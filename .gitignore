@@ -3,3 +3,5 @@ target/
 /gatk/
 /picard/
 /htsjdk/
+__pycache__/
+*.pyc
