@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  inventory:
+    name: Inventory is internally consistent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the generated inventory against itself
+        # The inventory is generated, so the risk is not that it is wrong by hand but that it
+        # is stale or partially regenerated. These checks catch both.
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          inv = json.load(open('tools/inventory/generated/inventory.json'))
+          fail = []
+
+          counts = inv['counts']
+          tools = inv['tools']
+
+          if len(tools) != counts['tools']:
+              fail.append(f"counts.tools={counts['tools']} but {len(tools)} tool entries")
+          if counts['tools'] != counts.get('cli_reported_tools'):
+              fail.append(f"tools={counts['tools']} != cli_reported_tools="
+                          f"{counts.get('cli_reported_tools')}; the inventory no longer matches "
+                          f"what `gatk --list` reports")
+
+          total_args = sum(len(t['arguments']) for t in tools)
+          if total_args != counts['arguments']:
+              fail.append(f"counts.arguments={counts['arguments']} but {total_args} counted")
+
+          # Every runnable tool must have at least one argument. A zero-argument entry means a
+          # non-tool (a metrics definition class) leaked back into the tool list.
+          empty = [t['name'] for t in tools if not t['arguments']]
+          if empty:
+              fail.append(f"{len(empty)} tools with no arguments, e.g. {empty[:5]}")
+
+          # Names must be invocable: the " (Picard)" display suffix must have been stripped.
+          suffixed = [t['name'] for t in tools if '(' in t['name']]
+          if suffixed:
+              fail.append(f"non-invocable tool names present: {suffixed[:5]}")
+
+          # Branch names must be unique, or two tools would collide on one branch.
+          branches = [t['branch'] for t in tools]
+          dupes = {b for b in branches if branches.count(b) > 1}
+          if dupes:
+              fail.append(f"duplicate branch names: {sorted(dupes)[:5]}")
+
+          for f in fail:
+              print("FAIL:", f)
+          print(f"tools={len(tools)} arguments={total_args} "
+                f"spark={sum(1 for t in tools if t['spark'])} "
+                f"undocumented={sum(1 for t in tools if not t.get('documented', True))}")
+          sys.exit(1 if fail else 0)
+          PY
+
+      - name: Generator runs and is deterministic
+        run: |
+          python3 -c "import ast,sys; ast.parse(open('tools/inventory/generate_inventory.py').read())"
+          python3 -c "import ast,sys; ast.parse(open('tools/inventory/extract_undocumented.py').read())"
+          echo "generators parse"
