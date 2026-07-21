@@ -86,5 +86,11 @@ code, and why the dependency runs in that direction here too.
 
 ## License
 
-GATK is BSD-3-Clause. License for this port is to be finalized before the repository is made
-public.
+Apache License 2.0, matching GATK. See `LICENSE`.
+
+Worth stating because it is easy to get wrong: GATK is **Apache 2.0**, not BSD-3-Clause.
+Several third-party descriptions (including the Homebrew formula) say BSD-3-Clause; the
+authoritative source is `LICENSE.TXT` in the pinned clone, which is Apache 2.0 with a Broad
+preamble. GitHub's API reports `NOASSERTION` for the same reason. The three repositories in
+this program therefore do not share one licence: `htsjdk-rs` and `picard-rs` are MIT,
+`gatk-rs` is Apache 2.0.
