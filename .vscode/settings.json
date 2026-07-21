@@ -1,0 +1,31 @@
+{
+  // The Java language server is disabled here on purpose.
+  //
+  // These folders each contain a pinned *reference clone* of a large Java project: 2,489 .java
+  // files in gatk/, 1,181 in htsjdk/, 733 in picard/. The extension tries to index all of it,
+  // which is where the several hundred percent CPU and ~2.6 GB of resident memory came from.
+  //
+  // Nothing here is a Java project being edited. The Java is read as the source of truth for a
+  // Rust port, and reading it needs a text editor, not a language server. Disabling this is
+  // reversible: set "java.server.launchMode" back to "Standard" or remove this file.
+  "java.server.launchMode": "Disabled",
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
+  "java.autobuild.enabled": false,
+
+  // Belt and braces: even in LightWeight mode, keep the reference clones out of any indexer.
+  "java.import.exclusions": [
+    "**/gatk/**",
+    "**/picard/**",
+    "**/htsjdk/**"
+  ],
+  "files.watcherExclude": {
+    "**/gatk/**": true,
+    "**/picard/**": true,
+    "**/htsjdk/**": true,
+    "**/target/**": true
+  },
+  "search.exclude": {
+    "**/target/**": true
+  }
+}
