@@ -84,6 +84,29 @@ The topology mirrors upstream. GATK's `Main.getPackageList()` returns
 `["org.broadinstitute.hellbender", "picard"]`, which is why `gatk MarkDuplicates` runs Picard's
 code, and why the dependency runs in that direction here too.
 
+## Relationship to `fulcrumgenomics/riker`
+
+[riker](https://github.com/fulcrumgenomics/riker) is an independent, MIT-licensed Rust
+reimplementation of Picard's QC tools from the maintainers of Picard and htsjdk. It overlaps this
+program's Picard layer only, not its GATK layer. The distinction that governs the relationship:
+**riker targets functional equivalence, this program targets byte equivalence.** riker is the
+better tool to *use*; this is a byte-for-byte reproduction of the existing one, bugs included.
+
+That makes riker a source of divergence candidates and never a source to port from. Its `ERRATA`
+documents exactly where a careful reimplementer chooses to differ from Picard, and every entry is
+pinned as a conformance case in `picard-rs`, measured against the reference rather than trusted.
+See `picard-rs` for the two entries pinned so far, and htsjdk-rs decision 0020 for a case where
+byte comparison surfaced a behaviour (alignment-block cycle binning is not in riker's errata) that
+careful reimplementation did not.
+
+## Commit attribution
+
+Commits are co-authored with the model that wrote them. On 2026-07-21 the history of all three
+repositories was rewritten to add that trailer uniformly, at the maintainer's request, changing
+every commit SHA. `gatk-rs` pins no dependencies yet, so nothing here was invalidated; the note is
+recorded for symmetry with the other two repositories, whose SHA-pinned historical builds are no
+longer bit-reproducible as a result. The trade was made deliberately.
+
 ## License
 
 Apache License 2.0, matching GATK. See `LICENSE`.
