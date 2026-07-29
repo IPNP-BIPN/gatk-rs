@@ -296,14 +296,16 @@
     {
       "id": "locuswalker",
       "title": "LocusWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The traversal the largest GATK archetype inherits, probed as a real LocusWalker run through the real command line so its defaults are measured rather than transcribed. Four of them are not a ReadWalker's: two default read filters rather than one, WellformedReadFilter and MappedReadFilter, so an unmapped read carrying its mate's position reaches a ReadWalker and never reaches a LocusWalker; includeDeletions true and includeNs false; emitEmptyLoci false, so an uncovered position inside -L produces no apply call at all, which a second walker subclass overriding that method measures against; and --max-depth-per-sample defaulting to 0 with a negative value being a bad argument rather than a synonym for unlimited. The fixture is ReadWalkerDump's, so a divergence between the two suites is a divergence between the traversals rather than between their inputs. The downsampling run is recorded rather than compared: the port refuses that path, and a refusal has to be measured against what the reference actually does.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "LocusWalkerDump"
+          "dump": "LocusWalkerDump",
+          "golden": "crates/gatk-tools/tests/data/locus_walker.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 217 apply calls over 8 traversals. The pair that earns the suite is gap and gap-emptyloci, the same interval run both ways: six calls with the default, fifty-one with emitEmptyLoci overridden, the uncovered ones carrying a real context with zero depth and the reference base still present. One row is honest rather than covering: depth-1 produced rows identical to the undownsampled run, because this fixture never exceeds one read per sample at any locus, so it does not measure downsampling at all. The test asserts that identity so the case cannot quietly start counting as coverage, and a probe that actually downsamples belongs with the java.util.Random port the reservoir needs."
         }
       ]
     }

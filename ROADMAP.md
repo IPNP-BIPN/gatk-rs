@@ -112,7 +112,8 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 - [x] `ReadWalker` (49 `apply` calls over 9 traversals)
 - [x] `IntervalWalker` (25 `apply` calls over 24 argument combinations)
-- [ ] `LocusWalker` (needs all of G1.5)
+- [x] `LocusWalker`: 217 `apply` calls over 8 traversals, including the same interval run with
+      and without `emitEmptyLoci` (6 calls against 51)
 - [ ] `VariantWalker` (needs G1.3's feature sources)
 - [ ] `AssemblyRegionWalker` (the base of G3)
 - [ ] the multi-pass and multi-input walker variants
