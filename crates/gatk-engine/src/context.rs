@@ -57,6 +57,19 @@ pub struct ReferenceContext {
 }
 
 impl ReferenceContext {
+    /// `new ReferenceContext()`: no data source, no interval, no window.
+    ///
+    /// Not a failure state. A walker handed a read with no valid interval, or run with no
+    /// reference at all, gets one of these, and every query on it answers empty rather than
+    /// throwing. That is why a tool can run without `-R` and still call `getBases()`.
+    pub fn empty() -> ReferenceContext {
+        ReferenceContext {
+            interval: None,
+            window: None,
+            cached: None,
+        }
+    }
+
     /// `new ReferenceContext(dataSource, interval, leading, trailing)`.
     ///
     /// `interval == None` is the "no known location" case, which answers every query with an
