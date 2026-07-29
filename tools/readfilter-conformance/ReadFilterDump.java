@@ -34,6 +34,7 @@ import htsjdk.samtools.SAMSequenceRecord;
 import org.broadinstitute.hellbender.engine.filters.AlignmentAgreesWithHeaderReadFilter;
 import org.broadinstitute.hellbender.engine.filters.AmbiguousBaseReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ExcessiveEndClippedReadFilter;
+import org.broadinstitute.hellbender.engine.filters.IntervalOverlapReadFilter;
 import org.broadinstitute.hellbender.engine.filters.LibraryReadFilter;
 import org.broadinstitute.hellbender.engine.filters.MetricsReadFilter;
 import org.broadinstitute.hellbender.engine.filters.NotOpticalDuplicateReadFilter;
@@ -63,6 +64,7 @@ import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.SAMRecordToGATKReadAdapter;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -194,7 +196,7 @@ public class ReadFilterDump {
         // Exact values, not substrings, despite the argument documentation saying <TAG>:<SUBSTRING>.
         map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit-rg1)", blackList("PU:unit-rg1"));
         map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit)", blackList("PU:unit"));
-        map.put("ReadGroupBlackListReadFilter(blacklist=ID:rg2+PL:ILLUMINA)",
+        map.put("ReadGroupBlackListReadFilter(blacklist=ID:rg2;PL:ILLUMINA)",
                 blackList("ID:rg2", "PL:ILLUMINA"));
 
         // The flow-based family. All three hmer filters walk the read's homopolymers and index an
@@ -206,6 +208,18 @@ public class ReadFilterDump {
         map.put("FlowBasedTPAttributeValidReadFilter(maxHmer=12)", tpValid(12));
         map.put("FlowBasedTPAttributeValidReadFilter(maxHmer=20)", tpValid(20));
         map.put("ReadGroupHasFlowOrderReadFilter()", new ReadGroupHasFlowOrderReadFilter());
+
+        // Intervals. The label separates them with a semicolon because `+` is the reference's own
+        // "to the end of the contig" marker and would be eaten by the separator; the reference
+        // refuses `-L "a;b"` outright, so a semicolon can never appear inside one interval.
+        map.put("IntervalOverlapReadFilter(intervals=chr1:100-200)",
+                new IntervalOverlapReadFilter(Arrays.asList("chr1:100-200")));
+        map.put("IntervalOverlapReadFilter(intervals=chr2)",
+                new IntervalOverlapReadFilter(Arrays.asList("chr2")));
+        map.put("IntervalOverlapReadFilter(intervals=chr1:1,900+)",
+                new IntervalOverlapReadFilter(Arrays.asList("chr1:1,900+")));
+        map.put("IntervalOverlapReadFilter(intervals=chr1:1000;chr1:1001-1300)",
+                new IntervalOverlapReadFilter(Arrays.asList("chr1:1000", "chr1:1001-1300")));
         map.put("WellformedFlowBasedReadFilter()", new WellformedFlowBasedReadFilter());
         return map;
     }
@@ -505,6 +519,11 @@ public class ReadFilterDump {
 
         r = read(header, "past_contig_end", 0, 1, CHR2 + 50, 60, "10M", 0, 0, 0, true);
         out.add(r);
+
+        // A read that is actually on chr2 and inside it. Without it every interval filter naming
+        // chr2 answers the same thing for every record, which is a row of identical characters and
+        // no evidence at all.
+        out.add(read(header, "chr2_mapped", 0, 1, 100, 60, "10M", 1, 0, 0, true));
 
         // The clipping family. Every one of these keeps ten read bases, so they separate the
         // clipping filters without also moving ReadLengthEqualsCigarLengthReadFilter.

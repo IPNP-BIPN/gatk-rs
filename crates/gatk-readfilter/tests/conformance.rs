@@ -92,7 +92,7 @@ fn every_filter_matches_the_reference_decision_for_decision() {
                 .split_once('=')
                 .map(|(_, list)| list)
                 .unwrap_or("")
-                .split('+')
+                .split(';')
                 .filter(|v| !v.is_empty())
                 .map(str::to_string)
                 .collect();
@@ -113,6 +113,9 @@ fn every_filter_matches_the_reference_decision_for_decision() {
                         }
                         "ReadGroupBlackListReadFilter" => {
                             Some(with_header::read_group_black_list(read, &header, &values))
+                        }
+                        "IntervalOverlapReadFilter" => {
+                            with_header::interval_overlap(read, &header, &values)
                         }
                         "ReadGroupHasFlowOrderReadFilter" => {
                             Some(with_header::read_group_has_flow_order(read, &header))

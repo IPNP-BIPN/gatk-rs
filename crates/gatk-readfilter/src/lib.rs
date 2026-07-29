@@ -1062,6 +1062,7 @@ pub mod flow {
 /// read naming an undeclared group passes it. Measured, not assumed.
 pub mod with_header {
     use super::*;
+    use gatk_engine::interval::MergingRule;
     use htsjdk_bam::header::SamHeader;
 
     /// `ReadUtils.getSAMReadGroupRecord`: the read's `RG` looked up in the header.
@@ -1188,6 +1189,35 @@ pub mod with_header {
             Some(contig) => read.alignment_start <= contig.length,
             None => false,
         }
+    }
+
+    /// `IntervalOverlapReadFilter`: keep reads overlapping any of the given intervals.
+    ///
+    /// `None` where the reference throws, which an interval string that names no contig or holds
+    /// impossible positions does.
+    ///
+    /// The read reaches the detector as a `Locatable`, and `GATKRead`'s three accessors all return
+    /// their unset sentinel for an unmapped read: a null contig, which misses the detector's map
+    /// and answers false. So an unmapped read is filtered out here without the filter ever saying
+    /// so, and that is the reference's behaviour rather than a shortcut.
+    pub fn interval_overlap(
+        read: &BamRecord,
+        header: &SamHeader,
+        intervals: &[String],
+    ) -> Option<bool> {
+        // IntervalUtils.loadIntervals with UNION and IntervalMergingRule.ALL, which is what the
+        // filter passes.
+        let loaded =
+            gatk_engine::interval::load_intervals(intervals, header, MergingRule::All).ok()?;
+        let detector = gatk_engine::interval::OverlapDetector::create(loaded);
+        if read::is_unmapped(read) {
+            return Some(detector.overlaps_any(None, 0, 0));
+        }
+        let contig = header
+            .sequences
+            .get(read.reference_index as usize)
+            .map(|s| s.name.as_str());
+        Some(detector.overlaps_any(contig, read.alignment_start, read.alignment_end()))
     }
 
     /// `ReadGroupHasFlowOrderReadFilter`: the read's group must be declared and carry `FO`.

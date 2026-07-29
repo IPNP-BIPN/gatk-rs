@@ -56,7 +56,8 @@ argument schemas, branch names, and the differential test matrix.
 | status dashboard | generated from the inventory and the ports' manifests: [docs/STATUS.md](docs/STATUS.md) |
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
-| `gatk-readfilter` | 54 of the 55 read filters, oracle-backed: 75 instances over 58 records, 4,350 decisions identical to the reference |
+| `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
+| `gatk-engine` | intervals: parsing against a sequence dictionary, union and merge, overlap detection |
 
 The read filters come first because they are stateless, touch no floating point, and every tool
 that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces

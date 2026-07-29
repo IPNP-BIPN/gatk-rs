@@ -80,10 +80,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-engine"
+version = "0.1.0"
+dependencies = [
+ "htsjdk-bam",
+]
+
+[[package]]
 name = "gatk-readfilter"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "gatk-engine",
  "htsjdk-bam",
 ]
 
