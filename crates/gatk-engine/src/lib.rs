@@ -10,6 +10,7 @@ pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;
 pub mod context;
+pub mod features;
 pub mod interval;
 pub mod interval_args;
 pub mod jexl;

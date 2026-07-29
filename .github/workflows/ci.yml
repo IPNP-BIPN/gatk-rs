@@ -111,6 +111,9 @@ jobs:
           - group: oracle-backed
             index: "2/2"
             suites: "intervalwalker alignmentstate pileupelement intervalfile jexlfilter"
+          - group: golden-pending
+            index: "1/1"
+            suites: "featurecache"
     steps:
       - uses: actions/checkout@v4
 
