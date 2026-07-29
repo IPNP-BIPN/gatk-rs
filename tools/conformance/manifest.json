@@ -280,14 +280,16 @@
     {
       "id": "acbuilder",
       "title": "AlignmentContextIteratorBuilder routing and sample order",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Two facts here reach into every locus-based tool's output and neither is visible from the builder's setters. The samples are collected with Collectors.toSet(), so LocusIteratorByState creates its per-sample managers in Java HashSet iteration order and concatenates their elements in that same order to build each pileup: the element order of a multi-sample pileup is a HashSet bucket order over the sample names, deterministic but neither sorted nor the header's. A port using a sorted map, an insertion-ordered list or a different hash would agree on single-sample data and diverge as soon as a second sample appeared, which is why java.util.HashMap's index and its order-preserving resize are ported alongside. And areIntervalsSpecified is intervals != null rather than !isEmpty(), so an empty but non-null list counts as specified, routes to IntervalOverlappingIterator, and that constructor's Utils.nonEmpty throws: an empty interval list is an error rather than an empty traversal, and only when emitEmptyLoci is off.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "AlignmentContextBuilderDump"
+          "dump": "AlignmentContextBuilderDump",
+          "golden": "crates/gatk-engine/tests/data/ac_builder.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. For the order half this golden is the *definition* rather than a check: the order is a java.util.HashSet's, which is GPL2 and unspecified, so the port reproduces it as an observable and the measurement wins where the two disagree. See docs/an-unspecified-order-that-reaches-the-output.md. The rows earn their place: three sample names come back in the reverse of their insertion order, five numeric names interleave as 11|1|2|3|10, and thirteen names cross the growth point. The routing half shows the empty-list asymmetry: with emitEmptyLoci off an empty non-null interval list is an IllegalArgumentException, and with it on the same list is a traversal of nothing. The empty-loci *contexts* are recorded here but not yet compared: IntervalAlignmentContextIterator is not ported."
         }
       ]
     }
