@@ -1209,15 +1209,20 @@ pub mod with_header {
         // filter passes.
         let loaded =
             gatk_engine::interval::load_intervals(intervals, header, MergingRule::All).ok()?;
-        let detector = gatk_engine::interval::OverlapDetector::create(loaded);
+        let detector = gatk_engine::interval::build_detector(loaded);
         if read::is_unmapped(read) {
-            return Some(detector.overlaps_any(None, 0, 0));
+            return Some(gatk_engine::interval::overlaps_any(&detector, None, 0, 0));
         }
         let contig = header
             .sequences
             .get(read.reference_index as usize)
             .map(|s| s.name.as_str());
-        Some(detector.overlaps_any(contig, read.alignment_start, read.alignment_end()))
+        Some(gatk_engine::interval::overlaps_any(
+            &detector,
+            contig,
+            read.alignment_start,
+            read.alignment_end(),
+        ))
     }
 
     /// `ReadGroupHasFlowOrderReadFilter`: the read's group must be declared and carry `FO`.

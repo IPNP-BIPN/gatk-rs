@@ -13,9 +13,8 @@
 //! the query if there is more than one. `IntervalUtils.getResolvedIntervals` is that resolution,
 //! and it splits on the **last** colon, not the first.
 
-use std::collections::HashMap;
-
 use htsjdk_bam::header::SamHeader;
+use htsjdk_bam::overlap::OverlapDetector;
 
 /// `SimpleInterval`: a contig with a 1-based, closed `[start, end]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,43 +196,39 @@ pub fn merge_interval_locations(
     merged
 }
 
-/// `htsjdk.samtools.util.OverlapDetector`, reduced to what the read filter asks of it.
+/// The `OverlapDetector` the interval filters query, built from parsed intervals.
 ///
-/// A locatable whose contig is absent from the map is not an error: the tree lookup misses and
-/// the answer is false. That is what makes an unmapped read, whose contig is null, fail the
-/// filter rather than crash it.
-pub struct OverlapDetector {
-    by_contig: HashMap<String, Vec<SimpleInterval>>,
+/// The detector itself is htsjdk's and is ported once, in htsjdk-rs
+/// (`htsjdk_bam::overlap::OverlapDetector`): reimplementing it here would be a second port of one
+/// upstream class, which is exactly the drift the three-repository split exists to prevent.
+///
+/// What this adds is the read's side of the query. A read reaches the detector as a `Locatable`,
+/// and `GATKRead` returns a **null contig** for an unmapped read, which misses the detector's
+/// per-contig map and answers false. So an unmapped read is filtered out without the filter ever
+/// testing for it.
+pub fn build_detector(intervals: Vec<SimpleInterval>) -> OverlapDetector<SimpleInterval> {
+    let mut detector = OverlapDetector::create();
+    for interval in intervals {
+        detector.add(
+            &interval.contig.clone(),
+            interval.start,
+            interval.end,
+            interval,
+        );
+    }
+    detector
 }
 
-impl OverlapDetector {
-    pub fn create(intervals: Vec<SimpleInterval>) -> OverlapDetector {
-        let mut by_contig: HashMap<String, Vec<SimpleInterval>> = HashMap::new();
-        for interval in intervals {
-            by_contig
-                .entry(interval.contig.clone())
-                .or_default()
-                .push(interval);
-        }
-        OverlapDetector { by_contig }
-    }
-
-    /// `OverlapDetector.overlapsAny`.
-    pub fn overlaps_any(&self, contig: Option<&str>, start: i32, end: i32) -> bool {
-        let Some(contig) = contig else {
-            return false;
-        };
-        let Some(intervals) = self.by_contig.get(contig) else {
-            return false;
-        };
-        // The reference bails out before querying the tree when the locatable is empty, which a
-        // read whose cigar consumes no reference is.
-        if start > end {
-            return false;
-        }
-        intervals
-            .iter()
-            .any(|interval| interval.overlaps(contig, start, end))
+/// `OverlapDetector.overlapsAny` for a locatable whose contig may be absent.
+pub fn overlaps_any(
+    detector: &OverlapDetector<SimpleInterval>,
+    contig: Option<&str>,
+    start: i32,
+    end: i32,
+) -> bool {
+    match contig {
+        None => false,
+        Some(contig) => detector.overlaps_any(contig, start, end),
     }
 }
 
@@ -321,15 +316,16 @@ mod tests {
 
     #[test]
     fn an_unmapped_locatable_overlaps_nothing() {
-        let detector = OverlapDetector::create(vec![SimpleInterval {
+        let detector = build_detector(vec![SimpleInterval {
             contig: "chr1".to_string(),
             start: 1,
             end: 100,
         }]);
-        assert!(detector.overlaps_any(Some("chr1"), 50, 60));
-        assert!(!detector.overlaps_any(Some("chr2"), 50, 60));
-        assert!(!detector.overlaps_any(None, 50, 60));
-        // An empty locatable: the reference checks this before touching the tree.
-        assert!(!detector.overlaps_any(Some("chr1"), 60, 50));
+        assert!(overlaps_any(&detector, Some("chr1"), 50, 60));
+        assert!(!overlaps_any(&detector, Some("chr2"), 50, 60));
+        // A null contig is what GATKRead gives for an unmapped read.
+        assert!(!overlaps_any(&detector, None, 50, 60));
+        // An empty locatable: the detector checks this before querying.
+        assert!(!overlaps_any(&detector, Some("chr1"), 60, 50));
     }
 }
