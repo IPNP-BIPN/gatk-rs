@@ -108,7 +108,7 @@
     {
       "id": "printreads",
       "title": "PrintReads output bytes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": ["PrintReads"],
       "why": "The first whole tool, and the first suite whose claim is bytes rather than decisions: the output BAM travels in the golden in full, base64, index included. Two header behaviours are measured with it: the @PG record the tool appends (ID, VN, CL, PN, with the ID taking a numeric suffix when it collides) and the fact that getHeaderForSAMWriter mutates the reads header in place. The dump installs htsjdk's JDK DeflaterFactory explicitly and records it in the golden, because --use-jdk-deflater does not restore it: GATK, like Picard, only ever installs the Intel factory when the flag is false, and that setter is static, so one earlier Picard call in the same JVM leaves GKL compressing everything that follows while the flag claims otherwise. The dump writes to a fixed directory rather than a temporary one, because the command line is recorded inside the output BAM's own @PG record: a random /tmp path does not make one golden row unstable, it makes every output byte unstable, and canonicalization cannot reach inside base64.",
