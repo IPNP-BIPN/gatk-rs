@@ -116,7 +116,7 @@ jobs:
             suites: "featurecache readpileup readstates locusiterator acbuilder"
           - group: oracle-backed
             index: "4/4"
-            suites: "locuswalker"
+            suites: "locuswalker javarandom"
     steps:
       - uses: actions/checkout@v4
 
