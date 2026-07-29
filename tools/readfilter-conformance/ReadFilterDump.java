@@ -31,7 +31,14 @@ import htsjdk.samtools.SAMReadGroupRecord;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
+import org.broadinstitute.hellbender.engine.filters.AmbiguousBaseReadFilter;
+import org.broadinstitute.hellbender.engine.filters.FragmentLengthReadFilter;
+import org.broadinstitute.hellbender.engine.filters.MappingQualityReadFilter;
+import org.broadinstitute.hellbender.engine.filters.MateDistantReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadLengthReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadNameReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadStrandFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.SAMRecordToGATKReadAdapter;
@@ -87,7 +94,51 @@ public class ReadFilterDump {
                 ReadFilterLibrary.MATE_UNMAPPED_AND_UNMAPPED_READ_FILTER);
         map.put("NonChimericOriginalAlignmentReadFilter",
                 ReadFilterLibrary.NON_CHIMERIC_ORIGINAL_ALIGNMENT_READ_FILTER);
+
+        // The parameterised filters, instantiated by the reference itself. The label carries the
+        // parameters, and the port rebuilds the instance from that label, so there is one list of
+        // instantiations rather than two that could drift.
+        //
+        // Values are chosen to sit *inside* the corpus: a threshold no record can reach makes a
+        // filter that always answers the same thing, which is a row of identical characters and no
+        // evidence at all.
+        map.put("MappingQualityReadFilter(min=10,max=null)", new MappingQualityReadFilter(10));
+        map.put("MappingQualityReadFilter(min=30,max=60)", new MappingQualityReadFilter(30, 60));
+        map.put("ReadLengthReadFilter(min=1,max=9)", new ReadLengthReadFilter(1, 9));
+        map.put("ReadLengthReadFilter(min=10,max=100)", new ReadLengthReadFilter(10, 100));
+        map.put("FragmentLengthReadFilter(min=0,max=120)", fragmentLength(0, 120));
+        map.put("FragmentLengthReadFilter(min=150,max=1000000)", fragmentLength(150, 1000000));
+        map.put("MateDistantReadFilter(threshold=50)", new MateDistantReadFilter(50));
+        map.put("MateDistantReadFilter(threshold=1000)", new MateDistantReadFilter(1000));
+        map.put("ReadNameReadFilter(names=plain_mapped+duplicate)",
+                readName("plain_mapped", "duplicate"));
+        map.put("ReadStrandFilter(keepReverse=false)", readStrand(false));
+        map.put("ReadStrandFilter(keepReverse=true)", readStrand(true));
+        map.put("AmbiguousBaseReadFilter(maxBases=0,maxFraction=0.05)",
+                new AmbiguousBaseReadFilter(0));
+        map.put("AmbiguousBaseReadFilter(maxBases=null,maxFraction=0.05)",
+                new AmbiguousBaseReadFilter());
         return map;
+    }
+
+    /** The two filters whose parameters have no constructor: set the public fields directly. */
+    static FragmentLengthReadFilter fragmentLength(final int min, final int max) {
+        final FragmentLengthReadFilter filter = new FragmentLengthReadFilter();
+        filter.minFragmentLength = min;
+        filter.maxFragmentLength = max;
+        return filter;
+    }
+
+    static ReadNameReadFilter readName(final String... names) {
+        final ReadNameReadFilter filter = new ReadNameReadFilter();
+        filter.readNames = new java.util.LinkedHashSet<>(java.util.Arrays.asList(names));
+        return filter;
+    }
+
+    static ReadStrandFilter readStrand(final boolean keepOnlyReverse) {
+        final ReadStrandFilter filter = new ReadStrandFilter();
+        filter.keepOnlyReverse = keepOnlyReverse;
+        return filter;
     }
 
     public static void main(final String[] args) throws Exception {
@@ -220,6 +271,26 @@ public class ReadFilterDump {
 
         r = read(header, "oa_without_mate_contig", 0, 0, 1840, 60, "10M", 0, 0, 0, true);
         r.setAttribute("OA", "chr2,100,+,10M,60,0;");
+        out.add(r);
+
+        // A short read and a reverse-strand read. Without them ReadLengthReadFilter and
+        // ReadStrandFilter answer the same thing for every record, which is a row of identical
+        // characters and no evidence: a filter that never changes its mind tests nothing.
+        r = read(header, "short_read", 0, 0, 1850, 60, "5M", 0, 0, 0, true);
+        r.setReadBases("ACGTA".getBytes());
+        r.setBaseQualities(new byte[] {30, 30, 30, 30, 30});
+        out.add(r);
+
+        out.add(read(header, "reverse_strand", 0x10, 0, 1860, 60, "10M", 0, 0, 0, true));
+
+        // Ambiguous bases, and the one that looks ambiguous and is not: BaseUtils maps '*' to A's
+        // index ("the wildcard character counts as an A"), so a read of '*' has none.
+        r = read(header, "two_n_bases", 0, 0, 1870, 60, "10M", 0, 0, 0, true);
+        r.setReadBases("ACGTNNGTAC".getBytes());
+        out.add(r);
+
+        r = read(header, "wildcard_bases", 0, 0, 1880, 60, "10M", 0, 0, 0, true);
+        r.setReadBases("**********".getBytes());
         out.add(r);
 
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.

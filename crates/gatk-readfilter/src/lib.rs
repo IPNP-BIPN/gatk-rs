@@ -488,6 +488,154 @@ fn tag_text(value: &htsjdk_bam::tag::TagValue) -> &str {
     }
 }
 
+/// The filters that take arguments.
+///
+/// They are modelled as data rather than as functions because their behaviour is a function of
+/// their parameters, and the parameters are what the command line supplies. Porting the *logic*
+/// here keeps it independent of the Barclay argument layer, which is a separate slice: a filter
+/// can be proved byte-identical against the reference long before anything can parse
+/// `--read-filter MappingQualityReadFilter --minimum-mapping-quality 20`.
+///
+/// The conformance golden names each instance with its parameters, and [`Parameterized::parse`]
+/// rebuilds it from that name, so the reference's own instantiation is what the port is tested
+/// against rather than a second list that could drift.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Parameterized {
+    /// `MappingQualityReadFilter`. The maximum is optional and absent by default.
+    MappingQuality { min: i32, max: Option<i32> },
+    /// `ReadLengthReadFilter`.
+    ReadLength { min: i32, max: i32 },
+    /// `FragmentLengthReadFilter`.
+    FragmentLength { min: i32, max: i32 },
+    /// `MateDistantReadFilter`.
+    MateDistant { threshold: i32 },
+    /// `ReadNameReadFilter`.
+    ReadName { names: Vec<String> },
+    /// `ReadStrandFilter`.
+    ReadStrand { keep_reverse: bool },
+    /// `AmbiguousBaseReadFilter`: an absolute count when given, otherwise a fraction of the read.
+    AmbiguousBase {
+        max_bases: Option<i32>,
+        max_fraction: f64,
+    },
+}
+
+impl Parameterized {
+    pub fn test(&self, read: &BamRecord) -> bool {
+        match self {
+            Parameterized::MappingQuality { min, max } => {
+                let mq = read::mapping_quality(read) as i32;
+                mq >= *min && max.is_none_or(|limit| mq <= limit)
+            }
+            Parameterized::ReadLength { min, max } => {
+                let length = read::length(read) as i32;
+                length >= *min && length <= *max
+            }
+            Parameterized::FragmentLength { min, max } => {
+                // An unpaired read passes: the fragment length means nothing for it.
+                if !read::is_paired(read) {
+                    return true;
+                }
+                // Negative when the mate maps before the read, hence the absolute value.
+                let length = read::fragment_length(read).abs();
+                length <= *max && length >= *min
+            }
+            Parameterized::MateDistant { threshold } => {
+                read::is_paired(read)
+                    && !read::is_unmapped(read)
+                    && !read::mate_is_unmapped(read)
+                    && ((read.alignment_start - read.mate_alignment_start).abs() >= *threshold
+                        || read.reference_index != read.mate_reference_index)
+            }
+            Parameterized::ReadName { names } => names.contains(&read.read_name),
+            Parameterized::ReadStrand { keep_reverse } => {
+                read::is_reverse_strand(read) == *keep_reverse
+            }
+            Parameterized::AmbiguousBase {
+                max_bases,
+                max_fraction,
+            } => {
+                // `(int)(length * fraction)` truncates towards zero in Java, which `as i32` also
+                // does for the non-negative values a read length can take.
+                let max_n =
+                    max_bases.unwrap_or_else(|| (read::length(read) as f64 * max_fraction) as i32);
+                let mut ambiguous = 0;
+                for base in &read.read_bases {
+                    if !is_regular_base(*base) {
+                        ambiguous += 1;
+                        if ambiguous > max_n {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /// Rebuild an instance from the golden's `Name(key=value,...)` label.
+    pub fn parse(spec: &str) -> Option<Parameterized> {
+        let (name, rest) = spec.split_once('(')?;
+        let args = rest.strip_suffix(')')?;
+        let mut values: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        for pair in args.split(',').filter(|p| !p.is_empty()) {
+            let (key, value) = pair.split_once('=')?;
+            values.insert(key, value);
+        }
+        let int = |key: &str| -> Option<i32> { values.get(key)?.parse().ok() };
+        let maybe_int = |key: &str| -> Option<Option<i32>> {
+            match *values.get(key)? {
+                "null" => Some(None),
+                other => other.parse().ok().map(Some),
+            }
+        };
+        Some(match name {
+            "MappingQualityReadFilter" => Parameterized::MappingQuality {
+                min: int("min")?,
+                max: maybe_int("max")?,
+            },
+            "ReadLengthReadFilter" => Parameterized::ReadLength {
+                min: int("min")?,
+                max: int("max")?,
+            },
+            "FragmentLengthReadFilter" => Parameterized::FragmentLength {
+                min: int("min")?,
+                max: int("max")?,
+            },
+            "MateDistantReadFilter" => Parameterized::MateDistant {
+                threshold: int("threshold")?,
+            },
+            "ReadNameReadFilter" => Parameterized::ReadName {
+                names: values
+                    .get("names")?
+                    .split('+')
+                    .map(str::to_string)
+                    .collect(),
+            },
+            "ReadStrandFilter" => Parameterized::ReadStrand {
+                keep_reverse: *values.get("keepReverse")? == "true",
+            },
+            "AmbiguousBaseReadFilter" => Parameterized::AmbiguousBase {
+                max_bases: maybe_int("maxBases")?,
+                max_fraction: values.get("maxFraction")?.parse().ok()?,
+            },
+            _ => return None,
+        })
+    }
+}
+
+/// `BaseUtils.isRegularBase`.
+///
+/// The trap: `*` is a **regular** base. `BaseUtils.baseIndexMap['*']` is set to A's index with the
+/// comment "the wildcard character counts as an A", so a read full of `*` has no ambiguous bases
+/// at all. A port that tested `matches!(base, b'A' | b'C' | b'G' | b'T')` would count them.
+pub fn is_regular_base(base: u8) -> bool {
+    matches!(
+        base,
+        b'A' | b'a' | b'C' | b'c' | b'G' | b'g' | b'T' | b't' | b'*'
+    )
+}
+
 /// The filters by the name GATK exposes on the command line (`--read-filter <Name>`).
 pub fn by_name(name: &str) -> Option<ReadFilter> {
     Some(match name {

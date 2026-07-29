@@ -5,6 +5,10 @@
 //! through `SAMRecordToGATKReadAdapter`. The corpus travels in the same file, field by field, so
 //! this test judges the records the reference judged rather than a reconstruction of them.
 //!
+//! Rows whose label carries parameters (`MappingQualityReadFilter(min=30,max=60)`) are instances
+//! the reference built; the port rebuilds them from the label, so one list of instantiations
+//! drives both sides.
+//!
 //! What this catches that a unit test does not: `NotProperlyPairedReadFilter` is
 //! `isPaired() && !isProperlyPaired()`, not the negation of `ProperlyPairedReadFilter`. The first
 //! version of the port used the negation, which keeps every unpaired read. The decision matrix
@@ -12,7 +16,7 @@
 
 use std::io::Read;
 
-use gatk_readfilter::{by_name, PORTED};
+use gatk_readfilter::{by_name, Parameterized, PORTED};
 use htsjdk_bam::record::BamRecord;
 
 fn golden() -> String {
@@ -134,14 +138,24 @@ fn every_filter_matches_the_reference_decision_for_decision() {
 
         // A filter in the golden that the port does not implement is a failure, not a skip:
         // silently ignoring it is how a suite shrinks without anyone noticing.
-        let filter = by_name(name).unwrap_or_else(|| {
-            panic!("{name} is in the golden but not ported; add it or remove it")
-        });
-
-        let ours: String = records
-            .iter()
-            .map(|read| if filter(read) { '1' } else { '0' })
-            .collect();
+        //
+        // A parameterised filter carries its parameters in the label, and the port rebuilds the
+        // instance from them, so the reference's own instantiation drives the comparison rather
+        // than a second list on this side that could drift from it.
+        let ours: String = if let Some(filter) = by_name(name) {
+            records
+                .iter()
+                .map(|read| if filter(read) { '1' } else { '0' })
+                .collect()
+        } else {
+            let filter = Parameterized::parse(name).unwrap_or_else(|| {
+                panic!("{name} is in the golden but not ported; add it or remove it")
+            });
+            records
+                .iter()
+                .map(|read| if filter.test(read) { '1' } else { '0' })
+                .collect()
+        };
 
         if ours != expected {
             let differing: Vec<usize> = expected
