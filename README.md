@@ -57,7 +57,7 @@ argument schemas, branch names, and the differential test matrix.
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
 | `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
-| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` (2,242 clipped reads), `ReferenceDataSource` (45 queries) and `ReadsDataSource` (the `.bai` interval query, golden pending) |
+| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` (2,242 clipped reads), `ReferenceDataSource` (45 queries) and `ReadsDataSource` (29 interval queries against a fixture BAM and its `.bai`) |
 
 `gatk-engine` depends on `noodles` for indexed FASTA and `.bai` plumbing while porting and
 measuring what GATK and htsjdk do with what it returns; the rule that governs when a dependency
@@ -86,6 +86,10 @@ Goldens come from the pinned reference in a digest-pinned `linux/amd64` containe
 produced only on real x86-64 CI. Emulated x86-64 on Apple Silicon does not expose AVX, so GKL
 native paths can silently fail to load and yield goldens matching no real machine; the oracle
 runner asserts the resolved provider state and fails rather than degrading.
+
+Verified rather than asserted, on 2026-07-29: the oracle jobs were dispatched on a real x86-64
+runner and re-derived all seven goldens from the pinned container, comparing 4,691 rows line by
+line with no divergence.
 
 Fields legitimately allowed to vary are canonicalized under explicitly declared rules, and
 every comparison records what was compared raw versus canonicalized. Values that cannot be

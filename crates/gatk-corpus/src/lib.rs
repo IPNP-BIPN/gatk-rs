@@ -23,6 +23,41 @@ pub fn read_golden(path: &std::path::Path) -> String {
     text
 }
 
+/// Decode a base64 field of a golden, standard alphabet, `=` padded.
+///
+/// Some fixtures are binary: the `ReadsDataSource` golden carries the BAM it queried and that
+/// BAM's `.bai`, so the port reads the bytes the reference read rather than a file rebuilt to
+/// match a description of them. Written out rather than pulled in, because a dependency to undo
+/// `java.util.Base64` in a test is a dependency to audit for the life of the programme.
+pub fn decode_base64(text: &str) -> Vec<u8> {
+    fn value(byte: u8) -> Option<u32> {
+        match byte {
+            b'A'..=b'Z' => Some((byte - b'A') as u32),
+            b'a'..=b'z' => Some((byte - b'a') as u32 + 26),
+            b'0'..=b'9' => Some((byte - b'0') as u32 + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let mut accumulator = 0u32;
+    let mut bits = 0u32;
+    for byte in text.bytes() {
+        let Some(value) = value(byte) else {
+            continue; // padding and whitespace
+        };
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((accumulator >> bits) as u8);
+        }
+    }
+    out
+}
+
 /// The header the reference judged the corpus against.
 ///
 /// It travels in the golden because the resolved filters read the library, sample, platform and

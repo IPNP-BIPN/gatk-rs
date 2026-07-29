@@ -60,23 +60,16 @@
     {
       "id": "readsdatasource",
       "title": "ReadsDataSource interval queries",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Which reads a walker sees for a given -L is decided by htsjdk's stateful query filter, not by an overlap test: its interval index only advances and the traversal stops once every interval is behind the record, unmapped reads carrying their mate's position are special-cased, and QueryInterval.optimizeIntervals merges abutting intervals so two adjacent -L arguments return a spanning read once. The fixture BAM and its .bai travel in the golden as base64, so the port queries the bytes the reference queried.",
       "compare": { "mode": "lines" },
-      "expect_rows": 89,
-      "expect_contains": [
-        "count\tchrX:1-100\tE",
-        "u001|",
-        "x001|"
-      ],
-      "$expect_why": "The three behaviours the suite exists for: a contig absent from the reads dictionary throws rather than returning nothing, an unmapped read at its mate's coordinate is returned by a query overlapping that coordinate, and queryUnmapped reaches the unplaced reads at the tail.",
       "cases": [
         {
           "dump": "ReadsDataSourceDump",
-          "golden": null,
-          "why": "No golden yet: the oracle image is not present on this machine, and a golden produced anywhere but the pinned container on real x86-64 is refused (picard-rs decision 0008). CI publishes the candidate dump; the Rust conformance test lands with it."
+          "golden": "crates/gatk-engine/tests/data/reads_query.txt.gz",
+          "why": "Produced by the pinned container on a real x86-64 runner and downloaded from that run's artifact, which is the only provenance this programme accepts for a golden. Three of its answers are worth naming: a query at 500-500 does not return the mapped read that starts at 500 with an empty cigar, because its alignment end is 499; a query at 495-505 does; and 499-499 stops the traversal outright."
         }
       ]
     }
