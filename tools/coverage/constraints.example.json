@@ -1,0 +1,19 @@
+{
+  "$comment": [
+    "A minimal fixtures file, used by CI to prove the constraint machinery does something.",
+    "",
+    "Real fixtures live in the repository that runs the arrays (picard-rs owns the corpus, so it",
+    "owns the paths and the constraints that go with them). This file exists so that a regression",
+    "in constraint handling fails here rather than being discovered later by a run whose rows are",
+    "all rejected.",
+    "",
+    "The clause is real: Picard 3.4.0 throws 'FLOW_MODE is obsolete' on any row carrying it."
+  ],
+  "constraints": [
+    {
+      "tools": ["CollectQualityYieldMetrics"],
+      "forbid": { "--FLOW_MODE": "true" },
+      "why": "The reference rejects it outright, so every row carrying it measures the rejection rather than the tool."
+    }
+  ]
+}

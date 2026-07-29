@@ -66,3 +66,65 @@ jobs:
           python3 -c "import ast,sys; ast.parse(open('tools/inventory/generate_inventory.py').read())"
           python3 -c "import ast,sys; ast.parse(open('tools/inventory/extract_undocumented.py').read())"
           echo "generators parse"
+
+  dashboard:
+    name: The status dashboard matches its sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docs/STATUS.md is generated, not written
+        # It is generated from the inventory and the vendored port summaries under
+        # tools/dashboard/ports, both of which are committed, so this runs with only this
+        # repository checked out. Refreshing the summaries from the sibling working copies is
+        # `--refresh`, and is a deliberate, reviewable commit.
+        run: python3 tools/dashboard/generate.py --check
+
+  coverage:
+    name: Covering arrays cover what they claim
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The arrays are verified, not asserted
+        # --verify enumerates every t-way tuple of the domain and checks the array covers it, so a
+        # regression in the generator fails here rather than producing an array that looks covered.
+        # One small tool, one large one, and t=3 on the large one, which is the shape the plan
+        # commits to on the critical path.
+        run: |
+          python3 tools/coverage/covering.py --tool CollectQualityYieldMetrics --t 2 --verify
+          python3 tools/coverage/covering.py --tool HaplotypeCaller --t 2 --verify
+          python3 tools/coverage/covering.py --tool HaplotypeCaller --t 3 --verify
+          python3 tools/coverage/covering.py --tool HaplotypeCaller --t 2 --numeric-policy perturb --verify
+
+      - name: Constraints actually forbid something
+        # A constraint that quietly does nothing is indistinguishable from one that works, and the
+        # failure mode is silent: the array still verifies, and every row it produces is rejected
+        # by the reference at run time (picard-rs decision 0009). So CI asserts that the forbidden
+        # count is non-zero and that the array still covers every permitted tuple.
+        run: |
+          python3 tools/coverage/covering.py --tool CollectQualityYieldMetrics --t 2 \
+            --fixtures tools/coverage/constraints.example.json --verify | tee /tmp/c.txt
+          grep -q "missing=0" /tmp/c.txt || { echo "constrained array does not cover its space"; exit 1; }
+          grep -qE "forbidden by constraints=[1-9]" /tmp/c.txt || {
+            echo "the constraint forbade nothing; it is not being applied"
+            exit 1
+          }
+
+      - name: The generator is deterministic
+        # The arrays are meant to be regenerated and diffed. Two runs that disagree would make
+        # every diff meaningless, and IPOG has enough tie-breaks for that to happen by accident.
+        run: |
+          python3 tools/coverage/covering.py --tool HaplotypeCaller --t 2 --json /tmp/a.json >/dev/null
+          python3 tools/coverage/covering.py --tool HaplotypeCaller --t 2 --json /tmp/b.json >/dev/null
+          cmp /tmp/a.json /tmp/b.json && echo "identical across runs"
+
+      - name: The measured sizing still matches the document
+        # docs/what-pairwise-coverage-costs.md states these numbers. If the inventory changes, the
+        # document is stale, and a stale number in a sizing document is how a plan drifts.
+        run: |
+          python3 tools/coverage/covering.py --all --t 2 | tee /tmp/all.txt
+          grep -q "oracle runs=19437" /tmp/all.txt || {
+            echo "pairwise sizing changed; update docs/what-pairwise-coverage-costs.md"
+            exit 1
+          }
