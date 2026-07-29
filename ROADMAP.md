@@ -96,9 +96,11 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       offsets it refuses)
 - [x] `ReadPileup`: the per-locus collection, its sorting, its sample split and the samtools
       overlap fix (3 pileups and 24 quality pairs)
-- [ ] `ReadStateManager` and `PerSampleReadStateManager` (partition by sample)
-- [ ] `SamplePartitioner`
-- [ ] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`)
+- [x] `ReadStateManager`, `PerSampleReadStateManager` and `SamplePartitioner`, downsampling
+      excepted (56 traversal steps over 5 runs)
+- [ ] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`). Refused
+      rather than approximated so far: `ReservoirDownsampler` and `LevelingDownsampler` draw from
+      `Utils.getRandomGenerator`, so this needs Java's `Random` and its exact draw sequence
 - [ ] `LocusIteratorByState` (merging the per-read machines into one pileup per locus)
 - [ ] `IntervalAlignmentContextIterator` and `AlignmentContextIteratorBuilder`, including
       `emitEmptyLoci`, `includeDeletions` and `includeNs`
@@ -189,6 +191,62 @@ Everything downstream inherits these, so they are front-loaded.
 
 ---
 
+## Milestone GPU: accelerate without losing the byte
+
+There is nothing upstream to port here. GATK 4.6.2.0 ships no GPU kernel: `PairHMM` resolves to
+`AVX_LOGLESS_CACHING`, `AVX_LOGLESS_CACHING_OMP` or the pure-Java `LOGLESS_CACHING` through Intel
+GKL, and the only CUDA-adjacent tool is `NVScoreVariants`, which is ML inference and already sits
+in Milestone X.
+
+A GPU path is therefore a **second implementation of a path this programme has already made
+byte-identical**, and it earns its place only by producing the same bytes as the first one. The
+gate is not "close", not "concordant", and not "within tolerance": same golden, same bytes, or the
+kernel does not ship. That is what separates this from every existing GPU reimplementation of
+GATK, which targets concordance and says so.
+
+### GPU.1 What makes a kernel eligible
+
+- [ ] a written eligibility rule, and a guard that enforces it per kernel:
+  - integer and byte work with a fixed traversal order is eligible as it stands;
+  - floating point is eligible only when the operation order, the rounding and the transcendental
+    implementations are pinned to the CPU path's. In practice: no fast-math, no FMA contraction
+    unless the CPU path contracts identically, no TF32 or tensor-core substitution, and a fixed
+    reduction tree rather than an atomics-order-dependent one;
+  - `StrictMath`-equivalent transcendentals have to be computed in software on the device, because
+    a vendor libm is not the one jmath reproduces;
+  - anything that cannot meet the above is quarantined and reported as bio-identical, exactly as a
+    CPU quarantine is
+- [ ] a determinism gate across **two different GPU architectures**, not one: a reduction that is
+      deterministic at one warp size or occupancy can stop being so at another, and a single-device
+      green run does not establish that
+
+### GPU.2 The targets, in order of tractability
+
+- [ ] **BGZF deflate and inflate**: integer work, block-independent, and already the hottest path
+      in every tool that writes a BAM. Byte-identity is decidable here because the output is
+      defined bit for bit
+- [ ] **the read filters and the pileup floor**: integer and byte predicates over many reads, no
+      floating point, and a fixed order. The cheapest place to prove the harness works end to end
+- [ ] **`PairHMM`**: the reason anyone wants a GPU here. Byte-identity against `LoglessPairHMM`
+      requires reproducing the pure-Java accumulation order, which is the same constraint the CPU
+      port already carries, so the kernel is a transliteration rather than a redesign
+- [ ] **the assembly graph and genotyping** (G3): larger, and floating point throughout
+- [ ] **CRAM codecs** (Milestone H), whose arithmetic is integral and whose output is defined
+
+### GPU.3 How it is verified
+
+- [ ] every conformance suite runs twice in CI, CPU and GPU, and the goldens are compared with the
+      same comparator: a GPU run is not a separate claim, it is the same claim on other hardware
+- [ ] the oracle contract records the device, the driver and the toolkit version alongside the
+      container digest, because a kernel's result is a property of all three
+- [ ] a measured speedup per kernel, published beside its byte-equality, so an accelerated path
+      that is not faster gets deleted rather than kept
+
+**Scope note.** This milestone is optional and runs in parallel: nothing in G1, G2, G3, H or P
+depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
+
+---
+
 ## Milestone V: program-level validation and reproducibility
 
 - [x] one conformance manifest per repository, with the CI generated from it and a guard that
@@ -219,6 +277,8 @@ Everything downstream inherits these, so they are front-loaded.
    jmath corpus, which blocks every floating-point tool and therefore most annotations.
 5. Then the **callers** (G3), then the **hard problems** (X).
 6. **CRAM** and **GKL-exact deflate** proceed in parallel, being self-contained in htsjdk-rs.
+7. **GPU** (Milestone GPU) is off the critical path by construction: it accelerates paths that are
+   already byte-identical, and a kernel that cannot match the CPU bytes is not merged.
 
 The honest bottom line: the tool-by-tool fan-out is tractable and amortizes well; the schedule is
 dominated by the engine, the callers, and the four hard problems. Full parameter coverage on

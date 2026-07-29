@@ -248,14 +248,16 @@
     {
       "id": "readstates",
       "title": "ReadStateManager sample partition and state advance",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Between the per-read state machines and the pileup sits the layer that decides which reads enter, under which sample, and when they leave. Four of its behaviours change what a locus contains and none is visible from a tool's output. The sample map is a LinkedHashMap, and the reference says so in capitals, so iteration follows the order the samples were declared rather than the header's: the probe declares B before A while the header has A before B. A read whose first stepForwardOnGenome returns null is dropped in silence, so a read that is all soft clips and insertions never reaches any pileup, which upstream marks a todo rather than an error. collectPendingReads takes the left-most *genome position* among the states already in the system, which for a read part-way through a deletion is not where that read started. A read whose sample was not declared at construction is a hard error rather than a new bucket, and a read with no read group at all is the null sample. Downsampling is out of scope on purpose: it draws from Utils.getRandomGenerator, and the port refuses it rather than approximating it.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "ReadStateDump"
+          "dump": "ReadStateDump",
+          "golden": "crates/gatk-engine/tests/data/read_states.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 56 traversal steps over 5 runs. Every row of two-samples lists sampleB before sampleA, which is the declaration order and not the header's; all-clipped holds three reads and reports two, because 5S5I never enters; and deletion-boundary admits d2 at 105 while d1 is part-way through a 10D, which is where d1 is rather than where it started."
         }
       ]
     }
