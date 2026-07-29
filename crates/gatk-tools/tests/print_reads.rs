@@ -73,8 +73,7 @@ fn every_output_file_is_byte_identical() {
 
     let mut compared = 0;
     for (label, expected_base64) in &outputs {
-        let (interval_strings, default_filters, no_duplicates, create_index) =
-            configuration(label);
+        let (interval_strings, default_filters, no_duplicates, create_index) = configuration(label);
         let intervals: Vec<SimpleInterval> = interval_strings
             .iter()
             .map(|text| interval::parse_interval(text, &header).expect("a parsable interval"))
@@ -141,34 +140,4 @@ fn every_output_file_is_byte_identical() {
 
     std::fs::remove_dir_all(&dir).ok();
     println!("{compared} PrintReads outputs, byte-identical with their indexes");
-}
-
-#[test]
-#[ignore = "diagnostic: prints the port's own header text next to the reference's"]
-fn show_header_difference() {
-    let text = golden();
-    let dir = std::env::temp_dir().join(format!("gatk-rs-printreads-dbg-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let bam = dir.join("reads.bam");
-    let bai = dir.join("reads.bai");
-    std::fs::write(&bam, corpus::decode_base64(field(&text, "bam"))).unwrap();
-    std::fs::write(&bai, corpus::decode_base64(field(&text, "bai"))).unwrap();
-    let source = ReadsDataSource::open(&bam, &bai).expect("open");
-    let command_line = rows(&text, "commandline")
-        .into_iter()
-        .find(|(l, _)| *l == "all")
-        .map(|(_, c)| c)
-        .unwrap();
-    let options = Options {
-        command_line,
-        ..Options::default()
-    };
-    let filter_header = source.header().clone();
-    let (ours, _) = print_reads::print_reads(&source, &options, &move |read| {
-        with_header::wellformed(read, &filter_header)
-    })
-    .expect("run");
-    std::fs::write("/tmp/ours.bam", &ours).unwrap();
-    println!("PORT WROTE {} bytes to /tmp/ours.bam", ours.len());
-    std::fs::remove_dir_all(&dir).ok();
 }

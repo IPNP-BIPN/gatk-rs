@@ -57,7 +57,7 @@ argument schemas, branch names, and the differential test matrix.
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
 | `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
-| `gatk-tools` | the `ReadWalker` traversal, oracle-backed: 49 `apply` calls over 9 traversals of one fixture, each compared with the reference window and bases it arrived with |
+| `gatk-tools` | **`PrintReads`, byte-identical**: six output BAMs and their `.bai` indexes compared byte for byte against the pinned reference, under the JDK deflater. Plus the `ReadWalker` traversal it rests on: 49 `apply` calls over 9 traversals, each compared with the reference window and bases it arrived with |
 | `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` in full, all 14 entry points (3,068 clipped reads), `ReferenceDataSource` (45 queries), `ReadsDataSource` (29 interval queries against a fixture BAM and its `.bai`), and `ReferenceContext` (352 window answers) |
 
 `gatk-engine` depends on `noodles` for indexed FASTA and `.bai` plumbing while porting and
@@ -84,12 +84,14 @@ HaplotypeCaller alone has 174 arguments, implying on the order of 2^174 combinat
 ## Bit-identity contract
 
 Goldens come from the pinned reference in a digest-pinned `linux/amd64` container on JDK 17,
-produced only on real x86-64 CI. Emulated x86-64 on Apple Silicon does not expose AVX, so GKL
+produced only on real x86-64 CI. A suite that writes BGZF also declares **which deflater** its
+bytes come from, and installs it rather than asking for it: `--use-jdk-deflater` does not restore
+the JDK deflater, it only declines to install the Intel one, and the setter is static and global. Emulated x86-64 on Apple Silicon does not expose AVX, so GKL
 native paths can silently fail to load and yield goldens matching no real machine; the oracle
 runner asserts the resolved provider state and fails rather than degrading.
 
 Verified rather than asserted, on 2026-07-29: the oracle jobs were dispatched on a real x86-64
-runner and re-derived all nine goldens from the pinned container, comparing 6,079 rows line by
+runner and re-derived all ten goldens from the pinned container, comparing 6,108 rows line by
 line with no divergence.
 
 Fields legitimately allowed to vary are canonicalized under explicitly declared rules, and

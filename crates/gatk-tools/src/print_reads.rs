@@ -99,8 +99,7 @@ pub fn print_reads(
     let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     let header = header_for_sam_writer(source.header(), options);
 
-    let writer = BamWriter::new(Vec::new(), &header)
-        .map_err(|e| ReadsError::Io(e.to_string()))?;
+    let writer = BamWriter::new(Vec::new(), &header).map_err(|e| ReadsError::Io(e.to_string()))?;
     let mut writer = if options.create_output_bam_index {
         writer.with_index()
     } else {
