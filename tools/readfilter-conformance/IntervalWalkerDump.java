@@ -39,7 +39,6 @@
  */
 
 import htsjdk.samtools.reference.FastaSequenceIndexCreator;
-import org.broadinstitute.hellbender.cmdline.programgroups.ReadDataManipulationProgramGroup;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.IntervalWalker;
 import org.broadinstitute.hellbender.engine.ReadsContext;
@@ -47,6 +46,7 @@ import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
+import picard.cmdline.programgroups.ReadDataManipulationProgramGroup;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
