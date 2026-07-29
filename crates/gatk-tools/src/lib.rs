@@ -6,5 +6,6 @@
 //! and neither half can see the other.
 
 pub mod interval_walker;
+pub mod locus_walker;
 pub mod print_reads;
 pub mod read_walker;

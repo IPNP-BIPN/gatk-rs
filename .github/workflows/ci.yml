@@ -106,14 +106,17 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/3"
+            index: "1/4"
             suites: "readfilters readsdatasource referencecontext readwalker printreads"
           - group: oracle-backed
-            index: "2/3"
+            index: "2/4"
             suites: "intervalwalker alignmentstate pileupelement intervalfile jexlfilter"
           - group: oracle-backed
-            index: "3/3"
+            index: "3/4"
             suites: "featurecache readpileup readstates locusiterator acbuilder"
+          - group: oracle-backed
+            index: "4/4"
+            suites: "locuswalker"
     steps:
       - uses: actions/checkout@v4
 

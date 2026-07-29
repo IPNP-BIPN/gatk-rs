@@ -87,10 +87,26 @@ pub fn contexts<'a>(
     samples: Vec<Option<String>>,
     header: &SamHeader,
     options: LocusIteratorOptions,
+    states: ReadStateManager<'a>,
+) -> Result<Vec<AlignmentContext<'a>>, ReadStateError> {
+    contexts_filtered(reads, samples, header, options, states, &|_| true)
+}
+
+/// The same, with the walker's read filter applied first.
+///
+/// The filter runs before the iterator sees anything, so a filtered read is *absent* from the
+/// pileup rather than present and ignored: it changes the depth, not only the reported set.
+pub fn contexts_filtered<'a>(
+    reads: &'a [BamRecord],
+    samples: Vec<Option<String>>,
+    header: &SamHeader,
+    options: LocusIteratorOptions,
     mut states: ReadStateManager<'a>,
+    filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<Vec<AlignmentContext<'a>>, ReadStateError> {
     let _ = samples;
-    let mut pending: std::collections::VecDeque<&'a BamRecord> = reads.iter().collect();
+    let mut pending: std::collections::VecDeque<&'a BamRecord> =
+        reads.iter().filter(|read| filter(read)).collect();
     let mut out = Vec::new();
 
     // `readStates.hasNext()`: states in the system, or reads still to come.
