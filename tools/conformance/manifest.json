@@ -264,14 +264,16 @@
     {
       "id": "locusiterator",
       "title": "LocusIteratorByState pileups",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "One pileup per covered locus, which is what a LocusWalker iterates, so which elements land where is every locus-based tool's output. Four decisions sit in the twenty lines that build each pileup. The two exclusions are not symmetric: a read whose current operator is N is skipped before the adaptor test, a read whose operator is D is skipped inside it, so a read sitting in an adaptor with a deletion is excluded once by the adaptor while an N is excluded whatever the adaptor says. The adaptor test is per base, so the same read contributes to some loci and not others. The pileup is monolithic and concatenated in sample declaration order, which the reference kept for the HaplotypeCaller and documents as such. And a locus with no surviving element yields no context at all, silently, because emitting empty loci belongs to a different class. All four (includeDeletions, includeNs) combinations are probed, because a tool picks them by overriding two methods whose defaults differ.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "LocusIteratorDump"
+          "dump": "LocusIteratorDump",
+          "golden": "crates/gatk-engine/tests/data/locus_iterator.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 148 pileups over 12 runs. The adaptor rows are the ones that took two attempts to measure: the first fixture put the mate twenty bases before the read, so the boundary (mateStart - 1 for a reverse-strand read) landed before every probed locus and excluded nothing while ten rows appeared to cover it. With the mate five bases into the read, p1 is missing from chr1:101 to chr1:105 and present from 106."
         }
       ]
     }

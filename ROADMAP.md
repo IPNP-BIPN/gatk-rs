@@ -101,7 +101,8 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [ ] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`). Refused
       rather than approximated so far: `ReservoirDownsampler` and `LevelingDownsampler` draw from
       `Utils.getRandomGenerator`, so this needs Java's `Random` and its exact draw sequence
-- [ ] `LocusIteratorByState` (merging the per-read machines into one pileup per locus)
+- [x] `LocusIteratorByState`: one pileup per covered locus, both exclusions and the per-base
+      adaptor test (148 pileups over 12 runs)
 - [ ] `IntervalAlignmentContextIterator` and `AlignmentContextIteratorBuilder`, including
       `emitEmptyLoci`, `includeDeletions` and `includeNs`
 
