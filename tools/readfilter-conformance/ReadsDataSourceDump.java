@@ -23,8 +23,12 @@
  *
  *     bam\t<base64 of the BAM>
  *     bai\t<base64 of the .bai>
+ *     spec\t<label>\t<mode>|<interval>,<interval>...   what was asked, machine-readable
  *     query\t<label>\t<record>\n<record>...   (\n literal, one segment per returned read)
  *     count\t<label>\t<n>                     (or E if the reference threw)
+ *
+ * The `spec` row exists so the port runs the queries the reference ran rather than a second copy
+ * of this table: the label alone is a name, and a name is not a query.
  *
  * Usage: ReadsDataSourceDump
  */
@@ -125,6 +129,12 @@ public class ReadsDataSourceDump {
 
     static void emit(final Path bam, final String label, final List<String> intervals,
                      final boolean unmapped) {
+        final String mode = label.startsWith("traverse:")
+                ? (unmapped ? "traverse+unmapped" : "traverse")
+                : (intervals == null ? "unmapped" : "query");
+        System.out.printf("spec\t%s\t%s|%s%n", label, mode,
+                intervals == null ? "" : String.join(",", intervals));
+
         final List<String> rows = new ArrayList<>();
         String count;
         try (final ReadsDataSource source = new ReadsPathDataSource(bam)) {

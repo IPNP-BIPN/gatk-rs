@@ -33,10 +33,17 @@ def container_command(cls, props):
     """The in-container script: compile the harness against the pinned jar, then run it.
 
     `2>/dev/null` drops htsjdk's chatter on stderr; the dump itself goes to stdout.
+
+    The whole harness directory is copied and `-sourcepath .` is passed, not just the one class.
+    Copying a single file is what the first version did, and it meant three of the six read-filter
+    dumps could not compile in CI at all: `CountingFilterDump`, `ReadCoordinateDump` and
+    `ReadClipperDump` share `ReadFilterDump.corpus`, which was not there to compile against. Their
+    goldens had been produced by an ad-hoc command instead, so nothing re-derived them, which is
+    the exact failure picard-rs decision 0008 is about.
     """
     prop_str = (" ".join(props) + " ") if props else ""
     return (
-        f'cp /harness/{cls}.java . && javac -cp "$ORACLE_CP" -d . {cls}.java '
+        f'cp /harness/*.java . && javac -cp "$ORACLE_CP" -sourcepath . -d . {cls}.java '
         f'&& java {prop_str}-cp ".:$ORACLE_CP" {cls} 2>/dev/null'
     )
 

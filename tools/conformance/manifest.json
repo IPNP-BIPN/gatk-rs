@@ -23,7 +23,8 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "One row per filter, one character per record: the reference's own decision, taken through SAMRecordToGATKReadAdapter rather than off the flags. Going through the adapter is the point: GATKRead.isUnmapped is three criteria and isFirstOfPair requires pairing, so comparing against flags would compare against a reimplementation of the adapter instead of the reference. The corpus travels in the same file as SAM text, so the port judges the records the reference judged rather than a description of them.",
-      "compare": { "mode": "keyed" },
+      "compare": { "mode": "lines" },
+      "$compare_why": "Line mode, not keyed. Keyed compares one row per (kind, case) pair, and every dump here repeats a kind across many cases: the ReadClipper golden has 2,385 rows and only 181 distinct keys, so keyed mode silently compared 8% of it and reported ok. The whole file is the artefact and its order is part of it.",
       "cases": [
         {
           "dump": "ReadFilterDump",
@@ -63,8 +64,8 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Which reads a walker sees for a given -L is decided by htsjdk's stateful query filter, not by an overlap test: its interval index only advances and the traversal stops once every interval is behind the record, unmapped reads carrying their mate's position are special-cased, and QueryInterval.optimizeIntervals merges abutting intervals so two adjacent -L arguments return a spanning read once. The fixture BAM and its .bai travel in the golden as base64, so the port queries the bytes the reference queried.",
-      "compare": { "mode": "keyed" },
-      "expect_rows": 60,
+      "compare": { "mode": "lines" },
+      "expect_rows": 89,
       "expect_contains": [
         "count\tchrX:1-100\tE",
         "u001|",
