@@ -26,6 +26,7 @@
 //! Each filter below therefore records which GATKRead accessor it goes through, and the accessors
 //! are implemented once, in [`read`], rather than inlined per filter.
 
+use htsjdk_bam::cigar::Op;
 use htsjdk_bam::record::BamRecord;
 
 /// The SAM flag bits, as `SAMFlag` defines them.
@@ -519,6 +520,19 @@ pub enum Parameterized {
         max_bases: Option<i32>,
         max_fraction: f64,
     },
+    /// `SoftClippedReadFilter`. The two thresholds are mutually exclusive arguments, and the
+    /// reference throws a `UserException` when neither is given, so exactly one is ever set.
+    SoftClipped {
+        ratio: Option<f64>,
+        leading_trailing: Option<f64>,
+    },
+    /// `OverclippedReadFilter`.
+    Overclipped {
+        min_aligned_bases: i32,
+        dont_require_both_ends: bool,
+    },
+    /// `ExcessiveEndClippedReadFilter`.
+    ExcessiveEndClipped { max_clipped_bases: i32 },
 }
 
 impl Parameterized {
@@ -571,6 +585,97 @@ impl Parameterized {
                 }
                 true
             }
+            Parameterized::SoftClipped {
+                ratio,
+                leading_trailing,
+            } => {
+                let elements = &read.cigar.elements;
+                // The denominator is the sum of every element's length, hard clips, deletions and
+                // skips included, not the read's length. The argument documentation says "total
+                // bases in read"; the code says `totalLength += element.getLength()` for every
+                // element. The two differ on any read carrying an H, a D or an N.
+                let total: u32 = elements.iter().map(|e| e.length).sum();
+                if let Some(max) = ratio {
+                    let soft: u32 = elements
+                        .iter()
+                        .filter(|e| e.op == Op::S)
+                        .map(|e| e.length)
+                        .sum();
+                    let clip_ratio = if total != 0 {
+                        f64::from(soft) / f64::from(total)
+                    } else {
+                        0.0
+                    };
+                    clip_ratio <= *max
+                } else if let Some(max) = leading_trailing {
+                    // An empty cigar has no edge to be clipped, so it passes.
+                    if elements.is_empty() {
+                        return true;
+                    }
+                    let last = elements.len() - 1;
+                    let leading = if elements[0].op == Op::S {
+                        elements[0].length
+                    } else {
+                        0
+                    };
+                    // `lastCigarOpIndex != 0` guards the single-element cigar: `5S` alone counts
+                    // its five bases once, not twice.
+                    let trailing = if last != 0 && elements[last].op == Op::S {
+                        elements[last].length
+                    } else {
+                        0
+                    };
+                    let clip_ratio = if total != 0 {
+                        f64::from(leading + trailing) / f64::from(total)
+                    } else {
+                        0.0
+                    };
+                    clip_ratio <= *max
+                } else {
+                    // The reference raises `UserException` here: the two thresholds are mutex and
+                    // one is required. Reaching this means a golden label declared neither.
+                    panic!("SoftClippedReadFilter needs one of its two thresholds")
+                }
+            }
+            Parameterized::Overclipped {
+                min_aligned_bases,
+                dont_require_both_ends,
+            } => {
+                let min_blocks = if *dont_require_both_ends { 1 } else { 2 };
+                let mut aligned = 0u32;
+                let mut blocks = 0;
+                let mut previous: Option<Op> = None;
+                for element in &read.cigar.elements {
+                    if element.op == Op::S {
+                        // Consecutive soft clips are one block: `1S2S5M2S` has two, not three.
+                        if previous != Some(Op::S) {
+                            blocks += 1;
+                        }
+                    } else if element.op.consumes_read_bases() {
+                        // M, I, X and =, S having been taken above.
+                        aligned += element.length;
+                    }
+                    previous = Some(element.op);
+                }
+                aligned as i32 >= *min_aligned_bases || blocks < min_blocks
+            }
+            Parameterized::ExcessiveEndClipped { max_clipped_bases } => {
+                // Each end separately, never their sum: `900S50000M900S` passes at a threshold of
+                // 1000 that `1500S50000M` fails. Soft and hard clips are counted together.
+                let elements = &read.cigar.elements;
+                let is_clip = |e: &&htsjdk_bam::cigar::CigarElement| matches!(e.op, Op::S | Op::H);
+                let front: u32 = elements.iter().take_while(is_clip).map(|e| e.length).sum();
+                if front as i32 > *max_clipped_bases {
+                    return false;
+                }
+                let back: u32 = elements
+                    .iter()
+                    .rev()
+                    .take_while(is_clip)
+                    .map(|e| e.length)
+                    .sum();
+                back as i32 <= *max_clipped_bases
+            }
         }
     }
 
@@ -590,6 +695,13 @@ impl Parameterized {
                 other => other.parse().ok().map(Some),
             }
         };
+        let maybe_float = |key: &str| -> Option<Option<f64>> {
+            match *values.get(key)? {
+                "null" => Some(None),
+                other => other.parse().ok().map(Some),
+            }
+        };
+        let flag = |key: &str| -> Option<bool> { Some(*values.get(key)? == "true") };
         Some(match name {
             "MappingQualityReadFilter" => Parameterized::MappingQuality {
                 min: int("min")?,
@@ -619,6 +731,17 @@ impl Parameterized {
             "AmbiguousBaseReadFilter" => Parameterized::AmbiguousBase {
                 max_bases: maybe_int("maxBases")?,
                 max_fraction: values.get("maxFraction")?.parse().ok()?,
+            },
+            "SoftClippedReadFilter" => Parameterized::SoftClipped {
+                ratio: maybe_float("ratio")?,
+                leading_trailing: maybe_float("leadingTrailingRatio")?,
+            },
+            "OverclippedReadFilter" => Parameterized::Overclipped {
+                min_aligned_bases: int("minAlignedBases")?,
+                dont_require_both_ends: flag("dontRequireBothEnds")?,
+            },
+            "ExcessiveEndClippedReadFilter" => Parameterized::ExcessiveEndClipped {
+                max_clipped_bases: int("maxClippedBases")?,
             },
             _ => return None,
         })
@@ -897,6 +1020,82 @@ mod tests {
 
         read.mate_reference_index = 0;
         assert!(super::mate_on_same_contig_or_no_mapped_mate(&read));
+    }
+
+    fn with_cigar(text: &str) -> BamRecord {
+        BamRecord {
+            cigar: htsjdk_bam::text_parse::parse_cigar(text).unwrap(),
+            ..mapped_read()
+        }
+    }
+
+    /// The soft-clip ratio divides by the sum of every cigar element, not by the read length.
+    ///
+    /// `2H2S6M2S2H` is four soft-clipped bases over fourteen (0.286), not over the ten bases the
+    /// read actually carries (0.400). At a threshold of 0.3 the two readings disagree, and the
+    /// argument's own documentation ("total bases in read") is the one that is wrong.
+    #[test]
+    fn soft_clip_ratio_divides_by_the_whole_cigar() {
+        let filter = Parameterized::SoftClipped {
+            ratio: Some(0.3),
+            leading_trailing: None,
+        };
+        assert!(filter.test(&with_cigar("2H2S6M2S2H")));
+        assert!(!filter.test(&with_cigar("3S4M3S")));
+    }
+
+    /// Only the first and last elements count, and a lone `5S` is not counted at both ends.
+    #[test]
+    fn leading_trailing_ratio_ignores_interior_clips() {
+        let filter = Parameterized::SoftClipped {
+            ratio: None,
+            leading_trailing: Some(0.5),
+        };
+        // Hard clips at the edges: the soft clips are interior, so the ratio is zero.
+        assert!(filter.test(&with_cigar("2H2S6M2S2H")));
+        // 5 of 10, counted once: doubling it would give 1.0 and filter the read out.
+        assert!(filter.test(&with_cigar("5S5M")));
+
+        // A single element is not counted at both ends. `5S` is 1.0, not 2.0, so it survives a
+        // threshold of exactly 1.0 and the guard on `lastCigarOpIndex != 0` is what makes it.
+        let everything = Parameterized::SoftClipped {
+            ratio: None,
+            leading_trailing: Some(1.0),
+        };
+        assert!(everything.test(&with_cigar("5S")));
+        assert!(!filter.test(&with_cigar("5S")));
+    }
+
+    /// Consecutive soft clips are one block, which is what decides whether "both ends" is met.
+    #[test]
+    fn overclipped_counts_blocks_not_elements() {
+        let both_ends = Parameterized::Overclipped {
+            min_aligned_bases: 8,
+            dont_require_both_ends: false,
+        };
+        let one_end = Parameterized::Overclipped {
+            min_aligned_bases: 8,
+            dont_require_both_ends: true,
+        };
+        // 1S2S5M2S: five aligned bases, and two blocks rather than three.
+        assert!(!both_ends.test(&with_cigar("1S2S5M2S")));
+        assert!(!one_end.test(&with_cigar("1S2S5M2S")));
+        // 5S5M: one block, so the both-ends instance keeps it and the other does not.
+        assert!(both_ends.test(&with_cigar("5S5M")));
+        assert!(!one_end.test(&with_cigar("5S5M")));
+    }
+
+    /// Each end is tested on its own, never the sum of the two.
+    #[test]
+    fn excessive_end_clipped_never_sums_the_two_ends() {
+        let filter = Parameterized::ExcessiveEndClipped {
+            max_clipped_bases: 4,
+        };
+        // Four each end, eight in total: kept.
+        assert!(filter.test(&with_cigar("4S2M4S")));
+        assert!(!filter.test(&with_cigar("5S5M")));
+        // Soft and hard clips at one end are added together.
+        assert!(!filter.test(&with_cigar("3H2S5M")));
     }
 
     #[test]

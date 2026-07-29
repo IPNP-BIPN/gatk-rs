@@ -33,7 +33,10 @@ import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import org.broadinstitute.hellbender.engine.filters.AlignmentAgreesWithHeaderReadFilter;
 import org.broadinstitute.hellbender.engine.filters.AmbiguousBaseReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ExcessiveEndClippedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.LibraryReadFilter;
+import org.broadinstitute.hellbender.engine.filters.OverclippedReadFilter;
+import org.broadinstitute.hellbender.engine.filters.SoftClippedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformUnitReadFilter;
 import org.broadinstitute.hellbender.engine.filters.SampleReadFilter;
@@ -135,7 +138,55 @@ public class ReadFilterDump {
         map.put("PlatformReadFilter(names=ILLUM)", platform("ILLUM"));
         map.put("PlatformUnitReadFilter(blacklist=unit-rg2)", platformUnit("unit-rg2"));
         map.put("PlatformUnitReadFilter(blacklist=)", platformUnit());
+
+        // The clipping family. Thresholds are chosen to sit between corpus records rather than
+        // outside them: OverclippedReadFilter with both instances at minAlignedBases=8 separates
+        // only because one of them requires soft clips at both ends, and 5S5M has one.
+        map.put("SoftClippedReadFilter(ratio=0.4,leadingTrailingRatio=null)",
+                configure(new SoftClippedReadFilter(), "maximumSoftClippedRatio", 0.4d));
+        map.put("SoftClippedReadFilter(ratio=0.1,leadingTrailingRatio=null)",
+                configure(new SoftClippedReadFilter(), "maximumSoftClippedRatio", 0.1d));
+        map.put("SoftClippedReadFilter(ratio=null,leadingTrailingRatio=0.4)",
+                configure(new SoftClippedReadFilter(),
+                        "maximumLeadingTrailingSoftClippedRatio", 0.4d));
+        map.put("SoftClippedReadFilter(ratio=null,leadingTrailingRatio=0.2)",
+                configure(new SoftClippedReadFilter(),
+                        "maximumLeadingTrailingSoftClippedRatio", 0.2d));
+        map.put("OverclippedReadFilter(minAlignedBases=8,dontRequireBothEnds=false)",
+                configure(new OverclippedReadFilter(), "minAlignedBases", 8));
+        map.put("OverclippedReadFilter(minAlignedBases=8,dontRequireBothEnds=true)",
+                configure(new OverclippedReadFilter(), "minAlignedBases", 8,
+                        "doNotRequireSoftClipsOnBothEnds", true));
+        map.put("ExcessiveEndClippedReadFilter(maxClippedBases=4)",
+                configure(new ExcessiveEndClippedReadFilter(), "maxClippedBases", 4));
+        map.put("ExcessiveEndClippedReadFilter(maxClippedBases=2)",
+                configure(new ExcessiveEndClippedReadFilter(), "maxClippedBases", 2));
         return map;
+    }
+
+    /**
+     * Set argument fields the reference declares private, by their declared names.
+     *
+     * The clipping filters expose their parameters only through @Argument fields and
+     * package-private test constructors, neither of which this class can reach. Naming the field
+     * is deliberate: if a rename upstream makes the name wrong, this throws rather than leaving the
+     * filter on its default, which would produce a full golden describing a filter nobody asked
+     * for.
+     */
+    static <T extends ReadFilter> T configure(final T filter, final Object... nameThenValue) {
+        for (int i = 0; i < nameThenValue.length; i += 2) {
+            final String name = (String) nameThenValue[i];
+            try {
+                final java.lang.reflect.Field field = filter.getClass().getDeclaredField(name);
+                field.setAccessible(true);
+                field.set(filter, nameThenValue[i + 1]);
+            } catch (final ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                        filter.getClass().getSimpleName() + " has no argument field '" + name + "'",
+                        e);
+            }
+        }
+        return filter;
     }
 
     static LibraryReadFilter library(final String... libraries) {
@@ -370,6 +421,25 @@ public class ReadFilterDump {
 
         r = read(header, "past_contig_end", 0, 1, CHR2 + 50, 60, "10M", 0, 0, 0, true);
         out.add(r);
+
+        // The clipping family. Every one of these keeps ten read bases, so they separate the
+        // clipping filters without also moving ReadLengthEqualsCigarLengthReadFilter.
+        //
+        // Note what the denominator of SoftClippedReadFilter actually is: the sum of *every* cigar
+        // element's length, hard clips, deletions and skips included, not the read's length. The
+        // documentation says "total bases in read". A port written from the documentation would
+        // divide by the read length and agree on every record here except the hard-clipped ones.
+        out.add(read(header, "soft_clip_both_ends", 0, 0, 1910, 60, "3S4M3S", 0, 0, 0, true));
+        out.add(read(header, "soft_clip_one_end", 0, 0, 1920, 60, "5S5M", 0, 0, 0, true));
+
+        // Consecutive soft clips: two elements, one block. OverclippedReadFilter counts blocks,
+        // not elements, and this is the record that tells the two apart.
+        out.add(read(header, "soft_clip_consecutive", 0, 0, 1930, 60, "1S2S5M2S", 0, 0, 0, true));
+
+        // Hard clips count towards ExcessiveEndClippedReadFilter and towards SoftClippedReadFilter's
+        // denominator, but never towards its numerator.
+        out.add(read(header, "hard_clip_front", 0, 0, 1940, 60, "9H1S9M", 0, 0, 0, true));
+        out.add(read(header, "hard_clip_back", 0, 0, 1950, 60, "9M1S9H", 0, 0, 0, true));
 
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.
         r = read(header, "no_qualities", 0, 0, 1700, 60, "10M", 0, 0, 0, true);
