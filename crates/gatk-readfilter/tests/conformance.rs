@@ -14,27 +14,14 @@
 //! version of the port used the negation, which keeps every unpaired read. The decision matrix
 //! disagreed on five records of nineteen the first time it ran.
 
-use std::io::Read;
-
 use gatk_readfilter::{by_name, with_header, Parameterized, PORTED};
 
-#[path = "common/corpus.rs"]
-mod corpus;
+use gatk_corpus as corpus;
 
 fn golden() -> String {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/read_filters.txt.gz");
-    let file = std::fs::File::open(&path).unwrap_or_else(|e| {
-        panic!(
-            "{}: {e}. Regenerate with tools/conformance/run_suite.py",
-            path.display()
-        )
-    });
-    let mut text = String::new();
-    flate2::read::GzDecoder::new(file)
-        .read_to_string(&mut text)
-        .expect("the golden is not valid gzip");
-    text
+    corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/read_filters.txt.gz"),
+    )
 }
 
 #[test]

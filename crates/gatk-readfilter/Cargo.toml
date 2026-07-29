@@ -10,6 +10,5 @@ gatk-engine = { path = "../gatk-engine" }
 htsjdk-bam.workspace = true
 
 [dev-dependencies]
-# The golden is gzipped like every other corpus in the programme: they are committed, and a text
-# corpus of decisions compresses to a fraction of its size.
-flate2 = "1"
+# One corpus parser for the whole workspace: two parsers would be two corpora.
+gatk-corpus = { path = "../gatk-corpus" }

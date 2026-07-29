@@ -1,10 +1,27 @@
-//! The corpus and the header, as they travel in every golden of this suite.
+//! The conformance corpus, as it travels in every golden of this programme.
 //!
-//! Shared by the decision-matrix test and the counting test through `#[path]`, so both judge the
-//! same records parsed the same way: two parsers would be two corpora.
+//! One parser, used by every crate's tests. Two parsers would be two corpora: a golden says which
+//! records the reference judged, and a second reading of those rows is a second set of records
+//! that can differ in exactly the ways the goldens exist to catch.
 
 use htsjdk_bam::header::{ReadGroup, SamHeader, SequenceRecord};
 use htsjdk_bam::record::BamRecord;
+
+/// Read and decompress a gzipped golden.
+pub fn read_golden(path: &std::path::Path) -> String {
+    use std::io::Read;
+    let file = std::fs::File::open(path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e}. Regenerate with tools/conformance/run_suite.py --suites readfilters",
+            path.display()
+        )
+    });
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file)
+        .read_to_string(&mut text)
+        .expect("the golden is not valid gzip");
+    text
+}
 
 /// The header the reference judged the corpus against.
 ///

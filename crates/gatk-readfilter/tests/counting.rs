@@ -9,29 +9,17 @@
 //! `WellformedReadFilter` and the eight filters it and's together produce the same decisions here,
 //! and only the counts say which of the eight rejected each read.
 
-use std::io::Read;
-
 use gatk_readfilter::counting;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
-#[path = "common/corpus.rs"]
-mod corpus;
+use gatk_corpus as corpus;
 
 fn golden() -> String {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/counting_filters.txt.gz");
-    let file = std::fs::File::open(&path).unwrap_or_else(|e| {
-        panic!(
-            "{}: {e}. Regenerate with tools/conformance/run_suite.py --suites readfilters",
-            path.display()
-        )
-    });
-    let mut text = String::new();
-    flate2::read::GzDecoder::new(file)
-        .read_to_string(&mut text)
-        .expect("the golden is not valid gzip");
-    text
+    corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/counting_filters.txt.gz"),
+    )
 }
 
 fn rows<'a>(text: &'a str, kind: &str) -> Vec<(&'a str, &'a str)> {

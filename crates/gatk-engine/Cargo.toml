@@ -7,3 +7,7 @@ repository.workspace = true
 
 [dependencies]
 htsjdk-bam.workspace = true
+
+[dev-dependencies]
+# One corpus parser for the whole workspace: two parsers would be two corpora.
+gatk-corpus = { path = "../gatk-corpus" }
