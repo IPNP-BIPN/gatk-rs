@@ -16,7 +16,8 @@
 
 use std::io::Read;
 
-use gatk_readfilter::{by_name, Parameterized, PORTED};
+use gatk_readfilter::{by_name, with_header, Parameterized, PORTED};
+use htsjdk_bam::header::{ReadGroup, SamHeader, SequenceRecord};
 use htsjdk_bam::record::BamRecord;
 
 fn golden() -> String {
@@ -33,6 +34,37 @@ fn golden() -> String {
         .read_to_string(&mut text)
         .expect("the golden is not valid gzip");
     text
+}
+
+/// The header the reference judged the corpus against.
+///
+/// It travels in the golden because the resolved filters read the library, sample, platform and
+/// contig lengths out of it: a port given a different header would be answering a different
+/// question and could agree by accident.
+fn header(text: &str) -> SamHeader {
+    let mut header = SamHeader::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        match parts[0] {
+            "sq" => header
+                .sequences
+                .push(SequenceRecord::new(parts[2], parts[3].parse().unwrap())),
+            "rg" => {
+                let mut group = ReadGroup::new(parts[1]);
+                for field in &parts[2..] {
+                    let (key, value) = field.split_once('=').expect("an @RG field is KEY=value");
+                    // "null" is how the dump prints an absent attribute; setting it would make the
+                    // port match on a string the reference never had.
+                    if value != "null" {
+                        group.attributes.set(key, value);
+                    }
+                }
+                header.read_groups.push(group);
+            }
+            _ => {}
+        }
+    }
+    header
 }
 
 /// The corpus, in the order the reference judged it.
@@ -118,6 +150,7 @@ fn corpus(text: &str) -> Vec<BamRecord> {
 fn every_filter_matches_the_reference_decision_for_decision() {
     let text = golden();
     let records = corpus(&text);
+    let header = header(&text);
 
     let mut checked = 0;
     let mut compared = 0;
@@ -147,13 +180,47 @@ fn every_filter_matches_the_reference_decision_for_decision() {
                 .iter()
                 .map(|read| if filter(read) { '1' } else { '0' })
                 .collect()
-        } else {
-            let filter = Parameterized::parse(name).unwrap_or_else(|| {
-                panic!("{name} is in the golden but not ported; add it or remove it")
-            });
+        } else if let Some(filter) = Parameterized::parse(name) {
             records
                 .iter()
                 .map(|read| if filter.test(read) { '1' } else { '0' })
+                .collect()
+        } else {
+            // The header-dependent family: the label names the filter and its arguments, and the
+            // header comes from the golden, so both sides resolve against the same @RG lines.
+            let (label, args) = name.split_once('(').expect("a filter label");
+            let args = args.strip_suffix(')').expect("a filter label ends with )");
+            let values: Vec<String> = args
+                .split_once('=')
+                .map(|(_, list)| list)
+                .unwrap_or("")
+                .split('+')
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+                .collect();
+            records
+                .iter()
+                .map(|read| {
+                    let kept = match label {
+                        "HasReadGroupWithHeader" => gatk_readfilter::has_read_group(read),
+                        "AlignmentAgreesWithHeaderReadFilter" => {
+                            with_header::alignment_agrees_with_header(read, &header)
+                        }
+                        "WellformedReadFilter" => with_header::wellformed(read, &header),
+                        "LibraryReadFilter" => with_header::library(read, &header, &values),
+                        "SampleReadFilter" => with_header::sample(read, &header, &values),
+                        "PlatformReadFilter" => with_header::platform(read, &header, &values),
+                        "PlatformUnitReadFilter" => {
+                            with_header::platform_unit(read, &header, &values)
+                        }
+                        _ => panic!("{name} is in the golden but not ported; add it or remove it"),
+                    };
+                    if kept {
+                        '1'
+                    } else {
+                        '0'
+                    }
+                })
                 .collect()
         };
 

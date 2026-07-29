@@ -139,13 +139,14 @@ pub mod read {
         read.mapping_quality
     }
 
-    /// Whether the record carries an `RG` tag at all, which is what `getReadGroup() != null` tests.
+    /// Whether the record carries an `RG` tag at all.
     ///
-    /// Only presence, deliberately. `SAMRecord.getReadGroup()` resolves the tag against the
-    /// header's `@RG` lines and returns null when the header has no such group, so a record whose
-    /// `RG` names a group the header does not declare is filtered out by GATK and kept here. That
-    /// gap closes when the ported filters take a header; it is recorded rather than left implicit,
-    /// because it is the kind of difference that only shows on a malformed file.
+    /// Presence is the whole semantics, and this was worth checking rather than assuming: an
+    /// earlier version of this comment claimed the reference resolves the tag against the header's
+    /// `@RG` lines and drops a read naming an undeclared group. It does not.
+    /// `SAMRecordToGATKReadAdapter.getReadGroup` returns the raw string attribute, so a read whose
+    /// `RG` is `rg_absent` passes `HasReadGroupReadFilter` on a header that has never heard of it.
+    /// The conformance corpus now carries exactly that record, and the reference keeps it.
     pub fn has_read_group(read: &BamRecord) -> bool {
         read.tags.iter().any(|(tag, _)| tag.name() == *b"RG")
     }
@@ -634,6 +635,132 @@ pub fn is_regular_base(base: u8) -> bool {
         base,
         b'A' | b'a' | b'C' | b'c' | b'G' | b'g' | b'T' | b't' | b'*'
     )
+}
+
+/// The filters that need the file header.
+///
+/// A read carries an `RG` *identifier*; the library, sample, platform and platform unit live in
+/// the header's `@RG` line for that identifier. `ReadUtils.getSAMReadGroupRecord` is the
+/// resolution step, and its result being null (no tag, or a tag naming a group the header does not
+/// declare) is what several of these filters test.
+///
+/// What the header does *not* change is `HasReadGroupReadFilter`: that one tests the tag, and a
+/// read naming an undeclared group passes it. Measured, not assumed.
+pub mod with_header {
+    use super::*;
+    use htsjdk_bam::header::SamHeader;
+
+    /// `ReadUtils.getSAMReadGroupRecord`: the read's `RG` looked up in the header.
+    pub fn read_group<'a>(
+        read: &BamRecord,
+        header: &'a SamHeader,
+    ) -> Option<&'a htsjdk_bam::header::ReadGroup> {
+        let id = read.tags.iter().find_map(|(tag, value)| {
+            (tag.name() == *b"RG").then_some(match value {
+                htsjdk_bam::tag::TagValue::Str(text) => text.as_str(),
+                _ => "",
+            })
+        })?;
+        header.read_groups.iter().find(|group| group.id == id)
+    }
+
+    fn attribute<'a>(read: &BamRecord, header: &'a SamHeader, key: &str) -> Option<&'a str> {
+        read_group(read, header)?.attributes.get(key)
+    }
+
+    /// Whether the header declares the read's group.
+    ///
+    /// **Not** `HasReadGroupReadFilter`, which tests the tag alone and keeps a read naming a group
+    /// the header does not declare. This is the resolution the library, sample and platform
+    /// filters perform before they can answer, and it is exposed separately so the difference
+    /// between "the record mentions a group" and "the header knows it" stays visible.
+    pub fn header_declares_read_group(read: &BamRecord, header: &SamHeader) -> bool {
+        read_group(read, header).is_some()
+    }
+
+    /// `LibraryReadFilter`: keep reads whose `@RG` `LB` is in the set.
+    pub fn library(read: &BamRecord, header: &SamHeader, keep: &[String]) -> bool {
+        match attribute(read, header, "LB") {
+            Some(library) => keep.iter().any(|l| l == library),
+            None => false,
+        }
+    }
+
+    /// `SampleReadFilter`: `SM`.
+    pub fn sample(read: &BamRecord, header: &SamHeader, keep: &[String]) -> bool {
+        match attribute(read, header, "SM") {
+            Some(sample) => keep.iter().any(|s| s == sample),
+            None => false,
+        }
+    }
+
+    /// `PlatformReadFilter`: a **substring** match, both sides upper-cased.
+    ///
+    /// Not equality: the Java upper-cases the read group's `PL` and asks whether it *contains* the
+    /// requested name, so `--platform ILLUM` keeps an `ILLUMINA` read group. A port using equality
+    /// would drop it.
+    pub fn platform(read: &BamRecord, header: &SamHeader, names: &[String]) -> bool {
+        let platform = match attribute(read, header, "PL") {
+            Some(value) => value.to_uppercase(),
+            None => return false,
+        };
+        names
+            .iter()
+            .any(|name| platform.contains(&name.to_uppercase()))
+    }
+
+    /// `PlatformUnitReadFilter`: a blacklist, and an empty one keeps everything.
+    ///
+    /// A read whose platform unit cannot be resolved is **kept**, which is the opposite of the
+    /// convention the library and sample filters follow. That asymmetry is the reference's, not a
+    /// transcription slip: a blacklist that cannot identify a read has no reason to reject it.
+    pub fn platform_unit(read: &BamRecord, header: &SamHeader, blacklist: &[String]) -> bool {
+        if blacklist.is_empty() {
+            return true;
+        }
+        // The read's own PU tag wins over the read group's, which is what getPlatformUnit does.
+        let own = read.tags.iter().find_map(|(tag, value)| {
+            (tag.name() == *b"PU").then_some(match value {
+                htsjdk_bam::tag::TagValue::Str(text) => text.as_str(),
+                _ => "",
+            })
+        });
+        let unit = own.or_else(|| attribute(read, header, "PU"));
+        match unit {
+            Some(value) => !blacklist.iter().any(|b| b == value),
+            None => true,
+        }
+    }
+
+    /// `ReadUtils.alignmentAgreesWithHeader`.
+    ///
+    /// Two ways to disagree: aligned to a contig the header does not declare, or aligned past the
+    /// end of the contig it does declare.
+    pub fn alignment_agrees_with_header(read: &BamRecord, header: &SamHeader) -> bool {
+        if read::is_unmapped(read) {
+            return true;
+        }
+        match header.sequences.get(read.reference_index as usize) {
+            Some(contig) => read.alignment_start <= contig.length,
+            None => false,
+        }
+    }
+
+    /// `WellformedReadFilter`, which is the conjunction of seven filters plus the header check.
+    ///
+    /// Ported as the same conjunction in the same order rather than as one predicate: the order is
+    /// not observable through the boolean, but it is observable through *which* filter a counting
+    /// wrapper attributes a rejection to, and CountingReadFilter is a later slice.
+    pub fn wellformed(read: &BamRecord, header: &SamHeader) -> bool {
+        valid_alignment_start(read)
+            && valid_alignment_end(read)
+            && alignment_agrees_with_header(read, header)
+            && super::has_read_group(read)
+            && matching_bases_and_quals(read)
+            && read_length_equals_cigar_length(read)
+            && seq_is_stored(read)
+            && cigar_contains_no_n_operator(read)
+    }
 }
 
 /// The filters by the name GATK exposes on the command line (`--read-filter <Name>`).

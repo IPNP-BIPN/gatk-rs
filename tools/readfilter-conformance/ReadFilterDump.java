@@ -31,7 +31,13 @@ import htsjdk.samtools.SAMReadGroupRecord;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
+import org.broadinstitute.hellbender.engine.filters.AlignmentAgreesWithHeaderReadFilter;
 import org.broadinstitute.hellbender.engine.filters.AmbiguousBaseReadFilter;
+import org.broadinstitute.hellbender.engine.filters.LibraryReadFilter;
+import org.broadinstitute.hellbender.engine.filters.PlatformReadFilter;
+import org.broadinstitute.hellbender.engine.filters.PlatformUnitReadFilter;
+import org.broadinstitute.hellbender.engine.filters.SampleReadFilter;
+import org.broadinstitute.hellbender.engine.filters.WellformedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.FragmentLengthReadFilter;
 import org.broadinstitute.hellbender.engine.filters.MappingQualityReadFilter;
 import org.broadinstitute.hellbender.engine.filters.MateDistantReadFilter;
@@ -118,7 +124,42 @@ public class ReadFilterDump {
                 new AmbiguousBaseReadFilter(0));
         map.put("AmbiguousBaseReadFilter(maxBases=null,maxFraction=0.05)",
                 new AmbiguousBaseReadFilter());
+
+        // The header-dependent family. Each is given the header by setHeader() in main, exactly as
+        // the engine gives it to them.
+        map.put("HasReadGroupWithHeader()", ReadFilterLibrary.HAS_READ_GROUP);
+        map.put("AlignmentAgreesWithHeaderReadFilter()", new AlignmentAgreesWithHeaderReadFilter());
+        map.put("WellformedReadFilter()", new WellformedReadFilter());
+        map.put("LibraryReadFilter(keep=lib1)", library("lib1"));
+        map.put("SampleReadFilter(keep=sample2)", sample("sample2"));
+        map.put("PlatformReadFilter(names=ILLUM)", platform("ILLUM"));
+        map.put("PlatformUnitReadFilter(blacklist=unit-rg2)", platformUnit("unit-rg2"));
+        map.put("PlatformUnitReadFilter(blacklist=)", platformUnit());
         return map;
+    }
+
+    static LibraryReadFilter library(final String... libraries) {
+        final LibraryReadFilter filter = new LibraryReadFilter();
+        filter.libraryToKeep = new java.util.LinkedHashSet<>(java.util.Arrays.asList(libraries));
+        return filter;
+    }
+
+    static SampleReadFilter sample(final String... samples) {
+        final SampleReadFilter filter = new SampleReadFilter();
+        filter.samplesToKeep = new java.util.LinkedHashSet<>(java.util.Arrays.asList(samples));
+        return filter;
+    }
+
+    static PlatformReadFilter platform(final String... names) {
+        final PlatformReadFilter filter = new PlatformReadFilter();
+        filter.PLFilterNames = new java.util.LinkedHashSet<>(java.util.Arrays.asList(names));
+        return filter;
+    }
+
+    static PlatformUnitReadFilter platformUnit(final String... lanes) {
+        final PlatformUnitReadFilter filter = new PlatformUnitReadFilter();
+        filter.blackListedLanes = new java.util.LinkedHashSet<>(java.util.Arrays.asList(lanes));
+        return filter;
     }
 
     /** The two filters whose parameters have no constructor: set the public fields directly. */
@@ -146,6 +187,19 @@ public class ReadFilterDump {
         final List<SAMRecord> corpus = corpus(header);
 
         System.out.println("# ReadFilterDump: the reference's own decision per filter, per record");
+
+        // The header travels too: the resolved filters read the library, sample, platform and
+        // contig lengths out of it, so a port given a different header would be answering a
+        // different question.
+        for (final SAMSequenceRecord seq : header.getSequenceDictionary().getSequences()) {
+            System.out.printf("sq\t%d\t%s\t%d%n",
+                    seq.getSequenceIndex(), seq.getSequenceName(), seq.getSequenceLength());
+        }
+        for (final SAMReadGroupRecord group : header.getReadGroups()) {
+            System.out.printf("rg\t%s\tLB=%s\tSM=%s\tPL=%s\tPU=%s%n",
+                    group.getId(), group.getLibrary(), group.getSample(),
+                    group.getPlatform(), group.getPlatformUnit());
+        }
 
         for (int i = 0; i < corpus.size(); i++) {
             final SAMRecord record = corpus.get(i);
@@ -185,11 +239,21 @@ public class ReadFilterDump {
         dict.addSequence(new SAMSequenceRecord("chr2", CHR2));
         h.setSequenceDictionary(dict);
         h.setSortOrder(SAMFileHeader.SortOrder.unsorted);
-        final SAMReadGroupRecord rg = new SAMReadGroupRecord("rg1");
-        rg.setSample("sample1");
-        rg.setLibrary("lib1");
-        rg.setPlatform("ILLUMINA");
-        h.addReadGroup(rg);
+        final SAMReadGroupRecord rg1 = new SAMReadGroupRecord("rg1");
+        rg1.setSample("sample1");
+        rg1.setLibrary("lib1");
+        rg1.setPlatform("ILLUMINA");
+        rg1.setPlatformUnit("unit-rg1");
+        h.addReadGroup(rg1);
+
+        // A second group differing in every resolved field, so the library, sample, platform and
+        // platform-unit filters each have something to separate.
+        final SAMReadGroupRecord rg2 = new SAMReadGroupRecord("rg2");
+        rg2.setSample("sample2");
+        rg2.setLibrary("lib2");
+        rg2.setPlatform("PACBIO");
+        rg2.setPlatformUnit("unit-rg2");
+        h.addReadGroup(rg2);
         return h;
     }
 
@@ -291,6 +355,20 @@ public class ReadFilterDump {
 
         r = read(header, "wildcard_bases", 0, 0, 1880, 60, "10M", 0, 0, 0, true);
         r.setReadBases("**********".getBytes());
+        out.add(r);
+
+        // The header path: a read in the second group, a read naming a group the header does not
+        // declare (which resolves to null, so "has a read group" is false even though the tag is
+        // there), and a read aligned past the end of its contig.
+        r = read(header, "second_read_group", 0, 0, 1890, 60, "10M", 0, 0, 0, false);
+        r.setAttribute("RG", "rg2");
+        out.add(r);
+
+        r = read(header, "undeclared_read_group", 0, 0, 1900, 60, "10M", 0, 0, 0, false);
+        r.setAttribute("RG", "rg_absent");
+        out.add(r);
+
+        r = read(header, "past_contig_end", 0, 1, CHR2 + 50, 60, "10M", 0, 0, 0, true);
         out.add(r);
 
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.
