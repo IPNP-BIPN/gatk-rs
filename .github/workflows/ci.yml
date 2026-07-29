@@ -114,6 +114,9 @@ jobs:
           - group: oracle-backed
             index: "3/3"
             suites: "featurecache readpileup readstates locusiterator acbuilder"
+          - group: golden-pending
+            index: "1/1"
+            suites: "locuswalker"
     steps:
       - uses: actions/checkout@v4
 

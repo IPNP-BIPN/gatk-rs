@@ -292,6 +292,20 @@
           "why": "From the pinned container on a real x86-64 runner. For the order half this golden is the *definition* rather than a check: the order is a java.util.HashSet's, which is GPL2 and unspecified, so the port reproduces it as an observable and the measurement wins where the two disagree. See docs/an-unspecified-order-that-reaches-the-output.md. The rows earn their place: three sample names come back in the reverse of their insertion order, five numeric names interleave as 11|1|2|3|10, and thirteen names cross the growth point. The routing half shows the empty-list asymmetry: with emitEmptyLoci off an empty non-null interval list is an IllegalArgumentException, and with it on the same list is a traversal of nothing. The contexts of every route are compared too, empty loci included: an uncovered requested locus yields a real context with an empty pileup rather than no context, and the source is advanced past rather than rewound, so a covered locus no requested interval contains is consumed and dropped."
         }
       ]
+    },
+    {
+      "id": "locuswalker",
+      "title": "LocusWalker traversal",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The traversal the largest GATK archetype inherits, probed as a real LocusWalker run through the real command line so its defaults are measured rather than transcribed. Four of them are not a ReadWalker's: two default read filters rather than one, WellformedReadFilter and MappedReadFilter, so an unmapped read carrying its mate's position reaches a ReadWalker and never reaches a LocusWalker; includeDeletions true and includeNs false; emitEmptyLoci false, so an uncovered position inside -L produces no apply call at all, which a second walker subclass overriding that method measures against; and --max-depth-per-sample defaulting to 0 with a negative value being a bad argument rather than a synonym for unlimited. The fixture is ReadWalkerDump's, so a divergence between the two suites is a divergence between the traversals rather than between their inputs. The downsampling run is recorded rather than compared: the port refuses that path, and a refusal has to be measured against what the reference actually does.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "LocusWalkerDump"
+        }
+      ]
     }
   ],
   "probes": []
