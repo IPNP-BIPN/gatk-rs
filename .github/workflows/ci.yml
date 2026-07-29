@@ -110,10 +110,7 @@ jobs:
             suites: "readfilters readsdatasource referencecontext readwalker printreads"
           - group: oracle-backed
             index: "2/2"
-            suites: "intervalwalker alignmentstate pileupelement intervalfile"
-          - group: golden-pending
-            index: "1/1"
-            suites: "jexlfilter"
+            suites: "intervalwalker alignmentstate pileupelement intervalfile jexlfilter"
     steps:
       - uses: actions/checkout@v4
 

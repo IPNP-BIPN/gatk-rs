@@ -77,6 +77,8 @@ pub enum JexlError {
     /// `NumberFormatException`, which is a distinct variant because `add` catches it and
     /// concatenates while every other operator lets it out as an `ArithmeticException`.
     NumberFormat(String),
+    /// `JexlException.Variable`: the context has no such name, and the engine is strict.
+    UndefinedVariable(String),
     /// A construct this port refuses rather than approximating.
     Unsupported(String),
 }
@@ -700,12 +702,16 @@ impl Expression {
 fn evaluate(node: &Node, context: &Context) -> Result<Value, JexlError> {
     match node {
         Node::Literal(value) => Ok(value.clone()),
-        // `GATKReadJexlContext.get` returns `getAttributeAsString`, which is null for an absent
-        // tag. Null is a value here and only becomes an error when an operator touches it.
-        Node::Identifier(name) => Ok(match context.get(name) {
-            Some(value) => Value::Str(value.clone()),
-            None => Value::Null,
-        }),
+        // Not a null: `Interpreter.visit(ASTIdentifier)` throws `JexlException.Variable` when the
+        // value is null *and* `context.has(name)` is false, and `setLenient(false)` makes the
+        // engine strict, so `unknownVariable` rethrows. Measured, not assumed: the golden shows
+        // even `ZZ == null` throwing rather than answering true, which is the opposite of what
+        // the expression reads like. An absent tag can therefore never be tested for; only
+        // `empty()` on a *present* one answers.
+        Node::Identifier(name) => match context.get(name) {
+            Some(value) => Ok(Value::Str(value.clone())),
+            None => Err(JexlError::UndefinedVariable(name.clone())),
+        },
         Node::Not(inner) => Ok(Value::Bool(!to_boolean(&evaluate(inner, context)?)?)),
         Node::Negate(inner) => {
             let value = evaluate(inner, context)?;

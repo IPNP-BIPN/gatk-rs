@@ -1545,10 +1545,22 @@ pub mod jexl_filter {
     /// `test`: every expression must evaluate to `Boolean.TRUE`.
     pub fn test(read: &BamRecord, expressions: &[Expression], names: &[String]) -> Decision {
         let context = context_for(read, names);
+        test_context(&context, expressions, names)
+    }
+
+    /// The same, over a context built elsewhere. The conformance suite uses this, because the
+    /// strings the reference's context handed over travel in its golden and rebuilding them here
+    /// would compare two renderings rather than the reference's.
+    pub fn test_context(
+        context: &Context,
+        expressions: &[Expression],
+        _names: &[String],
+    ) -> Decision {
         for expression in expressions {
-            match expression.evaluate(&context) {
+            match expression.evaluate(context) {
                 Err(error) => return Decision::Failed(error),
                 // `v.equals(Boolean.TRUE)` on a null `v` is a NullPointerException, not a false.
+                // Only the `null` literal can reach this: an absent tag throws in the engine.
                 Ok(Value::Null) => return Decision::NullResult,
                 Ok(Value::Bool(true)) => continue,
                 Ok(_) => return Decision::Drop,

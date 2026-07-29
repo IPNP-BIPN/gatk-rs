@@ -49,7 +49,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       decisions)
 - [x] `CountingReadFilter` summary text, compared as bytes (the only place a conjunction's order
       is observable)
-- [ ] `JexlExpressionReadTagValueFilter`, the 56th, which needs a JEXL expression engine
+- [x] `JexlExpressionReadTagValueFilter`, the 56th, with commons-jexl 2.1.1's arithmetic ported
+      under it (186 evaluations and 186 filter decisions). **All 56 read filters are now
+      oracle-backed.**
 
 ### G1.2 Coordinates, cigars and clipping
 
