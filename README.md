@@ -57,7 +57,7 @@ argument schemas, branch names, and the differential test matrix.
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
 | `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
-| `gatk-engine` | intervals (parsing against a sequence dictionary, union and merge, overlap detection) and the GATKRead adapter; `ReadUtils` coordinate mapping oracle-backed over 872 probed positions |
+| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), and `ReadClipper` (2,242 clipped reads) |
 
 The read filters come first because they are stateless, touch no floating point, and every tool
 that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces

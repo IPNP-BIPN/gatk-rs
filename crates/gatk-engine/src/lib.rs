@@ -7,6 +7,8 @@
 
 pub mod cigar_builder;
 pub mod cigar_utils;
+pub mod clipping;
 pub mod interval;
 pub mod read;
+pub mod read_group;
 pub mod read_utils;

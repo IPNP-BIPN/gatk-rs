@@ -950,23 +950,8 @@ pub mod with_header {
     use gatk_engine::interval::MergingRule;
     use htsjdk_bam::header::SamHeader;
 
-    /// `ReadUtils.getSAMReadGroupRecord`: the read's `RG` looked up in the header.
-    pub fn read_group<'a>(
-        read: &BamRecord,
-        header: &'a SamHeader,
-    ) -> Option<&'a htsjdk_bam::header::ReadGroup> {
-        let id = read.tags.iter().find_map(|(tag, value)| {
-            (tag.name() == *b"RG").then_some(match value {
-                htsjdk_bam::tag::TagValue::Str(text) => text.as_str(),
-                _ => "",
-            })
-        })?;
-        header.read_groups.iter().find(|group| group.id == id)
-    }
-
-    fn attribute<'a>(read: &BamRecord, header: &'a SamHeader, key: &str) -> Option<&'a str> {
-        read_group(read, header)?.attributes.get(key)
-    }
+    /// `ReadUtils.getSAMReadGroupRecord`, ported once in gatk-engine and re-exported here.
+    pub use gatk_engine::read_group::{attribute, resolve as read_group};
 
     /// Whether the header declares the read's group.
     ///
