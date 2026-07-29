@@ -108,6 +108,9 @@ jobs:
           - group: oracle-backed
             index: "1/1"
             suites: "readfilters"
+          - group: golden-pending
+            index: "1/1"
+            suites: "readsdatasource"
     steps:
       - uses: actions/checkout@v4
 

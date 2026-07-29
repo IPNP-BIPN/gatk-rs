@@ -7,7 +7,10 @@ repository.workspace = true
 
 [dependencies]
 htsjdk-bam.workspace = true
+htsjdk-bgzf.workspace = true
 # Pinned exactly, not by caret range: a byte-identity claim cannot float its dependencies.
+# noodles parses the .fai and the .bai; what those bytes mean to a GATK tool is ported.
+noodles-bam = "=0.92.0"
 noodles-fasta = "=0.61.0"
 
 [dev-dependencies]

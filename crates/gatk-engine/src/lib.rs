@@ -12,4 +12,5 @@ pub mod interval;
 pub mod read;
 pub mod read_group;
 pub mod read_utils;
+pub mod reads;
 pub mod reference;

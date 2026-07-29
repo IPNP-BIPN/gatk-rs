@@ -1,8 +1,9 @@
 # When a dependency is cheaper than a port, and when it is not
 
-`gatk-engine` depends on `noodles-fasta` for indexed FASTA access. This is the first third-party
-implementation of a file format in this programme, and the rule it establishes is worth stating
-once, because applying it wrongly would quietly weaken every claim downstream.
+`gatk-engine` depends on `noodles-fasta` for indexed FASTA access and on `noodles-bam` for parsing
+the `.bai`. These are the first third-party implementations of a file format in this programme,
+and the rule they establish is worth stating once, because applying it wrongly would quietly
+weaken every claim downstream.
 
 ## The rule
 
@@ -32,6 +33,33 @@ The suite compares the *whole* answer, which is what makes the split safe: if `n
 ever disagree about a line boundary, an offset or an edge, the golden fails and the difference gets
 ported rather than inherited.
 
+## The second application: the `.bai`
+
+`ReadsDataSource` splits the same way, and the line falls in a place worth naming. The `.bai`
+bytes are parsed by `noodles-bam`: a bin's chunk list is what the format says it is. Everything
+that decides *which records come back* is ported into `crates/gatk-engine/src/reads.rs`, because
+each of those is htsjdk's or GATK's and not the format's:
+
+| ported | why it is not plumbing |
+|---|---|
+| `GenomicIndexUtil.regionToBins` | 1-based in, decremented before shifting; htsjdk's own comment calls this "suspicious" and keeps it |
+| `LinearIndex.getMinimumOffset` | out-of-range windows mean *no* constraint, not an empty result |
+| `Chunk.optimizeChunkList` | drops chunks below the minimum offset, coalesces chunks whose pointers exactly touch |
+| `QueryInterval.optimizeIntervals` | merges **abutting** intervals, so two adjacent `-L` arguments return a spanning read once rather than twice |
+| `BAMQueryMultipleIntervalsIteratorFilter` | stateful and single-pass: the interval index only advances, and the traversal *stops* once every interval is behind the record |
+| `AbstractBAMFileIndex.getStartOfLastLinearBin` | the **last** reference's last entry, not the largest entry |
+
+The filter is where the argument for porting is strongest. It special-cases an unmapped read that
+carries its mate's coordinate to `end = start`, because `getAlignmentEnd()` is `0` for anything
+with the unmapped flag; without it, every mate-placed unmapped read would sort before every
+interval and be invisible to every query. A generic "does this record overlap this interval"
+would drop them silently, and a caller counting reads over a region would be wrong by however many
+half-mapped pairs the region holds.
+
+Records are decompressed by `htsjdk-bgzf` and decoded by `htsjdk-bam`, this programme's own ports,
+rather than by `noodles-bam`'s reader: what a record *is* is htsjdk's decision, and that is the
+"reading is itself a decision" case below.
+
 ## Where this does not apply
 
 - **The write path.** Byte-identity lives there: which deflate level, which tag integer width,
@@ -48,10 +76,15 @@ ported rather than inherited.
 
 ## Pinning
 
-`noodles-fasta = "=0.61.0"`, an exact version rather than a caret range. A byte-identity claim
-cannot float its dependencies: a patch release that changed an edge case would change the port's
-answers with nothing in the diff to show for it. The same rule as `rev = "..."` for the two sibling
-repositories.
+`noodles-fasta = "=0.61.0"` and `noodles-bam = "=0.92.0"`, exact versions rather than caret ranges.
+A byte-identity claim cannot float its dependencies: a patch release that changed an edge case
+would change the port's answers with nothing in the diff to show for it. The same rule as
+`rev = "..."` for the two sibling repositories.
+
+`noodles-bam` drags `noodles-sam` and `rayon` into the build for what is, here, a `.bai` parser.
+That is a build cost and not a correctness one, and it is the honest place to note that the day
+this crate needs anything else from `noodles-bam` the answer is still no: its record reader is on
+the wrong side of the line above.
 
 ## Licence
 
