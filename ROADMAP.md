@@ -103,11 +103,10 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       `Utils.getRandomGenerator`, so this needs Java's `Random` and its exact draw sequence
 - [x] `LocusIteratorByState`: one pileup per covered locus, both exclusions and the per-base
       adaptor test (148 pileups over 12 runs)
-- [~] `AlignmentContextIteratorBuilder`: the routing is oracle-backed (7 decisions), and so is
-      the sample-set iteration order the pileup element order depends on (7 orders, 29 hashes),
-      which had to be reproduced as a measured observable rather than ported. Still to do:
-      `IntervalAlignmentContextIterator` itself, so the empty loci it emits are compared and not
-      only recorded
+- [x] `IntervalAlignmentContextIterator`, `IntervalLocusIterator`, `IntervalOverlappingIterator`
+      and `AlignmentContextIteratorBuilder`: 7 routing decisions and 99 contexts across every
+      route, plus the sample-set iteration order the pileup element order depends on (7 orders,
+      29 hashes), which had to be reproduced as a measured observable rather than ported
 
 ### G1.6 Walkers
 
