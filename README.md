@@ -56,7 +56,7 @@ argument schemas, branch names, and the differential test matrix.
 | status dashboard | generated from the inventory and the ports' manifests: [docs/STATUS.md](docs/STATUS.md) |
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
-| `gatk-readfilter` | 44 of the 55 read filters, oracle-backed: 57 instances over 41 records, 2,337 decisions identical to the reference |
+| `gatk-readfilter` | 49 of the 55 read filters, oracle-backed: 69 instances over 49 records, 3,381 decisions identical to the reference |
 
 The read filters come first because they are stateless, touch no floating point, and every tool
 that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces

@@ -483,6 +483,18 @@ pub fn non_chimeric_original_alignment(read: &BamRecord) -> bool {
     }
 }
 
+/// A tag's value as text, absent when the record does not carry the tag.
+///
+/// The reference reaches every tag these filters read through `getAttributeAsInteger` or
+/// `getAttributeAsFloat`, both of which fall back to `toString()` on whatever the record holds, so
+/// text is the common denominator rather than a simplification.
+fn tag_string<'a>(read: &'a BamRecord, name: &[u8; 2]) -> Option<&'a str> {
+    read.tags
+        .iter()
+        .find(|(tag, _)| tag.name() == *name)
+        .map(|(_, value)| tag_text(value))
+}
+
 fn tag_text(value: &htsjdk_bam::tag::TagValue) -> &str {
     match value {
         htsjdk_bam::tag::TagValue::Str(text) => text,
@@ -533,38 +545,107 @@ pub enum Parameterized {
     },
     /// `ExcessiveEndClippedReadFilter`.
     ExcessiveEndClipped { max_clipped_bases: i32 },
+    /// `ReadGroupReadFilter`.
+    ///
+    /// Takes no parameter in the golden beyond the group to keep, and is here rather than among
+    /// the plain filters because it is one of the two that can *throw*: see [`Parameterized::decide`].
+    ReadGroup { keep: String },
+    /// `NotOpticalDuplicateReadFilter`, which takes no arguments at all.
+    ///
+    /// It sits here because its `OD` tag goes through `getAttributeAsInteger`, which throws on a
+    /// value that is not a number, and the plain filters cannot express that outcome.
+    NotOpticalDuplicate,
+    /// `MetricsReadFilter`.
+    Metrics {
+        pf_read_only: bool,
+        aligned_reads_only: bool,
+    },
+    /// `ReadTagValueFilter`.
+    ReadTagValue {
+        tag: String,
+        op: TagOperator,
+        value: f32,
+    },
+}
+
+/// `ReadTagValueFilter.Operator`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagOperator {
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+    Equal,
+    NotEqual,
+}
+
+impl TagOperator {
+    /// Apply the operator the way the reference does, which is not one uniform comparison.
+    ///
+    /// Four of the six unbox to a primitive `float` comparison (`x < y`), and two of them,
+    /// `EQUAL` and `NOT_EQUAL`, are `Float::equals` on the *boxed* values. `Float.equals`
+    /// compares `floatToIntBits`, so it calls every NaN equal to every other NaN and calls `-0.0`
+    /// different from `0.0`, both of which are the opposite of what `==` on a primitive does. A
+    /// port that used `==` for all six agrees on every value except those two, and those two are
+    /// exactly the values a tag written by an aligner can hold.
+    pub fn apply(self, tag: f32, threshold: f32) -> bool {
+        // `Float.floatToIntBits` collapses every NaN to one canonical bit pattern, which is what
+        // makes NaN equal to NaN here.
+        fn bits(value: f32) -> u32 {
+            if value.is_nan() {
+                0x7fc0_0000
+            } else {
+                value.to_bits()
+            }
+        }
+        match self {
+            TagOperator::Less => tag < threshold,
+            TagOperator::LessOrEqual => tag <= threshold,
+            TagOperator::Greater => tag > threshold,
+            TagOperator::GreaterOrEqual => tag >= threshold,
+            TagOperator::Equal => bits(tag) == bits(threshold),
+            TagOperator::NotEqual => bits(tag) != bits(threshold),
+        }
+    }
 }
 
 impl Parameterized {
-    pub fn test(&self, read: &BamRecord) -> bool {
+    /// The decision, or `None` where the reference throws rather than deciding.
+    ///
+    /// Three of these filters can throw on a record: `ReadGroupReadFilter` dereferences a read
+    /// group that may be absent, and the two tag filters parse a tag value that may not be a
+    /// number. The conformance golden records that outcome as its own character, because a filter
+    /// that throws is not a filter that returns false: the engine propagates the exception and the
+    /// tool stops, so collapsing the two would hide a crash behind a dropped read.
+    pub fn decide(&self, read: &BamRecord) -> Option<bool> {
         match self {
             Parameterized::MappingQuality { min, max } => {
                 let mq = read::mapping_quality(read) as i32;
-                mq >= *min && max.is_none_or(|limit| mq <= limit)
+                Some(mq >= *min && max.is_none_or(|limit| mq <= limit))
             }
             Parameterized::ReadLength { min, max } => {
                 let length = read::length(read) as i32;
-                length >= *min && length <= *max
+                Some(length >= *min && length <= *max)
             }
             Parameterized::FragmentLength { min, max } => {
                 // An unpaired read passes: the fragment length means nothing for it.
                 if !read::is_paired(read) {
-                    return true;
+                    return Some(true);
                 }
                 // Negative when the mate maps before the read, hence the absolute value.
                 let length = read::fragment_length(read).abs();
-                length <= *max && length >= *min
+                Some(length <= *max && length >= *min)
             }
-            Parameterized::MateDistant { threshold } => {
+            Parameterized::MateDistant { threshold } => Some(
                 read::is_paired(read)
                     && !read::is_unmapped(read)
                     && !read::mate_is_unmapped(read)
                     && ((read.alignment_start - read.mate_alignment_start).abs() >= *threshold
-                        || read.reference_index != read.mate_reference_index)
-            }
-            Parameterized::ReadName { names } => names.contains(&read.read_name),
+                        || read.reference_index != read.mate_reference_index),
+            ),
+            Parameterized::ReadName { names } => Some(names.contains(&read.read_name)),
             Parameterized::ReadStrand { keep_reverse } => {
-                read::is_reverse_strand(read) == *keep_reverse
+                Some(read::is_reverse_strand(read) == *keep_reverse)
             }
             Parameterized::AmbiguousBase {
                 max_bases,
@@ -579,11 +660,11 @@ impl Parameterized {
                     if !is_regular_base(*base) {
                         ambiguous += 1;
                         if ambiguous > max_n {
-                            return false;
+                            return Some(false);
                         }
                     }
                 }
-                true
+                Some(true)
             }
             Parameterized::SoftClipped {
                 ratio,
@@ -606,11 +687,11 @@ impl Parameterized {
                     } else {
                         0.0
                     };
-                    clip_ratio <= *max
+                    Some(clip_ratio <= *max)
                 } else if let Some(max) = leading_trailing {
                     // An empty cigar has no edge to be clipped, so it passes.
                     if elements.is_empty() {
-                        return true;
+                        return Some(true);
                     }
                     let last = elements.len() - 1;
                     let leading = if elements[0].op == Op::S {
@@ -630,7 +711,7 @@ impl Parameterized {
                     } else {
                         0.0
                     };
-                    clip_ratio <= *max
+                    Some(clip_ratio <= *max)
                 } else {
                     // The reference raises `UserException` here: the two thresholds are mutex and
                     // one is required. Reaching this means a golden label declared neither.
@@ -657,7 +738,7 @@ impl Parameterized {
                     }
                     previous = Some(element.op);
                 }
-                aligned as i32 >= *min_aligned_bases || blocks < min_blocks
+                Some(aligned as i32 >= *min_aligned_bases || blocks < min_blocks)
             }
             Parameterized::ExcessiveEndClipped { max_clipped_bases } => {
                 // Each end separately, never their sum: `900S50000M900S` passes at a threshold of
@@ -666,7 +747,7 @@ impl Parameterized {
                 let is_clip = |e: &&htsjdk_bam::cigar::CigarElement| matches!(e.op, Op::S | Op::H);
                 let front: u32 = elements.iter().take_while(is_clip).map(|e| e.length).sum();
                 if front as i32 > *max_clipped_bases {
-                    return false;
+                    return Some(false);
                 }
                 let back: u32 = elements
                     .iter()
@@ -674,9 +755,50 @@ impl Parameterized {
                     .take_while(is_clip)
                     .map(|e| e.length)
                     .sum();
-                back as i32 <= *max_clipped_bases
+                Some(back as i32 <= *max_clipped_bases)
+            }
+            Parameterized::ReadGroup { keep } => {
+                // `readGroup != null && rg.equals(this.readGroup)`: the argument is checked for
+                // null, the read's group is not. A read with no RG tag therefore throws a
+                // NullPointerException rather than being filtered out, and the corpus carries one.
+                tag_string(read, b"RG").map(|group| group == keep)
+            }
+            Parameterized::NotOpticalDuplicate => {
+                // `MarkDuplicatesSparkUtils.OPTICAL_DUPLICATE_TOTAL_ATTRIBUTE_NAME` is "OD".
+                match tag_string(read, b"OD") {
+                    None => Some(true),
+                    Some(text) => text.parse::<i32>().ok().map(|count| count == 0),
+                }
+            }
+            Parameterized::Metrics {
+                pf_read_only,
+                aligned_reads_only,
+            } => Some(
+                (!*pf_read_only || !read::fails_vendor_quality_check(read))
+                    && (!*aligned_reads_only || !read::is_unmapped(read))
+                    && !read::is_secondary_alignment(read)
+                    && !read::is_supplementary_alignment(read),
+            ),
+            Parameterized::ReadTagValue { tag, op, value } => {
+                let name = tag.as_bytes();
+                match tag_string(read, &[name[0], name[1]]) {
+                    // `hasAttribute` first: an absent tag is filtered out, not an error.
+                    None => Some(false),
+                    // `getAttributeAsFloat` parses the text of a non-float attribute and throws
+                    // `ReadAttributeTypeMismatch` when that fails.
+                    Some(text) => text
+                        .parse::<f32>()
+                        .ok()
+                        .map(|tag_value| op.apply(tag_value, *value)),
+                }
             }
         }
+    }
+
+    /// The decision, for a filter and record where the reference cannot throw.
+    pub fn test(&self, read: &BamRecord) -> bool {
+        self.decide(read)
+            .expect("this filter throws on this read; call decide")
     }
 
     /// Rebuild an instance from the golden's `Name(key=value,...)` label.
@@ -742,6 +864,27 @@ impl Parameterized {
             },
             "ExcessiveEndClippedReadFilter" => Parameterized::ExcessiveEndClipped {
                 max_clipped_bases: int("maxClippedBases")?,
+            },
+            "ReadGroupReadFilter" => Parameterized::ReadGroup {
+                keep: values.get("keep")?.to_string(),
+            },
+            "NotOpticalDuplicateReadFilter" => Parameterized::NotOpticalDuplicate,
+            "MetricsReadFilter" => Parameterized::Metrics {
+                pf_read_only: flag("pfReadOnly")?,
+                aligned_reads_only: flag("alignedReadsOnly")?,
+            },
+            "ReadTagValueFilter" => Parameterized::ReadTagValue {
+                tag: values.get("tag")?.to_string(),
+                op: match *values.get("op")? {
+                    "LESS" => TagOperator::Less,
+                    "LESS_OR_EQUAL" => TagOperator::LessOrEqual,
+                    "GREATER" => TagOperator::Greater,
+                    "GREATER_OR_EQUAL" => TagOperator::GreaterOrEqual,
+                    "EQUAL" => TagOperator::Equal,
+                    "NOT_EQUAL" => TagOperator::NotEqual,
+                    _ => return None,
+                },
+                value: values.get("value")?.parse().ok()?,
             },
             _ => return None,
         })
@@ -853,6 +996,36 @@ pub mod with_header {
             Some(value) => !blacklist.iter().any(|b| b == value),
             None => true,
         }
+    }
+
+    /// `ReadGroupBlackListReadFilter`: `TAG:value` entries checked against the resolved `@RG`.
+    ///
+    /// Two things the argument's own documentation gets wrong. It says the entry is
+    /// `<TAG>:<SUBSTRING>`, but the code puts the values in a `TreeSet` and calls `contains`, so
+    /// the match is **exact**: `PU:unit` does not blacklist `unit-rg1`. And a read whose group the
+    /// header does not declare is **kept**, because the resolution returns null and the filter
+    /// returns true before looking at any entry.
+    ///
+    /// `ID` and `RG` both name the group's identifier; every other tag is read off the `@RG` line.
+    pub fn read_group_black_list(read: &BamRecord, header: &SamHeader, entries: &[String]) -> bool {
+        let Some(group) = read_group(read, header) else {
+            return true;
+        };
+        for entry in entries {
+            // `split(":", 2)`: only the first colon separates, so a value may contain colons.
+            let Some((key, value)) = entry.split_once(':') else {
+                continue;
+            };
+            let attribute = if key == "ID" || key == "RG" {
+                Some(group.id.as_str())
+            } else {
+                group.attributes.get(key)
+            };
+            if attribute == Some(value) {
+                return false;
+            }
+        }
+        true
     }
 
     /// `ReadUtils.alignmentAgreesWithHeader`.
@@ -1096,6 +1269,57 @@ mod tests {
         assert!(!filter.test(&with_cigar("5S5M")));
         // Soft and hard clips at one end are added together.
         assert!(!filter.test(&with_cigar("3H2S5M")));
+    }
+
+    /// `EQUAL` and `NOT_EQUAL` are `Float.equals`, the other four are primitive comparisons.
+    #[test]
+    fn tag_equality_is_float_equals_not_double_equals() {
+        // -0.0 is not equal to 0.0 through Float.equals, and is not less than it either.
+        assert!(!TagOperator::Equal.apply(-0.0, 0.0));
+        assert!(TagOperator::NotEqual.apply(-0.0, 0.0));
+        assert!(!TagOperator::Less.apply(-0.0, 0.0));
+        assert!(TagOperator::LessOrEqual.apply(-0.0, 0.0));
+
+        // Every NaN is equal to every NaN, which `==` would deny.
+        assert!(TagOperator::Equal.apply(f32::NAN, f32::NAN));
+        assert!(!TagOperator::NotEqual.apply(f32::NAN, f32::NAN));
+        // The ordered comparisons keep IEEE semantics: NaN is not >= anything.
+        assert!(!TagOperator::GreaterOrEqual.apply(f32::NAN, 0.0));
+    }
+
+    /// An absent tag is filtered out; a tag that is not a number is an exception, not a decision.
+    #[test]
+    fn tag_value_separates_absent_from_unparsable() {
+        let filter = Parameterized::ReadTagValue {
+            tag: "TV".to_string(),
+            op: TagOperator::Equal,
+            value: 0.0,
+        };
+        let read = mapped_read();
+        assert_eq!(filter.decide(&read), Some(false));
+
+        let mut with_text = mapped_read();
+        with_text.tags.insert(
+            htsjdk_bam::Tag::new(b"TV"),
+            htsjdk_bam::tag::TagValue::Str("high".to_string()),
+        );
+        assert_eq!(filter.decide(&with_text), None);
+    }
+
+    /// A read with no `RG` throws rather than being filtered out.
+    #[test]
+    fn read_group_filter_throws_on_a_read_without_one() {
+        let filter = Parameterized::ReadGroup {
+            keep: "rg1".to_string(),
+        };
+        assert_eq!(filter.decide(&mapped_read()), None);
+
+        let mut read = mapped_read();
+        read.tags.insert(
+            htsjdk_bam::Tag::new(b"RG"),
+            htsjdk_bam::tag::TagValue::Str("rg1".to_string()),
+        );
+        assert_eq!(filter.decide(&read), Some(true));
     }
 
     #[test]

@@ -181,9 +181,16 @@ fn every_filter_matches_the_reference_decision_for_decision() {
                 .map(|read| if filter(read) { '1' } else { '0' })
                 .collect()
         } else if let Some(filter) = Parameterized::parse(name) {
+            // `E` is the golden's third outcome: the reference threw rather than deciding. A
+            // filter that throws stops the tool, so folding it into `0` would hide a crash behind
+            // a dropped read.
             records
                 .iter()
-                .map(|read| if filter.test(read) { '1' } else { '0' })
+                .map(|read| match filter.decide(read) {
+                    Some(true) => '1',
+                    Some(false) => '0',
+                    None => 'E',
+                })
                 .collect()
         } else {
             // The header-dependent family: the label names the filter and its arguments, and the
@@ -212,6 +219,9 @@ fn every_filter_matches_the_reference_decision_for_decision() {
                         "PlatformReadFilter" => with_header::platform(read, &header, &values),
                         "PlatformUnitReadFilter" => {
                             with_header::platform_unit(read, &header, &values)
+                        }
+                        "ReadGroupBlackListReadFilter" => {
+                            with_header::read_group_black_list(read, &header, &values)
                         }
                         _ => panic!("{name} is in the golden but not ported; add it or remove it"),
                     };

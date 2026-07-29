@@ -35,7 +35,12 @@ import org.broadinstitute.hellbender.engine.filters.AlignmentAgreesWithHeaderRea
 import org.broadinstitute.hellbender.engine.filters.AmbiguousBaseReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ExcessiveEndClippedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.LibraryReadFilter;
+import org.broadinstitute.hellbender.engine.filters.MetricsReadFilter;
+import org.broadinstitute.hellbender.engine.filters.NotOpticalDuplicateReadFilter;
 import org.broadinstitute.hellbender.engine.filters.OverclippedReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadGroupBlackListReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadGroupReadFilter;
+import org.broadinstitute.hellbender.engine.filters.ReadTagValueFilter;
 import org.broadinstitute.hellbender.engine.filters.SoftClippedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformUnitReadFilter;
@@ -161,6 +166,31 @@ public class ReadFilterDump {
                 configure(new ExcessiveEndClippedReadFilter(), "maxClippedBases", 4));
         map.put("ExcessiveEndClippedReadFilter(maxClippedBases=2)",
                 configure(new ExcessiveEndClippedReadFilter(), "maxClippedBases", 2));
+
+        // The tag and read-group family. Three of these can throw rather than decide, which the
+        // dump records as 'E': ReadGroupReadFilter dereferences a read group that may be absent,
+        // and both tag filters parse a value that may not be a number.
+        map.put("NotOpticalDuplicateReadFilter()", new NotOpticalDuplicateReadFilter());
+        map.put("ReadGroupReadFilter(keep=rg1)", readGroup("rg1"));
+        map.put("ReadGroupReadFilter(keep=rg2)", readGroup("rg2"));
+        map.put("MetricsReadFilter(pfReadOnly=true,alignedReadsOnly=true)",
+                new MetricsReadFilter(true, true));
+        map.put("MetricsReadFilter(pfReadOnly=false,alignedReadsOnly=false)",
+                new MetricsReadFilter(false, false));
+        map.put("ReadTagValueFilter(tag=TV,op=EQUAL,value=0.0)",
+                new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.EQUAL));
+        map.put("ReadTagValueFilter(tag=TV,op=NOT_EQUAL,value=0.0)",
+                new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.NOT_EQUAL));
+        map.put("ReadTagValueFilter(tag=TV,op=LESS,value=0.0)",
+                new ReadTagValueFilter("TV", 0.0f, ReadTagValueFilter.Operator.LESS));
+        map.put("ReadTagValueFilter(tag=TV,op=GREATER_OR_EQUAL,value=5.0)",
+                new ReadTagValueFilter("TV", 5.0f, ReadTagValueFilter.Operator.GREATER_OR_EQUAL));
+
+        // Exact values, not substrings, despite the argument documentation saying <TAG>:<SUBSTRING>.
+        map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit-rg1)", blackList("PU:unit-rg1"));
+        map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit)", blackList("PU:unit"));
+        map.put("ReadGroupBlackListReadFilter(blacklist=ID:rg2+PL:ILLUMINA)",
+                blackList("ID:rg2", "PL:ILLUMINA"));
         return map;
     }
 
@@ -186,6 +216,18 @@ public class ReadFilterDump {
                         e);
             }
         }
+        return filter;
+    }
+
+    static ReadGroupReadFilter readGroup(final String keep) {
+        final ReadGroupReadFilter filter = new ReadGroupReadFilter();
+        filter.readGroup = keep;
+        return filter;
+    }
+
+    static ReadGroupBlackListReadFilter blackList(final String... entries) {
+        final ReadGroupBlackListReadFilter filter = new ReadGroupBlackListReadFilter();
+        filter.blackList = new ArrayList<>(java.util.Arrays.asList(entries));
         return filter;
     }
 
@@ -440,6 +482,44 @@ public class ReadFilterDump {
         // denominator, but never towards its numerator.
         out.add(read(header, "hard_clip_front", 0, 0, 1940, 60, "9H1S9M", 0, 0, 0, true));
         out.add(read(header, "hard_clip_back", 0, 0, 1950, 60, "9M1S9H", 0, 0, 0, true));
+
+        // Tag-reading filters. OD is an integer, TV a float, and one of each is text that does not
+        // parse, which is how both filters reach their exception rather than a decision.
+        r = read(header, "optical_duplicate", 0, 0, 1960, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OD", 3);
+        out.add(r);
+
+        r = read(header, "optical_duplicate_zero", 0, 0, 1970, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OD", 0);
+        out.add(r);
+
+        r = read(header, "optical_duplicate_not_a_number", 0, 0, 1980, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OD", "many");
+        out.add(r);
+
+        // Positive and negative zero, separately: EQUAL and NOT_EQUAL go through Float.equals,
+        // which compares floatToIntBits and so calls -0.0 different from 0.0. Every other operator
+        // unboxes to a primitive comparison, where the two are equal. One record cannot show that;
+        // two can.
+        r = read(header, "tag_zero", 0, 0, 1990, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("TV", 0.0f);
+        out.add(r);
+
+        r = read(header, "tag_negative_zero", 0, 0, 2000, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("TV", -0.0f);
+        out.add(r);
+
+        r = read(header, "tag_nan", 0, 0, 1690, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("TV", Float.NaN);
+        out.add(r);
+
+        r = read(header, "tag_high", 0, 0, 1680, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("TV", 7.5f);
+        out.add(r);
+
+        r = read(header, "tag_not_a_number", 0, 0, 1670, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("TV", "high");
+        out.add(r);
 
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.
         r = read(header, "no_qualities", 0, 0, 1700, 60, "10M", 0, 0, 0, true);
