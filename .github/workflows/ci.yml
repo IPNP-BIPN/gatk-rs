@@ -110,10 +110,7 @@ jobs:
             suites: "readfilters readsdatasource referencecontext readwalker printreads"
           - group: oracle-backed
             index: "2/2"
-            suites: "intervalwalker"
-          - group: golden-pending
-            index: "1/1"
-            suites: "alignmentstate"
+            suites: "intervalwalker alignmentstate"
     steps:
       - uses: actions/checkout@v4
 

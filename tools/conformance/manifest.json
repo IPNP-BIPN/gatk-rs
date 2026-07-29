@@ -153,14 +153,16 @@
     {
       "id": "alignmentstate",
       "title": "AlignmentStateMachine stops",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "LocusIteratorByState runs one AlignmentStateMachine per read and merges their positions into a pileup, so every depth, allele count and pileup annotation rests on the offsets this produces. The dump records one row per stepForwardOnGenome call over 26 cigars chosen for the machine's corners: a deletion returns once per reference base it spans with the read offset frozen, I/S/H/P are consumed whole inside one step so no stop ever lands on them, a read ending on an insertion advances the genome offset one past its end anyway, and a cigar starting or ending with a deletion throws while a zero-length element is skipped in silence.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "AlignmentStateDump"
+          "dump": "AlignmentStateDump",
+          "golden": "crates/gatk-engine/tests/data/alignment_state.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 244 stops over 26 cigars, 2 of them refused. Its sharpest rows are the ends: 5M3I stops 6 times for a read 8 bases long, because the trailing insertion is consumed whole and the final step advances the genome offset one past the read anyway; and 5M3D throws where 5M0D5M does not, so a deletion at the end is malformed while a deletion of nothing is skipped."
         }
       ]
     }
