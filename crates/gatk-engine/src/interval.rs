@@ -63,7 +63,7 @@ impl SimpleInterval {
 }
 
 /// What a query string can resolve to, kept apart from a plain failure.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     /// The query names no contig the dictionary declares.
     UnknownContig(String),
@@ -144,10 +144,11 @@ pub fn parse_interval(query: &str, header: &SamHeader) -> Result<SimpleInterval,
     }
 }
 
-/// `IntervalMergingRule`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `IntervalMergingRule`, whose default is `ALL`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MergingRule {
     /// Merge overlapping *and* adjacent intervals. `IntervalOverlapReadFilter` uses this one.
+    #[default]
     All,
     /// Merge only intervals that actually overlap.
     OverlappingOnly,
