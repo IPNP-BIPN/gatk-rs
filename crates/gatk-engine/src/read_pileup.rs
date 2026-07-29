@@ -97,7 +97,7 @@ impl<'a> ReadPileup<'a> {
         self.elements.iter().map(|e| e.base()).collect()
     }
 
-    /// `getQuals`: one byte per element, 16 for a deletion.
+    /// `getBaseQuals`: one byte per element, 16 for a deletion.
     pub fn quals(&self) -> Vec<u8> {
         self.elements.iter().map(|e| e.qual()).collect()
     }

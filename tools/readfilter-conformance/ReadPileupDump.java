@@ -111,7 +111,7 @@ public class ReadPileupDump {
                 label,
                 pileup.size(),
                 new String(pileup.getBases()),
-                join(pileup.getQuals()),
+                join(pileup.getBaseQuals()),
                 counts[0], counts[1], counts[2], counts[3],
                 pileup.getOffsets().toString().replace(" ", ""),
                 pileup.getPileupString('A'));
