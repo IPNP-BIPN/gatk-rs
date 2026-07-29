@@ -16,7 +16,14 @@
  *   - getHeaderForSAMWriter mutates the *reads* header in place rather than copying it.
  *
  * The command line lands in the golden as its own row, because it is an input to the writer and
- * not something a port can invent: it carries the temporary paths of the run that produced it.
+ * not something a port can invent: it carries the paths of the run that produced it.
+ *
+ * Those paths are why this dump writes to a fixed directory rather than a temporary one. The
+ * command line is recorded in the output BAM's own @PG record, so a random `/tmp/printreads<nnn>`
+ * does not merely make one golden row unstable, it makes every output byte unstable, and no
+ * canonicalization rule can reach inside base64. A rule that could would be canonicalizing the
+ * artefact the suite exists to compare. The directory is emptied first, so a rerun in the same
+ * container starts from the same state as a first run.
  *
  * Which deflater wrote these bytes is not a detail, and it is not what the flag suggests.
  * `--use-jdk-deflater true` does **not** restore the JDK deflater: GATK only ever *installs* the
@@ -66,7 +73,12 @@ public class PrintReadsDump {
         // whoever touches it first wins for the life of the JVM.
         BlockCompressedOutputStream.setDefaultDeflaterFactory(new DeflaterFactory());
 
-        final Path dir = Files.createTempDirectory("printreads");
+        // Relative to the working directory the runner already writes into, and relative on
+        // purpose: the string handed to -I and -O is the string the command line records, so a
+        // relative one is stable no matter where the container is rooted.
+        final Path dir = Path.of("printreads-dump");
+        emptyDirectory(dir);
+        Files.createDirectories(dir);
         final Path bam = dir.resolve("reads.bam");
         ReadWalkerDump.buildFixture(bam.toFile());
 
@@ -120,6 +132,18 @@ public class PrintReadsDump {
         final Path index = dir.resolve(output.getFileName().toString().replace(".bam", ".bai"));
         System.out.printf("index\t%s\t%s%n", label,
                 Files.exists(index) ? base64(index) : "absent");
+    }
+
+    /** Remove the fixed directory's contents, so a rerun sees what a first run saw. */
+    static void emptyDirectory(final Path dir) throws Exception {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try (final var entries = Files.list(dir)) {
+            for (final Path entry : entries.toList()) {
+                Files.deleteIfExists(entry);
+            }
+        }
     }
 
     static String base64(final Path path) throws Exception {
