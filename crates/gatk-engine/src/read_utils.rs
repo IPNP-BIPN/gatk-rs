@@ -278,3 +278,41 @@ pub fn read_base_quality_at_reference_coordinate(record: &BamRecord, ref_coord: 
 pub fn is_inside_read(record: &BamRecord, ref_coord: i32) -> bool {
     ref_coord >= start(record) && ref_coord <= end(record)
 }
+
+/// `ReadUtils.DEFAULT_INSERTION_DELETION_QUAL`, the flat Q45 the reference assumes when a read
+/// carries no recalibrated indel qualities.
+pub const DEFAULT_INSERTION_DELETION_QUAL: u8 = 45;
+
+/// `ReadUtils.BQSR_BASE_INSERTION_QUALITIES`.
+pub const BQSR_BASE_INSERTION_QUALITIES: [u8; 2] = *b"BI";
+/// `ReadUtils.BQSR_BASE_DELETION_QUALITIES`.
+pub const BQSR_BASE_DELETION_QUALITIES: [u8; 2] = *b"BD";
+
+/// `SAMUtils.fastqToPhred` over a tag: the tag is FASTQ text, not raw phred bytes.
+///
+/// Returns `None` where the reference returns null, which is what makes the caller fall back to
+/// the flat default rather than to an empty array.
+fn indel_qualities(record: &BamRecord, tag: [u8; 2]) -> Option<Vec<u8>> {
+    match record.tags.get(htsjdk_bam::tag::Tag::new(&tag)) {
+        Some(htsjdk_bam::tag::TagValue::Str(text)) => {
+            Some(text.bytes().map(|b| b.wrapping_sub(33)).collect())
+        }
+        _ => None,
+    }
+}
+
+/// `ReadUtils.getBaseInsertionQualities`.
+///
+/// The fallback array is as long as the read's **quality** count, not its base count, which is a
+/// difference for a read whose qualities are absent: the array is then empty and indexing it is
+/// an error rather than a Q45 answer.
+pub fn base_insertion_qualities(record: &BamRecord) -> Vec<u8> {
+    indel_qualities(record, BQSR_BASE_INSERTION_QUALITIES)
+        .unwrap_or_else(|| vec![DEFAULT_INSERTION_DELETION_QUAL; record.base_qualities.len()])
+}
+
+/// `ReadUtils.getBaseDeletionQualities`.
+pub fn base_deletion_qualities(record: &BamRecord) -> Vec<u8> {
+    indel_qualities(record, BQSR_BASE_DELETION_QUALITIES)
+        .unwrap_or_else(|| vec![DEFAULT_INSERTION_DELETION_QUAL; record.base_qualities.len()])
+}

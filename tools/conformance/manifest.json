@@ -165,6 +165,20 @@
           "why": "From the pinned container on a real x86-64 runner: 244 stops over 26 cigars, 2 of them refused. Its sharpest rows are the ends: 5M3I stops 6 times for a read 8 bases long, because the trailing insertion is consumed whole and the final step advances the genome offset one past the read anyway; and 5M3D throws where 5M0D5M does not, so a deletion at the end is malformed while a deletion of nothing is skipped."
         }
       ]
+    },
+    {
+      "id": "pileupelement",
+      "title": "PileupElement answers",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "AlignmentStateMachine decides where a read stops; PileupElement decides what a caller sees there, and that is where the indel-aware predicates live. Two families of them disagree on purpose: isBeforeInsertion goes through getAdjacentOperator, which looks at exactly the next cigar element whatever it is, while isBeforeDeletionStart goes through getNearestOnGenomeCigarElement, which skips everything that is not M, =, X or D. On 3M2S3I3M the element before the clip is therefore not before an insertion, while a deletion behind a clip is still seen. A port using one walk for both would agree on every simple cigar and diverge exactly there. The dump also probes createPileupForReadAndOffset at every read offset, including the ones inside a soft clip or an insertion where the reference throws, and sets BI/BD on three reads so the flat Q45 fallback is measured against a real array.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "PileupElementDump"
+        }
+      ]
     }
   ],
   "probes": []
