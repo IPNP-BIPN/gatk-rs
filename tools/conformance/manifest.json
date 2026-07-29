@@ -92,22 +92,16 @@
     {
       "id": "readwalker",
       "title": "ReadWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Every read-based tool inherits this traversal, so which reads reach apply and in what order is the tool's output. The probe is a real ReadWalker run through the real command line rather than a reconstruction: it records, per apply call, the read and the ReferenceContext window it arrived with. Two decisions are invisible from any tool's own output: the filter sits between the two read transformers, so it judges a read the walker never sees; and getReadInterval is null for a mapped read whose coordinates are not a valid interval, which hands the walker a read with no reference under it.",
       "compare": { "mode": "lines" },
-      "expect_contains": [
-        "summary\tall\tok",
-        "apply\tall-nofilter",
-        "|null|"
-      ],
-      "$expect_why": "The traversal runs, the no-filter variant reaches apply at all, and at least one read arrives with a null window: the mapped read whose empty cigar makes its interval invalid.",
       "cases": [
         {
           "dump": "ReadWalkerDump",
-          "golden": null,
-          "why": "No golden yet: only the pinned container on real x86-64 may produce one, and committing the artifact that run publishes is what makes the suite oracle-backed."
+          "golden": "crates/gatk-tools/tests/data/read_walker.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. It caught a divergence the class reading would not have: run without -R, a walker still receives a ReferenceContext whose *window* is the read's interval, with only its bases empty. The first version of the port handed over the fully empty context and would have reported a null window for every read of every reference-less run."
         }
       ]
     }

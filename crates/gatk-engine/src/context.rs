@@ -54,6 +54,9 @@ pub struct ReferenceContext {
     interval: Option<SimpleInterval>,
     window: Option<SimpleInterval>,
     cached: Option<Vec<u8>>,
+    /// Whether there is a backing data source. Separate from the window on purpose: a context
+    /// with no reference still has a window, and only its *bases* are empty.
+    backed: bool,
 }
 
 impl ReferenceContext {
@@ -67,7 +70,37 @@ impl ReferenceContext {
             interval: None,
             window: None,
             cached: None,
+            backed: false,
         }
+    }
+
+    /// `new ReferenceContext(null, interval)`: a context over a real interval with no reference
+    /// behind it, which is what every walker builds when the tool was run without `-R`.
+    ///
+    /// The window is still set, and `getWindow()` still answers: only `getBases()` is empty. That
+    /// distinction is measured rather than assumed, and it is not what it looks like from the
+    /// class: a first version of this port returned the fully empty context here, and the golden
+    /// showed the reference reporting `chr1:10-19` with no bases for the same read.
+    ///
+    /// A non-zero window would need the sequence dictionary to crop, and with no data source the
+    /// reference throws a `NullPointerException` there; that is [`ContextError::InvalidArgument`].
+    pub fn without_source(
+        interval: Option<SimpleInterval>,
+        leading: i32,
+        trailing: i32,
+    ) -> Result<ReferenceContext, ContextError> {
+        if leading < 0 || trailing < 0 {
+            return Err(ContextError::NegativeWindow);
+        }
+        if interval.is_some() && (leading != 0 || trailing != 0) {
+            return Err(ContextError::InvalidArgument);
+        }
+        Ok(ReferenceContext {
+            window: interval.clone(),
+            interval,
+            cached: None,
+            backed: false,
+        })
     }
 
     /// `new ReferenceContext(dataSource, interval, leading, trailing)`.
@@ -84,6 +117,7 @@ impl ReferenceContext {
             interval,
             window: None,
             cached: None,
+            backed: true,
         };
         context.set_window(source, leading, trailing)?;
         Ok(context)
@@ -135,7 +169,13 @@ impl ReferenceContext {
             interval,
             window,
             cached: None,
+            backed: true,
         })
+    }
+
+    /// `hasBackingDataSource`.
+    pub fn has_backing_data_source(&self) -> bool {
+        self.backed
     }
 
     pub fn interval(&self) -> Option<&SimpleInterval> {
@@ -189,6 +229,9 @@ impl ReferenceContext {
 
     /// `getBases()`: the whole window, cached.
     pub fn bases(&mut self, source: &mut ReferenceFileSource) -> Result<Vec<u8>, ContextError> {
+        if !self.backed {
+            return Ok(Vec::new());
+        }
         let Some(window) = self.window.clone() else {
             return Ok(Vec::new());
         };

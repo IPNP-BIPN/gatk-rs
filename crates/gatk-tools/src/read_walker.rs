@@ -74,14 +74,15 @@ pub fn traverse_with_reference(
 
     let mut applied = Vec::with_capacity(records.len());
     match reference {
-        // No reference: every context is the empty one, which answers every query with an empty
-        // array rather than failing.
+        // No reference: the context still carries the read's interval as its window, and only its
+        // *bases* are empty. Measured, not assumed: the golden shows the reference reporting
+        // `chr1:10-19` with no bases for a read a tool ran over without `-R`.
         None => {
             for read in records {
-                applied.push(Applied {
-                    read,
-                    context: ReferenceContext::empty(),
-                });
+                let interval = read_interval(&read, &header);
+                let context = ReferenceContext::without_source(interval, 0, 0)
+                    .unwrap_or_else(|_| ReferenceContext::empty());
+                applied.push(Applied { read, context });
             }
         }
         Some(reference) => {

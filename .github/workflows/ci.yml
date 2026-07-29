@@ -107,10 +107,7 @@ jobs:
         include:
           - group: oracle-backed
             index: "1/1"
-            suites: "readfilters readsdatasource referencecontext"
-          - group: golden-pending
-            index: "1/1"
-            suites: "readwalker"
+            suites: "readfilters readsdatasource referencecontext readwalker"
     steps:
       - uses: actions/checkout@v4
 
