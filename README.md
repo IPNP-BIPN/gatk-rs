@@ -48,6 +48,20 @@ The tool inventory is **generated**, not hand-written: 375 tools and 10,796 argu
 derived mechanically from the reference's own machine-readable tool documentation, along with
 argument schemas, branch names, and the differential test matrix.
 
+## What exists today
+
+| layer | state |
+|---|---|
+| tool inventory | generated: 311 tools, 13,130 arguments, from the pinned reference's own CLI |
+| status dashboard | generated from the inventory and the ports' manifests: [docs/STATUS.md](docs/STATUS.md) |
+| covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
+| oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
+| `gatk-readfilter` | 17 of the 55 read filters, unit-tested; not yet oracle-backed |
+
+The read filters come first because they are stateless, touch no floating point, and every tool
+that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces
+a different set of reads, and every number downstream inherits that.
+
 ## Coverage
 
 "Every parameter" is defined operationally, because exhaustive does not exist here:

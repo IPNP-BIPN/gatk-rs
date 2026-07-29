@@ -7,6 +7,80 @@ on:
   workflow_dispatch:
 
 jobs:
+  guard:
+    name: Repository invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: LICENSE and README state the same licence
+        # gatk-rs is Apache 2.0 because GATK is Apache 2.0; htsjdk-rs and picard-rs are MIT.
+        # Getting these crossed is easy and consequential, so it is checked rather than remembered.
+        # Several third-party descriptions call GATK BSD-3-Clause; the authority is LICENSE.TXT in
+        # the pinned clone.
+        run: |
+          grep -q "Apache License" LICENSE || { echo "LICENSE is not Apache 2.0"; exit 1; }
+          grep -q "Apache License 2.0, matching GATK" README.md || { echo "README licence claim changed"; exit 1; }
+          grep -qi "not the official GATK" README.md || { echo "attribution notice missing"; exit 1; }
+          echo "licence and attribution consistent"
+
+  test:
+    name: Test on real x86-64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Every ported symbol comes from a licence-compatible source
+        # htsjdk-rs decision 0014: a transcription of GPL2-only HotSpot source was published in an
+        # MIT crate and found eleven commits later by reading module headers. The same guard runs
+        # in all three repositories now, not just the one where it was learned.
+        run: python3 tools/audit/provenance.py crates
+
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace --release
+
+      - name: The ports below are pinned by revision, not by branch
+        # GATK's build.gradle pins picardVersion and htsjdkVersion. A floating dependency would let
+        # the layer underneath change under a byte-identity claim without anything failing.
+        run: |
+          if grep -E '^(htsjdk|picard|jmath)[a-z-]* = \{ git' Cargo.toml | grep -qv 'rev = "'; then
+            echo "a dependency is not pinned to a revision"
+            exit 1
+          fi
+          grep -c 'rev = "' Cargo.toml
+
+  oracle:
+    name: The oracle image satisfies its contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the host CPU
+        # PairHMM resolution depends on these flags, so which silicon produced a golden is part of
+        # its provenance.
+        run: |
+          grep -m1 'model name' /proc/cpuinfo
+          grep -m1 'vendor_id' /proc/cpuinfo
+          grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|avx2|avx512f|sse4_2)$' | sort | tr '\n' ' '
+          echo
+
+      - name: Build the oracle image
+        # OracleProbe runs during the build, so a degraded environment cannot produce an image, let
+        # alone a golden.
+        run: docker build --platform linux/amd64 -t gatk-rs-oracle:4.6.2.0 tools/oracle
+
+      - name: Print the provenance record
+        run: docker run --rm --platform linux/amd64 gatk-rs-oracle:4.6.2.0
+
   inventory:
     name: Inventory is internally consistent
     runs-on: ubuntu-latest
