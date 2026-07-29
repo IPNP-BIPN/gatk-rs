@@ -114,7 +114,16 @@ public class PileupElementDump {
 
         for (int i = 0; i < elements.size(); i++) {
             final PileupElement element = elements.get(i);
-            System.out.printf("el\t%s\t%d\t%d|%c|%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s%n",
+            // Built rather than written out: there are twenty-two fields, and hand-counting the
+            // placeholders got one short, which silently fed a boolean to a %d.
+            final String format = "el\t%s\t%d\t"
+                    + "%d|%c|%d|%d|%d|"          // offset, base, qual, insertion qual, deletion qual
+                    + "%s|%s|%s|%s|%s|%s|%s|%s|" // deletion, before/after deletion, insertion, clip
+                    + "%s|%s|"                   // at start, at end of the current cigar element
+                    + "%d|%s|"                   // following indel length, inserted bases
+                    + "%s|%s|%s|%s|"             // previous/next on genome, between prev/next
+                    + "%s%n";                    // usable for annotation
+            System.out.printf(format,
                     cigarText,
                     i,
                     element.getOffset(),
