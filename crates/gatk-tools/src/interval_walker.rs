@@ -52,8 +52,8 @@ pub fn traversal_intervals(
     if arguments.include.is_empty() {
         return Err(TraversalError::MissingIntervalArgument);
     }
-    let parameters = interval_args::parse_intervals(arguments, header)
-        .map_err(TraversalError::Intervals)?;
+    let parameters =
+        interval_args::parse_intervals(arguments, header).map_err(TraversalError::Intervals)?;
     // `traverseUnmappedReads` has nowhere to go here: IntervalWalker walks intervals, and the
     // unmapped request was already separated out of the list. `-L unmapped` alone therefore runs
     // a traversal of zero intervals rather than failing.

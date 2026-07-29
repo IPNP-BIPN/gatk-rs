@@ -191,12 +191,8 @@ fn every_traversal_hands_apply_what_the_reference_hands_it() {
         } else {
             None
         };
-        let result = interval_walker::traverse(
-            &source,
-            reference.as_mut(),
-            &arguments,
-            filter.as_ref(),
-        );
+        let result =
+            interval_walker::traverse(&source, reference.as_mut(), &arguments, filter.as_ref());
 
         // The reference reports the exception's class, and Barclay collapses two different causes
         // into `BadArgumentValue`: an empty intersection and an exclusion that removed everything.
@@ -225,8 +221,12 @@ fn every_traversal_hands_apply_what_the_reference_hands_it() {
                 failures += 1;
                 continue;
             }
-            (Ok(_), outcome) => panic!("{label}: the reference failed with {outcome}, the port did not"),
-            (Err(error), _) => panic!("{label}: the port failed with {error:?}, the reference did not"),
+            (Ok(_), outcome) => {
+                panic!("{label}: the reference failed with {outcome}, the port did not")
+            }
+            (Err(error), _) => {
+                panic!("{label}: the port failed with {error:?}, the reference did not")
+            }
         }
 
         let ours: Vec<String> = result
