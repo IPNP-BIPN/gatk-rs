@@ -228,6 +228,20 @@
           "golden": "crates/gatk-engine/tests/data/feature_cache.txt.gz"
         }
       ]
+    },
+    {
+      "id": "readpileup",
+      "title": "ReadPileup answers",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What one locus answers, which is what a caller consults. Four of those answers are decisions rather than aggregation. getBaseCounts counts the wildcard * as an A, because BaseUtils.baseIndexMap maps it to Base.A.ordinal() with a comment saying so, while an N is dropped by the -1 check and a deletion by an explicit test: two exclusions with two different reasons. splitBySample throws when a read has no sample and unknownSampleName is null, and a read group that exists but declares no SM is indistinguishable downstream from a read with no group at all. sortedIterator sorts by the read's start and by nothing else, and Java's sort is stable, so ties keep assembly order. fixPairOverlappingQualities truncates twice and differently: agreeing bases sum into a byte and are then capped, so the cap tests for a negative stored value as well as for one over 93, while disagreeing bases multiply the winner by 0.8 in double arithmetic and cast back.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "ReadPileupDump"
+        }
+      ]
     }
   ],
   "probes": []
