@@ -85,6 +85,14 @@ pub enum IntervalArgumentError {
     UnmappedExcluded,
     /// `getTraversalParameters` without any interval argument at all.
     NoIntervalsSpecified,
+    /// The argument ends in `.list` or `.intervals` and there is no such file.
+    IntervalFileMissing(String),
+    /// `UserException.MalformedFile`: the interval file held no intervals.
+    IntervalFileEmpty,
+    /// The file exists and is neither a Feature file nor an interval file by extension.
+    FileIsNeitherFeaturesNorIntervals(String),
+    /// The removed `-L "a;b"` syntax, which is refused rather than split.
+    LegacySemicolonSyntax(String),
 }
 
 impl From<ParseError> for IntervalArgumentError {
@@ -224,17 +232,127 @@ pub fn merge_lists_by_set_operator(
     Ok(result)
 }
 
+/// `IntervalUtils.GATK_INTERVAL_FILE_EXTENSIONS`.
+pub const GATK_INTERVAL_FILE_EXTENSIONS: [&str; 2] = [".list", ".intervals"];
+
+/// `IntervalUtils.isGatkIntervalFile`: does this argument *look* like an interval file?
+///
+/// Extension only, lower-cased, and deliberately not "does it contain intervals": a contig may
+/// contain a period, so the reference refuses to treat the mere presence of an extension as
+/// evidence, and an argument with one of these two extensions is a file even when it is missing.
+pub fn has_gatk_interval_file_extension(query: &str) -> bool {
+    let lowered = query.to_lowercase();
+    GATK_INTERVAL_FILE_EXTENSIONS
+        .iter()
+        .any(|extension| lowered.ends_with(extension))
+}
+
+/// `IntervalUtils.gatkIntervalFileToList`: one interval per non-blank line, trimmed.
+///
+/// A file with no intervals in it is a `MalformedFile`, not an empty list, which is a different
+/// outcome from `-L` with no argument at all.
+pub fn gatk_interval_file_to_list(
+    text: &str,
+    header: &SamHeader,
+) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
+    let mut intervals = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        intervals.push(interval::parse_interval(trimmed, header)?);
+    }
+    if intervals.is_empty() {
+        return Err(IntervalArgumentError::IntervalFileEmpty);
+    }
+    Ok(intervals)
+}
+
+/// What a `-L` argument turned out to be. Reading a Feature file is the caller's job, because it
+/// needs codecs that live above this module.
+pub trait FeatureIntervals {
+    /// `FeatureManager.isFeatureFile` composed with `IntervalUtils.featureFileToIntervals`.
+    ///
+    /// `None` means "not a Feature file", which is what sends the argument down the interval-file
+    /// and then the literal branch. It is not an error.
+    fn intervals_from_feature_file(
+        &self,
+        path: &std::path::Path,
+        header: &SamHeader,
+    ) -> Option<Result<Vec<SimpleInterval>, IntervalArgumentError>>;
+}
+
+/// The seam with nothing plugged into it: no argument is ever a Feature file.
+pub struct NoFeatureSources;
+
+impl FeatureIntervals for NoFeatureSources {
+    fn intervals_from_feature_file(
+        &self,
+        _path: &std::path::Path,
+        _header: &SamHeader,
+    ) -> Option<Result<Vec<SimpleInterval>, IntervalArgumentError>> {
+        None
+    }
+}
+
+/// `IntervalUtils.parseIntervalArguments(parser, arg)`: one argument to a list of intervals.
+///
+/// The order of the tests is the reference's and is observable. A Feature file is recognised
+/// first, so a `.list` that also parses as a Feature file goes down the Feature path; the
+/// interval-file test comes second and *throws* when the extension matches but the file is
+/// missing; only then does an existing file that is neither become an error; and only a
+/// non-existent argument with neither extension is parsed as a literal interval.
+pub fn parse_interval_arguments(
+    query: &str,
+    header: &SamHeader,
+    features: &dyn FeatureIntervals,
+) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
+    if query.contains(';') {
+        return Err(IntervalArgumentError::LegacySemicolonSyntax(
+            query.to_string(),
+        ));
+    }
+    let path = std::path::Path::new(query);
+    if path.exists() {
+        if let Some(result) = features.intervals_from_feature_file(path, header) {
+            return result;
+        }
+    }
+    if has_gatk_interval_file_extension(query) {
+        if !path.exists() {
+            return Err(IntervalArgumentError::IntervalFileMissing(
+                query.to_string(),
+            ));
+        }
+        let text = std::fs::read_to_string(path)
+            .map_err(|_| IntervalArgumentError::IntervalFileMissing(query.to_string()))?;
+        return gatk_interval_file_to_list(&text, header);
+    }
+    if path.exists() {
+        return Err(IntervalArgumentError::FileIsNeitherFeaturesNorIntervals(
+            query.to_string(),
+        ));
+    }
+    Ok(vec![interval::parse_interval(query, header)?])
+}
+
 /// `IntervalUtils.loadIntervals`: parse each argument, pad it, fold it in under the set rule, then
 /// sort and merge the whole.
 ///
 /// `-L unmapped` is reported separately rather than parsed, because `GenomeLoc.UNMAPPED` compares
 /// and merges by identity upstream and would be meaningless in a sorted set here.
-pub fn load_intervals(
+///
+/// Padding is applied to the whole batch one argument produced, which matters for a file: an
+/// interval file of twenty lines is padded and `ALL`-merged as one unit before the set rule sees
+/// it, exactly as if its twenty lines had been twenty `-L` arguments would *not* be.
+pub fn load_intervals_with_features(
     queries: &[String],
     header: &SamHeader,
     set_rule: SetRule,
     merging_rule: MergingRule,
     padding: i32,
+    features: &dyn FeatureIntervals,
 ) -> Result<(Vec<SimpleInterval>, bool), IntervalArgumentError> {
     let mut all: Vec<SimpleInterval> = Vec::new();
     let mut unmapped = false;
@@ -243,13 +361,31 @@ pub fn load_intervals(
             unmapped = true;
             continue;
         }
-        let mut parsed = vec![interval::parse_interval(query, header)?];
+        let mut parsed = parse_interval_arguments(query, header, features)?;
         if padding > 0 {
             parsed = with_flanks(parsed, padding, header);
         }
         all = merge_lists_by_set_operator(parsed, all, set_rule, header)?;
     }
     Ok((sort_and_merge(all, header, merging_rule), unmapped))
+}
+
+/// [`load_intervals_with_features`] with no Feature sources plugged in.
+pub fn load_intervals(
+    queries: &[String],
+    header: &SamHeader,
+    set_rule: SetRule,
+    merging_rule: MergingRule,
+    padding: i32,
+) -> Result<(Vec<SimpleInterval>, bool), IntervalArgumentError> {
+    load_intervals_with_features(
+        queries,
+        header,
+        set_rule,
+        merging_rule,
+        padding,
+        &NoFeatureSources,
+    )
 }
 
 /// `GenomeLocSortedSet.createSetFromSequenceDictionary`: one interval per contig, whole.

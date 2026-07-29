@@ -181,6 +181,20 @@
           "why": "From the pinned container on a real x86-64 runner: 217 elements over 25 cigars, plus 231 createPileupForReadAndOffset calls. Its decisive rows are on 3M2S3I3M, where the last base of the leading 3M reports isBeforeSoftClip and not isBeforeInsertion while carrying 2S3I between it and the next position, and where the first base after the clip reports isAfterInsertion and not isAfterSoftClip. The two answers come from two different walks over the same cigar."
         }
       ]
+    },
+    {
+      "id": "intervalfile",
+      "title": "What one -L argument resolves to",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "IntervalWalkerDump measures what happens once the intervals exist; this measures the step before it. IntervalUtils.parseIntervalArguments decides whether a -L string is a Feature file, a GATK interval file, a file it refuses, or a literal interval, and the order of those tests is the behaviour. A Feature file is recognised first by asking every codec, so a .list holding a BED body goes down the Feature path and never reaches the interval-file reader; the interval-file test is by lower-cased extension only and throws when the extension matches but the file is absent, because a contig name may contain a period and the contents cannot be consulted; an existing file that is neither is an error naming both; and only a non-existent argument with neither extension is parsed as a literal, which is why a typo in a filename surfaces as a missing contig. .interval_list and .bed are in the probe because they are Feature files rather than interval files, which their names do not suggest.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "IntervalFileDump"
+        }
+      ]
     }
   ],
   "probes": []
