@@ -13,6 +13,7 @@ pub mod context;
 pub mod features;
 pub mod interval;
 pub mod interval_args;
+pub mod java_hash;
 pub mod jexl;
 pub mod locus_iterator;
 pub mod pileup;

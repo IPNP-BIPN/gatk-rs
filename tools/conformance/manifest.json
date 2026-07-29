@@ -276,6 +276,20 @@
           "why": "From the pinned container on a real x86-64 runner: 148 pileups over 12 runs. The adaptor rows are the ones that took two attempts to measure: the first fixture put the mate twenty bases before the read, so the boundary (mateStart - 1 for a reverse-strand read) landed before every probed locus and excluded nothing while ten rows appeared to cover it. With the mate five bases into the read, p1 is missing from chr1:101 to chr1:105 and present from 106."
         }
       ]
+    },
+    {
+      "id": "acbuilder",
+      "title": "AlignmentContextIteratorBuilder routing and sample order",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Two facts here reach into every locus-based tool's output and neither is visible from the builder's setters. The samples are collected with Collectors.toSet(), so LocusIteratorByState creates its per-sample managers in Java HashSet iteration order and concatenates their elements in that same order to build each pileup: the element order of a multi-sample pileup is a HashSet bucket order over the sample names, deterministic but neither sorted nor the header's. A port using a sorted map, an insertion-ordered list or a different hash would agree on single-sample data and diverge as soon as a second sample appeared, which is why java.util.HashMap's index and its order-preserving resize are ported alongside. And areIntervalsSpecified is intervals != null rather than !isEmpty(), so an empty but non-null list counts as specified, routes to IntervalOverlappingIterator, and that constructor's Utils.nonEmpty throws: an empty interval list is an error rather than an empty traversal, and only when emitEmptyLoci is off.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "AlignmentContextBuilderDump"
+        }
+      ]
     }
   ],
   "probes": []
