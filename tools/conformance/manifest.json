@@ -169,14 +169,16 @@
     {
       "id": "pileupelement",
       "title": "PileupElement answers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "AlignmentStateMachine decides where a read stops; PileupElement decides what a caller sees there, and that is where the indel-aware predicates live. Two families of them disagree on purpose: isBeforeInsertion goes through getAdjacentOperator, which looks at exactly the next cigar element whatever it is, while isBeforeDeletionStart goes through getNearestOnGenomeCigarElement, which skips everything that is not M, =, X or D. On 3M2S3I3M the element before the clip is therefore not before an insertion, while a deletion behind a clip is still seen. A port using one walk for both would agree on every simple cigar and diverge exactly there. The dump also probes createPileupForReadAndOffset at every read offset, including the ones inside a soft clip or an insertion where the reference throws, and sets BI/BD on three reads so the flat Q45 fallback is measured against a real array.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "PileupElementDump"
+          "dump": "PileupElementDump",
+          "golden": "crates/gatk-engine/tests/data/pileup_element.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 217 elements over 25 cigars, plus 231 createPileupForReadAndOffset calls. Its decisive rows are on 3M2S3I3M, where the last base of the leading 3M reports isBeforeSoftClip and not isBeforeInsertion while carrying 2S3I between it and the next position, and where the first base after the clip reports isAfterInsertion and not isAfterSoftClip. The two answers come from two different walks over the same cigar."
         }
       ]
     }
