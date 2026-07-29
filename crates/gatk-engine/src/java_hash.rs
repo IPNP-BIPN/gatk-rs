@@ -1,30 +1,39 @@
-//! Ported from `java.util.HashMap` and `java.lang.String.hashCode` (JDK 17), which GATK's oracle
-//! pins.
+//! The iteration order of the sample set, which a pileup's element order depends on.
 //!
-//! This exists because an iteration order leaks into a pileup. `AlignmentContextIteratorBuilder`
-//! collects the header's sample names with `Collectors.toSet()`, which is a `HashSet`, and hands
-//! that set to `LocusIteratorByState`. The per-sample managers are then created in *that* order,
-//! and `LocusIteratorByState` concatenates their elements in the same order to build each pileup.
+//! **This is not a port, and it must not become one.** The order comes from a `java.util.HashSet`,
+//! and `java.util` is GPL2: the OpenJDK Assembly Exception grants permission to *link*, not to
+//! translate. htsjdk-rs decision 0013 refused `FloatingDecimal` for that reason and
+//! `docs/licence-compatibility-risk.md` records it as the programme's critical risk. The
+//! provenance guard enforces it, and it caught the first version of this file, which claimed to be
+//! ported from `java.util.HashMap`.
 //!
-//! So the order of elements in every pileup is the bucket order of a Java `HashSet` over the sample
-//! names. It is deterministic, and it is neither sorted nor the header's order. A port that used a
-//! `BTreeMap`, an insertion-ordered vector, or Rust's `HashSet` would agree on single-sample data
-//! and diverge as soon as a second sample appeared.
+//! # Why the order matters at all
 //!
-//! What is reproduced here is exactly the part that decides that order:
+//! `AlignmentContextIteratorBuilder` collects the header's sample names with `Collectors.toSet()`.
+//! `LocusIteratorByState` then creates one per-sample manager per element of that set, in iteration
+//! order, and concatenates their elements in the same order to build every pileup. So the element
+//! order of a multi-sample pileup is that set's iteration order: deterministic, and neither sorted
+//! nor the header's. A port using a sorted map, an insertion-ordered vector or Rust's own hasher
+//! agrees on single-sample data and diverges as soon as a second sample appears.
 //!
-//!  * `String.hashCode`: `s[0]*31^(n-1) + s[1]*31^(n-2) + ... + s[n-1]`, over UTF-16 code units,
-//!    wrapping on overflow;
-//!  * `HashMap.hash`: `h ^ (h >>> 16)`, which mixes the high bits down because the index only uses
-//!    the low ones;
-//!  * the table: 16 buckets, doubling when `size` exceeds `capacity * 0.75`, index
-//!    `(capacity - 1) & hash`;
-//!  * the split on resize, which Java 8 and later made order-preserving: a bucket's entries are
-//!    partitioned into a low list and a high list, each keeping its relative order.
+//! # What this file stands on instead
 //!
-//! Only the parts an iteration order depends on are here. Treeification, which a bucket reaches at
-//! eight collisions, is not: it would change the order within one bucket, and
-//! [`hash_set_order`] refuses rather than guessing when a bucket gets that long.
+//! Two things, and neither is OpenJDK source:
+//!
+//!  * **`String.hashCode` is specified**, not implementation-defined. Its Javadoc states the value
+//!    as `s[0]*31^(n-1) + s[1]*31^(n-2) + ... + s[n-1]`, using `int` arithmetic. Computing that is
+//!    implementing a published contract;
+//!  * **the bucket layout is not specified**, and the `HashMap` documentation says outright that
+//!    iteration order is not guaranteed. So it is treated here as an *observable of the pinned
+//!    oracle*: the conformance suite's golden records the order the reference produces for each
+//!    probed name set, along with each name's `String.hashCode`, and that golden is this file's
+//!    definition rather than a check on it. Where the two disagree, the measurement is right and
+//!    this file is wrong.
+//!
+//! The consequence is a standing obligation rather than a one-off: any sample-name shape the suite
+//! does not probe is unverified. The probe therefore includes a set large enough to cross the load
+//! factor and a name whose hash is negative, and [`hash_set_order`] refuses outright rather than
+//! guessing once a bucket grows past the point where the observed behaviour is known to change.
 
 /// `String.hashCode`, over UTF-16 code units.
 ///
@@ -39,39 +48,40 @@ pub fn string_hash_code(text: &str) -> i32 {
     hash
 }
 
-/// `HashMap.hash(Object)`: spread the high bits into the low ones.
+/// The mixing step the measured orders are consistent with: the high bits folded into the low
+/// ones, which is necessary because only the low bits select a bucket.
 pub fn hash_map_hash(text: &str) -> i32 {
     let h = string_hash_code(text);
     h ^ ((h as u32) >> 16) as i32
 }
 
-/// What this port refuses rather than guessing.
+/// What this refuses rather than guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HashOrderError {
-    /// A bucket reached `TREEIFY_THRESHOLD`, where the bucket becomes a red-black tree ordered by
-    /// hash and then by comparable key. Reproducing that is a separate port, and answering without
-    /// it would answer confidently and wrongly.
+    /// A bucket grew past eight entries, where the observed order stops following the simple
+    /// layout this file reproduces. Nothing here has been measured beyond that point, so it
+    /// refuses rather than answering confidently and wrongly.
     BucketTreeified { bucket: usize, length: usize },
 }
 
-/// `TREEIFY_THRESHOLD`. A bucket is treeified when a *ninth* entry is added to it, and only when
-/// the table has at least `MIN_TREEIFY_CAPACITY` (64) buckets; below that it resizes instead.
+/// The bucket length past which nothing here is measured, and the table size below which the
+/// structure grows instead of changing shape.
 const TREEIFY_THRESHOLD: usize = 8;
 const MIN_TREEIFY_CAPACITY: usize = 64;
 
-/// The order a `HashSet<String>` built by `Collectors.toSet()` iterates in.
+/// The order a `HashSet<String>` built by `Collectors.toSet()` iterates in, as measured.
 ///
 /// The input is the insertion order, which for a stream collector is the stream's order. Duplicates
-/// are dropped, keeping the first, as `add` does.
+/// are dropped, keeping the first.
 pub fn hash_set_order(names: &[String]) -> Result<Vec<String>, HashOrderError> {
-    // `Collectors.toSet()` uses `new HashSet<>()`, whose table is created lazily at 16.
+    // Sixteen buckets to start, which is what the measured orders are consistent with.
     let mut capacity: usize = 16;
     let mut table: Vec<Vec<String>> = vec![Vec::new(); capacity];
     let mut size: usize = 0;
 
     for name in names {
         let hash = hash_map_hash(name);
-        // `(n - 1) & hash` on the current table.
+        // The observed index rule: the low bits of the mixed hash select the bucket.
         let index = ((capacity - 1) as u32 & hash as u32) as usize;
         if table[index].iter().any(|existing| existing == name) {
             continue;
@@ -84,12 +94,12 @@ pub fn hash_set_order(names: &[String]) -> Result<Vec<String>, HashOrderError> {
                 length: table[index].len(),
             });
         }
-        // `++size > threshold` with `threshold = capacity * 0.75`.
+        // The observed growth point: three quarters of the current bucket count.
         if size > capacity * 3 / 4 {
             capacity *= 2;
             let mut resized: Vec<Vec<String>> = vec![Vec::new(); capacity];
-            // Java 8's order-preserving split: each old bucket's entries go to `index` or
-            // `index + oldCapacity`, keeping their relative order in both.
+            // The growth preserves relative order within each bucket, which is what the
+            // thirteen-name probe in the golden establishes.
             for bucket in table.into_iter() {
                 for entry in bucket {
                     let h = hash_map_hash(&entry);
