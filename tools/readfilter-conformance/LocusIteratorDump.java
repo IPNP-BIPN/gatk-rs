@@ -152,7 +152,11 @@ public class LocusIteratorDump {
             record.setProperPairFlag(true);
             record.setReadNegativeStrandFlag(true);
             record.setMateReferenceName("chr1");
-            record.setMateAlignmentStart(start - 20);
+            // The mate must start *inside* this read for the adaptor boundary to fall inside it:
+            // for a reverse-strand read the boundary is mateStart - 1, so a mate before the read
+            // puts the boundary before every locus and excludes nothing. The first version of this
+            // fixture did exactly that and measured no exclusion at all.
+            record.setMateAlignmentStart(start + 5);
             record.setMateNegativeStrandFlag(false);
             record.setInferredInsertSize(-fragmentLength);
         }
