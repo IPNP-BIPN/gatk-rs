@@ -149,6 +149,20 @@
           "why": "From the pinned container on a real x86-64 runner. Two of its rows were not what reading the classes predicted: -XL chr1 with no -L is a MissingArgument, because requiresIntervals() makes -L a required Barclay argument and the whole-reference branch of parseIntervals is unreachable from this walker; and padding two arguments that come to overlap merges them even under OVERLAPPING_ONLY, because getIntervalsWithFlanks hard-codes ALL."
         }
       ]
+    },
+    {
+      "id": "alignmentstate",
+      "title": "AlignmentStateMachine stops",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "LocusIteratorByState runs one AlignmentStateMachine per read and merges their positions into a pileup, so every depth, allele count and pileup annotation rests on the offsets this produces. The dump records one row per stepForwardOnGenome call over 26 cigars chosen for the machine's corners: a deletion returns once per reference base it spans with the read offset frozen, I/S/H/P are consumed whole inside one step so no stop ever lands on them, a read ending on an insertion advances the genome offset one past its end anyway, and a cigar starting or ending with a deletion throws while a zero-length element is skipped in silence.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "AlignmentStateDump"
+        }
+      ]
     }
   ],
   "probes": []
