@@ -22,6 +22,11 @@ ALLOWED = {
     "htsjdk": "htsjdk, MIT",
     "picard": "Picard, MIT",
     "org.broadinstitute.hellbender": "GATK, Apache 2.0",
+    # Apache Commons JEXL 2.1.1, the expression language GATK resolves for
+    # JexlExpressionReadTagValueFilter and htsjdk's VCF selectors. Apache 2.0, verified from the
+    # licence header of the sources jar in the resolved dependency, not from its documentation.
+    # gatk-rs is Apache 2.0, so this is the same licence rather than a compatible one.
+    "org.apache.commons.jexl2": "Apache Commons JEXL, Apache 2.0",
 }
 
 # Anything matching these is GPL2 and must not be transcribed. Listed explicitly rather than
