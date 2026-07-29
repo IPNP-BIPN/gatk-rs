@@ -45,6 +45,11 @@
           "why": "Clipping rewrites the read: bases, qualities, cigar, alignment start and, for a flow read group, some of its tags. The golden carries the whole clipped read for every entry point, because comparing one field would hide the others."
         },
         {
+          "dump": "ReferenceQueryDump",
+          "golden": "crates/gatk-engine/tests/data/reference_query.txt.gz",
+          "why": "The bases a tool sees are not the bytes in the FASTA: CachingIndexedFastaSequenceFile upper-cases every query and flattens every IUPAC code to N. The fixture travels in the golden so the port reads the bytes the reference read, and the comparison covers the transformation rather than the file format."
+        },
+        {
           "dump": "CountingFilterDump",
           "golden": "crates/gatk-readfilter/tests/data/counting_filters.txt.gz",
           "why": "CountingReadFilter's summary text is output a tool prints, so it is compared as bytes. It is also the only place the order of a conjunction is observable: the boolean cannot say which of WellformedReadFilter's eight filters rejected a read, and the counts can."

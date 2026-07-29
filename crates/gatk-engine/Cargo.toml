@@ -7,6 +7,8 @@ repository.workspace = true
 
 [dependencies]
 htsjdk-bam.workspace = true
+# Pinned exactly, not by caret range: a byte-identity claim cannot float its dependencies.
+noodles-fasta = "=0.61.0"
 
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.

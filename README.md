@@ -57,7 +57,11 @@ argument schemas, branch names, and the differential test matrix.
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
 | `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
-| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), and `ReadClipper` (2,242 clipped reads) |
+| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` (2,242 clipped reads), and `ReferenceDataSource` (45 queries) |
+
+`gatk-engine` depends on `noodles-fasta` for indexed FASTA plumbing while porting and measuring
+GATK's own transformation of what it returns; the rule that governs when a dependency replaces a
+port, and when it must not, is [here](docs/when-a-dependency-is-cheaper-than-a-port.md).
 
 The read filters come first because they are stateless, touch no floating point, and every tool
 that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces
