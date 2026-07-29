@@ -135,6 +135,25 @@ public class ReadWalkerDump {
                 new String[] {"--read-filter", "NotDuplicateReadFilter"});
         // No reference at all: the walker is handed empty ReferenceContexts throughout.
         traverse("all-noref", bam, null, new String[] {});
+        // -L unmapped. setTraversalBounds makes a traversal bounded when it has intervals *or*
+        // when unmapped reads were asked for, and loadNextIterator runs the interval query first
+        // and the unmapped query second, so the unplaced reads are a tail rather than an
+        // interleaving. On its own it is a bounded traversal of nothing but that tail, which is a
+        // different answer from an unbounded traversal that happens to include the same reads.
+        traverse("unmapped", bam, fasta, new String[] {"-L", "unmapped"});
+        traverse("unmapped-and-chr1", bam, fasta,
+                new String[] {"-L", "unmapped", "-L", "chr1"});
+        traverse("unmapped-and-chr2", bam, fasta,
+                new String[] {"-L", "unmapped", "-L", "chr2"});
+        // The order the arguments are given in cannot matter: the unmapped request is separated
+        // out of the interval list before the list is sorted.
+        traverse("chr1-and-unmapped", bam, fasta,
+                new String[] {"-L", "chr1", "-L", "unmapped"});
+        // An unmapped read carrying its mate's position is *not* in the unmapped tail: it is
+        // returned by an interval query overlapping that position, which is why this differs from
+        // the unmapped-only run by more than the placed reads.
+        traverse("unmapped-narrow", bam, fasta,
+                new String[] {"-L", "unmapped", "-L", "chr1:1-1"});
     }
 
     static void traverse(final String label, final Path bam, final Path fasta,

@@ -51,10 +51,39 @@ pub fn traverse(
     intervals: &[SimpleInterval],
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<Vec<BamRecord>, ReadsError> {
-    let records = if intervals.is_empty() {
+    traverse_with_bounds(source, intervals, false, filter)
+}
+
+/// The same, with `-L unmapped` honoured.
+///
+/// `ReadsPathDataSource.setTraversalBounds` makes a traversal bounded when it has intervals **or**
+/// when unmapped reads were asked for, and `SamReaderQueryingIterator.loadNextIterator` runs the
+/// interval query first and the unmapped query second. So the order is not a choice: the unplaced
+/// reads arrive as a tail after every interval, and `-L unmapped` on its own is a bounded
+/// traversal of nothing but that tail rather than an unbounded one.
+///
+/// The distinction the reference draws twice, in two comments, is between an unmapped read with no
+/// position and an unmapped read carrying its mate's: only the first is in this tail, the second is
+/// returned by an interval query overlapping that position.
+pub fn traverse_with_bounds(
+    source: &ReadsDataSource,
+    intervals: &[SimpleInterval],
+    traverse_unmapped: bool,
+    filter: &dyn Fn(&BamRecord) -> bool,
+) -> Result<Vec<BamRecord>, ReadsError> {
+    let bounded = !intervals.is_empty() || traverse_unmapped;
+    let records = if !bounded {
         source.iter_all()?
     } else {
-        source.query(intervals)?
+        let mut records = if intervals.is_empty() {
+            Vec::new()
+        } else {
+            source.query(intervals)?
+        };
+        if traverse_unmapped {
+            records.extend(source.query_unmapped()?);
+        }
+        records
     };
     // map(pre).filter(f).map(post): both transformers are the identity for a tool that declares
     // none, which is every tool measured here. The order is kept because a tool that declares one
@@ -67,10 +96,11 @@ pub fn traverse_with_reference(
     source: &ReadsDataSource,
     reference: Option<&mut ReferenceFileSource>,
     intervals: &[SimpleInterval],
+    traverse_unmapped: bool,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<Vec<Applied>, ReadsError> {
     let header = source.header().clone();
-    let records = traverse(source, intervals, filter)?;
+    let records = traverse_with_bounds(source, intervals, traverse_unmapped, filter)?;
 
     let mut applied = Vec::with_capacity(records.len());
     match reference {
