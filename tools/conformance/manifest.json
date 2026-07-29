@@ -111,14 +111,15 @@
       "status": "golden-pending",
       "harness": "tools/readfilter-conformance",
       "tools": ["PrintReads"],
-      "why": "The first whole tool, and the first suite whose claim is bytes rather than decisions: the output BAM travels in the golden in full, base64, index included. Two header behaviours are measured with it: the @PG record the tool appends (ID, VN, CL, PN, with the ID taking a numeric suffix when it collides) and the fact that getHeaderForSAMWriter mutates the reads header in place. Every run passes --use-jdk-deflater, because GATK defaults to the Intel GKL deflater whose output htsjdk-rs does not reproduce yet; a byte claim over BGZF has to name which deflater it is about.",
+      "why": "The first whole tool, and the first suite whose claim is bytes rather than decisions: the output BAM travels in the golden in full, base64, index included. Two header behaviours are measured with it: the @PG record the tool appends (ID, VN, CL, PN, with the ID taking a numeric suffix when it collides) and the fact that getHeaderForSAMWriter mutates the reads header in place. The dump installs htsjdk's JDK DeflaterFactory explicitly and records it in the golden, because --use-jdk-deflater does not restore it: GATK, like Picard, only ever installs the Intel factory when the flag is false, and that setter is static, so one earlier Picard call in the same JVM leaves GKL compressing everything that follows while the flag claims otherwise.",
       "compare": { "mode": "lines" },
       "expect_contains": [
         "commandline\tall\t",
         "index\tnoindex\tabsent",
+        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory",
         "@PG"
       ],
-      "$expect_why": "The tool records a command line, the run that asked for no index produced none, and the header carries the appended program record.",
+      "$expect_why": "The tool records a command line, the run that asked for no index produced none, the deflater that produced the bytes is the JDK one and says so in the golden, and the header carries the appended program record.",
       "cases": [
         {
           "dump": "PrintReadsDump",

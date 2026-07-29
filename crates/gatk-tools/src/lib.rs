@@ -5,4 +5,5 @@
 //! rather than inside either, because a traversal is a data source and a filter chain composed,
 //! and neither half can see the other.
 
+pub mod print_reads;
 pub mod read_walker;

@@ -18,15 +18,23 @@
  * The command line lands in the golden as its own row, because it is an input to the writer and
  * not something a port can invent: it carries the temporary paths of the run that produced it.
  *
- * The Intel deflater is disabled for this dump (-Dsamjdk.try_use_intel_deflater=false), which the
- * suite declares. htsjdk-rs reproduces the JDK deflater exactly; GKL-exact deflate is a separate
- * piece of work, and until it exists a byte claim over BGZF output has to name which deflater it
- * is a claim about.
+ * Which deflater wrote these bytes is not a detail, and it is not what the flag suggests.
+ * `--use-jdk-deflater true` does **not** restore the JDK deflater: GATK only ever *installs* the
+ * Intel one, in `if (!useJdkDeflater) setDefaultDeflaterFactory(new IntelDeflaterFactory())`, and
+ * that setter is static and global. Picard's CommandLineProgram has the same shape, so a single
+ * earlier CreateSequenceDictionary call in the same JVM leaves the Intel deflater installed for
+ * everything that follows, and the flag is then a no-op. The first version of this dump did
+ * exactly that: its output was GKL-compressed while claiming to be JDK-compressed, 708 deflate
+ * bytes where zlib gives 698 at level 5 and 706 at level 4, matching no zlib setting at all.
+ *
+ * So the factory is installed explicitly here, and the golden records which one produced it.
+ * htsjdk-rs reproduces the JDK deflater exactly; GKL-exact deflate is separate work, and until it
+ * exists a byte claim over BGZF has to name the deflater it is a claim about.
  *
  * Output:
  *
- *     bam\t<base64 input BAM>       fai\t<escaped>
- *     bai\t<base64 input index>     fasta\t<escaped>
+ *     deflater\t<the DeflaterFactory class that produced every byte below>
+ *     bam\t<base64 input BAM>       bai\t<base64 input index>
  *     commandline\t<label>\t<the CL string the tool recorded>
  *     header\t<label>\t<output SAM header text, \n escaped>
  *     output\t<label>\t<base64 of the whole output BAM>
@@ -40,7 +48,8 @@ import htsjdk.samtools.SAMProgramRecord;
 import htsjdk.samtools.SamReader;
 import htsjdk.samtools.SamReaderFactory;
 import htsjdk.samtools.ValidationStringency;
-import htsjdk.samtools.reference.FastaSequenceIndexCreator;
+import htsjdk.samtools.util.BlockCompressedOutputStream;
+import htsjdk.samtools.util.zip.DeflaterFactory;
 import org.broadinstitute.hellbender.tools.PrintReads;
 
 import java.nio.file.Files;
@@ -53,21 +62,17 @@ import java.util.List;
 public class PrintReadsDump {
 
     public static void main(final String[] args) throws Exception {
-        final Path dir = Files.createTempDirectory("printreads");
-        final Path fasta = dir.resolve("ref.fasta");
-        Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
-        FastaSequenceIndexCreator.create(fasta, true);
-        new picard.sam.CreateSequenceDictionary().instanceMain(new String[] {
-                "R=" + fasta, "O=" + dir.resolve("ref.dict")});
+        // Before anything else, and before the fixture is written: the factory is static, and
+        // whoever touches it first wins for the life of the JVM.
+        BlockCompressedOutputStream.setDefaultDeflaterFactory(new DeflaterFactory());
 
+        final Path dir = Files.createTempDirectory("printreads");
         final Path bam = dir.resolve("reads.bam");
         ReadWalkerDump.buildFixture(bam.toFile());
 
         System.out.println("# PrintReadsDump: the bytes PrintReads writes");
-        System.out.printf("fasta\t%s%n", ReferenceQueryDump.escape(
-                new String(Files.readAllBytes(fasta))));
-        System.out.printf("fai\t%s%n", ReferenceQueryDump.escape(
-                new String(Files.readAllBytes(dir.resolve("ref.fasta.fai")))));
+        System.out.printf("deflater\t%s%n",
+                BlockCompressedOutputStream.getDefaultDeflaterFactory().getClass().getName());
         System.out.printf("bam\t%s%n", base64(bam));
         System.out.printf("bai\t%s%n", base64(dir.resolve("reads.bai")));
 
