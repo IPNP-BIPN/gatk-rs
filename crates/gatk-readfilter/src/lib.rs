@@ -1459,3 +1459,101 @@ mod tests {
         }
     }
 }
+
+/// `JexlExpressionReadTagValueFilter`, the 56th filter and the only one that runs an expression
+/// language.
+///
+/// Ported from `org.broadinstitute.hellbender.engine.filters.JexlExpressionReadTagValueFilter`
+/// (GATK 4.6.2.0), over [`gatk_engine::jexl`].
+///
+/// Two decisions live in the filter rather than in the engine:
+///
+///  * **every attribute is handed over as a String**, because the context is
+///    `read.getAttributeAsString(name)`. So the expression's *literal* decides whether a
+///    comparison is integral, floating or lexicographic, not the tag's actual type in the BAM;
+///  * **the result must be `Boolean.TRUE`**, tested with `v.equals(Boolean.TRUE)`. A `null`
+///    result therefore throws a `NullPointerException` rather than answering false, and a
+///    non-boolean result answers false without complaint.
+///
+/// Expressions are ANDed, and the reference evaluates them in order, so the first one to throw is
+/// the one that surfaces.
+pub mod jexl_filter {
+    use gatk_engine::jexl::{self, Context, Expression, JexlError, Value};
+    use htsjdk_bam::record::BamRecord;
+    use htsjdk_bam::tag::{Tag, TagValue};
+
+    /// What `test` can answer, including the two ways it can fail.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Decision {
+        Keep,
+        Drop,
+        /// The expression evaluated to null and `v.equals(Boolean.TRUE)` dereferenced it.
+        NullResult,
+        /// The engine refused: a parse error, an arithmetic error, or a coercion that threw.
+        Failed(JexlError),
+    }
+
+    /// `GATKRead.getAttributeAsString`: the tag rendered the way the adapter renders it.
+    ///
+    /// The rendering matters, because it is what the expression compares against. An integer tag
+    /// becomes its decimal text, a character tag becomes a one-character string, and a byte-array
+    /// tag becomes the array's own `toString`, which is why array tags are not usefully
+    /// comparable.
+    pub fn attribute_as_string(read: &BamRecord, name: &str) -> Option<String> {
+        let bytes = name.as_bytes();
+        if bytes.len() != 2 {
+            return None;
+        }
+        let tag = Tag::new(&[bytes[0], bytes[1]]);
+        match read.tags.get(tag)? {
+            TagValue::Str(text) => Some(text.clone()),
+            TagValue::Char(c) => Some((*c as char).to_string()),
+            TagValue::Int(i) => Some(i.to_string()),
+            TagValue::Float(f) => Some(format_java_float(*f)),
+            other => Some(format!("{other:?}")),
+        }
+    }
+
+    /// `Float.toString`, which always prints a decimal point.
+    fn format_java_float(value: f32) -> String {
+        if value == value.trunc() && value.is_finite() && value.abs() < 1e7 {
+            format!("{value:.1}")
+        } else {
+            format!("{value}")
+        }
+    }
+
+    /// The context one read presents to the engine.
+    pub fn context_for(read: &BamRecord, names: &[String]) -> Context {
+        let mut context = Context::new();
+        for name in names {
+            if let Some(value) = attribute_as_string(read, name) {
+                context.insert(name.clone(), value);
+            }
+        }
+        context
+    }
+
+    /// `JexlEngine.createExpression` over each `--read-filter-expression`.
+    pub fn compile(expressions: &[String]) -> Result<Vec<Expression>, JexlError> {
+        expressions
+            .iter()
+            .map(|e| jexl::create_expression(e))
+            .collect()
+    }
+
+    /// `test`: every expression must evaluate to `Boolean.TRUE`.
+    pub fn test(read: &BamRecord, expressions: &[Expression], names: &[String]) -> Decision {
+        let context = context_for(read, names);
+        for expression in expressions {
+            match expression.evaluate(&context) {
+                Err(error) => return Decision::Failed(error),
+                // `v.equals(Boolean.TRUE)` on a null `v` is a NullPointerException, not a false.
+                Ok(Value::Null) => return Decision::NullResult,
+                Ok(Value::Bool(true)) => continue,
+                Ok(_) => return Decision::Drop,
+            }
+        }
+        Decision::Keep
+    }
+}

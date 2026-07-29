@@ -12,6 +12,7 @@ pub mod clipping;
 pub mod context;
 pub mod interval;
 pub mod interval_args;
+pub mod jexl;
 pub mod pileup;
 pub mod read;
 pub mod read_group;

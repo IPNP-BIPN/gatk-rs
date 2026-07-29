@@ -197,6 +197,20 @@
           "why": "From the pinned container on a real x86-64 runner. Two of its fifteen rows are not compared by the port yet and are named in the test rather than skipped quietly: .interval_list and .bed resolve through Feature codecs, which arrive with G1.3, and the test asserts the port refuses them today for the documented reason so the assertion fails the moment the seam is filled."
         }
       ]
+    },
+    {
+      "id": "jexlfilter",
+      "title": "JexlExpressionReadTagValueFilter decisions",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The 56th read filter, and the only one that runs an expression language. Its answers are commons-jexl 2.1.1's, reached through one detail of the filter: the context is read.getAttributeAsString(name), so every attribute arrives as a String whatever it is in the BAM, and the *literal* decides which branch of JexlArithmetic.compare runs. NM > 3 is integral because 3 is an Integer and isNumberable is true; NM > 3.5 is floating because ASTNumberLiteral.setReal defaults to Float rather than Double; NM > '3' is lexicographic, so \"30\" > \"3\" is true for a different reason than 30 > 3 is. Only + falls back to concatenation, and only from a catch of NumberFormatException, so NM + 1 on a non-numeric tag is a string while NM - 1 is an error. The filter's own test is !v.equals(Boolean.TRUE), which makes a null result a NullPointerException rather than a false. The dump records the engine's value and the filter's boolean separately, plus the string the context handed over for every tag, so a divergence lands on the coercion rather than on the rendering.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "JexlFilterDump"
+        }
+      ]
     }
   ],
   "probes": []
