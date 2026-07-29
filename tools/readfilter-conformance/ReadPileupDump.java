@@ -70,7 +70,11 @@ public class ReadPileupDump {
             {"r2", "rg1", "10M", "101", "CCCCCCCCCC"},
             {"r3", "rg2", "2M5D3M", "101", "ACGTA"},
             {"r4", "rg2", "10M", "101", "NNNNNNNNNN"},
-            {"r5", "rg1", "10M", "101", "****:*****"},
+            // The wildcard has to land on the locus itself, at offset 4, or the quirk this suite
+            // exists for is never exercised: the first version put a `:` there and counted zero.
+            {"r5", "rg1", "10M", "101", "AAAA*AAAAA"},
+            // A byte that is neither a base nor the wildcard, so the -1 path is measured too.
+            {"r6", "rg2", "10M", "101", "::::::::::"},
         });
 
         // Reads starting at different positions, which is the only key sortedIterator uses.
