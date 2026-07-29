@@ -104,6 +104,28 @@
           "why": "From the pinned container on a real x86-64 runner. It caught a divergence the class reading would not have: run without -R, a walker still receives a ReferenceContext whose *window* is the read's interval, with only its bases empty. The first version of the port handed over the fully empty context and would have reported a null window for every read of every reference-less run."
         }
       ]
+    },
+    {
+      "id": "printreads",
+      "title": "PrintReads output bytes",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": ["PrintReads"],
+      "why": "The first whole tool, and the first suite whose claim is bytes rather than decisions: the output BAM travels in the golden in full, base64, index included. Two header behaviours are measured with it: the @PG record the tool appends (ID, VN, CL, PN, with the ID taking a numeric suffix when it collides) and the fact that getHeaderForSAMWriter mutates the reads header in place. Every run passes --use-jdk-deflater, because GATK defaults to the Intel GKL deflater whose output htsjdk-rs does not reproduce yet; a byte claim over BGZF has to name which deflater it is about.",
+      "compare": { "mode": "lines" },
+      "expect_contains": [
+        "commandline\tall\t",
+        "index\tnoindex\tabsent",
+        "@PG"
+      ],
+      "$expect_why": "The tool records a command line, the run that asked for no index produced none, and the header carries the appended program record.",
+      "cases": [
+        {
+          "dump": "PrintReadsDump",
+          "golden": null,
+          "why": "No golden yet: only the pinned container on real x86-64 may produce one."
+        }
+      ]
     }
   ],
   "probes": []
