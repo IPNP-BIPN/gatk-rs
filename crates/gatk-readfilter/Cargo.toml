@@ -1,0 +1,14 @@
+[package]
+name = "gatk-readfilter"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gatk-engine = { path = "../gatk-engine" }
+htsjdk-bam.workspace = true
+
+[dev-dependencies]
+# One corpus parser for the whole workspace: two parsers would be two corpora.
+gatk-corpus = { path = "../gatk-corpus" }

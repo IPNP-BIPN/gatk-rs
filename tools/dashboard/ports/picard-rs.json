@@ -1,0 +1,355 @@
+{
+  "suites": [
+    {
+      "id": "metrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectQualityYieldMetrics",
+        "CollectInsertSizeMetrics",
+        "MeanQualityByCycle",
+        "CollectBaseDistributionByCycle",
+        "CollectAlignmentSummaryMetrics"
+      ],
+      "cases": 4
+    },
+    {
+      "id": "rnaseq",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectRnaSeqMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "snvq",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectQualityYieldMetricsSNVQ"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "samtofastq",
+      "status": "oracle-backed",
+      "tools": [
+        "SamToFastq"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "fastqtosam",
+      "status": "oracle-backed",
+      "tools": [
+        "FastqToSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "sortsam",
+      "status": "oracle-backed",
+      "tools": [
+        "SortSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "addreplacerg",
+      "status": "oracle-backed",
+      "tools": [
+        "AddOrReplaceReadGroups"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "cleansam",
+      "status": "oracle-backed",
+      "tools": [
+        "CleanSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "fixmate",
+      "status": "oracle-backed",
+      "tools": [
+        "FixMateInformation"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "addoatag",
+      "status": "oracle-backed",
+      "tools": [
+        "AddOATag"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "reordersam",
+      "status": "oracle-backed",
+      "tools": [
+        "ReorderSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "replacesamheader",
+      "status": "oracle-backed",
+      "tools": [
+        "ReplaceSamHeader"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "revertsam",
+      "status": "oracle-backed",
+      "tools": [
+        "RevertSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "revertorigmatecigar",
+      "status": "oracle-backed",
+      "tools": [
+        "RevertOriginalBaseQualitiesAndAddMateCigar"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "viewsam",
+      "status": "oracle-backed",
+      "tools": [
+        "ViewSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "rgchecksum",
+      "status": "oracle-backed",
+      "tools": [
+        "CalculateReadGroupChecksum"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "downsamplesam",
+      "status": "oracle-backed",
+      "tools": [
+        "DownsampleSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "filtersamreads",
+      "status": "oracle-backed",
+      "tools": [
+        "FilterSamReads"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "createdict",
+      "status": "oracle-backed",
+      "tools": [
+        "CreateSequenceDictionary"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "samformatconverter",
+      "status": "oracle-backed",
+      "tools": [
+        "SamFormatConverter"
+      ],
+      "cases": 2
+    },
+    {
+      "id": "sortsam-bam",
+      "status": "oracle-backed",
+      "tools": [
+        "SortSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "setnmmduq",
+      "status": "oracle-backed",
+      "tools": [
+        "SetNmMdAndUqTags"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "addoatag-bam",
+      "status": "oracle-backed",
+      "tools": [
+        "AddOATag"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "validatesam",
+      "status": "oracle-backed",
+      "tools": [
+        "ValidateSamFile"
+      ],
+      "cases": 6
+    },
+    {
+      "id": "comparesams",
+      "status": "oracle-backed",
+      "tools": [
+        "CompareSAMs"
+      ],
+      "cases": 4
+    },
+    {
+      "id": "split",
+      "status": "oracle-backed",
+      "tools": [
+        "SplitSamByNumberOfReads",
+        "SplitSamByLibrary"
+      ],
+      "cases": 2
+    },
+    {
+      "id": "bamindexstats",
+      "status": "oracle-backed",
+      "tools": [
+        "BamIndexStats"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "merge",
+      "status": "oracle-backed",
+      "tools": [
+        "MergeSamFiles"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "rejections",
+      "status": "golden-pending",
+      "tools": [
+        "CollectQualityYieldMetrics",
+        "CollectAlignmentSummaryMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "qualityscoredistribution",
+      "status": "unchecked",
+      "tools": [
+        "QualityScoreDistribution"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "gcbias",
+      "status": "unchecked",
+      "tools": [
+        "CollectGcBiasMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "accumulatequalityyield",
+      "status": "unchecked",
+      "tools": [
+        "AccumulateQualityYieldMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "bedtointervallist",
+      "status": "unchecked",
+      "tools": [
+        "BedToIntervalList"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "intervallisttobed",
+      "status": "unchecked",
+      "tools": [
+        "IntervalListToBed"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "intervallisttools",
+      "status": "unchecked",
+      "tools": [
+        "IntervalListTools"
+      ],
+      "cases": 3
+    },
+    {
+      "id": "liftoverintervallist",
+      "status": "unchecked",
+      "tools": [
+        "LiftOverIntervalList"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "extractsequences",
+      "status": "unchecked",
+      "tools": [
+        "ExtractSequences"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "scatterintervalsbyns",
+      "status": "unchecked",
+      "tools": [
+        "ScatterIntervalsByNs"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "nonnfastasize",
+      "status": "unchecked",
+      "tools": [
+        "NonNFastaSize"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "normalizefasta",
+      "status": "unchecked",
+      "tools": [
+        "NormalizeFasta"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "samtofastqwithtags",
+      "status": "unchecked",
+      "tools": [
+        "SamToFastqWithTags"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "mergebamalignment",
+      "status": "unchecked",
+      "tools": [
+        "MergeBamAlignment"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "mergebamalignment-full",
+      "status": "unchecked",
+      "tools": [
+        "MergeBamAlignment"
+      ],
+      "cases": 1
+    }
+  ],
+  "source": "/Users/benjamin/Picard/tools/conformance/manifest.json"
+}

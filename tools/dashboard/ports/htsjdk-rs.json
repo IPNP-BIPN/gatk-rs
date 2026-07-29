@@ -1,0 +1,119 @@
+{
+  "suites": [
+    {
+      "id": "bgzf",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bgzf-termination",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bam-codec",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bam-file",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bam-reheader",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bam-gather",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "histogram",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "sam-text",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "sam-file",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bai",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "build-index",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "interval-list",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-header",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-record",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-file",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "rg-checksum",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cigar-clip",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "mateinfo",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "format",
+      "status": "unchecked",
+      "tools": [],
+      "cases": 1
+    }
+  ],
+  "source": "/Users/benjamin/htsjdk/tools/conformance/manifest.json"
+}

@@ -48,6 +48,27 @@ The tool inventory is **generated**, not hand-written: 375 tools and 10,796 argu
 derived mechanically from the reference's own machine-readable tool documentation, along with
 argument schemas, branch names, and the differential test matrix.
 
+## What exists today
+
+| layer | state |
+|---|---|
+| tool inventory | generated: 311 tools, 13,130 arguments, from the pinned reference's own CLI |
+| status dashboard | generated from the inventory and the ports' manifests: [docs/STATUS.md](docs/STATUS.md) |
+| covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
+| oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
+| `gatk-readfilter` | **all 56 read filters, oracle-backed**: 79 instances over 59 records, 4,661 decisions identical to the reference, plus `JexlExpressionReadTagValueFilter` with commons-jexl 2.1.1's arithmetic ported under it (186 evaluations and 186 filter decisions) |
+| `gatk-tools` | **`PrintReads`, byte-identical**: six output BAMs and their `.bai` indexes compared byte for byte against the pinned reference, under the JDK deflater. Plus the two traversals underneath: `ReadWalker`, 66 `apply` calls over 14 traversals, and `IntervalWalker`, 25 `apply` calls over 24 argument combinations of `-L`, `-XL`, padding, set rule and merging rule, with the three the reference refuses refused for the same reason |
+| `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` in full, all 14 entry points (3,068 clipped reads), `ReferenceDataSource` (45 queries), `ReadsDataSource` (29 interval queries against a fixture BAM and its `.bai`), `ReferenceContext` (352 window answers), the interval argument pipeline behind `-L` and `-XL` (files and `unmapped` included), the Feature lookahead cache (20 queries at two lookahead settings), and the pileup floor every locus tool stands on: `AlignmentStateMachine` (244 stops over 26 cigars), `PileupElement` (217 elements, plus 231 `createPileupForReadAndOffset` calls including the offsets it refuses), `ReadPileup` (3 pileups and 24 overlap fixes), the sample partition and state advance (56 traversal steps), `LocusIteratorByState` itself (148 pileups over 12 argument settings), and the context iterators above it (99 contexts over 6 routes, empty loci included) |
+
+`gatk-engine` depends on `noodles` for indexed FASTA and `.bai` plumbing while porting and
+measuring what GATK and htsjdk do with what it returns; the rule that governs when a dependency
+replaces a port, and when it must not, is
+[here](docs/when-a-dependency-is-cheaper-than-a-port.md).
+
+The read filters come first because they are stateless, touch no floating point, and every tool
+that reads reads runs a chain of them. A wrong filter does not produce a wrong number, it produces
+a different set of reads, and every number downstream inherits that.
+
 ## Coverage
 
 "Every parameter" is defined operationally, because exhaustive does not exist here:
@@ -63,9 +84,15 @@ HaplotypeCaller alone has 174 arguments, implying on the order of 2^174 combinat
 ## Bit-identity contract
 
 Goldens come from the pinned reference in a digest-pinned `linux/amd64` container on JDK 17,
-produced only on real x86-64 CI. Emulated x86-64 on Apple Silicon does not expose AVX, so GKL
+produced only on real x86-64 CI. A suite that writes BGZF also declares **which deflater** its
+bytes come from, and installs it rather than asking for it: `--use-jdk-deflater` does not restore
+the JDK deflater, it only declines to install the Intel one, and the setter is static and global. Emulated x86-64 on Apple Silicon does not expose AVX, so GKL
 native paths can silently fail to load and yield goldens matching no real machine; the oracle
 runner asserts the resolved provider state and fails rather than degrading.
+
+Verified rather than asserted, on 2026-07-29: the oracle jobs were dispatched on a real x86-64
+runner and re-derived all ten goldens from the pinned container, comparing 6,108 rows line by
+line with no divergence.
 
 Fields legitimately allowed to vary are canonicalized under explicitly declared rules, and
 every comparison records what was compared raw versus canonicalized. Values that cannot be
