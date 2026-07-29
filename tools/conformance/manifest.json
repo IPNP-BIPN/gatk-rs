@@ -217,14 +217,15 @@
     {
       "id": "featurecache",
       "title": "FeatureDataSource lookahead cache",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "What a tool sees when it asks which features are at a position is not what the file holds there: it is what the lookahead cache kept. Two behaviours are observable rather than internal. refillQueryCache extends the query end by queryLookaheadBases and caches everything the reader returned unfiltered, and getCachedFeaturesUpToStopPosition tests only start > stopPosition and *breaks*, so a feature that ends before the query started is still returned and one feature starting past the stop hides every feature behind it. trimToNewStartPosition pops the features starting before the new start, keeps those still overlapping, and pushes them back in reverse, preserving the file order, so a port that re-sorted would agree on every set and differ on every list. cacheHit is containment rather than overlap, so a query one base past the cached end is a miss. The lookahead is probed at 0 as well, because IntervalWalker.initializeFeatures sets it to 0 on purpose.",
+      "why": "What a tool sees when it asks which features are at a position is not what the file holds there: it is what the lookahead cache kept. Two behaviours are observable rather than internal. refillQueryCache extends the query end by queryLookaheadBases and caches everything the reader returned unfiltered, and getCachedFeaturesUpToStopPosition tests only start > stopPosition and *breaks*, so a feature that ends before the query started is still returned and one feature starting past the stop hides every feature behind it. trimToNewStartPosition pops the features starting before the new start, keeps those still overlapping, and pushes them back in reverse, preserving the file order, so a port that re-sorted would agree on every set and differ on every list. cacheHit is containment rather than overlap, so a query one base past the cached end is a miss. The lookahead is probed at 0 as well, because IntervalWalker.initializeFeatures sets it to 0 on purpose. What the golden then showed is worth stating plainly: the twenty answers are identical at lookahead 0 and at 100. The cache is transparent for well-ordered access, because trimToNewStartPosition keeps exactly the features a fresh overlap query would have returned. So this suite pins what a tool sees, which is the thing that matters, and it does NOT distinguish the cache from a fresh query per call: a port with no cache at all would pass it. The cache is ported for the ordering guarantee rather than because the suite forces it, and a probe that would separate them needs a feature file whose records are out of start order, which Tribble refuses to index.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "FeatureCacheDump"
+          "dump": "FeatureCacheDump",
+          "golden": "crates/gatk-engine/tests/data/feature_cache.txt.gz"
         }
       ]
     }

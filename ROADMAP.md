@@ -70,7 +70,11 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] `ReadsDataSource` interval queries against a fixture BAM and its `.bai` (29 queries,
       htsjdk's stateful single-pass filter included)
 - [x] `ReferenceContext` and `ReadsContext` (352 window answers)
-- [ ] `FeatureDataSource` and `FeatureContext` (blocks every tool that reads a VCF or BED)
+- [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
+      order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
+      settings). The suite pins what a tool sees and does **not** distinguish the cache from a
+      fresh query per call, which the manifest states. Still missing: the codecs (VCF, BED,
+      interval_list) and the Tribble index, which are htsjdk's and belong in Milestone H
 
 ### G1.4 Interval arguments
 
