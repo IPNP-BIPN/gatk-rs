@@ -153,6 +153,8 @@ pub mod read {
     }
 }
 
+pub mod counting;
+
 /// `htsjdk.samtools.Cigar` validity and the two GATK predicates built on it.
 ///
 /// `GoodCigarReadFilter` calls `CigarUtils.isGood`, which is `Cigar.isValid(null, -1) == null`

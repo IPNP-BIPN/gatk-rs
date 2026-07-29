@@ -28,6 +28,11 @@
         {
           "dump": "ReadFilterDump",
           "golden": "crates/gatk-readfilter/tests/data/read_filters.txt.gz"
+        },
+        {
+          "dump": "CountingFilterDump",
+          "golden": "crates/gatk-readfilter/tests/data/counting_filters.txt.gz",
+          "why": "CountingReadFilter's summary text is output a tool prints, so it is compared as bytes. It is also the only place the order of a conjunction is observable: the boolean cannot say which of WellformedReadFilter's eight filters rejected a read, and the counts can."
         }
       ]
     }

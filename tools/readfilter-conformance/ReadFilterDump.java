@@ -302,7 +302,31 @@ public class ReadFilterDump {
         final List<SAMRecord> corpus = corpus(header);
 
         System.out.println("# ReadFilterDump: the reference's own decision per filter, per record");
+        printCorpus(header, corpus);
 
+        for (final Map.Entry<String, ReadFilter> entry : filters().entrySet()) {
+            final ReadFilter filter = entry.getValue();
+            filter.setHeader(header);
+            final StringBuilder decisions = new StringBuilder();
+            for (final SAMRecord record : corpus) {
+                final GATKRead read = new SAMRecordToGATKReadAdapter(record);
+                boolean kept;
+                try {
+                    kept = filter.test(read);
+                } catch (final Exception e) {
+                    // A filter that throws on a record is a third outcome, not a silent false:
+                    // mateIsUnmapped asserts pairing, for instance. The port has to match that.
+                    decisions.append('E');
+                    continue;
+                }
+                decisions.append(kept ? '1' : '0');
+            }
+            System.out.printf("filter\t%s\t%s%n", entry.getKey(), decisions);
+        }
+    }
+
+    /** The header and the corpus, so the port judges the records the reference judged. */
+    static void printCorpus(final SAMFileHeader header, final List<SAMRecord> corpus) {
         // The header travels too: the resolved filters read the library, sample, platform and
         // contig lengths out of it, so a port given a different header would be answering a
         // different question.
@@ -329,26 +353,6 @@ public class ReadFilterDump {
                 System.out.printf("tag\t%d\t%s\t%s\t%s%n",
                         i, tag.tag, tagType(tag.value), tagValue(tag.value));
             }
-        }
-
-        for (final Map.Entry<String, ReadFilter> entry : filters().entrySet()) {
-            final ReadFilter filter = entry.getValue();
-            filter.setHeader(header);
-            final StringBuilder decisions = new StringBuilder();
-            for (final SAMRecord record : corpus) {
-                final GATKRead read = new SAMRecordToGATKReadAdapter(record);
-                boolean kept;
-                try {
-                    kept = filter.test(read);
-                } catch (final Exception e) {
-                    // A filter that throws on a record is a third outcome, not a silent false:
-                    // mateIsUnmapped asserts pairing, for instance. The port has to match that.
-                    decisions.append('E');
-                    continue;
-                }
-                decisions.append(kept ? '1' : '0');
-            }
-            System.out.printf("filter\t%s\t%s%n", entry.getKey(), decisions);
         }
     }
 
