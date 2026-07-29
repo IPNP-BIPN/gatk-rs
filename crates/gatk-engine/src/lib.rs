@@ -14,6 +14,7 @@ pub mod features;
 pub mod interval;
 pub mod interval_args;
 pub mod jexl;
+pub mod locus_iterator;
 pub mod pileup;
 pub mod read;
 pub mod read_group;

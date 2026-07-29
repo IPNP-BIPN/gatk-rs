@@ -260,6 +260,20 @@
           "why": "From the pinned container on a real x86-64 runner: 56 traversal steps over 5 runs. Every row of two-samples lists sampleB before sampleA, which is the declaration order and not the header's; all-clipped holds three reads and reports two, because 5S5I never enters; and deletion-boundary admits d2 at 105 while d1 is part-way through a 10D, which is where d1 is rather than where it started."
         }
       ]
+    },
+    {
+      "id": "locusiterator",
+      "title": "LocusIteratorByState pileups",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "One pileup per covered locus, which is what a LocusWalker iterates, so which elements land where is every locus-based tool's output. Four decisions sit in the twenty lines that build each pileup. The two exclusions are not symmetric: a read whose current operator is N is skipped before the adaptor test, a read whose operator is D is skipped inside it, so a read sitting in an adaptor with a deletion is excluded once by the adaptor while an N is excluded whatever the adaptor says. The adaptor test is per base, so the same read contributes to some loci and not others. The pileup is monolithic and concatenated in sample declaration order, which the reference kept for the HaplotypeCaller and documents as such. And a locus with no surviving element yields no context at all, silently, because emitting empty loci belongs to a different class. All four (includeDeletions, includeNs) combinations are probed, because a tool picks them by overriding two methods whose defaults differ.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "LocusIteratorDump"
+        }
+      ]
     }
   ],
   "probes": []
