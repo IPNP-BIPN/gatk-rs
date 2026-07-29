@@ -89,6 +89,65 @@ pub fn soft_end(record: &BamRecord) -> i32 {
     soft_end
 }
 
+/// `GATKRead.getUnclippedStart`, which is `SAMUtils.getUnclippedStart` under the adapter.
+///
+/// Unlike [`soft_start`], hard clips count: the walk subtracts `S` **and** `H` and stops at the
+/// first element that is neither. An unmapped read has no start to unclip, so the sentinel wins.
+pub fn unclipped_start(record: &BamRecord) -> i32 {
+    if read::is_unmapped(record) {
+        return UNSET_POSITION;
+    }
+    let mut unclipped = record.alignment_start;
+    for element in &record.cigar.elements {
+        match element.op {
+            Op::S | Op::H => unclipped -= element.length as i32,
+            _ => break,
+        }
+    }
+    unclipped
+}
+
+/// `ReadUtils.hasWellDefinedFragmentSize`: can this read's adaptor be found from its mate?
+///
+/// Five refusals, and the order is the reference's. The commented-out `isProperlyPaired` check is
+/// still commented out upstream, with the note that the flag is not always set correctly in BAMs;
+/// reproducing the *live* code means not restoring it.
+pub fn has_well_defined_fragment_size(record: &BamRecord) -> bool {
+    if record.inferred_insert_size == 0 {
+        return false; // mates on another contig, or an unmapped pair
+    }
+    if !read::is_paired(record) {
+        return false;
+    }
+    if read::is_unmapped(record) || read::mate_is_unmapped(record) {
+        return false;
+    }
+    if read::is_reverse_strand(record) == read::mate_is_reverse_strand(record) {
+        return false;
+    }
+    if read::is_reverse_strand(record) {
+        end(record) > record.mate_alignment_start
+    } else {
+        start(record) <= record.mate_alignment_start + record.inferred_insert_size
+    }
+}
+
+/// `ReadUtils.getAdaptorBoundary`, or `None` for `CANNOT_COMPUTE_ADAPTOR_BOUNDARY`.
+///
+/// The two branches are not symmetric: on the reverse strand the boundary is the mate's start
+/// minus one, a *measured* coordinate; on the forward strand it is this read's start plus the
+/// absolute insert size, which is an inference and can land outside the read.
+pub fn adaptor_boundary(record: &BamRecord) -> Option<i32> {
+    if !has_well_defined_fragment_size(record) {
+        return None;
+    }
+    if read::is_reverse_strand(record) {
+        Some(record.mate_alignment_start - 1)
+    } else {
+        Some(start(record) + record.inferred_insert_size.abs())
+    }
+}
+
 /// `ReadUtils.getLastInsertionOffset`, or `None` where the reference throws.
 ///
 /// It indexes the last cigar element without checking that there is one, so a read with no cigar

@@ -81,6 +81,37 @@ fn run(
             )
         }
         "revertSoftClipped" => clipping::revert_soft_clipped_bases(read, header),
+        "softToRegion" => {
+            let (start, stop) = argument.split_once(',').unwrap();
+            clipping::soft_clip_to_region_including_clipped_bases(
+                read,
+                header,
+                start.parse().unwrap(),
+                stop.parse().unwrap(),
+            )
+        }
+        "softBothEnds" => {
+            let (left, right) = argument.split_once(',').unwrap();
+            clipping::soft_clip_both_ends_by_reference_coordinates(
+                read,
+                header,
+                left.parse().unwrap(),
+                right.parse().unwrap(),
+            )
+        }
+        "softByRead" => {
+            let (start, stop) = argument.split_once(',').unwrap();
+            clipping::soft_clip_by_read_coordinates(
+                read,
+                header,
+                start.parse().unwrap(),
+                stop.parse().unwrap(),
+            )
+        }
+        "hardClipSoftClipped" => {
+            clipping::hard_clip_soft_clipped_bases(read, header, argument.parse().unwrap())
+        }
+        "hardClipAdaptor" => clipping::hard_clip_adaptor_sequence(read, header),
         _ => {
             let low_qual = argument.parse().unwrap();
             let representation = match name {

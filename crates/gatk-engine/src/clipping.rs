@@ -22,7 +22,9 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
 use crate::cigar_builder::CigarError;
-use crate::cigar_utils::{alignment_start_shift, clip_cigar, revert_soft_clips};
+use crate::cigar_utils::{
+    alignment_start_shift, clip_cigar, count_ref_bases_and_clips, revert_soft_clips,
+};
 use crate::read;
 use crate::read_utils;
 
@@ -546,4 +548,175 @@ pub fn clip_low_qual_ends(
         });
     }
     clipper.clip_read(algorithm)
+}
+
+/// `ReadClipper.hardClipSoftClippedBases`, with `clipExtraBases` as the reference's
+/// `extraBasesToClip`.
+///
+/// Two things here are the reference's rather than the obvious implementation's:
+///
+///  * only the **first** soft clip on each side is recorded. `cutLeft` is overwritten by every
+///    leading soft clip and `cutRight` by every trailing one, so a cigar with two soft clips on
+///    the same side keeps the last one seen, not their union;
+///  * the right cut is applied **first**, because applying the left one would shift every read
+///    coordinate the right cut is expressed in. The reference's own comment says "extremely
+///    important", and it is: the ops are interpreted against a read the previous op has shortened.
+///
+/// `extra_bases_to_clip` moves both cuts *inwards*, so a positive value takes aligned bases too.
+pub fn hard_clip_soft_clipped_bases(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+    extra_bases_to_clip: i32,
+) -> Result<BamRecord, ClipError> {
+    if read.read_bases.is_empty() {
+        return Ok(read.clone());
+    }
+
+    let mut read_index = 0i32;
+    let mut cut_left = -1i32; // first position to hard clip, inclusive
+    let mut cut_right = -1i32;
+    let mut right_tail = false;
+
+    for element in &read.cigar.elements {
+        match element.op {
+            Op::S => {
+                if right_tail {
+                    cut_right = read_index;
+                } else {
+                    cut_left = read_index + element.length as i32 - 1;
+                }
+            }
+            Op::H => {}
+            _ => right_tail = true,
+        }
+        if element.op.consumes_read_bases() {
+            read_index += element.length as i32;
+        }
+    }
+
+    let mut clipper = ReadClipper::new(read, header);
+    if cut_right >= 0 {
+        clipper.add_op(ClippingOp {
+            start: cut_right - extra_bases_to_clip,
+            stop: read.read_bases.len() as i32 - 1,
+        });
+    }
+    if cut_left >= 0 {
+        clipper.add_op(ClippingOp {
+            start: 0,
+            stop: cut_left + extra_bases_to_clip,
+        });
+    }
+    clipper.clip_read(ClippingRepresentation::HardclipBases)
+}
+
+/// `ReadClipper.hardClipAdaptorSequence`.
+///
+/// The read comes back untouched in two cases that look alike and are not: the boundary cannot be
+/// computed at all (`CANNOT_COMPUTE_ADAPTOR_BOUNDARY`), or it can and it falls outside the read.
+/// The second is the common one on a short fragment, where the inferred boundary lands past the
+/// last aligned base.
+pub fn hard_clip_adaptor_sequence(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+) -> Result<BamRecord, ClipError> {
+    let Some(boundary) = read_utils::adaptor_boundary(read) else {
+        return Ok(read.clone());
+    };
+    if !read_utils::is_inside_read(read, boundary) {
+        return Ok(read.clone());
+    }
+    if read::is_reverse_strand(read) {
+        hard_clip_by_reference_coordinates_left_tail(read, header, boundary)
+    } else {
+        hard_clip_by_reference_coordinates_right_tail(read, header, boundary)
+    }
+}
+
+/// `ReadClipper.softClipByReferenceCoordinates`, the soft twin of the hard clip above.
+fn soft_clip_by_reference_coordinates(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+    ref_start: i32,
+    ref_stop: i32,
+) -> Result<BamRecord, ClipError> {
+    ReadClipper::new(read, header).clip_by_reference_coordinates(
+        ref_start,
+        ref_stop,
+        ClippingRepresentation::SoftclipBases,
+    )
+}
+
+/// `ReadClipper.softClipBothEndsByReferenceCoordinates`.
+///
+/// Same shape as the hard version, including the re-check of the left bound against the read the
+/// right clip returned, and the same answer for `left == right`: an empty read, because clipping
+/// both ends at one coordinate clips everything.
+pub fn soft_clip_both_ends_by_reference_coordinates(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+    left: i32,
+    right: i32,
+) -> Result<BamRecord, ClipError> {
+    if read.read_bases.is_empty() || left == right {
+        return Ok(empty_read(read));
+    }
+    let left_tail = soft_clip_by_reference_coordinates(read, header, right, -1)?;
+    if left > read_utils::end(&left_tail) {
+        return Ok(empty_read(read));
+    }
+    soft_clip_by_reference_coordinates(&left_tail, header, -1, left)
+}
+
+/// `ReadClipper.softClipToRegionIncludingClippedBases`.
+///
+/// The span it tests is **not** the alignment: it starts at `getUnclippedStart` and runs for
+/// `countRefBasesAndClips` bases, so soft *and* hard clipped bases count towards whether the read
+/// reaches the region. A read whose aligned part sits outside the region can still be clipped to
+/// it on the strength of its clipped tails, which is the whole point of the "including clipped
+/// bases" in the name.
+pub fn soft_clip_to_region_including_clipped_bases(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+    ref_start: i32,
+    ref_stop: i32,
+) -> Result<BamRecord, ClipError> {
+    let start = read_utils::unclipped_start(read);
+    let stop = start + count_ref_bases_and_clips(&read.cigar.elements) - 1;
+
+    if start <= ref_stop && stop >= ref_start {
+        if start < ref_start && stop > ref_stop {
+            soft_clip_both_ends_by_reference_coordinates(read, header, ref_start - 1, ref_stop + 1)
+        } else if start < ref_start {
+            soft_clip_by_reference_coordinates(read, header, -1, ref_start - 1)
+        } else if stop > ref_stop {
+            soft_clip_by_reference_coordinates(read, header, ref_stop + 1, -1)
+        } else {
+            Ok(read.clone())
+        }
+    } else {
+        Ok(empty_read(read))
+    }
+}
+
+/// `ReadClipper.softClipByReadCoordinates`.
+///
+/// Clipping the whole read by read coordinates returns an empty read rather than an error, which
+/// is where this differs from the reference-coordinate path: there, a clip covering everything
+/// goes through `clipRead` and comes back empty by arithmetic; here it is checked up front.
+pub fn soft_clip_by_read_coordinates(
+    read: &BamRecord,
+    header: Option<&SamHeader>,
+    start: i32,
+    stop: i32,
+) -> Result<BamRecord, ClipError> {
+    if read.read_bases.is_empty() {
+        return Ok(empty_read(read));
+    }
+    if start == 0 && stop == read.read_bases.len() as i32 - 1 {
+        return Ok(empty_read(read));
+    }
+    let mut clipper = ReadClipper::new(read, header);
+    clipper.add_op(ClippingOp { start, stop });
+    clipper.clip_read(ClippingRepresentation::SoftclipBases)
 }

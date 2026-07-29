@@ -126,10 +126,12 @@ jobs:
         #   python3 tools/conformance/run_suite.py --suites "${{ matrix.suites }}"
         run: python3 tools/conformance/run_suite.py --suites "${{ matrix.suites }}"
 
-      - name: Publish any candidate goldens
-        # A `golden-pending` suite has no golden to compare against, and one may not be committed
-        # from a developer machine (decision 0008). The job publishes what the pinned container
-        # produced on real x86-64; committing that artefact is what makes the suite oracle-backed.
+      - name: Publish what the container produced
+        # Two cases, one artefact. A `golden-pending` suite has no golden to compare against and
+        # one may not be committed from a developer machine (decision 0008). An `oracle-backed`
+        # suite whose dump has grown a case needs its golden refreshed, and that refresh has to
+        # come from here for the same reason. Both land in tools/conformance/pending/, and
+        # committing the file is what makes the claim.
         if: always()
         uses: actions/upload-artifact@v4
         with:

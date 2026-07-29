@@ -5,3 +5,4 @@ target/
 /htsjdk/
 __pycache__/
 *.pyc
+tools/conformance/pending/

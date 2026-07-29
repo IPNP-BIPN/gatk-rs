@@ -155,9 +155,14 @@ def run_suite(manifest, suite, workdir):
         if build_fixtures(manifest, fixtures) != 0:
             print(f"FAIL {suite['id']}: could not build the fixtures")
             return 1
+    # The regenerated dumps are kept, not thrown away with the temporary directory. A dump that
+    # grows a case needs its golden refreshed, and the refresh may only come from the pinned
+    # container on real x86-64; without this the only way to update a golden was to have the image
+    # locally, which is how goldens of unknown provenance get committed in the first place.
+    PENDING_DIR.mkdir(parents=True, exist_ok=True)
     for case in suite["cases"]:
         dump = case["dump"]
-        out = Path(workdir) / f"{suite['id']}.{dump}.txt"
+        out = PENDING_DIR / f"{suite['id']}.{dump}.txt"
         rc = docker_run(manifest, suite["harness"], dump, props, out, fixtures)
         lines = sum(1 for _ in open(out))
         print(f"regenerated {dump}: {lines} lines (docker exit {rc})")

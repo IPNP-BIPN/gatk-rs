@@ -65,6 +65,46 @@ public class ReadClipperDump {
                     ReadClipper.hardClipToRegion(copy(record), start - 5, start - 2));
             emit(index, "revertSoftClipped", () ->
                     ReadClipper.revertSoftClippedBases(copy(record)));
+
+            // The soft-clip family. Its coordinates are the *unclipped* span, because
+            // softClipToRegionIncludingClippedBases tests the read's reach with its clipped bases
+            // counted, so a read can be inside a region its aligned part misses.
+            emit(index, "softToRegion@" + (start + 1) + "," + (end - 1), () ->
+                    ReadClipper.softClipToRegionIncludingClippedBases(
+                            copy(record), start + 1, end - 1));
+            emit(index, "softToRegion@" + (start - 5) + "," + (start - 2), () ->
+                    ReadClipper.softClipToRegionIncludingClippedBases(
+                            copy(record), start - 5, start - 2));
+            emit(index, "softToRegion@" + start + "," + end, () ->
+                    ReadClipper.softClipToRegionIncludingClippedBases(copy(record), start, end));
+            emit(index, "softBothEnds@" + start + "," + end, () ->
+                    ReadClipper.softClipBothEndsByReferenceCoordinates(copy(record), start, end));
+            emit(index, "softBothEnds@" + (start + 1) + "," + (end - 1), () ->
+                    ReadClipper.softClipBothEndsByReferenceCoordinates(
+                            copy(record), start + 1, end - 1));
+            // left == right: clipping both ends at one coordinate clips everything.
+            emit(index, "softBothEnds@" + start + "," + start, () ->
+                    ReadClipper.softClipBothEndsByReferenceCoordinates(copy(record), start, start));
+
+            // Read coordinates, not reference ones: the whole read, one end, and the middle, which
+            // is refused.
+            final int length = read.getLength();
+            emit(index, "softByRead@0," + (length - 1), () ->
+                    ReadClipper.softClipByReadCoordinates(copy(record), 0, length - 1));
+            emit(index, "softByRead@0,2", () ->
+                    ReadClipper.softClipByReadCoordinates(copy(record), 0, 2));
+            emit(index, "softByRead@" + (length - 3) + "," + (length - 1), () ->
+                    ReadClipper.softClipByReadCoordinates(copy(record), length - 3, length - 1));
+            emit(index, "softByRead@1,2", () ->
+                    ReadClipper.softClipByReadCoordinates(copy(record), 1, 2));
+
+            // Hard-clipping the soft clips away, with and without extra aligned bases.
+            for (final int extra : new int[] {0, 1, 3}) {
+                emit(index, "hardClipSoftClipped@" + extra, () ->
+                        ReadClipper.hardClipSoftClippedBases(copy(record), extra));
+            }
+            emit(index, "hardClipAdaptor", () ->
+                    ReadClipper.hardClipAdaptorSequence(copy(record)));
             for (final byte lowQual : new byte[] {0, 20, 30}) {
                 emit(index, "hardClipLowQual@" + lowQual, () ->
                         ReadClipper.hardClipLowQualEnds(copy(record), lowQual));

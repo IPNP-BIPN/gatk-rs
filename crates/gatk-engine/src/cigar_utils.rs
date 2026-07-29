@@ -8,6 +8,19 @@ use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 
 use crate::cigar_builder::{CigarBuilder, CigarError};
 
+/// `CigarUtils.countRefBasesAndClips`: reference-consuming elements plus **both** kinds of clip.
+///
+/// The distinction from `countRefBasesAndSoftClips`, which excludes hard clips, is what makes the
+/// difference between the span of the read as sequenced and the span of what is left of it. This
+/// one is used to place a read that has already lost bases to hard clipping.
+pub fn count_ref_bases_and_clips(elements: &[CigarElement]) -> i32 {
+    elements
+        .iter()
+        .filter(|e| e.op.consumes_reference_bases() || e.op == Op::S || e.op == Op::H)
+        .map(|e| e.length as i32)
+        .sum()
+}
+
 /// `CigarUtils.clipCigar(cigar, start, stop, clippingOperator)`.
 ///
 /// `start` is inclusive and `stop` exclusive, both in **read** coordinates, and `start == 0` is
