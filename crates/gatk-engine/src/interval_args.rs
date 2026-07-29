@@ -1,6 +1,6 @@
-//! Ported from `IntervalArgumentCollection.parseIntervals`, `IntervalUtils.loadIntervals`,
-//! `GenomeLocParser.createPaddedGenomeLoc` and `GenomeLocSortedSet.subtractRegions`
-//! (GATK 4.6.2.0).
+//! Ported from `org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection`,
+//! `org.broadinstitute.hellbender.utils.IntervalUtils`, `.GenomeLocParser` and
+//! `.GenomeLocSortedSet` (GATK 4.6.2.0).
 //!
 //! `IntervalWalker.traverse` is five lines: it iterates `userIntervals` and calls `apply` on each.
 //! Every decision the traversal makes was already taken before it starts, when `-L`, `-XL`,
