@@ -128,19 +128,31 @@ fn corpus(text: &str) -> Vec<BamRecord> {
     }
 
     // Tags travel on their own rows: an OA value ends with a semicolon, so any in-line separator
-    // would collide with the data it carries.
+    // would collide with the data it carries. The type travels with them because `tp` is a byte
+    // array, and printing one as text would carry its identity hash into the corpus.
     for line in text.lines() {
-        let mut parts = line.splitn(4, '\t');
+        let mut parts = line.splitn(5, '\t');
         if parts.next() != Some("tag") {
             continue;
         }
         let index: usize = parts.next().unwrap().parse().unwrap();
         let name = parts.next().expect("a tag row has a name").as_bytes();
+        let kind = parts.next().expect("a tag row has a type");
         let value = parts.next().expect("a tag row has a value");
-        records[index].tags.insert(
-            htsjdk_bam::Tag::new(&[name[0], name[1]]),
-            htsjdk_bam::tag::TagValue::Str(value.to_string()),
-        );
+        let parsed = match kind {
+            "bytes" => htsjdk_bam::tag::TagValue::ByteArray {
+                values: value
+                    .split(',')
+                    .filter(|v| !v.is_empty())
+                    .map(|v| v.parse().expect("a signed byte"))
+                    .collect(),
+                unsigned: false,
+            },
+            _ => htsjdk_bam::tag::TagValue::Str(value.to_string()),
+        };
+        records[index]
+            .tags
+            .insert(htsjdk_bam::Tag::new(&[name[0], name[1]]), parsed);
     }
     assert!(!records.is_empty(), "the golden carries no records");
     records
@@ -208,27 +220,33 @@ fn every_filter_matches_the_reference_decision_for_decision() {
             records
                 .iter()
                 .map(|read| {
-                    let kept = match label {
-                        "HasReadGroupWithHeader" => gatk_readfilter::has_read_group(read),
+                    let kept: Option<bool> = match label {
+                        "HasReadGroupWithHeader" => Some(gatk_readfilter::has_read_group(read)),
                         "AlignmentAgreesWithHeaderReadFilter" => {
-                            with_header::alignment_agrees_with_header(read, &header)
+                            Some(with_header::alignment_agrees_with_header(read, &header))
                         }
-                        "WellformedReadFilter" => with_header::wellformed(read, &header),
-                        "LibraryReadFilter" => with_header::library(read, &header, &values),
-                        "SampleReadFilter" => with_header::sample(read, &header, &values),
-                        "PlatformReadFilter" => with_header::platform(read, &header, &values),
+                        "WellformedReadFilter" => Some(with_header::wellformed(read, &header)),
+                        "LibraryReadFilter" => Some(with_header::library(read, &header, &values)),
+                        "SampleReadFilter" => Some(with_header::sample(read, &header, &values)),
+                        "PlatformReadFilter" => Some(with_header::platform(read, &header, &values)),
                         "PlatformUnitReadFilter" => {
-                            with_header::platform_unit(read, &header, &values)
+                            Some(with_header::platform_unit(read, &header, &values))
                         }
                         "ReadGroupBlackListReadFilter" => {
-                            with_header::read_group_black_list(read, &header, &values)
+                            Some(with_header::read_group_black_list(read, &header, &values))
+                        }
+                        "ReadGroupHasFlowOrderReadFilter" => {
+                            Some(with_header::read_group_has_flow_order(read, &header))
+                        }
+                        "WellformedFlowBasedReadFilter" => {
+                            with_header::wellformed_flow_based(read, &header)
                         }
                         _ => panic!("{name} is in the golden but not ported; add it or remove it"),
                     };
-                    if kept {
-                        '1'
-                    } else {
-                        '0'
+                    match kept {
+                        Some(true) => '1',
+                        Some(false) => '0',
+                        None => 'E',
                     }
                 })
                 .collect()

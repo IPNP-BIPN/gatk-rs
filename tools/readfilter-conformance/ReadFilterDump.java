@@ -42,6 +42,11 @@ import org.broadinstitute.hellbender.engine.filters.ReadGroupBlackListReadFilter
 import org.broadinstitute.hellbender.engine.filters.ReadGroupReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadTagValueFilter;
 import org.broadinstitute.hellbender.engine.filters.SoftClippedReadFilter;
+import org.broadinstitute.hellbender.engine.filters.flow.FlowBasedTPAttributeSymetricReadFilter;
+import org.broadinstitute.hellbender.engine.filters.flow.FlowBasedTPAttributeValidReadFilter;
+import org.broadinstitute.hellbender.engine.filters.flow.HmerQualitySymetricReadFilter;
+import org.broadinstitute.hellbender.engine.filters.flow.ReadGroupHasFlowOrderReadFilter;
+import org.broadinstitute.hellbender.engine.filters.flow.WellformedFlowBasedReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformReadFilter;
 import org.broadinstitute.hellbender.engine.filters.PlatformUnitReadFilter;
 import org.broadinstitute.hellbender.engine.filters.SampleReadFilter;
@@ -191,6 +196,17 @@ public class ReadFilterDump {
         map.put("ReadGroupBlackListReadFilter(blacklist=PU:unit)", blackList("PU:unit"));
         map.put("ReadGroupBlackListReadFilter(blacklist=ID:rg2+PL:ILLUMINA)",
                 blackList("ID:rg2", "PL:ILLUMINA"));
+
+        // The flow-based family. All three hmer filters walk the read's homopolymers and index an
+        // array of per-base values, so a short array is an exception rather than a decision, and a
+        // read with no cigar dereferences a null first element.
+        map.put("HmerQualitySymetricReadFilter()", new HmerQualitySymetricReadFilter());
+        map.put("FlowBasedTPAttributeSymetricReadFilter()",
+                new FlowBasedTPAttributeSymetricReadFilter());
+        map.put("FlowBasedTPAttributeValidReadFilter(maxHmer=12)", tpValid(12));
+        map.put("FlowBasedTPAttributeValidReadFilter(maxHmer=20)", tpValid(20));
+        map.put("ReadGroupHasFlowOrderReadFilter()", new ReadGroupHasFlowOrderReadFilter());
+        map.put("WellformedFlowBasedReadFilter()", new WellformedFlowBasedReadFilter());
         return map;
     }
 
@@ -216,6 +232,12 @@ public class ReadFilterDump {
                         e);
             }
         }
+        return filter;
+    }
+
+    static FlowBasedTPAttributeValidReadFilter tpValid(final int maxHmer) {
+        final FlowBasedTPAttributeValidReadFilter filter = new FlowBasedTPAttributeValidReadFilter();
+        filter.maxHmer = maxHmer;
         return filter;
     }
 
@@ -289,9 +311,9 @@ public class ReadFilterDump {
                     seq.getSequenceIndex(), seq.getSequenceName(), seq.getSequenceLength());
         }
         for (final SAMReadGroupRecord group : header.getReadGroups()) {
-            System.out.printf("rg\t%s\tLB=%s\tSM=%s\tPL=%s\tPU=%s%n",
+            System.out.printf("rg\t%s\tLB=%s\tSM=%s\tPL=%s\tPU=%s\tFO=%s%n",
                     group.getId(), group.getLibrary(), group.getSample(),
-                    group.getPlatform(), group.getPlatformUnit());
+                    group.getPlatform(), group.getPlatformUnit(), group.getFlowOrder());
         }
 
         for (int i = 0; i < corpus.size(); i++) {
@@ -299,8 +321,13 @@ public class ReadFilterDump {
             System.out.printf("record\t%d\t%s%n", i, fields(record));
             // Tags get their own rows rather than a delimited column: an OA value ends with a
             // semicolon of its own, so any in-line separator collides with the data it carries.
+            //
+            // The type travels with the value because `tp` is a byte array, and String.valueOf of
+            // a byte[] is its identity hash: the corpus would carry "[B@4f3f5b24" and the port
+            // would compare against a memory address.
             for (final SAMRecord.SAMTagAndValue tag : record.getAttributes()) {
-                System.out.printf("tag\t%d\t%s\t%s%n", i, tag.tag, String.valueOf(tag.value));
+                System.out.printf("tag\t%d\t%s\t%s\t%s%n",
+                        i, tag.tag, tagType(tag.value), tagValue(tag.value));
             }
         }
 
@@ -347,6 +374,17 @@ public class ReadFilterDump {
         rg2.setPlatform("PACBIO");
         rg2.setPlatformUnit("unit-rg2");
         h.addReadGroup(rg2);
+
+        // A third group carrying a flow order, which is the only thing separating a flow-based
+        // read from any other read as far as ReadGroupHasFlowOrderReadFilter is concerned. rg1 and
+        // rg2 deliberately have none, so the filter has both answers to give.
+        final SAMReadGroupRecord rg3 = new SAMReadGroupRecord("rg3");
+        rg3.setSample("sample3");
+        rg3.setLibrary("lib3");
+        rg3.setPlatform("ULTIMA");
+        rg3.setPlatformUnit("unit-rg3");
+        rg3.setFlowOrder("TGCA");
+        h.addReadGroup(rg3);
         return h;
     }
 
@@ -521,6 +559,46 @@ public class ReadFilterDump {
         r.setAttribute("TV", "high");
         out.add(r);
 
+        // The flow-based family. Every record here has the same homopolymer structure,
+        // AAA CC GG TTT, so the four hmer boundaries are fixed and only the per-base values move.
+        //
+        // `tp` is a *byte array*, which is why the tag rows carry a type: the filters index it
+        // base by base, and a short array is an index out of bounds rather than a decision.
+        final byte[] symmetricQuals = {30, 20, 30, 25, 25, 40, 40, 10, 5, 10};
+        final byte[] symmetricTp = {1, 0, 1, 0, 0, -1, -1, 1, 0, 1};
+        final byte[] asymmetricFirstHmerTp = {1, 0, 0, 0, 0, -1, -1, 1, 0, 1};
+
+        out.add(flowRead(header, "flow_ok", 1660, "10M", symmetricQuals, symmetricTp, "rg3"));
+        out.add(flowRead(header, "flow_tp_asymmetric", 1650, "10M",
+                symmetricQuals, asymmetricFirstHmerTp, "rg3"));
+
+        // The same asymmetry, exempted because the first hmer sits behind a hard clip.
+        out.add(flowRead(header, "flow_hard_clipped_edge", 1640, "2H10M",
+                symmetricQuals, asymmetricFirstHmerTp, "rg3"));
+
+        // tp + hmer length outside [0, maxHmer], above and below: 10 + 3 exceeds 12 but not 20,
+        // while -5 + 3 is negative under either.
+        out.add(flowRead(header, "flow_tp_too_high", 1630, "10M", symmetricQuals,
+                new byte[] {10, 10, 10, 0, 0, -1, -1, 1, 0, 1}, "rg3"));
+        out.add(flowRead(header, "flow_tp_negative", 1620, "10M", symmetricQuals,
+                new byte[] {-5, -5, -5, 0, 0, -1, -1, 1, 0, 1}, "rg3"));
+
+        // Qualities that are not a palindrome inside the first hmer, tp untouched.
+        out.add(flowRead(header, "flow_qual_asymmetric", 1610, "10M",
+                new byte[] {30, 20, 25, 25, 25, 40, 40, 10, 5, 10}, symmetricTp, "rg3"));
+
+        // No tp at all: getAttributeAsByteArray returns null, which the helper turns into a plain
+        // rejection rather than an error.
+        out.add(flowRead(header, "flow_no_tp", 1600, "10M", symmetricQuals, null, "rg3"));
+
+        // A tp shorter than the read: the walk indexes past its end.
+        out.add(flowRead(header, "flow_tp_short", 1590, "10M", symmetricQuals,
+                new byte[] {1, 0, 1, 0}, "rg3"));
+
+        // Everything a flow read needs, in a read group that declares no flow order.
+        out.add(flowRead(header, "flow_no_flow_order", 1580, "10M",
+                symmetricQuals, symmetricTp, "rg1"));
+
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.
         r = read(header, "no_qualities", 0, 0, 1700, 60, "10M", 0, 0, 0, true);
         r.setBaseQualities(SAMRecord.NULL_QUALS);
@@ -554,6 +632,40 @@ public class ReadFilterDump {
         r.setReadBases("ACGTACGTAC".getBytes());
         r.setBaseQualities(new byte[] {30, 30, 30, 30, 30, 30, 30, 30, 30, 30});
         if (readGroup) r.setAttribute("RG", "rg1");
+        return r;
+    }
+
+    static String tagType(final Object value) {
+        return value instanceof byte[] ? "bytes" : "text";
+    }
+
+    /** A byte array as signed decimals, everything else as its own text. */
+    static String tagValue(final Object value) {
+        if (!(value instanceof byte[])) {
+            return String.valueOf(value);
+        }
+        final StringBuilder text = new StringBuilder();
+        for (final byte b : (byte[]) value) {
+            if (text.length() != 0) text.append(',');
+            text.append(b);
+        }
+        return text.toString();
+    }
+
+    /** A read whose homopolymers are what the flow filters walk: AAA CC GG TTT. */
+    static SAMRecord flowRead(
+            final SAMFileHeader header,
+            final String name,
+            final int start,
+            final String cigar,
+            final byte[] quals,
+            final byte[] tp,
+            final String readGroup) {
+        final SAMRecord r = read(header, name, 0, 0, start, 60, cigar, 0, 0, 0, false);
+        r.setReadBases("AAACCGGTTT".getBytes());
+        r.setBaseQualities(quals);
+        r.setAttribute("RG", readGroup);
+        if (tp != null) r.setAttribute("tp", tp);
         return r;
     }
 

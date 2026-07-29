@@ -566,6 +566,12 @@ pub enum Parameterized {
         op: TagOperator,
         value: f32,
     },
+    /// `HmerQualitySymetricReadFilter`: the base qualities must be a palindrome inside each hmer.
+    HmerQualitySymmetric,
+    /// `FlowBasedTPAttributeSymetricReadFilter`: the same test on the `tp` tag.
+    FlowTpSymmetric,
+    /// `FlowBasedTPAttributeValidReadFilter`.
+    FlowTpValid { max_hmer: i32 },
 }
 
 /// `ReadTagValueFilter.Operator`.
@@ -792,6 +798,31 @@ impl Parameterized {
                         .map(|tag_value| op.apply(tag_value, *value)),
                 }
             }
+            Parameterized::HmerQualitySymmetric => {
+                // getBaseQualitiesNoCopy() is never null, so this filter reaches the cigar for
+                // every read, including the ones that have none.
+                let quals: Vec<i8> = read.base_qualities.iter().map(|q| *q as i8).collect();
+                flow::hmer_scan(read, Some(&quals), flow::is_palindrome)
+            }
+            Parameterized::FlowTpSymmetric => match flow::flow_matrix(read) {
+                flow::FlowMatrix::Absent => flow::hmer_scan(read, None, flow::is_palindrome),
+                flow::FlowMatrix::Values(values) => {
+                    flow::hmer_scan(read, Some(&values), flow::is_palindrome)
+                }
+                flow::FlowMatrix::TypeMismatch => None,
+            },
+            Parameterized::FlowTpValid { max_hmer } => {
+                let in_range = |values: &[i8], offset: usize, length: usize| {
+                    flow::tp_in_range(values, offset, length, *max_hmer)
+                };
+                match flow::flow_matrix(read) {
+                    flow::FlowMatrix::Absent => flow::hmer_scan(read, None, in_range),
+                    flow::FlowMatrix::Values(values) => {
+                        flow::hmer_scan(read, Some(&values), in_range)
+                    }
+                    flow::FlowMatrix::TypeMismatch => None,
+                }
+            }
         }
     }
 
@@ -869,6 +900,11 @@ impl Parameterized {
                 keep: values.get("keep")?.to_string(),
             },
             "NotOpticalDuplicateReadFilter" => Parameterized::NotOpticalDuplicate,
+            "HmerQualitySymetricReadFilter" => Parameterized::HmerQualitySymmetric,
+            "FlowBasedTPAttributeSymetricReadFilter" => Parameterized::FlowTpSymmetric,
+            "FlowBasedTPAttributeValidReadFilter" => Parameterized::FlowTpValid {
+                max_hmer: int("maxHmer")?,
+            },
             "MetricsReadFilter" => Parameterized::Metrics {
                 pf_read_only: flag("pfReadOnly")?,
                 aligned_reads_only: flag("alignedReadsOnly")?,
@@ -901,6 +937,116 @@ pub fn is_regular_base(base: u8) -> bool {
         base,
         b'A' | b'a' | b'C' | b'c' | b'G' | b'g' | b'T' | b't' | b'*'
     )
+}
+
+/// The flow-based filters, which walk a read's homopolymers.
+///
+/// Ported from `org.broadinstitute.hellbender.engine.filters.flow`. All three hmer filters share
+/// `FlowBasedHmerBasedReadFilterHelper.test`, which is where the two ways they stop being total
+/// functions live: it dereferences the cigar's first and last element, and it hands each hmer's
+/// offset and length to a test that indexes an array of per-base values. An empty cigar throws,
+/// and a value array shorter than the read throws.
+pub mod flow {
+    use super::*;
+
+    /// `FlowBasedRead.FLOW_MATRIX_TAG_NAME`.
+    pub const FLOW_MATRIX_TAG: [u8; 2] = *b"tp";
+
+    /// `FlowBasedHmerBasedReadFilterHelper.test`, with the per-hmer predicate supplied.
+    ///
+    /// `None` where the reference throws. The `values == null` check comes first, so a read
+    /// without the tag is rejected before the cigar is ever touched: that ordering is why a read
+    /// with no cigar *and* no `tp` is a rejection for the tp filters and an exception for the
+    /// quality one.
+    pub fn hmer_scan(
+        read: &BamRecord,
+        values: Option<&[i8]>,
+        test_hmer: impl Fn(&[i8], usize, usize) -> Option<bool>,
+    ) -> Option<bool> {
+        let Some(values) = values else {
+            return Some(false);
+        };
+        // getFirstCigarElement() returns null on an empty cigar, so .getOperator() throws.
+        let start_hard_clipped = read.cigar.elements.first()?.op == Op::H;
+        let end_hard_clipped = read.cigar.elements.last()?.op == Op::H;
+
+        // BaseUtils.HmerIterator: runs of one repeated base, over the bases as stored.
+        let bases = &read.read_bases;
+        let mut offset = 0;
+        while offset < bases.len() {
+            let base = bases[offset];
+            let mut length = 1;
+            while offset + length < bases.len() && bases[offset + length] == base {
+                length += 1;
+            }
+            let first = offset == 0;
+            let last = offset + length >= bases.len();
+            // An hmer at a hard-clipped edge is exempt: it is a fragment of a longer homopolymer
+            // whose other half was clipped away, so it has no reason to be symmetric.
+            if !((first && start_hard_clipped) || (last && end_hard_clipped))
+                && !test_hmer(values, offset, length)?
+            {
+                return Some(false);
+            }
+            offset += length;
+        }
+        Some(true)
+    }
+
+    /// `FlowBasedHmerBasedReadFilterHelper.isPalindrome`.
+    pub fn is_palindrome(values: &[i8], offset: usize, length: usize) -> Option<bool> {
+        for i in 0..length / 2 {
+            // Indexing past the end is an ArrayIndexOutOfBoundsException in the reference, which
+            // the golden records as its own outcome.
+            if values.get(offset + i)? != values.get(offset + length - 1 - i)? {
+                return Some(false);
+            }
+        }
+        Some(true)
+    }
+
+    /// `FlowBasedTPAttributeValidReadFilter.testHmer`: `tp + hmerLength` inside `[0, maxHmer]`.
+    pub fn tp_in_range(values: &[i8], offset: usize, length: usize, max_hmer: i32) -> Option<bool> {
+        for i in 0..length {
+            let target = i32::from(*values.get(offset + i)?) + length as i32;
+            if target < 0 || target > max_hmer {
+                return Some(false);
+            }
+        }
+        Some(true)
+    }
+
+    /// What `getAttributeAsByteArray` can return, kept apart rather than collapsed.
+    ///
+    /// Absent and mistyped are different outcomes: an absent tag makes the filter answer false,
+    /// while a tag of the wrong type throws `ReadAttributeTypeMismatch`. Folding them together
+    /// would turn a crash into a dropped read.
+    pub enum FlowMatrix {
+        Absent,
+        Values(Vec<i8>),
+        TypeMismatch,
+    }
+
+    /// The `tp` tag as signed bytes.
+    pub fn flow_matrix(read: &BamRecord) -> FlowMatrix {
+        let Some((_, value)) = read
+            .tags
+            .iter()
+            .find(|(tag, _)| tag.name() == FLOW_MATRIX_TAG)
+        else {
+            return FlowMatrix::Absent;
+        };
+        match value {
+            htsjdk_bam::tag::TagValue::ByteArray { values, .. } => {
+                FlowMatrix::Values(values.clone())
+            }
+            // getAttributeAsByteArray takes a String's bytes, and throws for anything else.
+            htsjdk_bam::tag::TagValue::Str(text) => {
+                FlowMatrix::Values(text.as_bytes().iter().map(|b| *b as i8).collect())
+            }
+            _ => FlowMatrix::TypeMismatch,
+        }
+    }
 }
 
 /// The filters that need the file header.
@@ -1040,6 +1186,33 @@ pub mod with_header {
             Some(contig) => read.alignment_start <= contig.length,
             None => false,
         }
+    }
+
+    /// `ReadGroupHasFlowOrderReadFilter`: the read's group must be declared and carry `FO`.
+    pub fn read_group_has_flow_order(read: &BamRecord, header: &SamHeader) -> bool {
+        attribute(read, header, "FO").is_some()
+    }
+
+    /// `WellformedFlowBasedReadFilter`: `WellformedReadFilter` and then the four flow checks.
+    ///
+    /// `None` where the reference throws. The conjunction is `ReadFilter.and`, which
+    /// short-circuits, so the order is what decides whether an exception is reached at all: a read
+    /// that fails the wellformed check never reaches the hmer walk that would have thrown on it.
+    /// Ported as the same chain in the same order for that reason.
+    pub fn wellformed_flow_based(read: &BamRecord, header: &SamHeader) -> Option<bool> {
+        if !wellformed(read, header) || !read_group_has_flow_order(read, header) {
+            return Some(false);
+        }
+        for filter in [
+            Parameterized::HmerQualitySymmetric,
+            Parameterized::FlowTpValid { max_hmer: 12 },
+            Parameterized::FlowTpSymmetric,
+        ] {
+            if !filter.decide(read)? {
+                return Some(false);
+            }
+        }
+        Some(true)
     }
 
     /// `WellformedReadFilter`, which is the conjunction of seven filters plus the header check.
@@ -1320,6 +1493,56 @@ mod tests {
             htsjdk_bam::tag::TagValue::Str("rg1".to_string()),
         );
         assert_eq!(filter.decide(&read), Some(true));
+    }
+
+    fn flow_read(cigar: &str, quals: &[u8]) -> BamRecord {
+        BamRecord {
+            cigar: htsjdk_bam::text_parse::parse_cigar(cigar).unwrap(),
+            read_bases: b"AAACCGGTTT".to_vec(),
+            base_qualities: quals.to_vec(),
+            ..mapped_read()
+        }
+    }
+
+    /// An hmer at a hard-clipped edge is exempt, and only at that edge.
+    #[test]
+    fn hard_clipped_edge_hmers_are_exempt() {
+        let asymmetric_first = [30, 20, 25, 25, 25, 40, 40, 10, 5, 10];
+        let filter = Parameterized::HmerQualitySymmetric;
+        assert_eq!(
+            filter.decide(&flow_read("10M", &asymmetric_first)),
+            Some(false)
+        );
+        assert_eq!(
+            filter.decide(&flow_read("2H10M", &asymmetric_first)),
+            Some(true)
+        );
+        // A hard clip at the other end does not exempt the first hmer.
+        assert_eq!(
+            filter.decide(&flow_read("10M2H", &asymmetric_first)),
+            Some(false)
+        );
+    }
+
+    /// An empty cigar dereferences a null first element rather than deciding.
+    #[test]
+    fn a_read_without_a_cigar_throws_in_the_hmer_walk() {
+        let mut read = flow_read("10M", &[30; 10]);
+        read.cigar.elements.clear();
+        assert_eq!(Parameterized::HmerQualitySymmetric.decide(&read), None);
+    }
+
+    /// A value array shorter than the read is an index out of bounds, not a rejection.
+    #[test]
+    fn a_short_value_array_throws() {
+        assert_eq!(flow::is_palindrome(&[1, 0, 1, 0], 8, 3), None);
+        assert_eq!(flow::tp_in_range(&[1, 0, 1, 0], 8, 3, 12), None);
+        // Absent values are a rejection, which is a different thing.
+        let read = flow_read("10M", &[30; 10]);
+        assert_eq!(
+            flow::hmer_scan(&read, None, flow::is_palindrome),
+            Some(false)
+        );
     }
 
     #[test]
