@@ -106,10 +106,10 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/1"
+            index: "1/2"
             suites: "readfilters readsdatasource referencecontext readwalker printreads"
-          - group: golden-pending
-            index: "1/1"
+          - group: oracle-backed
+            index: "2/2"
             suites: "intervalwalker"
     steps:
       - uses: actions/checkout@v4

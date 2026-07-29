@@ -131,7 +131,7 @@
     {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "IntervalWalker.traverse is five lines over userIntervals, so the traversal is the list and the list is IntervalArgumentCollection: -L, -XL, --interval-padding, --interval-exclusion-padding, --interval-set-rule and --interval-merging-rule. The probe runs a real IntervalWalker through the real command line for 24 combinations of those, and records what reached apply. The decisions it pins are not in the argument names: padding is clamped to the contig rather than extended past it, getIntervalsWithFlanks merges padded intervals with ALL whatever --interval-merging-rule says, INTERSECTION is a running fold whose empty accumulator makes a single -L the identity, an empty intersection is an error rather than an empty traversal, -XL with no -L subtracts from the whole reference, and -XL inside an interval splits it in two.",
@@ -144,7 +144,9 @@
       "$expect_why": "The two failing set operations must fail, and the split that -XL performs in the middle of an interval must produce a second apply call.",
       "cases": [
         {
-          "dump": "IntervalWalkerDump"
+          "dump": "IntervalWalkerDump",
+          "golden": "crates/gatk-tools/tests/data/interval_walker.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. Two of its rows were not what reading the classes predicted: -XL chr1 with no -L is a MissingArgument, because requiresIntervals() makes -L a required Barclay argument and the whole-reference branch of parseIntervals is unreachable from this walker; and padding two arguments that come to overlap merges them even under OVERLAPPING_ONLY, because getIntervalsWithFlanks hard-codes ALL."
         }
       ]
     }

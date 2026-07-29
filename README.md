@@ -57,7 +57,7 @@ argument schemas, branch names, and the differential test matrix.
 | covering arrays | generated and verified per tool: [what pairwise coverage costs](docs/what-pairwise-coverage-costs.md) |
 | oracle image | digest-pinned `linux/amd64`, GATK 4.6.2.0, probe asserts the contract during the build |
 | `gatk-readfilter` | 55 of the 56 read filters, oracle-backed: 79 instances over 59 records, 4,661 decisions identical to the reference. The exception is `JexlExpressionReadTagValueFilter`, which needs a JEXL expression engine |
-| `gatk-tools` | **`PrintReads`, byte-identical**: six output BAMs and their `.bai` indexes compared byte for byte against the pinned reference, under the JDK deflater. Plus the `ReadWalker` traversal it rests on: 49 `apply` calls over 9 traversals, each compared with the reference window and bases it arrived with |
+| `gatk-tools` | **`PrintReads`, byte-identical**: six output BAMs and their `.bai` indexes compared byte for byte against the pinned reference, under the JDK deflater. Plus the two traversals underneath: `ReadWalker`, 49 `apply` calls over 9 traversals, and `IntervalWalker`, 25 `apply` calls over 24 argument combinations of `-L`, `-XL`, padding, set rule and merging rule, with the three the reference refuses refused for the same reason |
 | `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` in full, all 14 entry points (3,068 clipped reads), `ReferenceDataSource` (45 queries), `ReadsDataSource` (29 interval queries against a fixture BAM and its `.bai`), and `ReferenceContext` (352 window answers) |
 
 `gatk-engine` depends on `noodles` for indexed FASTA and `.bai` plumbing while porting and
