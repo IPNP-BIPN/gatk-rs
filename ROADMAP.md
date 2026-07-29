@@ -74,8 +74,11 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 - [x] `-L` / `-XL`, padding, `--interval-set-rule`, `--interval-merging-rule`, subtraction
       (measured through `IntervalWalker`, 24 combinations)
-- [ ] interval **files** (`.list`, `.intervals`, Picard `.interval_list`, and the Feature-file
-      path through `FeatureManager.isFeatureFile`)
+- [x] interval **files**: `.list` and `.intervals` (lower-cased extension test, blank-line
+      skipping, the empty-file refusal, and the order of the four tests in
+      `parseIntervalArguments`), 13 arguments compared
+- [ ] the Feature-file path (`.interval_list`, `.bed`, VCF): the seam exists and is named
+      (`NoFeatureSources`), the codecs arrive with G1.3
 - [ ] `-L unmapped` end to end, on a walker that can actually traverse unmapped reads
 
 ### G1.5 The pileup floor

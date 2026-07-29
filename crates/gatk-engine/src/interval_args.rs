@@ -298,11 +298,17 @@ impl FeatureIntervals for NoFeatureSources {
 
 /// `IntervalUtils.parseIntervalArguments(parser, arg)`: one argument to a list of intervals.
 ///
-/// The order of the tests is the reference's and is observable. A Feature file is recognised
-/// first, so a `.list` that also parses as a Feature file goes down the Feature path; the
-/// interval-file test comes second and *throws* when the extension matches but the file is
-/// missing; only then does an existing file that is neither become an error; and only a
-/// non-existent argument with neither extension is parsed as a literal interval.
+/// The order of the tests is the reference's and is observable, but not in the way the code
+/// suggests. `FeatureManager.isFeatureFile` asks every registered codec whether it `canDecode`
+/// the path, and the codecs that matter here answer by **extension**, not by content: measured
+/// against the reference, a `.list` file holding a BED body is *not* a Feature file, falls through
+/// to the interval-file reader, and dies parsing `chr1\t0\t10` as a genome location.
+///
+/// What remains observable: the interval-file test is by lower-cased extension only and *throws*
+/// when the extension matches but the file is missing, rather than falling through; an existing
+/// file that is neither Features nor intervals is an error naming both; and only a non-existent
+/// argument with neither extension is parsed as a literal interval, which is why a typo in a
+/// filename surfaces as a missing contig.
 pub fn parse_interval_arguments(
     query: &str,
     header: &SamHeader,

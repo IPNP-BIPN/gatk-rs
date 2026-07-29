@@ -185,14 +185,16 @@
     {
       "id": "intervalfile",
       "title": "What one -L argument resolves to",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "IntervalWalkerDump measures what happens once the intervals exist; this measures the step before it. IntervalUtils.parseIntervalArguments decides whether a -L string is a Feature file, a GATK interval file, a file it refuses, or a literal interval, and the order of those tests is the behaviour. A Feature file is recognised first by asking every codec, so a .list holding a BED body goes down the Feature path and never reaches the interval-file reader; the interval-file test is by lower-cased extension only and throws when the extension matches but the file is absent, because a contig name may contain a period and the contents cannot be consulted; an existing file that is neither is an error naming both; and only a non-existent argument with neither extension is parsed as a literal, which is why a typo in a filename surfaces as a missing contig. .interval_list and .bed are in the probe because they are Feature files rather than interval files, which their names do not suggest.",
+      "why": "IntervalWalkerDump measures what happens once the intervals exist; this measures the step before it. IntervalUtils.parseIntervalArguments decides whether a -L string is a Feature file, a GATK interval file, a file it refuses, or a literal interval, and the order of those tests is the behaviour. A Feature file is recognised first by asking every codec, but the codecs answer canDecode by extension rather than by content, which the golden settled: a .list holding a BED body is NOT a Feature file, falls through to the interval-file reader, and dies parsing chr1<tab>0<tab>10 as a genome location. The interval-file test is by lower-cased extension only and throws when the extension matches but the file is absent, because a contig name may contain a period and the contents cannot be consulted; an existing file that is neither is an error naming both; and only a non-existent argument with neither extension is parsed as a literal, which is why a typo in a filename surfaces as a missing contig. .interval_list and .bed are in the probe because they are Feature files rather than interval files, which their names do not suggest.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "IntervalFileDump"
+          "dump": "IntervalFileDump",
+          "golden": "crates/gatk-engine/tests/data/interval_file.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. Two of its fifteen rows are not compared by the port yet and are named in the test rather than skipped quietly: .interval_list and .bed resolve through Feature codecs, which arrive with G1.3, and the test asserts the port refuses them today for the documented reason so the assertion fails the moment the seam is filled."
         }
       ]
     }
