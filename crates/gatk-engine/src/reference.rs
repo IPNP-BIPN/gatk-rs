@@ -73,6 +73,12 @@ impl ReferenceFileSource {
             .map(|(_, length)| *length)
     }
 
+    /// `getSequenceDictionary().getSequence(contig).getSequenceLength()`, or `None` where the
+    /// reference has no such contig and throws.
+    pub fn sequence_length(&self, contig: &str) -> Option<usize> {
+        self.length_of(contig)
+    }
+
     /// `ReferenceDataSource.queryAndPrefetch(interval)`: the bases of `[start, stop]`, 1-based and
     /// inclusive, upper-cased and with IUPAC codes flattened to `N`.
     pub fn query(

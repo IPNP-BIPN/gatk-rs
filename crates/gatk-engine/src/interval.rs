@@ -30,6 +30,23 @@ const CONTIG_SEPARATOR: char = ':';
 const START_END_SEPARATOR: char = '-';
 
 impl SimpleInterval {
+    /// `new SimpleInterval(contig, start, end)`, which **validates**: a start below 1 or an end
+    /// before the start is an `IllegalArgumentException`, not a clamp.
+    ///
+    /// Worth having as a constructor rather than leaving the struct open, because callers in the
+    /// reference build intervals by arithmetic (`start - padding`, `end + padding`) and the throw
+    /// is how a padding that runs off the front of a contig is reported.
+    pub fn new(contig: &str, start: i32, end: i32) -> Option<SimpleInterval> {
+        if !SimpleInterval::is_valid(start, end) {
+            return None;
+        }
+        Some(SimpleInterval {
+            contig: contig.to_string(),
+            start,
+            end,
+        })
+    }
+
     /// `SimpleInterval.isValid`.
     pub fn is_valid(start: i32, end: i32) -> bool {
         start > 0 && end >= start

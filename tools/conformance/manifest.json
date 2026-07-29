@@ -72,6 +72,29 @@
           "why": "Produced by the pinned container on a real x86-64 runner and downloaded from that run's artifact, which is the only provenance this programme accepts for a golden. Three of its answers are worth naming: a query at 500-500 does not return the mapped read that starts at 500 with an empty cigar, because its alignment end is 499; a query at 495-505 does; and 499-499 stops the traversal outright."
         }
       ]
+    },
+    {
+      "id": "referencecontext",
+      "title": "ReferenceContext windows",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "A walker never queries the reference directly: it is handed a window around its position, and three of that window's behaviours are decisions. Near a contig edge the window is silently smaller than requested and numWindowLeadingBases reports what was obtained rather than what was asked for; getBases(leading, trailing) expands the window rather than the interval, so the expansions compose; and getKmerAround returns null rather than a shorter kmer when the edge prevents expansion. Each accessor gets its own row, so which call throws is measured rather than collapsed into one E.",
+      "compare": { "mode": "lines" },
+      "expect_rows": 396,
+      "expect_contains": [
+        "result\tunknownContig\tE",
+        "result\tnegativeWindow\tE",
+        "/kmer20\tnull"
+      ],
+      "$expect_why": "The two exceptions the class throws rather than clamping, and the null kmer at a contig edge.",
+      "cases": [
+        {
+          "dump": "ReferenceContextDump",
+          "golden": null,
+          "why": "No golden yet: it may only come from the pinned container on real x86-64, which is CI. Committing the artifact that run publishes is what makes the suite oracle-backed."
+        }
+      ]
     }
   ],
   "probes": []
