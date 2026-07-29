@@ -46,7 +46,10 @@ Two consequences follow for the rest of the programme:
 1. **This pattern will recur.** Any GATK behaviour that depends on the iteration order of a
    `HashSet` or `HashMap` over strings lands here. Each such case gets a probe, and none of them may
    be answered by reading OpenJDK.
-2. **`Random` is the same problem, and worse.** Downsampling draws from `Utils.getRandomGenerator`,
-   which is a `java.util.Random`. Its algorithm *is* specified in its Javadoc, unusually, so that
-   one can be implemented from the contract. The G1.5 downsampling box stays open until that is
-   done deliberately rather than incidentally.
+2. **`Random` was the same problem with the opposite answer, and is now done.** Downsampling draws
+   from `Utils.getRandomGenerator`, which is a `java.util.Random`. Its algorithm *is* specified in
+   its Javadoc, constants included, so it was implemented from the contract rather than measured:
+   `crates/gatk-engine/src/java_random.rs`, with 98 sequences and 7 interleaved streams
+   oracle-backed. The pair is the clearest statement of the rule this document exists for: read
+   the specification when there is one, measure the oracle when there is not, and never read the
+   GPL2 implementation either way.

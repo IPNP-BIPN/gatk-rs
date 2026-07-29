@@ -312,14 +312,16 @@
     {
       "id": "javarandom",
       "title": "java.util.Random sequences",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Utils.getRandomGenerator() is one static new Random(47382911L), seeded at class initialisation, so every draw in a run comes from a single stream and a consumer that takes one value too few or too many shifts that stream for every later consumer as well. The sequence therefore has to be exact before anything is allowed to draw from it, which is why this is its own slice ahead of the downsampler. Unlike HashMap's iteration order, this one is legitimately implementable from the published contract: the Javadoc states the algorithm and its constants and requires every method to produce that exact sequence. Two behaviours are probed for shape rather than value: nextInt(bound) takes a different path for a power-of-two bound, so bound 16 answers differently from what 15 and 17 would suggest, and the general path rejects biased values and redraws, so its draw count depends on the values themselves. A final interleaved sequence mixes the methods on one generator, which catches a port whose methods are individually right but whose draw counts are not.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "JavaRandomDump"
+          "dump": "JavaRandomDump",
+          "golden": "crates/gatk-engine/tests/data/java_random.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 98 sequences over 7 seeds, plus 7 interleaved streams. The interleaved rows are the ones that would catch a plausible wrong port: a version whose methods are individually correct but whose draw counts are not passes every single-method row and fails those, because nextDouble and nextLong each consume two draws. The seeds include the GATK constant, zero, both extremes of long, and the multiplier itself, which scrambles to zero."
         }
       ]
     }
