@@ -51,7 +51,7 @@ fn corpus(text: &str) -> Vec<BamRecord> {
             .collect();
         assert_eq!(
             fields.len(),
-            12,
+            11,
             "record {index} has {} fields",
             fields.len()
         );
@@ -82,18 +82,29 @@ fn corpus(text: &str) -> Vec<BamRecord> {
             record.cigar = htsjdk_bam::text_parse::parse_cigar(fields[5])
                 .unwrap_or_else(|e| panic!("record {index} cigar does not parse: {e:?}"));
         }
-        if !fields[11].is_empty() {
-            record.tags.insert(
-                htsjdk_bam::Tag::new(b"RG"),
-                htsjdk_bam::tag::TagValue::Str(fields[11].to_string()),
-            );
-        }
+
         assert_eq!(
             records.len(),
             index,
             "records are out of order in the golden"
         );
         records.push(record);
+    }
+
+    // Tags travel on their own rows: an OA value ends with a semicolon, so any in-line separator
+    // would collide with the data it carries.
+    for line in text.lines() {
+        let mut parts = line.splitn(4, '\t');
+        if parts.next() != Some("tag") {
+            continue;
+        }
+        let index: usize = parts.next().unwrap().parse().unwrap();
+        let name = parts.next().expect("a tag row has a name").as_bytes();
+        let value = parts.next().expect("a tag row has a value");
+        records[index].tags.insert(
+            htsjdk_bam::Tag::new(&[name[0], name[1]]),
+            htsjdk_bam::tag::TagValue::Str(value.to_string()),
+        );
     }
     assert!(!records.is_empty(), "the golden carries no records");
     records

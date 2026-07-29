@@ -151,6 +151,145 @@ pub mod read {
     }
 }
 
+/// `htsjdk.samtools.Cigar` validity and the two GATK predicates built on it.
+///
+/// `GoodCigarReadFilter` calls `CigarUtils.isGood`, which is `Cigar.isValid(null, -1) == null`
+/// plus two GATK rules. The htsjdk half is the long one and the easy one to approximate: it is ported
+/// here in full rather than reduced to "looks sensible", because every rule it applies is a way a
+/// read can be kept by the reference and dropped by the port.
+pub mod cigar {
+    use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
+
+    fn is_clipping(op: Op) -> bool {
+        matches!(op, Op::S | Op::H)
+    }
+
+    /// `Cigar.isRealOperator`: M, =, X, I, D, N.
+    fn is_real(op: Op) -> bool {
+        matches!(op, Op::M | Op::Eq | Op::X | Op::I | Op::D | Op::N)
+    }
+
+    fn is_indel(op: Op) -> bool {
+        matches!(op, Op::I | Op::D)
+    }
+
+    fn is_padding(op: Op) -> bool {
+        matches!(op, Op::P)
+    }
+
+    /// `Cigar.isValid(null, -1) == null`: no validation error of any kind.
+    ///
+    /// An empty cigar returns `null` in the Java, meaning *valid*, which is not the reading the
+    /// name suggests: an unmapped read with `*` for its cigar passes.
+    pub fn is_valid(c: &Cigar) -> bool {
+        let elements: &[CigarElement] = &c.elements;
+        if elements.is_empty() {
+            return true;
+        }
+        let mut seen_real = false;
+        for (i, element) in elements.iter().enumerate() {
+            if element.length == 0 {
+                return false;
+            }
+            let op = element.op;
+            if is_clipping(op) {
+                if op == Op::H {
+                    // Hard clips only at either end.
+                    if i != 0 && i != elements.len() - 1 {
+                        return false;
+                    }
+                } else if i == 0 || i == elements.len() - 1 {
+                    // A soft clip at either end is fine.
+                } else if i == 1 {
+                    // The special case the Java calls funky: S is both one from the beginning and
+                    // one from the end.
+                    let funky = elements.len() == 3 && elements[2].op == Op::H;
+                    if !funky && elements[0].op != Op::H {
+                        return false;
+                    }
+                } else if i == elements.len() - 2 {
+                    if elements[elements.len() - 1].op != Op::H {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else if is_real(op) {
+                seen_real = true;
+                if is_indel(op) {
+                    // There must be an M, N or P between any pair of the *same* indel operator.
+                    for next in &elements[i + 1..] {
+                        let next_op = next.op;
+                        if (is_real(next_op) && !is_indel(next_op)) || is_padding(next_op) {
+                            break;
+                        }
+                        if is_indel(next_op) && next_op == op {
+                            return false;
+                        }
+                    }
+                }
+            } else if is_padding(op) && i != 0 {
+                // Position 0 is allowed: a read starting inside a pad needs leading padding, and
+                // the Java carries a comment saying the restriction was removed deliberately.
+                // Everything else must sit between two real operators, which the last position
+                // cannot do. The two rejections are one condition here because they are one
+                // condition in effect; the Java writes them apart only to word two messages.
+                let at_end = i == elements.len() - 1;
+                if at_end || !is_real(elements[i - 1].op) || !is_real(elements[i + 1].op) {
+                    return false;
+                }
+            }
+        }
+        seen_real
+    }
+
+    /// `CigarUtils.hasConsecutiveIndels`.
+    fn has_consecutive_indels(elements: &[CigarElement]) -> bool {
+        let mut previous_indel = false;
+        for element in elements {
+            let indel = is_indel(element.op);
+            if previous_indel && indel {
+                return true;
+            }
+            previous_indel = indel;
+        }
+        false
+    }
+
+    /// `CigarUtils.startsOrEndsWithDeletionIgnoringClips`.
+    fn starts_or_ends_with_deletion_ignoring_clips(elements: &[CigarElement]) -> bool {
+        for from_left in [true, false] {
+            let iter: Box<dyn Iterator<Item = &CigarElement>> = if from_left {
+                Box::new(elements.iter())
+            } else {
+                Box::new(elements.iter().rev())
+            };
+            for element in iter {
+                if element.op == Op::D {
+                    return true;
+                } else if !is_clipping(element.op) {
+                    break;
+                }
+            }
+        }
+        false
+    }
+
+    /// `CigarUtils.isGood`.
+    pub fn is_good(c: &Cigar) -> bool {
+        if !is_valid(c) {
+            return false;
+        }
+        let elements = &c.elements;
+        !(has_consecutive_indels(elements) || starts_or_ends_with_deletion_ignoring_clips(elements))
+    }
+
+    /// `CigarUtils.containsNOperator`.
+    pub fn contains_n_operator(c: &Cigar) -> bool {
+        c.elements.iter().any(|e| e.op == Op::N)
+    }
+}
+
 /// A read filter: `true` keeps the read, exactly as `ReadFilter.test` does.
 pub type ReadFilter = fn(&BamRecord) -> bool;
 
@@ -258,6 +397,97 @@ pub fn mate_on_same_contig_or_no_mapped_mate(read: &BamRecord) -> bool {
         || read.mate_reference_index == read.reference_index
 }
 
+/// `ReadFilterLibrary.CigarContainsNoNOperator`.
+pub fn cigar_contains_no_n_operator(read: &BamRecord) -> bool {
+    !cigar::contains_n_operator(&read.cigar)
+}
+
+/// `ReadFilterLibrary.GoodCigarReadFilter`.
+pub fn good_cigar(read: &BamRecord) -> bool {
+    cigar::is_good(&read.cigar)
+}
+
+/// `ReadFilterLibrary.NonZeroReferenceLengthAlignmentReadFilter`.
+pub fn non_zero_reference_length_alignment(read: &BamRecord) -> bool {
+    read.cigar
+        .elements
+        .iter()
+        .any(|e| e.op.consumes_reference_bases() && e.length > 0)
+}
+
+/// `ReadFilterLibrary.PrimaryLineReadFilter`: neither secondary nor supplementary.
+pub fn primary_line(read: &BamRecord) -> bool {
+    !read::is_secondary_alignment(read) && !read::is_supplementary_alignment(read)
+}
+
+/// `ReadFilterLibrary.ReadLengthEqualsCigarLengthReadFilter`.
+///
+/// Unmapped reads pass unconditionally, which matters: their cigar is `*`, so the comparison would
+/// otherwise reject every one of them.
+pub fn read_length_equals_cigar_length(read: &BamRecord) -> bool {
+    read::is_unmapped(read) || read::length(read) as u32 == read.cigar.read_length()
+}
+
+/// `ReadFilterLibrary.SeqIsStoredReadFilter`.
+pub fn seq_is_stored(read: &BamRecord) -> bool {
+    read::length(read) > 0
+}
+
+/// `ReadFilterLibrary.ValidAlignmentStartReadFilter`.
+///
+/// `GATKRead.getStart()` returns `ReadConstants.UNSET_POSITION` for an unmapped read, so the
+/// filter's first clause is what keeps this from testing a sentinel.
+pub fn valid_alignment_start(read: &BamRecord) -> bool {
+    read::is_unmapped(read) || read.alignment_start > 0
+}
+
+/// `ReadFilterLibrary.ValidAlignmentEndReadFilter`: `end - start + 1 >= 0`.
+///
+/// The condition looks vacuous and is not: `getEnd()` is derived from the cigar's reference
+/// length, and a cigar that consumes no reference gives an end before the start.
+pub fn valid_alignment_end(read: &BamRecord) -> bool {
+    read::is_unmapped(read) || (read.alignment_end() - read.alignment_start + 1) >= 0
+}
+
+/// `ReadFilterLibrary.MateUnmappedAndUnmappedReadFilter`.
+///
+/// Keeps a read only when neither it nor (if paired) its mate is unmapped.
+pub fn mate_unmapped_and_unmapped(read: &BamRecord) -> bool {
+    !(read::is_unmapped(read) || (read::is_paired(read) && read::mate_is_unmapped(read)))
+}
+
+/// `ReadFilterLibrary.NonChimericOriginalAlignmentReadFilter`.
+///
+/// Compares the contig in the `OA` tag with the mate contig `AddOriginalAlignmentTags` writes.
+///
+/// That tag is **`XM`**, not `MC`. The first version of this port assumed `MC`, the SAM standard
+/// mate-cigar-adjacent tag, and so did the conformance corpus, so the filter returned "no tags,
+/// pass" on every record and the two sides agreed perfectly while testing nothing. A corpus
+/// written from the same assumption as the port confirms the assumption, not the behaviour. The
+/// constant is `AddOriginalAlignmentTags.MATE_CONTIG_TAG_NAME`.
+///
+/// A read missing either tag passes.
+pub fn non_chimeric_original_alignment(read: &BamRecord) -> bool {
+    let oa = read.tags.iter().find(|(t, _)| t.name() == *b"OA");
+    let mate_contig = read.tags.iter().find(|(t, _)| t.name() == *b"XM");
+    match (oa, mate_contig) {
+        (Some((_, oa_value)), Some((_, mate_value))) => {
+            // AddOriginalAlignmentTags.getOAContig takes the first comma-separated field of OA.
+            let oa_text = tag_text(oa_value);
+            let contig = oa_text.split(',').next().unwrap_or("");
+            contig == tag_text(mate_value)
+        }
+        _ => true,
+    }
+}
+
+fn tag_text(value: &htsjdk_bam::tag::TagValue) -> &str {
+    match value {
+        htsjdk_bam::tag::TagValue::Str(text) => text,
+        _ => "",
+    }
+}
+
 /// The filters by the name GATK exposes on the command line (`--read-filter <Name>`).
 pub fn by_name(name: &str) -> Option<ReadFilter> {
     Some(match name {
@@ -278,6 +508,17 @@ pub fn by_name(name: &str) -> Option<ReadFilter> {
         "HasReadGroupReadFilter" => has_read_group,
         "MateDifferentStrandReadFilter" => mate_different_strand,
         "MateOnSameContigOrNoMappedMateReadFilter" => mate_on_same_contig_or_no_mapped_mate,
+        "ProperlyPairedReadFilter" => properly_paired,
+        "CigarContainsNoNOperator" => cigar_contains_no_n_operator,
+        "GoodCigarReadFilter" => good_cigar,
+        "NonZeroReferenceLengthAlignmentReadFilter" => non_zero_reference_length_alignment,
+        "PrimaryLineReadFilter" => primary_line,
+        "ReadLengthEqualsCigarLengthReadFilter" => read_length_equals_cigar_length,
+        "SeqIsStoredReadFilter" => seq_is_stored,
+        "ValidAlignmentStartReadFilter" => valid_alignment_start,
+        "ValidAlignmentEndReadFilter" => valid_alignment_end,
+        "MateUnmappedAndUnmappedReadFilter" => mate_unmapped_and_unmapped,
+        "NonChimericOriginalAlignmentReadFilter" => non_chimeric_original_alignment,
         _ => return None,
     })
 }
@@ -286,7 +527,9 @@ pub fn by_name(name: &str) -> Option<ReadFilter> {
 /// added here is exercised against the oracle without touching the harness.
 pub const PORTED: &[&str] = &[
     "AllowAllReadsReadFilter",
+    "CigarContainsNoNOperator",
     "FirstOfPairReadFilter",
+    "GoodCigarReadFilter",
     "HasReadGroupReadFilter",
     "MappedReadFilter",
     "MappingQualityAvailableReadFilter",
@@ -294,14 +537,23 @@ pub const PORTED: &[&str] = &[
     "MatchingBasesAndQualsReadFilter",
     "MateDifferentStrandReadFilter",
     "MateOnSameContigOrNoMappedMateReadFilter",
+    "MateUnmappedAndUnmappedReadFilter",
+    "NonChimericOriginalAlignmentReadFilter",
     "NonZeroFragmentLengthReadFilter",
+    "NonZeroReferenceLengthAlignmentReadFilter",
     "NotDuplicateReadFilter",
     "NotProperlyPairedReadFilter",
     "NotSecondaryAlignmentReadFilter",
     "NotSupplementaryAlignmentReadFilter",
     "PairedReadFilter",
     "PassesVendorQualityCheckReadFilter",
+    "PrimaryLineReadFilter",
+    "ProperlyPairedReadFilter",
+    "ReadLengthEqualsCigarLengthReadFilter",
     "SecondOfPairReadFilter",
+    "SeqIsStoredReadFilter",
+    "ValidAlignmentEndReadFilter",
+    "ValidAlignmentStartReadFilter",
 ];
 
 #[cfg(test)]

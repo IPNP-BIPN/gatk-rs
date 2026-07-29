@@ -14,7 +14,8 @@
  *
  * plus the corpus itself, so the port judges exactly the records the reference judged:
  *
- *     record\t<index>\tname|flags|refIdx|start|mapq|cigar|mateRef|mateStart|isize|bases|quals|rg
+ *     record\t<index>\tname|flags|refIdx|start|mapq|cigar|mateRef|mateStart|isize|bases|quals
+ *     tag\t<index>\t<NAME>\t<value>
  *
  * Fields, not a SAM line. The corpus deliberately contains a record whose flags say mapped while
  * its reference is absent, because that is one of the three criteria of GATKRead.isUnmapped, and
@@ -71,6 +72,21 @@ public class ReadFilterDump {
         map.put("PairedReadFilter", ReadFilterLibrary.PAIRED);
         map.put("PassesVendorQualityCheckReadFilter", ReadFilterLibrary.PASSES_VENDOR_QUALITY_CHECK);
         map.put("SecondOfPairReadFilter", ReadFilterLibrary.SECOND_OF_PAIR);
+        map.put("ProperlyPairedReadFilter", ReadFilterLibrary.PROPERLY_PAIRED);
+        map.put("CigarContainsNoNOperator", new ReadFilterLibrary.CigarContainsNoNOperator());
+        map.put("GoodCigarReadFilter", ReadFilterLibrary.GOOD_CIGAR);
+        map.put("NonZeroReferenceLengthAlignmentReadFilter",
+                ReadFilterLibrary.NON_ZERO_REFERENCE_LENGTH_ALIGNMENT);
+        map.put("PrimaryLineReadFilter", ReadFilterLibrary.PRIMARY_LINE);
+        map.put("ReadLengthEqualsCigarLengthReadFilter",
+                ReadFilterLibrary.READLENGTH_EQUALS_CIGARLENGTH);
+        map.put("SeqIsStoredReadFilter", ReadFilterLibrary.SEQ_IS_STORED);
+        map.put("ValidAlignmentStartReadFilter", ReadFilterLibrary.VALID_ALIGNMENT_START);
+        map.put("ValidAlignmentEndReadFilter", ReadFilterLibrary.VALID_ALIGNMENT_END);
+        map.put("MateUnmappedAndUnmappedReadFilter",
+                ReadFilterLibrary.MATE_UNMAPPED_AND_UNMAPPED_READ_FILTER);
+        map.put("NonChimericOriginalAlignmentReadFilter",
+                ReadFilterLibrary.NON_CHIMERIC_ORIGINAL_ALIGNMENT_READ_FILTER);
         return map;
     }
 
@@ -81,7 +97,13 @@ public class ReadFilterDump {
         System.out.println("# ReadFilterDump: the reference's own decision per filter, per record");
 
         for (int i = 0; i < corpus.size(); i++) {
-            System.out.printf("record\t%d\t%s%n", i, fields(corpus.get(i)));
+            final SAMRecord record = corpus.get(i);
+            System.out.printf("record\t%d\t%s%n", i, fields(record));
+            // Tags get their own rows rather than a delimited column: an OA value ends with a
+            // semicolon of its own, so any in-line separator collides with the data it carries.
+            for (final SAMRecord.SAMTagAndValue tag : record.getAttributes()) {
+                System.out.printf("tag\t%d\t%s\t%s%n", i, tag.tag, String.valueOf(tag.value));
+            }
         }
 
         for (final Map.Entry<String, ReadFilter> entry : filters().entrySet()) {
@@ -167,6 +189,39 @@ public class ReadFilterDump {
         // No read group at all.
         out.add(read(header, "no_read_group", 0, 0, 1600, 60, "10M", 0, 0, 0, false));
 
+        // Cigars, one per rule the good-cigar test applies. Each is legal SAM text, so they reach
+        // the filter rather than being rejected by the record's own setter.
+        out.add(read(header, "cigar_with_n", 0, 0, 1750, 60, "4M2N4M", 0, 0, 0, true));
+        out.add(read(header, "cigar_consecutive_indels", 0, 0, 1760, 60, "3M1I1D5M", 0, 0, 0, true));
+        out.add(read(header, "cigar_leading_deletion", 0, 0, 1770, 60, "2S1D8M", 0, 0, 0, true));
+        out.add(read(header, "cigar_trailing_deletion", 0, 0, 1780, 60, "8M1D2S", 0, 0, 0, true));
+        out.add(read(header, "cigar_all_insertion", 0, 0, 1790, 60, "10I", 0, 0, 0, true));
+        out.add(read(header, "cigar_soft_inside_hard", 0, 0, 1800, 60, "2H2S6M2S2H", 0, 0, 0, true));
+
+        // Read length disagreeing with the cigar's read length, on a *mapped* read: the filter
+        // lets every unmapped read through, so an unmapped one would prove nothing.
+        r = read(header, "cigar_length_mismatch", 0, 0, 1810, 60, "5M", 0, 0, 0, true);
+        out.add(r);
+
+        // OA and XM: same contig, then different, then only one of the two present.
+        //
+        // XM, not MC. The first corpus used MC, which is not the tag AddOriginalAlignmentTags
+        // writes, so the filter saw no tags and passed everything: the golden agreed with a port
+        // that had made the same wrong assumption, and neither was tested.
+        r = read(header, "oa_same_contig", 0, 0, 1820, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OA", "chr1,100,+,10M,60,0;");
+        r.setAttribute("XM", "chr1");
+        out.add(r);
+
+        r = read(header, "oa_other_contig", 0, 0, 1830, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OA", "chr2,100,+,10M,60,0;");
+        r.setAttribute("XM", "chr1");
+        out.add(r);
+
+        r = read(header, "oa_without_mate_contig", 0, 0, 1840, 60, "10M", 0, 0, 0, true);
+        r.setAttribute("OA", "chr2,100,+,10M,60,0;");
+        out.add(r);
+
         // Qualities absent: getBaseQualityCount() is 0 while the read has ten bases.
         r = read(header, "no_qualities", 0, 0, 1700, 60, "10M", 0, 0, 0, true);
         r.setBaseQualities(SAMRecord.NULL_QUALS);
@@ -219,7 +274,6 @@ public class ReadFilterDump {
                 String.valueOf(r.getMateAlignmentStart()),
                 String.valueOf(r.getInferredInsertSize()),
                 new String(r.getReadBases()),
-                qualText.toString(),
-                r.getAttribute("RG") == null ? "" : String.valueOf(r.getAttribute("RG")));
+                qualText.toString());
     }
 }
