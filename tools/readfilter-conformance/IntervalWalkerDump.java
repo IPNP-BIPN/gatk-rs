@@ -52,6 +52,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 
 public class IntervalWalkerDump {
@@ -94,6 +95,17 @@ public class IntervalWalkerDump {
         ReadWalkerDump.buildFixture(bam.toFile());
 
         System.out.println("# IntervalWalkerDump: what an IntervalWalker hands to apply()");
+        // The fixture travels in this golden too, rather than being borrowed from the ReadWalker
+        // one. It is the same fixture, built by the same method, but a suite that reads its input
+        // out of another suite's golden is a suite that passes because the other one changed.
+        System.out.printf("fasta\t%s%n", ReferenceQueryDump.escape(
+                new String(Files.readAllBytes(fasta))));
+        System.out.printf("fai\t%s%n", ReferenceQueryDump.escape(
+                new String(Files.readAllBytes(dir.resolve("ref.fasta.fai")))));
+        System.out.printf("bam\t%s%n", Base64.getEncoder().encodeToString(
+                Files.readAllBytes(bam)));
+        System.out.printf("bai\t%s%n", Base64.getEncoder().encodeToString(
+                Files.readAllBytes(dir.resolve("reads.bai"))));
 
         // One whole contig, and one interval inside it.
         traverse("chr1", bam, fasta, "-L", "chr1");
