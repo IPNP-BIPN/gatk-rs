@@ -94,7 +94,8 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] `AlignmentStateMachine` (244 stops over 26 cigars)
 - [x] `PileupElement` (217 elements, plus 231 `createPileupForReadAndOffset` calls including the
       offsets it refuses)
-- [ ] `ReadPileup` (the per-locus collection, its sorting, and its filtered views)
+- [x] `ReadPileup`: the per-locus collection, its sorting, its sample split and the samtools
+      overlap fix (3 pileups and 24 quality pairs)
 - [ ] `ReadStateManager` and `PerSampleReadStateManager` (partition by sample)
 - [ ] `SamplePartitioner`
 - [ ] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`)

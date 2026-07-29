@@ -232,14 +232,16 @@
     {
       "id": "readpileup",
       "title": "ReadPileup answers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "What one locus answers, which is what a caller consults. Four of those answers are decisions rather than aggregation. getBaseCounts counts the wildcard * as an A, because BaseUtils.baseIndexMap maps it to Base.A.ordinal() with a comment saying so, while an N is dropped by the -1 check and a deletion by an explicit test: two exclusions with two different reasons. splitBySample throws when a read has no sample and unknownSampleName is null, and a read group that exists but declares no SM is indistinguishable downstream from a read with no group at all. sortedIterator sorts by the read's start and by nothing else, and Java's sort is stable, so ties keep assembly order. fixPairOverlappingQualities truncates twice and differently: agreeing bases sum into a byte and are then capped, so the cap tests for a negative stored value as well as for one over 93, while disagreeing bases multiply the winner by 0.8 in double arithmetic and cast back.",
       "compare": { "mode": "lines" },
       "cases": [
         {
-          "dump": "ReadPileupDump"
+          "dump": "ReadPileupDump",
+          "golden": "crates/gatk-engine/tests/data/read_pileup.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner: 3 pileups and 24 overlap fixes. Its decisive row is the mixed pileup, whose bases are ACDN*: and whose counts are A=2: the wildcard is counted as an A, while N and : fall out through the -1 check and the deletion through an explicit test. Three exclusions, three mechanisms, one row. The first version of this dump put the wildcard everywhere except the locus, so the claim was unmeasured while appearing covered; the fixture now lands it on the locus and carries a separate byte for the -1 path."
         }
       ]
     }
