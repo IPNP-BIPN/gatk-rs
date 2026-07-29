@@ -1,0 +1,36 @@
+{
+  "$comment": [
+    "The conformance suites, declared once. `generate_ci.py` emits the oracle jobs of",
+    ".github/workflows/ci.yml from this file, and `run_suite.py` runs the same steps locally.",
+    "Same shape as picard-rs and htsjdk-rs; see picard-rs decision 0008 for why a golden that no",
+    "CI step re-derives is not evidence."
+  ],
+  "oracle": {
+    "image": "gatk-rs-oracle:4.6.2.0",
+    "context": "tools/oracle",
+    "platform": "linux/amd64"
+  },
+  "ci": {
+    "suites_per_job": 5,
+    "$why": "Suites share a job because each job restores the oracle image once."
+  },
+  "default_java_props": ["-Duser.language=en", "-Duser.country=US"],
+  "suites": [
+    {
+      "id": "readfilters",
+      "title": "ReadFilterLibrary decisions",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "One row per filter, one character per record: the reference's own decision, taken through SAMRecordToGATKReadAdapter rather than off the flags. Going through the adapter is the point: GATKRead.isUnmapped is three criteria and isFirstOfPair requires pairing, so comparing against flags would compare against a reimplementation of the adapter instead of the reference. The corpus travels in the same file as SAM text, so the port judges the records the reference judged rather than a description of them.",
+      "compare": { "mode": "keyed" },
+      "cases": [
+        {
+          "dump": "ReadFilterDump",
+          "golden": "crates/gatk-readfilter/tests/data/read_filters.txt.gz"
+        }
+      ]
+    }
+  ],
+  "probes": []
+}

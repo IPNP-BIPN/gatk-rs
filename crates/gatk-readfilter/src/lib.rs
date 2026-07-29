@@ -199,9 +199,19 @@ pub fn paired(read: &BamRecord) -> bool {
     read::is_paired(read)
 }
 
-/// `ReadFilterLibrary.NotProperlyPairedReadFilter`: keep reads that are *not* properly paired.
+/// `ReadFilterLibrary.NotProperlyPairedReadFilter`.
+///
+/// `read.isPaired() && !read.isProperlyPaired()`, which is **not** the negation of
+/// `ProperlyPairedReadFilter`: an unpaired read is filtered out by both. The first version here
+/// was the negation, and it kept every unpaired read; the oracle's decision matrix caught it on
+/// the first run, on five records of a nineteen-record corpus.
 pub fn not_properly_paired(read: &BamRecord) -> bool {
-    !read::is_proper_pair(read)
+    read::is_paired(read) && !read::is_proper_pair(read)
+}
+
+/// `ReadFilterLibrary.ProperlyPairedReadFilter`, for the contrast with the filter above.
+pub fn properly_paired(read: &BamRecord) -> bool {
+    read::is_proper_pair(read)
 }
 
 /// `ReadFilterLibrary.FirstOfPairReadFilter`.
