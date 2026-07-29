@@ -165,9 +165,10 @@ public class IntervalWalkerDump {
             new ProbeWalker().instanceMain(argv.toArray(new String[0]));
             summary = "ok";
         } catch (final Exception | AssertionError e) {
-            // Which exception is not compared, because its message carries the command line. That
-            // the traversal failed at all is the measured fact.
-            summary = "E";
+            // The class is recorded, the message is not: the message carries the run's paths and
+            // would make the golden unreproducible, while the class distinguishes a rejected
+            // argument from a failed traversal, which is a difference a port can get wrong.
+            summary = "E:" + e.getClass().getName();
         }
         for (int i = 0; i < APPLIED.size(); i++) {
             System.out.printf("apply\t%s\t%d\t%s%n", label, i, APPLIED.get(i));
