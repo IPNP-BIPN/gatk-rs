@@ -79,7 +79,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       `parseIntervalArguments`), 13 arguments compared
 - [ ] the Feature-file path (`.interval_list`, `.bed`, VCF): the seam exists and is named
       (`NoFeatureSources`), the codecs arrive with G1.3
-- [ ] `-L unmapped` end to end, on a walker that can actually traverse unmapped reads
+- [x] `-L unmapped` end to end, measured through `ReadWalker` (5 runs): the tail comes after
+      every interval, `-L unmapped` alone is a bounded traversal of nothing else, and an unmapped
+      read carrying its mate's position is not in the tail at all
 
 ### G1.5 The pileup floor
 

@@ -92,7 +92,7 @@
     {
       "id": "readwalker",
       "title": "ReadWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Every read-based tool inherits this traversal, so which reads reach apply and in what order is the tool's output. The probe is a real ReadWalker run through the real command line rather than a reconstruction: it records, per apply call, the read and the ReferenceContext window it arrived with. Two decisions are invisible from any tool's own output: the filter sits between the two read transformers, so it judges a read the walker never sees; and getReadInterval is null for a mapped read whose coordinates are not a valid interval, which hands the walker a read with no reference under it.",

@@ -107,13 +107,10 @@ jobs:
         include:
           - group: oracle-backed
             index: "1/2"
-            suites: "readfilters readsdatasource referencecontext printreads intervalwalker"
+            suites: "readfilters readsdatasource referencecontext readwalker printreads"
           - group: oracle-backed
             index: "2/2"
-            suites: "alignmentstate pileupelement intervalfile"
-          - group: golden-pending
-            index: "1/1"
-            suites: "readwalker"
+            suites: "intervalwalker alignmentstate pileupelement intervalfile"
     steps:
       - uses: actions/checkout@v4
 

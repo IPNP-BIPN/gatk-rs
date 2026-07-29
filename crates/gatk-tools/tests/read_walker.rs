@@ -48,18 +48,26 @@ fn field<'a>(text: &'a str, kind: &str) -> &'a str {
 /// The table is here rather than parsed out of the golden because a label like `all-nofilter` is
 /// a *configuration*, not coordinates: it says which filters the tool was run with, and there is
 /// nothing in the row to derive that from.
-fn configuration(label: &str) -> (Vec<&'static str>, bool, bool) {
-    // (interval strings, default filters enabled, reference available)
+fn configuration(label: &str) -> (Vec<&'static str>, bool, bool, bool) {
+    // (interval strings, default filters enabled, reference available, -L unmapped given)
     match label {
-        "all" => (vec![], true, true),
-        "chr1" => (vec!["chr1"], true, true),
-        "chr1:1-60" => (vec!["chr1:1-60"], true, true),
-        "chr1:100-160" => (vec!["chr1:100-160"], true, true),
-        "chr1:1-100+101-200" => (vec!["chr1:1-100", "chr1:101-200"], true, true),
-        "chr2" => (vec!["chr2"], true, true),
-        "all-nofilter" => (vec![], false, true),
-        "all-nodup" => (vec![], true, true),
-        "all-noref" => (vec![], true, false),
+        "all" => (vec![], true, true, false),
+        "chr1" => (vec!["chr1"], true, true, false),
+        "chr1:1-60" => (vec!["chr1:1-60"], true, true, false),
+        "chr1:100-160" => (vec!["chr1:100-160"], true, true, false),
+        "chr1:1-100+101-200" => (vec!["chr1:1-100", "chr1:101-200"], true, true, false),
+        "chr2" => (vec!["chr2"], true, true, false),
+        "all-nofilter" => (vec![], false, true, false),
+        "all-nodup" => (vec![], true, true, false),
+        "all-noref" => (vec![], true, false, false),
+        // `-L unmapped` is separated out of the interval list, so it is a flag here and not an
+        // interval string. On its own it leaves no intervals at all, which is still a *bounded*
+        // traversal: of the unplaced tail and nothing else.
+        "unmapped" => (vec![], true, true, true),
+        "unmapped-and-chr1" => (vec!["chr1"], true, true, true),
+        "unmapped-and-chr2" => (vec!["chr2"], true, true, true),
+        "chr1-and-unmapped" => (vec!["chr1"], true, true, true),
+        "unmapped-narrow" => (vec!["chr1:1-1"], true, true, true),
         other => panic!("{other} is in the golden but not configured here"),
     }
 }
@@ -100,7 +108,8 @@ fn every_traversal_hands_apply_what_the_reference_hands_it() {
 
     let mut compared = 0;
     for (label, rows) in &expected {
-        let (interval_strings, default_filters, has_reference) = configuration(label);
+        let (interval_strings, default_filters, has_reference, traverse_unmapped) =
+            configuration(label);
         let intervals: Vec<SimpleInterval> = interval_strings
             .iter()
             .map(|text| interval::parse_interval(text, &header).expect("a parsable interval"))
@@ -128,6 +137,7 @@ fn every_traversal_hands_apply_what_the_reference_hands_it() {
             &source,
             reference.as_mut(),
             &intervals,
+            traverse_unmapped,
             filter.as_ref(),
         )
         .expect("the traversal runs");
