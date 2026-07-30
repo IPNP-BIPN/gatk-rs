@@ -32,7 +32,10 @@ REPO = Path(__file__).resolve().parents[2]
 def container_command(cls, props):
     """The in-container script: compile the harness against the pinned jar, then run it.
 
-    `2>/dev/null` drops htsjdk's chatter on stderr; the dump itself goes to stdout.
+    htsjdk chatters on stderr, so a successful run's stderr is dropped. It is kept aside rather
+    than discarded outright and replayed when the run fails: an exception thrown out of a dump's
+    main used to leave nothing behind at all, which reads exactly like a dump that produced no
+    rows, and the two need different fixes.
 
     The whole harness directory is copied and `-sourcepath .` is passed, not just the one class.
     Copying a single file is what the first version did, and it meant three of the six read-filter
@@ -44,7 +47,8 @@ def container_command(cls, props):
     prop_str = (" ".join(props) + " ") if props else ""
     return (
         f'cp /harness/*.java . && javac -cp "$ORACLE_CP" -sourcepath . -d . {cls}.java '
-        f'&& java {prop_str}-cp ".:$ORACLE_CP" {cls} 2>/dev/null'
+        f'&& {{ java {prop_str}-cp ".:$ORACLE_CP" {cls} 2>/tmp/dump-stderr '
+        f'|| {{ cat /tmp/dump-stderr >&2; exit 1; }}; }}'
     )
 
 
