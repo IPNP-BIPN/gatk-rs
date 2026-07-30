@@ -79,6 +79,18 @@
       "cases": 1
     },
     {
+      "id": "vcf-header-parse",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-header-lines",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "vcf-record",
       "status": "oracle-backed",
       "tools": [],
@@ -86,6 +98,36 @@
     },
     {
       "id": "vcf-file",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-record-parse",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-genotype-parse",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-genotype-likelihoods",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-chromosome-counts",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-genotype-type",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
