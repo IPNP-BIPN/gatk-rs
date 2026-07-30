@@ -19,6 +19,7 @@
 pub mod chromosome_counts;
 pub mod coverage;
 pub mod info_annotation;
+pub mod original_alignment;
 pub mod raw_gt_count;
 pub mod sample_list;
 
