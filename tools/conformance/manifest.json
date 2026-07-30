@@ -340,6 +340,38 @@
           "why": "From the pinned container on a real x86-64 runner. The stream-position rows are the evidence: under-target and nonrandom both leave the generator at 1057280359, its first value, because neither took a draw, while one-over leaves it at -873351126, its second, because it took exactly one before discarding the slot. A port that skipped the draw when the slot loses would keep the same reads and fail those rows."
         }
       ]
+    },
+    {
+      "id": "well19937c",
+      "title": "Well19937c sequences",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "GATK carries two static generators, not one: Utils.getRandomGenerator() is a java.util.Random and Utils.getRandomDataGenerator() is a RandomDataGenerator over a Well19937c, seeded from the same constant and reset together. They are different algorithms with different streams, and LevelingDownsampler draws from the second where ReservoirDownsampler draws from the first, so a port that routed both through one generator would agree with neither. Four shapes are probed because a port gets them wrong while looking right. The two constructors disagree: new Well19937c(long) splits the seed into two ints, high word first, so it seeds a different 624-word pool from new Well19937c((int) seed) even when the long fits in an int, and GATK uses the long one. The derived methods are not java.util.Random's: nextDouble is ((next(26) << 26) | next(26)) * 2^-52 where java.util.Random uses 27 bits and 2^-53, nextFloat takes 23 bits rather than 24, and nextLong ors its halves where java.util.Random adds them signed. nextInt(bound) is the one that does agree, because commons-math copied it from Apache Harmony, so bounds either side of 16 are dumped to confirm the power-of-two path and the rejection loop. And nextBytes takes one extra full draw after its four-at-a-time loop even when the length is a multiple of four and nothing is left to fill, so lengths 0 through 9 are dumped with the generator's next value after each. nextGaussian is deliberately absent from both the dump and the port: it goes through commons-math's own FastMath, whose cos, sin, log and sqrt are its implementations rather than the platform's, so a port of its shape would be bit-wrong in the mantissa while looking right. It belongs with jmath.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "Well19937cDump",
+          "golden": "crates/gatk-engine/tests/data/well19937c.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. The rows that matter most are the interleaved ones and the nextBytes rows: the first catch a port whose methods are individually right but whose draw counts are not, and the second catch the unconditional trailing draw, which is invisible in the bytes themselves and visible only in where the stream ends up."
+        }
+      ]
+    },
+    {
+      "id": "leveling",
+      "title": "LevelingDownsampler and the permutation underneath it",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "LevelingDownsampler cuts several stacks down to one total, and it removes items through MathUtils.sampleIndicesWithoutReplacement, which is RandomDataGenerator.nextPermutation over the static Well19937c. Both layers decide the answer, so both are dumped. nextPermutation(n, k) shuffles all n entries and returns the first k, so it costs n - 1 draws whatever k is: sampling 2 of 1000 spends 999 draws and moves the stream for every later consumer, which is why the probe reports the generator's next value after each call. Its shuffle runs downwards with shrinking bounds, and its last step takes no draw at all, so the cost is n - 1 rather than n. The indices it returns are the shuffled head and are therefore unsorted, and since the caller uses them only as membership, the raw list is dumped so that a port which sorted them still fails. Above that, the leveling plan is pure arithmetic: a round-robin walk over the sizes decrements one at a time, so how many go from each stack is fixed before any draw and only which ones is random. The walk stops on consecutive refusals rather than on a scan. A stack that keeps everything takes no draw, so stack sizes shift the stream for the stacks after them. LinkedList and ArrayList take different removal paths upstream and must keep the same items, so both are dumped and a divergence between them is a failure rather than an assumption. And with minElementsPerStack of zero a stack can be planned down to nothing, at which point nextPermutation throws NotStrictlyPositiveException instead of returning an empty selection.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "LevelingDownsamplerDump",
+          "golden": "crates/gatk-engine/tests/data/leveling.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. The stream-position rows are the evidence for the draw counts, and the target-zero pair is the evidence for the refusal: with minElementsPerStack one the stacks fall to one item each, and with zero the same target reaches nextPermutation(n, 0) and throws."
+        }
+      ]
     }
   ],
   "probes": []
