@@ -107,25 +107,22 @@ jobs:
         include:
           - group: oracle-backed
             index: "1/6"
-            suites: "genotyper-allele-likelihoods genotyper-allele-list annotation-counting readfilters readsdatasource"
+            suites: "annotation-likelihood-counts genotyper-allele-likelihoods genotyper-allele-list annotation-counting readfilters"
           - group: oracle-backed
             index: "2/6"
-            suites: "referencecontext readwalker printreads intervalwalker alignmentstate"
+            suites: "readsdatasource referencecontext readwalker printreads intervalwalker"
           - group: oracle-backed
             index: "3/6"
-            suites: "pileupelement intervalfile jexlfilter featurecache readpileup"
+            suites: "alignmentstate pileupelement intervalfile jexlfilter featurecache"
           - group: oracle-backed
             index: "4/6"
-            suites: "readstates locusiterator acbuilder locuswalker javarandom"
+            suites: "readpileup readstates locusiterator acbuilder locuswalker"
           - group: oracle-backed
             index: "5/6"
-            suites: "reservoir well19937c leveling variantwalker activityprofile"
+            suites: "javarandom reservoir well19937c leveling variantwalker"
           - group: oracle-backed
             index: "6/6"
-            suites: "assemblyregion intervaliterators assemblyregioniterator assemblyregionwalker"
-          - group: golden-pending
-            index: "1/1"
-            suites: "annotation-likelihood-counts"
+            suites: "activityprofile assemblyregion intervaliterators assemblyregioniterator assemblyregionwalker"
     steps:
       - uses: actions/checkout@v4
 
