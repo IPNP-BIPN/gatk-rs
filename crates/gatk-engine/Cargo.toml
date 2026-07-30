@@ -16,5 +16,6 @@ noodles-bam = "=0.92.0"
 noodles-fasta = "=0.61.0"
 
 [dev-dependencies]
+flate2 = "1"
 # One corpus parser for the whole workspace: two parsers would be two corpora.
 gatk-corpus = { path = "../gatk-corpus" }

@@ -19,14 +19,14 @@
     {
       "id": "genotyper-allele-list",
       "title": "The allele and sample axes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
       "why": "AlleleLikelihoods is defined over an AlleleList and a SampleList, so anything surprising about those two is inherited by every likelihood GATK computes. An indexed list is a set: IndexedSet drops a duplicate silently and the survivor keeps the index of its first occurrence, so a list built from A, C, A has two entries and nothing says so, and a caller that built its list from a variant context with a repeated allele gets a matrix with fewer rows than it asked for. Membership is Allele.equals, which is bases and the reference flag, so the reference A and a non-reference A are two entries in one list and indexOfReference reports only the first entry whose flag is set. And a permutation is a directional subset map: it may drop and reorder, never invent, refusing a longer target and a target holding an unknown allele with the same message both ways, while reporting isPartial, isNonPermuted and isKept, which callers use to skip work. A subset that keeps its order is partial and NOT non-permuted, which is the distinction a port collapses by accident.",
       "compare": { "mode": "lines" },
       "cases": [
         {
           "dump": "AlleleListDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/allele_list.txt.gz"
         }
       ]
     },
