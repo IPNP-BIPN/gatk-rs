@@ -417,6 +417,21 @@
           "golden": "crates/gatk-engine/tests/data/assembly_region.txt.gz"
         }
       ]
+    },
+    {
+      "id": "intervaliterators",
+      "title": "The iterators between a shard of reads and an activity profile",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "LocusIteratorByState yields nothing at all for a locus no read covers, so a position with zero depth is silently absent from its output. The assembly-region traversal cannot work that way, because the activity profile has to see the gap in order to close a region over it, and AssemblyRegionIterator therefore wraps the locus iterator in IntervalAlignmentContextIterator, whose whole job is to walk every base of every interval and manufacture an empty AlignmentContext wherever the wrapped iterator has none. The comment upstream is unusually direct about the stakes: this is critical for reproducing GATK 3.x behavior. A port that skipped the wrapper would produce regions ending at the last covered base instead of where the activity dies, which moves every boundary downstream of a coverage gap. Underneath it, ShardedIntervalIterator computes shard indices over the interval length and converts them back to coordinates, so the arithmetic is absolute rather than relative and the last shard is truncated against the interval end; IntervalLocusIterator is that class at shard size 1. The corpus has deliberate gaps before, inside and after its reads, and the intervals asked for start before the coverage, end after it, sit entirely inside a gap, and cross a contig boundary.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "IntervalIteratorsDump",
+          "golden": "crates/gatk-engine/tests/data/interval_iterators.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
