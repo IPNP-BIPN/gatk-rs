@@ -116,10 +116,7 @@ jobs:
             suites: "featurecache readpileup readstates locusiterator acbuilder"
           - group: oracle-backed
             index: "4/4"
-            suites: "locuswalker javarandom reservoir"
-          - group: golden-pending
-            index: "1/1"
-            suites: "well19937c leveling"
+            suites: "locuswalker javarandom reservoir well19937c leveling"
     steps:
       - uses: actions/checkout@v4
 
