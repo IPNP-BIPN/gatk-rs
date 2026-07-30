@@ -21,7 +21,9 @@ const CONTIG_LENGTH: i32 = 200;
 
 /// The cases whose answer needs Feature codecs. Both are files whose names look like intervals
 /// and whose contents are decoded by a codec instead.
-const PENDING_FEATURE_SOURCES: [&str; 2] = ["picard-interval-list", "bed"];
+/// `.interval_list` is still pending: it is a Feature file to the reference, and htsjdk's
+/// IntervalList reader is its own slice. `bed` left this list when the BED codec landed.
+const PENDING_FEATURE_SOURCES: [&str; 1] = ["picard-interval-list"];
 
 fn golden() -> String {
     corpus::read_golden(
@@ -138,7 +140,7 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
         let result = interval_args::parse_interval_arguments(
             &argument(label, &dir),
             &header,
-            &interval_args::NoFeatureSources,
+            &gatk_engine::feature_intervals::BedFeatureSource,
         );
 
         if PENDING_FEATURE_SOURCES.contains(&label) {

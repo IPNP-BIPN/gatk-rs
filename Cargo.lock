@@ -213,6 +213,7 @@ dependencies = [
  "gatk-corpus",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-tribble",
  "htsjdk-vcf",
  "noodles-bam",
  "noodles-fasta",
@@ -256,7 +257,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 [[package]]
 name = "htsjdk-bam"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=695569c4000384db228c5050101c9bc12f05dd07#695569c4000384db228c5050101c9bc12f05dd07"
 dependencies = [
  "htsjdk-bgzf",
  "md-5",
@@ -265,16 +266,21 @@ dependencies = [
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=695569c4000384db228c5050101c9bc12f05dd07#695569c4000384db228c5050101c9bc12f05dd07"
 dependencies = [
  "flate2",
  "libz-sys",
 ]
 
 [[package]]
+name = "htsjdk-tribble"
+version = "0.1.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=695569c4000384db228c5050101c9bc12f05dd07#695569c4000384db228c5050101c9bc12f05dd07"
+
+[[package]]
 name = "htsjdk-vcf"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=695569c4000384db228c5050101c9bc12f05dd07#695569c4000384db228c5050101c9bc12f05dd07"
 dependencies = [
  "jmath",
 ]
@@ -292,7 +298,7 @@ dependencies = [
 [[package]]
 name = "jmath"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=695569c4000384db228c5050101c9bc12f05dd07#695569c4000384db228c5050101c9bc12f05dd07"
 
 [[package]]
 name = "lexical-core"

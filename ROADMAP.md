@@ -73,8 +73,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
       order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
       settings). The suite pins what a tool sees and does **not** distinguish the cache from a
-      fresh query per call, which the manifest states. Still missing: the codecs (VCF, BED,
-      interval_list) and the Tribble index, which are htsjdk's and belong in Milestone H
+      fresh query per call, which the manifest states. The **BED codec** is now ported and
+      oracle-backed in htsjdk-rs. Still missing: the VCF and interval_list codecs and the Tribble
+      index, which are htsjdk's and belong in Milestone H
 
 ### G1.4 Interval arguments
 
@@ -83,8 +84,10 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] interval **files**: `.list` and `.intervals` (lower-cased extension test, blank-line
       skipping, the empty-file refusal, and the order of the four tests in
       `parseIntervalArguments`), 13 arguments compared
-- [ ] the Feature-file path (`.interval_list`, `.bed`, VCF): the seam exists and is named
-      (`NoFeatureSources`), the codecs arrive with G1.3
+- [~] the Feature-file path: `.bed` is closed. The BED codec landed in htsjdk-rs (its own
+      oracle-backed suite, 90 rows) and is plugged into the seam, so 14 of the 15 measured `-L`
+      arguments now resolve identically and only `.interval_list` is pending. VCF arrives with
+      the Tribble index
 - [x] `-L unmapped` end to end, measured through `ReadWalker` (5 runs): the tail comes after
       every interval, `-L unmapped` alone is a bounded traversal of nothing else, and an unmapped
       read carrying its mate's position is not in the tail at all
