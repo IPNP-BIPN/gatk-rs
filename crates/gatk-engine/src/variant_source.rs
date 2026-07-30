@@ -15,10 +15,18 @@
 //! }
 //! ```
 //!
-//! One interval back, not a set of everything seen. So a variant covered by intervals 1 and 3 but
-//! not by 2 is handed to `apply` **twice**, and the same variant covered by two adjacent intervals
-//! is handed over once. The class documents that intervals must be non-overlapping and sorted, and
-//! nothing enforces it: a caller that breaks the precondition gets duplicates rather than an error.
+//! One interval back, not a set of everything seen, so a variant covered by intervals 1 and 3 but
+//! not by 2 would be handed to `apply` twice.
+//!
+//! **The golden says it is not.** `-L chr1:100-160 -L chr1:500-600 -L chr1:100-160` produces two
+//! `apply` calls, not four, and `-L chr1:200-210 -L chr1:100-160` traverses in sorted order. The
+//! argument layer ([`crate::interval_args`]) sorts and merges before the traversal ever sees the
+//! list, so the precondition the iterator documents is always satisfied through a command line and
+//! the one-interval memory is unreachable from there.
+//!
+//! That is worth stating exactly, because the two claims are different: the behaviour is real in
+//! the class and unreachable in the tool. A caller that builds the list itself and skips the
+//! argument layer still gets duplicates, and this port still reproduces them.
 //!
 //! # `previousInterval` lags by one query, including at the end
 //!

@@ -376,15 +376,15 @@
     {
       "id": "variantwalker",
       "title": "VariantWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "The traversal every variant-based tool inherits, run through the real command line rather than reconstructed. Two of its behaviours are not what restricting a traversal to -L suggests, and both are visible only when the intervals are not the sorted, non-overlapping list the class asks for. The de-duplication remembers one interval and not all of them: FeatureIntervalIterator's featureIsNovel tests a feature against previousInterval alone, so a variant covered by intervals 1 and 3 but not by 2 is handed to apply twice, while the same variant covered by two adjacent intervals arrives once. Nothing enforces the documented precondition, so breaking it produces duplicates rather than an error. And an empty interval list is not an empty traversal: setIntervalsForTraversal maps both null and an empty list to null, which means no restriction at all. The record fields travel with each apply call because the walker is also where a decoded record becomes what a tool sees: the interval it builds is SimpleInterval(variant), whose end is the END attribute when the record carries one and start plus the reference allele's length minus one otherwise.",
+      "why": "The traversal every variant-based tool inherits, run through the real command line rather than reconstructed. Reading FeatureIntervalIterator suggests that -L can produce duplicates: featureIsNovel tests a feature against previousInterval alone, one interval of memory rather than a set, so a variant covered by intervals 1 and 3 but not by 2 would reach apply twice. The suite measures that and the answer is no: three intervals whose first and third are identical produce two apply calls rather than four, and intervals given out of order are traversed in sorted order. The argument layer sorts and merges before the traversal sees the list, so the precondition the iterator documents is always satisfied through a command line. The behaviour is real in the class and unreachable in the tool, which is a different claim from saying it does not happen, and the distinction is exactly what a golden is for. And an empty interval list is not an empty traversal: setIntervalsForTraversal maps both null and an empty list to null, which means no restriction at all. The record fields travel with each apply call because the walker is also where a decoded record becomes what a tool sees: the interval it builds is SimpleInterval(variant), whose end is the END attribute when the record carries one and start plus the reference allele's length minus one otherwise.",
       "compare": { "mode": "lines" },
       "cases": [
         {
           "dump": "VariantWalkerDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/variant_walker.txt.gz"
         }
       ]
     }

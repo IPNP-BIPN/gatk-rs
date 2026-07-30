@@ -106,19 +106,19 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/4"
+            index: "1/5"
             suites: "readfilters readsdatasource referencecontext readwalker printreads"
           - group: oracle-backed
-            index: "2/4"
+            index: "2/5"
             suites: "intervalwalker alignmentstate pileupelement intervalfile jexlfilter"
           - group: oracle-backed
-            index: "3/4"
+            index: "3/5"
             suites: "featurecache readpileup readstates locusiterator acbuilder"
           - group: oracle-backed
-            index: "4/4"
+            index: "4/5"
             suites: "locuswalker javarandom reservoir well19937c leveling"
-          - group: golden-pending
-            index: "1/1"
+          - group: oracle-backed
+            index: "5/5"
             suites: "variantwalker"
     steps:
       - uses: actions/checkout@v4

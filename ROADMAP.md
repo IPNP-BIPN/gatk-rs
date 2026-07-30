@@ -119,7 +119,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] `IntervalWalker` (25 `apply` calls over 24 argument combinations)
 - [x] `LocusWalker`: 217 `apply` calls over 8 traversals, including the same interval run with
       and without `emitEmptyLoci` (6 calls against 51)
-- [ ] `VariantWalker` (needs G1.3's feature sources)
+- [x] `VariantWalker` (12 traversals, 30 `apply` calls). The VCF reader it stands on landed in
+      htsjdk-rs first: the header frame, the typed header lines, the site columns and the genotype
+      columns, four oracle-backed suites there
 - [ ] `AssemblyRegionWalker` (the base of G3)
 - [ ] the multi-pass and multi-input walker variants
 
