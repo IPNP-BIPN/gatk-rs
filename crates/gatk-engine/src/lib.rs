@@ -7,6 +7,7 @@
 
 pub mod activity_profile;
 pub mod alignment_state;
+pub mod allele_list;
 pub mod assembly_region;
 pub mod assembly_region_iterator;
 pub mod assembly_region_walker;

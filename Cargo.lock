@@ -208,9 +208,11 @@ dependencies = [
 name = "gatk-engine"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "gatk-corpus",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-vcf",
  "noodles-bam",
  "noodles-fasta",
 ]
