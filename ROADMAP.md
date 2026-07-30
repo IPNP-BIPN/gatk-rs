@@ -12,13 +12,13 @@ golden stays `[~]`.
 
 ---
 
-## Where we are (measured 2026-07-29)
+## Where we are (measured 2026-07-30)
 
 | Repo | Scope | State |
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
-| **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only) |
-| **gatk-rs** | 202 tools | 4 crates, **8 conformance suites, 13 goldens, all oracle-backed**; 1 tool byte-identical |
+| **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
+| **gatk-rs** | 202 tools | 5 crates, **32 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 7 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -134,8 +134,13 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 ### G1.7 Annotations
 
-- [ ] the 54-annotation library. Many go through jmath, so any annotation touching an unfinished
-      jmath function waits rather than being approximated
+- [~] the 54-annotation library. Seven are ported and oracle-backed: the counting family
+      (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
+      `CountNs`, `OriginalAlignment`), together with the `InfoFieldAnnotation` interface and the
+      machinery underneath it (`AlleleList`/`SampleList` and their permutation, the
+      `AlleleLikelihoods` matrix and its best-allele search, and `VariantContextGetters`)
+- [ ] the remaining 47. Many go through jmath, so any annotation touching an unfinished jmath
+      function waits rather than being approximated
 
 ### G1.8 The argument layer
 
@@ -273,10 +278,16 @@ depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
 - [x] the golden audit: every committed golden is declared, every declared golden exists, and a
       keyed suite whose golden collapses is refused
 - [x] the provenance guard (decision 0014), running in all three repositories
-- [~] covering arrays generated and verified per tool (generated; not yet driving the oracle runs)
-- [ ] the coverage-guided differential fuzzer
-- [ ] determinism gates: same input twice, different `-Xmx` / `TMPDIR` / `LC_ALL`, two clean
-      builds
+- [~] covering arrays generated **and run** per tool. Two tools are measured against both the
+      reference and the port on every CI run (`AddOATag` 0/9, `CollectAlignmentSummaryMetrics`
+      0/16 at t=2), with the corpus recording each side of a mismatching row and the dashboard
+      printing the fraction. Zero is the honest figure for binaries written for the throughput
+      benchmark; what remains is the other 42 tools with a suite, and a port binary to run each
+      array against
+- [~] the coverage-guided differential fuzzer (running in picard-rs CI, seeded from the arrays;
+      not yet in gatk-rs or htsjdk-rs)
+- [~] determinism gates: same input twice, different `-Xmx` / `TMPDIR` / `LC_ALL`, two clean
+      builds (running in picard-rs; not yet in the other two)
 - [ ] per-run provenance (input hashes, reference tags, toolchain, container digest, GKL provider
       state)
 - [ ] per-tool validation reports (inputs, records, byte-equal file count, argument coverage, t
