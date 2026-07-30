@@ -19,14 +19,14 @@
     {
       "id": "genotyper-allele-likelihoods",
       "title": "The likelihood matrix and the best-allele search",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
       "why": "Every likelihood-reading annotation goes through searchBestAllele, and four of its decisions are invisible in its signature. bestAlleleIndex and secondBestIndex both start at zero and nothing means no second best, so a one-allele matrix ends with the two equal and the tail turns that into a second-best likelihood of negative infinity. The comparison is strictly greater, so among equal likelihoods the earliest allele wins and the allele order is observable in a result that looks order-independent. isInformative compares the confidence against LOG_10_INFORMATIVE_THRESHOLD whatever base the matrix is in, while the tie-breaking pass inside searchBestAllele converts its threshold with the base, so after switchToNaturalLog the two ask their question at different thresholds. And confidence is guarded by likelihood == secondBestLikelihood ? 0 : the difference, whose load-bearing case is the pair of negative infinities where the subtraction would be NaN. The likelihoods travel as raw bits because they are read back out of the matrix after a conversion.",
       "compare": { "mode": "lines" },
       "cases": [
         {
           "dump": "AlleleLikelihoodsDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/allele_likelihoods.txt.gz"
         }
       ]
     },
