@@ -12,10 +12,14 @@
 //! final String[] parsed = rawDataString.trim().replaceAll(BRACKET_REGEX, "").split(", *");
 //! ```
 //!
-//! A comma followed by spaces splits; a **space followed by a comma** does not, so `"1 , 2, 3"`
-//! parses as two fields and is refused for having the wrong arity rather than for the space. The
-//! brackets are stripped anywhere in the string, not just at the ends, because
+//! Only a comma followed by *spaces* splits. `"1 , 2, 3"` therefore splits into `"1 "`, `"2"`,
+//! `"3"`, which is the right arity and the wrong first field, so it fails on the integer rather
+//! than on the count; and a tab after the comma is not a space, so `"1,\t2,\t3"` fails the same
+//! way. The brackets are stripped anywhere in the string, not just at the ends, because
 //! `BRACKET_REGEX = "\\[|\\]"` and `replaceAll` is global.
+//!
+//! The sums are `int` additions with no overflow check, so combining `Integer.MAX_VALUE` with `1`
+//! wraps to `Integer.MIN_VALUE` and is written out as a large negative count.
 //!
 //! The written value drops one of the three counts it just summed:
 //!
@@ -55,13 +59,15 @@ impl RawGtCountError {
         "org.broadinstitute.hellbender.exceptions.UserException$BadInput"
     }
 
+    /// `getMessage()`, which is what a caller sees. The `A USER ERROR has occurred:` banner belongs
+    /// to the command line's printer, not to the exception, so it is not part of this.
     pub fn message(&self) -> String {
         match self {
             RawGtCountError::WrongArity { found, raw } => format!(
-                "A USER ERROR has occurred: Bad input: Raw value for {RAW_GENOTYPE_COUNT_KEY} has {found} values, expected 3. Annotation value is {raw}"
+                "Bad input: Raw value for {RAW_GENOTYPE_COUNT_KEY} has {found} values, expected 3. Annotation value is {raw}"
             ),
             RawGtCountError::NotAnInteger { raw } => format!(
-                "A USER ERROR has occurred: Bad input: malformed {RAW_GENOTYPE_COUNT_KEY} annotation: {raw}"
+                "Bad input: malformed {RAW_GENOTYPE_COUNT_KEY} annotation: {raw}"
             ),
         }
     }
@@ -84,8 +90,16 @@ fn java_trim(text: &str) -> &str {
     &text[start..end]
 }
 
-/// `split(", *")`: a comma followed by any number of spaces. Java drops trailing empty fields.
+/// `split(", *")`: a comma followed by any number of **spaces**, and a tab is not a space.
+///
+/// Java's two rules about empties both apply: trailing empty fields are dropped, and a string the
+/// pattern never matches comes back as a one-element array holding the whole input. The second is
+/// why the empty string is one field and not zero, which is the difference between the arity error
+/// saying 1 and saying 0.
 fn split_on_comma_spaces(text: &str) -> Vec<&str> {
+    if !text.contains(',') {
+        return vec![text];
+    }
     let bytes = text.as_bytes();
     let mut parts = Vec::new();
     let mut field_start = 0;
@@ -143,7 +157,12 @@ pub fn combine_raw_data(raw_values: &[String]) -> Result<String, RawGtCountError
         let counts = parse_raw_data_string(raw)?;
         combined = Some(match combined {
             None => counts,
-            Some(sum) => [sum[0] + counts[0], sum[1] + counts[1], sum[2] + counts[2]],
+            // `int` addition, unchecked: two maxima sum to a negative and are written out as one.
+            Some(sum) => [
+                sum[0].wrapping_add(counts[0]),
+                sum[1].wrapping_add(counts[1]),
+                sum[2].wrapping_add(counts[2]),
+            ],
         });
     }
     // With no inputs at all the reference dereferences a null and throws; a caller reaching that
