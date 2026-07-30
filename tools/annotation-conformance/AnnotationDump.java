@@ -48,7 +48,6 @@ import java.util.StringJoiner;
 public class AnnotationDump {
 
     static final Allele REF = Allele.create("A", true);
-    static final Allele REF_BASES_AS_ALT = Allele.create("A", false);
     static final Allele ALT1 = Allele.create("C", false);
     static final Allele ALT2 = Allele.create("G", false);
     static final Allele NO_CALL = Allele.NO_CALL;
@@ -124,9 +123,10 @@ public class AnnotationDump {
             // monomorphic and SampleList says nothing even though a genotype carries an alt.
             {"filtered-het", build(List.of(REF, ALT1),
                     filtered(gt("s1", REF, ALT1), "LowGQ"), gt("s2", REF, REF))},
-            // A genotype that is HET only because the reference bases are also present unflagged.
-            {"het-by-ref-flag", build(List.of(REF, ALT1),
-                    gt("s1", REF, REF_BASES_AS_ALT), gt("s2", REF, REF))},
+            // Het for two ALTERNATE alleles, which is HET with no reference allele in it, and
+            // which puts the AC and AF of a two-alternate site next to a SampleList entry.
+            {"het-two-alts", build(List.of(REF, ALT1, ALT2),
+                    gt("s1", ALT1, ALT2), gt("s2", REF, REF))},
             // Sample names out of storage order, to show the iteration order of SampleList.
             {"name-order", build(List.of(REF, ALT1),
                     gt("b", REF, ALT1), gt("A", REF, ALT1), gt("a", REF, ALT1),
