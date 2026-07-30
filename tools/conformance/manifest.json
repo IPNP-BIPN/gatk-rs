@@ -19,14 +19,14 @@
     {
       "id": "annotation-original-alignment",
       "title": "OriginalAlignment and the OA tag",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "why": "OriginalAlignment counts the reads supporting the best alternate allele whose original alignment was on a different contig, which is how a Mutect2 call on the mitochondrion is checked against a NuMT, and four of its decisions live outside the class. The allele it counts for is picked by TLOD through getTumorLogOdds and maxElementIndex, so a tie goes to the earliest alternate and a TLOD of dot is not missing but -1, which after the log conversion is an ordinary number that can win the maximum. The contig comparison is a string field: getOAContig splits the OA tag on a comma and takes field zero, so an unmapped read, whose tag is star comma zero and so on, has original contig star, which differs from every real contig and therefore counts. The filter takes BestAllele.isInformative, which compares against the log10 threshold whatever base the matrix is in. And unlike Coverage, MappingQualityZero and CountNs, which treat null likelihoods as nothing to say, this one calls Utils.nonNull and throws.",
       "compare": { "mode": "lines" },
       "cases": [
         {
           "dump": "OriginalAlignmentDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/original_alignment.txt.gz"
         }
       ]
     },
