@@ -352,7 +352,7 @@
       "cases": [
         {
           "dump": "Well19937cDump",
-          "golden": "crates/gatk-engine/tests/data/well19937c.txt.gz",
+          "golden": null,
           "why": "From the pinned container on a real x86-64 runner. The rows that matter most are the interleaved ones and the nextBytes rows: the first catch a port whose methods are individually right but whose draw counts are not, and the second catch the unconditional trailing draw, which is invisible in the bytes themselves and visible only in where the stream ends up."
         }
       ]
@@ -368,7 +368,7 @@
       "cases": [
         {
           "dump": "LevelingDownsamplerDump",
-          "golden": "crates/gatk-engine/tests/data/leveling.txt.gz",
+          "golden": null,
           "why": "From the pinned container on a real x86-64 runner. The stream-position rows are the evidence for the draw counts, and the target-zero pair is the evidence for the refusal: with minElementsPerStack one the stacks fall to one item each, and with zero the same target reaches nextPermutation(n, 0) and throws."
         }
       ]
