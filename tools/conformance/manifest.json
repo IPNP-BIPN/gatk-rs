@@ -391,7 +391,7 @@
     {
       "id": "activityprofile",
       "title": "Where an assembly region starts and stops",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The boundaries HaplotypeCaller and Mutect2 assemble over: a boundary that moves by one base changes the haplotypes and therefore the calls, so this is upstream of every variant those tools emit. Four behaviours decide it and none follows from cutting where the activity changes. A probability is spread over a Gaussian and the spread is added rather than assigned, so the probability at a site is the sum of its neighbours' tails and a site never reported active can cross the threshold, while a probability of exactly zero skips the filter entirely. The filter width is chosen from the kernel's values rather than from sigma, and it feeds back into getMaxProbPropagationDistance, which decides when a region may be popped at all. The cut site is a local minimum searched backwards, and isMinimum is asymmetric, requiring p[i] <= p[i+1] but p[i] < p[i-1], so a plateau is cut at its left-hand end. And nothing may be popped until the profile holds maxRegionSize plus the propagation distance in states, so regions appear in bursts rather than as soon as their activity ends. The kernels are compared as raw bits because the last bits are the point: Math.exp is the platform's and a port whose exp differs in the final ulp moves a cut site.",
@@ -399,7 +399,7 @@
       "cases": [
         {
           "dump": "ActivityProfileDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/activity_profile.txt.gz"
         }
       ]
     }
