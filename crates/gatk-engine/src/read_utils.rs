@@ -316,3 +316,149 @@ pub fn base_deletion_qualities(record: &BamRecord) -> Vec<u8> {
     indel_qualities(record, BQSR_BASE_DELETION_QUALITIES)
         .unwrap_or_else(|| vec![DEFAULT_INSERTION_DELETION_QUAL; record.base_qualities.len()])
 }
+
+/// `ReadUtils.getSAMFlagsForRead`: the flags **recomputed** from the accessors, not the stored
+/// word.
+///
+/// This is not `record.flags`, and the difference is measurable. Every bit is rebuilt from a
+/// `GATKRead` accessor, and three of those accessors are not the flag test they look like:
+/// `isFirstOfPair` is `isPaired() && 0x40`, `isSecondOfPair` is `isPaired() && 0x80`, and
+/// `isProperlyPaired` is `isPaired() && 0x2`. So a record carrying 0x40 without 0x1 keeps that bit
+/// in its own header and loses it here. `SAM_READ_STRAND_FLAG` is likewise conditioned on the read
+/// being mapped, so an unmapped reverse-strand read loses 0x10.
+///
+/// It matters because `ReadCoordinateComparator` breaks ties on this value, so two reads at the
+/// same position can order differently under the stored flags and under these.
+pub fn sam_flags_for_read(read: &BamRecord) -> i32 {
+    let mut flags = 0i32;
+    if read::is_paired(read) {
+        flags |= read::flags::READ_PAIRED as i32;
+    }
+    if read::is_proper_pair(read) {
+        flags |= read::flags::PROPER_PAIR as i32;
+    }
+    if read::is_unmapped(read) {
+        flags |= read::flags::READ_UNMAPPED as i32;
+    }
+    if read::is_paired(read) && read::mate_is_unmapped(read) {
+        flags |= read::flags::MATE_UNMAPPED as i32;
+    }
+    if !read::is_unmapped(read) && read::is_reverse_strand(read) {
+        flags |= read::flags::READ_REVERSE_STRAND as i32;
+    }
+    if read::is_paired(read) && !read::mate_is_unmapped(read) && read::mate_is_reverse_strand(read)
+    {
+        flags |= read::flags::MATE_REVERSE_STRAND as i32;
+    }
+    if read::is_first_of_pair(read) {
+        flags |= read::flags::FIRST_OF_PAIR as i32;
+    }
+    if read::is_second_of_pair(read) {
+        flags |= read::flags::SECOND_OF_PAIR as i32;
+    }
+    if read::is_secondary_alignment(read) {
+        flags |= read::flags::NOT_PRIMARY_ALIGNMENT as i32;
+    }
+    if read::fails_vendor_quality_check(read) {
+        flags |= read::flags::READ_FAILS_VENDOR_QUALITY_CHECK as i32;
+    }
+    if read::is_duplicate(read) {
+        flags |= read::flags::DUPLICATE_READ as i32;
+    }
+    if read::is_supplementary_alignment(read) {
+        flags |= read::flags::SUPPLEMENTARY_ALIGNMENT as i32;
+    }
+    flags
+}
+
+/// `ReadUtils.getMateReferenceIndex`: `-1` when the mate is unmapped, whatever the record stores.
+pub fn mate_reference_index(read: &BamRecord) -> i32 {
+    if read::mate_is_unmapped(read) {
+        read::NO_ALIGNMENT_REFERENCE_INDEX
+    } else {
+        read.mate_reference_index
+    }
+}
+
+/// `ReadCoordinateComparator.compareCoordinates`.
+///
+/// The *assigned* position, not the one `getStart()` reports: an unmapped read placed at its
+/// mate's coordinate sorts there rather than at the end, which is what interleaves unmapped reads
+/// with mapped ones in a coordinate-sorted BAM. A read with no assigned reference sorts **after**
+/// everything, and two of them compare equal.
+pub fn compare_coordinates(first: &BamRecord, second: &BamRecord) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let first_ref = first.reference_index;
+    let second_ref = second.reference_index;
+
+    if first_ref == read::NO_ALIGNMENT_REFERENCE_INDEX {
+        return if second_ref == read::NO_ALIGNMENT_REFERENCE_INDEX {
+            Ordering::Equal
+        } else {
+            Ordering::Greater
+        };
+    }
+    if second_ref == read::NO_ALIGNMENT_REFERENCE_INDEX {
+        return Ordering::Less;
+    }
+    first_ref
+        .cmp(&second_ref)
+        .then(first.alignment_start.cmp(&second.alignment_start))
+}
+
+/// `ReadCoordinateComparator.compare`: coordinates first, then six tie-breakers in this order.
+///
+/// The strand tie-breaker is inverted on purpose and is the reference's: a read on the reverse
+/// strand sorts **after** one on the forward strand at the same position. The comment upstream
+/// says it mimics `SAMRecordCoordinateComparator`.
+///
+/// The name is compared with Java's `String.compareTo`, which is UTF-16 code-unit order, and the
+/// flags are the recomputed ones from [`sam_flags_for_read`] rather than the stored word.
+pub fn compare_read_coordinate(first: &BamRecord, second: &BamRecord) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let result = compare_coordinates(first, second);
+    if result != Ordering::Equal {
+        return result;
+    }
+
+    if read::is_reverse_strand(first) != read::is_reverse_strand(second) {
+        return if read::is_reverse_strand(first) {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        };
+    }
+
+    let result = crate::java_hash::compare_strings(&first.read_name, &second.read_name);
+    if result != Ordering::Equal {
+        return result;
+    }
+    let result = sam_flags_for_read(first).cmp(&sam_flags_for_read(second));
+    if result != Ordering::Equal {
+        return result;
+    }
+    let result = (first.mapping_quality as i32).cmp(&(second.mapping_quality as i32));
+    if result != Ordering::Equal {
+        return result;
+    }
+    if read::is_paired(first) && read::is_paired(second) {
+        let result = mate_reference_index(first).cmp(&mate_reference_index(second));
+        if result != Ordering::Equal {
+            return result;
+        }
+        let result = mate_start(first).cmp(&mate_start(second));
+        if result != Ordering::Equal {
+            return result;
+        }
+    }
+    first.inferred_insert_size.cmp(&second.inferred_insert_size)
+}
+
+/// `GATKRead.getMateStart()`: the sentinel for an unmapped mate, not the stored value.
+pub fn mate_start(read: &BamRecord) -> i32 {
+    if read::mate_is_unmapped(read) {
+        UNSET_POSITION
+    } else {
+        read.mate_alignment_start
+    }
+}
