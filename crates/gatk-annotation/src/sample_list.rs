@@ -28,7 +28,9 @@
 use htsjdk_vcf::genotype_type::{genotypes_ordered_by_name, is_monomorphic_in_samples};
 use htsjdk_vcf::variant::VariantContext;
 
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
+use htsjdk_bam::record::BamRecord;
 
 use crate::info_annotation::{AnnotationValue, InfoFieldAnnotation};
 
@@ -47,6 +49,7 @@ impl InfoFieldAnnotation for SampleList {
         &self,
         _reference: Option<&ReferenceContext>,
         vc: &VariantContext,
+        _likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     ) -> Vec<(String, AnnotationValue)> {
         if is_monomorphic_in_samples(vc) || vc.genotypes.is_empty() {
             return Vec::new();

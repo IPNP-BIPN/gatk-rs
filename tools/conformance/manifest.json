@@ -17,6 +17,20 @@
   "default_java_props": ["-Duser.language=en", "-Duser.country=US"],
   "suites": [
     {
+      "id": "annotation-likelihood-counts",
+      "title": "The annotations that read the likelihood matrix",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "why": "Coverage, MappingQualityZero and CountNs are the three annotations whose whole input is the likelihood matrix. Their arithmetic is three counts and no two of the three agree on anything else. Only Coverage tests evidenceCount, so an empty matrix makes it write nothing while the other two write a zero. Only MappingQualityZero tests the site, so a non-variant site makes it write nothing while the other two still count. Coverage and MappingQualityZero go through String.format so their values are Strings, while CountNs puts a long into an ImmutableMap so its value is a Long: all three render identically and are three different objects to a consumer. And CountNs compares against the byte N, upper case only, reaching the base through getReadBaseAtReferenceCoordinate, whose bounds test uses the alignment span while its index uses the soft start, so a read whose N sits inside a soft clip does not count.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "LikelihoodAnnotationDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "genotyper-allele-likelihoods",
       "title": "The likelihood matrix and the best-allele search",
       "status": "oracle-backed",

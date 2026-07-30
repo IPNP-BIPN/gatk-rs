@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 gatk-engine = { path = "../gatk-engine" }
+htsjdk-bam.workspace = true
 htsjdk-vcf.workspace = true
 
 [dev-dependencies]

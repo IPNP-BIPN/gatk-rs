@@ -30,7 +30,9 @@ use htsjdk_vcf::chromosome_counts::{
 };
 use htsjdk_vcf::variant::VariantContext;
 
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
+use htsjdk_bam::record::BamRecord;
 
 use crate::info_annotation::{AnnotationValue, InfoFieldAnnotation};
 
@@ -49,6 +51,7 @@ impl InfoFieldAnnotation for ChromosomeCounts {
         &self,
         _reference: Option<&ReferenceContext>,
         vc: &VariantContext,
+        _likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     ) -> Vec<(String, AnnotationValue)> {
         if vc.genotypes.is_empty() {
             return Vec::new();

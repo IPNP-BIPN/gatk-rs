@@ -21,14 +21,16 @@
 //!
 //! # The likelihoods argument
 //!
-//! `AlleleLikelihoods` is not ported yet, so the annotations that read it (`Coverage`,
-//! `MappingQualityZero`, `CountNs`, `OriginalAlignment`) are not here either. The trait therefore
-//! takes only the two arguments the ported annotations use. Adding the third when the likelihoods
-//! exist is a signature change on a handful of call sites, which is cheaper than shipping a
-//! placeholder type now and having every annotation written against a fiction.
+//! `null` likelihoods are a normal input, not an error: three of the annotations here answer an
+//! empty map for them, and each one tests something slightly different. `Coverage` tests
+//! `likelihoods == null || likelihoods.evidenceCount() == 0`; `MappingQualityZero` tests
+//! `!vc.isVariant() || likelihoods == null` and **not** the evidence count, so an empty matrix
+//! makes it write a zero where `Coverage` writes nothing at all; `CountNs` tests only the null.
 
+use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
 
 /// A value an annotation puts into the INFO map, keeping the Java type it was boxed as.
@@ -106,10 +108,12 @@ pub trait InfoFieldAnnotation {
     /// `annotate(ref, vc, likelihoods)`.
     ///
     /// An empty result means the keys are absent from the record, which is a different statement
-    /// from writing zero.
+    /// from writing zero. `None` likelihoods are the reference's `null`, which several annotations
+    /// are given in practice and each one guards differently.
     fn annotate(
         &self,
         reference: Option<&ReferenceContext>,
         vc: &VariantContext,
+        likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     ) -> Vec<(String, AnnotationValue)>;
 }
