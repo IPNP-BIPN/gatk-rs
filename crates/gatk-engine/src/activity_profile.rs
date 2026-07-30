@@ -42,6 +42,12 @@ use crate::interval::SimpleInterval;
 /// `MIN_PROB_TO_KEEP_IN_FILTER`.
 pub const MIN_PROB_TO_KEEP_IN_FILTER: f64 = 1e-5;
 
+/// `BandPassActivityProfile.MAX_FILTER_SIZE`.
+pub const MAX_FILTER_SIZE: i32 = 50;
+
+/// `BandPassActivityProfile.DEFAULT_SIGMA`.
+pub const DEFAULT_SIGMA: f64 = 17.0;
+
 /// `MathUtils.ROOT_TWO_PI`, which is `Math.sqrt(2.0 * Math.PI)` computed at class initialisation.
 ///
 /// Computed here too rather than written as a literal: a decimal literal is a transcription of a
@@ -191,6 +197,15 @@ impl ActivityProfile {
 
     pub fn is_empty(&self) -> bool {
         self.states.is_empty()
+    }
+
+    /// `getEnd()`: the end of the region stop location, which is the last position **added** and
+    /// not the last state, because the band pass filter writes past it.
+    ///
+    /// The traversal compares this against the next locus to decide whether to force a conversion,
+    /// so taking the last state instead would stop it noticing a gap in the loci.
+    pub fn end(&self) -> i32 {
+        self.region_stop.unwrap_or(0)
     }
 
     /// `getSpan().size()`: the number of positions actually added, which is not the number of

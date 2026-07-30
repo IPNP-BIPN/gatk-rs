@@ -432,6 +432,21 @@
           "golden": "crates/gatk-engine/tests/data/interval_iterators.txt.gz"
         }
       ]
+    },
+    {
+      "id": "assemblyregioniterator",
+      "title": "The assembly-region traversal: loci in, regions out",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Where the activity profile, the assembly region and the locus iterators meet, and what HaplotypeCaller and Mutect2 are once the assembler is removed: a region boundary that moves by one base here changes their calls. Four behaviours are measured and three are invisible from any tool output. A shard carries two interval lists built the same way, the padded one with the padding and the unpadded one with zero, and passing zero is not a no-op because getIntervalsWithFlanks sorts and merges with IntervalMergingRule.ALL whatever the padding is, so the reads are queried over one list while the loci are walked over another. The profile is popped before the current pileup is added and the force flag is that this locus does not continue the profile, which the upstream comment insists on: adding first would make the profile contiguous with the new pileup, the force would never fire, and a region would never be closed at a gap between two intervals. A region popped from the profile is not ready, but waits in a queue until the loci have advanced past the end of its padded span, because until then the reads that belong in it have not been read. And reads are carried forward from the previous region as well as taken from the cache, so a read spanning a boundary is in both regions, while a read is left in the cache only when its start is past the region padded end. The evaluator is a probe rather than a caller, activity being a declared function of pileup depth, so the regions are decided by the traversal and not by anything statistical.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "AssemblyRegionIteratorDump",
+          "golden": "crates/gatk-engine/tests/data/assembly_region_iterator.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
