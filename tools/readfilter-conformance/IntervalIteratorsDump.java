@@ -63,8 +63,12 @@ public class IntervalIteratorsDump {
     static final int CHR2 = 200;
 
     /**
-     * Reads with deliberate gaps: nothing before 101, a hole at 111-119, and nothing after 140.
+     * Reads with deliberate gaps: nothing before 101, a hole at 115-119, and nothing after 140.
      * The holes are what the wrapper exists for.
+     *
+     * The hole is 115-119 and not 111-119, which the first golden had to point out: r2 is 10M at
+     * 105, so it covers through 114. Coverage is the union of the reads, not the union of their
+     * starts.
      */
     static final String[][] READS = {
         {"r1", "rg1", "10M", "101"},
@@ -111,7 +115,7 @@ public class IntervalIteratorsDump {
         // Spans the hole in the middle, which is the case the wrapper exists for.
         contexts(header, "ctx-interior-gap", new SimpleInterval("chr1", 108, 122));
         // Entirely inside the hole: every locus is manufactured and none is covered.
-        contexts(header, "ctx-all-gap", new SimpleInterval("chr1", 112, 118));
+        contexts(header, "ctx-all-gap", new SimpleInterval("chr1", 115, 119));
         // Two intervals with a large uncovered stretch between them, which is where the
         // uncovered branch has to decide whether to advance the wrapped iterator.
         contexts(header, "ctx-two-intervals",
