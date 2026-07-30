@@ -32,6 +32,7 @@ import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.VariantContextBuilder;
 
+import org.broadinstitute.hellbender.engine.ReferenceDataSource;
 import org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags;
 import org.broadinstitute.hellbender.tools.walkers.annotator.OriginalAlignment;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
@@ -139,7 +140,10 @@ public class OriginalAlignmentDump {
     }
 
     static org.broadinstitute.hellbender.engine.ReferenceContext referenceContext() {
-        return new org.broadinstitute.hellbender.engine.ReferenceContext(null, new SimpleInterval("chr1", START, START));
+        // The null needs a cast: ReferenceContext has both a (ReferenceDataSource, SimpleInterval)
+        // and a (ReferenceContext, SimpleInterval) constructor, and a bare null matches both.
+        return new org.broadinstitute.hellbender.engine.ReferenceContext(
+                (ReferenceDataSource) null, new SimpleInterval("chr1", START, START));
     }
 
     static VariantContext site(final String tlod) {
