@@ -402,6 +402,21 @@
           "golden": "crates/gatk-engine/tests/data/activity_profile.txt.gz"
         }
       ]
+    },
+    {
+      "id": "assemblyregion",
+      "title": "The assembly region itself: spans, reads, trimming",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What HaplotypeCaller and Mutect2 actually assemble, once the activity profile has decided where a region starts and stops: a primary span for calling, a padded span for assembly, and the reads overlapping the padded one. Four behaviours are measured because none is what the class says. The padding constructor goes through IntervalUtils.trimIntervalToContig, which returns null rather than throwing when the padded interval cannot be placed on the contig, and the null then reaches Utils.nonNull inside the other constructor, so the failure is reported as a null padded span and never mentions padding. trim(span, padding) does not produce the region its own javadoc describes: the javadoc works an example, active 100-200 padded 50-250 trimmed to 150-225 giving a region 150-200 with 25bp of padding, but the code expands the requested span by the requested padding and intersects that with the old padded span, so the padding is never recomputed to fit. Trimming re-clips every read to the new padded span, drops the ones left empty or no longer overlapping, and then sorts the survivors with ReadCoordinateComparator, so the read order of a trimmed region is not the order the reads were added in and the comparator is observable output rather than an internal detail. And trimming drops the hard-clipped pileup reads entirely, because the new region is constructed empty and only addAll is called on it. The comparator is dumped over every ordered pair of the corpus, so its antisymmetry is measured too: a comparator that is not antisymmetric sorts differently under a different sort algorithm.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "AssemblyRegionDump",
+          "golden": "crates/gatk-engine/tests/data/assembly_region.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []

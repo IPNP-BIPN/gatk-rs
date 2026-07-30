@@ -60,6 +60,65 @@ impl SimpleInterval {
     pub fn overlaps(&self, contig: &str, start: i32, end: i32) -> bool {
         self.contig == contig && self.start <= end && start <= self.end
     }
+
+    /// `SimpleInterval.size()`: closed at both ends, so a one-base interval has size 1.
+    pub fn size(&self) -> i32 {
+        self.end - self.start + 1
+    }
+
+    /// `SimpleInterval.contains`, which is `overlaps` plus the two endpoints being inside.
+    pub fn contains(&self, other: &SimpleInterval) -> bool {
+        self.contig == other.contig && self.start <= other.start && self.end >= other.end
+    }
+
+    pub fn overlaps_interval(&self, other: &SimpleInterval) -> bool {
+        self.overlaps(&other.contig, other.start, other.end)
+    }
+
+    /// `SimpleInterval.intersect`, which **refuses** two intervals that do not overlap rather than
+    /// returning an empty one. `None` here is that `IllegalArgumentException`.
+    pub fn intersect(&self, other: &SimpleInterval) -> Option<SimpleInterval> {
+        if !self.overlaps_interval(other) {
+            return None;
+        }
+        SimpleInterval::new(
+            &self.contig,
+            self.start.max(other.start),
+            self.end.min(other.end),
+        )
+    }
+
+    /// `SimpleInterval.expandWithinContig`, which is `trimIntervalToContig` on the padded bounds
+    /// and therefore inherits its `None`.
+    pub fn expand_within_contig(&self, padding: i32, contig_length: i32) -> Option<SimpleInterval> {
+        trim_interval_to_contig(
+            &self.contig,
+            self.start - padding,
+            self.end + padding,
+            contig_length,
+        )
+    }
+}
+
+/// `IntervalUtils.trimIntervalToContig`: clamp to `[1, contigLength]`, or **`null`** when there is
+/// nothing left to clamp to.
+///
+/// The null is the point. An interval entirely off the contig is not an error and not an empty
+/// interval: it is a null that the caller has to notice. `AssemblyRegion`'s padding constructor
+/// does not, and reports the failure as a null padded span.
+pub fn trim_interval_to_contig(
+    contig: &str,
+    start: i32,
+    stop: i32,
+    contig_length: i32,
+) -> Option<SimpleInterval> {
+    let bounded_start = start.max(1);
+    let bounded_stop = stop.min(contig_length);
+    if bounded_start > contig_length || bounded_stop < 1 {
+        None
+    } else {
+        SimpleInterval::new(contig, bounded_start, bounded_stop)
+    }
 }
 
 /// What a query string can resolve to, kept apart from a plain failure.

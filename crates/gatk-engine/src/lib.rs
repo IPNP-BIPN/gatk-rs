@@ -7,6 +7,7 @@
 
 pub mod activity_profile;
 pub mod alignment_state;
+pub mod assembly_region;
 pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;

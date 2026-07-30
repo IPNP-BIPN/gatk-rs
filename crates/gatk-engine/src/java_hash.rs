@@ -113,3 +113,26 @@ pub fn hash_set_order(names: &[String]) -> Result<Vec<String>, HashOrderError> {
 
     Ok(table.into_iter().flatten().collect())
 }
+
+/// `String.compareTo`, which is **UTF-16 code-unit** order, not byte order and not Unicode
+/// scalar order.
+///
+/// The two orders agree on ASCII and disagree above the BMP: a supplementary character encodes as
+/// a surrogate pair whose first unit is in `0xD800..=0xDBFF`, so it sorts *before* every character
+/// in `0xE000..=0xFFFF` even though its scalar value is larger. Read names are ASCII in practice,
+/// but the comparator this feeds decides the order of an assembly region's reads, and a sort order
+/// that is right in practice is exactly the kind of thing that is wrong once.
+pub fn compare_strings(left: &str, right: &str) -> std::cmp::Ordering {
+    let mut left_units = left.encode_utf16();
+    let mut right_units = right.encode_utf16();
+    loop {
+        match (left_units.next(), right_units.next()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            // Java returns len1 - len2 when one is a prefix of the other.
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(a), Some(b)) if a != b => return a.cmp(&b),
+            _ => {}
+        }
+    }
+}
