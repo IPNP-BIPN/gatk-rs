@@ -117,6 +117,9 @@ jobs:
           - group: oracle-backed
             index: "4/4"
             suites: "locuswalker javarandom"
+          - group: golden-pending
+            index: "1/1"
+            suites: "reservoir"
     steps:
       - uses: actions/checkout@v4
 
