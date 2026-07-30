@@ -291,9 +291,14 @@ fn every_traversal_matches_the_reference() {
         } else {
             unfiltered_reads()
         };
-        let intervals = case.intervals.clone().expect("every case names its intervals");
+        let intervals = case
+            .intervals
+            .clone()
+            .expect("every case names its intervals");
 
-        let result = traverse(&reads, &intervals, &samples, &case.args, &header, &is_active);
+        let result = traverse(
+            &reads, &intervals, &samples, &case.args, &header, &is_active,
+        );
         let label = case.label;
 
         let expected_summary = row(&text, &format!("summary\t{label}\t"));
@@ -361,20 +366,14 @@ fn forcing_active_moves_no_boundary() {
             .map(|rest| {
                 let value = rest.split_once('\t').expect("an index and a value").1;
                 // span|paddedSpan, dropping the flag and the counts.
-                value
-                    .split('|')
-                    .take(2)
-                    .collect::<Vec<_>>()
-                    .join("|")
+                value.split('|').take(2).collect::<Vec<_>>().join("|")
             })
             .collect()
     };
     let flags = |label: &str| -> Vec<String> {
         text.lines()
             .filter_map(|line| line.strip_prefix(&format!("apply\t{label}\t")))
-            .map(|rest| {
-                rest.split('|').nth(2).expect("a flag").to_string()
-            })
+            .map(|rest| rest.split('|').nth(2).expect("a flag").to_string())
             .collect()
     };
 
