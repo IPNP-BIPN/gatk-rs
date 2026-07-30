@@ -123,6 +123,9 @@ jobs:
           - group: oracle-backed
             index: "6/6"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker"
+          - group: golden-pending
+            index: "1/1"
+            suites: "genotyper-allele-likelihoods"
     steps:
       - uses: actions/checkout@v4
 
