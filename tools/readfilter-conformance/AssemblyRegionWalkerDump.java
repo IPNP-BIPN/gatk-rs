@@ -136,6 +136,18 @@ public class AssemblyRegionWalkerDump {
         // A threshold above every probability the probe emits, so nothing is active.
         traverse("threshold-above-all", bam, fasta, "-L", "chr1",
                 "--active-probability-threshold", "2.0");
+        // The two together, which is the only way to see force-active do anything: at the default
+        // threshold every region is already active, so the flag it rewrites was already true.
+        traverse("force-active-above-threshold", bam, fasta, "-L", "chr1",
+                "--active-probability-threshold", "2.0", "--force-active", "true");
+        // The same pair with small regions, so the flag is rewritten on several regions at once
+        // and the boundaries can be compared against the run that did not force anything.
+        traverse("force-active-small-regions", bam, fasta, "-L", "chr1",
+                "--active-probability-threshold", "2.0", "--force-active", "true",
+                "--min-assembly-region-size", "5", "--max-assembly-region-size", "20");
+        traverse("threshold-above-all-small-regions", bam, fasta, "-L", "chr1",
+                "--active-probability-threshold", "2.0",
+                "--min-assembly-region-size", "5", "--max-assembly-region-size", "20");
         // A propagation distance of zero, which changes when a region may be popped at all.
         traverse("zero-propagation", bam, fasta, "-L", "chr1",
                 "--max-prob-propagation-distance", "0");
@@ -171,7 +183,10 @@ public class AssemblyRegionWalkerDump {
             factory.get().instanceMain(argv.toArray(new String[0]));
             summary = "ok";
         } catch (final Exception | AssertionError e) {
-            summary = "E:" + e.getClass().getName();
+            // The message travels too: "no-filters" throws an IllegalStateException whose text is
+            // the only thing that says which layer refused, and a class name alone would leave that
+            // unattributed.
+            summary = "E:" + e.getClass().getName() + ":" + oneLine(e.getMessage());
         }
         for (int i = 0; i < APPLIED.size(); i++) {
             System.out.printf("apply\t%s\t%d\t%s%n", label, i, APPLIED.get(i)[0]);
@@ -179,5 +194,9 @@ public class AssemblyRegionWalkerDump {
         }
         System.out.printf("summary\t%s\t%s%n", label, summary);
         System.out.printf("count\t%s\t%d%n", label, APPLIED.size());
+    }
+
+    static String oneLine(final String message) {
+        return message == null ? "" : message.replace('\n', ' ').replace('\t', ' ');
     }
 }
