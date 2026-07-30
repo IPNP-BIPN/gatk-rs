@@ -119,7 +119,7 @@ jobs:
             suites: "locuswalker javarandom reservoir well19937c leveling"
           - group: oracle-backed
             index: "5/5"
-            suites: "variantwalker"
+            suites: "variantwalker activityprofile"
     steps:
       - uses: actions/checkout@v4
 

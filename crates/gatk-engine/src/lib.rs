@@ -5,6 +5,7 @@
 //! restricts itself to. A tool given the wrong interval reads the wrong data and every number it
 //! produces is wrong in a way no downstream comparison can attribute.
 
+pub mod activity_profile;
 pub mod alignment_state;
 pub mod cigar_builder;
 pub mod cigar_utils;
