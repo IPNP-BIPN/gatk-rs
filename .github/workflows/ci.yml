@@ -119,10 +119,7 @@ jobs:
             suites: "locuswalker javarandom reservoir well19937c leveling"
           - group: oracle-backed
             index: "5/5"
-            suites: "variantwalker activityprofile assemblyregion"
-          - group: golden-pending
-            index: "1/1"
-            suites: "intervaliterators"
+            suites: "variantwalker activityprofile assemblyregion intervaliterators"
     steps:
       - uses: actions/checkout@v4
 
