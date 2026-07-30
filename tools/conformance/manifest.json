@@ -17,6 +17,20 @@
   "default_java_props": ["-Duser.language=en", "-Duser.country=US"],
   "suites": [
     {
+      "id": "variant-getters",
+      "title": "An INFO attribute as a double array",
+      "status": "golden-pending",
+      "harness": "tools/genotyper-conformance",
+      "why": "Everything that reads a numeric annotation off a VariantContext goes through VariantContextGetters.attributeValueToDoubleArray, and the function is held together by an accident. Its Iterable branch tests value.getClass().isAssignableFrom(Iterable.class), which is backwards: isAssignableFrom asks whether the argument's type can be assigned to the receiver's, so it asks whether an Iterable fits in an ArrayList variable, which is false. Every list therefore falls through to the branch labelled as a last resort, which renders the value with String.valueOf and splits the result on a comma; String.valueOf of a list is bracketed and comma-space separated, so every field after the first arrives with a leading space and parses only because Double.parseDouble trims. A port splitting on comma-space, or using a parser that refuses leading whitespace, agrees on a one-element list and diverges on every longer one. Two more things the signature hides: a field equal to the missing value becomes the caller's missingValue, which is -1 for the overload every annotator uses, so a missing TLOD arrives as a number nobody can recognise as missing; and any other unparsable field becomes a GATKException naming the annotation rather than a NumberFormatException. The doubles travel as raw bits because getTumorLogOdds multiplies them by Math.log(10).",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "VariantGettersDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "annotation-likelihood-counts",
       "title": "The annotations that read the likelihood matrix",
       "status": "oracle-backed",
