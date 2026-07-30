@@ -82,6 +82,10 @@ public class AssemblyRegionDump {
         ctor("pad-unknown-contig", "chrX", 500, 600, 10);
         // A single base, which is the smallest legal active span.
         ctor("pad-one-base", "chr1", 500, 500, 10);
+        // An active span entirely past the end of its contig. SimpleInterval accepts it, because it
+        // never consults a dictionary, and trimIntervalToContig then has nothing to clamp to and
+        // returns null: this is the case whose failure is reported as a null rather than as padding.
+        ctor("pad-active-past-contig", "chr1", 2500, 2600, 10);
 
         // The (span, paddedSpan) constructor, where the padding is not symmetric and where the
         // containment precondition is broken.
@@ -126,6 +130,9 @@ public class AssemblyRegionDump {
         // A narrow region, to show that trim can drop every read.
         region("narrow", "chr1", 1000, 1010, 5);
         trim("narrow", "narrow-trim", "chr1", 1005, 1008, 0);
+
+        // The second read list, which trim does not carry across.
+        pileupThroughTrim("pileup-drop");
     }
 
     static int indexOf(final String name) {
@@ -246,7 +253,11 @@ public class AssemblyRegionDump {
         final List<GATKRead> reads = new ArrayList<>();
         for (final SAMRecord record : corpus) {
             final GATKRead read = copy(record);
-            if (read.isUnmapped() || read.getContig() == null || read.getStart() < 1) {
+            // The same three refusals add() makes, applied up front: an unmapped read, a read with
+            // no contig, and a read whose end precedes its start (an all-insertion cigar consumes
+            // no reference, so 10I at 1790 ends at 1789) all fail SimpleInterval's own validation.
+            if (read.isUnmapped() || read.getContig() == null || read.getStart() < 1
+                    || read.getEnd() < read.getStart()) {
                 continue;
             }
             if (!region.getPaddedSpan().overlaps(read)) {
@@ -295,6 +306,20 @@ public class AssemblyRegionDump {
             System.out.printf("trim\t%s\tE:%s:%s%n", label, e.getClass().getName(),
                     oneLine(e.getMessage()));
         }
+    }
+
+    /**
+     * Fill both read lists, then trim. The second list is not carried across: the trimmed region is
+     * constructed empty and only addAll is called on it, so the hard-clipped pileup reads are gone.
+     */
+    static void pileupThroughTrim(final String label) {
+        final AssemblyRegion region = build("wide");
+        region.addHardClippedPileupReads(region.getReads());
+        System.out.printf("pileup\t%s\tbefore\t%d\t%d%n", label, region.size(),
+                region.getHardClippedPileupReads().size());
+        final AssemblyRegion trimmed = region.trim(new SimpleInterval("chr1", 500, 1000), 50);
+        System.out.printf("pileup\t%s\tafter\t%d\t%d%n", label, trimmed.size(),
+                trimmed.getHardClippedPileupReads().size());
     }
 
     static String oneLine(final String message) {

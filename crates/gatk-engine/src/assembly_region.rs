@@ -92,7 +92,10 @@ impl RegionError {
             RegionError::MissingContig { .. } => {
                 "org.broadinstitute.hellbender.exceptions.UserException$MissingContigInSequenceDictionary"
             }
-            RegionError::Clip(_) => "java.lang.IllegalArgumentException",
+            // `Utils.validate`, not `Utils.validateArg`: the containment precondition is an
+            // IllegalStateException and every other refusal here is an IllegalArgumentException.
+            // The golden is what settled that, and the two are one word apart in the source.
+            RegionError::PaddedDoesNotContainActive => "java.lang.IllegalStateException",
             _ => "java.lang.IllegalArgumentException",
         }
     }
@@ -321,6 +324,18 @@ impl AssemblyRegion {
         let padded = self.padded_span.clone();
         validate_addition(&self.hard_clipped_pileup_reads, &record, &padded, header)?;
         self.hard_clipped_pileup_reads.push(record);
+        Ok(())
+    }
+
+    /// `AssemblyRegion.addHardClippedPileupReads`.
+    pub fn add_hard_clipped_pileup_reads(
+        &mut self,
+        records: impl IntoIterator<Item = BamRecord>,
+        header: &SamHeader,
+    ) -> Result<(), RegionError> {
+        for record in records {
+            self.add_hard_clipped_pileup_read(record, header)?;
+        }
         Ok(())
     }
 
