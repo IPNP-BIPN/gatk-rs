@@ -287,6 +287,14 @@
       "cases": 3
     },
     {
+      "id": "intervallisttoolspadbreak",
+      "status": "oracle-backed",
+      "tools": [
+        "IntervalListTools"
+      ],
+      "cases": 1
+    },
+    {
       "id": "liftoverintervallist",
       "status": "unchecked",
       "tools": [
@@ -351,5 +359,27 @@
       "cases": 1
     }
   ],
-  "source": "/Users/benjamin/Picard/tools/conformance/manifest.json"
+  "source": "/Users/benjamin/Picard/tools/conformance/manifest.json",
+  "coverage": {
+    "AddOATag": {
+      "rows": 9,
+      "accepted": 9,
+      "rejected": 0,
+      "distinct_outputs": 2,
+      "distinct_rejections": 0,
+      "matched": 0,
+      "t": 2,
+      "share": 0.0
+    },
+    "CollectAlignmentSummaryMetrics": {
+      "rows": 16,
+      "accepted": 16,
+      "rejected": 0,
+      "distinct_outputs": 11,
+      "distinct_rejections": 0,
+      "matched": 0,
+      "t": 2,
+      "share": 0.0
+    }
+  }
 }

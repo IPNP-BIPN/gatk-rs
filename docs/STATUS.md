@@ -6,26 +6,26 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 31 | 10.0% |
+| oracle-backed | 32 | 10.3% |
 | golden-pending | 0 | 0.0% |
-| unchecked | 13 | 4.2% |
+| unchecked | 12 | 3.9% |
 | not started | 267 | 85.9% |
 | **total** | **311** | |
 
-`oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: the t-wise arrays (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) are generated but not yet run, so the argument-coverage column below is empty for every tool. That is the distance between where the programme is and what it claims to be heading for.
+`oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
 
 ## picard-origin tools (43 of 109 started)
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
 | `AccumulateQualityYieldMetrics` | reporting-walker | unchecked | accumulatequalityyield | 1 | not measured |
-| `AddOATag` | record-transform | oracle-backed | addoatag, addoatag-bam | 2 | not measured |
+| `AddOATag` | record-transform | oracle-backed | addoatag, addoatag-bam | 2 | t=2, 0/9 rows (0%) |
 | `AddOrReplaceReadGroups` | record-transform | oracle-backed | addreplacerg | 1 | not measured |
 | `BamIndexStats` | reporting-walker | oracle-backed | bamindexstats | 1 | not measured |
 | `BedToIntervalList` | interval-utility | unchecked | bedtointervallist | 1 | not measured |
 | `CalculateReadGroupChecksum` | reporting-walker | oracle-backed | rgchecksum | 1 | not measured |
 | `CleanSam` | record-transform | oracle-backed | cleansam | 1 | not measured |
-| `CollectAlignmentSummaryMetrics` | reporting-walker | oracle-backed | metrics, rejections | 5 | not measured |
+| `CollectAlignmentSummaryMetrics` | reporting-walker | oracle-backed | metrics, rejections | 5 | t=2, 0/16 rows (0%) |
 | `CollectBaseDistributionByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `CollectGcBiasMetrics` | reporting-walker | unchecked | gcbias | 1 | not measured |
 | `CollectInsertSizeMetrics` | reporting-walker | oracle-backed | metrics | 4 | not measured |
@@ -40,7 +40,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterSamReads` | record-transform | oracle-backed | filtersamreads | 1 | not measured |
 | `FixMateInformation` | record-transform | oracle-backed | fixmate | 1 | not measured |
 | `IntervalListToBed` | interval-utility | unchecked | intervallisttobed | 1 | not measured |
-| `IntervalListTools` | interval-utility | unchecked | intervallisttools | 3 | not measured |
+| `IntervalListTools` | interval-utility | oracle-backed | intervallisttools, intervallisttoolspadbreak | 4 | not measured |
 | `LiftOverIntervalList` | interval-utility | unchecked | liftoverintervallist | 1 | not measured |
 | `MeanQualityByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `MergeBamAlignment` | record-transform | unchecked | mergebamalignment, mergebamalignment-full | 2 | not measured |

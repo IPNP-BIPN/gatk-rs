@@ -48,6 +48,14 @@ PORTS = [
     ("htsjdk-rs", REPO.parent / "htsjdk" / "tools" / "conformance" / "manifest.json"),
 ]
 
+# Each port's argument-coverage measurement, written by its own CI from the covering arrays. A
+# port with no such file has not run its arrays, and every tool it covers reports `not measured`
+# rather than nothing, so a reader cannot mistake silence for coverage.
+MEASURED = {
+    "picard-rs": REPO.parent / "Picard" / "tools" / "coverage" / "measured.json",
+    "htsjdk-rs": REPO.parent / "htsjdk" / "tools" / "coverage" / "measured.json",
+}
+
 
 def summarize(manifest):
     """The subset of a port's manifest the dashboard needs, and nothing else."""
@@ -75,6 +83,10 @@ def refresh():
         with open(path) as fh:
             summary = summarize(json.load(fh))
         summary["source"] = str(path)
+        measured = MEASURED.get(name)
+        if measured and measured.exists():
+            with open(measured) as fh:
+                summary["coverage"] = json.load(fh).get("tools", {})
         out = VENDORED / f"{name}.json"
         out.write_text(json.dumps(summary, indent=2) + "\n")
         written.append((name, len(summary["suites"])))
@@ -100,6 +112,30 @@ def load_manifests():
 RANK = {"oracle-backed": 3, "golden-pending": 2, "unchecked": 1, "not started": 0}
 
 
+def coverage_cell(entry, manifests):
+    """The argument-coverage column for one tool.
+
+    `not measured` is the honest answer for a tool whose arrays have never been run, and it is
+    also the answer for a tool that has an array but no port binary to run it against: an array
+    run against the reference alone measures the reference, not the port.
+
+    Where there is a measurement, the cell carries the strength, the fraction, and the number of
+    distinct outputs the accepted rows produced. The last one is not decoration: an array whose
+    accepted rows all produce the same output covers its argument pairs without observing them, so
+    a high fraction over one distinct output says nothing about the port.
+    """
+    measured = manifests.get(entry["port"], {}).get("coverage", {}).get(entry["tool"])
+    if not measured:
+        return "not measured"
+    cell = (
+        f"t={measured['t']}, {measured['matched']}/{measured['rows']} rows "
+        f"({measured['share']:.0%})"
+    )
+    if measured["distinct_outputs"] <= 1:
+        cell += ", **1 distinct output**"
+    return cell
+
+
 def tool_states(manifests):
     """Map tool name -> {'state', 'suites', 'port', 'cases'}."""
     states = {}
@@ -107,7 +143,8 @@ def tool_states(manifests):
         for suite in manifest["suites"]:
             for tool in suite.get("tools", []):
                 entry = states.setdefault(
-                    tool, {"state": "unchecked", "suites": [], "port": port, "cases": 0}
+                    tool,
+                    {"state": "unchecked", "suites": [], "port": port, "cases": 0, "tool": tool},
                 )
                 entry["suites"].append(suite["id"])
                 entry["cases"] += suite["cases"]
@@ -155,11 +192,12 @@ def render(inventory, manifests, missing):
     lines.append(
         "`oracle-backed` means CI re-derives the tool's goldens in the pinned container on every "
         "run and compares them. It does **not** mean the tool is byte-identical over its whole "
-        "argument surface: the t-wise arrays "
+        "argument surface: that is what the argument-coverage column is for. A t-wise array "
         "(`tools/coverage/covering.py`, sized in "
-        "[what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) are generated but not "
-        "yet run, so the argument-coverage column below is empty for every tool. That is the "
-        "distance between where the programme is and what it claims to be heading for."
+        "[what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the "
+        "reference and the port, and the column reports the fraction of its rows on which the two "
+        "answered identically, rejections included. `not measured` means the array has never been "
+        "run against a port binary, which is still true of most tools here."
     )
     lines.append("")
 
@@ -182,7 +220,7 @@ def render(inventory, manifests, missing):
                 suites = ", ".join(sorted(set(entry["suites"])))
                 lines.append(
                     f"| `{tool['name']}` | {tool['archetype']} | {state} | {suites} | "
-                    f"{entry['cases']} | not measured |"
+                    f"{entry['cases']} | {coverage_cell(entry, manifests)} |"
                 )
             lines.append("")
         not_started = [r[0]["name"] for r in subset if r[1] == "not started"]
