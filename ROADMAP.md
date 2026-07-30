@@ -98,9 +98,11 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       overlap fix (3 pileups and 24 quality pairs)
 - [x] `ReadStateManager`, `PerSampleReadStateManager` and `SamplePartitioner`, downsampling
       excepted (56 traversal steps over 5 runs)
-- [ ] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`). Refused
-      rather than approximated so far: `ReservoirDownsampler` and `LevelingDownsampler` draw from
-      `Utils.getRandomGenerator`, so this needs Java's `Random` and its exact draw sequence
+- [~] `LIBSDownsamplingInfo` and the downsampling itself (`--max-depth-per-sample`).
+      `java.util.Random` is ported from its published contract (98 sequences) and
+      `ReservoirDownsampler` on top of it (7 reservoirs, with the shared stream's position
+      compared after each). Still to do: `LevelingDownsampler`, which draws through
+      commons-math3's `RandomDataGenerator` over a `Well19937c`, a different generator
 - [x] `LocusIteratorByState`: one pileup per covered locus, both exclusions and the per-base
       adaptor test (148 pileups over 12 runs)
 - [x] `IntervalAlignmentContextIterator`, `IntervalLocusIterator`, `IntervalOverlappingIterator`

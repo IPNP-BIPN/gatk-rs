@@ -324,6 +324,22 @@
           "why": "From the pinned container on a real x86-64 runner: 98 sequences over 7 seeds, plus 7 interleaved streams. The interleaved rows are the ones that would catch a plausible wrong port: a version whose methods are individually correct but whose draw counts are not passes every single-method row and fails those, because nextDouble and nextLong each consume two draws. The seeds include the GATK constant, zero, both extremes of long, and the multiplier itself, which scrambles to zero."
         }
       ]
+    },
+    {
+      "id": "reservoir",
+      "title": "ReservoirDownsampler selections",
+      "status": "oracle-backed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Which reads a deep pileup keeps. Four behaviours change the answer without being inherent to reservoir sampling. The draw happens even when the slot is discarded: nextInt(totalReadsSeen) is called for every read past the target and only then is the slot compared against it, so a read that is thrown away still advances the shared static stream and every later draw anywhere in the run depends on how many reads were seen here. The probe therefore reports the generator's next value after each case, not only the reads kept: two cases that keep the same reads can leave the stream in different places. The bound grows with the count, so the same read draws differently depending on how many preceded it. Replacement is in place, so the reservoir's order is the order slots were last written rather than the reads' order. And setNonRandomReplacementMode swaps the draw for Math.abs(name.hashCode()) % totalReadsSeen, where Math.abs is wrong for Integer.MIN_VALUE. The generator is reset before each case, so a case measures the downsampler rather than the order the cases ran in.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "ReservoirDownsamplerDump",
+          "golden": "crates/gatk-engine/tests/data/reservoir.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. The stream-position rows are the evidence: under-target and nonrandom both leave the generator at 1057280359, its first value, because neither took a draw, while one-over leaves it at -873351126, its second, because it took exactly one before discarding the slot. A port that skipped the draw when the slot loses would keep the same reads and fail those rows."
+        }
+      ]
     }
   ],
   "probes": []
