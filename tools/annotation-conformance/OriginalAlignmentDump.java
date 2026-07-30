@@ -32,7 +32,6 @@ import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.VariantContextBuilder;
 
-import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags;
 import org.broadinstitute.hellbender.tools.walkers.annotator.OriginalAlignment;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
@@ -68,7 +67,7 @@ public class OriginalAlignmentDump {
         System.out.println("# OriginalAlignmentDump: OCM, and the tag it reads");
 
         final OriginalAlignment annotation = new OriginalAlignment();
-        final ReferenceContext reference = referenceContext();
+        final org.broadinstitute.hellbender.engine.ReferenceContext reference = referenceContext();
 
         // No TLOD at all: the annotation logs once and says nothing.
         emit("no-tlod", annotation, reference, site(null), matrix(List.of(
@@ -139,8 +138,8 @@ public class OriginalAlignmentDump {
         return header;
     }
 
-    static ReferenceContext referenceContext() {
-        return new ReferenceContext(null, new SimpleInterval("chr1", START, START));
+    static org.broadinstitute.hellbender.engine.ReferenceContext referenceContext() {
+        return new org.broadinstitute.hellbender.engine.ReferenceContext(null, new SimpleInterval("chr1", START, START));
     }
 
     static VariantContext site(final String tlod) {
@@ -190,7 +189,7 @@ public class OriginalAlignmentDump {
     }
 
     static void emit(final String label, final OriginalAlignment annotation,
-                     final ReferenceContext reference, final VariantContext vc,
+                     final org.broadinstitute.hellbender.engine.ReferenceContext reference, final VariantContext vc,
                      final AlleleLikelihoods<GATKRead, Allele> likelihoods) {
         try {
             final Map<String, Object> result = annotation.annotate(reference, vc, likelihoods);
