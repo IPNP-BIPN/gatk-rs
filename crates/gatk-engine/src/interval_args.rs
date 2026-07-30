@@ -161,7 +161,7 @@ fn sort_and_merge(
 ///
 /// The `ALL` is hard-coded upstream and is not the user's merging rule, which is why padding can
 /// join two intervals that `OVERLAPPING_ONLY` would have kept apart.
-fn with_flanks(
+pub fn with_flanks(
     intervals: Vec<SimpleInterval>,
     padding: i32,
     header: &SamHeader,
