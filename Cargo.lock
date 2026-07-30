@@ -211,6 +211,7 @@ dependencies = [
  "gatk-corpus",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-vcf",
  "noodles-bam",
  "noodles-fasta",
 ]
