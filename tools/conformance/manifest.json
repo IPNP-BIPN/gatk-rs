@@ -372,6 +372,21 @@
           "why": "From the pinned container on a real x86-64 runner. The stream-position rows are the evidence for the draw counts, and the target-zero pair is the evidence for the refusal: with minElementsPerStack one the stacks fall to one item each, and with zero the same target reaches nextPermutation(n, 0) and throws."
         }
       ]
+    },
+    {
+      "id": "variantwalker",
+      "title": "VariantWalker traversal",
+      "status": "golden-pending",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The traversal every variant-based tool inherits, run through the real command line rather than reconstructed. Two of its behaviours are not what restricting a traversal to -L suggests, and both are visible only when the intervals are not the sorted, non-overlapping list the class asks for. The de-duplication remembers one interval and not all of them: FeatureIntervalIterator's featureIsNovel tests a feature against previousInterval alone, so a variant covered by intervals 1 and 3 but not by 2 is handed to apply twice, while the same variant covered by two adjacent intervals arrives once. Nothing enforces the documented precondition, so breaking it produces duplicates rather than an error. And an empty interval list is not an empty traversal: setIntervalsForTraversal maps both null and an empty list to null, which means no restriction at all. The record fields travel with each apply call because the walker is also where a decoded record becomes what a tool sees: the interval it builds is SimpleInterval(variant), whose end is the END attribute when the record carries one and start plus the reference allele's length minus one otherwise.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "VariantWalkerDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []
