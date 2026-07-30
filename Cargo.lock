@@ -188,6 +188,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-annotation"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "gatk-engine",
+ "htsjdk-vcf",
+]
+
+[[package]]
 name = "gatk-corpus"
 version = "0.1.0"
 dependencies = [
@@ -244,7 +253,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 [[package]]
 name = "htsjdk-bam"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=b3a5b3d2a17f5c6e5f46cdcb18752eefaaf29281#b3a5b3d2a17f5c6e5f46cdcb18752eefaaf29281"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
 dependencies = [
  "htsjdk-bgzf",
  "md-5",
@@ -253,10 +262,18 @@ dependencies = [
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=b3a5b3d2a17f5c6e5f46cdcb18752eefaaf29281#b3a5b3d2a17f5c6e5f46cdcb18752eefaaf29281"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
 dependencies = [
  "flate2",
  "libz-sys",
+]
+
+[[package]]
+name = "htsjdk-vcf"
+version = "0.1.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
+dependencies = [
+ "jmath",
 ]
 
 [[package]]
@@ -268,6 +285,11 @@ dependencies = [
  "equivalent",
  "hashbrown",
 ]
+
+[[package]]
+name = "jmath"
+version = "0.0.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=868708e8b4ad3bc9479a14e1656dbda85df7fd93#868708e8b4ad3bc9479a14e1656dbda85df7fd93"
 
 [[package]]
 name = "lexical-core"

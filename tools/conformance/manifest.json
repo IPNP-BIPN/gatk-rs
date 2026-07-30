@@ -17,6 +17,20 @@
   "default_java_props": ["-Duser.language=en", "-Duser.country=US"],
   "suites": [
     {
+      "id": "annotation-counting",
+      "title": "The counting INFO annotations",
+      "status": "oracle-backed",
+      "harness": "tools/annotation-conformance",
+      "why": "ChromosomeCounts, SampleList and RawGtCount are the members of the counting family that need no AlleleLikelihoods, so they can be asked through their own interface. What is measured is not only the numbers but the shape of what an annotation returns, which is where a port goes wrong silently. The map is Map<String,Object>, so the Java class of each value is part of the answer: ChromosomeCounts puts an Integer for one alternate allele and an ArrayList for two or more, and both render the same way. An empty map is not zeroes, it means the keys are absent from the record, and each annotation has at least one guard reaching that branch. RawGtCount.annotate returns null rather than an empty map, a third thing again, and its real work is combineRawData, whose output drops one of the three counts it just summed and writes a literal dot in its place, so the result of a combine cannot be fed back into one. And SampleList's guard is isMonomorphicInSamples, which is not every genotype is hom-ref: a site with alternate alleles and no genotypes at all is not monomorphic, while a site where everybody is a no-call is.",
+      "compare": { "mode": "lines" },
+      "cases": [
+        {
+          "dump": "AnnotationDump",
+          "golden": "crates/gatk-annotation/tests/data/annotations.txt.gz"
+        }
+      ]
+    },
+    {
       "id": "readfilters",
       "title": "ReadFilterLibrary decisions",
       "status": "oracle-backed",
