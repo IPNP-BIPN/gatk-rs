@@ -103,6 +103,11 @@ impl Default for AssemblyRegionArgs {
 }
 
 /// What `AssemblyRegionArgumentCollection.validate` refuses, in the order it checks.
+///
+/// Every one of these is a `CommandLineException.BadArgumentValue`, but Barclay renders its two
+/// constructors differently and the golden is what said so: the one-argument form prefixes
+/// `Illegal argument value: `, while the two-argument form names the argument and its value. The
+/// last two refusals use the second form, and they are the only two that do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArgsError {
     SizeNotPositive,
@@ -111,6 +116,39 @@ pub enum ArgsError {
     NegativeMaxReads,
     NegativeSnpPadding(i32),
     NegativeIndelPadding(i32),
+}
+
+impl ArgsError {
+    /// The class the reference throws, as the dump prints it.
+    pub fn class(&self) -> &'static str {
+        "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue"
+    }
+
+    /// The message, verbatim. The `< 0` runs into the value without a space because upstream
+    /// concatenates `"" + snpPaddingForGenotyping + "< 0"`.
+    pub fn message(&self) -> String {
+        match self {
+            ArgsError::SizeNotPositive => {
+                "Illegal argument value: min/max assembly region size must be > 0".to_string()
+            }
+            ArgsError::MinAboveMax => {
+                "Illegal argument value: minAssemblyRegionSize must be <= maxAssemblyRegionSize"
+                    .to_string()
+            }
+            ArgsError::NegativePadding => {
+                "Illegal argument value: assemblyRegionPadding must be >= 0".to_string()
+            }
+            ArgsError::NegativeMaxReads => {
+                "Illegal argument value: maxReadsPerAlignmentStart must be >= 0".to_string()
+            }
+            ArgsError::NegativeSnpPadding(value) => {
+                format!("Argument paddingAroundSNPs has a bad value: {value}< 0")
+            }
+            ArgsError::NegativeIndelPadding(value) => {
+                format!("Argument paddingAroundIndels has a bad value: {value}< 0")
+            }
+        }
+    }
 }
 
 impl AssemblyRegionArgs {
