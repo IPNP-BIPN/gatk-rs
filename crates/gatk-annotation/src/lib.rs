@@ -17,6 +17,7 @@
 //!   `getKeyNames()` is the declaration order and nothing else.
 
 pub mod chromosome_counts;
+pub mod coverage;
 pub mod info_annotation;
 pub mod raw_gt_count;
 pub mod sample_list;

@@ -193,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "gatk-engine",
+ "htsjdk-bam",
  "htsjdk-vcf",
 ]
 

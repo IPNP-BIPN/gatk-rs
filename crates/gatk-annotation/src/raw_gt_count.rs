@@ -36,7 +36,9 @@
 //! map slot the accumulator happens to use.
 
 use crate::info_annotation::{AnnotationValue, InfoFieldAnnotation};
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
+use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
 /// `GATKVCFConstants.RAW_GENOTYPE_COUNT_KEY`.
@@ -188,6 +190,7 @@ impl InfoFieldAnnotation for RawGtCount {
         &self,
         _reference: Option<&ReferenceContext>,
         _vc: &VariantContext,
+        _likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     ) -> Vec<(String, AnnotationValue)> {
         Vec::new()
     }

@@ -269,7 +269,7 @@ fn key_names_match_the_reference() {
 fn chromosome_counts_matches_the_reference() {
     let text = golden();
     for (label, vc) in fixtures() {
-        let ours = render(&ChromosomeCounts.annotate(None, &vc));
+        let ours = render(&ChromosomeCounts.annotate(None, &vc, None));
         assert_eq!(
             ours,
             value(&text, &format!("anno\tChromosomeCounts\t{label}")),
@@ -282,7 +282,7 @@ fn chromosome_counts_matches_the_reference() {
 fn sample_list_matches_the_reference() {
     let text = golden();
     for (label, vc) in fixtures() {
-        let ours = render(&SampleList.annotate(None, &vc));
+        let ours = render(&SampleList.annotate(None, &vc, None));
         assert_eq!(
             ours,
             value(&text, &format!("anno\tSampleList\t{label}")),
@@ -304,7 +304,7 @@ fn raw_gt_count_annotates_nothing_anywhere() {
             "null",
             "the reference returned something for {label}"
         );
-        assert!(RawGtCount.annotate(None, &vc).is_empty());
+        assert!(RawGtCount.annotate(None, &vc, None).is_empty());
     }
 }
 
