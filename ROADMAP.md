@@ -122,11 +122,14 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] `VariantWalker` (12 traversals, 30 `apply` calls). The VCF reader it stands on landed in
       htsjdk-rs first: the header frame, the typed header lines, the site columns and the genotype
       columns, four oracle-backed suites there
-- [ ] `AssemblyRegionWalker` (the base of G3). Two of the three pieces under it are done: the
-      activity profile that decides where a region starts and stops (20 kernels compared as raw
-      bits, 8 profiles), and `AssemblyRegion` itself, its two spans, its reads and its trimming
-      (3481 comparator pairs, and the javadoc's own worked example shown to disagree with the code
-      it documents). What remains is `AssemblyRegionIterator` and the walker
+- [x] `AssemblyRegionWalker` (the base of G3), and the four layers under it, each oracle-backed on
+      its own: the activity profile that decides where a region starts and stops (20 kernels
+      compared as raw bits, 8 profiles); `AssemblyRegion` itself, its two spans, its reads and its
+      trimming (3481 comparator pairs, and the javadoc's own worked example shown to disagree with
+      the code it documents); the locus iterators that manufacture an empty pileup on a coverage
+      gap, without which a region ends at the last covered base; the traversal that turns loci into
+      regions; and the walker, run through the real command line, where `--force-active` is shown to
+      rewrite ten flags without moving one boundary
 - [ ] the multi-pass and multi-input walker variants
 
 ### G1.7 Annotations

@@ -451,7 +451,7 @@
     {
       "id": "assemblyregionwalker",
       "title": "What an AssemblyRegionWalker hands to apply()",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The last of the five walker archetypes and the one HaplotypeCaller and Mutect2 are built on. The probe is a real AssemblyRegionWalker run through the real command line rather than a reconstruction, so its defaults are measured rather than transcribed: min 50, max 300, padding 100, threshold 0.002, propagation 50, from an argument collection the walker instantiates without overriding anything. Four behaviours are the point and three are invisible from any tool output. There is one read shard per contig rather than one per interval, so two -L arguments on the same contig share a shard and an activity profile and can end up in one region if the padding joins them, while two on different contigs cannot whatever their distance. apply receives its reference and feature contexts over the region padded span rather than its active span, so a tool reads bases outside the territory it may call in, which is the point of the padding. force-active rewrites isActive after the iterator has produced the region, so it marks every region active without moving a single boundary, where a port folding it into the evaluator would return one enormous region instead. And the default read filters are WellformedReadFilter and MappedReadFilter, the same pair as a LocusWalker and not a ReadWalker single filter, so an unmapped read parked at its mate coordinate never reaches this traversal. The fixture is the read walker one, so a divergence between these suites is a divergence between traversals rather than between inputs.",
@@ -459,7 +459,7 @@
       "cases": [
         {
           "dump": "AssemblyRegionWalkerDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/assembly_region_walker.txt.gz"
         }
       ]
     }

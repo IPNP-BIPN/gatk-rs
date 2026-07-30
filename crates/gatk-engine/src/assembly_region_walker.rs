@@ -41,7 +41,7 @@ use crate::assembly_region_iterator::{
 };
 use crate::interval::SimpleInterval;
 use crate::locus_iterator::{self, LocusIteratorOptions};
-use crate::read_states::{DownsamplingInfo, ReadStateManager};
+use crate::read_states::{DownsamplingInfo, ReadStateError, ReadStateManager};
 use crate::read_utils;
 use crate::variant_source::Located;
 use htsjdk_bam::header::SamHeader;
@@ -75,6 +75,56 @@ pub fn make_read_shards(
         .iter()
         .map(|group| ReadShard::new(group, padding, header))
         .collect()
+}
+
+/// What the traversal refuses, from either of the two layers that can refuse.
+///
+/// Keeping them apart matters for one case in particular: disabling the default read filters lets
+/// a read with no read group through, and the refusal comes from the **sample partition** inside
+/// `LocusIteratorByState` rather than from anything in the walker. The reference reports it as an
+/// `IllegalStateException` reading "Offered read with sample name null to SamplePartitioner but
+/// this sample wasn't provided as one of possible samples at construction", which names the layer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WalkerError {
+    Region(RegionError),
+    ReadState(ReadStateError),
+}
+
+impl From<RegionError> for WalkerError {
+    fn from(error: RegionError) -> WalkerError {
+        WalkerError::Region(error)
+    }
+}
+
+impl From<ReadStateError> for WalkerError {
+    fn from(error: ReadStateError) -> WalkerError {
+        WalkerError::ReadState(error)
+    }
+}
+
+impl WalkerError {
+    /// The Java class the reference throws, as the dump prints it.
+    pub fn class(&self) -> &'static str {
+        match self {
+            WalkerError::ReadState(ReadStateError::UndeclaredSample(_)) => {
+                "java.lang.IllegalStateException"
+            }
+            WalkerError::Region(error) => error.class(),
+            _ => "java.lang.IllegalStateException",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            WalkerError::ReadState(ReadStateError::UndeclaredSample(sample)) => format!(
+                "Offered read with sample name {} to SamplePartitioner but this sample wasn't \
+                 provided as one of possible samples at construction",
+                sample.clone().unwrap_or_else(|| "null".to_string())
+            ),
+            WalkerError::Region(error) => error.message(),
+            WalkerError::ReadState(other) => format!("{other:?}"),
+        }
+    }
 }
 
 /// One locus as the traversal sees it: where it is and how deep it is.
@@ -116,7 +166,7 @@ pub fn traverse(
     args: &AssemblyRegionArgs,
     header: &SamHeader,
     is_active: &dyn Fn(&LocusDepth) -> f64,
-) -> Result<Vec<TraversedRegion>, RegionError> {
+) -> Result<Vec<TraversedRegion>, WalkerError> {
     let shards = make_read_shards(intervals, args.assembly_region_padding, header)
         .expect("a padding validate() has already accepted");
 
@@ -134,8 +184,7 @@ pub fn traverse(
             .cloned()
             .collect();
 
-        let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)
-            .expect("the traversal builds its LocusIteratorByState with DownsamplingMethod.NONE");
+        let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
         // `new LocusIteratorByState(..., true)`: the keepUniqueReadList constructor, whose
         // deletion and N settings are both on, unlike a LocusWalker's.
         let contexts = locus_iterator::contexts(
@@ -147,8 +196,7 @@ pub fn traverse(
                 include_ns: true,
             },
             states,
-        )
-        .expect("the shard's reads are what the iterator was built from");
+        )?;
 
         let loci: Vec<LocusDepth> = contexts
             .iter()
