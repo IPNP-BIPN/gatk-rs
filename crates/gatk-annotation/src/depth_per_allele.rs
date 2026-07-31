@@ -144,12 +144,16 @@ pub fn allele_depths(
     Some(out)
 }
 
-/// `MathUtils.normalizeSumToOne`, which divides by the sum and leaves an all-zero array alone.
+/// `MathUtils.normalizeSumToOne`, which divides by the sum whatever the sum is.
+///
+/// There is no guard for a zero sum: an all-zero `AD` divides zero by zero, so a site with no
+/// informative reads gets an `AF` of `NaN` rather than of zero. The golden's `empty` and
+/// `uninformative` rows are both that, and a consumer reading `AF` as a number has to handle it.
 fn normalize_sum_to_one(values: &[f64]) -> Vec<f64> {
-    let sum: f64 = values.iter().sum();
-    if sum == 0.0 {
-        return values.to_vec();
+    if values.is_empty() {
+        return Vec::new();
     }
+    let sum: f64 = values.iter().sum();
     values.iter().map(|value| value / sum).collect()
 }
 

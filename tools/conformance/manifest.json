@@ -709,7 +709,7 @@
     {
       "id": "annotation-depth-per-allele",
       "title": "AD, AF, DP and the marginalisation under them",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "AD, AF and the HaplotypeCaller's DP are all counted off a marginalised likelihood matrix, and the marginalisation's allele order is a HashMap's. Collectors.toMap builds one and marginalize takes its key set as the new allele array, so the order follows Allele.hashCode, which is the bases' array hash times thirty-one plus the boolean hash of the reference flag. That order is observable, because searchBestAllele breaks a tie by keeping the first index, so a read supporting two alleles equally is attributed to whichever the hash put first. marginalize itself takes the maximum likelihood of the old alleles a new one stands for rather than their sum. AD is keyed on the variant's alleles and counted over the matrix, so an allele the matrix holds and the variant does not is counted into a bucket nobody reads. AF drops the first entry, so it is one shorter than AD and the two do not line up by index. And DP counts informative reads only, so it can be lower than the INFO-level DP over the same site.",
@@ -719,7 +719,8 @@
       "cases": [
         {
           "dump": "DepthPerAlleleDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/depth_per_allele.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 41 rows. The order rows are the point: A*,C comes out C,A* and A*,C,G,T comes out T,C,A*,G, so the marginalised matrix does not follow the variant's allele order. The golden corrected the port on one thing, normalizeSumToOne, which has no zero guard: an all-zero AD divides zero by zero, so a site with no informative reads gets an AF of NaN rather than of zero. Two of those rows are an invalid operation's NaN whose sign is the FPU's, exempted off x86-64 under decision 0012."
         }
       ]
     }
