@@ -17,6 +17,7 @@
 //!   `getKeyNames()` is the declaration order and nothing else.
 
 pub mod allele_specific_rank_sum;
+pub mod allele_specific_strand_bias;
 pub mod chromosome_counts;
 pub mod coverage;
 pub mod depth_per_allele;

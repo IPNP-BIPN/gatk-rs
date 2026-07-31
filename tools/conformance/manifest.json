@@ -795,6 +795,24 @@
           "why": "From the pinned container on a real x86-64 runner. 100 rows: 11 histograms, 5 compressed lists, 16 binnings one value at a time, 27 direct and 27 raw allele-specific answers, and 7 combinations with their finalisations. The binning rows are what make the claim that a negative score bins away from zero a measurement rather than a reading of the source, and the ref-only row is what showed that a site with reference reads and no alternate read writes the four characters NaN into the raw field: the rank sum of an empty series is NaN, Histogram.add drops it, and an empty histogram renders as Double.toString(Double.NaN)."
         }
       ]
+    },
+    {
+      "id": "annotation-allele-specific-strand-bias",
+      "title": "AS_FS, AS_SOR and the strand table they share",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "AS_SB_TABLE writes an entry for the reference too and puts the delimiter between entries, so it does not start with one, while the allele-specific rank sums skip the reference's value but keep its slot and theirs does: two families, two conventions for the same delimiter, and this parser refuses a count mismatch outright where the other pads. A sample contributes nothing at all unless its whole table holds more than two informative reads, so a sample with exactly two is dropped even for the allele that had both of them. AS_StrandOddsRatio computes a value for the reference allele against itself and then never prints it, while AS_FisherStrand filters the reference out first, and the two siblings differ in exactly that line. AS_FS floors its p-value at 1e-320, which is a subnormal, before phred-scaling it. And a reduced string skips an alternate the annotation data does not carry rather than writing the missing value, so the field can come out with fewer entries than the variant has alternates.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AlleleSpecificStrandBiasDump",
+          "golden": null,
+          "why": "Pending the pinned container on a real x86-64 runner."
+        }
+      ]
     }
   ],
   "probes": []
