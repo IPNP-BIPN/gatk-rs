@@ -9,6 +9,7 @@ repository.workspace = true
 gatk-engine = { path = "../gatk-engine" }
 htsjdk-bam.workspace = true
 htsjdk-vcf.workspace = true
+jmath.workspace = true
 
 [dev-dependencies]
 flate2 = "1"
