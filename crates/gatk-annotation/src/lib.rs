@@ -24,5 +24,6 @@ pub mod per_allele;
 pub mod rank_sum;
 pub mod raw_gt_count;
 pub mod sample_list;
+pub mod strand_bias;
 
 pub use info_annotation::{AnnotationValue, InfoFieldAnnotation};

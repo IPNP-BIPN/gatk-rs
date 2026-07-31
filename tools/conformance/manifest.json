@@ -669,6 +669,24 @@
           "why": "From the pinned container on a real x86-64 runner. 56 answers, 21 of them an absent key rather than a value, and no corrections. The absent ones are what the suite is for: null likelihoods, no genotypes, an empty matrix, and a site whose alternate series is empty all produce no field at all rather than a field reading zero."
         }
       ]
+    },
+    {
+      "id": "annotation-strand-bias",
+      "title": "FS, SOR and SB",
+      "status": "oracle-backed",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "The three strand-bias annotations read one 2x2 contingency table three ways, and four things decide what a consumer sees. The table is built per sample and only then added up, and a sample under the threshold contributes nothing rather than contributing to a pooled total that would pass, with FS using a minimum count of two and SOR of zero, so the two do not see the same table. The genotype field wins: if any genotype carries SB, both are computed from those per-sample arrays and the likelihood matrix is never consulted, which makes SB load-bearing rather than diagnostic. FS normalises a table above four hundred reads by scaling to about two hundred and truncating to int, so a deep site is scored from a table that no longer sums to its coverage, while SOR does not normalise at all. And FS is phred-scaled off a floor of 1e-320, which exists to prevent infinities, so the largest value a site can report is about 3200 whatever the evidence. The p-value itself goes through Math.pow, which decision 0007 deferred, so this suite is also where the port learns whether the platform's pow agrees with the reference's on these inputs.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "StrandBiasAnnotationDump",
+          "golden": "crates/gatk-annotation/tests/data/strand_bias.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 87 rows, no corrections, and sixteen of them are Fisher p-values that pass through Math.pow(10, x). Decision 0007 deferred that function because its intrinsic is GPL2 and not correctly rounded; the port calls the platform's powf, and on every input these annotations produce the two agree bit for bit. That is evidence, not a proof: it extends the pow measurement of decision 0007 rather than closing it."
+        }
+      ]
     }
   ],
   "probes": []

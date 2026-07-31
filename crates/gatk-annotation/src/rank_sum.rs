@@ -147,7 +147,7 @@ pub fn annotate<A: RankSumTest>(
 /// `{:.3}` (round-half-to-even on the same expansion). They differ on a value whose fourth decimal
 /// is exactly 5 and whose expansion terminates there, which a Z score can be: `0.0625` prints
 /// `0.063` in Java and `0.062` in Rust.
-fn format_three_decimals(value: f64) -> String {
+pub(crate) fn format_three_decimals(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_string();
     }
