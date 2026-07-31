@@ -38,7 +38,7 @@
     {
       "id": "annotation-per-allele",
       "title": "MBQ, MMQ, MPOS and MFRL",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "The four PerAlleleAnnotation members share one parent and disagree about everything the parent leaves open. An allele no read supports is annotated 0 by BaseQuality, 60 by MappingQuality, 50 by ReadPosition and 0 by FragmentLength, and the two invented values say why in a comment: an allele with no reads should not prejudice a site. Three filters run before a read contributes and they are not the same filter, so MappingQuality never sees a read of quality zero and its median can only be zero by way of the empty case, which is sixty. The value under the key is a Java int array, so it prints through Arrays.toString and carries the class [I rather than a list class. And includeRefAllele is false in the parent and overridden to true in three of the four, so MPOS reports one number per alternate allele where the others report one per allele including the reference. The median itself is commons-math3 Percentile finished with FastMath.round, which is floor(x + 0.5) and not Math.round; both are in jmath and this reaches the first.",
@@ -48,7 +48,8 @@
       "cases": [
         {
           "dump": "PerAlleleAnnotationDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/per_allele.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. The golden corrected the port on one point, and it is the shape of the data structure rather than the arithmetic: the buckets are keyed by the matrix's alleles while the loop runs over the variant's, so a variant allele the matrix never held looks up null and aggregate dereferences it. The port had it as an empty list, which would have produced the annotation's value for no reads, a plausible number where the reference produces no record at all."
         }
       ]
     },

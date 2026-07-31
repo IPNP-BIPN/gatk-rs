@@ -39,6 +39,20 @@
 //! `false` by default and overridden to `true` in three of the four, so `MPOS` reports one number
 //! per **alternate** allele while the other three report one per allele including the reference.
 //!
+//! # An allele the matrix does not hold is a `NullPointerException`
+//!
+//! ```java
+//! final Map<Allele, List<Integer>> values = likelihoods.alleles().stream()
+//!         .collect(Collectors.toMap(a -> a, a -> new ArrayList<>()));
+//! ...
+//! vc.getAlleles().stream().filter(this::includeAllele).mapToInt(a -> aggregate(values.get(a)))
+//! ```
+//!
+//! The buckets come from the **matrix's** alleles and the loop runs over the **variant's**, so a
+//! variant allele the matrix never held looks up `null` and `aggregate` dereferences it. Not an
+//! empty list, which would have been the value-for-no-reads: the annotation throws, and the
+//! golden says so. This is the one row of the suite that is an exception rather than a value.
+//!
 //! # The median is commons-math3, not the obvious one
 //!
 //! `MathUtils.median` goes through commons-math3 `Percentile` and finishes with
@@ -110,9 +124,9 @@ pub fn annotate<A: PerAlleleAnnotation>(
     _reference: Option<&ReferenceContext>,
     vc: &VariantContext,
     likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
-) -> Vec<(String, AnnotationValue)> {
+) -> Result<Vec<(String, AnnotationValue)>, MissingBucket> {
     let Some(likelihoods) = likelihoods else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
     // `Collectors.toMap` over `likelihoods.alleles()`, so the buckets are the matrix's alleles and
@@ -149,25 +163,42 @@ pub fn annotate<A: PerAlleleAnnotation>(
 
     // `vc.getAlleles()`, filtered, in the variant's order: the matrix's order does not decide
     // this, and a variant allele the matrix never held aggregates an empty list.
-    let statistics: Vec<AnnotationValue> = vc
+    let mut statistics: Vec<AnnotationValue> = Vec::new();
+    for allele in vc
         .alleles
         .iter()
         .filter(|allele| !allele.is_reference() || annotation.include_ref_allele())
-        .map(|allele| {
-            let collected = values
-                .iter()
-                .find(|(a, _)| a == allele)
-                .map(|(_, v)| v.as_slice())
-                .unwrap_or(&[]);
-            AnnotationValue::Int(annotation.aggregate(collected))
-        })
-        .collect();
+    {
+        // `values.get(a)` is null for an allele the matrix does not hold, and `aggregate`
+        // dereferences it. The refusal is the reference's, not the port's.
+        let Some((_, collected)) = values.iter().find(|(a, _)| a == allele) else {
+            return Err(MissingBucket);
+        };
+        statistics.push(AnnotationValue::Int(annotation.aggregate(collected)));
+    }
 
-    vec![(
+    Ok(vec![(
         annotation.vcf_key().to_string(),
         // `ImmutableMap.of(key, int[])`: an int array, whatever its length, and never a scalar.
         AnnotationValue::List(statistics),
-    )]
+    )])
+}
+
+/// The `NullPointerException` an allele outside the matrix produces.
+///
+/// It carries no message of its own: the reference's is the JVM's helpful-NPE text, which names
+/// the local variable rather than the allele.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MissingBucket;
+
+impl MissingBucket {
+    pub fn class(&self) -> &'static str {
+        "java.lang.NullPointerException"
+    }
+
+    pub fn message(&self) -> &'static str {
+        "Cannot invoke \"java.util.List.isEmpty()\" because \"values\" is null"
+    }
 }
 
 /// `BaseQuality`: `MBQ`, the median base quality at the variant's start.
@@ -350,7 +381,11 @@ macro_rules! info_annotation_for {
                 vc: &VariantContext,
                 likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
             ) -> Vec<(String, AnnotationValue)> {
-                annotate(self, reference, vc, likelihoods)
+                // The trait cannot carry the reference's exception, so a caller that needs to
+                // distinguish it calls `annotate` directly. An empty map here is the absence of
+                // keys, which is not what the reference does, and the suite tests the fallible
+                // form rather than this one.
+                annotate(self, reference, vc, likelihoods).unwrap_or_default()
             }
         }
     };
