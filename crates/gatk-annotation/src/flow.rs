@@ -104,6 +104,19 @@ fn is_special(allele: &Allele) -> bool {
     bases == "*" || bases == "<NON_REF>"
 }
 
+/// `Allele.length()`, which is **zero** for a symbolic allele rather than the length of its text.
+///
+/// So `<NON_REF>` is shorter than any reference and classifies as a deletion, even though it is
+/// skipped everywhere the classification is then read. The golden's `non-ref` row is that.
+fn allele_length(allele: &Allele) -> usize {
+    let bases = allele.display_string();
+    if bases.starts_with('<') && bases.ends_with('>') {
+        0
+    } else {
+        bases.len()
+    }
+}
+
 /// The reference window a flow annotation reads from.
 pub struct Window<'a> {
     pub start: i64,
@@ -161,7 +174,7 @@ impl Window<'_> {
 }
 
 /// Everything the eight annotations compute, in one pass, exactly as the base class does.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FlowAnnotations {
     /// `FLOW_INDEL_CLASSIFY`: `ins`, `del` or `NA`, one per alternate.
     pub indel: Vec<String>,
@@ -177,8 +190,8 @@ pub struct FlowAnnotations {
     pub right_motif: Option<Vec<Option<String>>>,
     /// `FLOW_GC_CONTENT`, a **float** rather than a double.
     pub gc_content: Option<f32>,
-    /// `FLOW_CYCLESKIP_STATUS`.
-    pub cycle_skip: Vec<String>,
+    /// `FLOW_CYCLESKIP_STATUS`, or the refusal a missing motif produces.
+    pub cycle_skip: Result<Vec<String>, CycleSkipError>,
     /// `FLOW_VARIANT_TYPE`.
     pub variant_type: Option<String>,
 }
@@ -189,12 +202,12 @@ fn indel_classify(vc: &VariantContext) -> (Vec<String>, Vec<Option<i32>>) {
         .alleles
         .iter()
         .find(|a| a.is_reference())
-        .map(|a| a.display_string().len())
+        .map(allele_length)
         .unwrap_or(0);
     let mut classify = Vec::new();
     let mut length = Vec::new();
     for allele in vc.alleles.iter().filter(|a| !a.is_reference()) {
-        let allele_length = allele.display_string().len();
+        let allele_length = allele_length(allele);
         classify.push(
             if ref_length == allele_length {
                 C_NA
@@ -371,6 +384,9 @@ fn right_motif(
     let ref_length = reference.display_string().len() as i64;
     let motif = window.motif(vc.start + ref_length, MOTIF_SIZE);
     if motif.len() != MOTIF_SIZE {
+        // The reference returns before putting RIGHT_MOTIF into the attribute map, but the list
+        // itself was already built by `isHmerIndel` and stays in the local context. So the
+        // annotation is absent while `cycleSkip` still sees a list, with nulls in it.
         return None;
     }
     Some(
@@ -394,16 +410,30 @@ fn gc_content(vc: &VariantContext, window: &Window) -> Option<f32> {
     Some(gc as f32 / seq.len() as f32)
 }
 
+/// What `cycleSkip` raises rather than answering, and they are two different exceptions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleSkipError {
+    /// The motif **list** is null, which the reference dereferences: `NullPointerException`.
+    MissingMotifList,
+    /// A motif **entry** is null, which Java concatenates as the four characters `null`. Those are
+    /// not bases, so the flow key's period guard trips: `GATKException`.
+    KeyFromNullMotif,
+}
+
 /// `cycleSkip`.
+///
+/// The motif lists are dereferenced without a guard, so a variant whose left motif ran off the
+/// window makes this throw a `NullPointerException` **before** the annotation gets the chance to
+/// decline for want of a flow order. Two rows of the golden are that.
 fn cycle_skip(
     vc: &VariantContext,
     flow_order: &str,
     left: &Option<Vec<String>>,
     right: &Option<Vec<Option<String>>>,
-) -> Vec<String> {
+) -> Result<Vec<String>, CycleSkipError> {
     let mut css = Vec::new();
     let Some(reference) = vc.alleles.iter().find(|a| a.is_reference()) else {
-        return css;
+        return Ok(css);
     };
     let ref_bases = reference.display_string();
     let ref_length = ref_bases.len();
@@ -414,16 +444,18 @@ fn cycle_skip(
             continue;
         }
         let index = css.len();
+        // `localContext.leftMotif.get(i)` with a null list: the reference throws here.
         let (Some(left), Some(right)) = (left.as_ref(), right.as_ref()) else {
-            // The reference dereferences the motif lists here, so a missing motif is a
-            // NullPointerException there. Here the status is simply not produced.
-            css.push(C_NA.to_string());
-            continue;
+            return Err(CycleSkipError::MissingMotifList);
         };
-        let (Some(left_motif), Some(Some(right_motif))) = (left.get(index), right.get(index))
-        else {
-            css.push(C_NA.to_string());
-            continue;
+        let (Some(left_motif), Some(right_entry)) = (left.get(index), right.get(index)) else {
+            return Err(CycleSkipError::MissingMotifList);
+        };
+        // `left + ref + right` with a null right motif is the string "null" in Java, not an empty
+        // string, and those four characters are not bases.
+        let right_motif = match right_entry {
+            Some(motif) => motif.clone(),
+            None => "null".to_string(),
         };
         let ref_key = base_array_to_key(
             format!("{left_motif}{ref_bases}{right_motif}").as_bytes(),
@@ -434,8 +466,7 @@ fn cycle_skip(
             flow_order,
         );
         let (Some(ref_key), Some(alt_key)) = (ref_key, alt_key) else {
-            css.push(C_NA.to_string());
-            continue;
+            return Err(CycleSkipError::KeyFromNullMotif);
         };
         let mut value = if ref_key.len() != alt_key.len() {
             C_CSS_CS
@@ -454,7 +485,7 @@ fn cycle_skip(
         }
         css.push(value.to_string());
     }
-    css
+    Ok(css)
 }
 
 /// Everything the eight annotations report, computed in the order the base class computes it.
@@ -463,8 +494,11 @@ pub fn annotate(vc: &VariantContext, window: &Window, flow_order: &str) -> FlowA
     let (hmer_indel_length, hmer_indel_nuc, hmer_right) = is_hmer_indel(vc, window, flow_order);
     let left = left_motif(vc, window);
     let right = right_motif(vc, window, &hmer_right);
+    // What `cycleSkip` sees is the local context's list, which survives even when the attribute
+    // was not written.
+    let right_for_cycle_skip = right.clone().or(Some(hmer_right.clone()));
     let gc = gc_content(vc, window);
-    let css = cycle_skip(vc, flow_order, &left, &right);
+    let css = cycle_skip(vc, flow_order, &left, &right_for_cycle_skip);
     let variant = variant_type(vc, &indel, &hmer_indel_length);
 
     FlowAnnotations {
