@@ -144,6 +144,20 @@ fn argument(label: &str, dir: &std::path::Path) -> String {
     }
 }
 
+/// `GenomeLoc.toString`, which is not `contig:start-end` for every locus.
+///
+/// A one-base locus prints as `contig:start`, with no range at all, and the golden's first VCF row
+/// is one: a SNV at chr1:10 prints `chr1:10` where a four-base reference allele prints
+/// `chr2:50-53`. The whole-contig form (`contig` alone) needs a stop of `Integer.MAX_VALUE`, which
+/// nothing here produces, so it is not reached.
+fn genome_loc_to_string(interval: &gatk_engine::interval::SimpleInterval) -> String {
+    if interval.start == interval.end {
+        format!("{}:{}", interval.contig, interval.start)
+    } else {
+        format!("{}:{}-{}", interval.contig, interval.start, interval.end)
+    }
+}
+
 /// The exception class the reference raised, for the refusal the port produced.
 fn class_of(error: &IntervalArgumentError) -> &'static str {
     match error {
@@ -163,6 +177,9 @@ fn class_of(error: &IntervalArgumentError) -> &'static str {
             "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
         }
         IntervalArgumentError::FeatureCodecRefused(_) => "htsjdk.tribble.TribbleException",
+        IntervalArgumentError::FeatureSourceFailed(_) => {
+            "org.broadinstitute.hellbender.exceptions.GATKException"
+        }
         // Every parse failure surfaces as one class: an unknown contig and malformed positions
         // are different messages of the same exception.
         IntervalArgumentError::Parse(_) => {
@@ -224,10 +241,7 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
 
         match (result, outcome) {
             (Ok(intervals), "ok") => {
-                let ours: Vec<String> = intervals
-                    .iter()
-                    .map(|i| format!("{}:{}-{}", i.contig, i.start, i.end))
-                    .collect();
+                let ours: Vec<String> = intervals.iter().map(genome_loc_to_string).collect();
                 assert_eq!(ours.len(), count, "{label}: interval count");
                 assert_eq!(ours.join("|"), expected, "{label}");
             }

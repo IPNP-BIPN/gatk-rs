@@ -169,9 +169,10 @@ impl RegisteredCodecs {
     ) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
         let frame = match htsjdk_vcf::header_parse::read_header_frame(text) {
             Ok(frame) => frame,
-            // A file whose magic matched but whose header is malformed: the codec throws, and the
-            // shape the engine sees is a file it could not read.
-            Err(error) => return Err(IntervalArgumentError::FeatureCodecRefused(error.0)),
+            // A file whose magic matched and whose header the codec refuses. The engine never
+            // gets a reader, so this is a GATKException rather than the codec's own exception:
+            // a malformed header and a malformed record in the same file are two classes.
+            Err(error) => return Err(IntervalArgumentError::FeatureSourceFailed(error.0)),
         };
         let header = htsjdk_vcf::header::VcfHeader {
             lines: Vec::new(),
@@ -188,10 +189,13 @@ impl RegisteredCodecs {
                     )?);
                 }
                 Ok(None) => continue,
-                Err(_) => {
-                    return Err(IntervalArgumentError::IntervalFileMissing(
-                        path_hint.to_string(),
-                    ))
+                // A record the codec cannot decode is a TribbleException, which
+                // `featureFileToIntervals` does not catch, so it leaves the engine as itself.
+                Err(error) => {
+                    let _ = path_hint;
+                    return Err(IntervalArgumentError::FeatureCodecRefused(format!(
+                        "{error:?}"
+                    )));
                 }
             }
         }
