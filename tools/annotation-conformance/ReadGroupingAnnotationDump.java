@@ -34,6 +34,7 @@ import org.broadinstitute.hellbender.engine.ReferenceMemorySource;
 import org.broadinstitute.hellbender.tools.walkers.annotator.BaseQualityHistogram;
 import org.broadinstitute.hellbender.tools.walkers.annotator.InfoFieldAnnotation;
 import org.broadinstitute.hellbender.tools.walkers.annotator.ReferenceBases;
+// The engine has a class of the same name for the bases themselves, so it is named in full below.
 import org.broadinstitute.hellbender.tools.walkers.annotator.UniqueAltReadCount;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods;
@@ -42,8 +43,6 @@ import org.broadinstitute.hellbender.utils.genotyper.IndexedSampleList;
 import org.broadinstitute.hellbender.utils.genotyper.LikelihoodMatrix;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.SAMRecordToGATKReadAdapter;
-
-import htsjdk.samtools.reference.ReferenceSequence;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -220,8 +219,9 @@ public class ReadGroupingAnnotationDump {
                          final int variantStart) {
         final SimpleInterval window = new SimpleInterval("chr1", windowStart,
                 windowStart + bases.length() - 1);
-        final ReferenceSequence sequence =
-                new ReferenceSequence("chr1", 0, bases.getBytes());
+        final org.broadinstitute.hellbender.utils.reference.ReferenceBases sequence =
+                new org.broadinstitute.hellbender.utils.reference.ReferenceBases(
+                        bases.getBytes(), window);
         final ReferenceContext context = new ReferenceContext(
                 new ReferenceMemorySource(sequence, HEADER.getSequenceDictionary()), window);
         final VariantContext vc = new VariantContextBuilder().chr("chr1").start(variantStart)
