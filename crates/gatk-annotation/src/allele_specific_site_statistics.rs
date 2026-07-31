@@ -109,13 +109,17 @@ pub enum AsSiteStatisticError {
 /// `AS_QUAL` carries one value per **alternate**; `AS_QUALapprox` carries one per **allele** and its
 /// first slot, the reference's, is dropped. An empty slot in the second form reads as zero, which
 /// the first form has no way to express.
+///
+/// `AS_QUAL` is read with `getAttributeAsList`, which does **not** split a comma-separated string:
+/// an attribute set programmatically as `"70,140"` is one element, and a triallelic site so
+/// annotated throws rather than reading two qualities. Only a value that came out of a VCF parser,
+/// or was set as a list, has more than one element. That is why this takes a list and not a string.
 pub fn parse_qual_list(
     num_alleles: usize,
-    as_qual: Option<&str>,
+    as_qual: Option<&[String]>,
     as_raw_qual_approx: Option<&str>,
 ) -> Result<Vec<i32>, AsSiteStatisticError> {
-    if let Some(text) = as_qual {
-        let values: Vec<&str> = text.split(LIST_DELIMITER).collect();
+    if let Some(values) = as_qual {
         if values.len() != num_alleles - 1 {
             return Err(AsSiteStatisticError::QualCountMismatch {
                 found: values.len(),
@@ -134,6 +138,7 @@ pub fn parse_qual_list(
             })
             .collect();
     }
+
     if let Some(text) = as_raw_qual_approx {
         // `replaceAll("\\[\\]\\s", "")` is a character class, so it strips brackets **and**
         // whitespace anywhere, not a bracketed prefix.
@@ -217,7 +222,7 @@ pub type AsQualByDepthEntry = Result<f64, QualByDepthError>;
 #[allow(clippy::type_complexity)]
 pub fn as_qual_by_depth(
     vc: &VariantContext,
-    as_qual: Option<&str>,
+    as_qual: Option<&[String]>,
     as_raw_qual_approx: Option<&str>,
     as_variant_depth: Option<&str>,
 ) -> Result<Option<Vec<AsQualByDepthEntry>>, AsSiteStatisticError> {
@@ -278,10 +283,11 @@ pub fn encode_value_list(values: &[f64], places: usize) -> String {
 /// Absent rather than zero for an allele no informative read was assigned to, which is what makes
 /// the difference between a written `0.00` and a missing value once the string is built.
 pub fn as_rms_data(likelihoods: &AlleleLikelihoods<BamRecord>) -> Vec<(Allele, Option<f64>)> {
-    let mut per_allele: Vec<(Allele, Option<f64>)> = (0..likelihoods.number_of_alleles())
-        .filter_map(|index| likelihoods.get_allele(index).cloned())
-        .map(|allele| (allele, None))
-        .collect();
+    // A bare `ReducibleAnnotationData`, **not** an `AlleleSpecificAnnotationData`: nothing
+    // pre-populates it, so an allele no informative read was assigned to has no key at all. That is
+    // what makes `AS_MQ` skip such an allele entirely rather than write the missing value, while the
+    // parsed form, which is pre-populated with nulls, writes the missing value for the same state.
+    let mut per_allele: Vec<(Allele, Option<f64>)> = Vec::new();
     for best in likelihoods.best_alleles_breaking_ties(None) {
         if !best.is_informative() {
             continue;
@@ -299,12 +305,12 @@ pub fn as_rms_data(likelihoods: &AlleleLikelihoods<BamRecord>) -> Vec<(Allele, O
         if mq == 255 {
             continue;
         }
-        if let Some(slot) = per_allele.iter_mut().find(|(a, _)| a == allele) {
-            // `mq * mq` is an **int** multiplication in the reference, promoted to double only on
-            // the addition, so a mapping quality above 46340 would overflow. None can: the field is
-            // a byte.
-            let square = (mq as i32 * mq as i32) as f64;
-            slot.1 = Some(slot.1.unwrap_or(0.0) + square);
+        // `mq * mq` is an **int** multiplication in the reference, promoted to double only on the
+        // addition, so a mapping quality above 46340 would overflow. None can: the field is a byte.
+        let square = (mq as i32 * mq as i32) as f64;
+        match per_allele.iter_mut().find(|(a, _)| a == allele) {
+            Some(slot) => slot.1 = Some(slot.1.unwrap_or(0.0) + square),
+            None => per_allele.push((allele.clone(), Some(square))),
         }
     }
     per_allele
@@ -509,7 +515,8 @@ mod tests {
         );
         genotype.ad = Some(vec![10, 4, 6]);
         vc.genotypes.push(genotype);
-        let out = as_qual_by_depth(&vc, Some("70,140"), None, None)
+        let quals = vec!["70".to_string(), "140".to_string()];
+        let out = as_qual_by_depth(&vc, Some(&quals), None, None)
             .expect("a parse")
             .expect("a value");
         // 70 / (4 + 10) = 5, and 140 / (6 + 10) = 8.75: the ten reference reads count twice.

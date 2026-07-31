@@ -817,7 +817,7 @@
     {
       "id": "annotation-allele-specific-site-statistics",
       "title": "AS_QD, AS_MQ, AS_InbreedingCoeff and the heterozygosity calculator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "AS_QD has no raw data of its own: annotateRawData returns an empty map, its raw key is expected to be written by GenotypeGVCFs, and annotate is finalizeRawData with the same variant context passed twice. It adds the reference depth to every alternate's denominator, so a triallelic site's denominators overlap and the entries sum to nothing meaningful, and it inherits fixTooHighQD once per alternate, so one entry of a comma-separated field can be deterministic and the next drawn from a random generator. AS_MQ divides a sum of squares taken from the likelihood matrix by an AD summed from the genotypes, with nothing checking that the two describe the same reads, and its depth counts every genotype where AS_QD's counts only het and hom-var genotypes whose alternate depth exceeds one. AS_InbreedingCoeff is the only member that is not reducible and does not inherit from its non-allele-specific sibling, and its heterozygosity calculator adds the hom-ref mass to the reference's count once per alternate allele, so a triallelic site counts it twice.",
@@ -827,8 +827,8 @@
       "cases": [
         {
           "dump": "AlleleSpecificSiteStatisticsDump",
-          "golden": null,
-          "why": "Pending the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-annotation/tests/data/allele_specific_site_statistics.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 71 rows: 12 AS_QD answers of which three are values the reference randomised and the port refuses, 12 allele-depth vectors, 21 mapping-quality answers, and 14 heterozygosity rows whose counts are compared as raw bits. The golden corrected the port twice. AS_QUAL is read with getAttributeAsList, which does not split a comma-separated string, so a triallelic site annotated programmatically with the one String \"70,140\" throws rather than reading two qualities. And AS_RMSMappingQuality collects into a bare ReducibleAnnotationData that nothing pre-populates, so an allele with no informative read has no key and is skipped entirely, while the parsed form is pre-populated with nulls and writes the missing value for the same state."
         }
       ]
     }
