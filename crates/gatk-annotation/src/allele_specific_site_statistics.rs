@@ -378,10 +378,11 @@ pub fn ad_counts(vc: &VariantContext) -> Option<Vec<(Allele, i32)>> {
         .collect();
     for genotype in &vc.genotypes {
         let Some(ad) = &genotype.ad else { continue };
-        for index in 1..vc.alleles.len() {
-            if let Some(value) = ad.get(index) {
-                counts[index].1 += value;
-            }
+        // "here -1 is to reconcile allele index with alt allele index": the reference's own slot is
+        // never touched, so `AS_MQ` divides by a depth that is zero for the reference by
+        // construction and never asks for it.
+        for (slot, value) in counts.iter_mut().zip(ad.iter()).skip(1) {
+            slot.1 += value;
         }
     }
     Some(counts)
