@@ -6,3 +6,6 @@ target/
 __pycache__/
 *.pyc
 tools/conformance/pending/
+
+# The editor workspace file, which is one developer's layout and not the repository's.
+*.code-workspace
