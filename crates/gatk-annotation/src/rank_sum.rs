@@ -47,7 +47,6 @@ use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
 use crate::info_annotation::{AnnotationValue, InfoFieldAnnotation};
-use crate::per_allele::ReadPosition;
 
 /// `GATKVCFConstants.BASE_QUAL_RANK_SUM_KEY`.
 pub const BASE_QUAL_RANK_SUM_KEY: &str = "BaseQRankSum";
@@ -118,7 +117,7 @@ pub fn annotate<A: RankSumTest>(
             let Some(allele) = best.allele else { continue };
             if allele.is_reference() {
                 ref_quals.push(value);
-            } else if vc.alleles.iter().any(|a| *a == allele) {
+            } else if vc.alleles.contains(&allele) {
                 alt_quals.push(value);
             }
         }
@@ -330,13 +329,6 @@ info_annotation_for!(BaseQualityRankSumTest, BASE_QUAL_RANK_SUM_KEY);
 info_annotation_for!(MappingQualityRankSumTest, MAP_QUAL_RANK_SUM_KEY);
 info_annotation_for!(ReadPosRankSumTest, READ_POS_RANK_SUM_KEY);
 info_annotation_for!(ClippingRankSumTest, CLIPPING_RANK_SUM_KEY);
-
-/// Re-exported so a caller can see that `ReadPosition` and `ReadPosRankSumTest` compute the same
-/// number behind different guards.
-pub use crate::per_allele::ReadPosition as MedianReadPosition;
-const _: fn() = || {
-    let _ = ReadPosition;
-};
 
 #[cfg(test)]
 mod tests {
