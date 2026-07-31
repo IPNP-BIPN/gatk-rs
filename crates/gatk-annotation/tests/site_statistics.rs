@@ -42,9 +42,18 @@ fn allele(bases: &str, is_ref: bool) -> Allele {
 
 /// The `QD` fixtures, by label: the QUAL, the per-sample ADs, a raw approximation, and whether the
 /// genotypes are hom-ref.
+/// One `QD` fixture: the QUAL as a log10 error, the per-sample ADs, a raw approximation, and
+/// whether the genotypes are hom-ref.
+struct QdFixture {
+    log10: Option<f64>,
+    ads: Option<Vec<Vec<i32>>>,
+    raw: Option<i32>,
+    hom_ref: bool,
+}
+
 fn qd_case(label: &str) -> (VariantContext, Option<i32>) {
-    let (log10, ads, raw, hom_ref): (Option<f64>, Option<Vec<Vec<i32>>>, Option<i32>, bool) =
-        match label {
+    let (log10, ads, raw, hom_ref) = {
+        let fixture = match label {
             "ordinary" => (Some(-25.0), Some(vec![vec![5, 5]]), None, false),
             "just-below-threshold" => (Some(-34.9), Some(vec![vec![5, 5]]), None, false),
             "at-threshold" => (Some(-35.0), Some(vec![vec![5, 5]]), None, false),
@@ -59,6 +68,14 @@ fn qd_case(label: &str) -> (VariantContext, Option<i32>) {
             "two-samples" => (Some(-20.0), Some(vec![vec![9, 1], vec![8, 2]]), None, false),
             other => panic!("{other} has no fixture"),
         };
+        let fixture = QdFixture {
+            log10: fixture.0,
+            ads: fixture.1,
+            raw: fixture.2,
+            hom_ref: fixture.3,
+        };
+        (fixture.log10, fixture.ads, fixture.raw, fixture.hom_ref)
+    };
 
     let mut vc = VariantContext::new("chr1", START, vec![allele("A", true), allele("C", false)]);
     vc.stop = START;
