@@ -126,6 +126,9 @@ jobs:
           - group: oracle-backed
             index: "7/7"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
+          - group: golden-pending
+            index: "1/1"
+            suites: "annotation-strand-bias"
     steps:
       - uses: actions/checkout@v4
 

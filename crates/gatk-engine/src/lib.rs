@@ -20,6 +20,7 @@ pub mod context_iterator;
 pub mod downsampling;
 pub mod feature_intervals;
 pub mod features;
+pub mod fisher_exact;
 pub mod interval;
 pub mod interval_args;
 pub mod java_hash;
