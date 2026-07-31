@@ -463,3 +463,51 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
             .collect()
     }
 }
+
+impl AlleleLikelihoods<htsjdk_bam::record::BamRecord> {
+    /// `groupEvidence(GATKRead::getName, Fragment::createAndAvoidFailure)`, the only instantiation
+    /// the annotations use.
+    ///
+    /// The log likelihoods of a group are **summed**, not averaged, and the resulting evidence order
+    /// is a `HashMap`'s over the read names. Both are recorded in [`crate::fragment`].
+    pub fn group_by_fragment(
+        &self,
+    ) -> Result<AlleleLikelihoods<crate::fragment::Fragment>, LikelihoodsError> {
+        let allele_count = self.number_of_alleles();
+        let mut evidence_by_sample: Vec<Vec<crate::fragment::Fragment>> = Vec::new();
+        let mut values: Vec<Vec<Vec<f64>>> = Vec::new();
+
+        for sample in 0..self.number_of_samples() {
+            let reads = self.sample_evidence(sample).unwrap_or(&[]);
+            let groups = crate::fragment::group_by_read_name(reads);
+            let mut fragments = Vec::with_capacity(groups.len());
+            let mut sample_values: Vec<Vec<f64>> = vec![vec![0.0; groups.len()]; allele_count];
+            for (new_index, group) in groups.iter().enumerate() {
+                for allele in 0..allele_count {
+                    for old_index in group {
+                        sample_values[allele][new_index] += self.value(sample, allele, *old_index);
+                    }
+                }
+                let group_reads: Vec<htsjdk_bam::record::BamRecord> =
+                    group.iter().map(|index| reads[*index].clone()).collect();
+                // `createAndAvoidFailure` never fails on a non-empty group, and a group produced by
+                // the grouping is never empty.
+                match crate::fragment::Fragment::create_and_avoid_failure(&group_reads) {
+                    Ok(fragment) => fragments.push(fragment),
+                    Err(_) => return Err(LikelihoodsError::UnknownSample(String::new())),
+                }
+            }
+            evidence_by_sample.push(fragments);
+            values.push(sample_values);
+        }
+
+        let mut grouped = AlleleLikelihoods::new(
+            self.samples.clone(),
+            self.alleles.clone(),
+            evidence_by_sample,
+            values,
+        )?;
+        grouped.is_natural_log = self.is_natural_log;
+        Ok(grouped)
+    }
+}

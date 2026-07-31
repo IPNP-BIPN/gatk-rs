@@ -21,6 +21,7 @@ pub mod downsampling;
 pub mod feature_intervals;
 pub mod features;
 pub mod fisher_exact;
+pub mod fragment;
 pub mod histogram;
 pub mod interval;
 pub mod interval_args;

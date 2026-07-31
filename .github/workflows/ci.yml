@@ -132,6 +132,9 @@ jobs:
           - group: oracle-backed
             index: "9/9"
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
+          - group: golden-pending
+            index: "1/1"
+            suites: "annotation-fragment-counts"
     steps:
       - uses: actions/checkout@v4
 
