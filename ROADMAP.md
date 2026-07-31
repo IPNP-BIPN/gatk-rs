@@ -73,9 +73,11 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
       order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
       settings). The suite pins what a tool sees and does **not** distinguish the cache from a
-      fresh query per call, which the manifest states. The **BED** and **IntervalList** codecs are
-      ported and oracle-backed in htsjdk-rs. Still missing: the VCF codec and the Tribble index,
-      which are htsjdk's and belong in Milestone H
+      fresh query per call, which the manifest states. All three codecs `-L` reaches are ported
+      and oracle-backed in htsjdk-rs (**BED**, **IntervalList**, and **VCF**'s `canDecode`, the one
+      that decides by content). Still missing: the **Tribble index**, which is what turns a
+      Feature file into a random-access source rather than a linear read, and belongs in
+      Milestone H
 
 ### G1.4 Interval arguments
 
@@ -84,10 +86,12 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] interval **files**: `.list` and `.intervals` (lower-cased extension test, blank-line
       skipping, the empty-file refusal, and the order of the four tests in
       `parseIntervalArguments`), 13 arguments compared
-- [~] the Feature-file path: `.bed` and `.interval_list` are closed. Both codecs landed in
-      htsjdk-rs with their own oracle-backed suites (90 and 133 rows) and are registered in the
-      seam, so all 19 measured `-L` arguments now resolve identically, four of them new rows for
-      the two dictionaries an interval list is validated against. VCF arrives with the Tribble index
+- [x] the Feature-file path, all three codecs. `.bed`, `.interval_list` and VCF landed in
+      htsjdk-rs with their own oracle-backed suites (90, 133 and 24 rows) and are registered in the
+      seam, so all **25** measured `-L` arguments resolve identically and none is pending. The
+      rows that cost the most: the two dictionaries an interval list is validated against, and the
+      fact that VCF is the only codec deciding by **content**, so a `.list` holding a VCF body is a
+      Feature file where one holding a BED body is not
 - [x] `-L unmapped` end to end, measured through `ReadWalker` (5 runs): the tail comes after
       every interval, `-L unmapped` alone is a bounded traversal of nothing else, and an unmapped
       read carrying its mate's position is not in the tail at all
