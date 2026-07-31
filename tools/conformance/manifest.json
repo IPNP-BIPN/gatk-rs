@@ -741,6 +741,23 @@
           "why": "From the pinned container on a real x86-64 runner. 117 rows, and the golden corrected the port on four points, all of them about what happens at the edge of a reference window. A symbolic allele has length zero rather than the length of its text, so <NON_REF> classifies as a deletion. The two motifs are written into the attribute map independently, so a left motif that ran off the window leaves the right one in place. CycleSkipStatus declares that an actual flow order is required and therefore normally produces nothing, but it dereferences the motif lists before that check, so it throws a NullPointerException where the left motif is missing. And where the right motif's attribute was not written but its list survives with nulls in it, Java concatenates the four characters null into the sequence, whose characters are not bases, so the flow key's period guard trips and the exception is a GATKException instead."
         }
       ]
+    },
+    {
+      "id": "annotation-site-statistics",
+      "title": "QD, the genotype summaries and LikelihoodRankSum",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "QD above thirty-five is randomised: the reference replaces it with thirty plus a Gaussian jitter, so the value written to a VCF is a draw from a seeded generator rather than a function of the data. The port refuses that branch instead of approximating it, because nextGaussian goes through StrictMath.log, which is fdlibm and differs from the correctly-rounded logarithm this programme has on 186 of the corpus's 44,996 points. The suite therefore measures where the boundary is and what the raw ratio was, not what lies past it. The depth QD divides by is also not DP: only het and hom-var genotypes count, the whole AD total is added for each, and a separate AD-restricted tally collects the same totals only where the alternate part exceeds one, and if that tally ends non-zero it replaces the depth entirely, so one sample with two alternate reads can discard every other sample's depth. GQ_MEAN and GQ_STDDEV are strings and the deviation is written only with more than one GQ. NCC counts no-call alleles rather than no-call samples. And LikelihoodRankSumTest is the one member of the rank-sum family whose value comes from the matrix rather than from the read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SiteStatisticsDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []
