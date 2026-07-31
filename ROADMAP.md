@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **32 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 7 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 5 crates, **34 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 11 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -137,13 +137,20 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. Seven are ported and oracle-backed: the counting family
+- [~] the 54-annotation library. **Eleven** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
-      `CountNs`, `OriginalAlignment`), together with the `InfoFieldAnnotation` interface and the
-      machinery underneath it (`AlleleList`/`SampleList` and their permutation, the
-      `AlleleLikelihoods` matrix and its best-allele search, and `VariantContextGetters`)
-- [ ] the remaining 47. Many go through jmath, so any annotation touching an unfinished jmath
-      function waits rather than being approximated
+      `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
+      `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL), together with the
+      `InfoFieldAnnotation` interface and the machinery underneath it (`AlleleList`/`SampleList`
+      and their permutation, the `AlleleLikelihoods` matrix and its best-allele search, and
+      `VariantContextGetters`)
+- [ ] the remaining 43. **The claim that most of them wait on jmath does not survive a grep**: 10
+      of the 57 files in `tools/walkers/annotator` mention `MathUtils` at all, and what the
+      annotators reach through `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four
+      already exact. What they actually wait on is engine machinery: the rank-sum and
+      strand-bias statistics, the pileup, and the genotype likelihoods. The median family landed
+      once commons-math3 `Percentile` was ported, which htsjdk-rs decision 0023 made possible by
+      separating an Apache 2.0 source from a GPL2 one
 
 ### G1.8 The argument layer
 
@@ -306,7 +313,9 @@ depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
 3. **Fan out G2 by archetype**, measuring the marginal cost of the second and third member of
    each archetype (the calibration gate) and re-sizing from real numbers.
 4. Close the **htsjdk-rs** gaps that block downstream tools: full VCF, write-side BAI, then the
-   jmath corpus, which blocks every floating-point tool and therefore most annotations.
+   jmath functions ported call sites reach. Not "the corpus to 100%": its columns are
+   `java.lang.Math`, whose remaining divergent functions can only be made exact by transcribing
+   GPL2 source, so that target is unreachable by construction (htsjdk-rs decision 0023).
 5. Then the **callers** (G3), then the **hard problems** (X).
 6. **CRAM** and **GKL-exact deflate** proceed in parallel, being self-contained in htsjdk-rs.
 7. **GPU** (Milestone GPU) is off the critical path by construction: it accelerates paths that are
