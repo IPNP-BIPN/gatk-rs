@@ -118,6 +118,38 @@ public class IntervalFileDump {
         probe(parser, "bed-contents-list-extension",
                 write(dir, "g.list", "chr1\t0\t10\nchr2\t4\t6\n").toString());
 
+        // VCF, the one codec that decides by CONTENT rather than by extension: it reads the first
+        // eighteen bytes and looks for the magic. So the same body is a Feature file under any
+        // name, and a `.list` holding a VCF is not the same story as a `.list` holding a BED.
+        final String vcf = "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=200>\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t10\t.\tA\tC\t.\t.\t.\n"
+                + "chr2\t50\t.\tACGT\tA\t.\t.\t.\n";
+        probe(parser, "vcf", write(dir, "h.vcf", vcf).toString());
+        probe(parser, "vcf-list-extension", write(dir, "i.list", vcf).toString());
+        // END overrides the reference allele's span, so a symbolic record contributes the interval
+        // it declares rather than one base.
+        probe(parser, "vcf-symbolic-end", write(dir, "j.vcf", "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=200>\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t20\t.\tA\t<DEL>\t.\t.\tEND=80\n").toString());
+        // A body whose magic matches and whose records do not parse.
+        probe(parser, "vcf-malformed-record", write(dir, "k.vcf", "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=200>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\tNOTANUMBER\t.\tA\tC\t.\t.\t.\n").toString());
+        // A record on a contig the reference dictionary does not hold.
+        probe(parser, "vcf-unknown-contig", write(dir, "l.vcf", "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr9,length=200>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr9\t10\t.\tA\tC\t.\t.\t.\n").toString());
+        // A file whose magic matches and which has no header past it.
+        probe(parser, "vcf-magic-only", write(dir, "m.vcf", "##fileformat=VCFv4.2\n").toString());
+
         // Plain literal intervals, for the row that anchors the rest.
         probe(parser, "literal", "chr1:1-10");
         probe(parser, "literal-whole-contig", "chr2");

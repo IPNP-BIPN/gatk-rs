@@ -89,9 +89,45 @@ fn fixture(label: &str) -> Option<(&'static str, &'static str)> {
             "foreign.interval_list",
             "@HD\tVN:1.6\n@SQ\tSN:chr9\tLN:200\nchr9\t1\t10\t+\t.\n",
         )),
+        // VCF: the one codec that decides by content, so the same body under a `.list` name is
+        // still a Feature file.
+        "vcf" => Some(("h.vcf", VCF_BODY)),
+        "vcf-list-extension" => Some(("i.list", VCF_BODY)),
+        "vcf-symbolic-end" => Some((
+            "j.vcf",
+            "##fileformat=VCFv4.2\n\
+             ##contig=<ID=chr1,length=200>\n\
+             ##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n\
+             ##ALT=<ID=DEL,Description=\"Deletion\">\n\
+             #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+             chr1\t20\t.\tA\t<DEL>\t.\t.\tEND=80\n",
+        )),
+        "vcf-malformed-record" => Some((
+            "k.vcf",
+            "##fileformat=VCFv4.2\n\
+             ##contig=<ID=chr1,length=200>\n\
+             #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+             chr1\tNOTANUMBER\t.\tA\tC\t.\t.\t.\n",
+        )),
+        "vcf-unknown-contig" => Some((
+            "l.vcf",
+            "##fileformat=VCFv4.2\n\
+             ##contig=<ID=chr9,length=200>\n\
+             #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+             chr9\t10\t.\tA\tC\t.\t.\t.\n",
+        )),
+        "vcf-magic-only" => Some(("m.vcf", "##fileformat=VCFv4.2\n")),
         _ => None,
     }
 }
+
+/// The VCF body two cases share, under two different extensions.
+const VCF_BODY: &str = "##fileformat=VCFv4.2\n\
+             ##contig=<ID=chr1,length=200>\n\
+             ##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n\
+             #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\
+             chr1\t10\t.\tA\tC\t.\t.\t.\n\
+             chr2\t50\t.\tACGT\tA\t.\t.\t.\n";
 
 /// The argument each case passed, given the directory the fixtures live in.
 fn argument(label: &str, dir: &std::path::Path) -> String {
@@ -158,6 +194,12 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
         "interval-list-short-record",
         "interval-list-unknown-contig",
         "interval-list-contig-absent-from-reference",
+        "vcf",
+        "vcf-list-extension",
+        "vcf-symbolic-end",
+        "vcf-malformed-record",
+        "vcf-unknown-contig",
+        "vcf-magic-only",
     ] {
         let (name, contents) = fixture(label).expect("a fixture");
         std::fs::write(dir.join(name), contents).unwrap();

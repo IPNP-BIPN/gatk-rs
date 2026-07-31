@@ -190,7 +190,11 @@ Everything downstream inherits these, so they are front-loaded.
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
       exists, every byte claim over BGZF must name the deflater it is a claim about
 - [~] **jmath**: bit-exact Java `Math` / `StrictMath` / commons-math3 `FastMath`, plus `Gamma`,
-      `BinomialDistribution`, `Percentile`, `Median`, SVD. The corpus must reach 100%
+      `BinomialDistribution`, SVD. `Percentile` and `Median` are ported and oracle-backed. The
+      target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`, whose
+      remaining divergent functions can only be made exact by transcribing GPL2 source, so that
+      is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function a
+      ported call site reaches is exact, and every one that cannot be is named at the call site" 
 - [ ] BGZF GKL/igzip surface cross-checked on real x86-64 hardware, not under emulation
 
 ---
