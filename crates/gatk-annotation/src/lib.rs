@@ -23,6 +23,7 @@ pub mod original_alignment;
 pub mod per_allele;
 pub mod rank_sum;
 pub mod raw_gt_count;
+pub mod read_grouping;
 pub mod sample_list;
 pub mod strand_bias;
 

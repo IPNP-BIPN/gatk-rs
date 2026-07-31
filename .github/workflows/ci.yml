@@ -129,6 +129,9 @@ jobs:
           - group: oracle-backed
             index: "8/8"
             suites: "annotation-strand-bias"
+          - group: golden-pending
+            index: "1/1"
+            suites: "annotation-read-grouping"
     steps:
       - uses: actions/checkout@v4
 
