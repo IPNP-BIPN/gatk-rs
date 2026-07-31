@@ -84,6 +84,7 @@ struct Rank {
 /// The merge is stable towards series 1 (`series1[i] <= series2[j]` keeps the first), which
 /// decides nothing about the statistic but does decide the `series` labels inside a tie band, and
 /// therefore which side each averaged rank is added to.
+#[allow(clippy::if_same_then_else)]
 fn calculate_rank(series1: &[f64], series2: &[f64]) -> (Vec<Rank>, Vec<usize>) {
     let mut a = series1.to_vec();
     let mut b = series2.to_vec();
@@ -103,6 +104,9 @@ fn calculate_rank(series1: &[f64], series2: &[f64]) -> (Vec<Rank>, Vec<usize>) {
                 series: 2,
             });
             j += 1;
+        // The two middle branches are the same push with the same label, and they are kept
+        // apart because the reference keeps them apart: one is "series 2 is exhausted" and the
+        // other is "series 1 compares less or equal", and only the second decides a tie.
         } else if j >= b.len() {
             ranks.push(Rank {
                 value: a[i],
@@ -222,6 +226,7 @@ pub fn calculate_z(u: f64, n1: usize, n2: usize, nties: f64, which_side: TestTyp
 pub fn median(sorted: &[f64]) -> f64 {
     let len = sorted.len();
     let mid = len / 2;
+    #[allow(clippy::manual_is_multiple_of)]
     if len % 2 == 0 {
         (sorted[mid] + sorted[mid - 1]) / 2.0
     } else {
