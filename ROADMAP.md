@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **33 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 32 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 5 crates, **33 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 35 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -141,7 +141,7 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. **Thirty-two** are ported and oracle-backed: the counting family
+- [~] the 54-annotation library. **Thirty-five** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
       `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
       `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL) and the rank-sum family
@@ -149,13 +149,14 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       family (`FS`, `SOR`, `SB`) and three that read the matrix or the reference window alone
       (`AS_UNIQ_ALT_READ_COUNT`, `BQHIST`, `REF_BASES`) the depth family (`AD`, `AF`, `DP`) and the
       eight flow-based ones (`VARIANT_TYPE`, `INDEL_CLASSIFY`, `INDEL_LENGTH`, `HMER_INDEL_LENGTH`,
-      `HMER_INDEL_NUC`, the motifs, `GC_CONTENT`, `CYCLESKIP_STATUS`), together with the
+      `HMER_INDEL_NUC`, the motifs, `GC_CONTENT`, `CYCLESKIP_STATUS`) and three site statistics
+      (`QD`, the genotype summaries, `LikelihoodRankSum`), together with the
       `InfoFieldAnnotation` interface and the machinery underneath it (`AlleleList`/`SampleList`
       and their permutation, the `AlleleLikelihoods` matrix and its best-allele search,
       `VariantContextGetters`, **`MannWhitneyU`** and **`FisherExactTest`**, with commons-math3's
       `FastMath.exp`, `FastMath.log`, `Gamma`, `Erf`, `NormalDistribution` and the saddle-point
       expansion under them, all oracle-backed in htsjdk-rs)
-- [ ] the remaining 22. **The claim that most of them wait on jmath does not survive a grep**: 10
+- [ ] the remaining 19. **The claim that most of them wait on jmath does not survive a grep**: 10
       of the 57 files in `tools/walkers/annotator` mention `MathUtils` at all, and what the
       annotators reach through `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four
       already exact. What they actually wait on is engine machinery: the rank-sum and

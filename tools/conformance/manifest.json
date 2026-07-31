@@ -745,7 +745,7 @@
     {
       "id": "annotation-site-statistics",
       "title": "QD, the genotype summaries and LikelihoodRankSum",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "QD above thirty-five is randomised: the reference replaces it with thirty plus a Gaussian jitter, so the value written to a VCF is a draw from a seeded generator rather than a function of the data. The port refuses that branch instead of approximating it, because nextGaussian goes through StrictMath.log, which is fdlibm and differs from the correctly-rounded logarithm this programme has on 186 of the corpus's 44,996 points. The suite therefore measures where the boundary is and what the raw ratio was, not what lies past it. The depth QD divides by is also not DP: only het and hom-var genotypes count, the whole AD total is added for each, and a separate AD-restricted tally collects the same totals only where the alternate part exceeds one, and if that tally ends non-zero it replaces the depth entirely, so one sample with two alternate reads can discard every other sample's depth. GQ_MEAN and GQ_STDDEV are strings and the deviation is written only with more than one GQ. NCC counts no-call alleles rather than no-call samples. And LikelihoodRankSumTest is the one member of the rank-sum family whose value comes from the matrix rather than from the read.",
@@ -755,7 +755,8 @@
       "cases": [
         {
           "dump": "SiteStatisticsDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/site_statistics.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 30 rows, of which two are QD values the reference randomised: the suite asserts that the port refuses exactly those, that the raw ratio really was at or past thirty-five, and that what the reference wrote is not the ratio. The golden corrected the port on one point: getNoCallCount counts no-call genotypes rather than the no-call alleles inside them, so a diploid no-call sample contributes one and not two."
         }
       ]
     }

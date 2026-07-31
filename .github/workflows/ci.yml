@@ -128,10 +128,7 @@ jobs:
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
             index: "8/8"
-            suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow"
-          - group: golden-pending
-            index: "1/1"
-            suites: "annotation-site-statistics"
+            suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
     steps:
       - uses: actions/checkout@v4
 
