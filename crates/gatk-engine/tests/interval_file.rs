@@ -12,6 +12,19 @@
 //! resolved by [`gatk_engine::feature_intervals::RegisteredCodecs`], and the interval list brought
 //! four cases of its own: it is the one format here that validates against **two** dictionaries,
 //! its own `@SQ` lines and the reference's, and the two disagreements have different outcomes.
+//!
+//! ```text
+//! case  interval-list-bad-strand                    E:...UserException$MalformedFile
+//! case  interval-list-short-record                  E:htsjdk.tribble.TribbleException
+//! case  interval-list-unknown-contig                ok  1  chr1:1-10
+//! case  interval-list-contig-absent-from-reference  E:...UserException$MalformedGenomeLoc
+//! ```
+//!
+//! One malformed file, two exception classes: `featureFileToIntervals` catches
+//! `IllegalArgumentException` and nothing else, so the bad strand is wrapped as a `MalformedFile`
+//! and the short record leaves the engine as the `TribbleException` it was. And the two
+//! dictionaries fail in opposite directions: a contig the file does not declare costs one line,
+//! a contig the reference does not hold costs the argument.
 
 use gatk_corpus as corpus;
 use gatk_engine::interval_args::{self, IntervalArgumentError};
