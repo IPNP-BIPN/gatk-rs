@@ -16,6 +16,7 @@
 //! - **the key order in the returned map is not the order in the record.** The encoder sorts, so
 //!   `getKeyNames()` is the declaration order and nothing else.
 
+pub mod allele_specific_rank_sum;
 pub mod chromosome_counts;
 pub mod coverage;
 pub mod depth_per_allele;

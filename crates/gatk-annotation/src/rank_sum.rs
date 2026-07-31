@@ -61,7 +61,7 @@ pub const CLIPPING_RANK_SUM_KEY: &str = "ClippingRankSum";
 const MAPPING_QUALITY_UNAVAILABLE: u8 = 255;
 
 /// `RankSumTest.INVALID_ELEMENT_FROM_READ`, which is a value and not an absence.
-const INVALID_ELEMENT_FROM_READ: f64 = f64::NEG_INFINITY;
+pub(crate) const INVALID_ELEMENT_FROM_READ: f64 = f64::NEG_INFINITY;
 
 /// What one member contributes.
 pub trait RankSumTest {

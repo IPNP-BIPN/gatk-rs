@@ -777,6 +777,24 @@
           "why": "From the pinned container on a real x86-64 runner. 128 rows: 40 genotype-count triples compared as raw bits, 40 cohort annotations, 27 mapping-quality answers and 21 repeat measurements. The counts are bits rather than decimals because they are what the two annotations divide and index by, and the first candidate golden earned that choice: it caught the port calling MathUtils.log10sumLog10 where normalizeLog10 calls log10SumLog10, one letter apart and two ulp apart, on the equilibrium cohort's het count and on nothing else."
         }
       ]
+    },
+    {
+      "id": "annotation-allele-specific-rank-sum",
+      "title": "The three allele-specific rank sums, and the histogram they travel as",
+      "status": "oracle-backed",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "The direct annotate() path of an allele-specific annotation is not allele-specific: it pools every alternate's reads into one series and reports one Z score, exactly as its non-allele-specific parent does, under a different key. The allele-specific part lives entirely in the raw gVCF path, where the raw string starts with its delimiter because the reference allele is skipped but its slot is not, and the parser reads the slots positionally, so a raw string whose leading delimiter were trimmed would shift every allele by one. A site with no unambiguous reference read produces a string of bare delimiters rather than a missing value per allele. And each Z score is stored as a one-entry histogram binned to a tenth by a floor, so a negative score bins away from zero, the binning is not symmetric about it, and the joint-called AS_MQRankSum is the median of those bins rather than the rank sum of the pooled reads.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AlleleSpecificRankSumDump",
+          "golden": "crates/gatk-annotation/tests/data/allele_specific_rank_sum.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 100 rows: 11 histograms, 5 compressed lists, 16 binnings one value at a time, 27 direct and 27 raw allele-specific answers, and 7 combinations with their finalisations. The binning rows are what make the claim that a negative score bins away from zero a measurement rather than a reading of the source, and the ref-only row is what showed that a site with reference reads and no alternate read writes the four characters NaN into the raw field: the rank sum of an empty series is NaN, Histogram.add drops it, and an empty histogram renders as Double.toString(Double.NaN)."
+        }
+      ]
     }
   ],
   "probes": []
