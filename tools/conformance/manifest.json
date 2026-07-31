@@ -853,7 +853,7 @@
     {
       "id": "annotation-fragment-counts",
       "title": "F1R2, F2R1, FAD and the fragment grouping under them",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "groupEvidence sums the log likelihoods of a group rather than averaging them, so a pair whose reads each support an allele at minus one gives the fragment a minus two and the informativeness threshold, which is an absolute difference, is easier to clear after grouping than before. The new evidence order is a HashMap's over the read names, because groupingBy builds one. The pair's orientation, its usability and its base quality are all read off the first read of the fragment, which is the first in the sample's own order, so which read is consulted depends on the order the reads were added and a pair whose second read is poor is still counted. isF2R1 is isReverseStrand equals isFirstOfPair, and an unpaired read has isFirstOfPair false, so a forward unpaired read lands in F2R1 and a reverse one in F1R2, the opposite of what the names suggest. And the counts are keyed on the matrix's alleles and read back by the variant's, so an allele the variant declares and the matrix does not is a NullPointerException rather than a zero.",
@@ -863,8 +863,8 @@
       "cases": [
         {
           "dump": "FragmentCountsDump",
-          "golden": null,
-          "why": "Pending the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-annotation/tests/data/fragment_counts.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 48 rows: 12 fragment lists, 12 grouped likelihood tables compared as raw bits, 12 orientation count pairs and 12 fragment depth vectors, all identical on the first run. The three-reads-one-name row is the sharpest pair: the Fragment holds two reads because the supplementary alignment was dropped, while its likelihood is the sum over three, because the grouping summed the whole group before the fragment was built. The trimming applies to the evidence object and not to the arithmetic."
         }
       ]
     }
