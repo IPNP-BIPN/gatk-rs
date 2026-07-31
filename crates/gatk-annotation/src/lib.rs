@@ -21,6 +21,7 @@ pub mod coverage;
 pub mod info_annotation;
 pub mod original_alignment;
 pub mod per_allele;
+pub mod rank_sum;
 pub mod raw_gt_count;
 pub mod sample_list;
 

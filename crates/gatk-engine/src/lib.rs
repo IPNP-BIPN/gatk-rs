@@ -27,6 +27,7 @@ pub mod java_random;
 pub mod jexl;
 pub mod locus_iterator;
 pub mod locus_shards;
+pub mod mann_whitney;
 pub mod permutation;
 pub mod pileup;
 pub mod read;

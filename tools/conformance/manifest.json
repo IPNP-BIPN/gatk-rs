@@ -633,6 +633,42 @@
           "golden": "crates/gatk-engine/tests/data/assembly_region_walker.txt.gz"
         }
       ]
+    },
+    {
+      "id": "mann-whitney",
+      "title": "The rank-sum test",
+      "status": "oracle-backed",
+      "harness": "tools/genotyper-conformance",
+      "tools": [],
+      "why": "MannWhitneyU is the test behind BaseQRankSum, MQRankSum, ReadPosRankSum and ClippingRankSum, and four of its decisions are not what a rank-sum test suggests. The ranks are floats: the values are doubles while the ranks, their sums and the averaged rank of a tie band are all single precision, so a port that ranked in double precision would agree on small inputs and drift on realistic ones. Two different tests are chosen by size, with either series at ten or more taking the normal approximation and anything smaller enumerating every permutation of the group labels, so the reported Z comes from a cumulative probability in one regime and from an inverse cumulative probability in the other, and commons-math3's two are not inverses of each other. transformTies reports zero ties when every single value is tied, because the sigma formula breaks down there, and the continuity correction is then dropped as well, so two mechanisms conspire to produce exactly one half. And the permutation p-value is half the observed bin plus everything more extreme rather than the cumulative distribution, because the cumulative form gives a p-value of one in the most extreme case and no usable Z.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MannWhitneyDump",
+          "golden": "crates/gatk-engine/tests/data/mann_whitney.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 69 test results and 162 Z scores, bit-identical on the first run, which covers both regimes: the permutation test at nine and nine, the normal approximation one element later, and the float rank sums at three hundred a side where single precision stops being exact."
+        }
+      ]
+    },
+    {
+      "id": "annotation-rank-sum",
+      "title": "BaseQRankSum, MQRankSum, ReadPosRankSum and ClippingRankSum",
+      "status": "oracle-backed",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "The four rank-sum annotations run a Mann-Whitney U test of the alternate reads against the reference reads and report a Z score, and four things decide what a consumer sees. The alternate goes first, so swapping the two arrays would flip the sign of every value this family reports and nothing downstream would notice. The value is a String, formatted with a three-decimal format that rounds half up on the decimal expansion rather than however a Double would render, so the VCF carries text and not a number. A NaN Z score is not written at all, which means a site with no alternate reads has no MQRankSum field rather than one reading zero. And three filters run before a read contributes, one of which ReadPosRankSum overrides to add a soft-clip test against the variant's end plus one, so the four members do not see the same reads.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "RankSumAnnotationDump",
+          "golden": "crates/gatk-annotation/tests/data/rank_sum.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 56 answers, 21 of them an absent key rather than a value, and no corrections. The absent ones are what the suite is for: null likelihoods, no genotypes, an empty matrix, and a site whose alternate series is empty all produce no field at all rather than a field reading zero."
+        }
+      ]
     }
   ],
   "probes": []
