@@ -29,6 +29,7 @@ pub mod jexl;
 pub mod locus_iterator;
 pub mod locus_shards;
 pub mod mann_whitney;
+pub mod math_utils;
 pub mod permutation;
 pub mod pileup;
 pub mod read;

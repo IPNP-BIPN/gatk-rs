@@ -106,29 +106,32 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/8"
+            index: "1/9"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
-            index: "2/8"
+            index: "2/9"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
-            index: "3/8"
+            index: "3/9"
             suites: "readwalker printreads intervalwalker alignmentstate pileupelement"
           - group: oracle-backed
-            index: "4/8"
+            index: "4/9"
             suites: "intervalfile jexlfilter featurecache readpileup readstates"
           - group: oracle-backed
-            index: "5/8"
+            index: "5/9"
             suites: "locusiterator acbuilder locuswalker javarandom reservoir"
           - group: oracle-backed
-            index: "6/8"
+            index: "6/9"
             suites: "well19937c leveling variantwalker activityprofile assemblyregion"
           - group: oracle-backed
-            index: "7/8"
+            index: "7/9"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
-            index: "8/8"
+            index: "8/9"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
+          - group: oracle-backed
+            index: "9/9"
+            suites: "annotation-heterozygosity-and-mq"
     steps:
       - uses: actions/checkout@v4
 
