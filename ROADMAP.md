@@ -165,13 +165,25 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       `VariantContextGetters`, **`MannWhitneyU`** and **`FisherExactTest`**, with commons-math3's
       `FastMath.exp`, `FastMath.log`, `Gamma`, `Erf`, `NormalDistribution` and the saddle-point
       expansion under them, all oracle-backed in htsjdk-rs)
-- [ ] the remaining 3. **The claim that most of them wait on jmath does not survive a grep**: 10
-      of the 57 files in `tools/walkers/annotator` mention `MathUtils` at all, and what the
-      annotators reach through `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four
-      already exact. What they actually wait on is engine machinery: the rank-sum and
-      strand-bias statistics, the pileup, and the genotype likelihoods. The median family landed
-      once commons-math3 `Percentile` was ported, which htsjdk-rs decision 0023 made possible by
-      separating an Apache 2.0 source from a GPL2 one
+- [ ] the remaining 3, each blocked on something named rather than on effort. **The claim that
+      most of the 54 wait on jmath did not survive a grep**: 10 of the 57 files in
+      `tools/walkers/annotator` mention `MathUtils` at all, and what the annotators reach through
+      `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four already exact. What the
+      first fifty-one actually waited on was engine machinery, and all of it is now ported. The
+      three that are left:
+  - `HaplotypeFilteringAnnotation` (`HAPCOMP`-adjacent, two counts) needs only the haplotype-typed
+    likelihood matrix and its `filteredHaplotypeCount`. **Portable today**, the next slice
+  - `AllelePseudoDepth` is **refused on the licence boundary**, not deferred. It ends in
+    `SomaticLikelihoodsEngine.alleleFractionsPosterior`, whose fixed point runs through
+    `NaturalLogUtils.normalizeFromLogToLinearSpace` and `logSumExp`, and both of those call
+    `java.lang.Math.exp`. htsjdk-rs decision 0014 withdrew `Math.exp`: its only faithful port was
+    an operation-by-operation transcription of HotSpot's x86 intrinsic, whose source is GPL2 with
+    no Classpath Exception and therefore cannot be published under that crate's MIT licence. The
+    `Gamma.digamma` this annotation also needs **is** ported (htsjdk-rs #62); the exponential is
+    what stops it, and no amount of work on this side changes that
+  - `AssemblyComplexity` needs `Haplotype.getEventMap()`, which is the assembly event model, so it
+    belongs to **G3** with `HaplotypeCaller` rather than to G1. Listing it here would be counting
+    the assembler as an annotation
 
 ### G1.8 The argument layer
 
