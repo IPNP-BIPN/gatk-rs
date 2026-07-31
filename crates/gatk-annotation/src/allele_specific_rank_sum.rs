@@ -40,6 +40,15 @@
 //! Not a missing value per allele: an empty map, which makes the raw string a bare run of
 //! delimiters. The finalising step then has nothing to take a median of.
 //!
+//! # The opposite case writes the four characters `NaN` into the record
+//!
+//! A site with reference reads and **no** alternate read takes a rank sum of an empty series
+//! against a non-empty one, which is `NaN`. `Histogram.add` drops a `NaN` silently, so the
+//! histogram is empty, and an empty histogram renders as `Double.toString(Double.NaN)`. The raw
+//! field is then `|NaN`, and the golden carries that row. The guard in
+//! [`make_combined_annotation_string`] keeps those four characters out of the *combined* string,
+//! but there is no such guard on the way in.
+//!
 //! # Each Z score is stored as a one-entry histogram, so the raw form is lossy
 //!
 //! ```java
