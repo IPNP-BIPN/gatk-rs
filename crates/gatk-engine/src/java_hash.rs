@@ -114,6 +114,60 @@ pub fn hash_set_order(names: &[String]) -> Result<Vec<String>, HashOrderError> {
     Ok(table.into_iter().flatten().collect())
 }
 
+/// The order a `HashMap` iterates in, given each key's `hashCode` and its insertion order.
+///
+/// The same layout as [`hash_set_order`], which is the same structure underneath: a `HashSet` is a
+/// `HashMap` with a constant value. This form takes the hashes because not every key is a string:
+/// `Allele.hashCode` is `Arrays.hashCode(bases) * 31 + Boolean.hashCode(isRef)`, and the order it
+/// produces decides which allele wins a tie in a marginalised likelihood matrix.
+pub fn hash_map_order<T: Clone + PartialEq>(
+    entries: &[(T, i32)],
+) -> Result<Vec<T>, HashOrderError> {
+    let mix = |hash: i32| hash ^ ((hash as u32) >> 16) as i32;
+    let mut capacity: usize = 16;
+    let mut table: Vec<Vec<(T, i32)>> = vec![Vec::new(); capacity];
+    let mut size: usize = 0;
+
+    for (key, hash) in entries {
+        let mixed = mix(*hash);
+        let index = ((capacity - 1) as u32 & mixed as u32) as usize;
+        if table[index].iter().any(|(existing, _)| existing == key) {
+            continue;
+        }
+        table[index].push((key.clone(), *hash));
+        size += 1;
+        if table[index].len() >= TREEIFY_THRESHOLD && capacity >= MIN_TREEIFY_CAPACITY {
+            return Err(HashOrderError::BucketTreeified {
+                bucket: index,
+                length: table[index].len(),
+            });
+        }
+        if size > capacity * 3 / 4 {
+            capacity *= 2;
+            let mut resized: Vec<Vec<(T, i32)>> = vec![Vec::new(); capacity];
+            for bucket in table.into_iter() {
+                for (entry, hash) in bucket {
+                    let to = ((capacity - 1) as u32 & mix(hash) as u32) as usize;
+                    resized[to].push((entry, hash));
+                }
+            }
+            table = resized;
+        }
+    }
+
+    Ok(table.into_iter().flatten().map(|(key, _)| key).collect())
+}
+
+/// `java.util.Arrays.hashCode(byte[])`.
+pub fn byte_array_hash_code(bytes: &[u8]) -> i32 {
+    let mut hash: i32 = 1;
+    for byte in bytes {
+        // The element is widened to int, so a byte above 0x7f is negative.
+        hash = hash.wrapping_mul(31).wrapping_add(*byte as i8 as i32);
+    }
+    hash
+}
+
 /// `String.compareTo`, which is **UTF-16 code-unit** order, not byte order and not Unicode
 /// scalar order.
 ///

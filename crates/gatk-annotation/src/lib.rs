@@ -18,6 +18,7 @@
 
 pub mod chromosome_counts;
 pub mod coverage;
+pub mod depth_per_allele;
 pub mod info_annotation;
 pub mod original_alignment;
 pub mod per_allele;

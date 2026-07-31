@@ -391,6 +391,67 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
             .collect()
     }
 
+    /// `marginalize(newToOldAlleleMap)`: fewer alleles, each taking the **maximum** likelihood of
+    /// the old ones it stands for.
+    ///
+    /// ```java
+    /// newSampleValues[newAllele][r] = oldAlleleSet.stream()
+    ///         .mapToDouble(oldA -> oldSampleValues[oldA][r]).max().orElse(NEGATIVE_INFINITY);
+    /// ```
+    ///
+    /// A maximum, not a sum: marginalising two alleles a read supports equally leaves that
+    /// likelihood unchanged rather than doubling it.
+    ///
+    /// The **order** of the new alleles is the caller's, and in the reference the caller is a
+    /// `Collectors.toMap` whose key set iterates in `HashMap` order. That order is observable,
+    /// because `searchBestAllele` breaks a tie by taking the first index, so which allele a tied
+    /// read is attributed to depends on `Allele.hashCode`. [`crate::java_hash::hash_map_order`]
+    /// reproduces it, and the caller passes the result here.
+    ///
+    /// An old allele the map does not mention contributes to nothing, which the reference supports
+    /// and calls "typically not the case".
+    pub fn marginalize(
+        &self,
+        new_to_old: &[(Allele, Vec<Allele>)],
+    ) -> Result<AlleleLikelihoods<E>, LikelihoodsError> {
+        let mut new_values: Vec<Vec<Vec<f64>>> = Vec::with_capacity(self.number_of_samples());
+        for sample in 0..self.number_of_samples() {
+            let evidence_count = self.sample_evidence_count(sample);
+            let mut sample_values: Vec<Vec<f64>> = Vec::with_capacity(new_to_old.len());
+            for (_, old_alleles) in new_to_old {
+                let mut row = vec![f64::NEG_INFINITY; evidence_count];
+                for old in old_alleles {
+                    let Some(old_index) = self.index_of_allele(old) else {
+                        // `IllegalArgumentException("missing old allele ...")`.
+                        return Err(LikelihoodsError::UnknownSample(String::new()));
+                    };
+                    for (evidence, slot) in row.iter_mut().enumerate() {
+                        let value = self.value(sample, old_index, evidence);
+                        if value > *slot {
+                            *slot = value;
+                        }
+                    }
+                }
+                sample_values.push(row);
+            }
+            new_values.push(sample_values);
+        }
+
+        let new_alleles: Vec<Allele> = new_to_old
+            .iter()
+            .map(|(allele, _)| allele.clone())
+            .collect();
+        let mut result = AlleleLikelihoods::new(
+            self.samples.clone(),
+            AlleleList::new(&new_alleles),
+            self.evidence_by_sample.clone(),
+            new_values,
+        )?;
+        // `result.isNaturalLog = isNaturalLog`, which the informative threshold depends on.
+        result.is_natural_log = self.is_natural_log;
+        Ok(result)
+    }
+
     /// `bestAllelesBreakingTies(sample, tieBreakingPriority)`.
     pub fn best_alleles_breaking_ties_for_sample(
         &self,
