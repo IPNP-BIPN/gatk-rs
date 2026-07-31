@@ -835,7 +835,7 @@
     {
       "id": "annotation-pedigree",
       "title": "The de novo calls and the transmitted singletons",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "TransmittedSingleton reads the child's depth three times and names the three results childIsHighDepth, momIsHighDepth and dadIsHighDepth, so the parents' depths are never looked at and the annotation's own documented caveat about all three samples being deep is not what the code does. Genotype.getDP is minus one when absent rather than zero, and PossibleDeNovo's depth threshold defaults to zero, so a trio with no DP fails the high-confidence branch and falls into the low one, which does not test depth at all. isViolation indexes the child's alleles at zero and one and asks each parent to contain one of them rather than to be able to transmit it, so a half-called parent transmits whatever it does carry and only an entirely uncalled one reaches the special branches above. The de novo allele-frequency cutoff is the larger of a flat four samples and a thousandth of the cohort, so the flat four wins below four thousand samples. And the call-rate gate counts genotypes whose GQ is strictly greater than twenty where every other threshold in the pair is greater-or-equal.",
@@ -845,8 +845,8 @@
       "cases": [
         {
           "dump": "PedigreeAnnotationDump",
-          "golden": null,
-          "why": "Pending the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-annotation/tests/data/pedigree.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 34 rows: 6 genotype types, 10 Mendelian verdicts, 10 de novo answers and 8 singleton answers, all identical on the first run. Three rows are the two depth facts: shallow-child passes the high-confidence branch because the default depth threshold is zero and a depth of zero clears it, no-depth fails it because an absent DP reads as minus one, and shallow-parents is still emitted because all three of TransmittedSingleton's depth tests read the child."
         }
       ]
     }
