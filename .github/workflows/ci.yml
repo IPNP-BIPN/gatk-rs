@@ -106,32 +106,35 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/9"
+            index: "1/10"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
-            index: "2/9"
+            index: "2/10"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
-            index: "3/9"
+            index: "3/10"
             suites: "readwalker printreads intervalwalker alignmentstate pileupelement"
           - group: oracle-backed
-            index: "4/9"
+            index: "4/10"
             suites: "intervalfile jexlfilter featurecache readpileup readstates"
           - group: oracle-backed
-            index: "5/9"
+            index: "5/10"
             suites: "locusiterator acbuilder locuswalker javarandom reservoir"
           - group: oracle-backed
-            index: "6/9"
+            index: "6/10"
             suites: "well19937c leveling variantwalker activityprofile assemblyregion"
           - group: oracle-backed
-            index: "7/9"
+            index: "7/10"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
-            index: "8/9"
+            index: "8/10"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
           - group: oracle-backed
-            index: "9/9"
+            index: "9/10"
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
+          - group: oracle-backed
+            index: "10/10"
+            suites: "annotation-fragment-counts"
     steps:
       - uses: actions/checkout@v4
 
