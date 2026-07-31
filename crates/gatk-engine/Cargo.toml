@@ -11,6 +11,7 @@ htsjdk-bgzf.workspace = true
 # The allele and sample axes of a likelihood matrix are defined over htsjdk alleles.
 htsjdk-tribble.workspace = true
 htsjdk-vcf.workspace = true
+jmath.workspace = true
 # Pinned exactly, not by caret range: a byte-identity claim cannot float its dependencies.
 # noodles parses the .fai and the .bai; what those bytes mean to a GATK tool is ported.
 noodles-bam = "=0.92.0"

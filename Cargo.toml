@@ -18,10 +18,10 @@ repository = "https://github.com/IPNP-BIPN/gatk-rs"
 # ["org.broadinstitute.hellbender", "picard"], which is why `gatk MarkDuplicates` runs Picard's
 # code, and why gatk-rs depends on picard-rs here.
 [workspace.dependencies]
-htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "1daef8215096e650a5eaf9d5217fb62faea43265" }
-picard-analysis = { git = "https://github.com/IPNP-BIPN/picard-rs", rev = "72a0ae70d0502d1c4f4cd05e883aad0a2e67f31c" }
+htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }
+picard-analysis = { git = "https://github.com/IPNP-BIPN/picard-rs", rev = "87e7e957126bc13546a6b6c617dad0f43d91faa2" }

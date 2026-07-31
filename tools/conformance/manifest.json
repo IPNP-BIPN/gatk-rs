@@ -633,6 +633,23 @@
           "golden": "crates/gatk-engine/tests/data/assembly_region_walker.txt.gz"
         }
       ]
+    },
+    {
+      "id": "mann-whitney",
+      "title": "The rank-sum test",
+      "status": "golden-pending",
+      "harness": "tools/genotyper-conformance",
+      "tools": [],
+      "why": "MannWhitneyU is the test behind BaseQRankSum, MQRankSum, ReadPosRankSum and ClippingRankSum, and four of its decisions are not what a rank-sum test suggests. The ranks are floats: the values are doubles while the ranks, their sums and the averaged rank of a tie band are all single precision, so a port that ranked in double precision would agree on small inputs and drift on realistic ones. Two different tests are chosen by size, with either series at ten or more taking the normal approximation and anything smaller enumerating every permutation of the group labels, so the reported Z comes from a cumulative probability in one regime and from an inverse cumulative probability in the other, and commons-math3's two are not inverses of each other. transformTies reports zero ties when every single value is tied, because the sigma formula breaks down there, and the continuity correction is then dropped as well, so two mechanisms conspire to produce exactly one half. And the permutation p-value is half the observed bin plus everything more extreme rather than the cumulative distribution, because the cumulative form gives a p-value of one in the most extreme case and no usable Z.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MannWhitneyDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []
