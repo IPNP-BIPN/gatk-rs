@@ -128,7 +128,7 @@ jobs:
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
             index: "8/8"
-            suites: "annotation-strand-bias"
+            suites: "annotation-strand-bias annotation-read-grouping"
     steps:
       - uses: actions/checkout@v4
 

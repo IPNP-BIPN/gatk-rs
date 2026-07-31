@@ -687,6 +687,24 @@
           "why": "From the pinned container on a real x86-64 runner. 87 rows, no corrections, and sixteen of them are Fisher p-values that pass through Math.pow(10, x). Decision 0007 deferred that function because its intrinsic is GPL2 and not correctly rounded; the port calls the platform's powf, and on every input these annotations produce the two agree bit for bit. That is evidence, not a proof: it extends the pow measurement of decision 0007 rather than closing it."
         }
       ]
+    },
+    {
+      "id": "annotation-read-grouping",
+      "status": "oracle-backed",
+      "title": "AS_UNIQ_ALT_READ_COUNT, BQHIST and REF_BASES",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "Three annotations whose output shape is more interesting than their arithmetic. AS_UNIQ_ALT_READ_COUNT counts distinct start and fragment-length pairs rather than reads, so a hundred PCR duplicates of one fragment count once and two genuinely different fragments sharing both numbers also count once, and the value is a String joined with a pipe because it is an allele-specific raw annotation. BQHIST is a flat list of one entry per distinct quality followed by one count per allele of the matrix in matrix order, so its length depends on the matrix rather than on the variant and reading it requires knowing that number. And REF_BASES is twenty-one bases taken out of whatever window the reference context carries, with the discard clamped at zero and the right end padded with N, so the string has a fixed length and is not necessarily centred on the variant.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ReadGroupingAnnotationDump",
+          "golden": "crates/gatk-annotation/tests/data/read_grouping.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 24 rows, no corrections. The three-duplicates row is the one that carries the claim: three reads, one fragment, one count."
+        }
+      ]
     }
   ],
   "probes": []
