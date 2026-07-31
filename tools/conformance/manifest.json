@@ -799,7 +799,7 @@
     {
       "id": "annotation-allele-specific-strand-bias",
       "title": "AS_FS, AS_SOR and the strand table they share",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "AS_SB_TABLE writes an entry for the reference too and puts the delimiter between entries, so it does not start with one, while the allele-specific rank sums skip the reference's value but keep its slot and theirs does: two families, two conventions for the same delimiter, and this parser refuses a count mismatch outright where the other pads. A sample contributes nothing at all unless its whole table holds more than two informative reads, so a sample with exactly two is dropped even for the allele that had both of them. AS_StrandOddsRatio computes a value for the reference allele against itself and then never prints it, while AS_FisherStrand filters the reference out first, and the two siblings differ in exactly that line. AS_FS floors its p-value at 1e-320, which is a subnormal, before phred-scaling it. And a reduced string skips an alternate the annotation data does not carry rather than writing the missing value, so the field can come out with fewer entries than the variant has alternates.",
@@ -809,8 +809,8 @@
       "cases": [
         {
           "dump": "AlleleSpecificStrandBiasDump",
-          "golden": null,
-          "why": "Pending the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-annotation/tests/data/allele_specific_strand_bias.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 76 rows: 14 raw strand tables, 28 direct answers, 9 combinations with their 16 finalisations, and 8 phred scalings compared as raw bits. The golden corrected the port twice. An entry that is present but empty is not the same as an absent one: the combined field reads 10,8| with nothing after the delimiter, where the port had written 0,0. And the allele-specific minimum count is two for both members, while the plain StrandOddsRatio uses zero, so SOR and AS_SOR disagree on a site whose only sample has one or two informative reads."
         }
       ]
     }

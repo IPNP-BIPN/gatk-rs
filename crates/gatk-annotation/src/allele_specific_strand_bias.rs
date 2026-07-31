@@ -59,8 +59,11 @@ use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::variant::VariantContext;
 
+use crate::info_annotation::AnnotationValue;
 use crate::rank_sum::format_decimals;
-use crate::strand_bias::{calculate_sor, p_value_for_contingency_table};
+use crate::strand_bias::{
+    calculate_sor, contingency_table, p_value_for_contingency_table, STRAND_BIAS_BY_SAMPLE_KEY,
+};
 
 /// `GATKVCFConstants.AS_SB_TABLE_KEY`.
 pub const AS_SB_TABLE_KEY: &str = "AS_SB_TABLE";
@@ -140,8 +143,8 @@ pub fn strand_counts(
     vc: &VariantContext,
     likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     min_count: i32,
-) -> Vec<(Allele, Option<[i32; 2]>)> {
-    let mut combined: Vec<(Allele, Option<[i32; 2]>)> = vc
+) -> Vec<(Allele, Option<Vec<i32>>)> {
+    let mut combined: Vec<(Allele, Option<Vec<i32>>)> = vc
         .alleles
         .iter()
         .map(|allele| (allele.clone(), None))
@@ -152,7 +155,7 @@ pub fn strand_counts(
     let reference = vc.alleles.iter().find(|a| a.is_reference());
 
     for sample_index in 0..likelihoods.number_of_samples() {
-        let mut sample_table: Vec<(Allele, Option<[i32; 2]>)> = vc
+        let mut sample_table: Vec<(Allele, Option<Vec<i32>>)> = vc
             .alleles
             .iter()
             .map(|allele| (allele.clone(), None))
@@ -187,7 +190,7 @@ pub fn strand_counts(
                 FORWARD
             };
             if let Some(slot) = sample_table.iter_mut().find(|(a, _)| a == allele) {
-                let counts = slot.1.get_or_insert([0, 0]);
+                let counts = slot.1.get_or_insert_with(|| vec![0, 0]);
                 counts[strand] += 1;
             }
         }
@@ -206,7 +209,7 @@ pub fn strand_counts(
                             existing[FORWARD] += counts[FORWARD];
                             existing[REVERSE] += counts[REVERSE];
                         }
-                        None => slot.1 = Some(*counts),
+                        None => slot.1 = Some(counts.clone()),
                     }
                 }
             }
@@ -222,7 +225,12 @@ fn is_reverse_strand(read: &BamRecord) -> bool {
 
 /// `StrandBiasUtils.makeRawAnnotationString`: the delimiter goes **between** entries, and a missing
 /// allele is written as the shared `ZERO_LIST`.
-pub fn make_raw_annotation_string(per_allele: &[(Allele, Option<[i32; 2]>)]) -> String {
+///
+/// An entry that is **present but empty** is not the same as an absent one: `encode` renders it as
+/// the empty string, so the field can read `10,8|` with nothing after the delimiter. That state is
+/// reachable, because `combineAttributeMap` stores an empty list whenever the source's own entry
+/// was empty.
+pub fn make_raw_annotation_string(per_allele: &[(Allele, Option<Vec<i32>>)]) -> String {
     let mut out = String::new();
     for (_, counts) in per_allele {
         if !out.is_empty() {
@@ -232,10 +240,19 @@ pub fn make_raw_annotation_string(per_allele: &[(Allele, Option<[i32; 2]>)]) -> 
             // `ZERO_LIST` is a `static` mutable `ArrayList` shared by every call site; nothing
             // writes through it, so the sharing is safe and remains one edit away from not being.
             None => out.push_str("0,0"),
-            Some(counts) => out.push_str(&format!("{},{}", counts[FORWARD], counts[REVERSE])),
+            Some(counts) => out.push_str(&encode(counts)),
         }
     }
     out
+}
+
+/// `StrandBiasUtils.encode`: the values joined with commas, and nothing at all when there are none.
+pub fn encode(values: &[i32]) -> String {
+    values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// `AS_StrandBiasTest.annotateRawData`.
@@ -251,6 +268,56 @@ pub fn annotate_raw_data(
         annotation.raw_key().to_string(),
         make_raw_annotation_string(&counts),
     ))
+}
+
+/// `StrandBiasTest.annotate` as the allele-specific members inherit it, which is **not** what
+/// their non-allele-specific siblings do.
+///
+/// Two differences, both invisible in the subclasses:
+///
+/// - the minimum count is `AS_StrandBiasTest.MIN_COUNT`, which is 2 for **both** members, while the
+///   plain `StrandOddsRatio` uses 0. So a sample with one or two informative reads contributes to
+///   `SOR` and not to `AS_SOR`, and the two annotations on such a site disagree;
+/// - `calculateAnnotationFromGTfield` is overridden to return nothing, because "allele-specific
+///   annotations cannot be called from walkers other than HaplotypeCaller". A site whose genotypes
+///   carry `SB` therefore gets `SOR` from that field and no `AS_SOR` at all.
+///
+/// And the value is still the **pooled** table over every alternate, so this path is no more
+/// allele-specific than the rank sums' is.
+pub fn annotate_direct(
+    annotation: AsStrandBias,
+    vc: &VariantContext,
+    likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
+) -> Vec<(String, AnnotationValue)> {
+    if !vc.is_variant() {
+        return Vec::new();
+    }
+    if vc.genotypes.iter().any(|g| {
+        g.extended
+            .iter()
+            .any(|(key, _)| key == STRAND_BIAS_BY_SAMPLE_KEY)
+    }) {
+        // The overridden `calculateAnnotationFromGTfield`, which is an empty map.
+        return Vec::new();
+    }
+    let Some(likelihoods) = likelihoods else {
+        return Vec::new();
+    };
+    let table = contingency_table(likelihoods, vc, MIN_COUNT);
+    let value = match annotation {
+        AsStrandBias::Fisher => format_decimals(
+            phred_scale_error_rate(gatk_engine::math_utils::java_max(
+                p_value_for_contingency_table(table),
+                MIN_PVALUE,
+            )),
+            3,
+        ),
+        AsStrandBias::OddsRatio => format_decimals(calculate_sor(table), 3),
+    };
+    vec![(
+        annotation.vcf_key().to_string(),
+        AnnotationValue::Str(value),
+    )]
 }
 
 /// `AS_StrandBiasTest.parseRawDataString`.
@@ -304,7 +371,7 @@ pub fn combine_raw_data(
     alleles: &[Allele],
     raw_strings: &[String],
 ) -> Result<String, AsStrandBiasError> {
-    let mut combined: Vec<(Allele, Option<[i32; 2]>)> = alleles
+    let mut combined: Vec<(Allele, Option<Vec<i32>>)> = alleles
         .iter()
         .map(|allele| (allele.clone(), None))
         .collect();
@@ -315,24 +382,23 @@ pub fn combine_raw_data(
                 continue;
             };
             match &mut slot.1 {
-                Some(existing) => {
-                    // `combineAttributeMap` reads index 0 and 1 unconditionally once the entry
-                    // exists, so a one-element entry here is an IndexOutOfBounds upstream. Only an
-                    // empty entry is representable, and it is handled below.
+                Some(existing) if !existing.is_empty() => {
+                    // `combineAttributeMap` reads index 0 and 1 unconditionally once the combined
+                    // entry exists, so an empty combined entry followed by a non-empty source is
+                    // an IndexOutOfBounds upstream. No writer produces that order.
                     if counts.len() >= 2 {
                         existing[FORWARD] += counts[FORWARD];
                         existing[REVERSE] += counts[REVERSE];
                     }
                 }
-                None => {
-                    slot.1 = if counts.len() >= 2 {
-                        Some([counts[FORWARD], counts[REVERSE]])
+                _ => {
+                    // An empty source entry stores an **empty list**, which is present-but-empty
+                    // and renders as nothing at all rather than as `0,0`.
+                    slot.1 = Some(if counts.len() >= 2 {
+                        vec![counts[FORWARD], counts[REVERSE]]
                     } else {
-                        // An empty entry puts an **empty list** in the map, which is not the same
-                        // as an absent one: it renders as `0,0` here but as the missing value once
-                        // reduced.
-                        Some([0, 0])
-                    };
+                        Vec::new()
+                    });
                 }
             }
         }
@@ -487,8 +553,8 @@ mod tests {
     fn the_raw_string_has_an_entry_for_the_reference_and_no_leading_delimiter() {
         let alleles = alleles();
         let counts = vec![
-            (alleles[0].clone(), Some([10, 8])),
-            (alleles[1].clone(), Some([3, 4])),
+            (alleles[0].clone(), Some(vec![10, 8])),
+            (alleles[1].clone(), Some(vec![3, 4])),
         ];
         assert_eq!(make_raw_annotation_string(&counts), "10,8|3,4");
     }

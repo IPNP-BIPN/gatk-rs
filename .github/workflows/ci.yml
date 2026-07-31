@@ -131,10 +131,7 @@ jobs:
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
           - group: oracle-backed
             index: "9/9"
-            suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum"
-          - group: golden-pending
-            index: "1/1"
-            suites: "annotation-allele-specific-strand-bias"
+            suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias"
     steps:
       - uses: actions/checkout@v4
 
