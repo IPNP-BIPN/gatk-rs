@@ -690,7 +690,7 @@
     },
     {
       "id": "annotation-read-grouping",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AS_UNIQ_ALT_READ_COUNT, BQHIST and REF_BASES",
       "harness": "tools/annotation-conformance",
       "tools": [],
@@ -701,7 +701,8 @@
       "cases": [
         {
           "dump": "ReadGroupingAnnotationDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/read_grouping.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 24 rows, no corrections. The three-duplicates row is the one that carries the claim: three reads, one fragment, one count."
         }
       ]
     }
