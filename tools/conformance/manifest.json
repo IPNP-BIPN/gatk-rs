@@ -655,7 +655,7 @@
     {
       "id": "annotation-rank-sum",
       "title": "BaseQRankSum, MQRankSum, ReadPosRankSum and ClippingRankSum",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "The four rank-sum annotations run a Mann-Whitney U test of the alternate reads against the reference reads and report a Z score, and four things decide what a consumer sees. The alternate goes first, so swapping the two arrays would flip the sign of every value this family reports and nothing downstream would notice. The value is a String, formatted with a three-decimal format that rounds half up on the decimal expansion rather than however a Double would render, so the VCF carries text and not a number. A NaN Z score is not written at all, which means a site with no alternate reads has no MQRankSum field rather than one reading zero. And three filters run before a read contributes, one of which ReadPosRankSum overrides to add a soft-clip test against the variant's end plus one, so the four members do not see the same reads.",
@@ -665,7 +665,8 @@
       "cases": [
         {
           "dump": "RankSumAnnotationDump",
-          "golden": null
+          "golden": "crates/gatk-annotation/tests/data/rank_sum.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. 56 answers, 21 of them an absent key rather than a value, and no corrections. The absent ones are what the suite is for: null likelihoods, no genotypes, an empty matrix, and a site whose alternate series is empty all produce no field at all rather than a field reading zero."
         }
       ]
     }
