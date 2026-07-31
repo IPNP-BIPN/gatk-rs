@@ -70,6 +70,19 @@ pub trait RankSumTest {
     /// `getElementForRead`. `None` is `OptionalDouble.empty()`.
     fn element_for_read(&self, read: &BamRecord, vc: &VariantContext) -> Option<f64>;
 
+    /// `getElementForRead(read, vc, bestAllele)`, which only `LikelihoodRankSumTest` overrides.
+    ///
+    /// The parent's form delegates to the two-argument one and ignores the best allele entirely,
+    /// so this default is that delegation and the likelihood is unused.
+    fn element_for_best_allele(&self, _likelihood: f64) -> Option<f64> {
+        None
+    }
+
+    /// Whether this member reads the best allele's likelihood rather than the read.
+    fn uses_best_allele(&self) -> bool {
+        false
+    }
+
     /// `isUsableRead`, which `ReadPosRankSumTest` overrides.
     fn is_usable_read(&self, read: &BamRecord, _vc: &VariantContext) -> bool {
         let quality = mapping_quality(read);
@@ -106,7 +119,11 @@ pub fn annotate<A: RankSumTest>(
             if !annotation.is_usable_read(read, vc) {
                 continue;
             }
-            let Some(value) = annotation.element_for_read(read, vc) else {
+            let Some(value) = (if annotation.uses_best_allele() {
+                annotation.element_for_best_allele(best.likelihood)
+            } else {
+                annotation.element_for_read(read, vc)
+            }) else {
                 continue;
             };
             // A read whose clipping goal was not reached, or whose position is inside a spanning
@@ -148,6 +165,11 @@ pub fn annotate<A: RankSumTest>(
 /// is exactly 5 and whose expansion terminates there, which a Z score can be: `0.0625` prints
 /// `0.063` in Java and `0.062` in Rust.
 pub(crate) fn format_three_decimals(value: f64) -> String {
+    format_decimals(value, 3)
+}
+
+/// `String.format("%.Nf", value)`, half-up on the decimal expansion.
+pub(crate) fn format_decimals(value: f64, places: usize) -> String {
     if value.is_nan() {
         return "NaN".to_string();
     }
@@ -159,10 +181,10 @@ pub(crate) fn format_three_decimals(value: f64) -> String {
     let (whole, fraction) = text.split_once('.').expect("a decimal point");
     let mut digits: Vec<u8> = whole
         .bytes()
-        .chain(fraction.bytes().take(3))
+        .chain(fraction.bytes().take(places))
         .map(|b| b - b'0')
         .collect();
-    let round_up = fraction.as_bytes()[3] >= b'5';
+    let round_up = fraction.as_bytes()[places] >= b'5';
     if round_up {
         let mut index = digits.len();
         loop {
@@ -179,7 +201,7 @@ pub(crate) fn format_three_decimals(value: f64) -> String {
             }
         }
     }
-    let split = digits.len() - 3;
+    let split = digits.len() - places;
     let whole: String = digits[..split].iter().map(|d| (d + b'0') as char).collect();
     let fraction: String = digits[split..].iter().map(|d| (d + b'0') as char).collect();
     let sign = if value.is_sign_negative() { "-" } else { "" };
