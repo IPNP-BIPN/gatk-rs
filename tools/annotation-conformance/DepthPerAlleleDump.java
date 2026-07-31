@@ -190,10 +190,12 @@ public class DepthPerAlleleDump {
         final Genotype g = vc.getGenotype(0);
 
         try {
-            final int[] ad = DepthPerAlleleBySample.annotateWithLikelihoods(vc, g,
-                    new LinkedHashSet<>(vc.getAlleles()), likelihoods);
+            // annotateWithLikelihoods is protected, so AD is taken through the public annotate.
+            final GenotypeBuilder adBuilder = new GenotypeBuilder("s1", List.of(REF, ALT));
+            new DepthPerAlleleBySample().annotate(null, vc, g, adBuilder, likelihoods);
+            final int[] ad = adBuilder.make().getAD();
             final StringBuilder counts = new StringBuilder();
-            for (final int count : ad) {
+            for (final int count : ad == null ? new int[0] : ad) {
                 if (counts.length() > 0) { counts.append(','); }
                 counts.append(count);
             }
