@@ -151,12 +151,12 @@ public class HeterozygosityAndMqDump {
         repetitions("AT", "", true);
 
         // TandemRepeat, over a real reference window.
-        str("deletion-of-one-unit", "GATCCACCACCAGTCGA", 100, 103, "TCCA", "T");
-        str("insertion-of-one-unit", "GATCCACCACCAGTCGA", 100, 103, "T", "TCCA");
-        str("not-a-repeat", "GATCCACCACCAGTCGA", 100, 103, "TC", "T");
-        str("snp-is-not-an-indel", "GATCCACCACCAGTCGA", 100, 103, "T", "G");
+        str("deletion-of-one-unit", "GATCCACCACCAGTCGA", 100, 102, "TCCA", "T");
+        str("insertion-of-one-unit", "GATCCACCACCAGTCGA", 100, 102, "T", "TCCA");
+        str("not-a-repeat", "GATCCACCACCAGTCGA", 100, 102, "TC", "T");
+        str("snp-is-not-an-indel", "GATCCACCACCAGTCGA", 100, 102, "T", "G");
         str("homopolymer", "GAAAAAAAAAAAAGTCGA", 100, 102, "AA", "A");
-        str("multiallelic-indel", "GATCCACCACCAGTCGA", 100, 103, "TCCA", "T,TCCACCA");
+        str("multiallelic-indel", "GATCCACCACCAGTCGA", 100, 102, "TCCA", "T,TCCACCA");
     }
 
     static SAMFileHeader makeHeader() {

@@ -44,42 +44,52 @@ pub fn pow10(x: f64) -> f64 {
     10.0f64.powf(x)
 }
 
-/// `MathUtils.log10sumLog10(array)`.
+/// `MathUtils.log10SumLog10(array)`, with a **capital S**.
 ///
-/// The sum is `1.0 + sum over i != max of pow(10, a[i] - max)`, left to right with the maximum's
-/// own term added as a literal zero, so the accumulation order is the array's.
-pub fn log10_sum_log10(log10p: &[f64]) -> f64 {
-    log10_sum_log10_range(log10p, 0, log10p.len())
+/// `MathUtils` has two log-sums whose names differ by that one letter, and they are not the same
+/// function:
+///
+/// | | accumulation | `-Infinity` entries | one element |
+/// |---|---|---|---|
+/// | `log10sumLog10` | `1.0 + (sum of terms)` | contribute `pow(10, -inf) = 0` | returned as is |
+/// | `log10SumLog10` | `sum = 1.0` then `sum += term` | **skipped**, no addition at all | still summed |
+///
+/// The accumulation order is observable. For PLs of `[60, 0, 60]` the terms are `1e-6` twice, and
+/// `(1.0 + 1e-6) + 1e-6` is two ulp away from `1.0 + (1e-6 + 1e-6)`. `normalizeLog10`, and so every
+/// genotype count `ExcessHet` and `InbreedingCoeff` rest on, calls the capital-S one. The golden
+/// caught the port calling the other, on the `equilibrium` cohort's het count and nowhere else.
+///
+/// The last line is the third difference: a sum still exactly `1.0` skips `Math.log10` rather than
+/// taking the logarithm of one, so a single-element array never reaches the logarithm at all.
+pub fn log10_sum_log10(log10_values: &[f64]) -> f64 {
+    log10_sum_log10_range(log10_values, 0, log10_values.len())
 }
 
-/// `MathUtils.log10sumLog10(array, start, finish)`.
-pub fn log10_sum_log10_range(log10p: &[f64], start: usize, finish: usize) -> f64 {
-    if finish.saturating_sub(start) < 2 {
-        return if finish == start {
-            f64::NEG_INFINITY
-        } else {
-            log10p[start]
-        };
+/// `MathUtils.log10SumLog10(array, start, finish)`.
+pub fn log10_sum_log10_range(log10_values: &[f64], start: usize, finish: usize) -> f64 {
+    if start >= finish {
+        return f64::NEG_INFINITY;
     }
-    let max_index = max_element_index(log10p, start, finish);
-    let max_value = log10p[max_index];
+    let max_index = max_element_index(log10_values, start, finish);
+    let max_value = log10_values[max_index];
     if max_value == f64::NEG_INFINITY {
         return max_value;
     }
-    let mut sum = 0.0;
-    for (i, value) in log10p.iter().enumerate().take(finish).skip(start) {
-        // The maximum contributes a literal 0.0 rather than being skipped, so the number of
-        // additions is the range's length whatever the maximum is.
-        sum += if i == max_index {
-            0.0
-        } else {
-            pow10(value - max_value)
-        };
+    let mut sum = 1.0f64;
+    for (i, value) in log10_values.iter().enumerate().take(finish).skip(start) {
+        if i == max_index || *value == f64::NEG_INFINITY {
+            continue;
+        }
+        sum += pow10(value - max_value);
     }
-    let sum = 1.0 + sum;
-    // `Utils.validateArg(!isNaN(sum) && sum != POSITIVE_INFINITY)`: an IllegalArgumentException
-    // there, which no ported caller can reach because the inputs are PLs.
-    max_value + jmath::math::log10(sum)
+    // `throw new IllegalArgumentException("log10 p: Values must be non-infinite and non-NAN")`,
+    // which no ported caller can reach because the inputs are PLs.
+    max_value
+        + if sum != 1.0 {
+            jmath::math::log10(sum)
+        } else {
+            0.0
+        }
 }
 
 /// `MathUtils.normalizeFromLog10ToLinearSpace`.
