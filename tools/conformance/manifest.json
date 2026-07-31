@@ -14,7 +14,10 @@
     "suites_per_job": 5,
     "$why": "Suites share a job because each job restores the oracle image once."
   },
-  "default_java_props": ["-Duser.language=en", "-Duser.country=US"],
+  "default_java_props": [
+    "-Duser.language=en",
+    "-Duser.country=US"
+  ],
   "suites": [
     {
       "id": "annotation-original-alignment",
@@ -22,7 +25,9 @@
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "why": "OriginalAlignment counts the reads supporting the best alternate allele whose original alignment was on a different contig, which is how a Mutect2 call on the mitochondrion is checked against a NuMT, and four of its decisions live outside the class. The allele it counts for is picked by TLOD through getTumorLogOdds and maxElementIndex, so a tie goes to the earliest alternate and a TLOD of dot is not missing but -1, which after the log conversion is an ordinary number that can win the maximum. The contig comparison is a string field: getOAContig splits the OA tag on a comma and takes field zero, so an unmapped read, whose tag is star comma zero and so on, has original contig star, which differs from every real contig and therefore counts. The filter takes BestAllele.isInformative, which compares against the log10 threshold whatever base the matrix is in. And unlike Coverage, MappingQualityZero and CountNs, which treat null likelihoods as nothing to say, this one calls Utils.nonNull and throws.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "OriginalAlignmentDump",
@@ -36,7 +41,9 @@
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
       "why": "Everything that reads a numeric annotation off a VariantContext goes through VariantContextGetters.attributeValueToDoubleArray, and the function is held together by an accident. Its Iterable branch tests value.getClass().isAssignableFrom(Iterable.class), which is backwards: isAssignableFrom asks whether the argument's type can be assigned to the receiver's, so it asks whether an Iterable fits in an ArrayList variable, which is false. Every list therefore falls through to the branch labelled as a last resort, which renders the value with String.valueOf and splits the result on a comma; String.valueOf of a list is bracketed and comma-space separated, so every field after the first arrives with a leading space and parses only because Double.parseDouble trims. A port splitting on comma-space, or using a parser that refuses leading whitespace, agrees on a one-element list and diverges on every longer one. Two more things the signature hides: a field equal to the missing value becomes the caller's missingValue, which is -1 for the overload every annotator uses, so a missing TLOD arrives as a number nobody can recognise as missing; and any other unparsable field becomes a GATKException naming the annotation rather than a NumberFormatException. The doubles travel as raw bits because getTumorLogOdds multiplies them by Math.log(10).",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "VariantGettersDump",
@@ -50,7 +57,9 @@
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "why": "Coverage, MappingQualityZero and CountNs are the three annotations whose whole input is the likelihood matrix. Their arithmetic is three counts and no two of the three agree on anything else. Only Coverage tests evidenceCount, so an empty matrix makes it write nothing while the other two write a zero. Only MappingQualityZero tests the site, so a non-variant site makes it write nothing while the other two still count. Coverage and MappingQualityZero go through String.format so their values are Strings, while CountNs puts a long into an ImmutableMap so its value is a Long: all three render identically and are three different objects to a consumer. And CountNs compares against the byte N, upper case only, reaching the base through getReadBaseAtReferenceCoordinate, whose bounds test uses the alignment span while its index uses the soft start, so a read whose N sits inside a soft clip does not count.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "LikelihoodAnnotationDump",
@@ -64,7 +73,9 @@
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
       "why": "Every likelihood-reading annotation goes through searchBestAllele, and four of its decisions are invisible in its signature. bestAlleleIndex and secondBestIndex both start at zero and nothing means no second best, so a one-allele matrix ends with the two equal and the tail turns that into a second-best likelihood of negative infinity. The comparison is strictly greater, so among equal likelihoods the earliest allele wins and the allele order is observable in a result that looks order-independent. isInformative compares the confidence against LOG_10_INFORMATIVE_THRESHOLD whatever base the matrix is in, while the tie-breaking pass inside searchBestAllele converts its threshold with the base, so after switchToNaturalLog the two ask their question at different thresholds. And confidence is guarded by likelihood == secondBestLikelihood ? 0 : the difference, whose load-bearing case is the pair of negative infinities where the subtraction would be NaN. The likelihoods travel as raw bits because they are read back out of the matrix after a conversion.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AlleleLikelihoodsDump",
@@ -78,7 +89,9 @@
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
       "why": "AlleleLikelihoods is defined over an AlleleList and a SampleList, so anything surprising about those two is inherited by every likelihood GATK computes. An indexed list is a set: IndexedSet drops a duplicate silently and the survivor keeps the index of its first occurrence, so a list built from A, C, A has two entries and nothing says so, and a caller that built its list from a variant context with a repeated allele gets a matrix with fewer rows than it asked for. Membership is Allele.equals, which is bases and the reference flag, so the reference A and a non-reference A are two entries in one list and indexOfReference reports only the first entry whose flag is set. And a permutation is a directional subset map: it may drop and reorder, never invent, refusing a longer target and a target holding an unknown allele with the same message both ways, while reporting isPartial, isNonPermuted and isKept, which callers use to skip work. A subset that keeps its order is partial and NOT non-permuted, which is the distinction a port collapses by accident.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AlleleListDump",
@@ -92,7 +105,9 @@
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
       "why": "ChromosomeCounts, SampleList and RawGtCount are the members of the counting family that need no AlleleLikelihoods, so they can be asked through their own interface. What is measured is not only the numbers but the shape of what an annotation returns, which is where a port goes wrong silently. The map is Map<String,Object>, so the Java class of each value is part of the answer: ChromosomeCounts puts an Integer for one alternate allele and an ArrayList for two or more, and both render the same way. An empty map is not zeroes, it means the keys are absent from the record, and each annotation has at least one guard reaching that branch. RawGtCount.annotate returns null rather than an empty map, a third thing again, and its real work is combineRawData, whose output drops one of the three counts it just summed and writes a literal dot in its place, so the result of a combine cannot be fed back into one. And SampleList's guard is isMonomorphicInSamples, which is not every genotype is hom-ref: a site with alternate alleles and no genotypes at all is not monomorphic, while a site where everybody is a no-call is.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AnnotationDump",
@@ -107,7 +122,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "One row per filter, one character per record: the reference's own decision, taken through SAMRecordToGATKReadAdapter rather than off the flags. Going through the adapter is the point: GATKRead.isUnmapped is three criteria and isFirstOfPair requires pairing, so comparing against flags would compare against a reimplementation of the adapter instead of the reference. The corpus travels in the same file as SAM text, so the port judges the records the reference judged rather than a description of them.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "$compare_why": "Line mode, not keyed. Keyed compares one row per (kind, case) pair, and every dump here repeats a kind across many cases: the ReadClipper golden has 2,385 rows and only 181 distinct keys, so keyed mode silently compared 8% of it and reported ok. The whole file is the artefact and its order is part of it.",
       "cases": [
         {
@@ -148,7 +165,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Which reads a walker sees for a given -L is decided by htsjdk's stateful query filter, not by an overlap test: its interval index only advances and the traversal stops once every interval is behind the record, unmapped reads carrying their mate's position are special-cased, and QueryInterval.optimizeIntervals merges abutting intervals so two adjacent -L arguments return a spanning read once. The fixture BAM and its .bai travel in the golden as base64, so the port queries the bytes the reference queried.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReadsDataSourceDump",
@@ -164,7 +183,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "A walker never queries the reference directly: it is handed a window around its position, and three of that window's behaviours are decisions. Near a contig edge the window is silently smaller than requested and numWindowLeadingBases reports what was obtained rather than what was asked for; getBases(leading, trailing) expands the window rather than the interval, so the expansions compose; and getKmerAround returns null rather than a shorter kmer when the edge prevents expansion. Each accessor gets its own row, so which call throws is measured rather than collapsed into one E.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReferenceContextDump",
@@ -180,7 +201,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Every read-based tool inherits this traversal, so which reads reach apply and in what order is the tool's output. The probe is a real ReadWalker run through the real command line rather than a reconstruction: it records, per apply call, the read and the ReferenceContext window it arrived with. Two decisions are invisible from any tool's own output: the filter sits between the two read transformers, so it judges a read the walker never sees; and getReadInterval is null for a mapped read whose coordinates are not a valid interval, which hands the walker a read with no reference under it.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReadWalkerDump",
@@ -194,9 +217,13 @@
       "title": "PrintReads output bytes",
       "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
-      "tools": ["PrintReads"],
+      "tools": [
+        "PrintReads"
+      ],
       "why": "The first whole tool, and the first suite whose claim is bytes rather than decisions: the output BAM travels in the golden in full, base64, index included. Two header behaviours are measured with it: the @PG record the tool appends (ID, VN, CL, PN, with the ID taking a numeric suffix when it collides) and the fact that getHeaderForSAMWriter mutates the reads header in place. The dump installs htsjdk's JDK DeflaterFactory explicitly and records it in the golden, because --use-jdk-deflater does not restore it: GATK, like Picard, only ever installs the Intel factory when the flag is false, and that setter is static, so one earlier Picard call in the same JVM leaves GKL compressing everything that follows while the flag claims otherwise. The dump writes to a fixed directory rather than a temporary one, because the command line is recorded inside the output BAM's own @PG record: a random /tmp path does not make one golden row unstable, it makes every output byte unstable, and canonicalization cannot reach inside base64.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "expect_contains": [
         "commandline\tall\t",
         "index\tnoindex\tabsent",
@@ -219,7 +246,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "IntervalWalker.traverse is five lines over userIntervals, so the traversal is the list and the list is IntervalArgumentCollection: -L, -XL, --interval-padding, --interval-exclusion-padding, --interval-set-rule and --interval-merging-rule. The probe runs a real IntervalWalker through the real command line for 24 combinations of those, and records what reached apply. The decisions it pins are not in the argument names: padding is clamped to the contig rather than extended past it, getIntervalsWithFlanks merges padded intervals with ALL whatever --interval-merging-rule says, INTERSECTION is a running fold whose empty accumulator makes a single -L the identity, an empty intersection is an error rather than an empty traversal, -XL with no -L subtracts from the whole reference, and -XL inside an interval splits it in two.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "expect_contains": [
         "summary\tintersection-empty\tE",
         "summary\texclude-everything\tE",
@@ -241,7 +270,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "LocusIteratorByState runs one AlignmentStateMachine per read and merges their positions into a pileup, so every depth, allele count and pileup annotation rests on the offsets this produces. The dump records one row per stepForwardOnGenome call over 26 cigars chosen for the machine's corners: a deletion returns once per reference base it spans with the read offset frozen, I/S/H/P are consumed whole inside one step so no stop ever lands on them, a read ending on an insertion advances the genome offset one past its end anyway, and a cigar starting or ending with a deletion throws while a zero-length element is skipped in silence.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AlignmentStateDump",
@@ -257,7 +288,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "AlignmentStateMachine decides where a read stops; PileupElement decides what a caller sees there, and that is where the indel-aware predicates live. Two families of them disagree on purpose: isBeforeInsertion goes through getAdjacentOperator, which looks at exactly the next cigar element whatever it is, while isBeforeDeletionStart goes through getNearestOnGenomeCigarElement, which skips everything that is not M, =, X or D. On 3M2S3I3M the element before the clip is therefore not before an insertion, while a deletion behind a clip is still seen. A port using one walk for both would agree on every simple cigar and diverge exactly there. The dump also probes createPileupForReadAndOffset at every read offset, including the ones inside a soft clip or an insertion where the reference throws, and sets BI/BD on three reads so the flat Q45 fallback is measured against a real array.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "PileupElementDump",
@@ -272,13 +305,15 @@
       "status": "oracle-backed",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "IntervalWalkerDump measures what happens once the intervals exist; this measures the step before it. IntervalUtils.parseIntervalArguments decides whether a -L string is a Feature file, a GATK interval file, a file it refuses, or a literal interval, and the order of those tests is the behaviour. A Feature file is recognised first by asking every codec, but the codecs answer canDecode by extension rather than by content, which the golden settled: a .list holding a BED body is NOT a Feature file, falls through to the interval-file reader, and dies parsing chr1<tab>0<tab>10 as a genome location. The interval-file test is by lower-cased extension only and throws when the extension matches but the file is absent, because a contig name may contain a period and the contents cannot be consulted; an existing file that is neither is an error naming both; and only a non-existent argument with neither extension is parsed as a literal, which is why a typo in a filename surfaces as a missing contig. .interval_list and .bed are in the probe because they are Feature files rather than interval files, which their names do not suggest.",
-      "compare": { "mode": "lines" },
+      "why": "IntervalWalkerDump measures what happens once the intervals exist; this measures the step before it. IntervalUtils.parseIntervalArguments decides whether a -L string is a Feature file, a GATK interval file, a file it refuses, or a literal interval, and the order of those tests is the behaviour. A Feature file is recognised first by asking every codec, but the codecs answer canDecode by extension rather than by content, which the golden settled: a .list holding a BED body is NOT a Feature file, falls through to the interval-file reader, and dies parsing chr1<tab>0<tab>10 as a genome location. The interval-file test is by lower-cased extension only and throws when the extension matches but the file is absent, because a contig name may contain a period and the contents cannot be consulted; an existing file that is neither is an error naming both; and only a non-existent argument with neither extension is parsed as a literal, which is why a typo in a filename surfaces as a missing contig. .interval_list and .bed are in the probe because they are Feature files rather than interval files, which their names do not suggest. The interval list adds four rows of its own, because it is the one format here validated against two dictionaries: the file's own @SQ lines, which the codec reads before the first record, and the reference dictionary that createGenomeLoc checks the result against. A contig the file does not declare is dropped and the file still loads, while a contig the file declares and the reference does not kills the argument, and featureFileToIntervals catches IllegalArgumentException and nothing else, so a bad strand and a wrong field count in the same file raise two different exception classes.",
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "IntervalFileDump",
           "golden": "crates/gatk-engine/tests/data/interval_file.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner. Two of its fifteen rows are not compared by the port yet and are named in the test rather than skipped quietly: .interval_list and .bed resolve through Feature codecs, which arrive with G1.3, and the test asserts the port refuses them today for the documented reason so the assertion fails the moment the seam is filled."
+          "why": "From the pinned container on a real x86-64 runner. Every row is compared: the two that waited for Feature codecs, .bed and .interval_list, resolve through the registered codecs of G1.3."
         }
       ]
     },
@@ -289,7 +324,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The 56th read filter, and the only one that runs an expression language. Its answers are commons-jexl 2.1.1's, reached through one detail of the filter: the context is read.getAttributeAsString(name), so every attribute arrives as a String whatever it is in the BAM, and the *literal* decides which branch of JexlArithmetic.compare runs. NM > 3 is integral because 3 is an Integer and isNumberable is true; NM > 3.5 is floating because ASTNumberLiteral.setReal defaults to Float rather than Double; NM > '3' is lexicographic, so \"30\" > \"3\" is true for a different reason than 30 > 3 is. Only + falls back to concatenation, and only from a catch of NumberFormatException, so NM + 1 on a non-numeric tag is a string while NM - 1 is an error. The filter's own test is !v.equals(Boolean.TRUE), which makes a null result a NullPointerException rather than a false. The dump records the engine's value and the filter's boolean separately, plus the string the context handed over for every tag, so a divergence lands on the coercion rather than on the rendering.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "JexlFilterDump",
@@ -305,7 +342,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "What a tool sees when it asks which features are at a position is not what the file holds there: it is what the lookahead cache kept. Two behaviours are observable rather than internal. refillQueryCache extends the query end by queryLookaheadBases and caches everything the reader returned unfiltered, and getCachedFeaturesUpToStopPosition tests only start > stopPosition and *breaks*, so a feature that ends before the query started is still returned and one feature starting past the stop hides every feature behind it. trimToNewStartPosition pops the features starting before the new start, keeps those still overlapping, and pushes them back in reverse, preserving the file order, so a port that re-sorted would agree on every set and differ on every list. cacheHit is containment rather than overlap, so a query one base past the cached end is a miss. The lookahead is probed at 0 as well, because IntervalWalker.initializeFeatures sets it to 0 on purpose. What the golden then showed is worth stating plainly: the twenty answers are identical at lookahead 0 and at 100. The cache is transparent for well-ordered access, because trimToNewStartPosition keeps exactly the features a fresh overlap query would have returned. So this suite pins what a tool sees, which is the thing that matters, and it does NOT distinguish the cache from a fresh query per call: a port with no cache at all would pass it. The cache is ported for the ordering guarantee rather than because the suite forces it, and a probe that would separate them needs a feature file whose records are out of start order, which Tribble refuses to index.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "FeatureCacheDump",
@@ -320,7 +359,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "What one locus answers, which is what a caller consults. Four of those answers are decisions rather than aggregation. getBaseCounts counts the wildcard * as an A, because BaseUtils.baseIndexMap maps it to Base.A.ordinal() with a comment saying so, while an N is dropped by the -1 check and a deletion by an explicit test: two exclusions with two different reasons. splitBySample throws when a read has no sample and unknownSampleName is null, and a read group that exists but declares no SM is indistinguishable downstream from a read with no group at all. sortedIterator sorts by the read's start and by nothing else, and Java's sort is stable, so ties keep assembly order. fixPairOverlappingQualities truncates twice and differently: agreeing bases sum into a byte and are then capped, so the cap tests for a negative stored value as well as for one over 93, while disagreeing bases multiply the winner by 0.8 in double arithmetic and cast back.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReadPileupDump",
@@ -336,7 +377,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Between the per-read state machines and the pileup sits the layer that decides which reads enter, under which sample, and when they leave. Four of its behaviours change what a locus contains and none is visible from a tool's output. The sample map is a LinkedHashMap, and the reference says so in capitals, so iteration follows the order the samples were declared rather than the header's: the probe declares B before A while the header has A before B. A read whose first stepForwardOnGenome returns null is dropped in silence, so a read that is all soft clips and insertions never reaches any pileup, which upstream marks a todo rather than an error. collectPendingReads takes the left-most *genome position* among the states already in the system, which for a read part-way through a deletion is not where that read started. A read whose sample was not declared at construction is a hard error rather than a new bucket, and a read with no read group at all is the null sample. Downsampling is out of scope on purpose: it draws from Utils.getRandomGenerator, and the port refuses it rather than approximating it.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReadStateDump",
@@ -352,7 +395,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "One pileup per covered locus, which is what a LocusWalker iterates, so which elements land where is every locus-based tool's output. Four decisions sit in the twenty lines that build each pileup. The two exclusions are not symmetric: a read whose current operator is N is skipped before the adaptor test, a read whose operator is D is skipped inside it, so a read sitting in an adaptor with a deletion is excluded once by the adaptor while an N is excluded whatever the adaptor says. The adaptor test is per base, so the same read contributes to some loci and not others. The pileup is monolithic and concatenated in sample declaration order, which the reference kept for the HaplotypeCaller and documents as such. And a locus with no surviving element yields no context at all, silently, because emitting empty loci belongs to a different class. All four (includeDeletions, includeNs) combinations are probed, because a tool picks them by overriding two methods whose defaults differ.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "LocusIteratorDump",
@@ -368,7 +413,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Two facts here reach into every locus-based tool's output and neither is visible from the builder's setters. The samples are collected with Collectors.toSet(), so LocusIteratorByState creates its per-sample managers in Java HashSet iteration order and concatenates their elements in that same order to build each pileup: the element order of a multi-sample pileup is a HashSet bucket order over the sample names, deterministic but neither sorted nor the header's. A port using a sorted map, an insertion-ordered list or a different hash would agree on single-sample data and diverge as soon as a second sample appeared, which is why java.util.HashMap's index and its order-preserving resize are ported alongside. And areIntervalsSpecified is intervals != null rather than !isEmpty(), so an empty but non-null list counts as specified, routes to IntervalOverlappingIterator, and that constructor's Utils.nonEmpty throws: an empty interval list is an error rather than an empty traversal, and only when emitEmptyLoci is off.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AlignmentContextBuilderDump",
@@ -384,7 +431,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The traversal the largest GATK archetype inherits, probed as a real LocusWalker run through the real command line so its defaults are measured rather than transcribed. Four of them are not a ReadWalker's: two default read filters rather than one, WellformedReadFilter and MappedReadFilter, so an unmapped read carrying its mate's position reaches a ReadWalker and never reaches a LocusWalker; includeDeletions true and includeNs false; emitEmptyLoci false, so an uncovered position inside -L produces no apply call at all, which a second walker subclass overriding that method measures against; and --max-depth-per-sample defaulting to 0 with a negative value being a bad argument rather than a synonym for unlimited. The fixture is ReadWalkerDump's, so a divergence between the two suites is a divergence between the traversals rather than between their inputs. The downsampling run is recorded rather than compared: the port refuses that path, and a refusal has to be measured against what the reference actually does.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "LocusWalkerDump",
@@ -400,7 +449,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Utils.getRandomGenerator() is one static new Random(47382911L), seeded at class initialisation, so every draw in a run comes from a single stream and a consumer that takes one value too few or too many shifts that stream for every later consumer as well. The sequence therefore has to be exact before anything is allowed to draw from it, which is why this is its own slice ahead of the downsampler. Unlike HashMap's iteration order, this one is legitimately implementable from the published contract: the Javadoc states the algorithm and its constants and requires every method to produce that exact sequence. Two behaviours are probed for shape rather than value: nextInt(bound) takes a different path for a power-of-two bound, so bound 16 answers differently from what 15 and 17 would suggest, and the general path rejects biased values and redraws, so its draw count depends on the values themselves. A final interleaved sequence mixes the methods on one generator, which catches a port whose methods are individually right but whose draw counts are not.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "JavaRandomDump",
@@ -416,7 +467,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Which reads a deep pileup keeps. Four behaviours change the answer without being inherent to reservoir sampling. The draw happens even when the slot is discarded: nextInt(totalReadsSeen) is called for every read past the target and only then is the slot compared against it, so a read that is thrown away still advances the shared static stream and every later draw anywhere in the run depends on how many reads were seen here. The probe therefore reports the generator's next value after each case, not only the reads kept: two cases that keep the same reads can leave the stream in different places. The bound grows with the count, so the same read draws differently depending on how many preceded it. Replacement is in place, so the reservoir's order is the order slots were last written rather than the reads' order. And setNonRandomReplacementMode swaps the draw for Math.abs(name.hashCode()) % totalReadsSeen, where Math.abs is wrong for Integer.MIN_VALUE. The generator is reset before each case, so a case measures the downsampler rather than the order the cases ran in.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ReservoirDownsamplerDump",
@@ -432,7 +485,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "GATK carries two static generators, not one: Utils.getRandomGenerator() is a java.util.Random and Utils.getRandomDataGenerator() is a RandomDataGenerator over a Well19937c, seeded from the same constant and reset together. They are different algorithms with different streams, and LevelingDownsampler draws from the second where ReservoirDownsampler draws from the first, so a port that routed both through one generator would agree with neither. Four shapes are probed because a port gets them wrong while looking right. The two constructors disagree: new Well19937c(long) splits the seed into two ints, high word first, so it seeds a different 624-word pool from new Well19937c((int) seed) even when the long fits in an int, and GATK uses the long one. The derived methods are not java.util.Random's: nextDouble is ((next(26) << 26) | next(26)) * 2^-52 where java.util.Random uses 27 bits and 2^-53, nextFloat takes 23 bits rather than 24, and nextLong ors its halves where java.util.Random adds them signed. nextInt(bound) is the one that does agree, because commons-math copied it from Apache Harmony, so bounds either side of 16 are dumped to confirm the power-of-two path and the rejection loop. And nextBytes takes one extra full draw after its four-at-a-time loop even when the length is a multiple of four and nothing is left to fill, so lengths 0 through 9 are dumped with the generator's next value after each. nextGaussian is deliberately absent from both the dump and the port: it goes through commons-math's own FastMath, whose cos, sin, log and sqrt are its implementations rather than the platform's, so a port of its shape would be bit-wrong in the mantissa while looking right. It belongs with jmath.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "Well19937cDump",
@@ -448,7 +503,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "LevelingDownsampler cuts several stacks down to one total, and it removes items through MathUtils.sampleIndicesWithoutReplacement, which is RandomDataGenerator.nextPermutation over the static Well19937c. Both layers decide the answer, so both are dumped. nextPermutation(n, k) shuffles all n entries and returns the first k, so it costs n - 1 draws whatever k is: sampling 2 of 1000 spends 999 draws and moves the stream for every later consumer, which is why the probe reports the generator's next value after each call. Its shuffle runs downwards with shrinking bounds, and its last step takes no draw at all, so the cost is n - 1 rather than n. The indices it returns are the shuffled head and are therefore unsorted, and since the caller uses them only as membership, the raw list is dumped so that a port which sorted them still fails. Above that, the leveling plan is pure arithmetic: a round-robin walk over the sizes decrements one at a time, so how many go from each stack is fixed before any draw and only which ones is random. The walk stops on consecutive refusals rather than on a scan. A stack that keeps everything takes no draw, so stack sizes shift the stream for the stacks after them. LinkedList and ArrayList take different removal paths upstream and must keep the same items, so both are dumped and a divergence between them is a failure rather than an assumption. And with minElementsPerStack of zero a stack can be planned down to nothing, at which point nextPermutation throws NotStrictlyPositiveException instead of returning an empty selection.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "LevelingDownsamplerDump",
@@ -464,7 +521,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The traversal every variant-based tool inherits, run through the real command line rather than reconstructed. Reading FeatureIntervalIterator suggests that -L can produce duplicates: featureIsNovel tests a feature against previousInterval alone, one interval of memory rather than a set, so a variant covered by intervals 1 and 3 but not by 2 would reach apply twice. The suite measures that and the answer is no: three intervals whose first and third are identical produce two apply calls rather than four, and intervals given out of order are traversed in sorted order. The argument layer sorts and merges before the traversal sees the list, so the precondition the iterator documents is always satisfied through a command line. The behaviour is real in the class and unreachable in the tool, which is a different claim from saying it does not happen, and the distinction is exactly what a golden is for. And an empty interval list is not an empty traversal: setIntervalsForTraversal maps both null and an empty list to null, which means no restriction at all. The record fields travel with each apply call because the walker is also where a decoded record becomes what a tool sees: the interval it builds is SimpleInterval(variant), whose end is the END attribute when the record carries one and start plus the reference allele's length minus one otherwise.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "VariantWalkerDump",
@@ -479,7 +538,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The boundaries HaplotypeCaller and Mutect2 assemble over: a boundary that moves by one base changes the haplotypes and therefore the calls, so this is upstream of every variant those tools emit. Four behaviours decide it and none follows from cutting where the activity changes. A probability is spread over a Gaussian and the spread is added rather than assigned, so the probability at a site is the sum of its neighbours' tails and a site never reported active can cross the threshold, while a probability of exactly zero skips the filter entirely. The filter width is chosen from the kernel's values rather than from sigma, and it feeds back into getMaxProbPropagationDistance, which decides when a region may be popped at all. The cut site is a local minimum searched backwards, and isMinimum is asymmetric, requiring p[i] <= p[i+1] but p[i] < p[i-1], so a plateau is cut at its left-hand end. And nothing may be popped until the profile holds maxRegionSize plus the propagation distance in states, so regions appear in bursts rather than as soon as their activity ends. The kernels are compared as raw bits because the last bits are the point: Math.exp is the platform's and a port whose exp differs in the final ulp moves a cut site.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "ActivityProfileDump",
@@ -494,7 +555,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "What HaplotypeCaller and Mutect2 actually assemble, once the activity profile has decided where a region starts and stops: a primary span for calling, a padded span for assembly, and the reads overlapping the padded one. Four behaviours are measured because none is what the class says. The padding constructor goes through IntervalUtils.trimIntervalToContig, which returns null rather than throwing when the padded interval cannot be placed on the contig, and the null then reaches Utils.nonNull inside the other constructor, so the failure is reported as a null padded span and never mentions padding. trim(span, padding) does not produce the region its own javadoc describes: the javadoc works an example, active 100-200 padded 50-250 trimmed to 150-225 giving a region 150-200 with 25bp of padding, but the code expands the requested span by the requested padding and intersects that with the old padded span, so the padding is never recomputed to fit. Trimming re-clips every read to the new padded span, drops the ones left empty or no longer overlapping, and then sorts the survivors with ReadCoordinateComparator, so the read order of a trimmed region is not the order the reads were added in and the comparator is observable output rather than an internal detail. And trimming drops the hard-clipped pileup reads entirely, because the new region is constructed empty and only addAll is called on it. The comparator is dumped over every ordered pair of the corpus, so its antisymmetry is measured too: a comparator that is not antisymmetric sorts differently under a different sort algorithm.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AssemblyRegionDump",
@@ -509,7 +572,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "LocusIteratorByState yields nothing at all for a locus no read covers, so a position with zero depth is silently absent from its output. The assembly-region traversal cannot work that way, because the activity profile has to see the gap in order to close a region over it, and AssemblyRegionIterator therefore wraps the locus iterator in IntervalAlignmentContextIterator, whose whole job is to walk every base of every interval and manufacture an empty AlignmentContext wherever the wrapped iterator has none. The comment upstream is unusually direct about the stakes: this is critical for reproducing GATK 3.x behavior. A port that skipped the wrapper would produce regions ending at the last covered base instead of where the activity dies, which moves every boundary downstream of a coverage gap. Underneath it, ShardedIntervalIterator computes shard indices over the interval length and converts them back to coordinates, so the arithmetic is absolute rather than relative and the last shard is truncated against the interval end; IntervalLocusIterator is that class at shard size 1. The corpus has deliberate gaps before, inside and after its reads, and the intervals asked for start before the coverage, end after it, sit entirely inside a gap, and cross a contig boundary.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "IntervalIteratorsDump",
@@ -524,7 +589,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Where the activity profile, the assembly region and the locus iterators meet, and what HaplotypeCaller and Mutect2 are once the assembler is removed: a region boundary that moves by one base here changes their calls. Four behaviours are measured and three are invisible from any tool output. A shard carries two interval lists built the same way, the padded one with the padding and the unpadded one with zero, and passing zero is not a no-op because getIntervalsWithFlanks sorts and merges with IntervalMergingRule.ALL whatever the padding is, so the reads are queried over one list while the loci are walked over another. The profile is popped before the current pileup is added and the force flag is that this locus does not continue the profile, which the upstream comment insists on: adding first would make the profile contiguous with the new pileup, the force would never fire, and a region would never be closed at a gap between two intervals. A region popped from the profile is not ready, but waits in a queue until the loci have advanced past the end of its padded span, because until then the reads that belong in it have not been read. And reads are carried forward from the previous region as well as taken from the cache, so a read spanning a boundary is in both regions, while a read is left in the cache only when its start is past the region padded end. The evaluator is a probe rather than a caller, activity being a declared function of pileup depth, so the regions are decided by the traversal and not by anything statistical.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AssemblyRegionIteratorDump",
@@ -539,7 +606,9 @@
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "The last of the five walker archetypes and the one HaplotypeCaller and Mutect2 are built on. The probe is a real AssemblyRegionWalker run through the real command line rather than a reconstruction, so its defaults are measured rather than transcribed: min 50, max 300, padding 100, threshold 0.002, propagation 50, from an argument collection the walker instantiates without overriding anything. Four behaviours are the point and three are invisible from any tool output. There is one read shard per contig rather than one per interval, so two -L arguments on the same contig share a shard and an activity profile and can end up in one region if the padding joins them, while two on different contigs cannot whatever their distance. apply receives its reference and feature contexts over the region padded span rather than its active span, so a tool reads bases outside the territory it may call in, which is the point of the padding. force-active rewrites isActive after the iterator has produced the region, so it marks every region active without moving a single boundary, where a port folding it into the evaluator would return one enormous region instead. And the default read filters are WellformedReadFilter and MappedReadFilter, the same pair as a LocusWalker and not a ReadWalker single filter, so an unmapped read parked at its mate coordinate never reaches this traversal. The fixture is the read walker one, so a divergence between these suites is a divergence between traversals rather than between inputs.",
-      "compare": { "mode": "lines" },
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "AssemblyRegionWalkerDump",

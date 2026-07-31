@@ -96,6 +96,23 @@ public class IntervalFileDump {
         probe(parser, "picard-interval-list", writeIntervalList(dir, header).toString());
         probe(parser, "bed", write(dir, "f.bed", "chr1\t0\t10\nchr2\t4\t6\n").toString());
 
+        // The four ways an `.interval_list` can disagree with its codec, which is where the two
+        // parsers htsjdk has for this format come apart. The codec is strict where the reader is
+        // not, and each disagreement has its own outcome.
+        probe(parser, "interval-list-bad-strand", write(dir, "strand.interval_list",
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t.\t.\n").toString());
+        probe(parser, "interval-list-short-record", write(dir, "short.interval_list",
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t+\n").toString());
+        // A contig the file's own header does not declare: the codec drops the line and the file
+        // still loads, so this is one interval rather than an error.
+        probe(parser, "interval-list-unknown-contig", write(dir, "unknown.interval_list",
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t+\t.\n"
+                        + "chr3\t1\t10\t+\t.\n").toString());
+        // A contig the file declares and the *reference* dictionary does not: the codec is happy
+        // and createGenomeLoc is not.
+        probe(parser, "interval-list-contig-absent-from-reference", write(dir, "foreign.interval_list",
+                "@HD\tVN:1.6\n@SQ\tSN:chr9\tLN:200\nchr9\t1\t10\t+\t.\n").toString());
+
         // A `.list` file whose contents are a BED body. The extension says interval file, the
         // codec says Feature file, and the codec is asked first.
         probe(parser, "bed-contents-list-extension",

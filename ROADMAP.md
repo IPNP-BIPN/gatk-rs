@@ -73,9 +73,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
       order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
       settings). The suite pins what a tool sees and does **not** distinguish the cache from a
-      fresh query per call, which the manifest states. The **BED codec** is now ported and
-      oracle-backed in htsjdk-rs. Still missing: the VCF and interval_list codecs and the Tribble
-      index, which are htsjdk's and belong in Milestone H
+      fresh query per call, which the manifest states. The **BED** and **IntervalList** codecs are
+      ported and oracle-backed in htsjdk-rs. Still missing: the VCF codec and the Tribble index,
+      which are htsjdk's and belong in Milestone H
 
 ### G1.4 Interval arguments
 
@@ -84,10 +84,10 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [x] interval **files**: `.list` and `.intervals` (lower-cased extension test, blank-line
       skipping, the empty-file refusal, and the order of the four tests in
       `parseIntervalArguments`), 13 arguments compared
-- [~] the Feature-file path: `.bed` is closed. The BED codec landed in htsjdk-rs (its own
-      oracle-backed suite, 90 rows) and is plugged into the seam, so 14 of the 15 measured `-L`
-      arguments now resolve identically and only `.interval_list` is pending. VCF arrives with
-      the Tribble index
+- [~] the Feature-file path: `.bed` and `.interval_list` are closed. Both codecs landed in
+      htsjdk-rs with their own oracle-backed suites (90 and 133 rows) and are registered in the
+      seam, so all 19 measured `-L` arguments now resolve identically, four of them new rows for
+      the two dictionaries an interval list is validated against. VCF arrives with the Tribble index
 - [x] `-L unmapped` end to end, measured through `ReadWalker` (5 runs): the tail comes after
       every interval, `-L unmapped` alone is a bounded traversal of nothing else, and an unmapped
       read carrying its mate's position is not in the tail at all

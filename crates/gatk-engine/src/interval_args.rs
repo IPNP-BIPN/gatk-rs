@@ -93,6 +93,13 @@ pub enum IntervalArgumentError {
     FileIsNeitherFeaturesNorIntervals(String),
     /// The removed `-L "a;b"` syntax, which is refused rather than split.
     LegacySemicolonSyntax(String),
+    /// `UserException.MalformedFile`, the wrapper `featureFileToIntervals` puts around an
+    /// `IllegalArgumentException` a codec threw. Only that one exception type is caught, which is
+    /// why a codec's other refusals do not become this.
+    FeatureFileMalformed(String),
+    /// A `TribbleException` from a codec, which `featureFileToIntervals` does **not** catch: it
+    /// leaves the engine as itself, without a path or a hint attached.
+    FeatureCodecRefused(String),
 }
 
 impl From<ParseError> for IntervalArgumentError {

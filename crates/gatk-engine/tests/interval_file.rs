@@ -8,22 +8,29 @@
 //! to the interval-file reader and dies parsing `chr1\t0\t10` as a genome location. The row named
 //! `bed-contents-list-extension` is that measurement.
 //!
-//! Two cases are not compared yet and are named rather than skipped quietly: `.interval_list` and
-//! `.bed` are Feature files, and reading them needs the codecs of G1.3. The test asserts that the
-//! port refuses them *today* for the documented reason, so this assertion fails the moment
-//! `FeatureDataSource` lands and has to be removed with it.
+//! Every case is compared. The two that waited for codecs, `.bed` and `.interval_list`, are
+//! resolved by [`gatk_engine::feature_intervals::RegisteredCodecs`], and the interval list brought
+//! four cases of its own: it is the one format here that validates against **two** dictionaries,
+//! its own `@SQ` lines and the reference's, and the two disagreements have different outcomes.
+//!
+//! ```text
+//! case  interval-list-bad-strand                    E:...UserException$MalformedFile
+//! case  interval-list-short-record                  E:htsjdk.tribble.TribbleException
+//! case  interval-list-unknown-contig                ok  1  chr1:1-10
+//! case  interval-list-contig-absent-from-reference  E:...UserException$MalformedGenomeLoc
+//! ```
+//!
+//! One malformed file, two exception classes: `featureFileToIntervals` catches
+//! `IllegalArgumentException` and nothing else, so the bad strand is wrapped as a `MalformedFile`
+//! and the short record leaves the engine as the `TribbleException` it was. And the two
+//! dictionaries fail in opposite directions: a contig the file does not declare costs one line,
+//! a contig the reference does not hold costs the argument.
 
 use gatk_corpus as corpus;
 use gatk_engine::interval_args::{self, IntervalArgumentError};
 use htsjdk_bam::header::{SamHeader, SequenceRecord};
 
 const CONTIG_LENGTH: i32 = 200;
-
-/// The cases whose answer needs Feature codecs. Both are files whose names look like intervals
-/// and whose contents are decoded by a codec instead.
-/// `.interval_list` is still pending: it is a Feature file to the reference, and htsjdk's
-/// IntervalList reader is its own slice. `bed` left this list when the BED codec landed.
-const PENDING_FEATURE_SOURCES: [&str; 1] = ["picard-interval-list"];
 
 fn golden() -> String {
     corpus::read_golden(
@@ -61,6 +68,27 @@ fn fixture(label: &str) -> Option<(&'static str, &'static str)> {
             "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\n@SQ\tSN:chr2\tLN:200\n\
              chr1\t1\t10\t+\t.\nchr2\t5\t6\t+\t.\n",
         )),
+        // A strand of `.`, which the BED codec in the same package accepts and this one refuses.
+        "interval-list-bad-strand" => Some((
+            "strand.interval_list",
+            "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t.\t.\n",
+        )),
+        // Four fields, because the codec counts exactly five.
+        "interval-list-short-record" => Some((
+            "short.interval_list",
+            "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t+\n",
+        )),
+        // A contig the file's own header does not declare: dropped, and the file still loads.
+        "interval-list-unknown-contig" => Some((
+            "unknown.interval_list",
+            "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:200\nchr1\t1\t10\t+\t.\n\
+             chr3\t1\t10\t+\t.\n",
+        )),
+        // A contig the file declares and the reference dictionary does not.
+        "interval-list-contig-absent-from-reference" => Some((
+            "foreign.interval_list",
+            "@HD\tVN:1.6\n@SQ\tSN:chr9\tLN:200\nchr9\t1\t10\t+\t.\n",
+        )),
         _ => None,
     }
 }
@@ -93,6 +121,12 @@ fn class_of(error: &IntervalArgumentError) -> &'static str {
         IntervalArgumentError::LegacySemicolonSyntax(_) => {
             "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue"
         }
+        // `featureFileToIntervals` catches IllegalArgumentException and nothing else, so the same
+        // malformed interval list raises two different classes depending on which line is wrong.
+        IntervalArgumentError::FeatureFileMalformed(_) => {
+            "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
+        }
+        IntervalArgumentError::FeatureCodecRefused(_) => "htsjdk.tribble.TribbleException",
         // Every parse failure surfaces as one class: an unknown contig and malformed positions
         // are different messages of the same exception.
         IntervalArgumentError::Parse(_) => {
@@ -120,13 +154,16 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
         "bed",
         "bed-contents-list-extension",
         "picard-interval-list",
+        "interval-list-bad-strand",
+        "interval-list-short-record",
+        "interval-list-unknown-contig",
+        "interval-list-contig-absent-from-reference",
     ] {
         let (name, contents) = fixture(label).expect("a fixture");
         std::fs::write(dir.join(name), contents).unwrap();
     }
 
     let mut compared = 0;
-    let mut pending = 0;
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("case\t") else {
             continue;
@@ -140,23 +177,8 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
         let result = interval_args::parse_interval_arguments(
             &argument(label, &dir),
             &header,
-            &gatk_engine::feature_intervals::BedFeatureSource,
+            &gatk_engine::feature_intervals::RegisteredCodecs,
         );
-
-        if PENDING_FEATURE_SOURCES.contains(&label) {
-            // Named, not skipped: the reference reads these through a codec, and the port has no
-            // codecs yet. When G1.3 lands, this assertion fails and goes away with the seam.
-            assert!(
-                matches!(
-                    result,
-                    Err(IntervalArgumentError::FileIsNeitherFeaturesNorIntervals(_))
-                ),
-                "{label}: expected the Feature seam to be empty, got {result:?}"
-            );
-            assert_eq!(outcome, "ok", "{label} is only pending because it succeeds");
-            pending += 1;
-            continue;
-        }
 
         match (result, outcome) {
             (Ok(intervals), "ok") => {
@@ -184,7 +206,5 @@ fn every_argument_resolves_the_way_the_reference_resolves_it() {
 
     std::fs::remove_dir_all(&dir).ok();
     assert!(compared > 0, "the golden carries no case rows");
-    println!(
-        "{compared} -L arguments resolved identically, {pending} pending Feature sources (G1.3)"
-    );
+    println!("{compared} -L arguments resolved identically, none pending");
 }
