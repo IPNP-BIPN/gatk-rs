@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **34 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 11 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 5 crates, **33 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 11 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
