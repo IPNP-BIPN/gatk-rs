@@ -433,3 +433,159 @@ mod tests {
         assert!(p <= 1.0);
     }
 }
+
+/// `HeterozygosityCalculator`, which `AS_InbreedingCoeff` uses instead of the genotype counts.
+///
+/// # The reference's own count is incremented once per **alternate allele**
+///
+/// ```java
+/// for(final Allele a : vc.getAlternateAlleles()) {
+///     ...
+///     final double refAlleleCounts = alleleCounts.get(vc.getReference());
+///     alleleCounts.put(vc.getReference(), refAlleleCounts + 2*normalizedLikelihoods[0]);
+/// }
+/// ```
+///
+/// That last statement sits **inside** the loop over alternates, so a triallelic site adds the
+/// hom-ref mass to the reference's count twice. The allele frequency `AS_InbreedingCoeff` derives
+/// from it is therefore not a frequency in any normalised sense once there is more than one
+/// alternate.
+///
+/// # It is fractional, not integral
+///
+/// The counts are sums of normalised likelihoods rather than of called genotypes, which is the
+/// point: "for a GQ10 variant, the probability of the call will be ~0.9 and the second best call
+/// will be ~0.1 so adding up those 0.1s for het counts can dramatically change the AF compared with
+/// integer counts".
+#[derive(Debug, Clone, Default)]
+pub struct HeterozygosityCounts {
+    /// Per **alternate** allele, in the variant's order.
+    pub het_counts: Vec<(Allele, f64)>,
+    /// Per allele including the reference, in the variant's order.
+    pub allele_counts: Vec<(Allele, f64)>,
+    /// Genotypes that were called, diploid, and had likelihoods or a GQ.
+    pub sample_count: usize,
+}
+
+/// `GenotypeUtils.PLOIDY_2_HOM_VAR_SCALE_FACTOR`, which is `round(30 / -10 / log10(0.5))`.
+fn ploidy_2_hom_var_scale_factor() -> i32 {
+    jmath::math::round(30.0 / -10.0 / jmath::math::log10(0.5)) as i32
+}
+
+/// `GenotypeUtils.makeApproximateDiploidLog10LikelihoodsFromGQ`.
+///
+/// The reference's own javadoc calls this "completely bogus": it gives every heterozygote the same
+/// likelihood whatever the alternate, so a multiallelic hom-ref's quality is deflated "for no reason
+/// whatsoever".
+pub fn approximate_diploid_log10_likelihoods_from_gq(gq: i32, num_alleles: usize) -> Vec<f64> {
+    let count = num_alleles * (num_alleles + 1) / 2;
+    let hom_var = ploidy_2_hom_var_scale_factor() * gq;
+    (0..count)
+        .map(|index| {
+            let pl = if index == 0 {
+                0
+            } else {
+                let (first, _) = allele_pair(index);
+                if first == 0 {
+                    gq
+                } else {
+                    hom_var
+                }
+            };
+            pl as f64 / -10.0
+        })
+        .collect()
+}
+
+/// `HeterozygosityCalculator`'s constructor, which does all its work eagerly.
+pub fn heterozygosity_counts(vc: &VariantContext) -> HeterozygosityCounts {
+    let mut counts = HeterozygosityCounts::default();
+    if vc.genotypes.is_empty() || !vc.is_variant() {
+        // `sampleCount` stays at its initial **-1** in the reference, which no caller reads before
+        // the maps are built. Here it is zero, which the ten-sample guard treats the same way.
+        return counts;
+    }
+    let num_alleles = vc.alleles.len();
+    let reference = vc.reference().clone();
+    counts.het_counts = vc
+        .alternate_alleles()
+        .iter()
+        .map(|allele| (allele.clone(), 0.0))
+        .collect();
+    counts.allele_counts = vc
+        .alleles
+        .iter()
+        .map(|allele| (allele.clone(), 0.0))
+        .collect();
+
+    for genotype in &vc.genotypes {
+        if !is_called_and_diploid_with_likelihoods_or_with_gq(genotype) {
+            continue;
+        }
+        counts.sample_count += 1;
+
+        let log10 = match log10_likelihoods(genotype) {
+            Some(values) => values,
+            None => {
+                approximate_diploid_log10_likelihoods_from_gq(genotype.gq.unwrap_or(0), num_alleles)
+            }
+        };
+        let normalized = normalize_from_log10_to_linear_space(&log10);
+
+        for (alt_position, alt) in vc.alternate_alleles().iter().enumerate() {
+            let alt_index = alt_position + 1;
+            for i in 0..num_alleles {
+                if i == alt_index {
+                    // Hom-var mass, counted twice because a homozygote carries two copies.
+                    if let Some(slot) = counts.allele_counts.iter_mut().find(|(a, _)| a == alt) {
+                        slot.1 += 2.0 * normalized[pl_index(alt_index, alt_index)];
+                    }
+                    continue;
+                }
+                let idx_ab = pl_index(i.min(alt_index), i.max(alt_index));
+                if let Some(slot) = counts.het_counts.iter_mut().find(|(a, _)| a == alt) {
+                    slot.1 += normalized[idx_ab];
+                }
+                if let Some(slot) = counts.allele_counts.iter_mut().find(|(a, _)| a == alt) {
+                    slot.1 += normalized[idx_ab];
+                }
+                if let Some(slot) = counts
+                    .allele_counts
+                    .iter_mut()
+                    .find(|(a, _)| *a == reference)
+                {
+                    slot.1 += normalized[idx_ab];
+                }
+            }
+            // Inside the alternate loop: see the type's note.
+            if let Some(slot) = counts
+                .allele_counts
+                .iter_mut()
+                .find(|(a, _)| *a == reference)
+            {
+                slot.1 += 2.0 * normalized[0];
+            }
+        }
+    }
+    counts
+}
+
+impl HeterozygosityCounts {
+    /// `getHetCount(altAllele)`, zero for an allele the map does not hold.
+    pub fn het_count(&self, allele: &Allele) -> f64 {
+        self.het_counts
+            .iter()
+            .find(|(a, _)| a == allele)
+            .map(|(_, count)| *count)
+            .unwrap_or(0.0)
+    }
+
+    /// `getAlleleCount(allele)`, zero for an allele the map does not hold.
+    pub fn allele_count(&self, allele: &Allele) -> f64 {
+        self.allele_counts
+            .iter()
+            .find(|(a, _)| a == allele)
+            .map(|(_, count)| *count)
+            .unwrap_or(0.0)
+    }
+}

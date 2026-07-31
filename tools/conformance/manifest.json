@@ -813,6 +813,24 @@
           "why": "From the pinned container on a real x86-64 runner. 76 rows: 14 raw strand tables, 28 direct answers, 9 combinations with their 16 finalisations, and 8 phred scalings compared as raw bits. The golden corrected the port twice. An entry that is present but empty is not the same as an absent one: the combined field reads 10,8| with nothing after the delimiter, where the port had written 0,0. And the allele-specific minimum count is two for both members, while the plain StrandOddsRatio uses zero, so SOR and AS_SOR disagree on a site whose only sample has one or two informative reads."
         }
       ]
+    },
+    {
+      "id": "annotation-allele-specific-site-statistics",
+      "title": "AS_QD, AS_MQ, AS_InbreedingCoeff and the heterozygosity calculator",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "AS_QD has no raw data of its own: annotateRawData returns an empty map, its raw key is expected to be written by GenotypeGVCFs, and annotate is finalizeRawData with the same variant context passed twice. It adds the reference depth to every alternate's denominator, so a triallelic site's denominators overlap and the entries sum to nothing meaningful, and it inherits fixTooHighQD once per alternate, so one entry of a comma-separated field can be deterministic and the next drawn from a random generator. AS_MQ divides a sum of squares taken from the likelihood matrix by an AD summed from the genotypes, with nothing checking that the two describe the same reads, and its depth counts every genotype where AS_QD's counts only het and hom-var genotypes whose alternate depth exceeds one. AS_InbreedingCoeff is the only member that is not reducible and does not inherit from its non-allele-specific sibling, and its heterozygosity calculator adds the hom-ref mass to the reference's count once per alternate allele, so a triallelic site counts it twice.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AlleleSpecificSiteStatisticsDump",
+          "golden": null,
+          "why": "Pending the pinned container on a real x86-64 runner."
+        }
+      ]
     }
   ],
   "probes": []
