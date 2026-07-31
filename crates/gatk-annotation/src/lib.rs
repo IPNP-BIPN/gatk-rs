@@ -20,7 +20,9 @@ pub mod chromosome_counts;
 pub mod coverage;
 pub mod depth_per_allele;
 pub mod flow;
+pub mod heterozygosity;
 pub mod info_annotation;
+pub mod mapping_quality;
 pub mod original_alignment;
 pub mod per_allele;
 pub mod rank_sum;
@@ -29,5 +31,6 @@ pub mod read_grouping;
 pub mod sample_list;
 pub mod site_statistics;
 pub mod strand_bias;
+pub mod tandem_repeat;
 
 pub use info_annotation::{AnnotationValue, InfoFieldAnnotation};

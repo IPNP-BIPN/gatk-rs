@@ -759,6 +759,24 @@
           "why": "From the pinned container on a real x86-64 runner. 30 rows, of which two are QD values the reference randomised: the suite asserts that the port refuses exactly those, that the raw ratio really was at or past thirty-five, and that what the reference wrote is not the ratio. The golden corrected the port on one point: getNoCallCount counts no-call genotypes rather than the no-call alleles inside them, so a diploid no-call sample contributes one and not two."
         }
       ]
+    },
+    {
+      "id": "annotation-heterozygosity-and-mq",
+      "title": "ExcessHet, InbreedingCoeff, MQ, MQ0 and the tandem repeats",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "ExcessHet and InbreedingCoeff ask the same question of a cohort and answer it from the same three numbers, computed by one function called with opposite rounding flags, so the two annotations on one site can disagree about how many hets there are and both are right. The rounded branch guards against counting a genotype twice by comparing two normalised likelihoods for exact floating-point equality, which is reachable from PLs of [0,0,X] and [X,0,0], and a hom-ref genotype with no likelihoods at all is given a distribution invented from its GQ in three different ways. ExcessHet saturates below a p-value of 10e-60, which is 1e-59 and not 1e-60, so values above the saturating 160.0000 do occur. MQ drops reads whose mapping quality is 255 from both the numerator and the denominator, so an all-unavailable matrix divides by zero and the annotation is the four characters NaN, while MQ0 answers zero for an empty matrix where every other annotation in this crate answers nothing. And findRepeatedSubstring cannot see a partial trailing repeat, because Arrays.copyOfRange pads with zero bytes past the end of the array and a zero byte is not a base.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "HeterozygosityAndMqDump",
+          "golden": null,
+          "why": "Pending the pinned container on a real x86-64 runner. The genotype counts are dumped as raw bits rather than as decimals, because they are the numbers the two annotations divide and index by and a decimal rendering would hide the last ulp of a Math.pow the port has not yet proved it matches."
+        }
+      ]
     }
   ],
   "probes": []
