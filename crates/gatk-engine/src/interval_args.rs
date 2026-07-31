@@ -100,6 +100,11 @@ pub enum IntervalArgumentError {
     /// A `TribbleException` from a codec, which `featureFileToIntervals` does **not** catch: it
     /// leaves the engine as itself, without a path or a hint attached.
     FeatureCodecRefused(String),
+    /// `GATKException`: the engine could not build a Feature reader for the file at all, which is
+    /// what a header the codec refuses produces. It is neither a `UserException` nor the codec's
+    /// own exception, so a malformed VCF **header** and a malformed VCF **record** in the same
+    /// file surface as two different classes.
+    FeatureSourceFailed(String),
 }
 
 impl From<ParseError> for IntervalArgumentError {
