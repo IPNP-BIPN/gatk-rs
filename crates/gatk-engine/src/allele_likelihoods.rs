@@ -483,9 +483,9 @@ impl AlleleLikelihoods<htsjdk_bam::record::BamRecord> {
             let mut fragments = Vec::with_capacity(groups.len());
             let mut sample_values: Vec<Vec<f64>> = vec![vec![0.0; groups.len()]; allele_count];
             for (new_index, group) in groups.iter().enumerate() {
-                for allele in 0..allele_count {
+                for (allele, row) in sample_values.iter_mut().enumerate() {
                     for old_index in group {
-                        sample_values[allele][new_index] += self.value(sample, allele, *old_index);
+                        row[new_index] += self.value(sample, allele, *old_index);
                     }
                 }
                 let group_reads: Vec<htsjdk_bam::record::BamRecord> =

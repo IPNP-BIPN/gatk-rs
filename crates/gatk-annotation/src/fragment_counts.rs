@@ -81,6 +81,7 @@ fn is_usable_read(read: &BamRecord) -> bool {
 ///
 /// `None` is the reference's early return: a null genotype or a null fragment matrix, which writes
 /// neither key.
+#[allow(clippy::type_complexity)]
 pub fn orientation_bias_counts(
     vc: &VariantContext,
     sample: &str,
