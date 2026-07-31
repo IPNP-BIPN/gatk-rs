@@ -170,12 +170,13 @@ impl InfoFieldAnnotation for GenotypeSummaries {
             return Vec::new();
         }
         let mut out: Vec<(String, AnnotationValue)> = Vec::new();
-        // `vc.getNoCallCount()`: no-call **alleles**, across every genotype, not no-call samples.
-        let no_calls: usize = vc
+        // `vc.getNoCallCount()` counts **genotypes** that are no-call, not the no-call alleles
+        // inside them, so a diploid no-call sample contributes one rather than two.
+        let no_calls = vc
             .genotypes
             .iter()
-            .map(|g| g.alleles.iter().filter(|a| a.is_no_call()).count())
-            .sum();
+            .filter(|g| g.alleles.iter().all(|a| a.is_no_call()))
+            .count();
         out.push((
             NOCALL_CHROM_KEY.to_string(),
             AnnotationValue::Int(no_calls as i32),

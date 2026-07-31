@@ -62,18 +62,18 @@ public class SiteStatisticsDump {
         System.out.println("# SiteStatisticsDump: QD, NCC/GQ_MEAN/GQ_STDDEV and LikelihoodRankSum");
 
         // QD, across the threshold and around the depth rules.
-        qd("ordinary", -50.0, new int[][] {{5, 5}}, null, null);
+        qd("ordinary", -25.0, new int[][] {{5, 5}}, null, null);
         qd("just-below-threshold", -34.9, new int[][] {{5, 5}}, null, null);
         qd("at-threshold", -35.0, new int[][] {{5, 5}}, null, null);
         qd("above-threshold", -100.0, new int[][] {{5, 5}}, null, null);
         qd("no-qual", null, new int[][] {{5, 5}}, null, null);
         qd("raw-qual-approx", null, new int[][] {{5, 5}}, 300, null);
-        qd("hom-ref-only", -50.0, new int[][] {{10, 0}}, null, "0/0");
-        qd("one-alt-read", -50.0, new int[][] {{9, 1}}, null, null);
-        qd("two-alt-reads", -50.0, new int[][] {{8, 2}}, null, null);
-        qd("zero-ad", -50.0, new int[][] {{0, 0}}, null, null);
-        qd("no-ad-with-dp", -50.0, null, null, null);
-        qd("two-samples", -50.0, new int[][] {{9, 1}, {8, 2}}, null, null);
+        qd("hom-ref-only", -25.0, new int[][] {{10, 0}}, null, "0/0");
+        qd("one-alt-read", -20.0, new int[][] {{9, 1}}, null, null);
+        qd("two-alt-reads", -20.0, new int[][] {{8, 2}}, null, null);
+        qd("zero-ad", -25.0, new int[][] {{0, 0}}, null, null);
+        qd("no-ad-with-dp", -25.0, null, null, null);
+        qd("two-samples", -20.0, new int[][] {{9, 1}, {8, 2}}, null, null);
 
         // GenotypeSummaries.
         summaries("no-genotypes", new int[0], 0);
