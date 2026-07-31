@@ -723,6 +723,23 @@
           "why": "From the pinned container on a real x86-64 runner. 41 rows. The order rows are the point: A*,C comes out C,A* and A*,C,G,T comes out T,C,A*,G, so the marginalised matrix does not follow the variant's allele order. The golden corrected the port on one thing, normalizeSumToOne, which has no zero guard: an all-zero AD divides zero by zero, so a site with no informative reads gets an AF of NaN rather than of zero. Two of those rows are an invalid operation's NaN whose sign is the FPU's, exempted off x86-64 under decision 0012."
         }
       ]
+    },
+    {
+      "id": "annotation-flow",
+      "title": "The eight flow-based annotations",
+      "status": "golden-pending",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "The flow annotations describe a variant in flow space rather than in base space, and the encoding is where their surprises are. A flow key is a run-length encoding against a repeating flow order, TGCA by default, and N matches every flow base, so an ambiguous base is absorbed into whatever run it sits in rather than breaking it; a base the order does not contain trips a period guard and throws. An hmer indel is one whose reference and alternate flow keys differ in exactly one flow, with the length reported being the larger of the two and the nucleotide the order's base at that index, so a second differing flow disqualifies the site entirely. VARIANT_TYPE asks three questions in order and one ordinary indel beside an hmer one makes the whole site non-h-indel. A motif that would run off the contig is not truncated but dropped, so the annotation is absent rather than short. The left motif shifts for an indel, dropping its first base and appending the reference's first, so the two motifs of a mixed site come from different windows. And GC_CONTENT is a float rather than a double, so it carries single precision into the VCF.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FlowAnnotationDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

@@ -129,6 +129,9 @@ jobs:
           - group: oracle-backed
             index: "8/8"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele"
+          - group: golden-pending
+            index: "1/1"
+            suites: "annotation-flow"
     steps:
       - uses: actions/checkout@v4
 
