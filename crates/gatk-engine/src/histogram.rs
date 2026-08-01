@@ -49,7 +49,9 @@ const BIN_EPSILON: f64 = 0.01;
 /// What the reference raises as `GATKException`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistogramError {
-    /// A bin index outside `int` range: "Histogram values are suspiciously extreme".
+    /// A bin index outside `int` range: "Histogram values are suspiciously extreme". Reachable
+    /// from a value near the limits of a `double`, since the bin index is the value divided by the
+    /// bin size.
     ValueTooExtreme,
     /// `add(value, count)` with a count below one.
     NonPositiveCount,
@@ -69,10 +71,14 @@ pub struct CompressedDataList {
 }
 
 impl CompressedDataList {
+    /// An empty list. `Self` means "the type this block is for", so `Self::default()` is the
+    /// derived empty value: an empty map.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Whether anything has been added. Note that a value added with a count of zero still makes
+    /// the list non-empty, because the key exists.
     pub fn is_empty(&self) -> bool {
         self.value_counts.is_empty()
     }
@@ -89,6 +95,11 @@ impl CompressedDataList {
 
     /// `add(val, count)`, which has **no** guard against a non-positive count. The guard is in
     /// `Histogram`, one level up, so a negative count reaching this class is stored.
+    ///
+    /// **How the one line works**: `.entry(value)` looks the key up once and hands back a handle to
+    /// its slot, present or not; `.or_insert(0)` fills the slot with zero if it was absent and
+    /// returns a writable reference either way; the leading `*` writes through that reference. Java
+    /// would need a `get`, a null test and a `put`, and would look the key up twice.
     pub fn add_count(&mut self, value: i32, count: i32) {
         *self.value_counts.entry(value).or_insert(0) += count;
     }
@@ -101,6 +112,20 @@ impl CompressedDataList {
     }
 
     /// The iteration order: each value repeated its count of times, values ascending.
+    ///
+    /// **What**: the run-length encoding expanded back out. A list holding `{2: 3, 5: 2}` yields
+    /// `2, 2, 2, 5, 5`.
+    ///
+    /// **How**: `.flat_map(...)` turns each `(value, count)` pair into a small sequence and then
+    /// flattens all of them into one. `repeat_n(v, n)` is that small sequence.
+    ///
+    /// **Why `.max(0)`**: a negative count could have been stored, since this class has no guard.
+    /// Converting a negative number to an unsigned length would be a program error, so it is
+    /// clamped and the entry simply yields nothing.
+    ///
+    /// `impl Iterator<Item = i32> + '_` is the return type: "some sequence of integers whose
+    /// lifetime is tied to this list". The `'_` is what stops the sequence outliving the data it
+    /// reads.
     pub fn iter(&self) -> impl Iterator<Item = i32> + '_ {
         self.value_counts
             .iter()
@@ -110,10 +135,17 @@ impl CompressedDataList {
 
 impl std::fmt::Display for CompressedDataList {
     /// `toString`: `value,count` pairs joined by commas, values ascending.
+    ///
+    /// **Why the separator is written before each entry but the first**, rather than after each
+    /// and trimmed: that is what the reference does, and the difference shows on the empty list,
+    /// where this produces the empty string and a trim-based version would too, but on a list with
+    /// one entry only this one is guaranteed to emit no comma at all.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
         for (value, count) in &self.value_counts {
             if !first {
+                // `write!` appends to the formatter and can fail if the destination does; the `?`
+                // hands that failure to the caller.
                 write!(f, ",")?;
             }
             write!(f, "{value},{count}")?;
@@ -171,6 +203,18 @@ impl Histogram {
     }
 
     /// `getBinnedValue`: the epsilon goes in **before** the division, not after.
+    ///
+    /// **What**: which bin a value falls in, as a signed index that may be negative.
+    ///
+    /// **How**: shift by a hundredth of a bin, divide by the bin size, take the floor, then round.
+    /// The rounding after a floor is redundant arithmetically and is kept because the reference has
+    /// it: `Math.round` of an already-integral double is that double, but it also converts to a
+    /// `long`, which is what the reference wants.
+    ///
+    /// **Why the floor and not a truncation**: the floor goes **down** for negative numbers, so a
+    /// value of -1.23 with a tenth-wide bin lands in bin -13 and is reported as -1.3, away from
+    /// zero. The binning is therefore not symmetric about zero, and the allele-specific rank sums,
+    /// which store their Z scores through this, inherit that asymmetry.
     fn binned_value(&self, d: f64) -> i64 {
         jmath::math::round(((d + BIN_EPSILON * self.bin_size) / self.bin_size).floor())
     }
@@ -226,12 +270,26 @@ impl Histogram {
     }
 
     /// `median()`, walking the bins in ascending order. `None` for an empty histogram.
+    ///
+    /// **What**: the middle value, or the average of the two middle values when the count is even.
+    ///
+    /// **How**: accumulate the counts in key order until the running total reaches the middle
+    /// position, then read off the bin.
+    ///
+    /// **Why the arithmetic looks off by one**: `medianIndex` is `(n + 1) / 2` in **integer**
+    /// division, so for an even count it is the **lower** of the two middle positions. The walk
+    /// then remembers that bin and averages it with the next one. For an odd count it returns
+    /// immediately. The reference is written this way and the port follows it rather than a
+    /// textbook median, because the two differ on which bin is reported when a bin spans the
+    /// middle.
     pub fn median(&self) -> Option<f64> {
         let num_items: i32 = self.data.value_counts().values().sum();
         let odd = num_items % 2 != 0;
         // Integer division: for an even count this is the lower of the two middle positions.
         let median_index = (num_items + 1) / 2;
 
+        // `counter` is the running total; `first_median` remembers the lower of the two middle
+        // bins once it has been passed, and stays `None` for an odd count.
         let mut counter = 0i32;
         let mut first_median: Option<f64> = None;
         for (key, count) in self.data.value_counts() {
