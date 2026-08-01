@@ -185,6 +185,18 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
     belongs to **G3** with `HaplotypeCaller` rather than to G1. Listing it here would be counting
     the assembler as an annotation
 
+### Explaining the code as it is written
+
+- [~] `docs/COMMENTING.md`: every item that is not self-evident answers what it computes, how, and
+      **why it is written this way rather than the obvious way**, and Rust idioms are explained
+      where they are not guessable from Java. The third question is the point: in a byte-identity
+      port the obvious way is usually wrong, and a reader who can check the Java should not have to
+      learn Rust to check the port. `tools/audit/comment_density.py --check` is a ratchet, not a
+      floor: it fails only when a file already on the list loses its explanations
+- [ ] the tranches, in the order a reader needs them: the engine's numeric primitives, then the
+      likelihood matrix, then the annotations, then the readers and writers. **3 of 122 files** in
+      this repository, 332 across the three
+
 ### G1.8 The argument layer
 
 - [ ] Barclay's argument model and validation at library level, so covering-array vectors are
