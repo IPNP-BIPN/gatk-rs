@@ -54,6 +54,12 @@ jobs:
         # in all three repositories now, not just the one where it was learned.
         run: python3 tools/audit/provenance.py crates
 
+      - name: A file already explained does not lose its explanations
+        # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only
+        # when a file on tools/audit/commented.txt drops below the density it was recorded at, so
+        # the remaining files are a measured list rather than a feeling.
+        run: python3 tools/audit/comment_density.py --check
+
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --release
