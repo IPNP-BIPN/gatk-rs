@@ -1,0 +1,9 @@
+# Files brought to the standard in docs/COMMENTING.md, with the comment-to-code
+# ratio each had when it was done. tools/audit/comment_density.py --check fails if
+# one of them drops below its recorded floor, so the work is a ratchet: nothing
+# already explained can quietly come undone.
+#
+# Regenerate with: python3 tools/audit/comment_density.py --record
+
+crates/gatk-engine/src/fragment.rs 1.149
+crates/gatk-engine/src/math_utils.rs 1.930

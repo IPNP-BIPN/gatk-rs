@@ -25,7 +25,7 @@
 //! `Collectors.groupingBy` builds a `HashMap`, so the new evidence order is hash order over the
 //! grouping key, which for these annotations is the read name. The order **within** each group is
 //! the stream's, so the reads of a pair keep the sample's order and "the first read of each
-//! fragment" is well defined. [`gatk_engine::java_hash::hash_map_order`] reproduces the outer one.
+//! fragment" is well defined. [`crate::java_hash::hash_map_order`] reproduces the outer one.
 //!
 //! # More than two reads with one name is a warning, not an error
 //!
@@ -33,21 +33,45 @@
 //! more than two survive it logs "Using two reads randomly to combine as a fragment" and takes the
 //! **first two**, which is not random but is the sublist. If none survive it takes the first read of
 //! the original list, supplementary or not.
+//!
+//! # Reading this file without reading Rust
+//!
+//! - `Vec<T>` is a growable array, Java's `ArrayList<T>`, but without boxing: a `Vec<usize>` holds
+//!   the integers themselves;
+//! - `Result<T, E>` is "a value or an error". `Ok(v)` is the value, `Err(e)` the error. It is how
+//!   this codebase models a reference exception, and the compiler forces the caller to handle both;
+//! - `&BamRecord` is a borrowed read: the function may look at it but does not own or free it;
+//! - `read.flags & 0x10` is a bitwise test on the SAM flags word, exactly as in Java.
 
 use crate::java_hash::{hash_map_order, string_hash_code};
 use htsjdk_bam::record::BamRecord;
 
 /// `Fragment`: one read or a pair, with the interval spanning them.
+///
+/// **What**: the coordinates the fragment covers, plus the reads it was built from.
+///
+/// **Why the reads are kept rather than summarised**: `OrientationBiasReadCounts` reads the
+/// **first** read's strand, mapping quality and base quality, so the annotation needs the reads
+/// themselves and needs them in the sample's original order.
+///
+/// `#[derive(...)]` asks the compiler to write three implementations: `Debug` for printing in
+/// tests, `Clone` for copying, `PartialEq` for `==`. Java would write them by hand or inherit them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fragment {
+    /// Index into the BAM header's sequence dictionary; `getAssignedContig` in the reference.
     pub contig_index: i32,
+    /// First reference position covered, one-based as everywhere in this codebase.
     pub start: i32,
+    /// Last reference position covered, inclusive.
     pub end: i32,
     /// One or two reads, in the order they appeared in the sample.
     pub reads: Vec<BamRecord>,
 }
 
 /// What fragment construction refuses.
+///
+/// **Why an enum rather than a string**: each variant is one `Utils.validateArg` in the reference,
+/// and naming them separately lets a test assert which one fired rather than matching on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FragmentError {
     /// `Utils.validateArg(!reads.isEmpty(), "Need one or two reads to construct a fragment")`.
@@ -58,6 +82,9 @@ pub enum FragmentError {
 }
 
 /// `GATKRead.getEnd()` for an aligned read: the last reference position the cigar covers.
+///
+/// **Why it is a one-line wrapper**: so that the two call sites below read as the reference reads,
+/// and so a future change to how an end is computed has one place to happen.
 fn read_end(read: &BamRecord) -> i32 {
     read.alignment_end()
 }
@@ -65,10 +92,18 @@ fn read_end(read: &BamRecord) -> i32 {
 impl Fragment {
     /// `Fragment.create(List<GATKRead>)`.
     ///
-    /// The interval takes `min` and `max` of the two reads' starts and ends and then `min`/`max`
-    /// again, because a read whose end precedes its start (an unmapped one) would otherwise build an
-    /// interval the constructor rejects.
+    /// **What**: build a fragment from one or two reads.
+    ///
+    /// **How**: the interval is the smallest one covering both reads.
+    ///
+    /// **Why the `min` and `max` are applied twice**: the reference computes a start and an end and
+    /// then wraps them in another `Math.min` / `Math.max` pair. That is not redundant: a read whose
+    /// end precedes its start (an unmapped one carrying a position) would otherwise build an
+    /// interval whose constructor rejects it. The port keeps both applications so the same inputs
+    /// survive.
     pub fn create(reads: &[BamRecord]) -> Result<Fragment, FragmentError> {
+        // `match` on the length, which is Java's `switch` but required to cover every case. The
+        // final arm binds the length to `found` and so covers three and above.
         match reads.len() {
             0 => Err(FragmentError::NoReads),
             1 => {
@@ -76,16 +111,23 @@ impl Fragment {
                 let end = read_end(read);
                 Ok(Fragment {
                     contig_index: read.reference_index,
+                    // The double clamp described above, for the single-read case.
                     start: read.alignment_start.min(end),
                     end: read.alignment_start.max(end),
+                    // `.to_vec()` copies the borrowed slice into an owned list, because the
+                    // fragment outlives the caller's array.
                     reads: reads.to_vec(),
                 })
             }
             2 => {
+                // Destructuring: one line binds both reads instead of two indexed lookups.
                 let (left, right) = (&reads[0], &reads[1]);
                 let start = left.alignment_start.min(right.alignment_start);
                 let end = read_end(left).max(read_end(right));
                 Ok(Fragment {
+                    // The contig comes from the **left** read only. A pair whose mates map to
+                    // different contigs therefore reports the first one's, silently, exactly as
+                    // the reference does.
                     contig_index: left.reference_index,
                     start: start.min(end),
                     end: start.max(end),
@@ -97,24 +139,40 @@ impl Fragment {
     }
 
     /// `Fragment.createAndAvoidFailure`.
+    ///
+    /// **What**: build a fragment from any number of reads sharing a name, without throwing.
+    ///
+    /// **How**: drop the alignments that are not the primary record, then take at most two.
+    ///
+    /// **Why it matters that this trims the evidence and not the arithmetic**: `groupEvidence` has
+    /// already summed the likelihoods of the **whole** group by the time this runs. A group of three
+    /// reads therefore yields a two-read fragment carrying a three-read likelihood. The conformance
+    /// golden carries that pair of rows, and no reading of either source alone establishes it.
     pub fn create_and_avoid_failure(reads: &[BamRecord]) -> Result<Fragment, FragmentError> {
         if reads.len() <= 2 {
             return Fragment::create(reads);
         }
+        // `.filter(...)` keeps the reads for which the closure is true; `.cloned()` copies each one
+        // out of the borrow; `.collect()` gathers them. The type annotation on the binding tells
+        // `collect` what to build.
         let primary: Vec<BamRecord> = reads
             .iter()
             .filter(|read| {
                 let flags = read.flags;
-                // Duplicate, secondary and supplementary respectively.
+                // Bit 0x400 marks a PCR or optical duplicate, 0x100 a secondary alignment, 0x800 a
+                // supplementary one. A read is primary when it has none of the three.
                 flags & 0x400 == 0 && flags & 0x100 == 0 && flags & 0x800 == 0
             })
             .cloned()
             .collect();
         if primary.len() > 2 {
             // "Using two reads randomly to combine as a fragment", which takes the first two.
+            // `&primary[..2]` is a borrowed view of the first two elements, not a copy.
             return Fragment::create(&primary[..2]);
         }
         if primary.is_empty() {
+            // Nothing primary survived, so the reference falls back to the first read of the
+            // original list, supplementary or duplicate though it may be. It does not fail.
             return Fragment::create(&reads[..1]);
         }
         Fragment::create(&primary)
@@ -122,11 +180,18 @@ impl Fragment {
 
     /// `ReadUtils.isF2R1`: reverse-strand and first-of-pair agree.
     ///
-    /// A read that is not paired at all has `isFirstOfPair()` false, so a **forward** unpaired read
-    /// is `F2R1` (false equals false) and a reverse one is `F1R2`. The orientation is defined
-    /// whether or not there is a mate, and for an unpaired read it is the opposite of what the
-    /// names suggest.
+    /// **What**: which of the two read-pair orientations this read belongs to. The orientation is
+    /// what `OrientationBiasReadCounts` splits its counts on, because oxidative damage during
+    /// library preparation shows up in one orientation and not the other.
+    ///
+    /// **How**: one equality between two flag tests.
+    ///
+    /// **Why the names mislead**: a read that is not paired at all has `isFirstOfPair()` false, so
+    /// a **forward** unpaired read satisfies `false == false` and is classified `F2R1`, while a
+    /// reverse one is `F1R2`. That is the opposite of what the names suggest, and the golden's
+    /// `unpaired-forward` row is `F1R2=[0, 0];F2R1=[1, 1]` because of it.
     pub fn is_f2r1(read: &BamRecord) -> bool {
+        // 0x10 is "this read is reverse-strand", 0x40 is "this read is the first of its pair".
         let reverse = read.flags & 0x10 != 0;
         let first_of_pair = read.flags & 0x40 != 0;
         reverse == first_of_pair
@@ -135,25 +200,42 @@ impl Fragment {
 
 /// The grouping key and the resulting order of `AlleleLikelihoods.groupEvidence` by read name.
 ///
-/// Returns, per sample, the groups in the order the reference's `HashMap` iteration produces, each
-/// group holding the indices of its reads within that sample in the sample's own order.
+/// **What**: for one sample's reads, the groups that share a name, in the order the reference's
+/// `HashMap` iteration produces, each group holding the **positions** of its reads within that
+/// sample.
+///
+/// **How**: collect the groups in first-appearance order, then reorder them by Java's `HashMap`
+/// iteration rule over the hash of each name.
+///
+/// **Why positions rather than the reads themselves**: the caller needs to index the likelihood
+/// matrix by the same positions to sum the right columns, so returning indices keeps the two in
+/// step. Returning reads would force the caller to search for each one.
 pub fn group_by_read_name(reads: &[BamRecord]) -> Vec<Vec<usize>> {
-    // Insertion order first, as `groupingBy` fills the map.
+    // Insertion order first, as `groupingBy` fills the map. `names` and `groups` are kept parallel:
+    // `names[k]` is the read name of `groups[k]`.
     let mut names: Vec<String> = Vec::new();
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (index, read) in reads.iter().enumerate() {
+        // `.position(...)` returns `Some(k)` for the first match or `None` for no match, which is
+        // Java's `indexOf` with the absence made explicit. A linear scan is right here: a sample's
+        // reads at one site number in the tens.
         match names.iter().position(|name| *name == read.read_name) {
             Some(position) => groups[position].push(index),
             None => {
                 names.push(read.read_name.clone());
+                // `vec![index]` builds a one-element list, the first member of a new group.
                 groups.push(vec![index]);
             }
         }
     }
+    // Java's `String.hashCode` is specified exactly, so the hash of a read name is portable. That
+    // is what makes reproducing `HashMap` order possible at all.
     let entries: Vec<(usize, i32)> = (0..names.len())
         .map(|index| (index, string_hash_code(&names[index])))
         .collect();
     match hash_map_order(&entries) {
+        // The reordering: `order` holds the group positions in hash order, and this rebuilds the
+        // list of groups to match.
         Ok(order) => order
             .into_iter()
             .map(|index| groups[index].clone())
@@ -168,6 +250,7 @@ pub fn group_by_read_name(reads: &[BamRecord]) -> Vec<Vec<usize>> {
 mod tests {
     use super::*;
 
+    /// A read at a given position with a 10-base match, which is all these tests need.
     fn read(name: &str, flags: u16, start: i32) -> BamRecord {
         BamRecord {
             read_name: name.to_string(),
@@ -178,12 +261,16 @@ mod tests {
             cigar: htsjdk_bam::text_parse::parse_cigar("10M").expect("a cigar"),
             read_bases: vec![b'A'; 10],
             base_qualities: vec![30; 10],
+            // `..Default::default()` fills every field not named above with its default, so the
+            // test says only what it cares about.
             ..Default::default()
         }
     }
 
     #[test]
     fn a_pair_spans_both_reads() {
+        // 0x41 is paired and first-of-pair; 0x81 is paired and second. The second read starts at
+        // 200 and covers ten bases, so the pair ends at 209.
         let fragment =
             Fragment::create(&[read("r", 0x41, 100), read("r", 0x81, 200)]).expect("a fragment");
         assert_eq!((fragment.start, fragment.end), (100, 209));
@@ -206,6 +293,8 @@ mod tests {
             read("a", 0x81, 200),
         ]);
         assert_eq!(groups.len(), 2);
+        // Positions 0 and 2 share the name "a". The assertion is on membership rather than on
+        // position because the outer order is the HashMap's, which this test does not pin.
         assert!(groups.contains(&vec![0, 2]));
         assert!(groups.contains(&vec![1]));
     }
