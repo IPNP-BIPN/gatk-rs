@@ -996,27 +996,19 @@
     },
     {
       "id": "natural-log-utils",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "NaturalLogUtils, and the rows that cannot depend on exp",
       "harness": "tools/annotation-conformance",
       "tools": [],
       "why": "G1.9.1, and the layer AllelePseudoDepth stands on. Compared as raw bit patterns, because the question is whether a port built on a permissively-licensed exp lands on the same double and decimal rendering discards exactly that. The reference calls Math.exp; the port calls FDLIBM, measured at one ulp worst case against it by htsjdk-rs decision 0025, so this suite is not a bit-identity claim and does not pretend to be. It separates three things. First, the rows that reach neither exp nor log and are therefore exact by construction: logSumExp starts its accumulator at one rather than zero because the maximum's own term is skipped in the loop and folded in as that one, and the guard sum not equal to one then skips the log entirely, so a single non-infinite entry, a maximum with everything else at negative infinity, and a difference large enough that one plus exp of it rounds back to one all return the maximum untouched. Second, the rows that do call exp, which must land within one ulp, and the test reports the worst distance rather than only passing. Third, the refusal, which fires on the accumulator after the loop rather than on the inputs, so a NaN input reaches it and a negative infinity input does not, though the message names the inputs either way. A row diverging by more than one ulp means the port's arithmetic is wrong rather than that the exponential is approximate, which is the distinction the suite is built to make.",
-      "expect_rows": 42,
-      "expect_contains": [
-        "lse\tone-zero\t0\t0",
-        "lse\tall-neginf\tfff0000000000000",
-        "lse\ttie-first",
-        "lse\tnan-input\tE:java.lang.IllegalArgumentException",
-        "post\tpost-dirichlet-like"
-      ],
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "NaturalLogUtilsDump",
-          "golden": null,
-          "why": "No golden yet, and `golden: null` is how that is declared. It matters more here than usual: the dump's values come from `Math.exp`, which is a host intrinsic, so a golden produced on Apple Silicon would be a different function's answers. It has to come from the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-engine/tests/data/natural_log_utils.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 42 rows, no corrections. It happens to be byte-identical to an Apple Silicon run, which says the two hosts' Math.exp agreed on these particular inputs and says nothing about the general case; the provenance is what makes it a golden."
         }
       ]
     }
