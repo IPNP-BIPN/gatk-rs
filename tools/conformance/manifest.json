@@ -885,6 +885,24 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 15 rows, no corrections. The pair that carries the claim is duplicate-bases-same-uniqueness against duplicate-bases-different-uniqueness: the same bases, one entry against two, decided by a field that never appears in the output."
         }
       ]
+    },
+    {
+      "id": "multipasswalker",
+      "status": "oracle-backed",
+      "title": "The multi-pass walkers, and what they do between passes",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The last unported walkers of G1.6. Every other walker makes one traversal; these make several, and the three things they do between passes are each invisible from a single-pass run. MultiplePassVariantWalker builds one CountingVariantFilter and one CountingReadFilter before the loop and reuses both, so the filtered counts accumulate: the same file and the same predicate report one drop after a one-pass run, two after two passes and three after three. MultiplePassReadWalker builds a new filter at the top of every pass after the first and resets the reads data source, so each pass reports only its own drops; the two classes are one directory apart and disagree. afterNthPass is called inside the loop, so it runs after every pass including the last, which its own javadoc contradicts. TwoPassVariantWalker routes afterNthPass(0) to afterFirstPass and guards with else-if n greater than one, so n equal to one matches neither branch and the call after the second pass does nothing at all: there is no afterSecondPass and no error either. And zero passes is a legal traversal that visits nothing, calls afterNthPass never, and still builds both filters.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MultiPassWalkerDump",
+          "golden": "crates/gatk-tools/tests/data/multi_pass.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 144 rows, no corrections. The rows that carry the claim are the filter counts: npass-1, npass-2 and npass-3 report 1, 2 and 3 over one counter, while read-three-pass reports 3, 3, 3 over three."
+        }
+      ]
     }
   ],
   "probes": []

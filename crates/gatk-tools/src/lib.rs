@@ -7,5 +7,6 @@
 
 pub mod interval_walker;
 pub mod locus_walker;
+pub mod multi_pass;
 pub mod print_reads;
 pub mod read_walker;

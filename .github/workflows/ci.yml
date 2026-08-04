@@ -140,7 +140,7 @@ jobs:
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
           - group: oracle-backed
             index: "10/10"
-            suites: "annotation-fragment-counts annotation-haplotype-filtering"
+            suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker"
     steps:
       - uses: actions/checkout@v4
 

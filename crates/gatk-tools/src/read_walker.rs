@@ -71,6 +71,24 @@ pub fn traverse_with_bounds(
     traverse_unmapped: bool,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<Vec<BamRecord>, ReadsError> {
+    traverse_with_bounds_mut(source, intervals, traverse_unmapped, &mut |read| {
+        filter(read)
+    })
+}
+
+/// The same traversal, with a filter that may keep state.
+///
+/// The reference's filter always does: `getTransformedReadStream` is given a `CountingReadFilter`,
+/// whose counters are what the summary line is made of, so "the filter is a pure predicate" is an
+/// assumption of the callers here rather than of the engine. The multi-pass read walker is the
+/// first caller that needs the counts, and it goes through this form; the one above stays for the
+/// tools that pass a predicate and read nothing back.
+pub fn traverse_with_bounds_mut(
+    source: &ReadsDataSource,
+    intervals: &[SimpleInterval],
+    traverse_unmapped: bool,
+    filter: &mut dyn FnMut(&BamRecord) -> bool,
+) -> Result<Vec<BamRecord>, ReadsError> {
     let bounded = !intervals.is_empty() || traverse_unmapped;
     let records = if !bounded {
         source.iter_all()?
