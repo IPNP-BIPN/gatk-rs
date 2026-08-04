@@ -258,9 +258,28 @@ for.
       in it, asserted bit-identical for that reason
 - [ ] `AllelePseudoDepth` itself (#99), with the suite comparing the **formatted strings**.
       Comparing the doubles would re-measure the `exp` gap, which is already measured; comparing
-      the strings measures whether it reaches the output. `DecimalFormat` is `java.text` and so
-      GPL2, but nothing needs transcribing: `"#.##"` is HALF_EVEN to two places with trailing zeros
-      dropped, which is implementable from the pattern's documented meaning
+      the strings measures whether it reaches the output. Two suites, both `golden-pending`.
+
+      **`DecimalFormat` was not the ten-line job this line used to claim.** "HALF_EVEN to two
+      places with trailing zeros dropped" is what the Javadoc says and it is not what the class
+      does. Three facts had to be measured, over 5,699,818 formatted values: it rounds the
+      **shortest decimal form** and not the value, so `0.1` at forty places is `0.1`; an apparent
+      tie is settled by which side of the halfway point the double sits on, so `0.155` goes down
+      and `0.165` goes up; and the two patterns **disagree with each other** where the rounding
+      position falls before the first digit, because that is where the class's internal fast path
+      stops applying. `0.005` and `5e-5` are the same shape one decade apart and go opposite ways.
+      None of it needed transcribing, all of it needed measuring, and the port is exact for values
+      below 2^53 with at most fifteen significant digits — decades away from anything this
+      annotation emits
+
+      Two findings in the annotation are not arithmetic at all, and neither is in any test the
+      reference ships. `composePriorPseudoCounts` memoises one array per allele count and hands out
+      **that array**; on the empty-evidence branch the posteriors are it, so the closing
+      `posteriors[i] -= prior[i]` **zeroes the memo** and the next genotype with the same allele
+      count gets a prior of zeros. The reference's own second answer is `NaN,NaN`. And the log10
+      branch's visitor looks the mapping quality up at `evidence().get(row)` with `row` the
+      **allele** index, so a site with more alleles than reads throws `IndexOutOfBoundsException`
+      and one with fewer floors each allele's row using an unrelated read's quality
 
 Either outcome is worth having. No divergence and the library goes to **53 of 54**, leaving only
 `AssemblyComplexity` and its G3 dependency. A divergence and it will be one row sitting on a
