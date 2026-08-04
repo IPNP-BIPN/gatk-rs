@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **46 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 51 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 5 crates, **47 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -141,7 +141,7 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. **Fifty-one** are ported and oracle-backed: the counting family
+- [~] the 54-annotation library. **Fifty-two** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
       `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
       `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL) and the rank-sum family
@@ -159,20 +159,21 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       heterozygosity calculator under the third) and the pedigree pair (`hiConfDeNovo`/
       `loConfDeNovo`, `transmittedSingleton`/`nonTransmittedSingleton`, over a ported
       `MendelianViolation`) and the fragment pair (`F1R2`/`F2R1`, `FAD`, over a ported `Fragment`
-      and `groupEvidence`), together with the
+      and `groupEvidence`) and `HaplotypeFilteringAnnotation` (`ASSEMBLED_HAPS`/`FILTERED_HAPS`,
+      over a `Haplotype` and a likelihood matrix whose allele axis is one), together with the
       `InfoFieldAnnotation` interface and the machinery underneath it (`AlleleList`/`SampleList`
       and their permutation, the `AlleleLikelihoods` matrix and its best-allele search,
       `VariantContextGetters`, **`MannWhitneyU`** and **`FisherExactTest`**, with commons-math3's
       `FastMath.exp`, `FastMath.log`, `Gamma`, `Erf`, `NormalDistribution` and the saddle-point
       expansion under them, all oracle-backed in htsjdk-rs)
-- [ ] the remaining 3, each blocked on something named rather than on effort. **The claim that
+- [ ] the remaining 2, **neither of which is blocked on effort**. **The claim that
       most of the 54 wait on jmath did not survive a grep**: 10 of the 57 files in
       `tools/walkers/annotator` mention `MathUtils` at all, and what the annotators reach through
       `java.lang.Math` is `log`, `log10`, `sqrt` and `round`, all four already exact. What the
-      first fifty-one actually waited on was engine machinery, and all of it is now ported. The
-      three that are left:
-  - `HaplotypeFilteringAnnotation` (`HAPCOMP`-adjacent, two counts) needs only the haplotype-typed
-    likelihood matrix and its `filteredHaplotypeCount`. **Portable today**, the next slice
+      first fifty-two actually waited on was engine machinery, and all of it is now ported. The
+      third of the three came in with the haplotype-typed matrix: `HaplotypeFilteringAnnotation`
+      is oracle-backed above, and `Haplotype` is ported as far as an allele axis needs it, which
+      stops short of `EventMap`. The two that are left cannot be closed by working harder:
   - `AllelePseudoDepth` is **refused on the licence boundary**, not deferred. It ends in
     `SomaticLikelihoodsEngine.alleleFractionsPosterior`, whose fixed point runs through
     `NaturalLogUtils.normalizeFromLogToLinearSpace` and `logSumExp`, and both of those call

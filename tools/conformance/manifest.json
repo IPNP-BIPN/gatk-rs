@@ -867,6 +867,24 @@
           "why": "From the pinned container on a real x86-64 runner. 48 rows: 12 fragment lists, 12 grouped likelihood tables compared as raw bits, 12 orientation count pairs and 12 fragment depth vectors, all identical on the first run. The three-reads-one-name row is the sharpest pair: the Fragment holds two reads because the supplementary alignment was dropped, while its likelihood is the sum over three, because the grouping summed the whole group before the fragment was built. The trimming applies to the evidence object and not to the arithmetic."
         }
       ]
+    },
+    {
+      "id": "annotation-haplotype-filtering",
+      "status": "oracle-backed",
+      "title": "HaplotypeFilteringAnnotation: ASSEMBLED_HAPS and FILTERED_HAPS",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "The fifty-second annotation, and the first JumboInfoAnnotation: it is handed three likelihood matrices and reads only the third, whose allele axis is a Haplotype rather than an Allele. That is what it was waiting on, not jmath. ASSEMBLED_HAPS is alleles().size() over an IndexedSet under Haplotype.equals, which compares the uniqueness value, the reference flag and the bases while Haplotype.hashCode compares the bases alone, so two haplotypes with identical bases are one entry or two depending on a field that never appears in the output; the duplicate-bases-same-uniqueness and duplicate-bases-different-uniqueness pair is what pins it. FILTERED_HAPS is a getter over an int field that only AlleleFiltering.subsetHaplotypesByAlleles ever writes, so a matrix nobody filtered reports zero rather than no key at all, and the getter does not clamp a value that exceeds the haplotypes remaining or a negative one. Neither key is ever guarded: the method has no branch. And the engine chooses between an AlleleLikelihoods over Fragment and one over GATKRead with a ternary, a difference Java erases behind a wildcard, so both branches are run over the same haplotypes and compared.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "HaplotypeFilteringAnnotationDump",
+          "golden": "crates/gatk-annotation/tests/data/haplotype_filtering.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 15 rows, no corrections. The pair that carries the claim is duplicate-bases-same-uniqueness against duplicate-bases-different-uniqueness: the same bases, one entry against two, decided by a field that never appears in the output."
+        }
+      ]
     }
   ],
   "probes": []
