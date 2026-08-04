@@ -147,6 +147,9 @@ jobs:
           - group: oracle-backed
             index: "12/12"
             suites: "decimal-format allele-pseudo-depth"
+          - group: golden-pending
+            index: "1/1"
+            suites: "record-transform"
     steps:
       - uses: actions/checkout@v4
 

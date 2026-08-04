@@ -258,6 +258,35 @@
       ]
     },
     {
+      "id": "record-transform",
+      "status": "golden-pending",
+      "title": "UnmarkDuplicates and RevertBaseQualityScores output bytes",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "UnmarkDuplicates",
+        "RevertBaseQualityScores"
+      ],
+      "why": "G2's calibration gate: the second and third whole tools, so the marginal cost of an archetype member can be measured rather than guessed once PrintReads has paid for the engine. One dump covers both, which is itself part of the answer. Three behaviours are the reason for the case list and none of them is the transform. Both tools override getDefaultReadFilters to ALLOW_ALL_READS where PrintReads takes GATKTool's default of WellformedReadFilter, so on the same file the three tools emit different sets of reads and it is the filter rather than the apply that decides it; the wellformed case asks for the filter explicitly so the difference is visible in the golden. RevertBaseQualityScores aborts the whole run on a read with no OQ rather than skipping it or passing it through, so the output is whatever had been flushed and a port that passed the read through would produce a larger and healthier-looking file than the reference. And an empty OQ is the same as an absent one, because getOriginalBaseQualities returns null for both even though fastqToPhred of an empty string is happy and returns an empty array; that conflation is the reference's and is measured rather than inferred. The output BAMs travel in full, base64, indexes included, and the deflater is pinned and named in the golden because the factory is static and whoever touches it first wins for the life of the JVM.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 46,
+      "expect_contains": [
+        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory",
+        "error\tRevertBaseQualityScores\tmissing-oq\torg.broadinstitute.hellbender.exceptions.UserException",
+        "error\tRevertBaseQualityScores\tempty-oq\torg.broadinstitute.hellbender.exceptions.UserException",
+        "index\tUnmarkDuplicates\tnoindex\tabsent",
+        "commandline\tUnmarkDuplicates\tall\t"
+      ],
+      "cases": [
+        {
+          "dump": "RecordTransformDump",
+          "golden": null,
+          "why": "No golden yet. The candidate comes from the pinned container on a real x86-64 runner, published as this run's golden-pending artefact."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
