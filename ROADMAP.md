@@ -429,7 +429,26 @@ copy, which is a worse position than reading the source rather than a better one
 
 - [x] `PrintReads`, byte-identical: six output BAMs and five `.bai` indexes, under the JDK
       deflater
-- [ ] the rest of `record-transform` (56 tools, the largest archetype)
+- [~] the rest of `record-transform` (56 tools, the largest archetype). **The calibration gate is
+      answered**: `UnmarkDuplicates` and `RevertBaseQualityScores` are ported, with one suite
+      covering both. What the second and third members cost is not the transform — both `apply`
+      bodies are two lines — it is what the archetype hides:
+
+      * both **replace the default read filters** with `ALLOW_ALL_READS`, where `PrintReads` takes
+        `GATKTool`'s default of `WellformedReadFilter`. Three tools in one archetype, and their
+        default traversal is not the same set of reads;
+      * `RevertBaseQualityScores` **aborts the whole run** on a read with no `OQ` — not skips, not
+        passes through. A port that passed it through would emit a larger and healthier-looking
+        file than the reference, which is the worst shape a divergence can take;
+      * an **empty `OQ` is the same as an absent one**, because `getOriginalBaseQualities` returns
+        null for both even though `fastqToPhred("")` returns an empty array happily. Measured, not
+        inferred.
+
+      The measured marginal cost: `PrintReads` needed 152 lines of harness and its own header
+      logic; the second and third needed **95 and 235 lines of Rust between them and no new
+      harness**, because extracting `sam_output` left the `@PG` handling, the ID suffixing and the
+      writer shared. So the archetype's 54 remaining members are bounded by their `apply` and their
+      filter overrides rather than by the engine — which is what the gate existed to find out
 - [ ] `reporting-walker` (56 tools)
 - [ ] reference, interval, coverage, CNV/SV and genotyping-array utilities
 - [ ] full parameter coverage per tool (covering arrays plus fuzzing), not the default path
