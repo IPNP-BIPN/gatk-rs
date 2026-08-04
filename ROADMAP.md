@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **54 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **55 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -52,7 +52,7 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it.
 | `AllelePseudoDepth` (G1.7) | **reopened as G1.9** | the licence was probably never what blocked it. Both values it emits go through a `DecimalFormat`, and a 1-ulp difference cannot survive rounding to two decimals. Being measured |
 | `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
 
-54 conformance suites carry it, all oracle-backed.
+55 conformance suites carry it, all oracle-backed.
 
 One of those four came back. **G1.9** below is `AllelePseudoDepth`, reopened not because more effort
 was found for it but because the reason it was refused does not survive reading the annotation.
@@ -246,12 +246,16 @@ for.
       other value lands within **1 ulp**, and the test prints the worst it saw rather than only
       passing. The refusal is on the accumulator, not the inputs: it fires after the loop, on
       `sum`, so a `NaN` reaches it and a `-Infinity` does not
-- [ ] `alleleFractionsPosterior` and the `Dirichlet` under it (#98). **This is where the risk is,
-      and it is two risks.** A 1-ulp difference may amplify across the fixed point's iterations;
-      and convergence is a *threshold* test on `distance1/sum`, so a difference too small to see in
-      the values can still change the **iteration count**, which is a far larger difference than
-      one ulp. The dump emits that count beside the result so a divergence can be attributed rather
-      than just observed
+- [x] `alleleFractionsPosterior` and the `Dirichlet` under it (#98), 29 rows over twelve fixed-point
+      runs. This was where the risk was, and it was two risks: amplification across iterations, and
+      a **different iteration count**, since convergence is a threshold test on `distance1/sum` that
+      a difference too small to see in the values can land on the other side of. The suite asserts
+      the count exactly *before* comparing any value, because otherwise every value comparison
+      measures the wrong thing, and the count is the engine's own — the harness replays the loop and
+      checks its replay against the engine on every case. **Neither risk materialised: every
+      iteration count matches and the worst value divergence is zero ulp.** The fixed point is
+      bit-identical, not merely bounded. The `weights` rows are the control, `digamma` with no `exp`
+      in it, asserted bit-identical for that reason
 - [ ] `AllelePseudoDepth` itself (#99), with the suite comparing the **formatted strings**.
       Comparing the doubles would re-measure the `exp` gap, which is already measured; comparing
       the strings measures whether it reaches the output. `DecimalFormat` is `java.text` and so

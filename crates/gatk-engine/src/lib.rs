@@ -43,6 +43,7 @@ pub mod read_states;
 pub mod read_utils;
 pub mod reads;
 pub mod reference;
+pub mod somatic_likelihoods;
 pub mod variant_getters;
 pub mod variant_source;
 pub mod well19937c;
