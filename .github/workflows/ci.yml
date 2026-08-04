@@ -143,7 +143,7 @@ jobs:
             suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model barclay-tagged-arguments"
           - group: oracle-backed
             index: "11/11"
-            suites: "barclay-argument-collections barclay-arguments-file"
+            suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors"
     steps:
       - uses: actions/checkout@v4
 

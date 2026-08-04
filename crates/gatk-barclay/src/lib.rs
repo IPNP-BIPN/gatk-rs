@@ -397,6 +397,12 @@ pub struct Definition {
     pub field_is_primitive: bool,
     /// The value the constructor left in the field.
     pub value: Value,
+    /// `getDescriptorForControllingPlugin()`, `None` for an argument the tool declares itself.
+    ///
+    /// A controlled argument exists in the parser whether or not anybody selected its plugin: the
+    /// descriptor registers every implementation it discovers. What decides whether it is *usable*
+    /// is [`Parser::validate_plugin_argument_values`].
+    pub controlled_by: Option<PluginControl>,
     /// `defaultValueAsString`, computed once at construction from that initial value.
     default_value_as_string: String,
     /// `hasBeenSet`.
@@ -419,6 +425,7 @@ impl Definition {
         let default_value_as_string = convert_default_value_to_string(&initial, is_collection);
         Self {
             annotation,
+            controlled_by: None,
             field_name,
             class,
             is_collection,
@@ -1034,10 +1041,50 @@ fn collect(class: &ClassDecl, into: &mut Vec<Definition>) -> Result<(), Error> {
     Ok(())
 }
 
+/// What makes an argument a plugin's rather than a tool's.
+///
+/// The reference carries a whole `CommandLinePluginDescriptor` here. Two of its members are what
+/// `validatePluginArgumentValues` actually reads, and they are the two kept:
+///
+///  * the **predecessor class**, whose `getSimpleName()` is what the error names — not the argument
+///    that would have selected it, which is the surprising half;
+///  * `isDependentArgumentAllowed`, which every descriptor in GATK answers by looking at the
+///    argument that names plugins. It is modelled here as that argument's long name, so the
+///    predicate is "the selector's values contain the predecessor's simple name".
+///
+/// The discovery half — `ClassFinder` scanning a package for implementations and instantiating
+/// them — is not modelled. It decides *which* definitions exist, not what any of them means, and
+/// it belongs with the tool that has plugins rather than with the argument layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginControl {
+    /// The plugin class's simple name.
+    pub predecessor: &'static str,
+    /// The long name of the argument that names plugins for this descriptor.
+    pub selector: &'static str,
+}
+
+/// `validateAndResolvePlugins`, as GATK's read-filter descriptor implements it.
+///
+/// The interface method is the descriptor's own, and Barclay only promises to call it; what it
+/// does is the descriptor's business. `GATKReadFilterPluginDescriptor` uses it to refuse a name
+/// that matches no filter, which is why an unknown `--read-filter` is rejected there rather than
+/// by the argument layer, and why the message is GATK's wording rather than Barclay's.
+pub struct PluginResolution {
+    /// The long name of the argument that names plugins.
+    pub selector: &'static str,
+    /// The names that resolve to something.
+    pub known: Vec<String>,
+    /// The message's prefix, up to the offending name. GATK's is
+    /// `"Unrecognized read filter name: "`.
+    pub unrecognized_prefix: &'static str,
+}
+
 /// `CommandLineArgumentParser` over a set of definitions.
 pub struct Parser {
     definitions: Vec<Definition>,
     append_to_collections: bool,
+    /// The descriptor's own `validateAndResolvePlugins`, if the caller has one.
+    plugin_resolution: Option<PluginResolution>,
     /// `argumentsFilesLoadedAlready`.
     ///
     /// Parser state rather than per-call state, because the recursion is the same parser calling
@@ -1054,8 +1101,16 @@ impl Parser {
         Self {
             definitions,
             append_to_collections: false,
+            plugin_resolution: None,
             arguments_files_loaded_already: Vec::new(),
         }
+    }
+
+    /// The descriptor's own `validateAndResolvePlugins`, which runs after the plugin trim and
+    /// before the required check.
+    pub fn with_plugin_resolution(mut self, resolution: PluginResolution) -> Self {
+        self.plugin_resolution = Some(resolution);
+        self
     }
 
     /// `CommandLineParserOptions.APPEND_TO_COLLECTIONS`, whose absence is "replace".
@@ -1354,10 +1409,72 @@ impl Parser {
         Ok((given, positionals))
     }
 
+    /// `isDependentArgumentAllowed`: did the command line name this plugin?
+    fn is_dependent_argument_allowed(&self, control: &PluginControl) -> bool {
+        match self.value_of(control.selector) {
+            Some(Value::List(values)) => values
+                .iter()
+                .any(|value| value.to_java_string() == control.predecessor),
+            _ => false,
+        }
+    }
+
+    /// `validatePluginArgumentValues()`, which runs **before** the required check and rewrites the
+    /// list it checks.
+    ///
+    /// Three cases, and the first is the one worth having: a controlled argument whose plugin
+    /// nobody selected and which nobody gave is **dropped from the list**. Not made optional —
+    /// removed, so a *required* argument belonging to an unselected plugin does not fire. Every
+    /// GATK read filter has arguments in that state on every run.
+    fn validate_plugin_argument_values(&self) -> Result<Vec<&Definition>, Error> {
+        let mut actual: Vec<&Definition> = Vec::new();
+        for definition in &self.definitions {
+            let Some(control) = &definition.controlled_by else {
+                actual.push(definition);
+                continue;
+            };
+            let allowed = self.is_dependent_argument_allowed(control);
+            if definition.has_been_set() {
+                if !allowed {
+                    // The message names the predecessor **class**, not the argument that selects
+                    // it, and builds the argument's name as `getShortName() + "/" + getLongName()`
+                    // with no guard, so one with no short name reports a leading slash.
+                    return Err(Error::command_line(format!(
+                        "Argument \"{}/{}\" is only valid when the argument \"{}\" is specified",
+                        definition.annotation.short_name,
+                        definition.long_name(),
+                        control.predecessor
+                    )));
+                }
+                actual.push(definition);
+            } else if allowed {
+                // Kept so the required check can still see it: a selected plugin's required
+                // argument does fire.
+                actual.push(definition);
+            }
+        }
+        // "finally, give each plugin a chance to trim down any unseen instances from its own
+        // list": after the trim, before the required check.
+        if let Some(resolution) = &self.plugin_resolution {
+            if let Some(Value::List(values)) = self.value_of(resolution.selector) {
+                for value in values {
+                    let name = value.to_java_string();
+                    if !resolution.known.contains(&name) {
+                        return Err(Error::command_line(format!(
+                            "{}{name}",
+                            resolution.unrecognized_prefix
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(actual)
+    }
+
     /// `validateArgumentValues()`: every definition, in declaration order, so the first missing
     /// required argument reported is the first one declared.
     fn validate_argument_values(&self) -> Result<(), Error> {
-        for definition in &self.definitions {
+        for definition in self.validate_plugin_argument_values()? {
             // The partners that were actually given, by long name, in the annotation's order.
             let provided: Vec<String> = definition
                 .annotation
