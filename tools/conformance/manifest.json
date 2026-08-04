@@ -1011,6 +1011,31 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 42 rows, no corrections. It happens to be byte-identical to an Apple Silicon run, which says the two hosts' Math.exp agreed on these particular inputs and says nothing about the general case; the provenance is what makes it a golden."
         }
       ]
+    },
+    {
+      "id": "somatic-likelihoods",
+      "status": "golden-pending",
+      "title": "The Dirichlet fixed point, with its iteration count",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "G1.9.2. The variational fixed point AllelePseudoDepth ends in, and where G1.9's open question lives. G1.9.1 established that a one-ulp exp is what enters here; this measures what the iteration does with it, and there are two ways that could go wrong which look identical unless they are separated. Amplification, where the difference grows across iterations. And a different iteration count, because convergence is a threshold test on distance1 over sum against a thousandth, so a difference far too small to see in the values can still put one side of that comparison on the other side of the threshold, after which the two runs do a different amount of work. The second would be far larger than the first, so the golden carries the count and the suite asserts it exactly, before comparing any value. The count is not exposed by the engine, so the harness replays the loop body with the same calls in the same order and checks its replay against the engine's own answer on every case, which the agree rows record. The weights rows are the control: effectiveLogMultinomialWeights is digamma arithmetic with no exp in it, so they carry no bound and must be bit-identical.",
+      "expect_rows": 29,
+      "expect_contains": [
+        "agree\tone-read-clean\ttrue",
+        "post\tthree-alleles\t6",
+        "post\tnear-tie\t2",
+        "weights\tweights-flat2"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SomaticLikelihoodsDump",
+          "golden": null,
+          "why": "No golden yet, and `golden: null` is how that is declared: the values come from `Math.exp` through `NaturalLogUtils`, so the golden has to come from the pinned container on a real x86-64 runner."
+        }
+      ]
     }
   ],
   "probes": []
