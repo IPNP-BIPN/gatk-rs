@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **57 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 53 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **57 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -555,6 +555,67 @@ GATK, which targets concordance and says so.
 depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
 
 ---
+
+## Milestone S: speed, once the bytes are settled
+
+**Every box is gated on a conformance suite existing for the path it touches.** Speed work on a
+path with no golden is not optimisation, it is unmeasured change. Tracking issue #107.
+
+Fifty-seven conformance suites say what the port *produces*. Not one says what it **costs**. That
+is the right order — a fast wrong answer is worthless — but it has been followed far enough that
+the second question is now worth asking, and asking it late is an advantage: it gets asked on paths
+whose correctness is already pinned.
+
+### The constraint that makes this unlike ordinary optimisation
+
+A byte-identity port cannot buy speed the usual way, because the arithmetic is not ours to
+rearrange:
+
+- **no reassociation.** Floating-point addition is not associative, and the port transcribes the
+  reference's summation order precisely because reordering changes the double. `MathUtils.sum`
+  accumulates in index order; `sumArrayFunction` accumulates over reads in index order;
+- **no FMA contraction**, unless the reference contracts identically. `a * b + c` fused is not
+  `a * b + c` rounded twice;
+- **no fast-math, and no faster transcendental.** `jmath` exists because the host libm is not the
+  JVM's;
+- **no reordering of collection traversal**, which reaches output bytes in several places already
+  on the record.
+
+So the wins available are not arithmetic. They are allocation, copying, memory layout, I/O, and
+work that need not happen at all. That is a narrower space than a normal port has, and this section
+says so rather than promising a number.
+
+### What is actually in dispute
+
+Folklore says a Rust port is faster than the JVM. The answerable version is narrower:
+
+- **JVM startup** is paid once per invocation and dominates short runs, and GATK is very often
+  invoked once per file. The largest and least interesting win, measured separately so it does not
+  flatter everything else;
+- **steady state**, after the JIT warms up, is where the claim is genuinely uncertain. The
+  reference has had two decades of tuning on these paths;
+- **memory** is where a byte-identical port can lose, because it clones where Java aliases.
+
+### The boxes
+
+- [ ] **S.1** (#108) a harness measuring both sides on the same inputs — wall clock, CPU time and
+      peak RSS, cold start reported separately from steady state, ratios rather than absolute
+      seconds, on the conformance fixtures so a benchmark cannot drift onto an easier case than the
+      correctness claim covers
+- [ ] **S.2** (#109) the byte-neutrality gate, enforced rather than intended. A perf PR is not
+      exempt from its suites, the workspace forbids the flags that would let arithmetic be
+      reordered, and the "slow on purpose" list is written down so nobody attacks the contract by
+      mistake
+- [ ] **S.3** (#110) a published baseline before any optimisation, with the predictions written
+      **first** so the measurement can contradict them
+- [ ] **S.4** (#111) the costs already on the record — the clone in `AllelePseudoDepth`, the exact
+      decimal expansion in `decimal_format`, the fixed reduction order, the software transcendentals
+      — each marked removable or not
+- [ ] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
+      Blocked on S.3 by construction
+
+Milestone GPU is a different thing: a second implementation on other hardware. This one is about
+the CPU path that already exists, and no bit-identity claim may weaken to buy a speedup.
 
 ## Milestone V: program-level validation and reproducibility
 
