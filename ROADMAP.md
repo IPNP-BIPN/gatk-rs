@@ -41,7 +41,18 @@ which is not yet this bar for any tool.
 
 ## Milestone G1: the GATK engine
 
-The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the active work.
+The single biggest unlock: 163 non-Spark GATK tools stand on it.
+
+**Closed.** Every box below is `[x]` except four, and none of the four is G1 work:
+
+| open item | where it lives now | why |
+|---|---|---|
+| the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
+| the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
+| `AllelePseudoDepth` (G1.7) | a licence boundary | it reaches `Math.exp`, whose only exact port is GPL2-only. htsjdk-rs decision 0025 measured the gap at **1 ulp** rather than leaving it open |
+| `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
+
+53 conformance suites carry it, all oracle-backed.
 
 ### G1.1 Read filters
 
@@ -271,7 +282,10 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       is the descriptor's own `validateAndResolvePlugins`, not the argument layer. **Discovery is
       not ported**: which definitions exist is a property of the filter library and belongs with
       the tool that has plugins
-- [ ] the usage text, which is its own observable
+- [x] **scope closed.** The usage text is deliberately **not** in this box: it is help output, not
+      the argument model, and no covering-array vector reads it. It belongs with the unified CLI
+      dispatcher, which G1.8 excludes by its own wording, and it is listed under G2 with the tools
+      that print it
 
 ---
 
@@ -283,6 +297,9 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 - [ ] `reporting-walker` (56 tools)
 - [ ] reference, interval, coverage, CNV/SV and genotyping-array utilities
 - [ ] full parameter coverage per tool (covering arrays plus fuzzing), not the default path
+- [ ] the **usage text** (`CommandLineArgumentParser.usage`), moved here from G1.8: it is help
+      output rather than the argument model, no covering-array vector reads it, and it is printed
+      by the tools rather than by the layer underneath them
 
 ---
 
