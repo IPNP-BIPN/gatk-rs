@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **47 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 5 crates, **48 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -137,7 +137,20 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       gap, without which a region ends at the last covered base; the traversal that turns loci into
       regions; and the walker, run through the real command line, where `--force-active` is shown to
       rewrite ten flags without moving one boundary
-- [ ] the multi-pass and multi-input walker variants
+- [x] the multi-pass walkers (`MultiplePassVariantWalker`, `TwoPassVariantWalker`,
+      `MultiplePassReadWalker`), 144 rows over ten runs. Three things happen between passes and
+      none is guessable: the variant walker builds one counting filter before the loop and reuses
+      it, so its counts accumulate (1, 2 and 3 drops for one, two and three passes over one
+      filtered record) where the read walker builds a new one per pass and reports 3, 3, 3;
+      `afterNthPass` runs after the **last** pass too, which its own javadoc denies; and
+      `TwoPassVariantWalker`'s `afterNthPass` guard is `n == 0` then `n > 1`, so the call after the
+      second pass matches neither branch and does nothing at all. Zero passes is legal throughout
+- [ ] the multi-input walkers (`MultiVariantWalker` and `MultiVariantDataSource`), which merge
+      several VCFs into one position-ordered stream. Not effort-blocked but layer-blocked: the
+      merged header comes from htsjdk's `VCFUtils.smartMergeHeaders` and the merged order from
+      `VariantContextComparator` over the merged dictionary, so it lands once those are in
+      htsjdk-rs. `MultiVariantWalkerGroupedOnStart` and `MultiVariantWalkerGroupedByOverlap` sit
+      on top of it
 
 ### G1.7 Annotations
 
