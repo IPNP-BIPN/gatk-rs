@@ -939,6 +939,32 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 150 rows over 30 command lines, no corrections. The pair that carries the claim is same-option-tag-and-value-twice against same-tag-different-values: the surrogate key is built from the option string and the value, so the first collides with itself and the second does not."
         }
       ]
+    },
+    {
+      "id": "barclay-argument-collections",
+      "status": "golden-pending",
+      "title": "Barclay's @ArgumentCollection flattening",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "why": "G1.8's third slice, and the mechanism by which -L, -XL and the read-filter arguments actually reach a tool: they are not declared on the tool at all, they live on collection objects it holds, and createArgumentDefinitions recurses into those and adds their fields to one flat namespace where nothing records which object an argument came from. Two orderings are decided there and neither is stated anywhere. getAllFields adds a class's own declared fields and then climbs to its superclass, so a subclass's fields are registered before the ones it inherits, and that order is the order values are propagated in and the order a missing required argument is reported in: a user who omits both a subclass's required argument and its base class's is told about the subclass's. And the recursion is depth-first at the position of the field, so a collection declared between two arguments splices its own arguments between them rather than appending them. Two more refusals happen while the definitions are built rather than while a command line is parsed: an ArgumentCollection field left null, and a field carrying both annotations. A duplicate alias is a third, and it is a construction failure rather than a shadowing rule, so an outer object and a nested one declaring the same name make the tool unusable before it sees an argument.",
+      "expect_rows": 42,
+      "expect_contains": [
+        "defs\tderived\t0\tderived-required",
+        "defs\tderived\t6\tbase-required",
+        "clash has already been used.",
+        "must have an initial value",
+        "Only one of @Argument, @ArgumentCollection or @PositionalArguments can be used"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BarclayArgumentCollectionDump",
+          "golden": null,
+          "why": "No golden yet, and `golden: null` is how that is declared: the dump has to come from the pinned container on a real x86-64 runner, so CI publishes it as an artefact and the commit that adds the file is what makes the claim."
+        }
+      ]
     }
   ],
   "probes": []
