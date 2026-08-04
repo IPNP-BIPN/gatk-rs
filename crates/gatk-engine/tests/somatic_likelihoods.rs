@@ -66,11 +66,18 @@ fn column(reads: usize, per_allele: &[f64]) -> Vec<Vec<f64>> {
 /// `split(first, second)`: reads favouring allele 0, then reads favouring allele 1.
 fn split(first: usize, second: usize) -> Vec<Vec<f64>> {
     let total = first + second;
+    // Indexed by read rather than iterated, because the two allele rows are written together and
+    // the dump builds it the same way.
     let mut matrix = vec![vec![0.0; total]; 2];
-    for read in 0..total {
+    let (favouring_first, favouring_second) = matrix.split_at_mut(1);
+    for (read, (zero, one)) in favouring_first[0]
+        .iter_mut()
+        .zip(favouring_second[0].iter_mut())
+        .enumerate()
+    {
         let first_allele = read < first;
-        matrix[0][read] = if first_allele { -0.01 } else { -4.0 };
-        matrix[1][read] = if first_allele { -4.0 } else { -0.01 };
+        *zero = if first_allele { -0.01 } else { -4.0 };
+        *one = if first_allele { -4.0 } else { -0.01 };
     }
     matrix
 }
