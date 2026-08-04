@@ -86,6 +86,17 @@ pub enum Value {
     Enum(String),
     /// A `Collection`, which is what an `@Argument` on a `List` field holds.
     List(Vec<Value>),
+    /// A value whose type implements `TaggedArgument`: the value itself, plus the logical name and
+    /// attributes `populateArgumentTags` wrote onto it.
+    ///
+    /// The tag is written **before** the value is stored, and it is written even when there is no
+    /// tag: `populateArgumentTags(null)` sets the tag to null and the attributes to an empty map,
+    /// so an untagged taggable argument is distinguishable from one nobody touched.
+    Tagged {
+        value: String,
+        tag: Option<String>,
+        attributes: Vec<(String, String)>,
+    },
 }
 
 impl Value {
@@ -99,6 +110,9 @@ impl Value {
             Value::Double(number) => java_double_to_string(*number),
             Value::Bool(flag) => flag.to_string(),
             Value::Enum(name) => name.clone(),
+            // The dump's `TaggedPath.toString` is the value it was constructed from; the tag
+            // travels beside it rather than in it.
+            Value::Tagged { value, .. } => value.clone(),
             // `AbstractCollection.toString`: square brackets, `", "` between elements.
             Value::List(values) => {
                 let parts: Vec<String> = values.iter().map(Value::to_java_string).collect();
@@ -152,6 +166,9 @@ pub enum ValueClass {
     Double,
     Text,
     Boolean,
+    /// A type built from a `String` that implements `TaggedArgument`, which is the only thing
+    /// `getValuePopulatedWithTags` asks of it.
+    Tagged,
     /// An enum, with its simple name and its constants in declaration order: both appear in the
     /// message a bad value produces.
     Enum {
@@ -174,6 +191,7 @@ impl ValueClass {
             ValueClass::Double => "Double",
             ValueClass::Text => "String",
             ValueClass::Boolean => "Boolean",
+            ValueClass::Tagged => "TaggedPath",
             ValueClass::Enum { simple_name, .. } => simple_name,
         }
     }
@@ -200,6 +218,11 @@ impl ValueClass {
                 )
             }),
             ValueClass::Text => Ok(Value::Str(text.to_string())),
+            ValueClass::Tagged => Ok(Value::Tagged {
+                value: text.to_string(),
+                tag: None,
+                attributes: Vec::new(),
+            }),
             // A `Boolean` field is a flag, and its values have already been through
             // `StrictBooleanConverter` in the grammar, so only "true" and "false" reach here.
             ValueClass::Boolean => Ok(Value::Bool(text == "true")),
@@ -242,6 +265,8 @@ pub struct Annotation {
     pub max_value: f64,
     pub min_recommended_value: f64,
     pub max_recommended_value: f64,
+    /// `suppressFileExpansion()`, which the constructor refuses on anything but a collection.
+    pub suppress_file_expansion: bool,
 }
 
 impl Default for Annotation {
@@ -257,6 +282,7 @@ impl Default for Annotation {
             max_value: f64::INFINITY,
             min_recommended_value: f64::NEG_INFINITY,
             max_recommended_value: f64::INFINITY,
+            suppress_file_expansion: false,
         }
     }
 }
@@ -501,17 +527,75 @@ impl Definition {
     ///
     /// `append` is the parser's `APPEND_TO_COLLECTIONS` option, whose default is "replace". It is
     /// the only thing that stops a collection from being cleared before the first value.
-    pub fn set_argument_values(&mut self, values: &[String], append: bool) -> Result<(), Error> {
+    pub fn set_argument_values(
+        &mut self,
+        values: &[String],
+        append: bool,
+        surrogates: &TagSurrogates,
+        files: &dyn FileSource,
+    ) -> Result<(), Error> {
         if self.is_collection {
-            self.set_collection_values(values, append)?;
+            self.set_collection_values(values, append, surrogates, files)?;
         } else {
-            self.set_scalar_value(values)?;
+            self.set_scalar_value(values, surrogates)?;
         }
         self.has_been_set = true;
         Ok(())
     }
 
-    fn set_collection_values(&mut self, values: &[String], append: bool) -> Result<(), Error> {
+    /// `getNormalizedTagValuePair`: a value that is a surrogate key stands for a (tag, value) pair,
+    /// and one that is not stands for itself with no tag.
+    fn normalized_tag_value_pair(
+        &self,
+        text: &str,
+        surrogates: &TagSurrogates,
+    ) -> (Option<String>, String) {
+        match surrogates.get(text) {
+            Some((tag, value)) => (Some(tag.clone()), value.clone()),
+            None => (None, text.to_string()),
+        }
+    }
+
+    /// `getValuePopulatedWithTags`: build the value, then write the tag onto it — in that order,
+    /// and onto **every** value an expansion file produced.
+    ///
+    /// A tag on a field whose type does not implement `TaggedArgument` is refused here rather than
+    /// during preprocessing, and the message names the argument as `shortName/fullName`, so an
+    /// argument with no short name reports a leading slash.
+    fn value_populated_with_tags(&self, tag: Option<&str>, text: &str) -> Result<Value, Error> {
+        let value = self.class.construct_from_string(text, self.long_name())?;
+        match (&value, tag) {
+            (Value::Tagged { value: raw, .. }, _) => {
+                let (name, attributes) = match tag {
+                    Some(tag_string) => {
+                        let parsed = parse_tag(self.long_name(), tag_string)?;
+                        (Some(parsed.0), parsed.1)
+                    }
+                    // `populateArgumentTags(null)` is still called: the tag is set to null and the
+                    // attributes to an empty map.
+                    None => (None, Vec::new()),
+                };
+                Ok(Value::Tagged {
+                    value: raw.clone(),
+                    tag: name,
+                    attributes,
+                })
+            }
+            (_, Some(tag_string)) => Err(Error::command_line(format!(
+                "The argument: \"{}/{}\" does not accept tags: \"{tag_string}\"",
+                self.annotation.short_name, self.annotation.full_name
+            ))),
+            (_, None) => Ok(value),
+        }
+    }
+
+    fn set_collection_values(
+        &mut self,
+        values: &[String],
+        append: bool,
+        surrogates: &TagSurrogates,
+        files: &dyn FileSource,
+    ) -> Result<(), Error> {
         let mut collected: Vec<Value> = match (&self.value, append) {
             // "if this is a collection then we only want to clear it once at the beginning, before
             // we process any of the values, unless we're in APPEND_TO_COLLECTIONS mode". So the
@@ -532,16 +616,35 @@ impl Definition {
                 }
                 collected.clear();
             } else {
-                let actual = self.class.construct_from_string(value, self.long_name())?;
-                self.check_argument_range(&actual)?;
-                collected.push(actual);
+                let (tag, raw) = self.normalized_tag_value_pair(value, surrogates);
+                // `expandFromExpansionFile` is reached only from here, so expansion is a
+                // **collection-only** mechanism: the identical value on a scalar is a value.
+                let expanded = if self.annotation.suppress_file_expansion {
+                    vec![raw]
+                } else if EXPANSION_FILE_EXTENSIONS
+                    .iter()
+                    .any(|extension| raw.ends_with(extension))
+                {
+                    load_collection_list_file(&raw, files)?
+                } else {
+                    vec![raw]
+                };
+                for expanded_value in expanded {
+                    let actual = self.value_populated_with_tags(tag.as_deref(), &expanded_value)?;
+                    self.check_argument_range(&actual)?;
+                    collected.push(actual);
+                }
             }
         }
         self.value = Value::List(collected);
         Ok(())
     }
 
-    fn set_scalar_value(&mut self, values: &[String]) -> Result<(), Error> {
+    fn set_scalar_value(
+        &mut self,
+        values: &[String],
+        surrogates: &TagSurrogates,
+    ) -> Result<(), Error> {
         // Two occurrences of a scalar are an error, not "the last one wins"; and so is one
         // occurrence carrying two values.
         if self.has_been_set || values.len() > 1 {
@@ -568,7 +671,8 @@ impl Definition {
             }
             Value::Null
         } else {
-            self.class.construct_from_string(text, self.long_name())?
+            let (tag, raw) = self.normalized_tag_value_pair(text, surrogates);
+            self.value_populated_with_tags(tag.as_deref(), &raw)?
         };
         // Reached with the null too, which is what makes `--bounded-int null` out of range.
         self.check_argument_range(&value)?;
@@ -629,6 +733,151 @@ fn convert_default_value_to_string(initial: &Value, is_collection: bool) -> Stri
     }
 }
 
+/// Where an expansion file's lines come from.
+///
+/// The reference opens a `FileReader` on the value. The port goes through a source so a
+/// conformance suite can hand it the same bytes the dump wrote rather than rebuilding a file to
+/// match a description of one; [`Filesystem`] is the behaviour the reference has.
+pub trait FileSource {
+    /// The file's contents, or [`IoError`] where the reference gets an `IOException`.
+    fn read(&self, path: &str) -> Result<String, IoError>;
+}
+
+/// What the reference catches as an `IOException`. It carries nothing, because the message the
+/// parser builds from it names the path rather than the cause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IoError;
+
+/// The default source: the filesystem, as `new FileReader(collectionListFile)` reads it.
+pub struct Filesystem;
+
+impl FileSource for Filesystem {
+    fn read(&self, path: &str) -> Result<String, IoError> {
+        std::fs::read_to_string(path).map_err(|_| IoError)
+    }
+}
+
+/// `ARGUMENT_FILE_COMMENT`.
+const ARGUMENT_FILE_COMMENT: &str = "#";
+
+/// `EXPANSION_FILE_EXTENSIONS`.
+const EXPANSION_FILE_EXTENSIONS: [&str; 2] = [".list", ".args"];
+
+/// `loadCollectionListFile`: trim every line, drop the empty ones, drop the comments.
+///
+/// The `@`-prefixed warning is a `messageStream.println` and changes nothing about the result, so
+/// it is not modelled: the file is expanded either way.
+fn load_collection_list_file(path: &str, files: &dyn FileSource) -> Result<Vec<String>, Error> {
+    match files.read(path) {
+        Ok(text) => Ok(text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .filter(|line| !line.starts_with(ARGUMENT_FILE_COMMENT))
+            .map(str::to_string)
+            .collect()),
+        // `new CommandLineException("I/O error loading list file:" + file, e)`. Note the missing
+        // space after the colon, which is the reference's.
+        Err(IoError) => Err(Error::command_line(format!(
+            "I/O error loading list file:{path}"
+        ))),
+    }
+}
+
+/// `TaggedArgumentParser`: the rewrite that happens **before** jopt-simple sees the command line.
+///
+/// `--argument:logical_name,key=value raw_value` becomes `--argument` plus a *surrogate key*, and
+/// the map remembers what the key stands for. Two things follow from the key's shape,
+/// `option_string + ':' + raw_value`:
+///
+///  * it is the uniqueness test. `tagSurrogates.put` returning non-null is "duplicated on the
+///    command line", so the same option with the same tag and the same value twice is an error
+///    rather than two values, while the same tag with two different values is fine;
+///  * the value jopt-simple parses is synthetic. Nothing downstream can look at it and see a path.
+#[derive(Debug, Default)]
+pub struct TagSurrogates {
+    /// Insertion-ordered, because the only operation is "was this key already here".
+    entries: Vec<(String, (String, String))>,
+}
+
+impl TagSurrogates {
+    /// `getTaggedOptionForSurrogate`: the (tag, raw value) pair, or `None` for an ordinary value.
+    pub fn get(&self, key: &str) -> Option<&(String, String)> {
+        self.entries
+            .iter()
+            .find(|(candidate, _)| candidate == key)
+            .map(|(_, pair)| pair)
+    }
+
+    fn put(&mut self, key: String, tag: String, value: String) -> Result<(), Error> {
+        if self.get(&key).is_some() {
+            // `rawOptionString` here is the option string **without** the prefix, which is why the
+            // message reads `"tagged-collection:one a.bam"` and not `"--tagged-collection:one ..."`.
+            let (option, raw) = key.rsplit_once(':').expect("the key carries its separator");
+            return Err(Error::bad_argument_value(&format!(
+                "The argument value: \"{option} {raw}\" was duplicated on the command line"
+            )));
+        }
+        self.entries.push((key, (tag, value)));
+        Ok(())
+    }
+}
+
+/// `TaggedArgumentParser.USAGE`.
+const TAG_USAGE: &str =
+    "Tagged arguments must be of the form argument_name or argument_name:logical_name(,key=value)*";
+
+/// `ParsedArgument.of(longArgName, rawTagValue)`: the logical name, then `key=value` pairs.
+///
+/// The three refusals are three *different* exception shapes, and two of them do not name the
+/// argument at all: `BadArgumentValue("")` renders as `Argument  has a bad value:` with two
+/// spaces, which the golden shows. Transcribed rather than tidied.
+pub fn parse_tag(
+    long_argument_name: &str,
+    raw_tag_value: &str,
+) -> Result<(String, Vec<(String, String)>), Error> {
+    // `split(",", -1)`: the limit keeps trailing empty tokens, which is what makes a trailing
+    // comma an "empty tag or attribute" rather than a silently ignored one.
+    let tokens: Vec<&str> = raw_tag_value.split(',').collect();
+
+    // "first token is required to be a name"
+    if tokens[0].contains('=') {
+        return Err(Error::bad_argument_value(&format!(
+            "Missing tag name for argument: {raw_tag_value}"
+        )));
+    }
+    if tokens.iter().any(|token| token.is_empty()) {
+        return Err(Error::bad_argument_value_with_message(
+            long_argument_name,
+            raw_tag_value,
+            &format!("Empty tag or attribute encountered. {TAG_USAGE}"),
+        ));
+    }
+
+    let mut attributes: Vec<(String, String)> = Vec::new();
+    for token in &tokens[1..] {
+        let pair: Vec<&str> = token.split('=').collect();
+        if pair.len() != 2 || pair[0].is_empty() || pair[1].is_empty() {
+            // `BadArgumentValue("", rawTagValue, USAGE)`: the empty argument name is the
+            // reference's, and it is what puts two spaces in the message.
+            return Err(Error::bad_argument_value_with_message(
+                "",
+                raw_tag_value,
+                TAG_USAGE,
+            ));
+        }
+        if attributes.iter().any(|(key, _)| key == pair[0]) {
+            return Err(Error::bad_argument_value_with_message(
+                "",
+                raw_tag_value,
+                &format!("Duplicate key {}\n{TAG_USAGE}", pair[0]),
+            ));
+        }
+        attributes.push((pair[0].to_string(), pair[1].to_string()));
+    }
+    Ok((tokens[0].to_string(), attributes))
+}
+
 /// `CommandLineArgumentParser` over a set of definitions.
 pub struct Parser {
     definitions: Vec<Definition>,
@@ -668,7 +917,24 @@ impl Parser {
     /// line reports: the grammar (jopt-simple), then the values (`propagateParsedValues`), then
     /// `validateArgumentValues`.
     pub fn parse_arguments(&mut self, argv: &[&str]) -> Result<(), Error> {
-        let (parsed, positionals) = self.tokenize(argv)?;
+        self.parse_arguments_with(argv, &Filesystem)
+    }
+
+    /// The same, with the expansion files read from a source the caller names.
+    ///
+    /// The reference has no such seam: `loadCollectionListFile` opens a `FileReader`. It is here so
+    /// a conformance suite can hand the port the bytes the dump wrote instead of rebuilding files
+    /// to match a description of them, which is a second fixture.
+    pub fn parse_arguments_with(
+        &mut self,
+        argv: &[&str],
+        files: &dyn FileSource,
+    ) -> Result<(), Error> {
+        // `parser.parse(tagParser.preprocessTaggedOptions(args))`: the rewrite happens **first**,
+        // so jopt-simple never sees a tag and every error about one comes from before or after it.
+        let (argv, surrogates) = self.preprocess_tagged_options(argv)?;
+        let borrowed: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let (parsed, positionals) = self.tokenize(&borrowed)?;
 
         // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`: the map is over
         // the specs as they were registered, which is field order, and `has` filters it to the
@@ -679,7 +945,7 @@ impl Parser {
                 continue;
             };
             let append = self.append_to_collections;
-            self.definitions[index].set_argument_values(values, append)?;
+            self.definitions[index].set_argument_values(values, append, &surrogates, files)?;
         }
 
         if !positionals.is_empty() {
@@ -702,6 +968,81 @@ impl Parser {
         }
 
         self.validate_argument_values()
+    }
+
+    /// `TaggedArgumentParser.preprocessTaggedOptions`.
+    ///
+    /// Every token that looks like an option is inspected for a `:`. Without one, the token passes
+    /// through and the `=` check runs on it. With one, the option name is split off, the following
+    /// token is consumed as the value, and the pair is replaced by the bare option name and a
+    /// surrogate key.
+    ///
+    /// The refusals here happen **before** anything knows which arguments exist, which is why
+    /// `--:tumour` is "Zero length argument name" rather than "not a recognized option".
+    #[allow(clippy::type_complexity)]
+    fn preprocess_tagged_options(
+        &self,
+        argv: &[&str],
+    ) -> Result<(Vec<String>, TagSurrogates), Error> {
+        let mut out: Vec<String> = Vec::with_capacity(argv.len());
+        let mut surrogates = TagSurrogates::default();
+        let mut cursor = 0;
+
+        while cursor < argv.len() {
+            let token = argv[cursor];
+            cursor += 1;
+            let (prefix, rest) = if let Some(rest) = token.strip_prefix("--") {
+                ("--", rest)
+            } else if token.starts_with('-') && token != "-" {
+                ("-", &token[1..])
+            } else {
+                out.push(token.to_string());
+                continue;
+            };
+
+            let Some(separator) = rest.find(':') else {
+                // `detectAndRejectHybridSyntax`, which is where the `=` refusal lives.
+                reject_hybrid_syntax(rest)?;
+                out.push(format!("{prefix}{rest}"));
+                continue;
+            };
+
+            let option_name = &rest[..separator];
+            reject_hybrid_syntax(option_name)?;
+            let Some(value) = argv.get(cursor) else {
+                return Err(Error::command_line(format!(
+                    "No argument value found for tagged argument: {rest}"
+                )));
+            };
+            if option_name.is_empty() {
+                return Err(Error::command_line(format!(
+                    "Zero length argument name found in tagged argument: {rest}"
+                )));
+            }
+            let tag = &rest[separator + 1..];
+            if tag.is_empty() {
+                return Err(Error::command_line(format!(
+                    "Zero length tag name found in tagged argument: {rest}"
+                )));
+            }
+            if looks_like_an_option(value) {
+                // The value slot holds another option, so there is nothing to consume. The message
+                // is the same one the end-of-list case produces.
+                return Err(Error::command_line(format!(
+                    "No argument value found for tagged argument: {rest}"
+                )));
+            }
+            cursor += 1;
+
+            // `makeSurrogateKey`: the option string **without its prefix**, a colon, and the raw
+            // value. It is never parsed; it is only compared.
+            let key = format!("{rest}:{value}");
+            surrogates.put(key.clone(), tag.to_string(), (*value).to_string())?;
+            out.push(format!("{prefix}{option_name}"));
+            out.push(key);
+        }
+
+        Ok((out, surrogates))
     }
 
     /// The grammar: jopt-simple 5.0.3 as `BarclayOptionParser` configures it, plus the one check
@@ -728,14 +1069,8 @@ impl Parser {
                 continue;
             };
 
-            // `TaggedArgumentParser.preprocessTaggedOptions`, before jopt-simple runs at all. The
-            // `--name=value` spelling is rejected rather than accepted, because a hybrid of the
-            // Barclay and legacy syntaxes would make the tag parser produce misleading errors.
-            if name.contains('=') {
-                return Err(Error::command_line(format!(
-                    "Can't parse option name containing an embedded '=' ({name})"
-                )));
-            }
+            // The `=` refusal has already run in `preprocess_tagged_options`, which is where the
+            // reference puts it; repeating it here would be a second implementation of one rule.
 
             let Some(index) = self.index_of_alias(name) else {
                 // jopt-simple's `UnrecognizedOptionException`, whose message Barclay re-wraps in a
@@ -814,6 +1149,21 @@ impl Parser {
             .find(|definition| definition.long_name() == long_name)
             .map(|definition| &definition.value)
     }
+}
+
+/// `detectAndRejectHybridSyntax`: an option **name** may not contain `=`.
+///
+/// The comment above it in the reference explains why this is a refusal rather than a convenience:
+/// jopt-simple would accept `-O=value`, but a value containing a `:` would then be read as tagging
+/// syntax and fail somewhere else, so the spelling is refused everywhere instead of working
+/// sometimes.
+fn reject_hybrid_syntax(option_name: &str) -> Result<(), Error> {
+    if option_name.contains('=') {
+        return Err(Error::command_line(format!(
+            "Can't parse option name containing an embedded '=' ({option_name})"
+        )));
+    }
+    Ok(())
 }
 
 /// `OptionParser.looksLikeAnOption`: a token that starts with a dash and is longer than one

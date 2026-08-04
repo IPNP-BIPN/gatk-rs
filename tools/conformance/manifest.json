@@ -921,6 +921,24 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 368 rows over 41 command lines, no corrections. The pair that carries the claim is bounded-below against bounded-null: the same argument and the same bounds, reported as allowed range [1, 10] and as allowed range [1.0, 10.0], because the formatter asks whether the value is an Integer and a null is not."
         }
       ]
+    },
+    {
+      "id": "barclay-tagged-arguments",
+      "status": "oracle-backed",
+      "title": "Barclay's tagged arguments and collection-file expansion",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "why": "G1.8's second slice, and the two mechanisms a covering-array vector reaches as soon as it names a logical name or a file. Tags are rewritten before jopt-simple sees the command line: the option name is peeled off, the pair of tag and raw value is stored under a surrogate key built from the option string and the value, and the parser is handed the bare option name and that key. The key doing double duty as a uniqueness test is what makes the same option with the same tag and the same value twice a duplicate on the command line rather than two values, while the same tag with two different values is fine. A tag on a field whose type does not implement TaggedArgument is refused when the value is set rather than when it is parsed, and the message is built from getShortName plus a slash plus getFullName with no guard, so an argument with no short name reports itself as slash plain-scalar. The malformed forms are four different exception shapes and two of them name no argument at all, leaving two spaces in the message. Expansion is collection-only: a collection value ending in .list or .args becomes the file's lines, trimmed, without blanks or hash comments, while the identical value on a scalar stays a path and suppressFileExpansion turns it off; a tag on a collection whose value is an expansion file is written onto every value the file produced.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BarclayTaggedArgumentDump",
+          "golden": "crates/gatk-barclay/tests/data/tagged_arguments.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 150 rows over 30 command lines, no corrections. The pair that carries the claim is same-option-tag-and-value-twice against same-tag-different-values: the surrogate key is built from the option string and the value, so the first collides with itself and the second does not."
+        }
+      ]
     }
   ],
   "probes": []
