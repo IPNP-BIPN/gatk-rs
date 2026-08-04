@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **50 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **51 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -243,9 +243,17 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       `.list` path becomes three values on a collection, stays a path on a scalar, and stays a path
       on a collection declaring `suppressFileExpansion`; a tag is written onto every value the file
       produced
-- [ ] the rest: `@ArgumentCollection` flattening, `--arguments_file` (which re-enters
-      `parseArguments` recursively), plugin descriptors (`--read-filter`, `--annotation`), and the
-      usage text
+- [x] **`@ArgumentCollection` flattening**, 42 rows. This is how `-L`, `-XL` and the read-filter
+      arguments reach a tool: not declared on it, but on collection objects it holds, flattened
+      into one namespace where nothing records which object an argument came from. Two orderings
+      fall out and neither is stated anywhere: `getAllFields` adds a class's own fields and *then*
+      climbs to its superclass, so a subclass's required argument is reported missing before its
+      base class's; and the recursion is depth-first **at the position of the field**, so a nested
+      collection splices its arguments between the two it sits between. Three refusals happen
+      before any command line exists, of which a duplicate alias is the one worth naming: it is a
+      construction failure rather than a shadowing rule
+- [ ] the rest: `--arguments_file` (which re-enters `parseArguments` recursively), plugin
+      descriptors (`--read-filter`, `--annotation`), and the usage text
 
 ---
 

@@ -878,6 +878,134 @@ pub fn parse_tag(
     Ok((tokens[0].to_string(), attributes))
 }
 
+/// `CommandLineParserUtilities.getAllFields` plus `createArgumentDefinitions`: how a nested
+/// declaration becomes one flat list of arguments.
+///
+/// This is how `-L`, `-XL` and the read-filter arguments reach a tool. They are not declared on
+/// the tool: they live on `@ArgumentCollection` objects it holds, and the parser flattens those
+/// into a single namespace where nothing records which object an argument came from.
+///
+/// Two orderings are decided here and neither is stated anywhere in Barclay.
+///
+/// **Subclass before superclass.** `getAllFields` adds `clazz.getDeclaredFields()` and then climbs
+/// to `getSuperclass()`, so a subclass's own fields are registered *first*. That order is the order
+/// values are propagated in and the order `validateArgumentValues` reports a missing required
+/// argument in, so which of two missing arguments a user is told about depends on which class
+/// declared it.
+///
+/// **Depth-first, at the position of the field.** A collection declared between two `@Argument`
+/// fields inserts all of its arguments between them.
+pub enum FieldDecl {
+    /// A field carrying `@Argument`.
+    Argument(Box<Definition>),
+    /// A field carrying `@ArgumentCollection`, holding the object's own declaration.
+    Collection(ClassDecl),
+    /// A field carrying `@ArgumentCollection` that the constructor left null. Not a value the
+    /// parser can do anything with: it is a refusal, raised while the definitions are built.
+    UninitialisedCollection { field_name: &'static str },
+    /// A field carrying both `@Argument` and `@ArgumentCollection`, which is refused before either
+    /// is looked at.
+    BothAnnotations { field_name: &'static str },
+}
+
+/// One class's declaration: its own fields, in order, and the class it extends.
+pub struct ClassDecl {
+    /// The class's own name, which appears in the message an uninitialised collection produces.
+    pub name: &'static str,
+    /// `clazz.getDeclaredFields()`, in declaration order.
+    pub declared: Vec<FieldDecl>,
+    /// `clazz.getSuperclass()`, walked **after** the declared fields.
+    pub superclass: Option<Box<ClassDecl>>,
+}
+
+impl ClassDecl {
+    pub fn new(name: &'static str, declared: Vec<FieldDecl>) -> Self {
+        Self {
+            name,
+            declared,
+            superclass: None,
+        }
+    }
+
+    /// The class this one extends. Its fields are registered after this class's own.
+    pub fn extending(mut self, superclass: ClassDecl) -> Self {
+        self.superclass = Some(Box::new(superclass));
+        self
+    }
+}
+
+impl Error {
+    /// `new CommandLineException.CommandLineParserInternalException(msg)`. Raised while the
+    /// definitions are built, so a tool with one of these is unusable before any command line
+    /// exists.
+    fn parser_internal(message: String) -> Self {
+        Self {
+            class: "org.broadinstitute.barclay.argparser.CommandLineException$CommandLineParserInternalException",
+            message,
+        }
+    }
+}
+
+/// `createArgumentDefinitions`, flattened into the list the parser holds.
+///
+/// The duplicate check is `inArgumentMap`, which tests **every** alias of the new definition
+/// against every alias already registered, so a short name colliding with somebody else's long
+/// name is the same failure as two identical long names.
+pub fn create_argument_definitions(class: &ClassDecl) -> Result<Vec<Definition>, Error> {
+    let mut definitions: Vec<Definition> = Vec::new();
+    collect(class, &mut definitions)?;
+    Ok(definitions)
+}
+
+fn collect(class: &ClassDecl, into: &mut Vec<Definition>) -> Result<(), Error> {
+    for field in &class.declared {
+        match field {
+            FieldDecl::BothAnnotations { field_name } => {
+                return Err(Error::parser_internal(format!(
+                    "Field {field_name}: Only one of @Argument, @ArgumentCollection or \
+                     @PositionalArguments can be used"
+                )))
+            }
+            FieldDecl::UninitialisedCollection { field_name } => {
+                return Err(Error::parser_internal(format!(
+                    "The ArgumentCollection field '{field_name}' in '{}' must have an initial value",
+                    class.name
+                )))
+            }
+            FieldDecl::Argument(definition) => {
+                let aliases: Vec<String> = definition
+                    .argument_aliases()
+                    .iter()
+                    .map(|alias| alias.to_string())
+                    .collect();
+                let clash = into.iter().any(|existing| {
+                    existing
+                        .argument_aliases()
+                        .iter()
+                        .any(|alias| aliases.iter().any(|new| new == alias))
+                });
+                if clash {
+                    // The message names the alias display string, not the field, so two different
+                    // fields in two different classes report the same text.
+                    return Err(Error::parser_internal(format!(
+                        "{} has already been used.",
+                        definition.alias_display_string()
+                    )));
+                }
+                into.push((**definition).clone());
+            }
+            // Depth-first, here rather than after the loop.
+            FieldDecl::Collection(nested) => collect(nested, into)?,
+        }
+    }
+    // The superclass last, which is what puts a base class's required argument after the
+    // subclass's in every message that reports one.
+    if let Some(superclass) = &class.superclass {
+        collect(superclass, into)?;
+    }
+    Ok(())
+}
+
 /// `CommandLineArgumentParser` over a set of definitions.
 pub struct Parser {
     definitions: Vec<Definition>,
@@ -898,6 +1026,12 @@ impl Parser {
     pub fn with_append_to_collections(mut self) -> Self {
         self.append_to_collections = true;
         self
+    }
+
+    /// `new CommandLineArgumentParser(callerArguments)` over a nested declaration, which it
+    /// flattens with [`create_argument_definitions`].
+    pub fn from_class(class: &ClassDecl) -> Result<Self, Error> {
+        Ok(Self::new(create_argument_definitions(class)?))
     }
 
     pub fn definitions(&self) -> &[Definition] {

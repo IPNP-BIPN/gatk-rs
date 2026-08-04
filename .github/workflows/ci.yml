@@ -112,35 +112,38 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/10"
+            index: "1/11"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
-            index: "2/10"
+            index: "2/11"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
-            index: "3/10"
+            index: "3/11"
             suites: "readwalker printreads intervalwalker alignmentstate pileupelement"
           - group: oracle-backed
-            index: "4/10"
+            index: "4/11"
             suites: "intervalfile jexlfilter featurecache readpileup readstates"
           - group: oracle-backed
-            index: "5/10"
+            index: "5/11"
             suites: "locusiterator acbuilder locuswalker javarandom reservoir"
           - group: oracle-backed
-            index: "6/10"
+            index: "6/11"
             suites: "well19937c leveling variantwalker activityprofile assemblyregion"
           - group: oracle-backed
-            index: "7/10"
+            index: "7/11"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
-            index: "8/10"
+            index: "8/11"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
           - group: oracle-backed
-            index: "9/10"
+            index: "9/11"
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
           - group: oracle-backed
-            index: "10/10"
+            index: "10/11"
             suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model barclay-tagged-arguments"
+          - group: oracle-backed
+            index: "11/11"
+            suites: "barclay-argument-collections"
     steps:
       - uses: actions/checkout@v4
 
