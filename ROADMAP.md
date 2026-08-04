@@ -293,6 +293,20 @@ The goldens are byte-identical to the same container on Apple Silicon, so nothin
 depends on the host — which is a stronger statement than the suite needed to make and is worth
 having on the record for a chain built on an unported `exp` and an unported `pow`.
 
+**Below 2^53 the formatter reproduces the reference exactly**, on 903,121 measured values. It did
+not at first: two of the four divergences were this port's fault rather than Java's, an equidistant
+pair of shortest forms that the specification resolves toward the even digit and Rust's formatter
+does not. That is fixed, in both repos (htsjdk-rs #74).
+
+What is left is above the line, and it is not a rule. On a sweep of 493 such values Java gave the
+shortest form 472 times, the double's exact value 9 times, and neither 12 times — `2^60` comes out
+as its exact value rounded to eighteen significant digits. Those are branches inside Java 17's
+pre-Schubfach `FloatingDecimal`, so closing them would mean transcribing GPL2 source or fitting an
+implementation to measurements, and both are refused. The remaining route is decision 0013's
+option 3: pin a **JDK 19+** oracle, where `Double.toString` is Schubfach and the question
+disappears. That is a change to what "the reference" means, not a porting task, and it is not one
+to make quietly.
+
 **Not in scope:** reproducing `Math.exp` bit-for-bit. It has no specification to implement
 against — beyond "within 1 ulp and semi-monotone", its only definition is its own code — so
 recovering its bits from black-box measurement would be reverse-engineering toward a functional

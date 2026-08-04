@@ -1044,7 +1044,7 @@
         {
           "dump": "DecimalFormatDump",
           "golden": "crates/gatk-annotation/tests/data/decimal_format.txt.gz",
-          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 315 rows, no corrections, and byte-identical to the same container on Apple Silicon: nothing the formatter does here depends on the host. 630 strings compared and four values diverge, all of them Java emitting digits the shortest form does not have."
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 315 rows, no corrections, and byte-identical to the same container on Apple Silicon: nothing the formatter does here depends on the host. 630 strings compared and two values diverge, both above 2^53, where Java 17's pre-Schubfach digit generation stops producing the shortest decimal form. Below that line there is no divergence at all, measured on 903,121 values."
         }
       ]
     },
