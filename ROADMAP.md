@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **49 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **50 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -232,8 +232,20 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       **jopt-simple's**, not Barclay's: `--name=value` is refused outright, a flag consumes a
       following token only when `StrictBooleanConverter` accepts it, and the positional-argument
       message is built by `Collectors.joining` given a delimiter where a prefix belongs
-- [ ] the rest: tagged arguments (`--input:tumor file.bam`), argument-file expansion,
-      `@ArgumentCollection` flattening, plugin descriptors, and the usage text
+- [x] **tagged arguments and collection-file expansion**, 150 rows over 30 command lines. A tag is
+      a rewrite that happens **before** the grammar runs: the option name is peeled off and the
+      pair of tag and value is stored under a surrogate key built from the option string **and**
+      the value, so the same option with the same tag and the same value twice is "duplicated on
+      the command line" while the same tag with two different values is two values. A tag on a
+      field whose type does not implement `TaggedArgument` is refused when the value is *set*, and
+      the message is `getShortName() + "/" + getFullName()` with no guard, so an argument with no
+      short name reports itself as `/plain-scalar`. Expansion is **collection-only**: the same
+      `.list` path becomes three values on a collection, stays a path on a scalar, and stays a path
+      on a collection declaring `suppressFileExpansion`; a tag is written onto every value the file
+      produced
+- [ ] the rest: `@ArgumentCollection` flattening, `--arguments_file` (which re-enters
+      `parseArguments` recursively), plugin descriptors (`--read-filter`, `--annotation`), and the
+      usage text
 
 ---
 
