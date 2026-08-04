@@ -7,22 +7,17 @@
 //!
 //! # The suite declares its own domain, and the corpus goes past it
 //!
-//! The port reproduces the reference exactly for values below 2^53 whose shortest decimal form
-//! needs at most fifteen significant digits, which is the whole of what `AllelePseudoDepth` can
-//! produce. Past that the divergence is in Java's *digit generation* rather than in its rounding,
-//! and it has two shapes, both deliberately present in the corpus:
-//!
-//!  * **sixteen significant digits.** `6.985838094673373e14` is exactly `698583809467337.25`, so
-//!    the two sixteen-digit forms are equidistant; Java picks the even one, Rust the larger;
-//!  * **above 2^53.** Java stops printing the shortest form and starts printing digits from the
-//!    value itself.
+//! **Below 2^53 the port reproduces the reference exactly**, which covers everything
+//! `AllelePseudoDepth` can produce by a wide margin. Above it the reference stops printing the
+//! shortest decimal form, and what it prints instead is not one thing: sometimes the double's exact
+//! value, sometimes that value rounded to eighteen significant digits, mostly the shortest form
+//! after all. Those are branches inside Java 17's pre-Schubfach `FloatingDecimal`.
 //!
 //! Every row is compared, including those. What the test asserts is not that the divergences are
-//! few but that they are all of that **shape**: a divergence below 2^53 with fewer than sixteen
-//! significant digits would mean a rounding rule is wrong, which is a different failure and the one
-//! this suite exists to catch. A corpus trimmed to what already passes would report a hundred per
-//! cent and mean nothing, and a quarantine listed value by value would keep passing after the rule
-//! behind it stopped being true.
+//! few but that they are all of that **shape**: a divergence below 2^53 would mean a rounding rule
+//! is wrong, which is a different failure and the one this suite exists to catch. A corpus trimmed
+//! to what already passes would report a hundred per cent and mean nothing, and a quarantine listed
+//! value by value would keep passing after the rule behind it stopped being true.
 
 use std::io::Read;
 
@@ -44,20 +39,7 @@ fn golden() -> String {
 /// Computed from the value, not looked up: a list of bit patterns would keep passing after the
 /// rule behind it stopped being true.
 fn past_the_declared_domain(value: f64) -> bool {
-    if !value.is_finite() {
-        return false;
-    }
-    if value.abs() >= 9_007_199_254_740_992.0 {
-        return true;
-    }
-    let significant = format!("{value:e}")
-        .split('e')
-        .next()
-        .expect("mantissa")
-        .chars()
-        .filter(char::is_ascii_digit)
-        .count();
-    significant >= 16
+    value.is_finite() && value.abs() >= 9_007_199_254_740_992.0
 }
 
 #[test]
