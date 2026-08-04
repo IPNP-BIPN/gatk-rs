@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **52 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **53 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -261,7 +261,17 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       it including ones skipped for already being there, so a self-including file and a pair that
       include each other are each read once. The argument is not removed between passes: the
       recursion ends because the second expansion is empty
-- [ ] the rest: plugin descriptors (`--read-filter`, `--annotation`), and the usage text
+- [x] **plugin descriptors**, 48 rows, measured through GATK's own `GATKReadFilterPluginDescriptor`
+      over GATK's own filters rather than a stand-in. Every read filter's arguments are in the
+      parser on every run; `validatePluginArgumentValues` runs **before** the required check and
+      **removes** each controlled argument that nobody set and whose filter nobody named, so a
+      required argument of an unselected filter would not fire at all. Set without its filter, the
+      same argument is an error naming the filter **class** rather than `--read-filter`, built
+      from the short name, a slash and the long name with no guard. The refusal of an unknown name
+      is the descriptor's own `validateAndResolvePlugins`, not the argument layer. **Discovery is
+      not ported**: which definitions exist is a property of the filter library and belongs with
+      the tool that has plugins
+- [ ] the usage text, which is its own observable
 
 ---
 
