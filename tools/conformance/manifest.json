@@ -975,6 +975,31 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 76 rows over 14 command lines, no corrections. The pair that carries the claim is file-then-command-line against command-line-then-file: the same three values in the same order both ways, because the expansion is what the original command line is appended to."
         }
       ]
+    },
+    {
+      "id": "barclay-plugin-descriptors",
+      "status": "golden-pending",
+      "title": "Barclay's plugin descriptors",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "why": "G1.8's fifth slice, measured through GATK's own GATKReadFilterPluginDescriptor over GATK's own read filters rather than a stand-in, because --read-filter is this mechanism. A descriptor names a base class and a package, ClassFinder finds every implementation, and each one's arguments are registered as controlled by that descriptor, so every read filter's arguments are in the parser on every run whether or not anybody asked for that filter. What decides whether one is usable is validatePluginArgumentValues, which runs before the required check and rewrites the list it checks: a controlled argument that nobody set and whose filter nobody named is removed from the list rather than treated as optional, so a required argument of an unselected filter would not fire at all. The same argument set without its filter is an error that names the filter class rather than --read-filter, and builds the argument's own name from the short name, a slash and the long name with no guard, so one with no short name reports a leading slash. And the refusal of a name matching no filter is the descriptor's own validateAndResolvePlugins rather than the argument layer, which is why its wording is GATK's.",
+      "expect_rows": 48,
+      "expect_contains": [
+        "defs\tdiscovered\t1\tambig-filter-frac\tAmbiguousBaseReadFilter",
+        "result\tno-filter\tok",
+        "is only valid when the argument \"AmbiguousBaseReadFilter\" is specified",
+        "Unrecognized read filter name: NoSuchReadFilter"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BarclayPluginDescriptorDump",
+          "golden": null,
+          "why": "No golden yet, and `golden: null` is how that is declared: the dump has to come from the pinned container on a real x86-64 runner, so CI publishes it as an artefact and the commit that adds the file is what makes the claim."
+        }
+      ]
     }
   ],
   "probes": []
