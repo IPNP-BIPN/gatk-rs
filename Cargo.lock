@@ -199,6 +199,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-barclay"
+version = "0.1.0"
+dependencies = [
+ "gatk-corpus",
+]
+
+[[package]]
 name = "gatk-corpus"
 version = "0.1.0"
 dependencies = [
