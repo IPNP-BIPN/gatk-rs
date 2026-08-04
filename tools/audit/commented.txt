@@ -11,3 +11,4 @@ crates/gatk-engine/src/math_utils.rs 1.930
 crates/gatk-annotation/src/haplotype_filtering.rs 1.508
 crates/gatk-engine/src/haplotype.rs 1.706
 crates/gatk-tools/src/multi_pass.rs 1.085
+crates/gatk-barclay/src/lib.rs 0.425

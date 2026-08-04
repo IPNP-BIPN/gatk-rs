@@ -31,6 +31,15 @@ ALLOWED = {
     # Utils.getRandomDataGenerator() is a RandomDataGenerator over a Well19937c. Apache 2.0,
     # verified from the licence header of the sources jar in the resolved dependency.
     "org.apache.commons.math3": "Apache Commons Math, Apache 2.0",
+    # Barclay 5.0.0, the argument parser GATK's build.gradle pins and the layer a covering-array
+    # vector is interpreted by. BSD 3-Clause, verified from LICENSE.txt at tag 5.0.0 of
+    # broadinstitute/barclay ("Copyright (c) 2009-2016, GATK Authors"), not from its documentation.
+    # Permissive and attribution-only, so compatible with this repository's Apache 2.0.
+    "org.broadinstitute.barclay": "Barclay, BSD 3-Clause",
+    # jopt-simple 5.0.3, which is what Barclay's CommandLineArgumentParser delegates tokenisation
+    # to: the grammar is this library's, not Barclay's. MIT, verified from the licence header of
+    # every file in its sources jar.
+    "joptsimple": "jopt-simple, MIT",
 }
 
 # Anything matching these is GPL2 and must not be transcribed. Listed explicitly rather than

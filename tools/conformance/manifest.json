@@ -903,6 +903,33 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 144 rows, no corrections. The rows that carry the claim are the filter counts: npass-1, npass-2 and npass-3 report 1, 2 and 3 over one counter, while read-three-pass reports 3, 3, 3 over three."
         }
       ]
+    },
+    {
+      "id": "barclay-value-model",
+      "status": "golden-pending",
+      "title": "Barclay's argument value model",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "why": "G1.8's first slice: the layer a covering-array vector is interpreted by, run at library level with no tool around it. Six of its rules are not what the annotation names suggest. optional() does not decide whether an argument is optional: isOptional is the annotation OR a default that renders as something other than the string null, and an empty collection renders as null, so an initialised-but-empty List is required while an initialised-and-non-empty one is not. The string null is a value with three outcomes: it clears a collection, it throws on a non-optional argument, and it throws a different exception on a scalar whose raw field is primitive, which is a different question from the boxed class the range check asks. isValueOutOfRange begins with value equals null, so a null on a bounded numeric argument is an out-of-range error rather than an accepted null, and the message formats the bounds as integers only when the value is an Integer, so the same argument reports allowed range [1, 10] for a rejected zero and allowed range [1.0, 10.0] for a rejected null. checkArgumentRange tests the recommended range with that same method, which compares against the hard bounds, so the recommended-range warning can fire only for a null and is otherwise unreachable. A scalar refuses a second occurrence rather than taking the last one. And the grammar is jopt-simple's rather than Barclay's: the equals spelling is refused outright, a flag consumes a following token only when StrictBooleanConverter accepts it so --flag maybe leaves maybe as a positional argument, and the positional error message is built with Collectors.joining passed a delimiter where a prefix belongs, so one stray value renders as ',maybe}'.",
+      "expect_rows": 368,
+      "expect_contains": [
+        "Can't parse option name containing an embedded '='",
+        "allowed range [1, 10].",
+        "allowed range [1.0, 10.0].",
+        "Positional arguments were provided ',maybe}'",
+        "result\trecommended-far-out\tok",
+        "field\tcollection-one\tcollection\t[a]"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BarclayValueModelDump",
+          "golden": null,
+          "why": "No golden yet, and `golden: null` is how that is declared: the dump has to come from the pinned container on a real x86-64 runner, so CI publishes it as an artefact and the commit that adds the file is what makes the claim."
+        }
+      ]
     }
   ],
   "probes": []

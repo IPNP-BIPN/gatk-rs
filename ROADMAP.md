@@ -243,7 +243,10 @@ Everything downstream inherits these, so they are front-loaded.
 
 - [~] BAM/SAM/tags/index read and write (core done; write-side BAI, CRAI and corner cases remain)
 - [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write, index and all
-      field types remain)
+      field types remain). Two named consumers wait here rather than in G1: the **Tribble index**,
+      which is what turns a Feature file into a random-access source rather than a linear read
+      (G1.3), and the pair `VCFUtils.smartMergeHeaders` plus `VariantContextComparator`, which is
+      what `MultiVariantDataSource` merges several VCFs with (G1.6's multi-input half)
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression):
       a sub-project on its own
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it

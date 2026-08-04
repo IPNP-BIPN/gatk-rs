@@ -1,0 +1,851 @@
+//! Barclay's argument value model.
+//!
+//! Ported from `org.broadinstitute.barclay.argparser` (Barclay 5.0.0, the version GATK 4.6.2.0's
+//! `build.gradle` pins), and from `joptsimple` (jopt-simple 5.0.3) for the grammar underneath it.
+//!
+//! This is the layer a covering-array vector is interpreted by. The unified CLI dispatcher is out
+//! of scope, as ROADMAP G1.8 says; what is here is which vectors are accepted, what value each
+//! field ends up holding, and which exception the rejected ones produce, because a port that
+//! disagreed about any of those would be answering a different question from the one the array
+//! asked.
+//!
+//! # Provenance
+//!
+//! Barclay is BSD 3-Clause (`LICENSE.txt` at tag `5.0.0` of `broadinstitute/barclay`, "Copyright
+//! (c) 2009-2016, GATK Authors"), and jopt-simple 5.0.3 is MIT (the licence header of every file
+//! in its sources jar). Both are permissive and compatible with this crate's Apache 2.0. They are
+//! two libraries and the split matters: **the grammar is jopt-simple's, not Barclay's**, so the
+//! rules about what a token is are cited to `joptsimple` below and the rules about what a value
+//! means are cited to `barclay`.
+//!
+//! # `optional()` is not what decides whether an argument is optional
+//!
+//! ```java
+//! this.defaultValueAsString = convertDefaultValueToString();
+//! this.isOptional = argumentAnnotation.optional() || !this.defaultValueAsString.equals(NULL_ARGUMENT_STRING);
+//! ```
+//!
+//! A field declared `optional = false` that was **initialised** is optional anyway, because its
+//! default renders as something other than the string `"null"`. And `convertDefaultValueToString`
+//! maps an *empty collection* back to `"null"`, so an initialised-but-empty `List` is required
+//! while an initialised-and-non-empty one is not. Two fields that look identical in the
+//! annotation differ by what the constructor left in them.
+//!
+//! # `"null"` is a value, and it means three different things
+//!
+//! On a collection it clears the collection, and warns rather than fails if it is not the first
+//! value; on a non-optional argument it throws; and on a scalar whose **field** is primitive it
+//! throws a different exception. Note which test the last one uses:
+//! `getUnderlyingField().getType().isPrimitive()`, the raw field, not
+//! `getUnderlyingFieldClass()`, which has already boxed `int` into `Integer`.
+//!
+//! # The bounds check calls a null out of range, and checks the recommended range against the hard one
+//!
+//! ```java
+//! private boolean isValueOutOfRange(final Double value) {
+//!     return value == null || getMinValue() != Double.NEGATIVE_INFINITY && value < getMinValue()
+//!             || getMaxValue() != Double.POSITIVE_INFINITY && value > getMaxValue();
+//! }
+//! ```
+//!
+//! Two consequences, both measured in the golden. `--bounded-int null` is an
+//! `OutOfRangeArgumentValue` rather than an accepted null. And `checkArgumentRange` uses this same
+//! method for the **recommended** range, which compares against `minValue`/`maxValue`: for an
+//! argument with a recommended range and no hard range those are infinities, so the warning can
+//! only fire on a null; for an argument with both, the hard check has already thrown. The
+//! recommended-range warning is close to unreachable, and this port reproduces that rather than
+//! repairing it.
+//!
+//! The message tells the two apart in a way nothing documents: it formats the bounds as integers
+//! only when the *value* is an `Integer`, so a rejected `0` reports `allowed range [1, 10]` and a
+//! rejected `null` on the same argument reports `allowed range [1.0, 10.0]`.
+
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+
+/// The string Barclay treats as the absence of a value, and as the rendering of an absent default.
+///
+/// `NULL_ARGUMENT_STRING`. It is a *value* on the command line, not a token the grammar knows.
+pub const NULL_ARGUMENT_STRING: &str = "null";
+
+/// A value a field can hold, in the shapes this model distinguishes.
+///
+/// The Java type is kept rather than flattened to a string for the same reason
+/// `gatk_annotation::AnnotationValue` keeps it: the range check asks whether the value is a
+/// `Number`, and the out-of-range message asks whether it is an `Integer`. Both questions have no
+/// answer once everything is a string.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    /// A Java `null`. What a field holds before anything is assigned to it.
+    Null,
+    Str(String),
+    Int(i32),
+    Double(f64),
+    Bool(bool),
+    /// An enum constant, by name. `Enum.valueOf` is case-**sensitive**, which the golden shows.
+    Enum(String),
+    /// A `Collection`, which is what an `@Argument` on a `List` field holds.
+    List(Vec<Value>),
+}
+
+impl Value {
+    /// `String.valueOf(value)`, which is how a field is rendered and how `AbstractCollection`
+    /// renders its elements.
+    pub fn to_java_string(&self) -> String {
+        match self {
+            Value::Null => "null".to_string(),
+            Value::Str(text) => text.clone(),
+            Value::Int(number) => number.to_string(),
+            Value::Double(number) => java_double_to_string(*number),
+            Value::Bool(flag) => flag.to_string(),
+            Value::Enum(name) => name.clone(),
+            // `AbstractCollection.toString`: square brackets, `", "` between elements.
+            Value::List(values) => {
+                let parts: Vec<String> = values.iter().map(Value::to_java_string).collect();
+                format!("[{}]", parts.join(", "))
+            }
+        }
+    }
+
+    /// `((Number) value).doubleValue()`, or `None` where the reference has a null or a non-number.
+    fn as_number(&self) -> Option<f64> {
+        match self {
+            Value::Int(number) => Some(f64::from(*number)),
+            Value::Double(number) => Some(*number),
+            _ => None,
+        }
+    }
+}
+
+/// `Double.toString`, for the values this model reaches.
+///
+/// **Not the general algorithm.** Java's is specified as "the smallest number of digits that
+/// uniquely distinguishes the argument value from adjacent values of type double", with a decimal
+/// point always present and `E` notation outside `[1e-3, 1e7)`. Rust's `{}` for `f64` has the same
+/// shortest-round-trip property, so the two agree on the finite non-scientific values a bound or a
+/// bounded field can carry here, and this function adds Java's trailing `.0`. Anything outside
+/// that range is refused rather than guessed: the general `Double.toString` is `FloatingDecimal`,
+/// which is JDK source, and htsjdk-rs decision 0013 refused to transcribe it.
+pub fn java_double_to_string(value: f64) -> String {
+    assert!(
+        value.is_finite() && (value == 0.0 || (1e-3..1e7).contains(&value.abs())),
+        "java_double_to_string is ported only for finite values Java prints without an exponent; \
+         {value} needs FloatingDecimal, which is not portable"
+    );
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        // Java always prints "at least one digit ... after the decimal point".
+        format!("{rendered}.0")
+    }
+}
+
+/// What kind of value a field's *boxed* class accepts.
+///
+/// This is `getUnderlyingFieldClass()`, which boxes: a primitive `int` field reports `Integer`, so
+/// it is a `Number` for the range check even though `getUnderlyingField().getType().isPrimitive()`
+/// is what the null check asks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueClass {
+    Integer,
+    Double,
+    Text,
+    Boolean,
+    /// An enum, with its simple name and its constants in declaration order: both appear in the
+    /// message a bad value produces.
+    Enum {
+        simple_name: &'static str,
+        constants: &'static [&'static str],
+    },
+}
+
+impl ValueClass {
+    /// `Number.class.isAssignableFrom(getUnderlyingFieldClass())`.
+    fn is_number(&self) -> bool {
+        matches!(self, ValueClass::Integer | ValueClass::Double)
+    }
+
+    /// `getUnderlyingFieldClass().getSimpleName()`, which appears in two messages: the failure of
+    /// the `String` constructor and the failure of `Enum.valueOf`.
+    pub fn simple_name(&self) -> &'static str {
+        match self {
+            ValueClass::Integer => "Integer",
+            ValueClass::Double => "Double",
+            ValueClass::Text => "String",
+            ValueClass::Boolean => "Boolean",
+            ValueClass::Enum { simple_name, .. } => simple_name,
+        }
+    }
+
+    /// `constructFromString`: `Enum.valueOf` for an enum, otherwise the `String` constructor.
+    ///
+    /// The failure of the `String` constructor arrives as an `InvocationTargetException` and is
+    /// reported as "Failure constructing '<class>' from the string '<value>'."; the failure of
+    /// `Enum.valueOf` is an `IllegalArgumentException` and is reported with the allowed values.
+    fn construct_from_string(&self, text: &str, argument_name: &str) -> Result<Value, Error> {
+        match self {
+            ValueClass::Integer => text.parse::<i32>().map(Value::Int).map_err(|_| {
+                Error::bad_argument_value_with_message(
+                    argument_name,
+                    text,
+                    &format!("Failure constructing 'Integer' from the string '{text}'."),
+                )
+            }),
+            ValueClass::Double => text.parse::<f64>().map(Value::Double).map_err(|_| {
+                Error::bad_argument_value_with_message(
+                    argument_name,
+                    text,
+                    &format!("Failure constructing 'Double' from the string '{text}'."),
+                )
+            }),
+            ValueClass::Text => Ok(Value::Str(text.to_string())),
+            // A `Boolean` field is a flag, and its values have already been through
+            // `StrictBooleanConverter` in the grammar, so only "true" and "false" reach here.
+            ValueClass::Boolean => Ok(Value::Bool(text == "true")),
+            ValueClass::Enum {
+                simple_name,
+                constants,
+            } => {
+                if constants.contains(&text) {
+                    Ok(Value::Enum(text.to_string()))
+                } else {
+                    // `getEnumOptions` renders "Possible values: {A, B}", and the caller wraps that
+                    // in "Allowed values are %s", so the message says "Allowed values are Possible
+                    // values: {...}" and ends in a space. Both are the reference's.
+                    Err(Error::bad_argument_value_with_message(
+                        argument_name,
+                        text,
+                        &format!(
+                            "'{text}' is not a valid value for {simple_name}. Allowed values are Possible values: {{{}}} ",
+                            constants.join(", ")
+                        ),
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// The `@Argument` annotation, as far as the value model reads it.
+///
+/// The bounds are `double` in the annotation whatever the field type is, and their defaults are the
+/// infinities rather than absent, which is what `hasBoundedRange` tests for.
+#[derive(Debug, Clone)]
+pub struct Annotation {
+    pub full_name: &'static str,
+    pub short_name: &'static str,
+    pub doc: &'static str,
+    pub optional: bool,
+    pub mutex: &'static [&'static str],
+    pub min_value: f64,
+    pub max_value: f64,
+    pub min_recommended_value: f64,
+    pub max_recommended_value: f64,
+}
+
+impl Default for Annotation {
+    /// The annotation's own defaults, from `Argument.java`.
+    fn default() -> Self {
+        Self {
+            full_name: "",
+            short_name: "",
+            doc: "Undocumented option",
+            optional: false,
+            mutex: &[],
+            min_value: f64::NEG_INFINITY,
+            max_value: f64::INFINITY,
+            min_recommended_value: f64::NEG_INFINITY,
+            max_recommended_value: f64::INFINITY,
+        }
+    }
+}
+
+/// A rejected command line: the Java exception class, and its message.
+///
+/// The class is carried because the reference's callers distinguish them (`MissingArgument` and
+/// `BadArgumentValue` are both `CommandLineException`, and `OutOfRangeArgumentValue` is a
+/// `BadArgumentValue`), and because a dump can report it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error {
+    pub class: &'static str,
+    pub message: String,
+}
+
+const EXCEPTION: &str = "org.broadinstitute.barclay.argparser.CommandLineException";
+
+impl Error {
+    /// `new CommandLineException(msg)`.
+    pub fn command_line(message: impl Into<String>) -> Self {
+        Self {
+            class: EXCEPTION,
+            message: message.into(),
+        }
+    }
+
+    /// `new CommandLineException.MissingArgument(arg, message)`.
+    fn missing_argument(argument: &str, message: &str) -> Self {
+        Self {
+            class: "org.broadinstitute.barclay.argparser.CommandLineException$MissingArgument",
+            message: format!("Argument {argument} was missing: {message}"),
+        }
+    }
+
+    /// `new CommandLineException.BadArgumentValue(message)`, the one-argument form, which prefixes
+    /// rather than naming an argument.
+    fn bad_argument_value(message: &str) -> Self {
+        Self {
+            class: "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue",
+            message: format!("Illegal argument value: {message}"),
+        }
+    }
+
+    /// `new CommandLineException.BadArgumentValue(arg, value, message)`.
+    fn bad_argument_value_with_message(argument: &str, value: &str, message: &str) -> Self {
+        Self {
+            class: "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue",
+            message: format!("Argument {argument} has a bad value: {value}. {message}"),
+        }
+    }
+
+    /// `new CommandLineException.OutOfRangeArgumentValue(name, min, max, value)`, which is a
+    /// `BadArgumentValue` with a range message built from the two bounds.
+    fn out_of_range(name: &str, min: f64, max: f64, value: &Value) -> Self {
+        // `getValueString`: a null renders as the four characters, not as an empty string.
+        let value_string = value.to_java_string();
+        // `asInt` is `value instanceof Integer`, so a **null** value formats the bounds as
+        // doubles even on an Integer argument. That is the whole of the difference between
+        // "allowed range [1, 10]." and "allowed range [1.0, 10.0].".
+        let as_int = matches!(value, Value::Int(_));
+        let render = |bound: f64| -> String {
+            if as_int {
+                // `Integer.toString((int) Math.rint(v))`.
+                format!("{}", rint(bound) as i32)
+            } else {
+                java_double_to_string(bound)
+            }
+        };
+        let has_min = min != f64::NEG_INFINITY;
+        let has_max = max != f64::INFINITY;
+        let range = if has_min && has_max {
+            format!("allowed range [{}, {}].", render(min), render(max))
+        } else if has_min {
+            format!("minimum allowed value {}", render(min))
+        } else if has_max {
+            format!("maximum allowed value {}", render(max))
+        } else {
+            // `ShouldNeverReachHereException`: an unbounded range cannot produce this exception,
+            // because `hasBoundedRange()` gates it.
+            unreachable!("Unbounded range should never result in this exception")
+        };
+        Self {
+            class:
+                "org.broadinstitute.barclay.argparser.CommandLineException$OutOfRangeArgumentValue",
+            message: format!("Argument {name} has a bad value: {value_string}. {range}"),
+        }
+    }
+}
+
+/// `Math.rint`: round half to **even**, unlike `round`.
+fn rint(value: f64) -> f64 {
+    let rounded = value.round();
+    if (value - value.trunc()).abs() == 0.5 && rounded % 2.0 != 0.0 {
+        rounded - value.signum()
+    } else {
+        rounded
+    }
+}
+
+/// `NamedArgumentDefinition`: one `@Argument` field, its rules, and its current value.
+#[derive(Debug, Clone)]
+pub struct Definition {
+    pub annotation: Annotation,
+    /// The field's declared name, used as the long name when `fullName` is empty.
+    pub field_name: &'static str,
+    /// `getUnderlyingFieldClass()`, which is boxed. For a collection it is the element class.
+    pub class: ValueClass,
+    /// Whether the field is a `Collection`.
+    pub is_collection: bool,
+    /// `getUnderlyingField().getType().isPrimitive()`, the **unboxed** question, which only the
+    /// null check asks.
+    pub field_is_primitive: bool,
+    /// The value the constructor left in the field.
+    pub value: Value,
+    /// `defaultValueAsString`, computed once at construction from that initial value.
+    default_value_as_string: String,
+    /// `hasBeenSet`.
+    has_been_set: bool,
+}
+
+impl Definition {
+    /// The `NamedArgumentDefinition` constructor, as far as it concerns values.
+    ///
+    /// `defaultValueAsString` is computed **here**, from the initial value, and never again: a
+    /// later assignment does not change whether the argument is optional.
+    pub fn new(
+        annotation: Annotation,
+        field_name: &'static str,
+        class: ValueClass,
+        is_collection: bool,
+        field_is_primitive: bool,
+        initial: Value,
+    ) -> Self {
+        let default_value_as_string = convert_default_value_to_string(&initial, is_collection);
+        Self {
+            annotation,
+            field_name,
+            class,
+            is_collection,
+            field_is_primitive,
+            value: initial,
+            default_value_as_string,
+            has_been_set: false,
+        }
+    }
+
+    /// `getLongName()`: the full name, or the field's own name when the annotation has none.
+    pub fn long_name(&self) -> &str {
+        if self.annotation.full_name.is_empty() {
+            self.field_name
+        } else {
+            self.annotation.full_name
+        }
+    }
+
+    /// `getArgumentAliases()`: the short name first, if it exists, then the long name.
+    pub fn argument_aliases(&self) -> Vec<&str> {
+        let mut aliases = Vec::with_capacity(2);
+        if !self.annotation.short_name.is_empty() {
+            aliases.push(self.annotation.short_name);
+        }
+        aliases.push(self.long_name());
+        aliases
+    }
+
+    /// `getArgumentAliasDisplayString()`, joined with `/`. This is what an error message names the
+    /// argument by, and it is **not** the long name: it is `S/optional-string`.
+    pub fn alias_display_string(&self) -> String {
+        self.argument_aliases().join("/")
+    }
+
+    /// `getDefaultValueAsString()`.
+    pub fn default_value_as_string(&self) -> &str {
+        &self.default_value_as_string
+    }
+
+    /// `isOptional()`: the annotation **or** an initialised field. See the module note.
+    pub fn is_optional(&self) -> bool {
+        self.annotation.optional || self.default_value_as_string != NULL_ARGUMENT_STRING
+    }
+
+    /// `isFlag()`: a boolean-valued argument, which may appear with no value at all.
+    pub fn is_flag(&self) -> bool {
+        self.class == ValueClass::Boolean
+    }
+
+    /// `getHasBeenSet()`.
+    pub fn has_been_set(&self) -> bool {
+        self.has_been_set
+    }
+
+    /// `hasBoundedRange()`.
+    pub fn has_bounded_range(&self) -> bool {
+        self.annotation.min_value != f64::NEG_INFINITY || self.annotation.max_value != f64::INFINITY
+    }
+
+    /// `hasRecommendedRange()`.
+    pub fn has_recommended_range(&self) -> bool {
+        self.annotation.max_recommended_value != f64::INFINITY
+            || self.annotation.min_recommended_value != f64::NEG_INFINITY
+    }
+
+    /// `isValueOutOfRange(value)`, including its first clause: a null is out of range.
+    pub fn is_value_out_of_range(&self, value: Option<f64>) -> bool {
+        match value {
+            None => true,
+            Some(number) => {
+                (self.annotation.min_value != f64::NEG_INFINITY
+                    && number < self.annotation.min_value)
+                    || (self.annotation.max_value != f64::INFINITY
+                        && number > self.annotation.max_value)
+            }
+        }
+    }
+
+    /// `checkArgumentRange(value)`.
+    ///
+    /// The recommended-range branch only warns, and this port keeps it as a returned flag rather
+    /// than a log line: what it would print is `logger.warn`, which no golden can see, and what
+    /// matters is that it does not throw. It is also nearly unreachable, for the reason in the
+    /// module note.
+    pub fn check_argument_range(&self, value: &Value) -> Result<bool, Error> {
+        // "Only validate numeric types because we have already ensured at constructor time that
+        // only numeric types have bounds."
+        if !self.class.is_number() {
+            return Ok(false);
+        }
+        let as_double = value.as_number();
+        if self.has_bounded_range() && self.is_value_out_of_range(as_double) {
+            return Err(Error::out_of_range(
+                self.long_name(),
+                self.annotation.min_value,
+                self.annotation.max_value,
+                value,
+            ));
+        }
+        // The same test, against the same hard bounds. Not a typo here: a transcription.
+        Ok(self.has_recommended_range() && self.is_value_out_of_range(as_double))
+    }
+
+    /// `setArgumentValues(parser, stream, preprocessedValues)`.
+    ///
+    /// `append` is the parser's `APPEND_TO_COLLECTIONS` option, whose default is "replace". It is
+    /// the only thing that stops a collection from being cleared before the first value.
+    pub fn set_argument_values(&mut self, values: &[String], append: bool) -> Result<(), Error> {
+        if self.is_collection {
+            self.set_collection_values(values, append)?;
+        } else {
+            self.set_scalar_value(values)?;
+        }
+        self.has_been_set = true;
+        Ok(())
+    }
+
+    fn set_collection_values(&mut self, values: &[String], append: bool) -> Result<(), Error> {
+        let mut collected: Vec<Value> = match (&self.value, append) {
+            // "if this is a collection then we only want to clear it once at the beginning, before
+            // we process any of the values, unless we're in APPEND_TO_COLLECTIONS mode". So the
+            // field's declared contents are discarded the moment the user names the argument.
+            (Value::List(existing), true) => existing.clone(),
+            _ => Vec::new(),
+        };
+
+        for value in values {
+            if value == NULL_ARGUMENT_STRING {
+                // A "null" that is not the first value warns and clobbers; the warning is a
+                // `logger.warn` and nothing observable, so only the clobbering is modelled.
+                if !self.is_optional() {
+                    return Err(Error::command_line(format!(
+                        "Non \"null\" value must be provided for '{}'",
+                        self.alias_display_string()
+                    )));
+                }
+                collected.clear();
+            } else {
+                let actual = self.class.construct_from_string(value, self.long_name())?;
+                self.check_argument_range(&actual)?;
+                collected.push(actual);
+            }
+        }
+        self.value = Value::List(collected);
+        Ok(())
+    }
+
+    fn set_scalar_value(&mut self, values: &[String]) -> Result<(), Error> {
+        // Two occurrences of a scalar are an error, not "the last one wins"; and so is one
+        // occurrence carrying two values.
+        if self.has_been_set || values.len() > 1 {
+            return Err(Error::bad_argument_value(&format!(
+                "Argument '{}' cannot be specified more than once.",
+                self.alias_display_string()
+            )));
+        }
+
+        if self.is_flag() && values.is_empty() {
+            // A flag with no value is `true`. This is the only place a value appears from nowhere.
+            self.value = Value::Bool(true);
+            return Ok(());
+        }
+
+        let text = &values[0];
+        let value = if text == NULL_ARGUMENT_STRING {
+            // The **raw field**, not the boxed class: an `int` refuses, an `Integer` accepts.
+            if self.field_is_primitive {
+                return Err(Error::bad_argument_value(&format!(
+                    "Argument '{}' is not a nullable argument type.",
+                    self.alias_display_string()
+                )));
+            }
+            Value::Null
+        } else {
+            self.class.construct_from_string(text, self.long_name())?
+        };
+        // Reached with the null too, which is what makes `--bounded-int null` out of range.
+        self.check_argument_range(&value)?;
+        self.value = value;
+        Ok(())
+    }
+
+    /// `validateValues(parser)`, minus the plugin machinery: the mutex check, then the required
+    /// check that a set mutex partner satisfies.
+    pub fn validate_values(&self, provided_mutex_arguments: &[String]) -> Result<(), Error> {
+        if self.has_been_set && !provided_mutex_arguments.is_empty() {
+            return Err(Error::command_line(format!(
+                "Argument '{}' cannot be used in conjunction with argument(s) {}",
+                self.long_name(),
+                provided_mutex_arguments.join(" ")
+            )));
+        }
+        if !self.is_optional() {
+            let missing = if self.is_collection {
+                matches!(&self.value, Value::List(values) if values.is_empty())
+            } else {
+                !self.has_been_set
+            };
+            if missing && provided_mutex_arguments.is_empty() {
+                return Err(Error::missing_argument(
+                    self.long_name(),
+                    &self.arg_required_error_message(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// `getArgRequiredErrorMessage()`, whose second form renders the mutex targets as a
+    /// `LinkedHashSet`'s `toString`.
+    fn arg_required_error_message(&self) -> String {
+        if self.annotation.mutex.is_empty() {
+            format!("Argument '{}' is required", self.long_name())
+        } else {
+            format!(
+                "Argument '{}' is required unless one of [{}] are provided",
+                self.long_name(),
+                self.annotation.mutex.join(", ")
+            )
+        }
+    }
+}
+
+/// `convertDefaultValueToString`, which maps an **empty collection** to the same string as an
+/// uninitialised field, and everything else to its `toString`.
+fn convert_default_value_to_string(initial: &Value, is_collection: bool) -> String {
+    match initial {
+        Value::Null => NULL_ARGUMENT_STRING.to_string(),
+        Value::List(values) if is_collection && values.is_empty() => {
+            NULL_ARGUMENT_STRING.to_string()
+        }
+        other => other.to_java_string(),
+    }
+}
+
+/// `CommandLineArgumentParser` over a set of definitions.
+pub struct Parser {
+    definitions: Vec<Definition>,
+    append_to_collections: bool,
+}
+
+impl Parser {
+    /// `new CommandLineArgumentParser(callerArguments)`, with the definitions supplied rather than
+    /// discovered by reflection.
+    pub fn new(definitions: Vec<Definition>) -> Self {
+        Self {
+            definitions,
+            append_to_collections: false,
+        }
+    }
+
+    /// `CommandLineParserOptions.APPEND_TO_COLLECTIONS`, whose absence is "replace".
+    pub fn with_append_to_collections(mut self) -> Self {
+        self.append_to_collections = true;
+        self
+    }
+
+    pub fn definitions(&self) -> &[Definition] {
+        &self.definitions
+    }
+
+    /// The definition an alias names, if any. `namedArgumentsDefinitionsByAlias`.
+    fn index_of_alias(&self, alias: &str) -> Option<usize> {
+        self.definitions
+            .iter()
+            .position(|definition| definition.argument_aliases().contains(&alias))
+    }
+
+    /// `parseArguments(messageStream, args)`.
+    ///
+    /// Three phases, in this order, because the order decides which error a doubly-wrong command
+    /// line reports: the grammar (jopt-simple), then the values (`propagateParsedValues`), then
+    /// `validateArgumentValues`.
+    pub fn parse_arguments(&mut self, argv: &[&str]) -> Result<(), Error> {
+        let (parsed, positionals) = self.tokenize(argv)?;
+
+        // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`: the map is over
+        // the specs as they were registered, which is field order, and `has` filters it to the
+        // ones actually given. So values are propagated in **declaration** order, not in the order
+        // the user wrote them.
+        for index in 0..self.definitions.len() {
+            let Some(values) = parsed.iter().find(|(i, _)| *i == index).map(|(_, v)| v) else {
+                continue;
+            };
+            let append = self.append_to_collections;
+            self.definitions[index].set_argument_values(values, append)?;
+        }
+
+        if !positionals.is_empty() {
+            // `stringValues.stream().collect(Collectors.joining("{", ",", "}"))`. The three
+            // arguments of `joining` are (delimiter, prefix, suffix), so this is a delimiter of
+            // `{`, a prefix of `,` and a suffix of `}`: one value renders as `,maybe}` and two as
+            // `,a{b}`. Transcribed, not repaired.
+            let mut joined = String::from(",");
+            for (position, value) in positionals.iter().enumerate() {
+                if position > 0 {
+                    joined.push('{');
+                }
+                let _ = write!(joined, "{value}");
+            }
+            joined.push('}');
+            return Err(Error::bad_argument_value(&format!(
+                "Positional arguments were provided '{joined}' but no positional argument is \
+                 defined for this tool."
+            )));
+        }
+
+        self.validate_argument_values()
+    }
+
+    /// The grammar: jopt-simple 5.0.3 as `BarclayOptionParser` configures it, plus the one check
+    /// Barclay does before the parser sees the tokens.
+    ///
+    /// Only the surface these definitions reach is ported. Short-argument **clustering** is off,
+    /// which is the whole reason `BarclayOptionParser` exists; abbreviations are off, because
+    /// Barclay constructs it with `allowAbbreviations = false`.
+    #[allow(clippy::type_complexity)]
+    fn tokenize(&self, argv: &[&str]) -> Result<(Vec<(usize, Vec<String>)>, Vec<String>), Error> {
+        let mut given: Vec<(usize, Vec<String>)> = Vec::new();
+        let mut positionals: Vec<String> = Vec::new();
+        let mut cursor = 0;
+
+        while cursor < argv.len() {
+            let token = argv[cursor];
+            let name = if let Some(rest) = token.strip_prefix("--") {
+                rest
+            } else if token.len() > 1 && token.starts_with('-') && !looks_like_number(token) {
+                &token[1..]
+            } else {
+                positionals.push(token.to_string());
+                cursor += 1;
+                continue;
+            };
+
+            // `TaggedArgumentParser.preprocessTaggedOptions`, before jopt-simple runs at all. The
+            // `--name=value` spelling is rejected rather than accepted, because a hybrid of the
+            // Barclay and legacy syntaxes would make the tag parser produce misleading errors.
+            if name.contains('=') {
+                return Err(Error::command_line(format!(
+                    "Can't parse option name containing an embedded '=' ({name})"
+                )));
+            }
+
+            let Some(index) = self.index_of_alias(name) else {
+                // jopt-simple's `UnrecognizedOptionException`, whose message Barclay re-wraps in a
+                // plain `CommandLineException`.
+                return Err(Error::command_line(format!(
+                    "{name} is not a recognized option"
+                )));
+            };
+            let definition = &self.definitions[index];
+            cursor += 1;
+
+            let value = if definition.is_flag() {
+                // `withOptionalArg().withValuesConvertedBy(new StrictBooleanConverter())`, and
+                // `OptionalArgumentOptionSpec.detectOptionArgument`: the next token is taken only
+                // if it does not look like an option **and** the converter accepts it. So
+                // `--flag maybe` leaves "maybe" on the command line as a positional argument
+                // rather than reporting a bad boolean.
+                match argv.get(cursor) {
+                    Some(next) if !looks_like_an_option(next) => match strict_boolean(next) {
+                        Some(converted) => {
+                            cursor += 1;
+                            Some(converted)
+                        }
+                        None => None,
+                    },
+                    _ => None,
+                }
+            } else {
+                // `withRequiredArg()`: the next token is the value whatever it looks like, and its
+                // absence is jopt-simple's `OptionMissingRequiredArgumentException`.
+                match argv.get(cursor) {
+                    Some(next) => {
+                        cursor += 1;
+                        Some((*next).to_string())
+                    }
+                    None => {
+                        return Err(Error::command_line(format!(
+                            "Option {} requires an argument",
+                            definition.alias_display_string()
+                        )))
+                    }
+                }
+            };
+
+            match given.iter_mut().find(|(i, _)| *i == index) {
+                Some((_, values)) => values.extend(value),
+                None => given.push((index, value.into_iter().collect())),
+            }
+        }
+
+        Ok((given, positionals))
+    }
+
+    /// `validateArgumentValues()`: every definition, in declaration order, so the first missing
+    /// required argument reported is the first one declared.
+    fn validate_argument_values(&self) -> Result<(), Error> {
+        for definition in &self.definitions {
+            // The partners that were actually given, by long name, in the annotation's order.
+            let provided: Vec<String> = definition
+                .annotation
+                .mutex
+                .iter()
+                .filter_map(|target| self.index_of_alias(target))
+                .filter(|index| self.definitions[*index].has_been_set())
+                .map(|index| self.definitions[index].long_name().to_string())
+                .collect();
+            definition.validate_values(&provided)?;
+        }
+        Ok(())
+    }
+
+    /// The value a field ended up holding, by long name.
+    pub fn value_of(&self, long_name: &str) -> Option<&Value> {
+        self.definitions
+            .iter()
+            .find(|definition| definition.long_name() == long_name)
+            .map(|definition| &definition.value)
+    }
+}
+
+/// `OptionParser.looksLikeAnOption`: a token that starts with a dash and is longer than one
+/// character.
+fn looks_like_an_option(token: &str) -> bool {
+    token.len() > 1 && token.starts_with('-')
+}
+
+/// A lone `-` is not an option, and neither is a negative number: jopt-simple's short-option
+/// recognition is what decides, and Barclay disables clustering so a single dash introduces one
+/// name.
+fn looks_like_number(token: &str) -> bool {
+    token[1..].parse::<f64>().is_ok()
+}
+
+/// `StrictBooleanConverter.convert`, which is case-insensitive and accepts the single letters.
+///
+/// Its rejection is a `ValueConversionException`, which in the optional-argument path is not an
+/// error at all: it only means the token was not this option's value.
+fn strict_boolean(value: &str) -> Option<String> {
+    let lower = value.to_ascii_lowercase();
+    match lower.as_str() {
+        "true" | "t" => Some("true".to_string()),
+        "false" | "f" => Some("false".to_string()),
+        _ => None,
+    }
+}
+
+/// The long names of a set of definitions, sorted, for a caller that wants to report on them.
+pub fn long_names(definitions: &[Definition]) -> BTreeSet<String> {
+    definitions
+        .iter()
+        .map(|definition| definition.long_name().to_string())
+        .collect()
+}

@@ -1,0 +1,16 @@
+[package]
+name = "gatk-barclay"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Barclay is a separate library from GATK: BSD 3-Clause, `LICENSE.txt` at tag 5.0.0 of
+# broadinstitute/barclay, "Copyright (c) 2009-2016, GATK Authors". Permissive and compatible with
+# this crate's Apache 2.0. The grammar under it is jopt-simple 5.0.3, MIT, verified from the
+# licence header of its sources jar. Both are recorded in tools/audit/provenance.py.
+
+[dependencies]
+
+[dev-dependencies]
+gatk-corpus = { path = "../gatk-corpus" }
