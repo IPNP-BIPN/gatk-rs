@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **53 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **54 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -52,7 +52,7 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it.
 | `AllelePseudoDepth` (G1.7) | **reopened as G1.9** | the licence was probably never what blocked it. Both values it emits go through a `DecimalFormat`, and a 1-ulp difference cannot survive rounding to two decimals. Being measured |
 | `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
 
-53 conformance suites carry it, all oracle-backed.
+54 conformance suites carry it, all oracle-backed.
 
 One of those four came back. **G1.9** below is `AllelePseudoDepth`, reopened not because more effort
 was found for it but because the reason it was refused does not survive reading the annotation.
@@ -237,10 +237,15 @@ an assumption rather than by a licence.
 It is an assumption on this side too until the corpus says otherwise, which is what these boxes are
 for.
 
-- [ ] `NaturalLogUtils` on `jmath::strict_math::exp` (#97). `logSumExp` has a path that is exact by
-      construction: the accumulator starts at **1.0** because the maximum's own term is folded in
-      as that 1, and `sum != 1.0` then skips the `log` entirely, so a one-element array — or one
-      whose other entries are all `-Infinity` — returns `maxValue` untouched
+- [x] `NaturalLogUtils` on `jmath::strict_math::exp` (#97), 42 rows compared as raw bit patterns.
+      **9 of the 55 values are exact by construction**: `logSumExp`'s accumulator starts at **1.0**
+      because the maximum's own term is folded in as that 1, and `sum != 1.0` then skips the `log`
+      entirely, so a one-element array, a maximum with everything else at `-Infinity`, and a
+      difference large enough that `1 + exp(diff)` rounds back to `1` all return `maxValue`
+      untouched. The suite computes that property from the inputs rather than listing labels. Every
+      other value lands within **1 ulp**, and the test prints the worst it saw rather than only
+      passing. The refusal is on the accumulator, not the inputs: it fires after the loop, on
+      `sum`, so a `NaN` reaches it and a `-Infinity` does not
 - [ ] `alleleFractionsPosterior` and the `Dirichlet` under it (#98). **This is where the risk is,
       and it is two risks.** A 1-ulp difference may amplify across the fixed point's iterations;
       and convergence is a *threshold* test on `distance1/sum`, so a difference too small to see in
