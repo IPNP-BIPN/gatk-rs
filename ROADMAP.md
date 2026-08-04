@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **51 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **52 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -252,8 +252,16 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
       collection splices its arguments between the two it sits between. Three refusals happen
       before any command line exists, of which a duplicate alias is the one worth naming: it is a
       construction failure rather than a shadowing rule
-- [ ] the rest: `--arguments_file` (which re-enters `parseArguments` recursively), plugin
-      descriptors (`--read-filter`, `--annotation`), and the usage text
+- [x] **`--arguments_file`**, 76 rows over 14 command lines. The only argument that changes the
+      command line rather than a field. The file's arguments come **first**, wherever
+      `--arguments_file` sat, because the original command line is appended to the expansion
+      rather than the other way round: a collection reads `[a, b, cli]` either way round, and a
+      scalar given in both a file and the command line is a duplicate rather than an override. The
+      recursion is bounded by a **set of file names**, not a depth, and every file *named* enters
+      it including ones skipped for already being there, so a self-including file and a pair that
+      include each other are each read once. The argument is not removed between passes: the
+      recursion ends because the second expansion is empty
+- [ ] the rest: plugin descriptors (`--read-filter`, `--annotation`), and the usage text
 
 ---
 
