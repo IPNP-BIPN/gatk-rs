@@ -302,10 +302,44 @@ What is left is above the line, and it is not a rule. On a sweep of 493 such val
 shortest form 472 times, the double's exact value 9 times, and neither 12 times — `2^60` comes out
 as its exact value rounded to eighteen significant digits. Those are branches inside Java 17's
 pre-Schubfach `FloatingDecimal`, so closing them would mean transcribing GPL2 source or fitting an
-implementation to measurements, and both are refused. The remaining route is decision 0013's
-option 3: pin a **JDK 19+** oracle, where `Double.toString` is Schubfach and the question
-disappears. That is a change to what "the reference" means, not a porting task, and it is not one
-to make quietly.
+implementation to measurements, and both are refused.
+
+Two ways round were then examined and both came back **negative, by measurement**.
+
+*A permissively-licensed implementation of the same algorithm.* htsjdk-rs decision 0013 listed this
+and noted it had never been searched. It has now, and the answer follows from
+[JDK-4511638](https://bugs.openjdk.org/browse/JDK-4511638): Java 17's behaviour **violates its own
+Javadoc**, so any clean-room implementation implements the specification and therefore agrees with
+this port rather than with the oracle. The concrete instance is Android's Apache-2.0 `RealToString`,
+which produced `100000000000000000000000` for `1e23` where the reference produces
+`99999999999999990000000` — the same two answers this suite records.
+
+*A newer oracle JDK.* Decision 0013 said cause A disappears against a JDK 19+ oracle. That is right
+for `String.format` and **wrong for `DecimalFormat`**, which is the path these divergences are on:
+
+| JDK | `Double.toString(1e23)` | `new DecimalFormat("#.##").format(1e23)` |
+|---|---|---|
+| 17, the pinned oracle | `9.999999999999999E22` | `99999999999999990000000` |
+| 21 LTS | **`1.0E23`** | `99999999999999990000000` |
+| 22, 24, 25 | `1.0E23` | `99999999999999990000000` |
+| **26** | `1.0E23` | **`100000000000000000000000`** |
+
+The Schubfach rewrite replaced `Double.toString` and `Float.toString` and left `DecimalFormat` on
+the old converter until **JDK 26**, released this year. Pinning the oracle nine major versions past
+what GATK 4.6.2.0 is shipped against would make the goldens represent a runtime nobody runs these
+tools on.
+
+The cost of a bump was measured while the image existed, and it is not the obstacle: all **57
+oracle-backed suites, 62 cases, 32,604 compared values** were replayed against a JDK 21 oracle and
+**not one moved**. The obstacle is that the version which would help is too new to be the
+reference. (The image's own probe refused JDK 21 outright — `java major is '21', expected '17'` —
+so the pin cannot change by accident; it had to be relaxed in a copy to take the measurement.)
+
+So the line stays where it is, and it is worth saying which side of it is right: **the port
+implements the documented behaviour and the pinned oracle runs a version whose defect Oracle has
+since fixed.** JDK-4511638 was opened in 2001 and closed in 19 and 26. Nothing this programme
+produces comes within eleven orders of magnitude of 2^53 anyway — pseudo-depths are read counts and
+fractions are in `[0, 1]`.
 
 **Not in scope:** reproducing `Math.exp` bit-for-bit. It has no specification to implement
 against — beyond "within 1 ulp and semi-monotone", its only definition is its own code — so
