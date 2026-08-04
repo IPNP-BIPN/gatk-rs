@@ -39,8 +39,38 @@
 //! same order is non-permuted even when it was constructed separately; and `permutation` short
 //! circuits on equality before building anything, which is the only path that produces a
 //! permutation over a target longer than zero without scanning.
+//!
+//! # The allele axis is a type parameter, because in the reference it is one
+//!
+//! ```java
+//! public interface AlleleList<A extends Allele> { ... }
+//! ```
+//!
+//! Most of GATK instantiates it at `Allele`, which is why this list was written that way first.
+//! `HaplotypeCaller` instantiates it at [`crate::haplotype::Haplotype`], and
+//! `HaplotypeFilteringAnnotation` reads that instantiation. The parameter defaults to `Allele`
+//! here so that every existing caller keeps its spelling.
+//!
+//! The Java bound is inheritance: `A` **is** an `Allele`, so every `Allele` member is in scope. The
+//! only one this file uses is `isReference()`, so the bound here is [`AlleleType`], a trait with
+//! that one method. Anything wider would be claiming a relationship the code does not exercise.
 
 use htsjdk_vcf::allele::Allele;
+
+/// The `A extends Allele` bound, narrowed to what an allele list actually asks of its elements.
+///
+/// `Haplotype` satisfies it by being a `SimpleAllele` in the reference; here it satisfies it by
+/// implementing this trait.
+pub trait AlleleType: Clone + PartialEq {
+    /// `Allele.isReference()`.
+    fn is_reference(&self) -> bool;
+}
+
+impl AlleleType for Allele {
+    fn is_reference(&self) -> bool {
+        Allele::is_reference(self)
+    }
+}
 
 /// `IndexedSet`, specialised to the two element types GATK uses it with here.
 ///
@@ -93,20 +123,20 @@ impl<T: Clone + PartialEq> IndexedSet<T> {
     }
 }
 
-/// `IndexedAlleleList`.
+/// `IndexedAlleleList<A>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AlleleList {
-    alleles: IndexedSet<Allele>,
+pub struct AlleleList<A: AlleleType = Allele> {
+    alleles: IndexedSet<A>,
 }
 
-impl Default for AlleleList {
+impl<A: AlleleType> Default for AlleleList<A> {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl AlleleList {
-    pub fn new(alleles: &[Allele]) -> Self {
+impl<A: AlleleType> AlleleList<A> {
+    pub fn new(alleles: &[A]) -> Self {
         Self {
             alleles: IndexedSet::new(alleles),
         }
@@ -126,22 +156,25 @@ impl AlleleList {
     }
 
     /// `indexOfAllele`, which is a lookup by `Allele.equals`: bases **and** the reference flag.
-    pub fn index_of_allele(&self, allele: &Allele) -> Option<usize> {
+    ///
+    /// At `A = Haplotype` the equality is that class's own, which adds the uniqueness value, so a
+    /// haplotype list can hold two entries with identical bases where an allele list cannot.
+    pub fn index_of_allele(&self, allele: &A) -> Option<usize> {
         self.alleles.index_of(allele)
     }
 
-    pub fn contains_allele(&self, allele: &Allele) -> bool {
+    pub fn contains_allele(&self, allele: &A) -> bool {
         self.index_of_allele(allele).is_some()
     }
 
     /// `getAllele(index)`. The reference throws `IllegalArgumentException` past the end for the
     /// empty list and `IndexOutOfBoundsException` for a non-empty one, which is a distinction no
     /// caller depends on; both are `None` here.
-    pub fn get_allele(&self, index: usize) -> Option<&Allele> {
+    pub fn get_allele(&self, index: usize) -> Option<&A> {
         self.alleles.get(index)
     }
 
-    pub fn as_slice(&self) -> &[Allele] {
+    pub fn as_slice(&self) -> &[A] {
         self.alleles.as_slice()
     }
 
@@ -155,12 +188,15 @@ impl AlleleList {
     }
 
     /// `AlleleList.equals(first, second)`: same length, same alleles, same order.
-    pub fn same_alleles(&self, other: &AlleleList) -> bool {
+    pub fn same_alleles(&self, other: &AlleleList<A>) -> bool {
         self.as_slice() == other.as_slice()
     }
 
     /// `permutation(target)`.
-    pub fn permutation(&self, target: &AlleleList) -> Result<AllelePermutation, PermutationError> {
+    pub fn permutation(
+        &self,
+        target: &AlleleList<A>,
+    ) -> Result<AllelePermutation<A>, PermutationError> {
         AllelePermutation::new(self, target)
     }
 }
@@ -227,9 +263,9 @@ impl PermutationError {
 /// The reference has two classes because one of them can answer without any state; here the same
 /// state answers both, and the flags say which case was taken.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllelePermutation {
-    from: AlleleList,
-    to: AlleleList,
+pub struct AllelePermutation<A: AlleleType = Allele> {
+    from: AlleleList<A>,
+    to: AlleleList<A>,
     /// `fromIndex[toIndex]`: where each target allele came from.
     from_index: Vec<usize>,
     /// `keptFromIndices[fromIndex]`.
@@ -238,8 +274,8 @@ pub struct AllelePermutation {
     is_non_permuted: bool,
 }
 
-impl AllelePermutation {
-    fn new(original: &AlleleList, target: &AlleleList) -> Result<Self, PermutationError> {
+impl<A: AlleleType> AllelePermutation<A> {
+    fn new(original: &AlleleList<A>, target: &AlleleList<A>) -> Result<Self, PermutationError> {
         // `permutation()` short circuits on equality, which is the only way `isPartial` comes back
         // false for a target that was built separately.
         if original.same_alleles(target) {
@@ -317,11 +353,11 @@ impl AllelePermutation {
         self.to.number_of_alleles()
     }
 
-    pub fn from_list(&self) -> &[Allele] {
+    pub fn from_list(&self) -> &[A] {
         self.from.as_slice()
     }
 
-    pub fn to_list(&self) -> &[Allele] {
+    pub fn to_list(&self) -> &[A] {
         self.to.as_slice()
     }
 }

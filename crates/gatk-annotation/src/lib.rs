@@ -24,6 +24,7 @@ pub mod coverage;
 pub mod depth_per_allele;
 pub mod flow;
 pub mod fragment_counts;
+pub mod haplotype_filtering;
 pub mod heterozygosity;
 pub mod info_annotation;
 pub mod mapping_quality;

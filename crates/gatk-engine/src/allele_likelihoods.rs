@@ -47,7 +47,7 @@
 //! The guard reads as "equal likelihoods mean no confidence", and its load-bearing use is the pair
 //! of negative infinities that a one-allele matrix produces, where the subtraction would be `NaN`.
 
-use crate::allele_list::{AlleleList, SampleList};
+use crate::allele_list::{AlleleList, AlleleType, SampleList};
 use htsjdk_vcf::allele::Allele;
 
 /// `LOG_10_INFORMATIVE_THRESHOLD`.
@@ -70,19 +70,20 @@ pub fn natural_log_informative_threshold() -> f64 {
 /// `AlleleLikelihoods.BestAllele`.
 ///
 /// The two allele fields are `None` where the reference's are null, which happens only when the
-/// matrix has no allele to offer.
+/// matrix has no allele to offer. Like the matrix it comes from, it is generic in the allele type
+/// and defaults to `Allele`, which is what every caller here instantiates it at.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BestAllele {
+pub struct BestAllele<A: AlleleType = Allele> {
     pub sample: String,
     pub evidence_index: usize,
-    pub allele: Option<Allele>,
-    pub second_best_allele: Option<Allele>,
+    pub allele: Option<A>,
+    pub second_best_allele: Option<A>,
     pub likelihood: f64,
     pub second_best_likelihood: f64,
     pub confidence: f64,
 }
 
-impl BestAllele {
+impl<A: AlleleType> BestAllele<A> {
     /// `isInformative()`: the confidence against the **log10** threshold, whatever base the matrix
     /// is in. See the module note.
     pub fn is_informative(&self) -> bool {
@@ -102,15 +103,20 @@ pub enum LikelihoodsError {
     AlreadyNaturalLog,
 }
 
-/// `AlleleLikelihoods`, over an evidence type the caller names.
+/// `AlleleLikelihoods<EVIDENCE, A>`, over an evidence type and an allele type the caller names.
 ///
 /// The reference's evidence is a `GATKRead`; here it is whatever identifies a piece of evidence to
 /// the caller, because nothing in this slice reads the evidence itself. The annotations that do
 /// (`CountNs` looks at a base, `MappingQualityZero` at a mapping quality) carry their own type.
+///
+/// The allele axis defaults to `Allele`, which is what the annotations read. `HaplotypeCaller`
+/// builds the same class over [`crate::haplotype::Haplotype`], and
+/// `HaplotypeFilteringAnnotation` is handed that instantiation alongside the ordinary one; both
+/// are this type.
 #[derive(Debug, Clone, PartialEq)]
-pub struct AlleleLikelihoods<E: Clone + PartialEq> {
+pub struct AlleleLikelihoods<E: Clone + PartialEq, A: AlleleType = Allele> {
     samples: SampleList,
-    alleles: AlleleList,
+    alleles: AlleleList<A>,
     /// `evidenceBySampleIndex`.
     evidence_by_sample: Vec<Vec<E>>,
     /// `valuesBySampleIndex`, indexed `[sample][allele][evidence]`.
@@ -118,9 +124,17 @@ pub struct AlleleLikelihoods<E: Clone + PartialEq> {
     /// `referenceAlleleIndex`, `None` where the reference holds `MISSING_INDEX`.
     reference_allele_index: Option<usize>,
     is_natural_log: bool,
+    /// `filteredHaplotypeCount`, a plain `int` field of the class whatever it is instantiated over.
+    ///
+    /// It is written by `AlleleFiltering.subsetHaplotypesByAlleles`, which belongs to the assembler
+    /// and therefore to Milestone G3, and read by `HaplotypeFilteringAnnotation`. Between the two
+    /// it is carried, not computed, so it is a field here for the same reason it is one there: a
+    /// matrix nobody filtered reports zero, and that zero is a real answer rather than a missing
+    /// one.
+    filtered_haplotype_count: i32,
 }
 
-impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
+impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// The public constructor, with the likelihood values supplied rather than left at zero.
     ///
     /// `evidence_by_sample` and `values` are given per sample **index**, not per name: the
@@ -128,7 +142,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
     /// passed a name the sample list does not hold gets a null there.
     pub fn new(
         samples: SampleList,
-        alleles: AlleleList,
+        alleles: AlleleList<A>,
         evidence_by_sample: Vec<Vec<E>>,
         values: Vec<Vec<Vec<f64>>>,
     ) -> Result<Self, LikelihoodsError> {
@@ -169,7 +183,18 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
             values,
             reference_allele_index,
             is_natural_log: false,
+            filtered_haplotype_count: 0,
         })
+    }
+
+    /// `getFilteredHaplotypeCount()`.
+    pub fn filtered_haplotype_count(&self) -> i32 {
+        self.filtered_haplotype_count
+    }
+
+    /// `setFilteredHaplotypeCount(int)`.
+    pub fn set_filtered_haplotype_count(&mut self, count: i32) {
+        self.filtered_haplotype_count = count;
     }
 
     pub fn number_of_samples(&self) -> usize {
@@ -184,11 +209,11 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
         self.samples.index_of_sample(sample)
     }
 
-    pub fn index_of_allele(&self, allele: &Allele) -> Option<usize> {
+    pub fn index_of_allele(&self, allele: &A) -> Option<usize> {
         self.alleles.index_of_allele(allele)
     }
 
-    pub fn get_allele(&self, index: usize) -> Option<&Allele> {
+    pub fn get_allele(&self, index: usize) -> Option<&A> {
         self.alleles.get_allele(index)
     }
 
@@ -260,7 +285,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
         evidence_index: usize,
         can_be_reference: bool,
         priorities: Option<&[f64]>,
-    ) -> BestAllele {
+    ) -> BestAllele<A> {
         let allele_count = self.alleles.number_of_alleles();
         let reference_is_first = self.reference_allele_index == Some(0);
 
@@ -361,7 +386,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
         likelihood: f64,
         second_best_allele_index: Option<usize>,
         second_best_likelihood: f64,
-    ) -> BestAllele {
+    ) -> BestAllele<A> {
         BestAllele {
             sample: self
                 .samples
@@ -385,7 +410,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
 
     /// `bestAllelesBreakingTies(tieBreakingPriority)` over every sample, in sample then evidence
     /// order.
-    pub fn best_alleles_breaking_ties(&self, priorities: Option<&[f64]>) -> Vec<BestAllele> {
+    pub fn best_alleles_breaking_ties(&self, priorities: Option<&[f64]>) -> Vec<BestAllele<A>> {
         (0..self.number_of_samples())
             .flat_map(|sample| self.best_alleles_breaking_ties_for_sample(sample, priorities))
             .collect()
@@ -412,8 +437,8 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
     /// and calls "typically not the case".
     pub fn marginalize(
         &self,
-        new_to_old: &[(Allele, Vec<Allele>)],
-    ) -> Result<AlleleLikelihoods<E>, LikelihoodsError> {
+        new_to_old: &[(A, Vec<A>)],
+    ) -> Result<AlleleLikelihoods<E, A>, LikelihoodsError> {
         let mut new_values: Vec<Vec<Vec<f64>>> = Vec::with_capacity(self.number_of_samples());
         for sample in 0..self.number_of_samples() {
             let evidence_count = self.sample_evidence_count(sample);
@@ -437,7 +462,7 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
             new_values.push(sample_values);
         }
 
-        let new_alleles: Vec<Allele> = new_to_old
+        let new_alleles: Vec<A> = new_to_old
             .iter()
             .map(|(allele, _)| allele.clone())
             .collect();
@@ -457,14 +482,14 @@ impl<E: Clone + PartialEq> AlleleLikelihoods<E> {
         &self,
         sample_index: usize,
         priorities: Option<&[f64]>,
-    ) -> Vec<BestAllele> {
+    ) -> Vec<BestAllele<A>> {
         (0..self.sample_evidence_count(sample_index))
             .map(|evidence| self.search_best_allele(sample_index, evidence, true, priorities))
             .collect()
     }
 }
 
-impl AlleleLikelihoods<htsjdk_bam::record::BamRecord> {
+impl<A: AlleleType> AlleleLikelihoods<htsjdk_bam::record::BamRecord, A> {
     /// `groupEvidence(GATKRead::getName, Fragment::createAndAvoidFailure)`, the only instantiation
     /// the annotations use.
     ///
@@ -472,7 +497,7 @@ impl AlleleLikelihoods<htsjdk_bam::record::BamRecord> {
     /// is a `HashMap`'s over the read names. Both are recorded in [`crate::fragment`].
     pub fn group_by_fragment(
         &self,
-    ) -> Result<AlleleLikelihoods<crate::fragment::Fragment>, LikelihoodsError> {
+    ) -> Result<AlleleLikelihoods<crate::fragment::Fragment, A>, LikelihoodsError> {
         let allele_count = self.number_of_alleles();
         let mut evidence_by_sample: Vec<Vec<crate::fragment::Fragment>> = Vec::new();
         let mut values: Vec<Vec<Vec<f64>>> = Vec::new();
