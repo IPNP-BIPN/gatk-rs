@@ -259,7 +259,7 @@
     },
     {
       "id": "record-transform",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "UnmarkDuplicates and RevertBaseQualityScores output bytes",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -270,20 +270,11 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 49,
-      "expect_contains": [
-        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory",
-        "error\tRevertBaseQualityScores\tmissing-oq\torg.broadinstitute.hellbender.exceptions.UserException",
-        "error\tRevertBaseQualityScores\tempty-oq\torg.broadinstitute.hellbender.exceptions.UserException",
-        "index\tUnmarkDuplicates\tnoindex\tabsent",
-        "commandline\tUnmarkDuplicates\tall\t",
-        "fixtureindex\tfull\t"
-      ],
       "cases": [
         {
           "dump": "RecordTransformDump",
-          "golden": null,
-          "why": "No golden yet. The candidate comes from the pinned container on a real x86-64 runner, published as this run's golden-pending artefact."
+          "golden": "crates/gatk-tools/tests/data/record_transform.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 49 rows, no corrections, and byte-identical to the same container on Apple Silicon. Twelve output BAMs and eleven indexes byte for byte, three input fixtures with their indexes, and the two runs that abort with the class and message the reference throws."
         }
       ]
     },
