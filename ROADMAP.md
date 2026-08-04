@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **57 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
+| **gatk-rs** | 202 tools | 6 crates, **58 conformance suites, all oracle-backed**; 3 tools byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -447,8 +447,13 @@ copy, which is a worse position than reading the source rather than a better one
       The measured marginal cost: `PrintReads` needed 152 lines of harness and its own header
       logic; the second and third needed **95 and 235 lines of Rust between them and no new
       harness**, because extracting `sam_output` left the `@PG` handling, the ID suffixing and the
-      writer shared. So the archetype's 54 remaining members are bounded by their `apply` and their
-      filter overrides rather than by the engine — which is what the gate existed to find out
+      writer shared, and `print_reads.rs` fell from 152 lines to 52 by delegating. So the
+      archetype's 54 remaining members are bounded by their `apply` and their filter overrides
+      rather than by the engine — which is what the gate existed to find out.
+
+      Oracle-backed: **10 output BAMs and their indexes byte for byte, and both refusals
+      reproduced** with the class and message the reference throws. The golden is byte-identical to
+      the same container on Apple Silicon
 - [ ] `reporting-walker` (56 tools)
 - [ ] reference, interval, coverage, CNV/SV and genotyping-array utilities
 - [ ] full parameter coverage per tool (covering arrays plus fuzzing), not the default path
