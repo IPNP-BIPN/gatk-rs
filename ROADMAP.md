@@ -475,14 +475,20 @@ copy, which is a worse position than reading the source rather than a better one
 
 Everything downstream inherits these, so they are front-loaded.
 
-- [~] BAM/SAM/tags/index read and write (core done; write-side BAI, CRAI and corner cases remain)
+- [x] BAM/SAM/tags/index read and write. **Measured before working, and the entry was stale.** The
+      write-side BAI is oracle-backed over nine shapes (`empty`, `unmapped` with both a placed and
+      an unplaced read, `window_boundary`, `all_levels`, and the rest); the read-side index has its
+      own six, with the dump recording why the two forms differ — a chunk ending on a BGZF block
+      boundary is `(nextBlockAddress, 0)` to the reader and `(blockAddress, blockLength)` to the
+      writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
+      to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
 - [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write, index and all
       field types remain). Two named consumers wait here rather than in G1: the **Tribble index**,
       which is what turns a Feature file into a random-access source rather than a linear read
       (G1.3), and the pair `VCFUtils.smartMergeHeaders` plus `VariantContextComparator`, which is
       what `MultiVariantDataSource` merges several VCFs with (G1.6's multi-input half)
-- [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression):
-      a sub-project on its own
+- [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
+      **and CRAI with it**: a sub-project on its own
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
       exists, every byte claim over BGZF must name the deflater it is a claim about
 - [~] **jmath**: bit-exact Java `Math` / `StrictMath` / commons-math3 `FastMath`, plus `Gamma`,
