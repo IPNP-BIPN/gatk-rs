@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 5 crates, **48 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **49 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -213,8 +213,27 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it. This is the act
 
 ### G1.8 The argument layer
 
-- [ ] Barclay's argument model and validation at library level, so covering-array vectors are
+- [~] Barclay's argument model and validation at library level, so covering-array vectors are
       interpreted as upstream interprets them. The unified CLI dispatcher stays out of scope
+- [x] the **value model**: `NamedArgumentDefinition` and the grammar under it, 368 rows over 41
+      command lines. Six of its rules are not what the annotation names suggest. `optional()` does
+      not decide optionality (`isOptional` is the annotation **or** a default that renders as
+      something other than `"null"`, and an empty collection renders as `"null"`, so an
+      initialised-but-empty `List` is required and an initialised-and-non-empty one is not);
+      `"null"` is a value with three outcomes (clear a collection, throw on a non-optional
+      argument, throw a *different* exception on a scalar whose **raw** field is primitive);
+      `isValueOutOfRange` begins with `value == null ||`, so a null on a bounded numeric argument
+      is out of range, and the message formats the bounds by the **value's** type, so one argument
+      reports `allowed range [1, 10].` for a rejected `0` and `allowed range [1.0, 10.0].` for a
+      rejected `null`; the **recommended** range is checked with that same method against the
+      **hard** bounds, so its warning is unreachable for any non-null value; a scalar refuses a
+      second occurrence rather than taking the last; and a collection is cleared before the first
+      value unless the parser is in `APPEND_TO_COLLECTIONS` mode. The grammar under all of it is
+      **jopt-simple's**, not Barclay's: `--name=value` is refused outright, a flag consumes a
+      following token only when `StrictBooleanConverter` accepts it, and the positional-argument
+      message is built by `Collectors.joining` given a delimiter where a prefix belongs
+- [ ] the rest: tagged arguments (`--input:tumor file.bam`), argument-file expansion,
+      `@ArgumentCollection` flattening, plugin descriptors, and the usage text
 
 ---
 
