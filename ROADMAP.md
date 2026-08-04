@@ -49,10 +49,13 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it.
 |---|---|---|
 | the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
 | the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
-| `AllelePseudoDepth` (G1.7) | a licence boundary | it reaches `Math.exp`, whose only exact port is GPL2-only. htsjdk-rs decision 0025 measured the gap at **1 ulp** rather than leaving it open |
+| `AllelePseudoDepth` (G1.7) | **reopened as G1.9** | the licence was probably never what blocked it. Both values it emits go through a `DecimalFormat`, and a 1-ulp difference cannot survive rounding to two decimals. Being measured |
 | `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
 
 53 conformance suites carry it, all oracle-backed.
+
+One of those four came back. **G1.9** below is `AllelePseudoDepth`, reopened not because more effort
+was found for it but because the reason it was refused does not survive reading the annotation.
 
 ### G1.1 Read filters
 
@@ -209,6 +212,55 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it.
   - `AssemblyComplexity` needs `Haplotype.getEventMap()`, which is the assembly event model, so it
     belongs to **G3** with `HaplotypeCaller` rather than to G1. Listing it here would be counting
     the assembler as an annotation
+
+### G1.9 `AllelePseudoDepth`, and the premise that refused it
+
+G1.7 lists this annotation as **refused on the licence boundary**: it ends in
+`SomaticLikelihoodsEngine.alleleFractionsPosterior`, which reaches `Math.exp` through
+`NaturalLogUtils`, and the only exact port of `Math.exp` is a transcription of GPL2-only HotSpot
+source (htsjdk-rs decision 0014).
+
+**That framing does not survive reading the annotation.** Both values that depend on `exp` leave
+through a formatter:
+
+```java
+private static DecimalFormat DEPTH_FORMAT    = new DecimalFormat("#.##");
+private static DecimalFormat FRACTION_FORMAT = new DecimalFormat("#.####");
+```
+
+Two and four decimal places. htsjdk-rs decision 0025 measured the worst divergence between a
+permissively-licensed `exp` and `Math.exp` at **1 ulp** — a relative difference near 2⁻⁵², about
+twelve orders of magnitude below what rounding to two decimals discards. Byte-identity of the
+*output* does not require byte-identity of every *intermediate*, and this annotation was blocked by
+an assumption rather than by a licence.
+
+It is an assumption on this side too until the corpus says otherwise, which is what these boxes are
+for.
+
+- [ ] `NaturalLogUtils` on `jmath::strict_math::exp` (#97). `logSumExp` has a path that is exact by
+      construction: the accumulator starts at **1.0** because the maximum's own term is folded in
+      as that 1, and `sum != 1.0` then skips the `log` entirely, so a one-element array — or one
+      whose other entries are all `-Infinity` — returns `maxValue` untouched
+- [ ] `alleleFractionsPosterior` and the `Dirichlet` under it (#98). **This is where the risk is,
+      and it is two risks.** A 1-ulp difference may amplify across the fixed point's iterations;
+      and convergence is a *threshold* test on `distance1/sum`, so a difference too small to see in
+      the values can still change the **iteration count**, which is a far larger difference than
+      one ulp. The dump emits that count beside the result so a divergence can be attributed rather
+      than just observed
+- [ ] `AllelePseudoDepth` itself (#99), with the suite comparing the **formatted strings**.
+      Comparing the doubles would re-measure the `exp` gap, which is already measured; comparing
+      the strings measures whether it reaches the output. `DecimalFormat` is `java.text` and so
+      GPL2, but nothing needs transcribing: `"#.##"` is HALF_EVEN to two places with trailing zeros
+      dropped, which is implementable from the pattern's documented meaning
+
+Either outcome is worth having. No divergence and the library goes to **53 of 54**, leaving only
+`AssemblyComplexity` and its G3 dependency. A divergence and it will be one row sitting on a
+rounding boundary, which is a one-line quarantine instead of a refused annotation.
+
+**Not in scope:** reproducing `Math.exp` bit-for-bit. It has no specification to implement
+against — beyond "within 1 ulp and semi-monotone", its only definition is its own code — so
+recovering its bits from black-box measurement would be reverse-engineering toward a functional
+copy, which is a worse position than reading the source rather than a better one.
 
 ### Explaining the code as it is written
 
