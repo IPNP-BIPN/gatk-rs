@@ -270,13 +270,14 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 46,
+      "expect_rows": 49,
       "expect_contains": [
         "deflater\thtsjdk.samtools.util.zip.DeflaterFactory",
         "error\tRevertBaseQualityScores\tmissing-oq\torg.broadinstitute.hellbender.exceptions.UserException",
         "error\tRevertBaseQualityScores\tempty-oq\torg.broadinstitute.hellbender.exceptions.UserException",
         "index\tUnmarkDuplicates\tnoindex\tabsent",
-        "commandline\tUnmarkDuplicates\tall\t"
+        "commandline\tUnmarkDuplicates\tall\t",
+        "fixtureindex\tfull\t"
       ],
       "cases": [
         {

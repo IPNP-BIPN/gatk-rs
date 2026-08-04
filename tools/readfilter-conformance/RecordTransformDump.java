@@ -26,7 +26,8 @@
  * Output:
  *
  *     deflater\t<class>
- *     fixture\t<base64 bam>
+ *     fixture\t<label>\t<base64 bam>
+ *     fixtureindex\t<label>\t<base64 bai>
  *     header\t<tool>\t<label>\t<escaped SAM header>
  *     commandline\t<tool>\t<label>\t<the @PG CL the tool recorded>
  *     output\t<tool>\t<label>\t<base64 bam>
@@ -81,15 +82,15 @@ public class RecordTransformDump {
         // Every read carries OQ, so RevertBaseQualityScores can succeed.
         final Path full = dir.resolve("full.bam");
         buildFixture(full.toFile(), Oq.ALL);
-        System.out.printf("fixture\tfull\t%s%n", base64(full));
+        fixture(dir, full, "full");
         // One read has no OQ at all, and one has an empty OQ. Both abort the revert, and the
         // duplicate tool does not care.
         final Path partial = dir.resolve("partial.bam");
         buildFixture(partial.toFile(), Oq.MISSING_ON_ONE);
-        System.out.printf("fixture\tpartial\t%s%n", base64(partial));
+        fixture(dir, partial, "partial");
         final Path empty = dir.resolve("empty-oq.bam");
         buildFixture(empty.toFile(), Oq.EMPTY_ON_ONE);
-        System.out.printf("fixture\tempty-oq\t%s%n", base64(empty));
+        fixture(dir, empty, "empty-oq");
 
         // UnmarkDuplicates: the transform, the interval, the filter that is not the default, and
         // the run that asks for no index.
@@ -110,6 +111,18 @@ public class RecordTransformDump {
         revert(dir, full, "noindex", new String[] {"--create-output-bam-index", "false"});
         revert(dir, partial, "missing-oq", new String[] {});
         revert(dir, empty, "empty-oq", new String[] {});
+    }
+
+    /**
+     * A fixture and the index written beside it.
+     *
+     * The index travels too because the port's reader needs one to open the file at all, and a
+     * test that built its own would be inventing part of the input rather than reading it.
+     */
+    static void fixture(final Path dir, final Path bam, final String label) throws Exception {
+        System.out.printf("fixture\t%s\t%s%n", label, base64(bam));
+        final Path index = dir.resolve(bam.getFileName().toString().replace(".bam", ".bai"));
+        System.out.printf("fixtureindex\t%s\t%s%n", label, base64(index));
     }
 
     /** Which reads of the fixture carry an OQ tag. */
