@@ -21,10 +21,25 @@
 //! # `Math.pow` enters here, and it carries no bound
 //!
 //! [`Self::calculate_weights`] ends on `Math.pow(10, secondAdjusted)`. That is a **second**
-//! unported intrinsic, and unlike `exp` nobody has measured a bound for it: the jmath table puts
-//! the host's `powf` at 99.9378% agreement with the JVM, against `exp`'s 99.9711%, and 0025's
-//! 1-ulp result is about `exp` alone. Three settings of `weightDecay` reach three different sets
-//! of intrinsics, so the conformance suite has to carry all three:
+//! unported intrinsic. It now has a bound — htsjdk-rs decision 0027 measured fdlibm's `pow` at
+//! **1 ulp** from `Math.pow` over 404,964 points, the same figure 0025 got for `exp` — but this
+//! port does not use fdlibm here, and the reason is measured rather than assumed.
+//!
+//! Switching all three of gatk-rs's `pow` call sites to [`jmath::strict_math::pow`] was tried. It
+//! **broke a passing byte-identity claim**: `heterozygosity_and_mq` moved from `3.3333333333333335`
+//! to `3.3333333333333344`, two ulp on the emitted value, from one ulp in `pow` amplified by the
+//! arithmetic above it. The host's `powf` agrees with `Math.pow` on 99.9378% of the corpus where
+//! fdlibm agrees on 98.5317%, so on the points these suites reach, the libm is simply closer.
+//!
+//! What that trade buys and costs is worth stating plainly, because it is the opposite of the one
+//! `NaturalLogUtils` makes for `exp`. fdlibm is fixed and the host libm is whatever the machine
+//! ships, so fdlibm would make the port host-independent — at the price of a suite that passes
+//! today. The evidence that the libm is safe here is not an assumption: these suites pass on
+//! aarch64 locally and on x86-64 in CI, which is two platforms agreeing. If a third ever disagrees,
+//! the bounded alternative now exists and this is the note that says so.
+//!
+//! Three settings of `weightDecay` reach three different sets of intrinsics, so the conformance
+//! suite has to carry all three:
 //!
 //! | `weightDecay` | what runs |
 //! |---|---|
