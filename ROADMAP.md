@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
 | **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **55 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 52 of 54 annotations measured |
+| **gatk-rs** | 202 tools | 6 crates, **57 conformance suites, all oracle-backed**; 1 tool byte-identical, and the annotation archetype opened with 53 of 54 annotations measured |
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
 109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
@@ -49,13 +49,15 @@ The single biggest unlock: 163 non-Spark GATK tools stand on it.
 |---|---|---|
 | the Tribble index (G1.3) | Milestone H | it is an htsjdk capability GATK consumes |
 | the multi-input walkers (G1.6) | Milestone H | they merge with `VCFUtils.smartMergeHeaders` and `VariantContextComparator` |
-| `AllelePseudoDepth` (G1.7) | **reopened as G1.9** | the licence was probably never what blocked it. Both values it emits go through a `DecimalFormat`, and a 1-ulp difference cannot survive rounding to two decimals. Being measured |
+| `AllelePseudoDepth` (G1.7) | **done, G1.9** | the licence was never what blocked it. Both values leave through a `DecimalFormat` at two and four decimals, and the fixed point turned out bit-identical anyway. Oracle-backed, 46 calls, no divergence |
 | `AssemblyComplexity` (G1.7) | Milestone G3 | it needs `Haplotype.getEventMap()`, the assembly event model |
 
-55 conformance suites carry it, all oracle-backed.
+57 conformance suites carry it, all oracle-backed.
 
-One of those four came back. **G1.9** below is `AllelePseudoDepth`, reopened not because more effort
-was found for it but because the reason it was refused does not survive reading the annotation.
+One of those four came back and is now closed. **G1.9** below is `AllelePseudoDepth`, reopened not
+because more effort was found for it but because the reason it was refused did not survive reading
+the annotation — and then measured all the way through, ending oracle-backed with no divergence.
+Three of the four remain open, none of them G1 work.
 
 ### G1.1 Read filters
 
@@ -168,7 +170,7 @@ was found for it but because the reason it was refused does not survive reading 
 
 ### G1.7 Annotations
 
-- [~] the 54-annotation library. **Fifty-two** are ported and oracle-backed: the counting family
+- [~] the 54-annotation library. **Fifty-three** are ported and oracle-backed: the counting family
       (`ChromosomeCounts`, `SampleList`, `RawGtCount`, `Coverage`, `MappingQualityZero`,
       `CountNs`, `OriginalAlignment`) and the median family (`BaseQuality`, `MappingQuality`,
       `ReadPosition`, `FragmentLength`, i.e. MBQ/MMQ/MPOS/MFRL) and the rank-sum family
@@ -256,7 +258,7 @@ for.
       iteration count matches and the worst value divergence is zero ulp.** The fixed point is
       bit-identical, not merely bounded. The `weights` rows are the control, `digamma` with no `exp`
       in it, asserted bit-identical for that reason
-- [ ] `AllelePseudoDepth` itself (#99), with the suite comparing the **formatted strings**.
+- [x] `AllelePseudoDepth` itself (#99), with the suite comparing the **formatted strings**.
       Comparing the doubles would re-measure the `exp` gap, which is already measured; comparing
       the strings measures whether it reaches the output. Two suites, both `golden-pending`.
 
@@ -281,9 +283,15 @@ for.
       **allele** index, so a site with more alleles than reads throws `IndexOutOfBoundsException`
       and one with fewer floors each allele's row using an unrelated read's quality
 
-Either outcome is worth having. No divergence and the library goes to **53 of 54**, leaving only
-`AssemblyComplexity` and its G3 dependency. A divergence and it will be one row sitting on a
-rounding boundary, which is a one-line quarantine instead of a refused annotation.
+**No divergence.** All 46 calls match, all 69 rows, and the library goes to **53 of 54** — leaving
+only `AssemblyComplexity` and its G3 dependency. The rounding argument this section opened with
+turned out not to be needed: G1.9.2 measured the fixed point bit-identical, so nothing had to
+survive the formatter. What the formatter did instead was cost a day, because reproducing it needed
+three undocumented facts and 5.7M measured values.
+
+The goldens are byte-identical to the same container on Apple Silicon, so nothing in this chain
+depends on the host — which is a stronger statement than the suite needed to make and is worth
+having on the record for a chain built on an unported `exp` and an unported `pow`.
 
 **Not in scope:** reproducing `Math.exp` bit-for-bit. It has no specification to implement
 against — beyond "within 1 ulp and semi-monotone", its only definition is its own code — so

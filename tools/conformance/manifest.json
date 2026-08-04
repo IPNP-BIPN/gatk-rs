@@ -1032,7 +1032,7 @@
     },
     {
       "id": "decimal-format",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DecimalFormat, for the two patterns AllelePseudoDepth emits through",
       "harness": "tools/annotation-conformance",
       "tools": [],
@@ -1040,25 +1040,17 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 315,
-      "expect_contains": [
-        "3fc3d70a3d70a3d7\t0.15\t0.155",
-        "3fc51eb851eb851f\t0.17\t0.165",
-        "3fc0000000000000\t0.12\t0.125",
-        "3f747ae147ae147b\t0.01\t0.005",
-        "3f0a36e2eb1c432d\t0\t0"
-      ],
       "cases": [
         {
           "dump": "DecimalFormatDump",
-          "golden": null,
-          "why": "No golden yet. The candidate comes from the pinned container on a real x86-64 runner, published as this run's golden-pending artefact."
+          "golden": "crates/gatk-annotation/tests/data/decimal_format.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 315 rows, no corrections, and byte-identical to the same container on Apple Silicon: nothing the formatter does here depends on the host. 630 strings compared and four values diverge, all of them Java emitting digits the shortest form does not have."
         }
       ]
     },
     {
       "id": "allele-pseudo-depth",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DD and DF, the annotation G1.9 was opened for",
       "harness": "tools/annotation-conformance",
       "tools": [],
@@ -1066,19 +1058,11 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 69,
-      "expect_contains": [
-        "err\tlog10-three-by-two\t1\tjava.lang.IndexOutOfBoundsException",
-        "out\tempty-evidence\t2\t0,0\tNaN,NaN",
-        "out\tempty-evidence-keep-prior\t2\t1,1\t0.5,0.5",
-        "out\tsingle-allele\t1\t-\t-",
-        "out\tnull-likelihoods\t1\t-\t-"
-      ],
       "cases": [
         {
           "dump": "AllelePseudoDepthDump",
-          "golden": null,
-          "why": "No golden yet. The candidate comes from the pinned container on a real x86-64 runner, published as this run's golden-pending artefact."
+          "golden": "crates/gatk-annotation/tests/data/allele_pseudo_depth.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 69 rows, no corrections, and byte-identical to the same container on Apple Silicon. All 46 calls match, including the two whose second answer differs from their first because the reference wrote through its own memo."
         }
       ]
     }
