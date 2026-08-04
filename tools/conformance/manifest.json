@@ -957,6 +957,24 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 42 rows, no corrections. The rows that carry the claim are the eight defs rows: the subclass's own field is index 0, its nested collection occupies 1 to 4, and the base class's two fields are 6 and 7."
         }
       ]
+    },
+    {
+      "id": "barclay-arguments-file",
+      "status": "oracle-backed",
+      "title": "Barclay's --arguments_file",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "why": "G1.8's fourth slice, and the only argument that changes the command line rather than a field. When the special arguments-file argument is present, parseArguments reads the named files, splits every non-comment non-blank line on runs of whitespace, and calls itself again on the result. The file's arguments come first, because newArgs.addAll(Arrays.asList(args)) appends the original command line to the expansion rather than the other way round, and it does so wherever the arguments-file argument itself sat: a collection given a value in a file and another on the command line ends up with the file's first either way, and a scalar given in both is cannot be specified more than once rather than an override. The recursion is bounded by a set of file names rather than a depth, and every file named in a pass goes into that set including ones skipped for already being there, so a file that includes itself is read once and two files that include each other are read once each. The argument is not removed from the command line between passes: the recursion terminates because the second expansion is empty, not because the argument is gone. And the tag surrogates are reset between passes, because the first pass built keys the second would build again. Splitting is StringUtils.split, which collapses runs of whitespace, so an argument value containing a space cannot be written in one of these files at all.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BarclayArgumentsFileDump",
+          "golden": "crates/gatk-barclay/tests/data/arguments_file.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 76 rows over 14 command lines, no corrections. The pair that carries the claim is file-then-command-line against command-line-then-file: the same three values in the same order both ways, because the expansion is what the original command line is appended to."
+        }
+      ]
     }
   ],
   "probes": []

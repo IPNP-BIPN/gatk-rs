@@ -760,6 +760,13 @@ impl FileSource for Filesystem {
 /// `ARGUMENT_FILE_COMMENT`.
 const ARGUMENT_FILE_COMMENT: &str = "#";
 
+/// `SpecialArgumentsCollection.ARGUMENTS_FILE_FULLNAME`.
+///
+/// The parser does **not** declare it. A tool that wants argument files has to hold a
+/// `SpecialArgumentsCollection`, which GATK's `CommandLineProgram` does; a tool that does not gets
+/// "not a recognized option" for `--arguments_file`, which is the correct answer for it.
+pub const ARGUMENTS_FILE_FULLNAME: &str = "arguments_file";
+
 /// `EXPANSION_FILE_EXTENSIONS`.
 const EXPANSION_FILE_EXTENSIONS: [&str; 2] = [".list", ".args"];
 
@@ -780,6 +787,27 @@ fn load_collection_list_file(path: &str, files: &dyn FileSource) -> Result<Vec<S
         // space after the colon, which is the reference's.
         Err(IoError) => Err(Error::command_line(format!(
             "I/O error loading list file:{path}"
+        ))),
+    }
+}
+
+/// `loadArgumentsFile`: every non-comment non-blank line, split on runs of whitespace.
+///
+/// `StringUtils.split(line)` collapses runs, so alignment inside a file is free — and an argument
+/// value containing a space cannot be written in one at all.
+fn load_arguments_file(path: &str, files: &dyn FileSource) -> Result<Vec<String>, Error> {
+    match files.read(path) {
+        Ok(text) => Ok(text
+            .lines()
+            // The comment test is on the **raw** line and the blank test is on the trimmed one, so
+            // an indented `#` is not a comment while an indented empty line is blank.
+            .filter(|line| !line.starts_with(ARGUMENT_FILE_COMMENT) && !line.trim().is_empty())
+            .flat_map(|line| line.split_whitespace().map(str::to_string))
+            .collect()),
+        // Note the missing space after the colon, and that it is a different message from the
+        // expansion-file one.
+        Err(IoError) => Err(Error::command_line(format!(
+            "I/O error loading arguments file:{path}"
         ))),
     }
 }
@@ -1010,6 +1038,13 @@ fn collect(class: &ClassDecl, into: &mut Vec<Definition>) -> Result<(), Error> {
 pub struct Parser {
     definitions: Vec<Definition>,
     append_to_collections: bool,
+    /// `argumentsFilesLoadedAlready`.
+    ///
+    /// Parser state rather than per-call state, because the recursion is the same parser calling
+    /// itself. Every file *named* in a pass goes in here, including ones that were skipped for
+    /// already being present, which is what stops a file that includes itself and a pair of files
+    /// that include each other.
+    arguments_files_loaded_already: Vec<String>,
 }
 
 impl Parser {
@@ -1019,6 +1054,7 @@ impl Parser {
         Self {
             definitions,
             append_to_collections: false,
+            arguments_files_loaded_already: Vec::new(),
         }
     }
 
@@ -1066,9 +1102,25 @@ impl Parser {
     ) -> Result<(), Error> {
         // `parser.parse(tagParser.preprocessTaggedOptions(args))`: the rewrite happens **first**,
         // so jopt-simple never sees a tag and every error about one comes from before or after it.
-        let (argv, surrogates) = self.preprocess_tagged_options(argv)?;
-        let borrowed: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let (preprocessed, surrogates) = self.preprocess_tagged_options(argv)?;
+        let borrowed: Vec<&str> = preprocessed.iter().map(String::as_str).collect();
         let (parsed, positionals) = self.tokenize(&borrowed)?;
+
+        // `--arguments_file` is checked here, between the grammar and the values, and it is the
+        // only argument that changes the command line rather than a field.
+        if let Some(expanded) = self.expand_from_argument_file(&parsed, files)? {
+            // The file's arguments come **first**: `newArgs.addAll(Arrays.asList(args))` appends
+            // the original command line to the expansion rather than the other way round, wherever
+            // `--arguments_file` itself sat. That is why a collection ends up with the file's
+            // values before the user's and a scalar given in both is a duplicate.
+            let mut next: Vec<String> = expanded;
+            next.extend(argv.iter().map(|arg| (*arg).to_string()));
+            let borrowed: Vec<&str> = next.iter().map(String::as_str).collect();
+            // The tag surrogates of this pass are dropped by construction: `preprocess_tagged_
+            // options` builds a fresh map per call, which is what `resetTagSurrogates` does by
+            // hand in the reference.
+            return self.parse_arguments_with(&borrowed, files);
+        }
 
         // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`: the map is over
         // the specs as they were registered, which is field order, and `has` filters it to the
@@ -1102,6 +1154,50 @@ impl Parser {
         }
 
         self.validate_argument_values()
+    }
+
+    /// `expandFromArgumentFile`, plus the guard in `parseArguments` that decides whether to recurse.
+    ///
+    /// `Ok(None)` means "do not recurse", which covers both "the argument was not given" and "every
+    /// file it named has already been read". The second is how the recursion terminates: the
+    /// argument is **not** removed from the command line, so the next pass sees it again and
+    /// expands it to nothing.
+    fn expand_from_argument_file(
+        &mut self,
+        parsed: &[(usize, Vec<String>)],
+        files: &dyn FileSource,
+    ) -> Result<Option<Vec<String>>, Error> {
+        let Some(index) = self.index_of_alias(ARGUMENTS_FILE_FULLNAME) else {
+            return Ok(None);
+        };
+        let Some((_, argfiles)) = parsed.iter().find(|(i, _)| *i == index) else {
+            return Ok(None);
+        };
+
+        // `.distinct().filter(not already loaded)`, in that order.
+        let mut seen: Vec<&String> = Vec::new();
+        let mut expanded: Vec<String> = Vec::new();
+        for file in argfiles {
+            if seen.contains(&file) {
+                continue;
+            }
+            seen.push(file);
+            if self.arguments_files_loaded_already.contains(file) {
+                continue;
+            }
+            expanded.extend(load_arguments_file(file, files)?);
+        }
+        // Every file *named*, not every file read: a file skipped for being already loaded is
+        // still recorded, which costs nothing and is what the reference does.
+        for file in argfiles {
+            self.arguments_files_loaded_already.push(file.clone());
+        }
+
+        if expanded.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(expanded))
+        }
     }
 
     /// `TaggedArgumentParser.preprocessTaggedOptions`.
