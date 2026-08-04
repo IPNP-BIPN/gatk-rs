@@ -141,6 +141,9 @@ jobs:
           - group: oracle-backed
             index: "10/10"
             suites: "annotation-fragment-counts annotation-haplotype-filtering"
+          - group: golden-pending
+            index: "1/1"
+            suites: "multipasswalker"
     steps:
       - uses: actions/checkout@v4
 
