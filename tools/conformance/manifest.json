@@ -1029,6 +1029,42 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 29 rows, no corrections. The result it carries is the one G1.9 needed: every iteration count matches and the worst value divergence is zero, so the fixed point neither amplifies the exp difference nor crosses its convergence threshold differently."
         }
       ]
+    },
+    {
+      "id": "decimal-format",
+      "status": "oracle-backed",
+      "title": "DecimalFormat, for the two patterns AllelePseudoDepth emits through",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "G1.9.3. AllelePseudoDepth writes strings, not numbers, so java.text.DecimalFormat is part of its output. The Javadoc specifies HALF_EVEN and the pattern language and says nothing about the three facts that decide printed digits, each established here by measurement rather than by reading the class, which is GPL2 and may not be transcribed. First, it rounds the SHORTEST decimal form and not the value: formatting 0.1 to forty places gives 0.1 rather than the double's true 0.1000000000000000055511151231257827. Second, an apparent tie is settled by which side of the halfway point the double sits on, so 0.155 rounds down and 0.165 rounds up although the digit strings are the same shape, and only when the shortest form IS the value is it a real tie for HALF_EVEN to break on parity. Third, the two patterns disagree with each other at one place: where the rounding position falls before the first digit, #.## follows the value and #.#### rounds to even, so 0.005 and 5e-5 are the same shape one decade apart and go opposite ways. Values are bit patterns because a decimal literal in a golden would be re-parsed into a possibly different double, which for a suite about the last digit is the whole question.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "DecimalFormatDump",
+          "golden": "crates/gatk-annotation/tests/data/decimal_format.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 315 rows, no corrections, and byte-identical to the same container on Apple Silicon: nothing the formatter does here depends on the host. 630 strings compared and four values diverge, all of them Java emitting digits the shortest form does not have."
+        }
+      ]
+    },
+    {
+      "id": "allele-pseudo-depth",
+      "status": "oracle-backed",
+      "title": "DD and DF, the annotation G1.9 was opened for",
+      "harness": "tools/annotation-conformance",
+      "tools": [],
+      "why": "G1.9.3, and the end of G1.9. AllelePseudoDepth emits its two keys as STRINGS through DecimalFormat at two and four decimals, which is what makes an oracle-backed suite possible at all for a chain that calls Math.exp: G1.9.1 measured the port within 1 ulp of the reference and G1.9.2 measured the fixed point at zero ulp, and the formatter is about twelve orders of magnitude coarser than a last bit. The suite therefore compares the formatted strings, which is the only thing the reference writes. Four behaviours are the reason for the case list, and none of them is the arithmetic. composePriorPseudoCounts memoises one array per allele count and hands out that array rather than a copy, so on the empty-evidence branch the posteriors ARE the memo and the closing subtraction zeroes it; every case is annotated twice with the same object, and the reference's own second answer for empty-evidence is NaN,NaN. The log10 branch's visitor receives (row, column) as (allele, read) and looks the mapping quality up at evidence().get(row), so a site with more alleles than reads throws IndexOutOfBoundsException and one with fewer floors each allele's row using an unrelated read's quality. The decay rate selects which intrinsics run: one Math.pow per read at the default, two when it is neither zero nor one, and none at zero, where the weights are null. And the guards put no key in the genotype at all, which is not the same as an empty one. The matrices are graded rather than symmetric, because a symmetric site gives every read the same weight and every setting of weightDecay the same answer.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AllelePseudoDepthDump",
+          "golden": "crates/gatk-annotation/tests/data/allele_pseudo_depth.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 69 rows, no corrections, and byte-identical to the same container on Apple Silicon. All 46 calls match, including the two whose second answer differs from their first because the reference wrote through its own memo."
+        }
+      ]
     }
   ],
   "probes": []

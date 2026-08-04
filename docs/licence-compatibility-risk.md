@@ -65,6 +65,43 @@ Where such behaviour is observable in an output byte, there are four options and
    well as a fidelity one, which the plan does not currently treat it as.
 4. **Quarantine.** Report the affected values as bio-identical, with the exact list committed.
 
+## The label is more dangerous than the block (2026-08-04)
+
+The table above lists `DecimalFormat` rounding as licence-blocked. G1.9.3 needed it, went looking
+for option 1, and found that **most of what the label covered was never blocked**.
+
+Two things had been run together:
+
+- *the shortest decimal representation of a double*, which is a genuinely hard problem and is what
+  `FloatingDecimal` exists for. Rust's `{:e}` already supplies it, so nothing needs porting;
+- *the exact decimal expansion of a double*, which htsjdk-rs decision 0013 said also required
+  `FloatingDecimal`. It does not. Every finite double **is** a finite decimal: `m * 2^e` is `m`
+  doubled `e` times when `e` is non-negative, and `m * 5^-e` with the point moved when it is not,
+  because `2^e = 5^-e / 10^-e`. Multiplying a decimal digit string by five is one pass over its
+  digits. Thirty lines of schoolbook arithmetic on the bits of an IEEE 754 double, and a
+  translation of nothing.
+
+The second is what `DigitList.shouldRoundUp` needs to break a tie, and supplying it closed **44 of
+the 112** quarantined `FormatUtil` divergences with none introduced (htsjdk-rs #72, decision 0026).
+The 68 that remain are one cause, and it is the first bullet: Java 17's pre-Schubfach digit
+generation, which option 3 above already covers.
+
+**The lesson is about the label, not the licence.** Once work is marked licence-blocked it stops
+being examined, and the mark covers whatever was nearby when it was applied. Option 1 was written
+down and correct; what failed was that nobody re-ran it after the classification. Anything
+currently carrying that status is worth one more look, and the question to ask is narrow: *which
+specific fact does the output depend on, and is that fact reachable without the source?*
+
+The same re-examination reopened `AllelePseudoDepth` itself (G1.9): it was refused on `Math.exp`,
+and both values it emits leave through a formatter at two and four decimals, about twelve orders of
+magnitude coarser than the 1 ulp that was being worried about.
+
+**What this does not reach.** `Math.exp` bit-for-bit stays out of scope, and for a different reason
+that this finding does not weaken: there is no specification to implement against, so recovering
+its bits by black-box measurement would be reverse engineering toward a functional copy rather than
+implementing to a property. See htsjdk-rs #71. Option 1 needs a property to exist; where none does,
+the option is not available.
+
 ## Mitigation now in place
 
 `htsjdk-rs/tools/audit/provenance.py` checks every `Ported from` claim in the tree against an
