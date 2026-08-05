@@ -483,10 +483,22 @@ Everything downstream inherits these, so they are front-loaded.
       writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
       to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
 - [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write, index and all
-      field types remain). Two named consumers wait here rather than in G1: the **Tribble index**,
-      which is what turns a Feature file into a random-access source rather than a linear read
-      (G1.3), and the pair `VCFUtils.smartMergeHeaders` plus `VariantContextComparator`, which is
-      what `MultiVariantDataSource` merges several VCFs with (G1.6's multi-input half)
+      field types remain). One named consumer still waits here: the **Tribble index**, which is
+      what turns a Feature file into a random-access source rather than a linear read (G1.3).
+
+      **The other is done.** `VariantContextComparator` and `VCFUtils.smartMergeHeaders` are ported
+      and oracle-backed (htsjdk-rs #81 and #82, 67 and 16 rows), so `MultiVariantDataSource` has
+      what it needs and **the multi-input walkers G1.6 handed over are no longer blocked**.
+
+      Between them the two dumps corrected the port **four times before a single golden row was
+      compared**, and all four are the same shape — behaviour that reading the source carefully
+      does not reveal. The comparator's two constructors word the *empty* case differently, and
+      nothing in the class explains why. Every merge output carries a `fileformat` line **no source
+      wrote**. The merge's version comes from a **field** set at parse time rather than from a
+      `##fileformat` line, so a header assembled in memory never reaches the version policy at all.
+      And both of the merge's Integer/Float promotion arms are **no-ops**: the Java says "promote
+      key to Float" twice and neither arm does it, because the `put` writes back what the map
+      already holds
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
