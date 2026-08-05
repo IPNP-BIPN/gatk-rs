@@ -510,27 +510,39 @@ Everything downstream inherits these, so they are front-loaded.
       already holds
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
-- [~] **GKL-exact deflate**, scoped by measurement rather than started by assumption. htsjdk-rs
-      decision 0028 opened `libgkl_compression.so` and found **both** ISA-L's igzip and zlib
-      1.2.13 inside it, then compressed the same bytes through `IntelDeflater` and
-      `java.util.zip.Deflater` at every level to see which one runs. **Levels 1 to 6 are igzip**
-      and differ from the JDK, and **level 5 is htsjdk's BGZF default**, so that is the path every
-      BAM takes. **Levels 7 to 9 are zlib** and are byte-identical to the JDK, which this port
-      already reproduces.
+- [~] **GKL-exact deflate**, and levels 3 to 9 are done. htsjdk-rs `crates/gkl-deflate` reproduces
+      GKL byte for byte there: **28 of 28** (fixture, level) pairs against the column the real
+      library produced in the pinned container.
 
-      So the entry is smaller than its old wording: **levels 7 to 9 need nothing at all**, and the
-      warning this milestone carries narrows to levels 1 to 6. And **nothing here is
-      licence-blocked**: ISA-L is BSD-3-Clause, GKL is MIT. This is the first byte-deciding
-      component in the programme whose reference implementation is *permissively* licensed, so
-      both linking and porting are open, unlike `Math.exp` where the milestone is stuck by law
-      rather than by effort.
+      The scoping was measured rather than assumed, and it moved twice. Decision 0028 read the
+      level table and inferred "levels 1 to 6 are igzip"; decision 0029 read the branch out of the
+      library and found the split elsewhere. **Levels 1 and 2 are igzip; 3 to 9 are a zlib 1.2.13
+      carrying Intel's `deflate_medium` patch**, which the JDK's zlib 1.3.2 disagrees with below
+      level 7. The BGZF default is 5, so the default path is that patched zlib, not igzip. Two
+      pieces reproduce it: `deflate_medium` itself, and the CRC-32C positional hash Intel
+      substitutes for zlib's multiplicative rolling one.
 
-      **Prove it on real x86-64** used to be its own entry, and it turns out to come first rather
-      than last. igzip dispatches on CPU features and ships AVX2 and AVX512 kernels: if those emit
-      different bytes, there is no fixed target to port to and this entry belongs beside
-      `Math.pow` in decision 0007 instead. The `igzip-portability` CI job answers it by rerunning
-      the probe on a real x86-64 host and diffing every hash against a column produced under
-      Rosetta, which implements no AVX.
+      **Levels 1 and 2 are identified but not ported.** ISA-L 2.30.0, `isal_deflate_stateless`,
+      level 1, `level_buf_size = ISAL_DEF_LVL1_DEFAULT`, `end_of_stream = 1`: all four fixtures,
+      both Java levels, byte for byte. `deflate_gkl` refuses those levels rather than answering
+      with zlib's bytes. That leaves one piece of work and no unknowns; it is larger than
+      `deflate_medium` was, because igzip encodes into an intermediate compressed format and
+      builds its Huffman tables from the token histogram rather than emitting deflate directly.
+
+      **Nothing here is licence-blocked**: ISA-L is BSD-3-Clause, GKL is MIT, Intel's zlib fork is
+      under the zlib licence. The first byte-deciding component in the programme whose reference
+      implementation is *permissively* licensed, unlike `Math.exp` where the obstacle is law
+      rather than effort.
+
+      **"Prove it on real x86-64" came first rather than last, and the answer is one bit.**
+      Decision 0033: both backends cut at **SSE4.2** and nowhere else. Above it there is one
+      behaviour, and SSE4.2, AVX and AVX2 hosts all produce it; below it a second, which zlib
+      reaches by using the multiplicative hash and igzip by falling back to pure C. So a byte claim
+      over BGZF is a claim about a CPU class, and the class every oracle run has been in is
+      "reports SSE4.2". What this retires: 0028 treated "igzip's AVX2 kernels might differ from its
+      SSE ones" as the thing that could put this entry beside `Math.pow`. Measured, they do not.
+      AVX512 remains untested, because QEMU's TCG drops the feature bits and no available host has
+      it.
 - [~] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
       whose remaining divergent functions can only be made exact by transcribing GPL2 source, so
       that is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function
