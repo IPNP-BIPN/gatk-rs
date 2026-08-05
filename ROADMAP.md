@@ -512,12 +512,23 @@ Everything downstream inherits these, so they are front-loaded.
       **and CRAI with it**: a sub-project on its own
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
       exists, every byte claim over BGZF must name the deflater it is a claim about
-- [~] **jmath**: bit-exact Java `Math` / `StrictMath` / commons-math3 `FastMath`, plus `Gamma`,
-      `BinomialDistribution`, SVD. `Percentile` and `Median` are ported and oracle-backed. The
-      target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`, whose
-      remaining divergent functions can only be made exact by transcribing GPL2 source, so that
-      is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function a
-      ported call site reaches is exact, and every one that cannot be is named at the call site" 
+- [~] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
+      whose remaining divergent functions can only be made exact by transcribing GPL2 source, so
+      that is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function
+      a ported call site reaches is exact, and every one that cannot be is named at the call site".
+
+      **The rule was written down and the list was not.** It is now, in
+      `docs/numeric-functions-a-ported-call-site-reaches.md`, built by walking the call sites rather
+      than the library. Eight functions are reached through jmath and every one is exact or
+      bounded; **six call sites reach the host libm directly**, and those are the whole of the gap:
+      four `powf`, one `exp` in the activity profile that should be `strict_math::exp`, and
+      `log1mexp`'s `ln_1p`/`expm1` pair, which nothing in G1 reaches. `StrictMath.exp` and
+      `StrictMath.pow` are exact and `Math.exp`/`Math.pow` are each bounded at **1 ulp**
+      (decisions 0025 and 0027).
+
+      `BinomialDistribution` and SVD, the other two names this entry used to carry, are **not
+      reached by anything ported**: both are Mutect2-family and therefore Milestone G3. The honest
+      entry for them is "waits for G3" rather than "remaining" 
 - [ ] BGZF GKL/igzip surface cross-checked on real x86-64 hardware, not under emulation
 
 ---
