@@ -496,6 +496,28 @@ Everything downstream inherits these, so they are front-loaded.
       file's modification time, so the raw bytes differ on every run: the golden masks those eight
       bytes and reports the offset rather than being quietly unstable.
 
+      **Writing one landed with htsjdk-rs #99**, which is what GATK does beside every VCF it emits,
+      and it is a different problem: reading is a layout, writing is a set of decisions the layout
+      only records the outcome of. The per-contig bin width above now has its **cause**.
+      `LinearIndex.optimize` doubles the width per contig, merging blocks pairwise, until the most
+      dense block is estimated to hold more than a hundred features, or one block is left, or the
+      width goes bad — and it keeps the *last* width still under the threshold rather than the
+      first one over it. The estimate is the largest block's size in **bytes** over the mean bytes
+      per feature, never compared to the feature count the same object carries, so two files with
+      identical feature counts and different line lengths index differently.
+
+      **The index type is chosen from the data**, and measured, the choice flips both ways on the
+      same two files: sparse data gets a linear index under `FOR_SEEK_TIME` and an interval tree
+      under `FOR_SIZE`, and dense data gets the opposite, with nothing on a command line to say
+      which a run produced. And the header's `FEATURE_LENGTH_MEAN` is **not the mean feature
+      length**: the statistics are pushed the running maximum at each step, so features of lengths
+      10, 10, 600, 10, 10 write 364.0, the mean of 10, 10, 600, 600, 600. A port computing the
+      honest mean writes a different file.
+
+      The interval-tree layout is refused on write as it is on read, which is a **real** limit
+      rather than a formality, because the dynamic creator reaches it from ordinary data. It is
+      the named next slice of this entry.
+
       **The other is done.** `VariantContextComparator` and `VCFUtils.smartMergeHeaders` are ported
       and oracle-backed (htsjdk-rs #81 and #82, 67 and 16 rows), so `MultiVariantDataSource` has
       what it needs and **the multi-input walkers G1.6 handed over are no longer blocked**.
