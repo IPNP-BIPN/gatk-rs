@@ -597,8 +597,41 @@ Everything downstream inherits these, so they are front-loaded.
       scalar accessor reaching a list or a flag fails the **cast** rather than the parse. And
       `parseVcfDouble` accepts `1f`, `0x1p3`, `" 1"`, `inf` and `nan`, so a VCF may carry numbers no
       reading of the specification predicts
-- [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
-      **and CRAI with it**: a sub-project on its own
+- [~] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
+      **and CRAI with it**: a sub-project on its own, built floor upward. Three suites are
+      oracle-backed and the scope is smaller than 169 Java files suggested.
+
+      **The floor is the integers** (htsjdk-rs #103). A container header is a run of ITF8s, so
+      nothing above them can be checked until they are, and they lie in two directions. The
+      five-byte ITF8 **stores four bits twice** and the reader takes byte four whole while masking
+      byte five to its low nibble, so `f000000112` and `f0000001f2` both read 18 and a stream whose
+      two copies disagree resolves silently. And a **truncated stream is a number, not a refusal**:
+      `InputStream.read()` returns -1 past the end and nothing checks it after the first byte, so
+      `80` reads -1. Adding the refusal a port would naturally reach for would be the divergence.
+
+      **The file definition and container header** (htsjdk-rs #107). The file id is padded to
+      exactly 20 bytes and **truncated in silence**. The checksum covers the header rather than the
+      container, is little-endian, which is the opposite of the CRC in a BGZF block one crate away,
+      and is **absent below version 3**, so the same container is four bytes shorter in a 2.1 file.
+      Every file has at least two containers, and the last one is recognised by a magic number in a
+      **coordinate field**: its `alignmentStart` is 4542278, which is `0x454F46`, which is `EOF`.
+
+      **The block** (htsjdk-rs #108). The CRC covers the header **and** the content together, so a
+      block cannot be verified without re-reading its own header and the four checksum bytes sit
+      **outside** the `compressedSize` the header declares. A port that walks a container by adding
+      header plus compressed size lands four bytes short and misreads every block after the first.
+
+      **The scope is bounded by a measurement, not by the file count.** htsjdk 4.2.0 **ships the
+      CRAM 3.1 codecs and refuses 3.1 files**: `isSupportedVersion` answers false, and opening a 3.1
+      definition throws while a 3.0 one gets past the version gate. So rANS **4x8** is required and
+      rANS Nx16, the range coder, fqzcomp and the name tokeniser are not, because no file htsjdk
+      will open can contain them. That is 21 of the 169 files out of scope, and they are the hardest
+      21. htsjdk-rs decision 0038.
+
+      Measured on five ordinary files, a four-read CRAM uses **RAW, GZIP and rANS** over 29 blocks,
+      which is what makes rANS 4x8 required rather than optional, and it is the next slice. Two
+      external compressors are **unreachable from the oracle as it stands**: Commons Compress is not
+      on its classpath, so bzip2 and LZMA blocks cannot be produced to compare against at all
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
