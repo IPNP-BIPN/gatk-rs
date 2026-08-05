@@ -663,9 +663,36 @@ Everything downstream inherits these, so they are front-loaded.
       on Apple Silicon, so the rANS arithmetic does not depend on the silicon. That does not change
       where a golden may come from.
 
-      **The compression header is the next slice**: `CompressionHeaderEncodingMap`, the encoding
-      identifiers and the data series they bind. cram-block measured it as the RAW block that
-      follows the GZIP header block in every file, and nothing reads it yet
+      **The compression header is open, and two of its three maps are done.** It is the RAW block
+      cram-block measured behind the GZIP header block in every file, and it is three
+      length-prefixed maps in a row.
+
+      **The preservation map** (htsjdk-rs #118). Its size field is a **hardcoded 5**, not a count:
+      `internalWrite` writes the literal and then exactly RN, AP, RR, SM, TD in that order whatever
+      the header holds. The order is htsjdk's rather than the specification's and the reader accepts
+      any order, so it is **invisible to a round trip** and visible only against the reference's own
+      bytes. A boolean is `== 1` and not `!= 0`, so a 2 reads as false and nothing complains. An
+      unknown key is a plain `RuntimeException` while a missing mandatory key is a `CRAMException`,
+      and the latter names both keys whichever one is absent. And the tag dictionary's first group is
+      always empty, present even where every record carries tags. Measured aside: the whole
+      compression header is the same 160 bytes across four files differing in record count and read
+      length, and only tags move it.
+
+      **The substitution matrix** (htsjdk-rs #119), which is the five bytes the preservation map
+      carries under SM. They pack four two-bit codes per reference base, and the codes are **ranks
+      by observed frequency**, so the commonest substitution gets the shortest ITF8. The ranking has
+      an overflow: the comparator is `(int) (o2.freq - o1.freq)`, a **long difference narrowed to an
+      int**, so two frequencies whose difference is a non-zero multiple of 2^32 compare equal.
+      Measured, with `C` substituted 4294967296 times and nothing else substituted at all, reference
+      base `G` packs 27 in which **C ranks second behind a substitution that never happened**; one
+      more occurrence packs 75 in which it ranks first. The sort also runs **twice**, the second
+      pass over zeroed frequencies, so it is a sort by alphabet wearing the frequency comparator's
+      clothes. TimSort's small-array path is ported rather than delegated to Rust's sort, because
+      that comparator is not a total order and two sorts may legitimately disagree on one.
+
+      **The data series encoding map is the next slice**: `CompressionHeaderEncodingMap`, the ten
+      encoding identifiers and the thirty-two data series they bind. It is the third map, and the
+      first thing in CRAM that describes a record rather than a container
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
