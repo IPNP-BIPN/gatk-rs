@@ -647,7 +647,25 @@ Everything downstream inherits these, so they are front-loaded.
 
       The suite compares the encoding symbols field by field, not only the output bytes, because a
       stream comparison says a port is wrong and a symbol comparison says which multiplication is.
-      **Order 1 is the next slice**
+
+      **Order 1 is ported too** (htsjdk-rs #117), 876 rows over sixteen inputs, and it is **not
+      order 0 with more tables**. Its frequency table **counts three bytes that are not bigrams**:
+      each of the four lanes starts with context 0 while only one of them follows nothing, so
+      `calcFrequenciesOrder1` counts the byte at each quarter boundary as if it did. Measured on the
+      four bytes `ACGT`, context 0 holds A, C, G and T at 1024 apiece, so the table says C is as
+      likely as A after nothing and the input never shows it. Its normalisation is **floating
+      point** where order 0's is fixed point, so one class carries two arithmetics. And **a
+      frequency byte of zero means 4096 on the way in**, a reader-only rule that no input can
+      produce, measured on a five-byte table built by hand.
+
+      Both orders were byte-identical on their first run against the reference's own output.
+      Measured aside: the x86-64 runner's dump is byte-identical to the same dump under emulation
+      on Apple Silicon, so the rANS arithmetic does not depend on the silicon. That does not change
+      where a golden may come from.
+
+      **The compression header is the next slice**: `CompressionHeaderEncodingMap`, the encoding
+      identifiers and the data series they bind. cram-block measured it as the RAW block that
+      follows the GZIP header block in every file, and nothing reads it yet
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
