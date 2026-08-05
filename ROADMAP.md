@@ -598,7 +598,7 @@ Everything downstream inherits these, so they are front-loaded.
       `parseVcfDouble` accepts `1f`, `0x1p3`, `" 1"`, `inf` and `nan`, so a VCF may carry numbers no
       reading of the specification predicts
 - [~] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
-      **and CRAI with it**: a sub-project on its own, built floor upward. Three suites are
+      **and CRAI with it**: a sub-project on its own, built floor upward. Four suites are
       oracle-backed and the scope is smaller than 169 Java files suggested.
 
       **The floor is the integers** (htsjdk-rs #103). A container header is a run of ITF8s, so
@@ -629,9 +629,25 @@ Everything downstream inherits these, so they are front-loaded.
       21. htsjdk-rs decision 0038.
 
       Measured on five ordinary files, a four-read CRAM uses **RAW, GZIP and rANS** over 29 blocks,
-      which is what makes rANS 4x8 required rather than optional, and it is the next slice. Two
-      external compressors are **unreachable from the oracle as it stands**: Commons Compress is not
-      on its classpath, so bzip2 and LZMA blocks cannot be produced to compare against at all
+      which is what makes rANS 4x8 required rather than optional. Two external compressors are
+      **unreachable from the oracle as it stands**: Commons Compress is not on its classpath, so
+      bzip2 and LZMA blocks cannot be produced to compare against at all.
+
+      **rANS 4x8 order 0 is ported and byte-identical** (htsjdk-rs #114), over 1782 rows and
+      eighteen inputs. It is arithmetic rather than layout, and four of its properties are not in
+      the specification. The **requested order is not always the written order**: below four bytes
+      `compress` uses order 0 whatever the parameters say and the order byte records what it used.
+      The four final states are written big-endian and the whole blob is then **reversed**, two
+      reversals that cancel, so a port doing only one of them puts sixteen plausible bytes in the
+      wrong place. The normalisation is fixed point, and **one symbol absorbs the whole rounding
+      residue**: on an input holding symbol `i` exactly `i` times, symbol 254 normalises to 31 and
+      symbol 255, whose fair share is the same 31, is written as **152**. And the frequency table's
+      run marker is **inferred, never signalled**: the decoder peeks at whether the next symbol byte
+      is the current symbol plus one.
+
+      The suite compares the encoding symbols field by field, not only the output bytes, because a
+      stream comparison says a port is wrong and a symbol comparison says which multiplication is.
+      **Order 1 is the next slice**
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
