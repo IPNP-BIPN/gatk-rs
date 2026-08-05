@@ -711,8 +711,32 @@ Everything downstream inherits these, so they are front-loaded.
       `NM` at 1 to 4 is written `NMc` and at 100000 is written `NMi` from the same Java `Integer`,
       which changes the key and therefore the map.
 
-      **The slice header is the next slice**, and after it the record model. That is where CRAM
-      stops being a stack of frames and starts being reads
+      **The slice header** (htsjdk-rs #122), the last frame before CRAM becomes reads. **Its block
+      count does not count the header block**: `1 + numberOfExternalBlocks`, which measured equals
+      exactly the blocks that *follow* it, so a reader counting the header among them stops one
+      short. **Six tags ride in the header and four of them digest nothing**: `B1` and `S1` a SHA-1,
+      `B5` and `S5` a SHA-512, and on an unmapped slice all four are the digest of the **empty
+      string**, identical in every file, which is **168 bytes of constant per slice**. Only `BD` and
+      `SD` move with the reads, and two files differing only in whether their records carry tags
+      have equal `BD`, so record tags do not enter the slice digest. **The tag section carries no
+      length** and is read to the end of the block, so a header with no tags is indistinguishable
+      from one whose tags are zero bytes long; it is ported as opaque bytes, which is what
+      byte-identity needs. The MD5 is sixteen zeroes rather than absent, and an absent embedded
+      reference is -1, whose ITF8 is the five-byte form: the commonest value of that field is its
+      longest encoding.
+
+      That finding came from correcting a misreading. The tag bytes were decoded by eye as one tag
+      and are six; the dump was changed to decode them with the reader's own codec.
+
+      **Ten CRAM suites are oracle-backed.** The last five are not layout but implementation
+      decisions the specification does not prescribe, and **none of the five is visible to a round
+      trip**: a hardcoded count beside a real one in the same header, a write order that comes from
+      a `TreeMap` rather than from the data, a comparator that loses 32 bits, a tag type derived
+      from the magnitude of a value, and 168 bytes of digests of nothing.
+
+      **`BinaryTagCodec` is the next slice**, to open the tag section the slice header carries
+      opaquely, and after it the record model. That is where CRAM stops being frames and becomes
+      reads
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
