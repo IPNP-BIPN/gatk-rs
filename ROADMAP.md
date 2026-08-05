@@ -88,7 +88,7 @@ Three of the four remain open, none of them G1 work.
 - [x] `ReferenceContext` and `ReadsContext` (352 window answers)
 - [~] `FeatureDataSource` and `FeatureContext`: the lookahead cache, the trim that preserves file
       order, and the window arithmetic are ported and oracle-backed (20 queries at two lookahead
-      settings). The suite pins what a tool sees and does **not** distinguish the cache from a
+      settings), and the **Tribble index it needed is now in** (htsjdk-rs #83). The suite pins what a tool sees and does **not** distinguish the cache from a
       fresh query per call, which the manifest states. All three codecs `-L` reaches are ported
       and oracle-backed in htsjdk-rs (**BED**, **IntervalList**, and **VCF**'s `canDecode`, the one
       that decides by content). Still missing: the **Tribble index**, which is what turns a
@@ -482,9 +482,18 @@ Everything downstream inherits these, so they are front-loaded.
       boundary is `(nextBlockAddress, 0)` to the reader and `(blockAddress, blockLength)` to the
       writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
       to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
-- [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write, index and all
-      field types remain). One named consumer still waits here: the **Tribble index**, which is
-      what turns a Feature file into a random-access source rather than a linear read (G1.3).
+- [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write and all field
+      types remain). **Both named consumers are now done**, so nothing in G1 waits on this entry.
+
+      The **Tribble index** landed with htsjdk-rs #83: the linear `.idx` is read byte for byte and
+      the interval-tree one is *refused* rather than mis-parsed. The dump was written before the
+      port and earned that order three times. The type identifiers cannot be read out of the Java
+      at all — `LinearIndex.INDEX_TYPE` reads a field of the `IndexType` enum whose own constructor
+      is handed `LinearIndex.INDEX_TYPE` — so `1` and `2` are measured rather than cited. The bin
+      width is **per contig**, 16000 and 8000 in one file, so a reader assuming the creator's
+      default would answer every query wrongly and never fail. And the header carries the source
+      file's modification time, so the raw bytes differ on every run: the golden masks those eight
+      bytes and reports the offset rather than being quietly unstable.
 
       **The other is done.** `VariantContextComparator` and `VCFUtils.smartMergeHeaders` are ported
       and oracle-backed (htsjdk-rs #81 and #82, 67 and 16 rows), so `MultiVariantDataSource` has
