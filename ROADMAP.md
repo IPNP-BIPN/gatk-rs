@@ -482,8 +482,9 @@ Everything downstream inherits these, so they are front-loaded.
       boundary is `(nextBlockAddress, 0)` to the reader and `(blockAddress, blockLength)` to the
       writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
       to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
-- [~] VCF and Tribble (allele, variant, header, encoder exist; full read, write and all field
-      types remain). **Both named consumers are now done**, so nothing in G1 waits on this entry.
+- [~] VCF and Tribble (allele, variant, header, encoder, the Tribble index and the whole-file read
+      exist; the whole-file **write** above the record level and full field-type coverage remain).
+      **Both named consumers are now done**, so nothing in G1 waits on this entry.
 
       The **Tribble index** landed with htsjdk-rs #83: the linear `.idx` is read byte for byte and
       the interval-tree one is *refused* rather than mis-parsed. The dump was written before the
@@ -507,11 +508,37 @@ Everything downstream inherits these, so they are front-loaded.
       `##fileformat` line, so a header assembled in memory never reaches the version policy at all.
       And both of the merge's Integer/Float promotion arms are **no-ops**: the Java says "promote
       key to Float" twice and neither arm does it, because the `put` writes back what the map
-      already holds
+      already holds.
+
+      **The whole-file read is in** (htsjdk-rs #98), and it is the loop the three existing slices
+      were missing rather than a fourth slice beside them. What it measured is that the codec is
+      stateful and the state is not visible in any single line. htsjdk-rs decision 0035:
+
+      **the header a reader hands back is not the header the file contains.** The `VCFHeader`
+      constructor deletes the file's own `fileformat` line and `getMetaDataInInputOrder` prepends a
+      synthesized one saying `VCFv4.2` for everything below 4.3, so a v4.0 file reads back claiming
+      to be v4.2. And `doOnTheFlyModifications` defaults to **true**, so for the eighteen IDs htsjdk
+      holds a standard for, a count or type that disagrees replaces the whole line, description
+      included; a description that disagrees on its own is kept, which is what makes the rewrite
+      hard to notice.
+
+      That rebuild re-attaches the version **only from 4.3 up**, so below 4.3 the codec knows the
+      version and the header does not — and both consequences are load-bearing. `VCFWriter` refuses
+      a 4.3 header by testing that field, so a v4.3 file **can be read and cannot be written back**;
+      and `smartMergeHeaders` reads the same field, so the version policy above is unreachable
+      through the read path, which is the other half of the note two paragraphs up.
+
+      The **line counter** is shared and incremented in two places, so the same malformed line
+      reports two different numbers: `Line 12` from the column check, which runs before
+      `parseVCFLine`'s increment, and `line number 13` from `generateException`, which runs after
+      it. A `#` line in the body increments nothing and decodes to null, making it a **silently
+      dropped record** rather than a refusal. One upstream message is wrong and reproduced as it is:
+      a sites-only file is checked against 8 columns and told it was expecting 9
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
-- [~] **GKL-exact deflate**, and levels 3 to 9 are done. htsjdk-rs `crates/gkl-deflate` reproduces
-      GKL byte for byte there: **28 of 28** (fixture, level) pairs against the column the real
+- [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
+      stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
+      byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
       library produced in the pinned container.
 
       The scoping was measured rather than assumed, and it moved twice. Decision 0028 read the
