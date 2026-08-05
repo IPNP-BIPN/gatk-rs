@@ -511,7 +511,12 @@ Everything downstream inherits these, so they are front-loaded.
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
 - [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
-      exists, every byte claim over BGZF must name the deflater it is a claim about
+      exists, every byte claim over BGZF must name the deflater it is a claim about.
+
+      **And prove it on real x86-64**, which used to be its own entry. An igzip claim measured
+      under emulation is a claim about the emulator, so this is not "port a deflater" but "port a
+      deflater *and* measure it on real silicon" — and there is no igzip surface to cross-check
+      until the deflater exists, which is why the separate entry could not start
 - [~] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
       whose remaining divergent functions can only be made exact by transcribing GPL2 source, so
       that is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function
@@ -529,7 +534,11 @@ Everything downstream inherits these, so they are front-loaded.
       `BinomialDistribution` and SVD, the other two names this entry used to carry, are **not
       reached by anything ported**: both are Mutect2-family and therefore Milestone G3. The honest
       entry for them is "waits for G3" rather than "remaining" 
-- [ ] BGZF GKL/igzip surface cross-checked on real x86-64 hardware, not under emulation
+- [x] the BGZF surface that exists today is cross-checked on real x86-64. The `bgzf` and
+      `bgzf-termination` suites run on `ubuntu-latest`, which is real hardware, so every BGZF
+      golden is re-derived off emulation on every push; decision 0007's addendum measured it
+      directly on an AMD EPYC host as well. The **igzip** half folded into the entry above, where
+      its subject lives
 
 ---
 
