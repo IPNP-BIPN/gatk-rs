@@ -510,13 +510,27 @@ Everything downstream inherits these, so they are front-loaded.
       already holds
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
-- [ ] **GKL-exact deflate** (ISA-L / igzip byte-exact), the default non-JDK path. Until it
-      exists, every byte claim over BGZF must name the deflater it is a claim about.
+- [~] **GKL-exact deflate**, scoped by measurement rather than started by assumption. htsjdk-rs
+      decision 0028 opened `libgkl_compression.so` and found **both** ISA-L's igzip and zlib
+      1.2.13 inside it, then compressed the same bytes through `IntelDeflater` and
+      `java.util.zip.Deflater` at every level to see which one runs. **Levels 1 to 6 are igzip**
+      and differ from the JDK, and **level 5 is htsjdk's BGZF default**, so that is the path every
+      BAM takes. **Levels 7 to 9 are zlib** and are byte-identical to the JDK, which this port
+      already reproduces.
 
-      **And prove it on real x86-64**, which used to be its own entry. An igzip claim measured
-      under emulation is a claim about the emulator, so this is not "port a deflater" but "port a
-      deflater *and* measure it on real silicon" — and there is no igzip surface to cross-check
-      until the deflater exists, which is why the separate entry could not start
+      So the entry is smaller than its old wording: **levels 7 to 9 need nothing at all**, and the
+      warning this milestone carries narrows to levels 1 to 6. And **nothing here is
+      licence-blocked**: ISA-L is BSD-3-Clause, GKL is MIT. This is the first byte-deciding
+      component in the programme whose reference implementation is *permissively* licensed, so
+      both linking and porting are open, unlike `Math.exp` where the milestone is stuck by law
+      rather than by effort.
+
+      **Prove it on real x86-64** used to be its own entry, and it turns out to come first rather
+      than last. igzip dispatches on CPU features and ships AVX2 and AVX512 kernels: if those emit
+      different bytes, there is no fixed target to port to and this entry belongs beside
+      `Math.pow` in decision 0007 instead. The `igzip-portability` CI job answers it by rerunning
+      the probe on a real x86-64 host and diffing every hash against a column produced under
+      Rosetta, which implements no AVX.
 - [~] **jmath**. The target is **not** "the corpus reaches 100%": its columns are `java.lang.Math`,
       whose remaining divergent functions can only be made exact by transcribing GPL2 source, so
       that is unreachable by construction. htsjdk-rs decision 0023 replaced it with "every function
