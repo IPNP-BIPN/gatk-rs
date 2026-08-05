@@ -690,9 +690,29 @@ Everything downstream inherits these, so they are front-loaded.
       clothes. TimSort's small-array path is ported rather than delegated to Rust's sort, because
       that comparator is not a total order and two sorts may legitimately disagree on one.
 
-      **The data series encoding map is the next slice**: `CompressionHeaderEncodingMap`, the ten
-      encoding identifiers and the thirty-two data series they bind. It is the third map, and the
-      first thing in CRAM that describes a record rather than a container
+      **The data series encoding map** (htsjdk-rs #120), the second map, and the first thing in
+      CRAM that describes a record rather than a container. **Its size is a real count where the
+      preservation map's is the literal 5**: three maps in one header and two counting conventions,
+      so a port that hardcodes both or computes both is wrong on one. **The write order is the
+      enum's ordinal order**, not the alphabetical order the constructor populates in, and only the
+      first is in the bytes. htsjdk **writes 26 of the 32 series**, and **reads `TC` and `TN` only
+      to drop them**, so the reader's map can hold fewer entries than the file declared. The content
+      ids are htsjdk's rather than the specification's. And an unknown encoding id is an **array
+      index**, not a CRAM error, read **signed**, so an id byte of 255 arrives as index -1.
+
+      **The tag encoding map** (htsjdk-rs #121), the third, which closes the header. **The key is
+      the tag itself**, two name bytes and the type packed into twenty-four bits, so the type is
+      part of the key and one name at two types is two entries. **The write order is that key's**:
+      measured, two files whose records introduce the same three tags in opposite orders produce
+      **byte-identical** maps, so the order the data arrived in is not in the file. Its collision
+      guard covers ids 1 to 32 while the smallest printable tag packs to 2105376, which makes it
+      real code no input can reach. And one finding that is not about this map but is only visible
+      through it: **htsjdk narrows an integer attribute to the smallest type that holds it**, so
+      `NM` at 1 to 4 is written `NMc` and at 100000 is written `NMi` from the same Java `Integer`,
+      which changes the key and therefore the map.
+
+      **The slice header is the next slice**, and after it the record model. That is where CRAM
+      stops being a stack of frames and starts being reads
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
