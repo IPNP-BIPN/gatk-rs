@@ -514,9 +514,14 @@ Everything downstream inherits these, so they are front-loaded.
       10, 10, 600, 10, 10 write 364.0, the mean of 10, 10, 600, 600, 600. A port computing the
       honest mean writes a different file.
 
-      The interval-tree layout is refused on write as it is on read, which is a **real** limit
-      rather than a formality, because the dynamic creator reaches it from ordinary data. It is
-      the named next slice of this entry.
+      **Both layouts are written** (htsjdk-rs #100). The first pass wrote only the linear one and
+      justified that as symmetry with the reader; the justification was **false**, because the
+      reader parses and queries both, so the interval tree was simply not done. It is now, and it
+      was the harder half: `IntervalTreeIndex.ChrIndex.write` writes `tree.getIntervals()`, and
+      that is a **pre-order walk of a red-black tree** rather than a sorted list, so the byte order
+      is the order the rotations left the nodes in. Agreeing on those bytes means reproducing the
+      CLRS insert, both rotations and the `min`/`max` update that walks to the root after each one,
+      and the insert comparator sending **equal starts left** is part of the file.
 
       **The other is done.** `VariantContextComparator` and `VCFUtils.smartMergeHeaders` are ported
       and oracle-backed (htsjdk-rs #81 and #82, 67 and 16 rows), so `MultiVariantDataSource` has
