@@ -482,12 +482,16 @@ Everything downstream inherits these, so they are front-loaded.
       boundary is `(nextBlockAddress, 0)` to the reader and `(blockAddress, blockLength)` to the
       writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
       to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
-- [~] VCF and Tribble (allele, variant, header, encoder, the Tribble index and the whole-file read
-      exist; the whole-file **write** above the record level and full field-type coverage remain).
-      **Both named consumers are now done**, so nothing in G1 waits on this entry.
+- [~] VCF and Tribble (allele, variant, header, encoder, the Tribble index in both directions, the
+      whole-file read and the whole-file write with its index exist; full field-type coverage
+      remains). **Both named consumers are now done**, so nothing in G1 waits on this entry.
 
-      The **Tribble index** landed with htsjdk-rs #83: the linear `.idx` is read byte for byte and
-      the interval-tree one is *refused* rather than mis-parsed. The dump was written before the
+      The **Tribble index** landed with htsjdk-rs #83: **both** layouts are read byte for byte, and
+      what the port does not reproduce is narrower than this entry once said — the comparator the
+      interval-tree *query* sorts with, which htsjdk itself calls "a little cryptic" and which is
+      not a consistent order at all: `compare(a, a)` is `-1` and blocks one byte apart compare
+      equal. For any pair whose starts differ by two or more it is an ordinary ascending sort, and
+      no index seen here contains such a pair. The dump was written before the
       port and earned that order three times. The type identifiers cannot be read out of the Java
       at all — `LinearIndex.INDEX_TYPE` reads a field of the `IndexType` enum whose own constructor
       is handed `LinearIndex.INDEX_TYPE` — so `1` and `2` are measured rather than cited. The bin
@@ -522,6 +526,20 @@ Everything downstream inherits these, so they are front-loaded.
       is the order the rotations left the nodes in. Agreeing on those bytes means reproducing the
       CLRS insert, both rotations and the `min`/`max` update that walks to the root after each one,
       and the insert comparator sending **equal starts left** is part of the file.
+
+      **The two halves are joined** (htsjdk-rs #101): the VCF and its `.idx` are written in one
+      pass, which is what every GATK tool emitting a VCF does. Indexing is **on by default**, so a
+      caller who asks for nothing gets an index and one who supplies no dictionary gets an exception
+      rather than a file. The position recorded for a record is the one **before** it and is
+      absolute in the stream, so **the header is counted**: the first record sits at 242 because
+      that is the header's length, and an index built from a feature list that forgot the header is
+      uniformly off by it. The sequence dictionary becomes `DICT:` **properties** rather than the
+      flag it used to be, before the four statistics, and `flags` stays zero.
+
+      And **the layout is not the caller's choice**: the writer always uses the dynamic creator with
+      `FOR_SEEK_TIME`, so three of the six indexed files measured are interval trees — one record
+      gets a linear index, two thousand records get a tree, and so does a header-only file, whose
+      density is a division of zero by zero. That is why writing the tree was not optional
 
       **The other is done.** `VariantContextComparator` and `VCFUtils.smartMergeHeaders` are ported
       and oracle-backed (htsjdk-rs #81 and #82, 67 and 16 rows), so `MultiVariantDataSource` has
