@@ -482,9 +482,10 @@ Everything downstream inherits these, so they are front-loaded.
       boundary is `(nextBlockAddress, 0)` to the reader and `(blockAddress, blockLength)` to the
       writer. Tags cover every writable type, `B` arrays and the empty one included. **CRAI moved
       to CRAM**, where it belongs: it is the CRAM index and cannot precede CRAM
-- [~] VCF and Tribble (allele, variant, header, encoder, the Tribble index in both directions, the
-      whole-file read and the whole-file write with its index exist; full field-type coverage
-      remains). **Both named consumers are now done**, so nothing in G1 waits on this entry.
+- [x] VCF and Tribble. Allele, variant, header, encoder, the Tribble index in both directions and
+      both layouts, the whole-file read, the whole-file write with its index, and the typed
+      attribute accessors. **Both named consumers are done**, so nothing in G1 waits on this entry,
+      and the field types that closed it turned out to be a measurement rather than a port.
 
       The **Tribble index** landed with htsjdk-rs #83: **both** layouts are read byte for byte, and
       what the port does not reproduce is narrower than this entry once said — the comparator the
@@ -578,7 +579,24 @@ Everything downstream inherits these, so they are front-loaded.
       `parseVCFLine`'s increment, and `line number 13` from `generateException`, which runs after
       it. A `#` line in the body increments nothing and decodes to null, making it a **silently
       dropped record** rather than a refusal. One upstream message is wrong and reproduced as it is:
-      a sites-only file is checked against 8 columns and told it was expecting 9
+      a sites-only file is checked against 8 columns and told it was expecting 9.
+
+      **And what closed the entry was a measurement, not a port** (htsjdk-rs #102). The last open
+      item read "full field-type coverage", which sounds like work per type; measured, **the
+      declared Type converts nothing**. Every `Type` in the format stores a String, or a list of
+      Strings when `Number` is not 1, with the single exception of `Flag`. `Integer`, `Float`,
+      `Character` and `String` are indistinguishable in a decoded record. The Type only tells a
+      caller which accessor to reach for, and the conversion happens there, once per call.
+
+      Those accessors are where the surprises live, and they are the layer G1's annotations do
+      arithmetic on. `getAttributeAsInt` tests missing with `==` on a String, so it is true only for
+      the constant the codec assigns to a bare key and to `KEY=`; a value written `KEY=.` arrives as
+      a substring and throws instead. Three spellings of missing, identical in every rendering, and
+      the two outcomes are a number and an exception. `getAttributeAsDouble` has no such test at all
+      while `getAttributeAsDoubleList` does, so two accessors over the same conversion disagree. A
+      scalar accessor reaching a list or a flag fails the **cast** rather than the parse. And
+      `parseVcfDouble` accepts `1f`, `0x1p3`, `" 1"`, `inf` and `nan`, so a VCF may carry numbers no
+      reading of the specification predicts
 - [ ] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
