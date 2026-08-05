@@ -522,12 +522,23 @@ Everything downstream inherits these, so they are front-loaded.
       pieces reproduce it: `deflate_medium` itself, and the CRC-32C positional hash Intel
       substitutes for zlib's multiplicative rolling one.
 
-      **Levels 1 and 2 are identified but not ported.** ISA-L 2.30.0, `isal_deflate_stateless`,
-      level 1, `level_buf_size = ISAL_DEF_LVL1_DEFAULT`, `end_of_stream = 1`: all four fixtures,
-      both Java levels, byte for byte. `deflate_gkl` refuses those levels rather than answering
-      with zlib's bytes. That leaves one piece of work and no unknowns; it is larger than
-      `deflate_medium` was, because igzip encodes into an intermediate compressed format and
-      builds its Huffman tables from the token histogram rather than emitting deflate directly.
+      **Levels 1 and 2 are done too, by linking ISA-L rather than porting it**, and the reason is
+      a measurement. Decision 0034: ISA-L ships *two* implementations of its own compressor,
+      readable C and hand-written SIMD kernels, and they disagree — 19749 bytes where the assembly
+      gives 19044, and GKL ships the assembly. A translation of the readable version would have
+      been a confident wrong answer. Linking is also the trade this programme already makes for
+      the JDK deflater, where htsjdk-rs decision 0001 pins `flate2` to a *vendored C zlib*.
+
+      What makes that safe rather than convenient is a canary. ISA-L falls back to that same C when
+      built without an assembler, on a CPU without SSE4.2, and on any architecture with no kernels;
+      in all three states it returns **valid deflate that decompresses correctly**, so a round-trip
+      test passes and a length check passes. The crate carries 2048 bytes GKL was given and the 694
+      it returned, compresses the first and compares the second before answering, and **refuses**
+      if they disagree. A green CI that skipped the comparison would have looked like one that ran
+      it, so on x86-64 with SSE4.2 an unavailable igzip fails outright.
+
+      The pure-Rust route for these two levels stays open and unchosen: it means reproducing about
+      2,400 lines of SIMD assembly, since the readable version is known to produce different bytes.
 
       **Nothing here is licence-blocked**: ISA-L is BSD-3-Clause, GKL is MIT, Intel's zlib fork is
       under the zlib licence. The first byte-deciding component in the programme whose reference
