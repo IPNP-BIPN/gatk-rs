@@ -734,9 +734,35 @@ Everything downstream inherits these, so they are front-loaded.
       a `TreeMap` rather than from the data, a comparator that loses 32 bits, a tag type derived
       from the magnitude of a value, and 168 bytes of digests of nothing.
 
-      **`BinaryTagCodec` is the next slice**, to open the tag section the slice header carries
-      opaquely, and after it the record model. That is where CRAM stops being frames and becomes
-      reads
+      **The read side of the tag codec** (htsjdk-rs #123), which is what that opaque section waits
+      on. The write side was pinned five slices ago; reading is **not its inverse**. **Every narrow
+      integer widens to one type**: `c`, `C`, `s`, `S` and `i` all come back as a Java `Integer`,
+      so the width the file chose stops existing on the way in and the type a rewrite picks comes
+      from the value alone. **Exactly two forms break the round trip**, and both are ones htsjdk
+      never writes, so only a foreign file carries them: an `I` holding 5 is rewritten as `c`, four
+      bytes shorter, and an `H` is rewritten as a `B` array a byte longer. **There is no in-memory
+      `H` at all**: it decodes into the same `byte[]` a signed `B` array does, so every branch that
+      would write one back is dead and `TextTagCodec`'s says so in a comment. `'A'` is a signed
+      byte cast to a char, so `0xE9` becomes `U+FFE9` and the character in memory is not the one in
+      the file, though the bytes survive because the write truncates it back: the same cast the
+      substitution matrix goes through. The `I` range check **cannot fire**, the value being masked
+      to 32 bits before it is compared against the 32-bit range. The unsigned flag of an array is
+      **only the case of its type letter**, the elements staying signed, so a `C` array holding
+      `0xFF` comes back as `-1`. And a repeated tag replaces rather than duplicates, the last one
+      winning.
+
+      Two things in already-merged code were wrong and are fixed by that measurement. The text
+      encoder wrote `XX:H:48656C` back as an `H` line the reference never emits; it emits
+      `XX:B:c,72,101,108`. And the record codec carried a **second decoder** for the same bytes,
+      raising messages of its own invention, which is how the `H` handling came to be wrong in
+      three places at once; ninety-nine lines of it are gone.
+
+      Also closed: the candidate-golden artefact was named by the job's **position in the CI
+      matrix**, so adding a suite renumbered it and one slice's golden took the name the previous
+      slice's had. It is named after its suites now.
+
+      **Fifty of fifty-one suites are oracle-backed**, ten of them CRAM. **The record model is the
+      next slice.** That is where CRAM stops being frames and becomes reads
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
