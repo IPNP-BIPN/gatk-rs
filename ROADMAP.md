@@ -761,8 +761,37 @@ Everything downstream inherits these, so they are front-loaded.
       matrix**, so adding a suite renumbered it and one slice's golden took the name the previous
       slice's had. It is named after its suites now.
 
-      **Fifty of fifty-one suites are oracle-backed**, ten of them CRAM. **The record model is the
-      next slice.** That is where CRAM stops being frames and becomes reads
+      **The read features** (htsjdk-rs #124), the first half of the record model and the point
+      where CRAM stops being frames. A slice's records are not bases and a cigar: they are an
+      alignment start, a read length, and a list of one-letter features, and **everything that
+      matches the reference is stored as nothing at all**. That is where the compression comes
+      from, and it makes every rule below a rule about what counts as a match.
+
+      **The positions are one-based, and the interface says they are not**: every construction site
+      passes `zeroBasedPositionInRead + 1` while `ReadFeature.getPosition`'s javadoc says
+      "zero-based position in the read", so a port that believes the documentation is off by one on
+      every feature it writes. **An insertion of n bases becomes n features and a soft clip of n
+      becomes one**, decided five lines apart in the same loop: htsjdk's own comment says the
+      insertion should use a `Bases` feature and does not, because that would need a
+      `ByteArrayLenEncoding` and therefore a frequency distribution over lengths, so two of the
+      twelve features are read and never written. **A mismatch splits on the alphabet, not on the
+      cigar**: ACGTN against ACGTN is a substitution, anything else is a `ReadBase` carrying the
+      quality score a second time. **The cigar's own claim is not consulted at all**, so an `X` over
+      bases that match emits nothing and an `=` over bases that differ emits substitutions; the
+      operator only says how far to walk. **Past the end of the reference every base is compared
+      against `N`**, so an `N` out there matches and is stored as nothing: four `N`s at the end of
+      the reference produce three features, not four. **`SEQ="*"` manufactures `N`s** that then
+      mismatch like any other base, one substitution per position. And **the missing-quality test
+      is an identity test**: `baseQualities.equals(NULL_QUALS)` is `Object.equals` on a `byte[]`, so
+      an equal but distinct empty array takes the other branch and indexes it, which is measured as
+      `Index 3 out of bounds for length 0` on a record htsjdk itself will hold.
+
+      `htsjdk-cram` took its first dependency here, on `htsjdk-bam`. CRAM is defined in terms of SAM
+      records, and the cigar walk was already ported.
+
+      **Fifty-one of fifty-two suites are oracle-backed**, eleven of them CRAM. **The second half of
+      the record model is the next slice**: `getCigarForReadFeatures` and `restoreReadBases`, which
+      are the same rules run backwards
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
