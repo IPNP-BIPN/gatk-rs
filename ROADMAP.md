@@ -789,9 +789,27 @@ Everything downstream inherits these, so they are front-loaded.
       `htsjdk-cram` took its first dependency here, on `htsjdk-bam`. CRAM is defined in terms of SAM
       records, and the cigar walk was already ported.
 
-      **Fifty-one of fifty-two suites are oracle-backed**, eleven of them CRAM. **The second half of
-      the record model is the next slice**: `getCigarForReadFeatures` and `restoreReadBases`, which
-      are the same rules run backwards
+      **The cigar rebuilt from those features** (htsjdk-rs #126), which is the way back. The
+      interesting part is that **the cigar is not stored anywhere**: it is rebuilt from the feature
+      positions and the read length, and `gap = position - (lastOpPos + lastOpLen)` is the only
+      source of `M` in the output. The matches thrown away on the way in **come back as the gaps
+      between what was kept**.
+
+      **A substitution and a `ReadBase` are both `M`**, so the rebuilt cigar never emits `X` or `=`:
+      a record written with `8X` comes back as `8M`, and over thirteen round trips that and `8=` are
+      the only two that change. **A feature that consumes no read bases winds the read cursor back**,
+      the bookkeeping being in read space, so a deletion at the first position leaves the whole read
+      after it and `D@1 len=2` over a read of eight rebuilds as `2D8M`. **The switch silently ignores
+      what it does not name**, dropping `BaseQualityScore`, `Scores` and `Bases`, and `Bases` carries
+      read bases: a list holding one rebuilds as though it were not there. **The read length says
+      where the read ends and it wins**, absorbing a feature positioned past it, and a read length of
+      0 takes the accumulated length instead. Two guards in the reference cannot fire: a null feature
+      list reaches the same single `M` through the empty-list check at the end, and the operator it
+      compares against null never is.
+
+      **Fifty-two of fifty-three suites are oracle-backed**, twelve of them CRAM. **`restoreReadBases`
+      is the next slice**, which is what puts the bases back and the last piece before a record can
+      be read whole
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
