@@ -807,9 +807,34 @@ Everything downstream inherits these, so they are front-loaded.
       list reaches the same single `M` through the empty-list check at the end, and the operator it
       compares against null never is.
 
-      **Fifty-two of fifty-three suites are oracle-backed**, twelve of them CRAM. **`restoreReadBases`
-      is the next slice**, which is what puts the bases back and the last piece before a record can
-      be read whole
+      **The bases restored** (htsjdk-rs #128), which closes the reverse direction: a record can now
+      be read whole. The bases come from **three sources at once**, the features saying what
+      differs, the reference supplying everything else, and the substitution matrix turning a code
+      back into a base.
+
+      **It is two passes, and the second one overwrites.** `ReadBase` and `Bases` are skipped in the
+      main loop under a comment saying to defer them, then applied straight into the array, so they
+      win over the reference fill **and** over what the features before them wrote: an insertion of
+      `GGG` at position 1 followed by a `Bases` of `TTT` at position 1 restores `TTT`. **The trailing
+      fill stops at the end of the reference** and leaves the array's own zeros, so nothing ever
+      writes an `N` past the end: a zero becomes one on the way through the lookup.
+      **`toBamReadBasesInPlace` indexes a 127-byte table with a signed byte**, so a base of `0xE9` is
+      index -23 and a base of 127 is one past the end, and because the table is built by adding 32 to
+      every BAM read base, **`]` is an `=`** rather than an `N`. A substitution resolves against a
+      **normalized** reference base, so an IUPAC code there resolves as though it were `N`. And
+      unknown bases or a read length of zero return the empty sequence with the features not looked
+      at at all.
+
+      The comment above that loop says read features are 0-based. They are one-based, which the
+      forward direction measured from the other side, and this is the function that consumes them.
+
+      One thing about the corpus rather than the code: its reference is **aperiodic on purpose**.
+      Against `ACGTACGT...` a reference cursor off by four reads the same bases as a correct one,
+      and every case in the suite would pass anyway.
+
+      **Fifty-three of fifty-four suites are oracle-backed**, thirteen of them CRAM. The record model
+      is now pinned in both directions; **what remains for H.3 is the encodings that carry it**:
+      the data series codecs the encoding map names, and the slice blocks they are read from
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
