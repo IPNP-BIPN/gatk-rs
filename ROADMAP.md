@@ -904,9 +904,49 @@ Everything downstream inherits these, so they are front-loaded.
       series** out of the table it resolves encodings from. Nine other series would have masked it;
       the tenth did not.
 
-      **Sixty-three of sixty-four suites are oracle-backed**, twenty-three of them CRAM. What
-      remains for H.3 is the container and the file: writing a record back, the slice header's own
-      block, and the CRAM header that wraps them.
+      **Writing a record back** (htsjdk-rs #152), the other half of that round trip, and the
+      correction it forced (htsjdk-rs #150). Porting the writer showed what the reader was missing:
+      **an unmapped record's bases**, read one at a time, and the quality scores a record keeps as
+      an array. The suite could not see either, because the corpus recorded neither, so a reader
+      that skipped both passed it.
+
+      Two rows fix that, and the pairing is the point. **An unmapped record followed by a mapped one
+      is the only arrangement where the gap shows**: the unmapped record's bases come out of the
+      same series the next record's read feature reads from, so skipping them makes the following
+      record read the wrong byte and nothing says so. The other row is a record with
+      `CF_QS_PRESERVED_AS_ARRAY` set, the only one that touches the quality score series as an array
+      at all, through **the reference's oddest reader**: it takes the QS series' own encoding
+      descriptor and hands it a data series type of `BYTE_ARRAY` instead of `BYTE`, which is the
+      same external block read a different way, and htsjdk builds it by hand with a comment
+      wondering why.
+
+      The writer itself keeps three things as measured. **Two features can be read and not
+      written**: `Bases` and `Scores` fall to its default arm, which throws, while the reader has
+      branches for both. **A substitution whose code is negative** is resolved against the
+      compression header's substitution matrix on the way out. And **an unmapped record writes its
+      bases one at a time** with its quality scores nested inside that branch, the same asymmetry
+      the read side has.
+
+      Both directions share one corpus of eight slices, and each record row carries the record in
+      full, feature payloads included, so the port rebuilds the input rather than taking it from a
+      label. The blocks have to come out byte for byte what the reference produced.
+
+      **The CRAM index** (htsjdk-rs #154), which closes what H.1 handed over. A `.crai` is not a
+      structure, it is a sorted text file: one line per slice, six tab-separated integers, gzipped.
+      So what is worth pinning is not a layout but four decisions. **Unmapped-unplaced sorts last**
+      whatever its alignment start says, and its start is not consulted at all. **An unmapped entry
+      never intersects, not even with itself**, which is a special case in the code rather than
+      something the arithmetic produces. **The overlap test is a midpoint comparison**,
+      `|a0 + b0 - a1 - b1| < span0 + span1`, which is not the expression `a0 < b1 && a1 < b0` and
+      **does not agree with it on a zero span**: two identical entries of span zero do not
+      intersect. And **a query with a start or a span below one matches the whole sequence**, so 0
+      and -1 are a wildcard rather than an empty range, which is why an unmapped query finds
+      unmapped entries that would refuse to intersect.
+
+      **Sixty-five of sixty-six suites are oracle-backed**, twenty-five of them CRAM. A record can
+      now be read and written from the bytes htsjdk's own writer produced, and the index over them
+      is pinned. What remains for H.3 is **codec negotiation**, the writer's choice of an encoding
+      per data series, and reading a whole file end to end.
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
