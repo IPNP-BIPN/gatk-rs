@@ -835,6 +835,78 @@ Everything downstream inherits these, so they are front-loaded.
       **Fifty-three of fifty-four suites are oracle-backed**, thirteen of them CRAM. The record model
       is now pinned in both directions; **what remains for H.3 is the encodings that carry it**:
       the data series codecs the encoding map names, and the slice blocks they are read from
+
+      **The codecs that carry it** (htsjdk-rs #129, #132, #133, #135, #137, #139), ten slices that
+      close that gap. Every encoding identifier the map can name now has a codec behind it, and
+      every one was measured before it was written.
+
+      **The bit stream** under the three core codecs: bits go in most significant first, and the
+      flush pads the partial byte with zeros **on the right**, so the padding is data as far as
+      anything downstream can tell. A stream of one `true` bit and a stream of `0x80` in eight bits
+      are the same byte; only the count of values expected says where the stream ends.
+
+      **Beta, Gamma and Subexponential**, of which only Beta has an upper bound. Gamma and
+      Subexponential derive a bit length from `Math.log(v) / Math.log(2)`, so the bytes written
+      depend on a double division landing on the right side of an integer; the corpus walks every
+      power of two to `2^31 - 1` and the runner and an Apple Silicon laptop agree on all of them.
+
+      **Canonical Huffman**, where a file carries no tree at all: an alphabet and one code word
+      length per symbol, from which both sides rebuild the same codes. **Byte symbols sort signed**,
+      so `0x80` takes the first code word. **A one-symbol alphabet has length zero** and writes no
+      bits, leaving a core block from which the number of symbols written cannot be recovered. The
+      overflow check counts **set bits** rather than width, so three symbols at one bit are accepted
+      and the third given code word 2. And an unmatched code word runs off the end of a table sized
+      to the largest code word, which makes the codec's own "unable to map" message reachable only
+      with an empty alphabet.
+
+      **The external codecs**, where two codecs naming the same content id share one block and
+      interleave in it. **External byte cannot see the end of its block**: past the end it returns
+      -1, which a byte of `0xFF` that is really there also produces. **Byte array stop trusts the
+      data**: written `01 00 02` with a stop byte of zero, the block reads back as one array of
+      `01`, and nothing reports it. And **ByteArrayLen cannot wrap ByteArrayStop for reading**
+      though the format allows it: the length is read, then `read(length)` throws.
+
+      **Golomb, Golomb-Rice and Golomb-Long**, experimental in the reference and reachable from the
+      factory, so a port that skips them cannot claim to read every legal file. **Golomb does not
+      round-trip a value whose offset sum is negative and does not say so**: with `m` 4, `-1` is
+      written `60` and read back `3`, because the quotient is written by counting up to it.
+      **Golomb-Rice's parameter is not `m`**: the encoding calls it `m` and hands it to the codec as
+      `log2m`, so one built with 8 divides by 256. And the divisor Golomb refuses is one Golomb-Rice
+      takes without a word.
+
+      **The encoding factory**, forty lines of Java with **one missing `break`**. Only the `BYTE`
+      arm ends in one, so an `INT` that matches nothing falls into the `LONG` arm and then into the
+      `BYTE_ARRAY` arm: an `INT` data series named with `BYTE_ARRAY_LEN` gets a byte array encoding
+      rather than the refusal the method's last line promises. The suite is exhaustive by
+      construction, four types by ten identifiers, so a new identifier upstream fails it on the row
+      count.
+
+      **The compression header, the record's flag words, a slice's blocks and the record reader**
+      (htsjdk-rs #141, #143, #145, #147), which take those codecs up to a whole record.
+
+      A compression header **read and written again is byte-identical** in all six measured cases,
+      and a version 3 block carries a four-byte CRC-32 that a 2.1 block does not, **outside** the
+      compressed size. A record carries **three flag words**, and two bits live in two of them at
+      different positions: mate unmapped is `0x2` in the mate flags and `0x8` in the BAM flags.
+      Restoring mate info **walks a ring**, and the template length is computed once and negated
+      once, so the middle record of a triple keeps the zero it was built with. A slice's blocks are
+      written **by content id and not by insertion**: added 3, 2, 1 the reference writes 1, 2, 3.
+
+      **Reading a record** is the first suite where the port reads bytes **the reference wrote from
+      records** rather than bytes a dump built by hand. Every field comes from its own data series
+      and the series share streams, so the read order is not an implementation detail: read two in
+      the wrong order and both come back wrong with nothing to say so. The alignment start is a
+      delta and **the delta may be negative**; an unmapped record does not read zero read features,
+      it does not consult the series at all; and a multi-reference slice reads a reference index per
+      record where a single-reference slice takes the slice's own.
+
+      That suite earned its keep on its first run: it found the port had left the **mapping quality
+      series** out of the table it resolves encodings from. Nine other series would have masked it;
+      the tenth did not.
+
+      **Sixty-three of sixty-four suites are oracle-backed**, twenty-three of them CRAM. What
+      remains for H.3 is the container and the file: writing a record back, the slice header's own
+      block, and the CRAM header that wraps them.
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
