@@ -597,7 +597,7 @@ Everything downstream inherits these, so they are front-loaded.
       scalar accessor reaching a list or a flag fails the **cast** rather than the parse. And
       `parseVcfDouble` accepts `1f`, `0x1p3`, `" 1"`, `inf` and `nan`, so a VCF may carry numbers no
       reading of the specification predicts
-- [~] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
+- [x] **CRAM** (container model, all encodings, codec negotiation, reference-based compression),
       **and CRAI with it**: a sub-project on its own, built floor upward. Four suites are
       oracle-backed and the scope is smaller than 169 Java files suggested.
 
@@ -943,10 +943,45 @@ Everything downstream inherits these, so they are front-loaded.
       and -1 are a wildcard rather than an empty range, which is why an unmapped query finds
       unmapped entries that would refuse to intersect.
 
-      **Sixty-five of sixty-six suites are oracle-backed**, twenty-five of them CRAM. A record can
-      now be read and written from the bytes htsjdk's own writer produced, and the index over them
-      is pinned. What remains for H.3 is **codec negotiation**, the writer's choice of an encoding
-      per data series, and reading a whole file end to end.
+      **Codec negotiation** (htsjdk-rs #156), the writer's side of the choice. The reader takes what
+      a file names; the writer chooses, and the choice is what makes one CRAM of a set of records
+      rather than another. **The data series table is fixed** rather than derived, and **six of the
+      thirty-two series are not in it at all**, so a reader that expects every series to be named
+      finds nothing for them. **The compressor is chosen by running all three**, GZIP and rANS at
+      both orders, and **the tie-break is the order of the comparisons** rather than of the
+      compressions: a thousand identical bytes compress to 29 under GZIP and 29 under rANS 0, and
+      rANS wins. **A tag of one value size gets a zero-bit Huffman length**, which writes no bits at
+      all: the size lives in the encoding rather than in the data. **A `Z` of several sizes gets a
+      stop byte of TAB**, chosen rather than searched for, so a `Z` whose text contains a tab is
+      split by its own encoding, while a `B` over a hundred bytes searches for a byte its data never
+      uses. And **two records whose tags differ only in order share one dictionary entry**.
+
+      That measurement corrected the port a second time: `name3BytesToInt` packs a tag id **high
+      byte first**, and the record reader had it the other way round. No corpus reached it, because
+      no record measured until then carried a tag.
+
+      The gzip length is the one thing here the port cannot produce: htsjdk compresses with the
+      JDK's `Deflater`, whose output length is its zlib's business. So the rule takes the three
+      lengths rather than the data, and every row carries all three. Measured, the runner and the
+      laptop agree on those lengths too.
+
+      **A whole file** (htsjdk-rs #158), which is the piece that shows the rest fit. The definition,
+      the SAM header container, the container header, the compression header, the slice header and
+      the slice's blocks, in that order and at those offsets, over `ce#5.2.1.cram` from htsjdk's own
+      test resources with every block inflated. **The first container is not like the others**: it
+      holds the SAM header in a `FILE_HEADER` block rather than a compression header, and a reader
+      that treats it as an ordinary container is refused with the compression header's own message,
+      which is the first thing the walk hit. **The EOF container is a container**, parsing as one
+      whose record count is zero rather than as a byte pattern. And **the sort order htsjdk reports
+      is not in the file**: it says `unsorted` for a header carrying no `SO` tag at all.
+
+      `htsjdk-cram` takes `flate2` there, for inflate only: deflate output depends on the zlib
+      behind it, and a block's GZIP content has exactly one correct expansion. bzip2 and LZMA are
+      legal in a CRAM and are not ported, so a file using either is refused rather than read wrong.
+
+      **H.3 is closed. Sixty-seven of sixty-eight suites are oracle-backed, twenty-seven of them
+      CRAM.** The container model, every encoding, codec negotiation, reference-based compression
+      and the index are all measured and ported, and a real file walks end to end.
 - [x] **GKL-exact deflate**, and all nine levels reproduce GKL, by two routes with the boundary
       stated. Levels 3 to 9 are a pure Rust port: htsjdk-rs `crates/gkl-deflate` reproduces GKL
       byte for byte there, **28 of 28** (fixture, level) pairs against the column the real
