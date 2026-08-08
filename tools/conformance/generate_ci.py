@@ -90,9 +90,13 @@ def oracle_jobs(manifest):
         chunks = [group[i : i + per_job] for i in range(0, len(group), per_job)]
         for n, chunk in enumerate(chunks, 1):
             ids = " ".join(s["id"] for s in chunk)
+            # The artefact is named after the suites in the job, not the job's position in the
+            # matrix. Adding a suite renumbers the matrix, and a golden that took the previous
+            # slice's name is a golden published under the wrong claim.
             rows.append(
                 f"          - group: {status}\n"
                 f"            index: \"{n}/{len(chunks)}\"\n"
+                f"            slug: \"{'-'.join(s['id'] for s in chunk)}\"\n"
                 f"            suites: \"{ids}\""
             )
     matrix = "\n".join(rows)
@@ -136,7 +140,7 @@ def oracle_jobs(manifest):
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: candidate-goldens-${{{{ matrix.group }}}}-${{{{ strategy.job-index }}}}
+          name: candidate-goldens-${{{{ matrix.slug }}}}
           path: tools/conformance/pending/
           if-no-files-found: ignore
 """

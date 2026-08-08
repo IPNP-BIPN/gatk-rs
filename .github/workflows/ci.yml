@@ -113,39 +113,51 @@ jobs:
         include:
           - group: oracle-backed
             index: "1/12"
+            slug: "annotation-original-alignment-annotation-per-allele-variant-getters-annotation-likelihood-counts-genotyper-allele-likelihoods"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
             index: "2/12"
+            slug: "genotyper-allele-list-annotation-counting-readfilters-readsdatasource-referencecontext"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
             index: "3/12"
+            slug: "readwalker-printreads-record-transform-fix-misencoded-intervalwalker"
             suites: "readwalker printreads record-transform fix-misencoded intervalwalker"
           - group: oracle-backed
             index: "4/12"
+            slug: "alignmentstate-pileupelement-intervalfile-jexlfilter-featurecache"
             suites: "alignmentstate pileupelement intervalfile jexlfilter featurecache"
           - group: oracle-backed
             index: "5/12"
+            slug: "readpileup-readstates-locusiterator-acbuilder-locuswalker"
             suites: "readpileup readstates locusiterator acbuilder locuswalker"
           - group: oracle-backed
             index: "6/12"
+            slug: "javarandom-reservoir-well19937c-leveling-variantwalker"
             suites: "javarandom reservoir well19937c leveling variantwalker"
           - group: oracle-backed
             index: "7/12"
+            slug: "activityprofile-assemblyregion-intervaliterators-assemblyregioniterator-assemblyregionwalker"
             suites: "activityprofile assemblyregion intervaliterators assemblyregioniterator assemblyregionwalker"
           - group: oracle-backed
             index: "8/12"
+            slug: "mann-whitney-annotation-rank-sum-annotation-strand-bias-annotation-read-grouping-annotation-depth-per-allele"
             suites: "mann-whitney annotation-rank-sum annotation-strand-bias annotation-read-grouping annotation-depth-per-allele"
           - group: oracle-backed
             index: "9/12"
+            slug: "annotation-flow-annotation-site-statistics-annotation-heterozygosity-and-mq-annotation-allele-specific-rank-sum-annotation-allele-specific-strand-bias"
             suites: "annotation-flow annotation-site-statistics annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias"
           - group: oracle-backed
             index: "10/12"
+            slug: "annotation-allele-specific-site-statistics-annotation-pedigree-annotation-fragment-counts-annotation-haplotype-filtering-multipasswalker"
             suites: "annotation-allele-specific-site-statistics annotation-pedigree annotation-fragment-counts annotation-haplotype-filtering multipasswalker"
           - group: oracle-backed
             index: "11/12"
+            slug: "barclay-value-model-barclay-tagged-arguments-barclay-argument-collections-barclay-arguments-file-barclay-plugin-descriptors"
             suites: "barclay-value-model barclay-tagged-arguments barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors"
           - group: oracle-backed
             index: "12/12"
+            slug: "natural-log-utils-somatic-likelihoods-decimal-format-allele-pseudo-depth"
             suites: "natural-log-utils somatic-likelihoods decimal-format allele-pseudo-depth"
     steps:
       - uses: actions/checkout@v4
@@ -174,7 +186,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: candidate-goldens-${{ matrix.group }}-${{ strategy.job-index }}
+          name: candidate-goldens-${{ matrix.slug }}
           path: tools/conformance/pending/
           if-no-files-found: ignore
 
