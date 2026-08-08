@@ -297,6 +297,24 @@
       ]
     },
     {
+      "id": "add-oa-tags",
+      "status": "golden-pending",
+      "title": "AddOriginalAlignmentTags, which aborts on an unpaired read",
+      "harness": "tools/readfilter-conformance",
+      "why": "The fifth whole tool of the record-transform archetype and the first that writes tags rather than changing the read. IT ABORTS ON AN UNPAIRED READ: addMateContigTag calls mateIsUnmapped, which htsjdk defines only for a PAIRED read, so an unpaired one throws IllegalStateException and the whole run stops. Three of the four measured runs abort on a fixture holding one unpaired read among six, and the one that succeeds does so because its interval excludes it. An unpaired read is ordinary in an ordinary file, so this is the tool's behaviour on ordinary input rather than an edge case. THE OA FORMAT'S COMMA ESCAPING CANNOT FIRE: it replaces a comma in the contig name with an underscore, and a comma is not a legal sequence name character at all, which the golden carries as htsjdk's refusal and the regex it quotes. A READ WITH NO NM STILL GETS AN OA and the missing field prints as the four characters 'null', because getAttributeAsString returns null into a format string. AN UNMAPPED MATE GIVES XM=* and an unmapped read the constant '*,0,*,*,0,0;'. The tags are read back off the output rather than inferred, and the reads that survive an aborted run are in the golden too: the writer had already flushed five of six.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 16,
+      "cases": [
+        {
+          "dump": "AddOriginalAlignmentTagsDump",
+          "golden": null,
+          "why": "16 rows: one fixture with its index, four runs of which three abort, the one output BAM and its index in full, five tag rows read back off that output, and the sequence-name refusal that makes the comma branch dead."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

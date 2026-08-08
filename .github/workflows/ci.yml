@@ -159,6 +159,10 @@ jobs:
             index: "12/12"
             slug: "natural-log-utils-somatic-likelihoods-decimal-format-allele-pseudo-depth"
             suites: "natural-log-utils somatic-likelihoods decimal-format allele-pseudo-depth"
+          - group: golden-pending
+            index: "1/1"
+            slug: "add-oa-tags"
+            suites: "add-oa-tags"
     steps:
       - uses: actions/checkout@v4
 

@@ -5,6 +5,7 @@
 //! rather than inside either, because a traversal is a data source and a filter chain composed,
 //! and neither half can see the other.
 
+pub mod add_original_alignment_tags;
 pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
 pub mod locus_walker;
