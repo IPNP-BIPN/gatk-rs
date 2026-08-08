@@ -280,7 +280,7 @@
     },
     {
       "id": "fix-misencoded",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "FixMisencodedBaseQualityReads, the fourth record-transform tool",
       "harness": "tools/readfilter-conformance",
       "why": "The fourth whole tool of the largest archetype, and the first whose transform can REFUSE THE FILE IT WAS GIVEN. Its apply is one line; everything worth measuring is elsewhere. IT DOES NOT OVERRIDE ITS READ FILTERS, so it takes GATKTool's default of WellformedReadFilter where UnmarkDuplicates and RevertBaseQualityScores replace the whole list with ALLOW_ALL_READS: three tools in one archetype and two different default traversals, which is why naming AllowAllReadsReadFilter changes what this one emits and would not change what the other two emit. A QUALITY BELOW 31 ABORTS THE WHOLE RUN with a message saying the read 'was correctly encoded', so a port that clamped would write a healthy-looking file the reference never wrote. THE REFUSAL IS A PROPERTY OF THE TRAVERSAL RATHER THAN OF THE FILE: the same fixture succeeds when an interval excludes the read that carries the low quality, which the corpus carries as two cases over one file. THE CHECK IS PER BASE AND AFTER THE SUBTRACTION, so the bases before the offending one are already rewritten when it throws. AND A READ WITH NO QUALITIES AT ALL PASSES THROUGH, because the loop never runs: '*' in a SAM is not a quality of zero.",
@@ -291,8 +291,8 @@
       "cases": [
         {
           "dump": "FixMisencodedDump",
-          "golden": null,
-          "why": "40 rows: three fixtures with their indexes, eight runs whose output BAM and index travel in full, and one refusal with the class and message the reference throws. The fixtures differ only in their qualities, which is what every case turns on."
+          "golden": "crates/gatk-tools/tests/data/fix_misencoded.txt.gz",
+          "why": "40 rows: three fixtures with their indexes, eight runs whose output BAM and index travel in full, and one refusal with the class and message the reference throws. The fixtures differ only in their qualities, which is what every case turns on. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31230160751, and byte for byte what an Apple Silicon laptop produced, the output BAMs included."
         }
       ]
     },
