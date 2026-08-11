@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 44 | 14.1% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 45 | 14.5% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 254 | 81.7% |
 | **total** | **311** | |
@@ -74,7 +74,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 |---|---|---|---|---:|---|
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
-| `ConvertHeaderlessHadoopBamShardToBam` | record-transform | golden-pending | convert-headerless-shard | 1 | not measured |
+| `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
