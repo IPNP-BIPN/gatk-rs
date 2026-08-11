@@ -491,6 +491,33 @@
       ]
     },
     {
+      "id": "print-reads-header",
+      "status": "golden-pending",
+      "title": "PrintReadsHeader, the smallest tool of the archetype",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintReadsHeader"
+      ],
+      "why": "The eleventh whole tool of the record-transform archetype, the second that is not a walker, and the SMALLEST TOOL IN THE ARCHETYPE: forty-six lines of which four do anything. It is measured for that reason as much as for itself, because G2's calibration gate asks what a member of this archetype costs at the margin and every measurement so far has been of a tool that does something. THE FINDING IS NOT ABOUT THIS TOOL: no BAM htsjdk wrote can carry a non-current @HD VN, because SAMFileWriterImpl.writeHeader(SAMFileHeader) calls the two-argument SAMTextHeaderCodec.encode, which is keepExistingVersionNumber = false, and BAMFileWriter overrides only writeHeader(String). The three-argument call that passes true is reachable only from the standalone block-copy reheader. The dump prints the header's own VN at the moment the writer is handed it: builtvn says 1.5 and the BAM that comes out says VN:1.6. htsjdk-rs's BamWriter keeps the header's version and its SamHeader::encode says in a comment that the writer passes true, so the port diverges on any input whose VN is not current; filed as htsjdk-rs#164. THIS TOOL REWRITES THE VERSION THROUGH THE SAME OVERLOAD, and writeHDLine(false) rebuilds the @HD line from a fresh SAMFileHeader, which also moves VN to the front; both are unobservable on any input htsjdk can produce and are recorded so a future hand-built fixture does not rediscover them. NO @PG IS APPENDED, because the tool reads getHeaderForReads() rather than getHeaderForSAMWriter(), which is the opposite of every writer tool in this archetype. THE OUTPUT IS TEXT THROUGH AN OutputStreamWriter WITH NO CHARSET, so it is the platform default; the output travels as base64 beside the charset's name so the two can be checked against each other. AND A HEADER WITH NO SEQUENCE DICTIONARY STILL PRINTS, while a run with no -I is refused by Barclay before the tool is built.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 19,
+      "expect_contains": [
+        "builtvn\told_version.bam\t1.5",
+        "currentversion\t1.6",
+        "charset\tUTF-8",
+        "error\tnoinput\torg.broadinstitute.barclay.argparser.CommandLineException$MissingArgument:Argument input was missing: Argument 'input' is required"
+      ],
+      "cases": [
+        {
+          "dump": "PrintReadsHeaderDump",
+          "golden": null,
+          "why": "Three fixtures, four runs of which one is refused, the header htsjdk read back out of each fixture, and each output both as bytes and as escaped text: the bytes because the writer's charset is only decidable from them, the text because a reader should not have to decode base64 by hand to see that nothing was appended."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
