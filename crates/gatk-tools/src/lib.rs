@@ -14,6 +14,7 @@ pub mod locus_walker;
 pub mod multi_pass;
 pub mod print_distant_mates;
 pub mod print_reads;
+pub mod print_reads_header;
 pub mod read_walker;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
