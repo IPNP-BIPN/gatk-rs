@@ -547,6 +547,34 @@
       ]
     },
     {
+      "id": "convert-headerless-shard",
+      "status": "golden-pending",
+      "title": "ConvertHeaderlessHadoopBamShardToBam, which copies rather than reads",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ConvertHeaderlessHadoopBamShardToBam"
+      ],
+      "why": "The thirteenth whole tool of the record-transform archetype and the FIRST THAT IS NOT A GATKTool AT ALL: it extends CommandLineProgram and implements doWork(), so there is no traversal, no read filter, no @PG record and no engine. THE SHARD IS COPIED BYTE FOR BYTE: FileUtils.copyFile between a header block and a terminator, so the output's data blocks are the shard's own bytes, not decompressed, not re-deflated and not re-blocked. Measured as a byte search rather than as a read round trip, because a port that read the records and wrote them back would produce a valid BAM with different bytes and every read-level assertion would still pass; the golden carries the shard's length, the output's three-part layout and whether the middle part equals the shard exactly. THE HEADER IS ENCODED WITH keepExistingVersionNumber = true, which is the other branch from the one PrintReadsHeader takes: this is the block-copy reheader path that htsjdk-rs#164 says is the only place the flag is legitimately true. THE HEADER BLOCK CARRIES NO TERMINATOR, because writeBAMHeaderToStream flushes rather than closes, so the empty gzip block appears exactly once and at the very end. AND A DONOR THAT IS NOT A BAM IS NOT REFUSED: reading a headerless shard as the header donor yields an empty SAMFileHeader under SILENT validation, and the tool writes a BAM whose header is nothing but @HD VN:1.6 with the shard appended. Nothing is added to a valid donor's header either, because there is no GATKTool to append a @PG. AND --use-jdk-deflater HAS TO BE PASSED HERE TOO: it is declared on CommandLineProgram rather than on GATKTool, so it reaches a tool with no engine, and CommandLineProgram installs IntelDeflaterFactory into the static BlockCompressedOutputStream default when it is absent, whatever the dump pinned beforehand. Measured: the header block is 177 bytes without the flag and 173 with it, and the JDK deflater produces 173 at every compression level, so the four bytes are the GKL deflater rather than a level. That is #160's mechanism seen from the other side, and the dump records the factory in force during each run rather than only the one it set.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 21,
+      "expect_contains": [
+        "copiedverbatim\tplain\ttrue",
+        "layout\tplain\t173\t91\t28",
+        "shardlength\t91",
+        "deflaterinrun\tplain\thtsjdk.samtools.util.zip.DeflaterFactory",
+        "outputheader\tbadheader\t@HD\\tVN:1.6\\n"
+      ],
+      "cases": [
+        {
+          "dump": "ConvertHeaderlessShardDump",
+          "golden": null,
+          "why": "One donor BAM, one headerless shard built the way a Spark tool builds one, three runs, and for each the output in full. The shard is the donor's records re-encoded through BAMRecordCodec into a BGZF stream that is flushed rather than closed: slicing a finished BAM would not do, because htsjdk packs the header and small record data into one block and there is no boundary between them to cut at."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

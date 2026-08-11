@@ -180,10 +180,16 @@ public class ConvertHeaderlessShardDump {
     static void convert(final Path dir, final Path shard, final Path header, final String label)
             throws Exception {
         final Path output = dir.resolve("Converted." + label + ".bam");
+        // --use-jdk-deflater is on CommandLineProgram, not on GATKTool, so it reaches this tool
+        // too, and it has to be passed: CommandLineProgram installs IntelDeflaterFactory into the
+        // static BlockCompressedOutputStream default when it is absent, whatever this dump pinned
+        // before the run. Measured: without it the header block is 177 bytes and the JDK deflater
+        // produces 173 at every level, which is #160's mechanism seen from the other side.
         final List<String> argv = new ArrayList<>(Arrays.asList(
                 "--bam-shard", shard.toString(),
                 "--bam-with-header", header.toString(),
-                "-O", output.toString()));
+                "-O", output.toString(),
+                "--use-jdk-deflater", "true", "--use-jdk-inflater", "true"));
 
         try {
             new ConvertHeaderlessHadoopBamShardToBam().instanceMain(argv.toArray(new String[0]));
@@ -193,6 +199,9 @@ public class ConvertHeaderlessShardDump {
             return;
         }
 
+        // What the factory was when the tool actually wrote, rather than what the dump set.
+        System.out.printf("deflaterinrun\t%s\t%s%n", label,
+                BlockCompressedOutputStream.getDefaultDeflaterFactory().getClass().getName());
         System.out.printf("output\t%s\t%s%n", label, base64(output));
         try (final SamReader reader = SamReaderFactory.makeDefault()
                 .validationStringency(ValidationStringency.SILENT).open(output.toFile())) {
