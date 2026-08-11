@@ -6,6 +6,7 @@
 //! and neither half can see the other.
 
 pub mod add_original_alignment_tags;
+pub mod clip_reads;
 pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
 pub mod left_align_indels;

@@ -418,6 +418,33 @@
       ]
     },
     {
+      "id": "clip-reads",
+      "status": "golden-pending",
+      "title": "ClipReads, whose three clippers read the read in machine-cycle order",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ClipReads"
+      ],
+      "why": "The ninth whole tool of the record-transform archetype and the FIRST THAT WRITES A SECOND OUTPUT THAT IS NOT A BAM. THE QUALITY CLIPPER READS THE READ IN MACHINE-CYCLE ORDER, NOT IN REFERENCE ORDER: it walks i from the last base to the first but indexes with `isReverseStrand() ? readLen - i - 1 : i`, so a reverse-strand read is scanned from its front and the clip it emits is 0..clipPoint rather than clipPoint..readLen-1. The fixture's two quality reads carry the bad qualities at opposite ends of the array, so a port that walked the array backwards on both would find no clip point at all on the reverse one. THE REPRESENTATION DECIDES WHETHER THE WRITER SORTS: presorted is true only for WRITE_NS, WRITE_NS_Q0S and WRITE_Q0S, and the other three get a sorting writer, which the fixture makes observable twice over, by a soft clip that moves a read forward and by a revert that moves another backwards past it. HARDCLIP_BASES AND REVERT_SOFTCLIPPED_BASES REVERT BEFORE THEY CLIP, in apply, before the ReadClipper is constructed, so every clipper sees a read whose cigar and start have already changed. THE SEQUENCE CLIPPER IS A java.util.regex MATCH, case-insensitive, reverse-complemented for a reverse-strand read, looping until find() fails so one sequence can clip a read twice; its counts are keyed by the argument string in a TreeMap, which prints an upper-case argument before a lower-case one. THE CYCLE CLIPPER IS 1-BASED AND INCLUSIVE, clamps a stop past the end of the read and drops a range whose start is past it. THE ADAPTER CLIPPER DOES NOT FLIP FOR STRAND, and is the one place the tool adds a tag rather than removing bases. AND --read DROPS EVERY READ IT DOES NOT NAME rather than passing it through, so a --read that names nothing produces an empty BAM and a statistics file whose percentages are NaN, which is what String.format(\"%.2f\", 0.0/0) prints in Java.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 170,
+      "expect_contains": [
+        "reads\tqt\tr0\t0\tchr1\t1\t10M\tACGTANNNNN",
+        "reads\tqt\tr1\t16\tchr1\t5\t10M\tNNNNNACGTA",
+        "reads\thard\tr2\t0\tchr1\t3\t10M",
+        "reads\tadapter\tr3\t16\tchr1\t15\t10M\tNNGTACGNNN\tIIIIIIIIII\tXF=3;RG=rg1;XT=8;tf=A;tm=A"
+      ],
+      "cases": [
+        {
+          "dump": "ClipReadsDump",
+          "golden": null,
+          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
