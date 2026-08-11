@@ -345,6 +345,34 @@
       ]
     },
     {
+      "id": "split-reads",
+      "status": "oracle-backed",
+      "title": "SplitReads, whose outputs come from the header rather than the reads",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SplitReads"
+      ],
+      "why": "The seventh whole tool of the record-transform archetype, and the first whose -O is a DIRECTORY and whose run opens more than one writer. THE SET OF OUTPUT FILES COMES FROM THE HEADER: createWriters takes the cross product of each splitter's getSplitsBy(header), so a read group no read belongs to still gets a valid empty BAM. THE CROSS PRODUCT DOES NOT DEDUPLICATE: two read groups with the same sample give the same key twice, prepareSAMFileWriter runs twice on one path, and the first writer is never closed because closeTool only closes what the map still holds. A NULL VALUE IS SPELLED TWO WAYS: a read group with no LB gives the key '.null' from the header, because addKey concatenates the Object, and '.unknown' from a read, because getKey substitutes UNKNOWN_OUT_PREFIX, so the file the header promises is not the file the reads go to and both exist. A READ WITH NO READ GROUP cannot answer any splitter, and whether that aborts the run is decided by a filter rather than by the tool: WellformedReadFilter's HAS_READ_GROUP drops it first, so both runs are measured, one with the default filters and one with that filter disabled. WITH NO --split-* the key is the empty string and one file is written, named after the input. AND EVERY FILE OF A RUN HAS A DIFFERENT HEADER: getHeaderForSAMWriter ADDS a @PG record to the reads header in place and returns the same object, and a writer serialises the header when it is created, so the nth writer's file carries n records for this one tool, with ids suffixed .1, .2 and so on. The on-demand unknown writer, created during the traversal, carries the most.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 77,
+      "expect_contains": [
+        "outfile\tlibrary\tplain.null.bam",
+        "outfile\tlibrary\tplain.unknown.bam",
+        "Unrecognized attribute value found: .s2.rg3.unknown",
+        "error\tnorg-nofilter\tjava.lang.NullPointerException",
+        "programs\tlibrary\tplain.unknown.bam\tupstream;GATK SplitReads;GATK SplitReads.1;GATK SplitReads.2;GATK SplitReads.3"
+      ],
+      "cases": [
+        {
+          "dump": "SplitReadsDump",
+          "golden": "crates/gatk-tools/tests/data/split_reads.txt.gz",
+          "why": "77 rows: two fixtures with their indexes, ten runs of which three abort, and every file each finishing run left in its output directory in full, indexes and @PG lists included, because which files exist is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31514597878, and byte for byte what an Apple Silicon laptop produced twice."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

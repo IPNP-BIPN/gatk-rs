@@ -13,3 +13,5 @@ htsjdk-bam.workspace = true
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.
 gatk-corpus = { path = "../gatk-corpus" }
+# Only the tests need it: they read a port output's header back off its own bytes.
+htsjdk-bgzf.workspace = true
