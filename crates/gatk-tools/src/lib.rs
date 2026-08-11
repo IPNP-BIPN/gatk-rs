@@ -10,6 +10,7 @@ pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
 pub mod locus_walker;
 pub mod multi_pass;
+pub mod print_distant_mates;
 pub mod print_reads;
 pub mod read_walker;
 pub mod revert_base_quality_scores;
