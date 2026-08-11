@@ -125,44 +125,44 @@ jobs:
             suites: "readwalker printreads record-transform fix-misencoded add-oa-tags"
           - group: oracle-backed
             index: "4/13"
-            slug: "print-distant-mates-split-reads-intervalwalker-alignmentstate-pileupelement"
-            suites: "print-distant-mates split-reads intervalwalker alignmentstate pileupelement"
+            slug: "print-distant-mates-split-reads-left-align-indels-intervalwalker-alignmentstate"
+            suites: "print-distant-mates split-reads left-align-indels intervalwalker alignmentstate"
           - group: oracle-backed
             index: "5/13"
-            slug: "intervalfile-jexlfilter-featurecache-readpileup-readstates"
-            suites: "intervalfile jexlfilter featurecache readpileup readstates"
+            slug: "pileupelement-intervalfile-jexlfilter-featurecache-readpileup"
+            suites: "pileupelement intervalfile jexlfilter featurecache readpileup"
           - group: oracle-backed
             index: "6/13"
-            slug: "locusiterator-acbuilder-locuswalker-javarandom-reservoir"
-            suites: "locusiterator acbuilder locuswalker javarandom reservoir"
+            slug: "readstates-locusiterator-acbuilder-locuswalker-javarandom"
+            suites: "readstates locusiterator acbuilder locuswalker javarandom"
           - group: oracle-backed
             index: "7/13"
-            slug: "well19937c-leveling-variantwalker-activityprofile-assemblyregion"
-            suites: "well19937c leveling variantwalker activityprofile assemblyregion"
+            slug: "reservoir-well19937c-leveling-variantwalker-activityprofile"
+            suites: "reservoir well19937c leveling variantwalker activityprofile"
           - group: oracle-backed
             index: "8/13"
-            slug: "intervaliterators-assemblyregioniterator-assemblyregionwalker-mann-whitney-annotation-rank-sum"
-            suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
+            slug: "assemblyregion-intervaliterators-assemblyregioniterator-assemblyregionwalker-mann-whitney"
+            suites: "assemblyregion intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney"
           - group: oracle-backed
             index: "9/13"
-            slug: "annotation-strand-bias-annotation-read-grouping-annotation-depth-per-allele-annotation-flow-annotation-site-statistics"
-            suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
+            slug: "annotation-rank-sum-annotation-strand-bias-annotation-read-grouping-annotation-depth-per-allele-annotation-flow"
+            suites: "annotation-rank-sum annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow"
           - group: oracle-backed
             index: "10/13"
-            slug: "annotation-heterozygosity-and-mq-annotation-allele-specific-rank-sum-annotation-allele-specific-strand-bias-annotation-allele-specific-site-statistics-annotation-pedigree"
-            suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
+            slug: "annotation-site-statistics-annotation-heterozygosity-and-mq-annotation-allele-specific-rank-sum-annotation-allele-specific-strand-bias-annotation-allele-specific-site-statistics"
+            suites: "annotation-site-statistics annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics"
           - group: oracle-backed
             index: "11/13"
-            slug: "annotation-fragment-counts-annotation-haplotype-filtering-multipasswalker-barclay-value-model-barclay-tagged-arguments"
-            suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model barclay-tagged-arguments"
+            slug: "annotation-pedigree-annotation-fragment-counts-annotation-haplotype-filtering-multipasswalker-barclay-value-model"
+            suites: "annotation-pedigree annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model"
           - group: oracle-backed
             index: "12/13"
-            slug: "barclay-argument-collections-barclay-arguments-file-barclay-plugin-descriptors-natural-log-utils-somatic-likelihoods"
-            suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
+            slug: "barclay-tagged-arguments-barclay-argument-collections-barclay-arguments-file-barclay-plugin-descriptors-natural-log-utils"
+            suites: "barclay-tagged-arguments barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils"
           - group: oracle-backed
             index: "13/13"
-            slug: "decimal-format-allele-pseudo-depth"
-            suites: "decimal-format allele-pseudo-depth"
+            slug: "somatic-likelihoods-decimal-format-allele-pseudo-depth"
+            suites: "somatic-likelihoods decimal-format allele-pseudo-depth"
     steps:
       - uses: actions/checkout@v4
 

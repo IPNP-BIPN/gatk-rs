@@ -373,6 +373,29 @@
       ]
     },
     {
+      "id": "left-align-indels",
+      "status": "oracle-backed",
+      "title": "AlignmentUtils.leftAlignIndels, and the shift that can go right",
+      "harness": "tools/readfilter-conformance",
+      "why": "The call LeftAlignIndels is built around, measured on its own because its interface is exactly measurable and needs no file: a cigar, a reference, a read and a start in; a cigar and two counts of removed deletion bases out. THE CIGAR IS WALKED RIGHT TO LEFT, accumulating an indel's ranges and resolving them only at an alignment block or the start of the cigar, so two indels with too few matching bases between them COLLIDE AND MERGE, which is a behaviour of the loop rather than of a named rule. normalizeAlleles CAN SHIFT RIGHT: it trims shared bases off the end and then off the front, and the front trim does startShift--, so the returned start shift is NEGATIVE on non-parsimonious input and leftAlignIndels reads that as newMatchOnLeftDueToTrimming. A port that typed the shift as unsigned would be wrong in a way no simple case shows, so the inner function is dumped on its own inputs with the ranges before and after, because it adjusts them as a side effect. A DELETION THAT REACHES THE START OF THE CIGAR IS DROPPED rather than emitted and the reference bases it removed are reported instead, which is what makes the tool move the read. TWO VALIDATIONS REFUSE RATHER THAN CLAMP, both IllegalArgumentException out of a util rather than a UserException out of a tool.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 21,
+      "expect_contains": [
+        "leftalign\tdeletion-to-the-start",
+        "leftalign\tinsertion-then-deletion\t3M2I2M2D3M",
+        "normalize\tshifts-right"
+      ],
+      "cases": [
+        {
+          "dump": "LeftAlignIndelsDump",
+          "golden": "crates/gatk-engine/tests/data/left_align_indels.txt.gz",
+          "why": "A table of cigars over designed repeat structures and a table of allele ranges: homopolymers, a dinucleotide repeat, indels that cannot move, soft and hard clips the shift may not cross, two indels that collide, a deletion that walks off the start, both refusals, and the non-parsimonious ranges that shift right. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31516507658, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
