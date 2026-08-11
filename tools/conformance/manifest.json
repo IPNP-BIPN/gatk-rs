@@ -320,6 +320,31 @@
       ]
     },
     {
+      "id": "print-distant-mates",
+      "status": "oracle-backed",
+      "title": "PrintDistantMates, which moves a read to its mate and sorts the result",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintDistantMates"
+      ],
+      "why": "The sixth whole tool of the record-transform archetype, and three things in it are new to the archetype. IT EXTENDS THE DEFAULT READ FILTERS rather than taking or replacing them: getDefaultReadFilters starts from super's WellformedReadFilter and adds PAIRED, PRIMARY_LINE, NOT_DUPLICATE and MATE_DISTANT, a third pattern beside PrintReads which takes the default and UnmarkDuplicates which replaces it. Both lists are dumped rather than described. IT WRITES THE OA TAG WITH A DIFFERENT CONVENTION FROM AddOriginalAlignmentTags: both build 'contig,start,strand,cigar,mapq,NM;' and a missing NM prints as EMPTY here where the other tool prints the four characters 'null'. Both tools run over the same fixture so the two spellings of one missing field land in the same golden. IT OPENS ITS WRITER WITH preSorted = false where every other tool of the archetype passes true, and the transform moves each read into its mate's position, so traversal order and output order disagree by construction: the fixture's three surviving reads leave the traversal for chr2:600, chr1:2500 and chr2:150. undoDistantMateAlterations is measured as a round trip against the original record's own SAM text, tag block included, and on four OA values it cannot use.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 75,
+      "expect_contains": [
+        "filters\tPrintDistantMates\t4\tMateDistantReadFilter",
+        "roundtrip\t"
+      ],
+      "cases": [
+        {
+          "dump": "PrintDistantMatesDump",
+          "golden": "crates/gatk-tools/tests/data/print_distant_mates.txt.gz",
+          "why": "75 rows: the two filter lists, one fixture with its index, six runs with their headers, command lines, output BAMs and indexes in full, the reads read back off every output in the order they were written, the round trip over every fixture read, and undo's refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31512787457, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
