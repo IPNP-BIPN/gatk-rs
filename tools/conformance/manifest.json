@@ -341,7 +341,7 @@
     },
     {
       "id": "split-reads",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SplitReads, whose outputs come from the header rather than the reads",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -362,8 +362,8 @@
       "cases": [
         {
           "dump": "SplitReadsDump",
-          "golden": null,
-          "why": "Two fixtures with their indexes, ten runs, and every file each run left in its output directory in full, indexes included, because which files exist is the measurement."
+          "golden": "crates/gatk-tools/tests/data/split_reads.txt.gz",
+          "why": "77 rows: two fixtures with their indexes, ten runs of which three abort, and every file each finishing run left in its output directory in full, indexes and @PG lists included, because which files exist is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31514597878, and byte for byte what an Apple Silicon laptop produced twice."
         }
       ]
     },
