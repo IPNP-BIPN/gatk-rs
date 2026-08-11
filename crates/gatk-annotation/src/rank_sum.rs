@@ -39,6 +39,7 @@
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
+use gatk_engine::java_format;
 use gatk_engine::mann_whitney::{self, TestType};
 use gatk_engine::read::mapping_quality;
 use gatk_engine::read_utils::{self, BaseAt};
@@ -169,43 +170,11 @@ pub(crate) fn format_three_decimals(value: f64) -> String {
 }
 
 /// `String.format("%.Nf", value)`, half-up on the decimal expansion.
+///
+/// One implementation, in [`gatk_engine::java_format`], because `ClipReads` prints percentages
+/// through the same rule and two copies of a rounding rule is how a rounding rule drifts.
 pub(crate) fn format_decimals(value: f64, places: usize) -> String {
-    if value.is_nan() {
-        return "NaN".to_string();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
-    }
-    // The exact decimal expansion of the double, then a half-up rounding of it.
-    let text = format!("{:.*}", 30, value.abs());
-    let (whole, fraction) = text.split_once('.').expect("a decimal point");
-    let mut digits: Vec<u8> = whole
-        .bytes()
-        .chain(fraction.bytes().take(places))
-        .map(|b| b - b'0')
-        .collect();
-    let round_up = fraction.as_bytes()[places] >= b'5';
-    if round_up {
-        let mut index = digits.len();
-        loop {
-            if index == 0 {
-                digits.insert(0, 1);
-                break;
-            }
-            index -= 1;
-            if digits[index] == 9 {
-                digits[index] = 0;
-            } else {
-                digits[index] += 1;
-                break;
-            }
-        }
-    }
-    let split = digits.len() - places;
-    let whole: String = digits[..split].iter().map(|d| (d + b'0') as char).collect();
-    let fraction: String = digits[split..].iter().map(|d| (d + b'0') as char).collect();
-    let sign = if value.is_sign_negative() { "-" } else { "" };
-    format!("{sign}{whole}.{fraction}")
+    java_format::format_decimals(value, places)
 }
 
 /// `BaseQualityRankSumTest`: `BaseQRankSum`.

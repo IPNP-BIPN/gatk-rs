@@ -27,6 +27,7 @@ pub mod haplotype;
 pub mod histogram;
 pub mod interval;
 pub mod interval_args;
+pub mod java_format;
 pub mod java_hash;
 pub mod java_random;
 pub mod jexl;

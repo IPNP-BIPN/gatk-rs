@@ -423,6 +423,61 @@
       ]
     },
     {
+      "id": "clip-reads",
+      "status": "oracle-backed",
+      "title": "ClipReads, whose three clippers read the read in machine-cycle order",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ClipReads"
+      ],
+      "why": "The ninth whole tool of the record-transform archetype and the FIRST THAT WRITES A SECOND OUTPUT THAT IS NOT A BAM. THE QUALITY CLIPPER READS THE READ IN MACHINE-CYCLE ORDER, NOT IN REFERENCE ORDER: it walks i from the last base to the first but indexes with `isReverseStrand() ? readLen - i - 1 : i`, so a reverse-strand read is scanned from its front and the clip it emits is 0..clipPoint rather than clipPoint..readLen-1. The fixture's two quality reads carry the bad qualities at opposite ends of the array, so a port that walked the array backwards on both would find no clip point at all on the reverse one. THE REPRESENTATION DECIDES WHETHER THE WRITER SORTS: presorted is true only for WRITE_NS, WRITE_NS_Q0S and WRITE_Q0S, and the other three get a sorting writer, which the fixture makes observable twice over, by a soft clip that moves a read forward and by a revert that moves another backwards past it. HARDCLIP_BASES AND REVERT_SOFTCLIPPED_BASES REVERT BEFORE THEY CLIP, in apply, before the ReadClipper is constructed, so every clipper sees a read whose cigar and start have already changed. THE SEQUENCE CLIPPER IS A java.util.regex MATCH, case-insensitive, reverse-complemented for a reverse-strand read, looping until find() fails so one sequence can clip a read twice; its counts are keyed by the argument string in a TreeMap, which prints an upper-case argument before a lower-case one. THE CYCLE CLIPPER IS 1-BASED AND INCLUSIVE, clamps a stop past the end of the read and drops a range whose start is past it. THE ADAPTER CLIPPER DOES NOT FLIP FOR STRAND, and is the one place the tool adds a tag rather than removing bases. AND --read DROPS EVERY READ IT DOES NOT NAME rather than passing it through, so a --read that names nothing produces an empty BAM and a statistics file whose percentages are NaN, which is what String.format(\"%.2f\", 0.0/0) prints in Java.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 170,
+      "expect_contains": [
+        "reads\tqt\tr0\t0\tchr1\t1\t10M\tACGTANNNNN",
+        "reads\tqt\tr1\t16\tchr1\t5\t10M\tNNNNNACGTA",
+        "reads\thard\tr2\t0\tchr1\t3\t10M",
+        "reads\tadapter\tr3\t16\tchr1\t15\t10M\tNNGTACGNNN\tIIIIIIIIII\tXF=3;RG=rg1;XT=8;tf=A;tm=A"
+      ],
+      "cases": [
+        {
+          "dump": "ClipReadsDump",
+          "golden": "crates/gatk-tools/tests/data/clip_reads.txt.gz",
+          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31525426341, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
+      "id": "transfer-read-tags",
+      "status": "oracle-backed",
+      "title": "TransferReadTags, the first tool of the archetype that is not a walker",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "TransferReadTags"
+      ],
+      "why": "The tenth whole tool of the record-transform archetype and the FIRST THAT IS NOT A WALKER: it extends GATKTool and overrides traverse() itself, so there is no filter chain, no read transformer and no interval bound, and a port that reached for the read walker would apply WellformedReadFilter and drop reads this tool writes. The fixture carries a read with no read group for exactly that reason. It is also the first with TWO read inputs, walked in lockstep by query name with ReadQueryNameComparator, which duplicates SAMRecordQueryNameComparator. EVERY TAG IS TRANSFERRED AS A STRING, whatever it was: getAttributeAsString then setAttribute(name, String), so XI:i:42 arrives as XI:Z:42 and XN:f:1.5 as XN:Z:1.5, and the type is lost the same way every time. AN ALIGNED READ PAST THE END OF THE UNMAPPED FILE IS SILENTLY DROPPED, because the catch-up loop is `while (unmappedSamIterator.hasNext())` and when it runs out the loop simply ends: no exception, no warning, one fewer read in the output. THE WRITER IS NOT TOLD THE READS ARE SORTED, so htsjdk sorts a queryname header with SAMRecordQueryNameComparator and its six tie-breaks after the name; the fixture carries a name whose two records sit in the file in the order that comparator swaps. NO OUTPUT CARRIES AN INDEX whatever --create-output-bam-index says, because the output is queryname sorted. And the refusals come from four different layers: Barclay for a missing --read-tags, before the tool is built at all; Utils.validate for a coordinate-sorted -I, which is the only sort order checked and only on the aligned side; a UserException for an empty unmapped file beside a non-empty aligned one; IllegalStateException for an aligned read that is not in the unmapped file, from either of two throw sites with the same message; and IllegalArgumentException out of Utils.nonNull for a matched read missing the tag, naming the unmapped read rather than the aligned one.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 65,
+      "expect_contains": [
+        "reads\talltypes\ta1\t0\tchr1\t1\tRG=rg1:String;XI=42:String;XN=1.5:String;RX=AAA-CCC:String",
+        "reads\tin:unmapped\ta1\t4\t*\t0\tRG=rg1:String;XI=42:Integer;XN=1.5:Float;RX=AAA-CCC:String",
+        "reads\tunsorted\ta1\t65\tchr1\t1\tRX=AAA-CCC:String",
+        "error\tcoordinate\tjava.lang.IllegalStateException:aligned sam must be sorted by queryname",
+        "index\trx\tabsent"
+      ],
+      "cases": [
+        {
+          "dump": "TransferReadTagsDump",
+          "golden": "crates/gatk-tools/tests/data/transfer_read_tags.txt.gz",
+          "why": "Ten fixtures with no index between them, twelve runs of which six are refused, the output BAMs in full, the header and @PG command line of each, and every read read back off both the inputs and the outputs with the Java class of every tag value beside it, because the finding is a type change that the characters do not show. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31526755049, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
