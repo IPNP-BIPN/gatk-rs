@@ -492,7 +492,7 @@
     },
     {
       "id": "print-reads-header",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "PrintReadsHeader, the smallest tool of the archetype",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -512,8 +512,8 @@
       "cases": [
         {
           "dump": "PrintReadsHeaderDump",
-          "golden": null,
-          "why": "Three fixtures, four runs of which one is refused, the header htsjdk read back out of each fixture, and each output both as bytes and as escaped text: the bytes because the writer's charset is only decidable from them, the text because a reader should not have to decode base64 by hand to see that nothing was appended."
+          "golden": "crates/gatk-tools/tests/data/print_reads_header.txt.gz",
+          "why": "Three fixtures, four runs of which one is refused, the header htsjdk read back out of each fixture, and each output both as bytes and as escaped text: the bytes because the writer's charset is only decidable from them, the text because a reader should not have to decode base64 by hand to see that nothing was appended. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31537791739, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
