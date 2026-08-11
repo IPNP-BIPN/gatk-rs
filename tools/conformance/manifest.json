@@ -215,7 +215,7 @@
     {
       "id": "readwalker",
       "title": "ReadWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "expect_rows": 100,
       "expect_contains": [
         "deflaterafterdict\tcom.intel.gkl.compression.IntelDeflaterFactory",
@@ -322,7 +322,7 @@
     {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "expect_rows": 79,
       "expect_contains": [
         "deflaterafterdict\tcom.intel.gkl.compression.IntelDeflaterFactory",
