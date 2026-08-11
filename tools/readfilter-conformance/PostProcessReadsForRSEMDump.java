@@ -169,6 +169,17 @@ public class PostProcessReadsForRSEMDump {
         });
         fixture(oneSided, "one_sided");
 
+        // The mirror image: every secondary is a second-of-pair, so `groupedByRead1.get(true)` is
+        // the null one. Java evaluates `read1Reads.size()` first, so the message names the other
+        // list, and a port that assumed one message for both shapes would be inventing one.
+        final Path otherSided = dir.resolve("other_sided.bam");
+        buildFixture(otherSided.toFile(), SAMFileHeader.SortOrder.queryname, writer -> {
+            pair(writer, "t1", 100, 300);
+            writer.addAlignment(read(writer, "t1", 700, PAIRED | SECOND | SECONDARY, "chr1", 700,
+                    "100M", "chr1", 500));
+        });
+        fixture(otherSided, "other_sided");
+
         // The one sort order the tool checks, and it checks the header rather than the reads.
         final Path coordinate = dir.resolve("coordinate.bam");
         buildFixture(coordinate.toFile(), SAMFileHeader.SortOrder.coordinate, writer ->
@@ -178,6 +189,7 @@ public class PostProcessReadsForRSEMDump {
         run(dir, plain, "plain");
         run(dir, noFirst, "nofirst");
         run(dir, oneSided, "onesided");
+        run(dir, otherSided, "othersided");
         run(dir, coordinate, "coordinate");
 
         reads(dir, "plain");
