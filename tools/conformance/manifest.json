@@ -518,6 +518,35 @@
       ]
     },
     {
+      "id": "post-process-reads-for-rsem",
+      "status": "oracle-backed",
+      "title": "PostProcessReadsForRSEM, and two null dereferences in its own guards",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PostProcessReadsForRSEM"
+      ],
+      "why": "The twelfth whole tool of the record-transform archetype, the third that is not a walker, and the first that groups the traversal into query-name runs of its own accord. A FOURTH getDefaultReadFilters PATTERN: it replaces the whole list with a single filter that is not Wellformed, Collections.singletonList(NOT_SUPPLEMENTARY_ALIGNMENT), so a supplementary alignment never reaches the tool and ReadPair's supplementaryAlignments list is dead code on this path. TWO OF ITS OWN GUARDS DEREFERENCE NULL. passesRSEMFilter opens with `if (read1 == null || read2 == null) { logger.warn(... + read1.getName()); }` and dereferences read1 inside the branch that exists because it may be null, so a query-name group holding only a second-of-pair kills the run: measured as `Cannot invoke GATKRead.getName() because \"read1\" is null`. And groupSecondaryReads collects into Collectors.groupingBy(isFirstOfPair), which produces no false key at all when every secondary is a first-of-pair, then calls read2Reads.size(): measured as `Cannot invoke List.size() because \"read2Reads\" is null`. The mirror image, every secondary a second-of-pair, names the OTHER list: `read1Reads.size() != read2Reads.size()` evaluates its left operand first, so which list is missing decides which name the JVM prints, and a port that assumed one message for both shapes would be inventing one. All three take the whole traversal down, so all three have their own fixture. THE OUTPUT ORDER IS PRIMARY PAIR THEN EACH SECONDARY PAIR, first-of-pair before second-of-pair, which is not the order the group arrived in, and a secondary finds its mate by contig plus getStart() == mate.getMateStart() and getMateStart() == mate.getStart() rather than by anything in the record that says so. THREE REASONS DROP BOTH READS: either read unmapped, different contigs, or a cigar that is not exactly one M, where `100=` is a single element and still refused because the test is on the operator. A PRIMARY PAIR THAT FAILS TAKES ITS SECONDARY ALIGNMENTS WITH IT, since the secondary loop sits inside the primary's if, while a secondary pair that fails on its own drops only itself. AND THE SORT ORDER IS CHECKED ON THE HEADER rather than on the reads, so a mis-labelled file is trusted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 43,
+      "expect_contains": [
+        "filters\tNotSupplementaryAlignmentReadFilter",
+        "error\tnofirst\tjava.lang.NullPointerException:Cannot invoke \"org.broadinstitute.hellbender.utils.read.GATKRead.getName()\" because \"read1\" is null",
+        "error\tonesided\tjava.lang.NullPointerException:Cannot invoke \"java.util.List.size()\" because \"read2Reads\" is null",
+        "error\tothersided\tjava.lang.NullPointerException:Cannot invoke \"java.util.List.size()\" because \"read1Reads\" is null",
+        "error\tcoordinate\torg.broadinstitute.hellbender.exceptions.UserException:Input must be query-name sorted.",
+        "index\tplain\tabsent"
+      ],
+      "cases": [
+        {
+          "dump": "PostProcessReadsForRSEMDump",
+          "golden": "crates/gatk-tools/tests/data/post_process_reads_for_rsem.txt.gz",
+          "why": "Five fixtures with no index between them, five runs of which four crash or refuse, the surviving output BAM in full with its header and @PG command line, and every read read back off both the input and the output so the reordering and the eight dropped reads are visible as a difference rather than as a state. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31539861672, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
