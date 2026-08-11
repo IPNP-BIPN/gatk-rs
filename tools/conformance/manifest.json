@@ -446,7 +446,7 @@
     },
     {
       "id": "transfer-read-tags",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "TransferReadTags, the first tool of the archetype that is not a walker",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -467,8 +467,8 @@
       "cases": [
         {
           "dump": "TransferReadTagsDump",
-          "golden": null,
-          "why": "Ten fixtures with no index between them, twelve runs of which six are refused, the output BAMs in full, the header and @PG command line of each, and every read read back off both the inputs and the outputs with the Java class of every tag value beside it, because the finding is a type change that the characters do not show."
+          "golden": "crates/gatk-tools/tests/data/transfer_read_tags.txt.gz",
+          "why": "Ten fixtures with no index between them, twelve runs of which six are refused, the output BAMs in full, the header and @PG command line of each, and every read read back off both the inputs and the outputs with the Java class of every tag value beside it, because the finding is a type change that the characters do not show. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31526755049, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
