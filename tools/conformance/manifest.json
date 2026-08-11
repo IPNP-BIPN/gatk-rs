@@ -216,6 +216,11 @@
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
+      "expect_rows": 100,
+      "expect_contains": [
+        "deflaterafterdict\tcom.intel.gkl.compression.IntelDeflaterFactory",
+        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory"
+      ],
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "Every read-based tool inherits this traversal, so which reads reach apply and in what order is the tool's output. The probe is a real ReadWalker run through the real command line rather than a reconstruction: it records, per apply call, the read and the ReferenceContext window it arrived with. Two decisions are invisible from any tool's own output: the filter sits between the two read transformers, so it judges a read the walker never sees; and getReadInterval is null for a mapped read whose coordinates are not a valid interval, which hands the walker a read with no reference under it.",
@@ -318,6 +323,11 @@
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
+      "expect_rows": 79,
+      "expect_contains": [
+        "deflaterafterdict\tcom.intel.gkl.compression.IntelDeflaterFactory",
+        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory"
+      ],
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "why": "IntervalWalker.traverse is five lines over userIntervals, so the traversal is the list and the list is IntervalArgumentCollection: -L, -XL, --interval-padding, --interval-exclusion-padding, --interval-set-rule and --interval-merging-rule. The probe runs a real IntervalWalker through the real command line for 24 combinations of those, and records what reached apply. The decisions it pins are not in the argument names: padding is clamped to the contig rather than extended past it, getIntervalsWithFlanks merges padded intervals with ALL whatever --interval-merging-rule says, INTERSECTION is a running fold whose empty accumulator makes a single -L the identity, an empty intersection is an error rather than an empty traversal, -XL with no -L subtracts from the whole reference, and -XL inside an interval splits it in two.",

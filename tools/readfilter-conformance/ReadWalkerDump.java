@@ -39,6 +39,8 @@ import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.reference.FastaSequenceIndexCreator;
+import htsjdk.samtools.util.BlockCompressedOutputStream;
+import htsjdk.samtools.util.zip.DeflaterFactory;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReadWalker;
@@ -103,6 +105,19 @@ public class ReadWalkerDump {
         FastaSequenceIndexCreator.create(fasta, true);
         new picard.sam.CreateSequenceDictionary().instanceMain(new String[] {
                 "R=" + fasta, "O=" + dir.resolve("ref.dict")});
+
+        // The Picard call above replaced the deflater factory. It is a static on
+        // BlockCompressedOutputStream, and picard's CommandLineProgram installs
+        // com.intel.gkl.compression.IntelDeflaterFactory into it, so every BAM written after that
+        // call carries GKL bytes rather than the JDK deflater's. The fixture below is only ever
+        // read, never reproduced, so no claim in this golden was wrong; what was wrong is that the
+        // golden did not say which deflater wrote its input. It says so now, and the factory is
+        // pinned before the fixture rather than after it.
+        System.out.printf("deflaterafterdict\t%s%n",
+                BlockCompressedOutputStream.getDefaultDeflaterFactory().getClass().getName());
+        BlockCompressedOutputStream.setDefaultDeflaterFactory(new DeflaterFactory());
+        System.out.printf("deflater\t%s%n",
+                BlockCompressedOutputStream.getDefaultDeflaterFactory().getClass().getName());
 
         final Path bam = dir.resolve("reads.bam");
         buildFixture(bam.toFile());
