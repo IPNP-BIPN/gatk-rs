@@ -316,7 +316,7 @@
     },
     {
       "id": "print-distant-mates",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "PrintDistantMates, which moves a read to its mate and sorts the result",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -334,8 +334,8 @@
       "cases": [
         {
           "dump": "PrintDistantMatesDump",
-          "golden": null,
-          "why": "75 rows: the two filter lists, one fixture with its index, six runs with their headers, command lines, output BAMs and indexes in full, the reads read back off every output in the order they were written, the round trip over every fixture read, and undo's refusals."
+          "golden": "crates/gatk-tools/tests/data/print_distant_mates.txt.gz",
+          "why": "75 rows: the two filter lists, one fixture with its index, six runs with their headers, command lines, output BAMs and indexes in full, the reads read back off every output in the order they were written, the round trip over every fixture read, and undo's refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31512787457, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
