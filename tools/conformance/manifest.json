@@ -392,13 +392,13 @@
     },
     {
       "id": "left-align-indels-tool",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "LeftAlignIndels, the first tool of the archetype that needs the reference",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "LeftAlignIndels"
       ],
-      "why": "The eighth whole tool of the record-transform archetype and the FIRST WHOSE requiresReference() IS TRUE. THE REFERENCE A READ WALKER SEES IS THE READ'S OWN SPAN, no padding, so left-alignment is bounded by the read's own window rather than by the contig; the window handed to each read is dumped beside the read so a port cannot quietly widen it. A LEFT-ALIGNED DELETION CAN MOVE THE READ: CigarBuilder drops a deletion that ends up leading and reports the reference bases it removed, and the tool moves the read right by that many, which makes this the second tool of the archetype that changes a read's position after PrintDistantMates and for an unrelated reason. TWO CLASSES OF READ ARE PASSED THROUGH UNTOUCHED before the call rather than by it, an unmapped read and a read whose cigar has one element or none, and the fixture carries both. A RUN WITH NO -R IS REFUSED by the engine rather than by the tool. The call itself is measured by the left-align-indels suite.",
+      "why": "The eighth whole tool of the record-transform archetype and the FIRST WHOSE requiresReference() IS TRUE. THE REFERENCE A READ WALKER SEES IS THE READ'S OWN SPAN, no padding, so left-alignment is bounded by the read's own window rather than by the contig; the window handed to each read is dumped beside the read so a port cannot quietly widen it. A LEFT-ALIGNED DELETION CAN MOVE THE READ: CigarBuilder drops a deletion that ends up leading and reports the reference bases it removed, and the tool moves the read right by that many, which makes this the second tool of the archetype that changes a read's position after PrintDistantMates and for an unrelated reason. TWO CLASSES OF READ ARE PASSED THROUGH UNTOUCHED before the call rather than by it, an unmapped read and a read whose cigar has one element or none, and the fixture carries both. A RUN WITH NO -R IS REFUSED by Barclay rather than by the engine's requiresReference, so the message is an argument-parsing one. AND A PICARD CALL IN THE SAME JVM REPLACES THE DEFLATER FACTORY: this dump needs a .dict, so it calls CreateSequenceDictionary, which installs IntelDeflaterFactory into the static BlockCompressedOutputStream default and makes every BAM written afterwards carry GKL bytes whatever --use-jdk-deflater says. The dump records what the call left behind and pins the factory again before any run; #160 has the audit of the other dumps that do not. The call itself is measured by the left-align-indels suite.",
       "compare": {
         "mode": "lines"
       },
@@ -412,8 +412,8 @@
       "cases": [
         {
           "dump": "LeftAlignIndelsToolDump",
-          "golden": null,
-          "why": "The reference and its index, one fixture with its index, the reference window handed to every read, five runs of which one is refused, the output BAMs and their indexes in full, and every read read back off two of them."
+          "golden": "crates/gatk-tools/tests/data/left_align_indels_tool.txt.gz",
+          "why": "The reference and its index, one fixture with its index, the reference window handed to every read, five runs of which one is refused, the output BAMs and their indexes in full, and every read read back off two of them. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31519030504, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
