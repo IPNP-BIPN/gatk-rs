@@ -8,6 +8,7 @@
 pub mod add_original_alignment_tags;
 pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
+pub mod left_align_indels;
 pub mod locus_walker;
 pub mod multi_pass;
 pub mod print_distant_mates;

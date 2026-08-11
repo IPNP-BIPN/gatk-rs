@@ -391,6 +391,33 @@
       ]
     },
     {
+      "id": "left-align-indels-tool",
+      "status": "golden-pending",
+      "title": "LeftAlignIndels, the first tool of the archetype that needs the reference",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "LeftAlignIndels"
+      ],
+      "why": "The eighth whole tool of the record-transform archetype and the FIRST WHOSE requiresReference() IS TRUE. THE REFERENCE A READ WALKER SEES IS THE READ'S OWN SPAN, no padding, so left-alignment is bounded by the read's own window rather than by the contig; the window handed to each read is dumped beside the read so a port cannot quietly widen it. A LEFT-ALIGNED DELETION CAN MOVE THE READ: CigarBuilder drops a deletion that ends up leading and reports the reference bases it removed, and the tool moves the read right by that many, which makes this the second tool of the archetype that changes a read's position after PrintDistantMates and for an unrelated reason. TWO CLASSES OF READ ARE PASSED THROUGH UNTOUCHED before the call rather than by it, an unmapped read and a read whose cigar has one element or none, and the fixture carries both. A RUN WITH NO -R IS REFUSED by the engine rather than by the tool. The call itself is measured by the left-align-indels suite.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 40,
+      "expect_contains": [
+        "refwindow\tr0\tchr1\t6\t15\tAAAAATTTTT",
+        "deflaterafterdict\t",
+        "reads\tall\tr0\t0\tchr1\t7\t9M",
+        "error\tnoreference"
+      ],
+      "cases": [
+        {
+          "dump": "LeftAlignIndelsToolDump",
+          "golden": null,
+          "why": "The reference and its index, one fixture with its index, the reference window handed to every read, five runs of which one is refused, the output BAMs and their indexes in full, and every read read back off two of them."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
