@@ -419,7 +419,7 @@
     },
     {
       "id": "clip-reads",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ClipReads, whose three clippers read the read in machine-cycle order",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -439,8 +439,8 @@
       "cases": [
         {
           "dump": "ClipReadsDump",
-          "golden": null,
-          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it."
+          "golden": "crates/gatk-tools/tests/data/clip_reads.txt.gz",
+          "why": "One fixture with its index, fifteen runs covering the three clippers alone and together, all six clipping representations, the adapter tags, the --read filter that names nothing, the length filter and a run with no clipping argument at all. Each run travels as its output BAM and index in full, its header and @PG command line, its statistics file as escaped text, and every read read back off it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31525426341, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
