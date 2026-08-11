@@ -11,6 +11,9 @@ neither of them says:
   reference's own CLI;
 * each port's `tools/conformance/manifest.json`, which declares every suite, the tools it covers,
   and whether the oracle re-derives its goldens (`oracle-backed`) or nothing does (`unchecked`).
+  The two siblings are vendored under `tools/dashboard/ports/` because CI has only this repository
+  checked out; this repository's own manifest is read where it lives, because a second copy of a
+  file three directories away is a file that can disagree with itself.
 
 A tool's state is therefore one of:
 
@@ -47,6 +50,19 @@ PORTS = [
     ("picard-rs", REPO.parent / "Picard" / "tools" / "conformance" / "manifest.json"),
     ("htsjdk-rs", REPO.parent / "htsjdk" / "tools" / "conformance" / "manifest.json"),
 ]
+
+# This repository's own manifest is read in place, not vendored.
+#
+# The vendoring above exists for one reason: CI has only this repository checked out, so a sibling's
+# manifest has to be copied in to be readable at all. That reason does not apply to gatk-rs's own
+# manifest, which is committed three directories away. Vendoring it would create a second copy that
+# can disagree with the first, and the dashboard would then report whichever one was refreshed last.
+#
+# Until this was added the list held the two siblings only, so `tool_states` never saw a gatk-rs
+# suite and every tool ported here read `not started` in the table this repository publishes about
+# itself.
+LOCAL = ("gatk-rs", REPO / "tools" / "conformance" / "manifest.json")
+LOCAL_MEASURED = REPO / "tools" / "coverage" / "measured.json"
 
 # Each port's argument-coverage measurement, written by its own CI from the covering arrays. A
 # port with no such file has not run its arrays, and every tool it covers reports `not measured`
@@ -94,7 +110,11 @@ def refresh():
 
 
 def load_manifests():
-    """Read the vendored summaries. A port with no vendored file is reported, not skipped."""
+    """Read the vendored summaries, and this repository's manifest in place.
+
+    A port with no vendored file is reported, not skipped: a dashboard that quietly dropped a port
+    would show the same thing as a port with no suites.
+    """
     found, missing = {}, []
     for name, path in PORTS:
         vendored = VENDORED / f"{name}.json"
@@ -103,6 +123,18 @@ def load_manifests():
                 found[name] = json.load(fh)
         else:
             missing.append((name, vendored))
+
+    name, path = LOCAL
+    if path.exists():
+        with open(path) as fh:
+            summary = summarize(json.load(fh))
+        summary["source"] = str(path)
+        if LOCAL_MEASURED.exists():
+            with open(LOCAL_MEASURED) as fh:
+                summary["coverage"] = json.load(fh).get("tools", {})
+        found[name] = summary
+    else:
+        missing.append((name, path))
     return found, missing
 
 
@@ -250,6 +282,9 @@ def main(argv):
             print(f"vendored {name}: {count} suites")
         for name, path in absent:
             print(f"  no manifest for {name} at {path}")
+        # Said out loud, because a maintainer who sees two lines for three ports would reasonably
+        # conclude the third was skipped.
+        print(f"{LOCAL[0]}: read in place from {LOCAL[1]}, nothing to vendor")
 
     with open(INVENTORY) as fh:
         inventory = json.load(fh)

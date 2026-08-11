@@ -24,6 +24,7 @@
       "title": "OriginalAlignment and the OA tag",
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
+      "tools": [],
       "why": "OriginalAlignment counts the reads supporting the best alternate allele whose original alignment was on a different contig, which is how a Mutect2 call on the mitochondrion is checked against a NuMT, and four of its decisions live outside the class. The allele it counts for is picked by TLOD through getTumorLogOdds and maxElementIndex, so a tie goes to the earliest alternate and a TLOD of dot is not missing but -1, which after the log conversion is an ordinary number that can win the maximum. The contig comparison is a string field: getOAContig splits the OA tag on a comma and takes field zero, so an unmapped read, whose tag is star comma zero and so on, has original contig star, which differs from every real contig and therefore counts. The filter takes BestAllele.isInformative, which compares against the log10 threshold whatever base the matrix is in. And unlike Coverage, MappingQualityZero and CountNs, which treat null likelihoods as nothing to say, this one calls Utils.nonNull and throws.",
       "compare": {
         "mode": "lines"
@@ -58,6 +59,7 @@
       "title": "An INFO attribute as a double array",
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
+      "tools": [],
       "why": "Everything that reads a numeric annotation off a VariantContext goes through VariantContextGetters.attributeValueToDoubleArray, and the function is held together by an accident. Its Iterable branch tests value.getClass().isAssignableFrom(Iterable.class), which is backwards: isAssignableFrom asks whether the argument's type can be assigned to the receiver's, so it asks whether an Iterable fits in an ArrayList variable, which is false. Every list therefore falls through to the branch labelled as a last resort, which renders the value with String.valueOf and splits the result on a comma; String.valueOf of a list is bracketed and comma-space separated, so every field after the first arrives with a leading space and parses only because Double.parseDouble trims. A port splitting on comma-space, or using a parser that refuses leading whitespace, agrees on a one-element list and diverges on every longer one. Two more things the signature hides: a field equal to the missing value becomes the caller's missingValue, which is -1 for the overload every annotator uses, so a missing TLOD arrives as a number nobody can recognise as missing; and any other unparsable field becomes a GATKException naming the annotation rather than a NumberFormatException. The doubles travel as raw bits because getTumorLogOdds multiplies them by Math.log(10).",
       "compare": {
         "mode": "lines"
@@ -74,6 +76,7 @@
       "title": "The annotations that read the likelihood matrix",
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
+      "tools": [],
       "why": "Coverage, MappingQualityZero and CountNs are the three annotations whose whole input is the likelihood matrix. Their arithmetic is three counts and no two of the three agree on anything else. Only Coverage tests evidenceCount, so an empty matrix makes it write nothing while the other two write a zero. Only MappingQualityZero tests the site, so a non-variant site makes it write nothing while the other two still count. Coverage and MappingQualityZero go through String.format so their values are Strings, while CountNs puts a long into an ImmutableMap so its value is a Long: all three render identically and are three different objects to a consumer. And CountNs compares against the byte N, upper case only, reaching the base through getReadBaseAtReferenceCoordinate, whose bounds test uses the alignment span while its index uses the soft start, so a read whose N sits inside a soft clip does not count.",
       "compare": {
         "mode": "lines"
@@ -90,6 +93,7 @@
       "title": "The likelihood matrix and the best-allele search",
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
+      "tools": [],
       "why": "Every likelihood-reading annotation goes through searchBestAllele, and four of its decisions are invisible in its signature. bestAlleleIndex and secondBestIndex both start at zero and nothing means no second best, so a one-allele matrix ends with the two equal and the tail turns that into a second-best likelihood of negative infinity. The comparison is strictly greater, so among equal likelihoods the earliest allele wins and the allele order is observable in a result that looks order-independent. isInformative compares the confidence against LOG_10_INFORMATIVE_THRESHOLD whatever base the matrix is in, while the tie-breaking pass inside searchBestAllele converts its threshold with the base, so after switchToNaturalLog the two ask their question at different thresholds. And confidence is guarded by likelihood == secondBestLikelihood ? 0 : the difference, whose load-bearing case is the pair of negative infinities where the subtraction would be NaN. The likelihoods travel as raw bits because they are read back out of the matrix after a conversion.",
       "compare": {
         "mode": "lines"
@@ -106,6 +110,7 @@
       "title": "The allele and sample axes",
       "status": "oracle-backed",
       "harness": "tools/genotyper-conformance",
+      "tools": [],
       "why": "AlleleLikelihoods is defined over an AlleleList and a SampleList, so anything surprising about those two is inherited by every likelihood GATK computes. An indexed list is a set: IndexedSet drops a duplicate silently and the survivor keeps the index of its first occurrence, so a list built from A, C, A has two entries and nothing says so, and a caller that built its list from a variant context with a repeated allele gets a matrix with fewer rows than it asked for. Membership is Allele.equals, which is bases and the reference flag, so the reference A and a non-reference A are two entries in one list and indexOfReference reports only the first entry whose flag is set. And a permutation is a directional subset map: it may drop and reorder, never invent, refusing a longer target and a target holding an unknown allele with the same message both ways, while reporting isPartial, isNonPermuted and isKept, which callers use to skip work. A subset that keeps its order is partial and NOT non-permuted, which is the distinction a port collapses by accident.",
       "compare": {
         "mode": "lines"
@@ -122,6 +127,7 @@
       "title": "The counting INFO annotations",
       "status": "oracle-backed",
       "harness": "tools/annotation-conformance",
+      "tools": [],
       "why": "ChromosomeCounts, SampleList and RawGtCount are the members of the counting family that need no AlleleLikelihoods, so they can be asked through their own interface. What is measured is not only the numbers but the shape of what an annotation returns, which is where a port goes wrong silently. The map is Map<String,Object>, so the Java class of each value is part of the answer: ChromosomeCounts puts an Integer for one alternate allele and an ArrayList for two or more, and both render the same way. An empty map is not zeroes, it means the keys are absent from the record, and each annotation has at least one guard reaching that branch. RawGtCount.annotate returns null rather than an empty map, a third thing again, and its real work is combineRawData, whose output drops one of the three counts it just summed and writes a literal dot in its place, so the result of a combine cannot be fed back into one. And SampleList's guard is isMonomorphicInSamples, which is not every genotype is hom-ref: a site with alternate alleles and no genotypes at all is not monomorphic, while a site where everybody is a no-call is.",
       "compare": {
         "mode": "lines"
@@ -288,6 +294,9 @@
       "status": "oracle-backed",
       "title": "FixMisencodedBaseQualityReads, the fourth record-transform tool",
       "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FixMisencodedBaseQualityReads"
+      ],
       "why": "The fourth whole tool of the largest archetype, and the first whose transform can REFUSE THE FILE IT WAS GIVEN. Its apply is one line; everything worth measuring is elsewhere. IT DOES NOT OVERRIDE ITS READ FILTERS, so it takes GATKTool's default of WellformedReadFilter where UnmarkDuplicates and RevertBaseQualityScores replace the whole list with ALLOW_ALL_READS: three tools in one archetype and two different default traversals, which is why naming AllowAllReadsReadFilter changes what this one emits and would not change what the other two emit. A QUALITY BELOW 31 ABORTS THE WHOLE RUN with a message saying the read 'was correctly encoded', so a port that clamped would write a healthy-looking file the reference never wrote. THE REFUSAL IS A PROPERTY OF THE TRAVERSAL RATHER THAN OF THE FILE: the same fixture succeeds when an interval excludes the read that carries the low quality, which the corpus carries as two cases over one file. THE CHECK IS PER BASE AND AFTER THE SUBTRACTION, so the bases before the offending one are already rewritten when it throws. AND A READ WITH NO QUALITIES AT ALL PASSES THROUGH, because the loop never runs: '*' in a SAM is not a quality of zero.",
       "compare": {
         "mode": "lines"
@@ -306,6 +315,9 @@
       "status": "oracle-backed",
       "title": "AddOriginalAlignmentTags, which aborts on an unpaired read",
       "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AddOriginalAlignmentTags"
+      ],
       "why": "The fifth whole tool of the record-transform archetype and the first that writes tags rather than changing the read. IT ABORTS ON AN UNPAIRED READ: addMateContigTag calls mateIsUnmapped, which htsjdk defines only for a PAIRED read, so an unpaired one throws IllegalStateException and the whole run stops. Three of the four measured runs abort on a fixture holding one unpaired read among six, and the one that succeeds does so because its interval excludes it. An unpaired read is ordinary in an ordinary file, so this is the tool's behaviour on ordinary input rather than an edge case. THE OA FORMAT'S COMMA ESCAPING CANNOT FIRE: it replaces a comma in the contig name with an underscore, and a comma is not a legal sequence name character at all, which the golden carries as htsjdk's refusal and the regex it quotes. A READ WITH NO NM STILL GETS AN OA and the missing field prints as the four characters 'null', because getAttributeAsString returns null into a format string. AN UNMAPPED MATE GIVES XM=* and an unmapped read the constant '*,0,*,*,0,0;'. The tags are read back off the output rather than inferred, and the reads that survive an aborted run are in the golden too: the writer had already flushed five of six.",
       "compare": {
         "mode": "lines"
@@ -377,6 +389,7 @@
       "status": "oracle-backed",
       "title": "AlignmentUtils.leftAlignIndels, and the shift that can go right",
       "harness": "tools/readfilter-conformance",
+      "tools": [],
       "why": "The call LeftAlignIndels is built around, measured on its own because its interface is exactly measurable and needs no file: a cigar, a reference, a read and a start in; a cigar and two counts of removed deletion bases out. THE CIGAR IS WALKED RIGHT TO LEFT, accumulating an indel's ranges and resolving them only at an alignment block or the start of the cigar, so two indels with too few matching bases between them COLLIDE AND MERGE, which is a behaviour of the loop rather than of a named rule. normalizeAlleles CAN SHIFT RIGHT: it trims shared bases off the end and then off the front, and the front trim does startShift--, so the returned start shift is NEGATIVE on non-parsimonious input and leftAlignIndels reads that as newMatchOnLeftDueToTrimming. A port that typed the shift as unsigned would be wrong in a way no simple case shows, so the inner function is dumped on its own inputs with the ranges before and after, because it adjusts them as a side effect. A DELETION THAT REACHES THE START OF THE CIGAR IS DROPPED rather than emitted and the reference bases it removed are reported instead, which is what makes the tool move the read. TWO VALIDATIONS REFUSE RATHER THAN CLAMP, both IllegalArgumentException out of a util rather than a UserException out of a tool.",
       "compare": {
         "mode": "lines"
@@ -483,8 +496,9 @@
       "status": "oracle-backed",
       "expect_rows": 79,
       "expect_contains": [
-        "deflaterafterdict\tcom.intel.gkl.compression.IntelDeflaterFactory",
-        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory"
+        "summary\tintersection-empty\tE",
+        "summary\texclude-everything\tE",
+        "apply\texclude-middle\t1\t"
       ],
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -492,11 +506,6 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_contains": [
-        "summary\tintersection-empty\tE",
-        "summary\texclude-everything\tE",
-        "apply\texclude-middle\t1\t"
-      ],
       "$expect_why": "The two failing set operations must fail, and the split that -XL performs in the middle of an interval must produce a second apply call.",
       "cases": [
         {
