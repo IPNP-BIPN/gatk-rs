@@ -519,7 +519,7 @@
     },
     {
       "id": "post-process-reads-for-rsem",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "PostProcessReadsForRSEM, and two null dereferences in its own guards",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -541,8 +541,8 @@
       "cases": [
         {
           "dump": "PostProcessReadsForRSEMDump",
-          "golden": null,
-          "why": "Five fixtures with no index between them, five runs of which four crash or refuse, the surviving output BAM in full with its header and @PG command line, and every read read back off both the input and the output so the reordering and the eight dropped reads are visible as a difference rather than as a state."
+          "golden": "crates/gatk-tools/tests/data/post_process_reads_for_rsem.txt.gz",
+          "why": "Five fixtures with no index between them, five runs of which four crash or refuse, the surviving output BAM in full with its header and @PG command line, and every read read back off both the input and the output so the reordering and the eight dropped reads are visible as a difference rather than as a state. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31539861672, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
