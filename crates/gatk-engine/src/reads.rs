@@ -414,6 +414,29 @@ impl ReadsDataSource {
         })
     }
 
+    /// Open a BAM with no index, which is what `new ReadsPathDataSource(path)` does.
+    ///
+    /// The index is not a property of the file for the reference either: `ReadsPathDataSource`
+    /// takes one when it is given one and refuses only when a query needs it. A queryname-sorted
+    /// BAM cannot be indexed at all, so a tool that walks one whole, like
+    /// `crate::transfer_read_tags`'s reference does, must be able to open it. Every interval query
+    /// on a source opened this way finds no bins and returns nothing, which is the shape a caller
+    /// with no intervals never reaches.
+    pub fn open_unindexed(bam: &Path) -> Result<ReadsDataSource, ReadsError> {
+        let compressed = std::fs::read(bam).map_err(|e| ReadsError::Io(e.to_string()))?;
+        let decompressed = htsjdk_bgzf::read::decompress_all(&compressed)
+            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        let header = BamReader::new(&decompressed)
+            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
+            .header
+            .text;
+        Ok(ReadsDataSource {
+            compressed,
+            header,
+            index: Vec::new(),
+        })
+    }
+
     pub fn header(&self) -> &SamHeader {
         &self.header
     }
