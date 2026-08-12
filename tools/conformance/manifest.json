@@ -1973,7 +1973,7 @@
     },
     {
       "id": "dump-tabix-index",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DumpTabixIndex, the smallest tool of the archetype",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1991,8 +1991,8 @@
       "cases": [
         {
           "dump": "DumpTabixIndexDump",
-          "golden": null,
-          "why": "11 rows: three indexed files with their `.tbi` bytes, three dumps of them, and two refusals."
+          "golden": "crates/gatk-tools/tests/data/dump_tabix_index.txt.gz",
+          "why": "11 rows: three indexed files with their `.tbi` bytes, three dumps of them, and two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31605663198, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
