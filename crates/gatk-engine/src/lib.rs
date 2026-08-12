@@ -14,6 +14,7 @@ pub mod assembly_region;
 pub mod assembly_region_iterator;
 pub mod assembly_region_walker;
 pub mod base_utils;
+pub mod bqsr_transformer;
 pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;

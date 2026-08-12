@@ -40,7 +40,7 @@
  *     estimate\t<label>\t<bits>\t<decimal>
  *     order\t<label>\t<read>\t<comma separated recalibrated qualities>
  *     apply\t<label>\t<read>\t<comma separated recalibrated qualities>
- *     tag\t<label>\t<read>\t<OQ>
+ *     oqtag\t<label>\t<read>\t<OQ>
  *     round\t<value>\t<bounded qual>
  *     error\t<what>\t<exception>\t<message>
  *
@@ -163,6 +163,10 @@ public class BqsrTransformerDump {
         final SAMRecord unknown = read(header, "unknown", "ACGTACGTAC", new byte[] {30, 30, 30, 30, 30, 30, 30, 30, 30, 30});
         unknown.setAttribute("RG", "rg2");
 
+        // The header and the four reads travel, because the read group identifiers are read out of
+        // the header and the transformer's answer depends on them.
+        ReadFilterDump.printCorpus(header, List.of(first, second, low, unknown));
+
         apply("in-order", header, List.of(first, second, low), defaults(), false);
         apply("reversed", header, List.of(second, first, low), defaults(), false);
 
@@ -271,7 +275,9 @@ public class BqsrTransformerDump {
                 System.out.printf("apply\t%s\t%s\t%s%n", label, read.getName(),
                         join(out.getBaseQualities()));
                 if (printTags) {
-                    System.out.printf("tag\t%s\t%s\t%s%n", label, read.getName(),
+                    // Not "tag": the shared corpus printer already owns that row kind, and a reader of
+                    // the golden would take this for one of its rows.
+                    System.out.printf("oqtag\t%s\t%s\t%s%n", label, read.getName(),
                             String.valueOf(out.getAttributeAsString("OQ")));
                 }
             } catch (final Exception e) {
