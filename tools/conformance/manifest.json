@@ -2019,6 +2019,30 @@
           "why": "45 rows: five tables written through the writer, four of them read back twice (once through a reader that overrides the comment hook and once through one that does not), and five hand-written files of which four are refused. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31628098540, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "pileup-summary",
+      "status": "golden-pending",
+      "title": "The pileup summary record and its table",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The record every contamination tool passes around, and the second shared piece of CalculateContamination. THE ALLELE FREQUENCY IS WRITTEN BY DataLine.set(int, double), WHOSE ROUNDING BRANCH IS DEAD: the method writes the short form when Math.round matches and then RETURNS set(index, Double.toString(value)), which overwrites what it just wrote, so 1.0 is written 1.0 and never 1, while an integer column is a different path and carries no decimal point. THE METADATA TAG IS `SAMPLE` IN UPPER CASE, and the comment line goes through the same csv writer as a row, so a sample name holding a tab makes the writer QUOTE THE WHOLE COMMENT LINE and the reader parses it back intact. THE TOTAL IS DERIVED and has no column of its own. THE ALT FRACTION GUARDS AGAINST ZERO and gives 0 rather than NaN for an empty site, while nothing bounds the frequency, so 2.0 gives a reference frequency of -1. GATHERING TAKES THE SAMPLE FROM THE FIRST FILE: a second sample is a BadInput naming both, a file with no sample FIRST is an IllegalArgumentException from the writer, and the same file SECOND is a NullPointerException. Three refusals for one mistake, decided by position in the list, while a plain read of that file returns null beside the records. THE COMPARATOR ORDERS BY THE DICTIONARY'S INDEX, which is -1 for a contig it lacks, so an unknown contig sorts BEFORE every known one. AND getDouble's REFUSAL SAYS \"expected int value\", the int message copied twice into the double getter.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 33,
+      "expect_contains": [
+        "error\tnameless-second\tjava.lang.NullPointerException:Cannot invoke \"String.equals(Object)\" because \"thisSample\" is null",
+        "error\tbroken-frequency\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: format error in 'pileupsummary-dump/broken-frequency.table' at line 3: expected int value for column allele_frequency but found not-a-number",
+        "sorted\tdictionary-order\tchrUn:1,chr1:100,chr1:900,chr2:50,chr10:5"
+      ],
+      "cases": [
+        {
+          "dump": "PileupSummaryDump",
+          "golden": null,
+          "why": "33 rows: three tables written and read back, three gatherings of which two are refused differently, a file with no sample metadata read on its own, the comparator's order, and two malformed fields."
+        }
+      ]
     }
   ],
   "probes": []
