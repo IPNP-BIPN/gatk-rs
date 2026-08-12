@@ -1924,7 +1924,7 @@
     },
     {
       "id": "sam-pileup-codec",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SAMPileupCodec, the samtools mpileup format CheckPileup reads as its truth",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -1941,8 +1941,8 @@
       "cases": [
         {
           "dump": "SAMPileupCodecDump",
-          "golden": null,
-          "why": "28 rows: twenty lines of which ten decode and ten are refused, and eight paths through canDecode."
+          "golden": "crates/gatk-engine/tests/data/sam_pileup.txt.gz",
+          "why": "28 rows: twenty lines of which ten decode and ten are refused, and eight paths through canDecode. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603866314, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
