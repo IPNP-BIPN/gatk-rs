@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 48 | 15.4% |
-| golden-pending | 3 | 1.0% |
+| oracle-backed | 51 | 16.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 248 | 79.7% |
 | **total** | **311** | |
@@ -77,10 +77,10 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
-| `CountBases` | locus-walker | golden-pending | counting-walkers | 1 | not measured |
-| `CountReads` | locus-walker | golden-pending | counting-walkers | 1 | not measured |
+| `CountBases` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
+| `CountReads` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
-| `FlagStat` | reporting-walker | golden-pending | counting-walkers | 1 | not measured |
+| `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |

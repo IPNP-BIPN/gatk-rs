@@ -1745,7 +1745,7 @@
     },
     {
       "id": "counting-walkers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CountBases, CountReads and FlagStat, whose output is a number rather than a BAM",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1766,8 +1766,8 @@
       "cases": [
         {
           "dump": "CountingWalkersDump",
-          "golden": null,
-          "why": "30 rows: three fixtures with their indexes, and eight runs of each. The corpus covers every branch of FlagStat's counter, an empty file where the percentages divide by zero, and a file holding only reads the default filter drops. Each fixture is run whole, over an interval that keeps half of it, and with WellformedReadFilter disabled."
+          "golden": "crates/gatk-tools/tests/data/counting_walkers.txt.gz",
+          "why": "30 rows: three fixtures with their indexes, and eight runs of each. The corpus covers every branch of FlagStat's counter, an empty file where the percentages divide by zero, and a file holding only reads the default filter drops. Each fixture is run whole, over an interval that keeps half of it, and with WellformedReadFilter disabled. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31592539751, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
