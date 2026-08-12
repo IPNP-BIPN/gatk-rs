@@ -8,6 +8,7 @@
 pub mod add_original_alignment_tags;
 pub mod apply_bqsr;
 pub mod base_recalibrator;
+pub mod check_pileup;
 pub mod clip_reads;
 pub mod compare_base_qualities;
 pub mod convert_headerless_shard;
