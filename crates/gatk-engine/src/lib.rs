@@ -23,6 +23,7 @@ pub mod feature_intervals;
 pub mod features;
 pub mod fisher_exact;
 pub mod fragment;
+pub mod gatk_report;
 pub mod haplotype;
 pub mod histogram;
 pub mod interval;

@@ -167,6 +167,10 @@ jobs:
             index: "14/14"
             slug: "natural-log-utils-somatic-likelihoods-decimal-format-allele-pseudo-depth"
             suites: "natural-log-utils somatic-likelihoods decimal-format allele-pseudo-depth"
+          - group: golden-pending
+            index: "1/1"
+            slug: "gatk-report"
+            suites: "gatk-report"
     steps:
       - uses: actions/checkout@v4
 
