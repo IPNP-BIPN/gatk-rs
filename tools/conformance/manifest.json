@@ -646,9 +646,9 @@
         "covariate\t2\tContextCovariate\tContext\t1011\t2",
         "context\tAC\t66\tAC",
         "contextfromkey\t4095\tTTTTAAAAAAAAAAA",
-        "cycle\t-3\t500\t7\t-3",
         "matrix\tfresh\t68\t-\t-\tE:NullPointerException:Cannot invoke \"htsjdk.samtools.SAMReadGroupRecord.getPlatformUnit()\" because \"rg\" is null",
-        "error\treadgroup-format-unknown\tIllegalStateException\tmissing key 99"
+        "error\treadgroup-format-unknown\tIllegalStateException\tmissing key 99",
+        "cycle\t-2\t500\t5\t-2"
       ],
       "cases": [
         {
