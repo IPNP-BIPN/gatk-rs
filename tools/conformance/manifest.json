@@ -884,6 +884,31 @@
       ]
     },
     {
+      "id": "base-recalibrator",
+      "status": "oracle-backed",
+      "title": "BaseRecalibrator, the tool that writes the table ApplyBQSR reads",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "BaseRecalibrator"
+      ],
+      "why": "The tool that writes the table ApplyBQSR reads, and the one that closes the BQSR cycle. Its output is a GATKReport of five tables, so the whole text travels and every run is compared character for character. ITS DEFAULT READ FILTERS ARE SEVEN, NOT ONE: getStandardBQSRReadFilterList is six BQSR filters plus WellformedReadFilter, namely mapping quality not zero, mapping quality available, mapped, not secondary, not duplicate and passes vendor quality. That is a fifth pattern of getDefaultReadFilters across the ported tools, after taking the engine's default, replacing it with ALLOW_ALL_READS, extending it with four more, and replacing it with a single non-Wellformed filter; it is what decides which reads are counted at all, so the fixture carries one read per filter and the read group table's 34 observations is what is left. --known-sites IS REQUIRED AND MUST BE INDEXED: without an index the tool refuses before reading a read, with 'Input <file> must support random access to enable queries by interval. If it's a file, please index it using the bundled tool IndexFeatureFile', so the dump indexes both files the way that message says to. A BED AND A VCF NAMING THE SAME SITES PRODUCE THE SAME TABLE, which is why both are here. THE TWO ADDITIONAL COVARIATE TABLES SHARE ONE REPORT TABLE and one row counter, which is not reset between them, so context and cycle are written into a single RecalTable2; the reference's own XXX comment calls that knowledge about the ordering of tables. THE ROWS COME OUT ORDERED BY THEIR VALUES, because the row keys are integers and the sort is SORT_BY_COLUMN, which orders by the row data, so the two covariates come out interleaved. THE EmpiricalQuality COLUMN COMPUTES AND CACHES, because getEmpiricalQuality() is called while the table is being written. AND THE QUANTIZATION TABLE IS COMPUTED AFTER finalizeData, so it depends on every read the traversal kept and on the rounding the finalisation left behind.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 12,
+      "expect_contains": [
+        "reference\tACGTACGTACGTTTTTGGGGCCCCAAAAACGTACGTACGTGATTACAGGCTCTAGCATCGATCGATCGATTAGCTAGCTAGCTAACCGGTTACGT",
+        "sites\tbed\tchr1\\t9\\t12\\n"
+      ],
+      "cases": [
+        {
+          "dump": "BaseRecalibratorDump",
+          "golden": "crates/gatk-tools/tests/data/base_recalibrator.txt.gz",
+          "why": "12 rows: the input BAM and its index, the reference, both known-sites files, and seven whole recalibration tables as text. The seven runs are the two known-sites formats, the hidden indel tables, BAQ on, a different quantization level count, a different preserve threshold and a wider context. The working directory is relative because the string handed to -I is recorded inside the report's own argument table. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31590759980, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
