@@ -1797,7 +1797,7 @@
     },
     {
       "id": "overhang-fixing-manager",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "OverhangFixingManager, the overhang clipper SplitNCigarReads writes through",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -1815,8 +1815,8 @@
       "cases": [
         {
           "dump": "OverhangFixingManagerDump",
-          "golden": null,
-          "why": "57 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection."
+          "golden": "crates/gatk-engine/tests/data/overhang_fixing_manager.txt.gz",
+          "why": "57 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31598493960, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }

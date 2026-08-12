@@ -177,12 +177,8 @@ jobs:
             suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
           - group: oracle-backed
             index: "17/17"
-            slug: "decimal-format-allele-pseudo-depth-counting-walkers-sa-tag-builder"
-            suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder"
-          - group: golden-pending
-            index: "1/1"
-            slug: "overhang-fixing-manager"
-            suites: "overhang-fixing-manager"
+            slug: "decimal-format-allele-pseudo-depth-counting-walkers-sa-tag-builder-overhang-fixing-manager"
+            suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder overhang-fixing-manager"
     steps:
       - uses: actions/checkout@v4
 
