@@ -189,12 +189,8 @@ jobs:
             suites: "check-pileup dump-tabix-index tsv-table pileup-summary contamination-tables"
           - group: oracle-backed
             index: "20/20"
-            slug: "persistence-optimizer"
-            suites: "persistence-optimizer"
-          - group: golden-pending
-            index: "1/1"
-            slug: "analyze-covariates"
-            suites: "analyze-covariates"
+            slug: "persistence-optimizer-analyze-covariates"
+            suites: "persistence-optimizer analyze-covariates"
     steps:
       - uses: actions/checkout@v4
 

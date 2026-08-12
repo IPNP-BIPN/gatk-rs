@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 57 | 18.3% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 58 | 18.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 241 | 77.5% |
 | **total** | **311** | |
@@ -73,7 +73,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
-| `AnalyzeCovariates` | reporting-walker | golden-pending | analyze-covariates | 1 | not measured |
+| `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr | 1 | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
 | `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | not measured |

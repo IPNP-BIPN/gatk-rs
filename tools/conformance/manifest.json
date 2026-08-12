@@ -2095,7 +2095,7 @@
     },
     {
       "id": "analyze-covariates",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AnalyzeCovariates' intermediate csv",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2115,8 +2115,8 @@
       "cases": [
         {
           "dump": "AnalyzeCovariatesDump",
-          "golden": null,
-          "why": "15 rows: five recalibration reports, six csv files covering one report, two read groups, both orders of before and after, all three roles at once, and a difference the check does not look at, plus four refusals."
+          "golden": "crates/gatk-tools/tests/data/analyze_covariates.txt.gz",
+          "why": "15 rows: five recalibration reports, six csv files covering one report, two read groups, both orders of before and after, all three roles at once, and a difference the check does not look at, plus four refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31635215625, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
