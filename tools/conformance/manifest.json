@@ -1948,7 +1948,7 @@
     },
     {
       "id": "check-pileup",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CheckPileup, which compares GATK's own pileup against samtools'",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1966,8 +1966,8 @@
       "cases": [
         {
           "dump": "CheckPileupDump",
-          "golden": null,
-          "why": "33 rows: three input BAMs with their indexes, six truth files, and ten runs of which six finish, each with the file it wrote and either its summary or its refusal."
+          "golden": "crates/gatk-tools/tests/data/check_pileup.txt.gz",
+          "why": "33 rows: three input BAMs with their indexes, six truth files, and ten runs of which six finish, each with the file it wrote and either its summary or its refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31604740439, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
