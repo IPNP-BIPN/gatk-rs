@@ -687,6 +687,35 @@
       ]
     },
     {
+      "id": "recalibration-tables",
+      "status": "golden-pending",
+      "title": "NestedIntegerArray and RecalibrationTables",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The container a recalibration table is: four sparse arrays of RecalDatum indexed by covariate key, two of them special because the report writes them differently, and every shape taken from the covariates' own maximumKeyValue. Most of this is about which lookup answers null and which one throws, and the two are not where a reader would put them. THE VARARGS get() DOES NOT BOUNDS-CHECK ITS LAST KEY: it tests keys[i] >= dimensions[i] for the NESTED dimensions only and then indexes the leaf array directly, so an out-of-range last key is ArrayIndexOutOfBoundsException where every other out-of-range key is null. AND THE SPECIALISED getNKeys() DO: get2Keys, get3Keys and get4Keys test every key including the last, so get(1,2,5) throws where get3Keys(1,2,5) answers null; they are documented as a performance specialisation of the same function and they are not the same function. EXCEPT get1Key, WHICH CHECKS NOTHING AT ALL, its comment saying the bounds check is done in the caller while no caller does it. A NEGATIVE KEY IS CHECKED BY NOTHING ANYWHERE, because every test is >= against the dimension, so it reaches the array index and throws in all five entry points. THE FIRST TWO DIMENSIONS ARE PRE-ALLOCATED and the rest are created on demand in put(). put() BOUNDS-CHECKS ONLY THE NESTED DIMENSIONS TOO, with two exact messages, 'Key 3 is too large for dimension 0 (max is 2)' and 'Exactly 3 keys should be passed to this NestedIntegerArray but 2 were provided', and its last key is an index error like get()'s. THE TABLE SHAPES COME FROM THE COVARIATES: read group 3x3, quality score 3x94x3, context 3x94x1012x3 and cycle 3x94x1002x3. combineTables STORES THE OTHER TABLE'S OBJECT ITSELF where the left table has no datum, so the two tables share it afterwards, measured as reference identity. AND safeCombine IS NOT SAFE: it allocates a new set of tables and combines BOTH arguments into it, so the first combine moves the left table's datums into the new table and the second combine mutates them, leaving the caller's left table holding the sum of both.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 70,
+      "expect_contains": [
+        "readgroups\tunit-rg1,unit-rg2,unit-rg3",
+        "shape\tContext\t3,94,1012,3",
+        "get\tlast-key-too-big-varargs\tE:ArrayIndexOutOfBoundsException:Index 5 out of bounds for length 5",
+        "get\tlast-key-too-big-3keys\tnull",
+        "put\tfirst-key-too-big\tE:IllegalArgumentException:Key 3 is too large for dimension 0 (max is 2)",
+        "shared\tonly-right\ttrue",
+        "shared\tsafeCombine-left\ttrue",
+        "error\tcombine-different-shapes\tIllegalArgumentException\tTable1 2,3 not equal to 2,4"
+      ],
+      "cases": [
+        {
+          "dump": "RecalibrationTablesDump",
+          "golden": null,
+          "why": "70 rows: the four table shapes and the read groups they were computed from, twenty-six lookups across the varargs form and the four specialisations at every kind of out-of-range and negative key, nine insertions with their exact messages, the tree walk of an empty and a populated four-dimensional table with the order it returns values in, and the combining, including the reference-identity tests that show which datum object each table ends up holding."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
