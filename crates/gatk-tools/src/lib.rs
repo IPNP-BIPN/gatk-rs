@@ -19,6 +19,7 @@ pub mod post_process_reads_for_rsem;
 pub mod print_distant_mates;
 pub mod print_reads;
 pub mod print_reads_header;
+pub mod read_anonymizer;
 pub mod read_walker;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
