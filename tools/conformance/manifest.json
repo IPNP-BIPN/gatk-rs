@@ -1970,6 +1970,31 @@
           "why": "33 rows: three input BAMs with their indexes, six truth files, and ten runs of which six finish, each with the file it wrote and either its summary or its refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31604740439, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "dump-tabix-index",
+      "status": "golden-pending",
+      "title": "DumpTabixIndex, the smallest tool of the archetype",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "DumpTabixIndex"
+      ],
+      "why": "The fifth tool of the reporting-walker archetype: it reads a `.tbi`, a gzipped little-endian structure, and prints it as text. THE MAGIC'S FOURTH BYTE IS COMPARED AGAINST THE NUMBER 1 AND NOT THE CHARACTER, so a file ending its magic with the letter `1` is refused, and A FILE THAT IS NOT GZIPPED AT ALL FAILS INSIDE java.util.zip BEFORE the tool's own check ever runs: the two refusals live on different sides of the decompression. THE BIN NUMBER IS TURNED BACK INTO A RANGE by a ladder of six cases whose boundaries are 1, 8, 72, 584 and 4680 and whose unit changes from M to K at 585. A BIN ABOVE 37448 IS A PSEUDOBIN read as four longs, AND ITS SUMMARY PRINTS THE WRONG FIELD: `end=` takes its low half from chunkStart where every other place uses the matching value, which reaches the output and therefore the port. THE LINEAR INDEX IS PRINTED IN 16K STEPS from a counter that rises by 16. A LONG IS TWO INTS OF WHICH ONLY THE LOW ONE IS MASKED UNSIGNED. AND THE FORMAT NUMBER IS THE FILE'S, 2 for a VCF and 65536 for a BED, with the column numbers following it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "error\twrong-magic\torg.broadinstitute.hellbender.exceptions.UserException:Incorrect magic number for tabix index",
+        "error\tnot-gzipped\tjava.util.zip.ZipException:Not in GZIP format"
+      ],
+      "cases": [
+        {
+          "dump": "DumpTabixIndexDump",
+          "golden": null,
+          "why": "11 rows: three indexed files with their `.tbi` bytes, three dumps of them, and two refusals."
+        }
+      ]
     }
   ],
   "probes": []
