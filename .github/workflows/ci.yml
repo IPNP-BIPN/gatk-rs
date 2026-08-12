@@ -181,8 +181,8 @@ jobs:
             suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder overhang-fixing-manager"
           - group: oracle-backed
             index: "18/18"
-            slug: "split-n-cigar-reads-methylation-type-caller-get-sample-name-compare-base-qualities"
-            suites: "split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities"
+            slug: "split-n-cigar-reads-methylation-type-caller-get-sample-name-compare-base-qualities-sam-pileup-codec"
+            suites: "split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities sam-pileup-codec"
     steps:
       - uses: actions/checkout@v4
 

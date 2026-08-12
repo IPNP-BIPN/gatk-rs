@@ -1921,6 +1921,30 @@
           "why": "31 rows: nine input BAMs, and fourteen runs of which eight finish, each with the whole report it wrote and the value the tool returns as its exit code. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603123061, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "sam-pileup-codec",
+      "status": "oracle-backed",
+      "title": "SAMPileupCodec, the samtools mpileup format CheckPileup reads as its truth",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "THE FIELD COUNT MUST BE 4 TO 6, WHICH IS NOT THE FORMAT'S. A samtools mpileup line has six columns and may have more; a SEVEN-column line is refused here, and a FIVE-column line passes the count check and then dies on tokens[5] with a raw ArrayIndexOutOfBoundsException rather than the codec's own CodecLineParsingException, so the two refusals do not even share a Java class. THE BASES COLUMN IS A LITTLE LANGUAGE: `.` and `,` are the reference base, `*` is a deletion, `$` ends a read and consumes NO quality, `^` eats the NEXT character as a mapping quality, and `+`/`-` skip an indel whose length is the number that follows. THE QUALITY STRING IS THEREFORE CONSUMED AT A DIFFERENT RATE FROM THE BASES STRING, which is why leftover qualities are their own error and leftover bases are unreachable. A DELETION BECOMES THE LETTER `D`, which is not a base the reads column itself would accept. A COVERAGE OF ZERO RETURNS EARLY, so a line whose bases and qualities are nonsense parses. TWO MESSAGES CARRY TYPOS a port has to carry too, \"THe SAM pileup line\" and \"this codes is only valid\". AN N FOLDS TO N and every other base comes out upper case. AND canDecode IS THE EXTENSION AND NOTHING ELSE, case-insensitively, with one block-compressed extension stripped first.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 28,
+      "expect_contains": [
+        "decode\tdeletion\tchr1\\t10\\tA\\t3\\t.*.\\tIII\tchr1:10 A 3\tADA\t[40,40,40]",
+        "error\tfive-columns\tjava.lang.ArrayIndexOutOfBoundsException:Index 5 out of bounds for length 5",
+        "candecode\tx.pileup.txt\tfalse"
+      ],
+      "cases": [
+        {
+          "dump": "SAMPileupCodecDump",
+          "golden": "crates/gatk-engine/tests/data/sam_pileup.txt.gz",
+          "why": "28 rows: twenty lines of which ten decode and ten are refused, and eight paths through canDecode. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603866314, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
