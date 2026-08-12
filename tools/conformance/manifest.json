@@ -2122,7 +2122,7 @@
     },
     {
       "id": "remove-nearby-indels",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "RemoveNearbyIndels, the first variant transform",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2142,8 +2142,8 @@
       "cases": [
         {
           "dump": "RemoveNearbyIndelsDump",
-          "golden": null,
-          "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped."
+          "golden": "crates/gatk-tools/tests/data/remove_nearby_indels.txt.gz",
+          "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31637109094, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
