@@ -1822,7 +1822,7 @@
     },
     {
       "id": "split-n-cigar-reads",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SplitNCigarReads, the RNA-seq splitter the last two suites were built for",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1840,8 +1840,8 @@
       "cases": [
         {
           "dump": "SplitNCigarReadsDump",
-          "golden": null,
-          "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote."
+          "golden": "crates/gatk-tools/tests/data/split_n_cigar_reads.txt.gz",
+          "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31599678016, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
