@@ -1898,7 +1898,7 @@
     },
     {
       "id": "compare-base-qualities",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CompareBaseQualities, the first tool here that reads two BAMs at once",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1917,8 +1917,8 @@
       "cases": [
         {
           "dump": "CompareBaseQualitiesDump",
-          "golden": null,
-          "why": "31 rows: nine input BAMs, and fourteen runs of which eight finish, each with the whole report it wrote and the value the tool returns as its exit code."
+          "golden": "crates/gatk-tools/tests/data/compare_base_qualities.txt.gz",
+          "why": "31 rows: nine input BAMs, and fourteen runs of which eight finish, each with the whole report it wrote and the value the tool returns as its exit code. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603123061, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
