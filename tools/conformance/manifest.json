@@ -746,6 +746,34 @@
       ]
     },
     {
+      "id": "bqsr-transformer",
+      "status": "oracle-backed",
+      "title": "BQSRReadTransformer, the thing ApplyBQSR is",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "A read in, the same read out with every base quality replaced. Everything measured before this (RecalDatum, the covariates, the tables, the quantizer, the report reader) is an input to this one function. THE ESTIMATE IS y3 + y4 - y2, not a sum of corrections: the read group's empirical quality is the prior for the reported quality's, and each special covariate then contributes its own empirical quality MINUS that posterior, while a NULL datum contributes nothing at all, which is not the same as contributing a zero delta. THE DATUM CACHE MAKES IT ORDER-DEPENDENT IN PRINCIPLE: getEmpiricalQuality(prior) computes on the first call and returns the cached value ever after, whatever prior is asked for, and the datums live in the table and are shared across every read, so the first read to reach a datum fixes its empirical quality for the whole run; measured directly, one datum asked with a prior of 25 and then of 45 answers 25.0 twice where a fresh datum asked with 45 answers 45.0, and the reference's own TODO says so. This corpus does not make it visible through apply, because each read reaches a different quality-score datum, and the dump runs the reads in both orders to show that. THE ROUNDING IS fastRound, (int)(x + 0.5) and not Math.round, so 0.49999999999999994 rounds twice and answers 1, and the result is then clamped to [1, 93]. A QUALITY BELOW preserveQLessThan IS LEFT ALONE ENTIRELY, not even quantized. --allow-missing-read-group COVERS A DIFFERENT CASE THAN ITS NAME SUGGESTS: it is tested against the COVARIATE's key, so it acts only when the recalibration report was written from a different set of read groups than the BAM has, and the read is then quantized but not recalibrated; a read whose group the covariate knows but whose TABLE holds no datum is a GATKException whatever the flag says, because the flag is tested before that lookup. constructStaticQuantizedMapping SORTS ITS ARGUMENT LIST IN PLACE, preserves every quality below MIN_USABLE_Q_SCORE as itself, and rounds in PROBABILITY space rather than in Phred space; its array is a Java byte[] of length 254, so the identity mapping it returns for an empty list wraps past 127 into negatives. AND WITH STATIC QUANTIZATION THE QUALITY IS QUANTIZED TWICE, first through the dynamic map and then through the static one, which the reference's own TODO calls out.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 84,
+      "expect_contains": [
+        "round\t0.49999999999999994\t1\t1",
+        "estimate\tcached-then-45\t4039000000000000\t25.0",
+        "estimate\tfresh-45\t4046800000000000\t45.0",
+        "apply\tno-datum-for-read-group-allowed\tunknown\tE:GATKException:readGroupDatum for unit-rg2 is null",
+        "apply\tcovariate-missing-read-group-allowed\tunknown\t30,30,30,30,30,30,30,30,30,30",
+        "sorted\t[40, 10, 30, 20]@nearest\t[10, 20, 30, 40]",
+        "oqtag\temit-original\tfirst\t??????????"
+      ],
+      "cases": [
+        {
+          "dump": "BqsrTransformerDump",
+          "golden": "crates/gatk-engine/tests/data/bqsr_transformer.txt.gz",
+          "why": "84 rows: the four reads and the header their read group identifiers come from, twelve runs of the transformer over a hand-built table with a datum in every place it looks, both static rounding modes over six lists of static qualities with the caller's list printed after each call, thirteen roundings including the double below a half, and every combination of present and absent datums in the hierarchical estimate with its result as raw bits. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31576243381, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
