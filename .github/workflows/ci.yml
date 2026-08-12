@@ -177,8 +177,8 @@ jobs:
             suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
           - group: oracle-backed
             index: "17/17"
-            slug: "decimal-format-allele-pseudo-depth"
-            suites: "decimal-format allele-pseudo-depth"
+            slug: "decimal-format-allele-pseudo-depth-counting-walkers"
+            suites: "decimal-format allele-pseudo-depth counting-walkers"
     steps:
       - uses: actions/checkout@v4
 

@@ -1742,6 +1742,34 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite. 69 rows, no corrections, and byte-identical to the same container on Apple Silicon. All 46 calls match, including the two whose second answer differs from their first because the reference wrote through its own memo."
         }
       ]
+    },
+    {
+      "id": "counting-walkers",
+      "status": "oracle-backed",
+      "title": "CountBases, CountReads and FlagStat, whose output is a number rather than a BAM",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountBases",
+        "CountReads",
+        "FlagStat"
+      ],
+      "why": "The first three tools whose output is a NUMBER rather than a BAM. All three are `ReadWalker`s whose `apply` is one line and whose whole answer is what `onTraversalSuccess` prints, so what they measure is the traversal and the formatting rather than any transform. THEIR DEFAULT FILTER IS THE ENGINE'S, WellformedReadFilter, so a malformed read is not counted by any of the three: a file holding nothing but two reads whose cigars disagree with their lengths counts 0, and 2 with the filter disabled. CountBases COUNTS read.getLength(), the number of BASES AND NOT THE SPAN, so twelve ten-base reads come to 120 whether they carry a deletion or an insertion. FlagStat's PERCENTAGES ARE COMPUTED IN float AND FORMATTED WITH DecimalFormat(\"#0.00\"), which rounds HALF_EVEN where String.format(\"%.2f\") rounds HALF_UP: two different roundings, and this is the one that reaches the output, 11 of 12 mapped coming out 91.67%. WITH NO READS AT ALL THE RATIO IS 0f/0f, so the percentage is NaN% , a real line of a real output and not an error. read2 IS TESTED BEFORE read1 AND THE TWO ARE `else if`, so a read carrying both 0x40 and 0x80 counts as read2 only. `singletons` AND `with_itself_and_mate_mapped` ARE BOTH INSIDE the paired branch, so an unpaired read contributes to neither however it is mapped. AND isUnmapped IS THE THREE-PART TEST rather than the 0x4 flag.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 30,
+      "expect_contains": [
+        "count\tCountBases\tfull\t120",
+        "count\tCountReads\tmalformed\t0",
+        "count\tCountReads\tmalformed-unfiltered\t2"
+      ],
+      "cases": [
+        {
+          "dump": "CountingWalkersDump",
+          "golden": "crates/gatk-tools/tests/data/counting_walkers.txt.gz",
+          "why": "30 rows: three fixtures with their indexes, and eight runs of each. The corpus covers every branch of FlagStat's counter, an empty file where the percentages divide by zero, and a file holding only reads the default filter drops. Each fixture is run whole, over an interval that keeps half of it, and with WellformedReadFilter disabled. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31592539751, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
