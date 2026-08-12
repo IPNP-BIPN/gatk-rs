@@ -885,7 +885,7 @@
     },
     {
       "id": "base-recalibrator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "BaseRecalibrator, the tool that writes the table ApplyBQSR reads",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -903,8 +903,8 @@
       "cases": [
         {
           "dump": "BaseRecalibratorDump",
-          "golden": null,
-          "why": "12 rows: the input BAM and its index, the reference, both known-sites files, and seven whole recalibration tables as text. The seven runs are the two known-sites formats, the hidden indel tables, BAQ on, a different quantization level count, a different preserve threshold and a wider context. The working directory is relative because the string handed to -I is recorded inside the report's own argument table."
+          "golden": "crates/gatk-tools/tests/data/base_recalibrator.txt.gz",
+          "why": "12 rows: the input BAM and its index, the reference, both known-sites files, and seven whole recalibration tables as text. The seven runs are the two known-sites formats, the hidden indel tables, BAQ on, a different quantization level count, a different preserve threshold and a wider context. The working directory is relative because the string handed to -I is recorded inside the report's own argument table. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31590759980, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
