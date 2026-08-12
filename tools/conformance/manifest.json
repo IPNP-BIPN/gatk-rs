@@ -857,7 +857,7 @@
     },
     {
       "id": "base-recalibration-engine",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "BaseRecalibrationEngine, BQSR's counting pass",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -878,8 +878,8 @@
       "cases": [
         {
           "dump": "BaseRecalibrationEngineDump",
-          "golden": null,
-          "why": "211 rows: fifteen cigars through the counting loop with all three mark arrays and the event count, twenty fractional error arrays as raw bits over four error patterns and five BAQ shapes, twenty-eight roundings at two decimal places each, and four whole-engine runs over the same five reads, with and without known sites and with BAQ on, each carrying every datum of every table with its keys, its counts and its reported quality as raw bits."
+          "golden": "crates/gatk-engine/tests/data/base_recalibration_engine.txt.gz",
+          "why": "211 rows: fifteen cigars through the counting loop with all three mark arrays and the event count, twenty fractional error arrays as raw bits over four error patterns and five BAQ shapes, twenty-eight roundings at two decimal places each, and four whole-engine runs over the same five reads, with and without known sites and with BAQ on, each carrying every datum of every table with its keys, its counts and its reported quality as raw bits. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31580573933, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
