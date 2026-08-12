@@ -1819,6 +1819,31 @@
           "why": "57 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31598493960, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-n-cigar-reads",
+      "status": "golden-pending",
+      "title": "SplitNCigarReads, the RNA-seq splitter the last two suites were built for",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SplitNCigarReads"
+      ],
+      "why": "The thirteenth whole tool of the record-transform archetype, and the first that is a MultiplePassReadWalker: the input is traversed TWICE, the first pass recording which reads the overhang clipper moved and the second writing them out with their mates repaired. A READ WITH k N ELEMENTS BECOMES k+1 READS, each keeping every base and soft clipping the rest, so 3M2N5M comes out 3M5S and 3S5M. A SECTION BESIDE A DELETION IS TRIMMED BEFORE THE CLIP, and N-D-N is an IllegalArgumentException naming the cigar unless --refactor-cigar-string merges the motif into one N first; the refactor merges ONE motif per two elements skipped, so 3M2N1D2N1D2N2M comes out 3M5N1D2N2M. A CIGAR ENDING IN N EMITS ONE PIECE AND LOSES THE N; A CIGAR BEGINNING WITH N IS PASSED THROUGH UNTOUCHED. THE MAPPING QUALITY TRANSFORM REWRITES 255 AND ONLY 255, to 60, unless skipped. ITS DEFAULT FILTER IS ALLOW_ALL_READS, so a malformed read is still written. AN MC TAG IS REWRITTEN to what the mate's cigar will become, computed by splitting an artificial read carrying it. A SECONDARY ALIGNMENT IS NOT SPLIT unless --process-secondary-alignments is given. THE OUTPUT HEADER CARRIES TWO @PG RECORDS, `GATK SplitNCigarReads` and `GATK SplitNCigarReads.1`, because onTraversalStart asks for the header once and createSAMWriter asks again. AND ITS WRITER SORTS: createSAMWriter(OUTPUT, false), so a family's second piece lands at its own coordinate rather than beside its first.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 114,
+      "expect_contains": [
+        "ndn\t3M2N1D2N1D2N2M\t3M5N1D2N2M",
+        "error\tndn\tjava.lang.IllegalArgumentException:Cannot split this read (might be an empty section between Ns, for example 1N1D1N): 3M2N1D2N5M"
+      ],
+      "cases": [
+        {
+          "dump": "SplitNCigarReadsDump",
+          "golden": null,
+          "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote."
+        }
+      ]
     }
   ],
   "probes": []
