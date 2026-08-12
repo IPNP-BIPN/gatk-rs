@@ -28,6 +28,7 @@ pub mod print_reads;
 pub mod print_reads_header;
 pub mod read_anonymizer;
 pub mod read_walker;
+pub mod remove_nearby_indels;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
 pub mod split_n_cigar_reads;
