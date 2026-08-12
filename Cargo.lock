@@ -246,6 +246,7 @@ dependencies = [
  "gatk-readfilter",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-vcf",
 ]
 
 [[package]]
