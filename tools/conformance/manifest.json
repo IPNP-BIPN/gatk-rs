@@ -1794,6 +1794,31 @@
           "why": "30 rows: nine tags that round trip, six that are refused, five units built from reads, and six families of reads set as supplemental to each other. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31597074001, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "overhang-fixing-manager",
+      "status": "oracle-backed",
+      "title": "OverhangFixingManager, the overhang clipper SplitNCigarReads writes through",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The second piece of SplitNCigarReads, and the one that decides what the output reads look like. overhangingBasesMismatch REFUSES THREE KINDS OF SPAN BEFORE COUNTING ANYTHING: below 1, above --max-bases-in-overhang, and STRICTLY LONGER than half the read's non-clipped length, where the division is integer and the comparison is `>`, so on ten bases a span of five is tested and six is refused while on NINE bases five is already refused. IT HAS TWO WAYS TO SAY YES: the tolerance, and a span where at least (span+1)/2 bases mismatch, so one mismatch out of two is a mismatch although the tolerance is one. isLeftOverhang AND isRightOverhang MIX STRICT AND NON-STRICT COMPARISONS, so a read starting exactly at the splice start is neither and one starting a base later is a left overhang. addSplicePosition RETURNS null BOTH FOR A SPLICE ALREADY HELD AND FOR A MANAGER WITH FIXING TURNED OFF, told apart only by what is held afterwards, and A SPLICE ON A NEW CONTIG CLEARS EVERYTHING SEEN SO FAR. THE QUEUE FLUSHES HALFWAY UNDER PRESSURE and completely on a new contig. THE FAMILY IS REPAIRED ON THE WAY OUT, NM, MD and NH cleared and the SA tags written, and only when writing is active. A SECONDARY ALIGNMENT IS WRITTEN BUT NOT CLIPPED unless --process-secondary-alignments is given. activateWriting A SECOND TIME IS A GATKException. AND THE MATE KEY IS name@0-or-1@start, whose digit is !isFirstOfPair when stored and isFirstOfPair when looked up, carrying the read's OLD start, so a mate already pointing at the clipped read's new position misses.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 57,
+      "expect_contains": [
+        "mismatch\tspan-5-of-9\tfalse",
+        "mismatch\tone-of-two\ttrue",
+        "splice\tfixing-off\tnull\t",
+        "mate\tfirst-of-pair\tuntouched"
+      ],
+      "cases": [
+        {
+          "dump": "OverhangFixingManagerDump",
+          "golden": "crates/gatk-engine/tests/data/overhang_fixing_manager.txt.gz",
+          "why": "57 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31598493960, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
