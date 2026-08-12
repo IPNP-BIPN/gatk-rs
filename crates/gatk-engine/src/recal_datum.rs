@@ -175,8 +175,8 @@ static LOG_PRIOR_CACHE: LazyLock<[f64; (MAX_GATK_USABLE_Q_SCORE + 1) as usize]> 
         // The reference names both, so this does too, even though the mean is zero.
         let mean = 0.0;
         let sigma = 0.5;
-        let log_sd_plus_half_log_2pi = jmath::fast_math::log(sigma)
-            + 0.5 * jmath::fast_math::log(2.0 * std::f64::consts::PI);
+        let log_sd_plus_half_log_2pi =
+            jmath::fast_math::log(sigma) + 0.5 * jmath::fast_math::log(2.0 * std::f64::consts::PI);
         let mut cache = [0.0; (MAX_GATK_USABLE_Q_SCORE + 1) as usize];
         for (i, slot) in cache.iter_mut().enumerate() {
             let x0 = i as f64 - mean;
@@ -536,7 +536,9 @@ impl RecalDatum {
         // The reference's condition is `qual >= 0.0` and this is its complement written out, which
         // is not `qual < 0.0`: NaN fails the reference's test and fails neither comparison.
         if self.reported_quality.is_nan() || self.reported_quality < 0.0 {
-            return Err(RecalDatumError::QualityNotAtLeastZero(self.reported_quality));
+            return Err(RecalDatumError::QualityNotAtLeastZero(
+                self.reported_quality,
+            ));
         }
         Ok(self.num_observations() as f64 * qual_to_error_prob(self.reported_quality))
     }
@@ -703,7 +705,9 @@ mod tests {
     #[test]
     fn combining_two_empty_datums_leaves_a_nan_that_the_setter_would_have_refused() {
         let mut empty = RecalDatum::new(0, 0.0, 30).unwrap();
-        empty.combine(&RecalDatum::new(0, 0.0, 30).unwrap()).unwrap();
+        empty
+            .combine(&RecalDatum::new(0, 0.0, 30).unwrap())
+            .unwrap();
         assert!(empty.reported_quality().is_nan());
         assert_eq!(
             empty.set_reported_quality(f64::NAN),
@@ -744,7 +748,10 @@ mod tests {
     fn the_event_letter_is_not_the_enum_name() {
         assert_eq!(EventType::BaseSubstitution.representation(), "M");
         assert_eq!(EventType::BaseSubstitution.name(), "BASE_SUBSTITUTION");
-        assert_eq!(EventType::from_representation("M"), Some(EventType::BaseSubstitution));
+        assert_eq!(
+            EventType::from_representation("M"),
+            Some(EventType::BaseSubstitution)
+        );
         assert_eq!(EventType::from_representation("BASE_SUBSTITUTION"), None);
         assert_eq!(EventType::from_index(3), None);
         assert_eq!(EventType::from_index(-1), None);
