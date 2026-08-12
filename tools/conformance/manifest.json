@@ -1872,7 +1872,7 @@
     },
     {
       "id": "get-sample-name",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GetSampleName, the smallest tool of the reporting-walker archetype",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1891,8 +1891,8 @@
       "cases": [
         {
           "dump": "GetSampleNameDump",
-          "golden": null,
-          "why": "35 rows: seven input BAMs with their indexes, and eleven runs of which ten finish, each with the file's text and its length in bytes."
+          "golden": "crates/gatk-tools/tests/data/get_sample_name.txt.gz",
+          "why": "35 rows: seven input BAMs with their indexes, and eleven runs of which ten finish, each with the file's text and its length in bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31602296883, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }

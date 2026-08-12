@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 53 | 17.0% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 54 | 17.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 245 | 78.8% |
 | **total** | **311** | |
@@ -81,7 +81,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountReads` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
-| `GetSampleName` | reporting-walker | golden-pending | get-sample-name | 1 | not measured |
+| `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
