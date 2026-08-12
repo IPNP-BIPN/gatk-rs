@@ -288,7 +288,7 @@ mod tests {
         let error = Table::parse("a\tb\tc\n1\t2\n", "file.table").unwrap_err();
         assert_eq!(
             error.message(),
-            "format error in 'file.table' at line 2: mismatch between number of values (2) and columns (3)"
+            "format error in 'file.table' at line 2: mismatch between number of values in line (2) and number of columns (3)"
         );
     }
 
