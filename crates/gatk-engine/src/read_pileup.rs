@@ -30,19 +30,9 @@ pub const MAX_SAM_QUAL_SCORE: u8 = 93;
 /// `ReadPileup.SAMTOOLS_OVERLAP_LOW_CONFIDENCE`.
 pub const SAMTOOLS_OVERLAP_LOW_CONFIDENCE: f64 = 0.8;
 
-/// Ported from `org.broadinstitute.hellbender.utils.BaseUtils.simpleBaseToBaseIndex`.
-///
-/// `A`, `C`, `G` and `T` in either case, plus one entry that is not a base at all: the wildcard
-/// `*` maps to `A`. Everything else, `N` included, is `-1`.
-pub fn simple_base_to_base_index(base: u8) -> i32 {
-    match base {
-        b'A' | b'a' | b'*' => 0,
-        b'C' | b'c' => 1,
-        b'G' | b'g' => 2,
-        b'T' | b't' => 3,
-        _ => -1,
-    }
-}
+/// `BaseUtils.simpleBaseToBaseIndex`, which now lives in [`crate::base_utils`] because the
+/// covariates need it too. Kept here as a re-export so the pileup code reads as it did.
+pub use crate::base_utils::simple_base_to_base_index;
 
 /// `ReadPileup`: a locus and the elements at it, in the order they were assembled.
 pub struct ReadPileup<'a> {

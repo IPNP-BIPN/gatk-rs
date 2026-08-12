@@ -630,6 +630,35 @@
       ]
     },
     {
+      "id": "covariates",
+      "status": "golden-pending",
+      "title": "The four BQSR covariates",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What a recalibration table is indexed by, settled before either tool that fills one. THE KEY MATRIX IS REUSED ACROSS READS OF THE SAME LENGTH AND IT DOES NOT LEAK: on a cache hit PerReadCovariateMatrix hands back the same int[][][] a previous read filled in and nothing clears it, so the dump runs the whole corpus twice, once with one shared cache as BQSR does and once with a fresh cache per read, and the two matrices agree in every cell, because every covariate writes a key at every position and ContextCovariate zeroes the array first on the one path that would leave a gap. A port may allocate per read and this is the measurement that says so. THE READ GROUP IS IDENTIFIED BY PU AND NOT BY ID, falling back to ID only when PU is absent: unit-rg1 and not rg1. A MISSING READ GROUP HAS THREE DIFFERENT ENDS: -1 from keyFromValue with an identifier the table does not hold, a NullPointerException for a read whose RG names a group the header does not declare, because getSAMReadGroupRecord answers null and getReadGroupIdentifier dereferences it, and IllegalStateException 'missing key 99' from formatKey. THE CONTEXT IS OF THE READ'S OWN BASES, reverse-complemented for a negative-strand read, with the low-quality tail overwritten with N first, and the first contextSize-1 positions get -1; an N poisons the following positions and the recovery after the first -1 walks BACKWARDS from the penalty position rather than restarting. THE CONTEXT KEY CARRIES ITS LENGTH IN THE LOW FOUR BITS, so A is 1, AA is 2 and AC is 66, and contextFromKey(4095) reads a length of fifteen out of a key holding thirteen bases and answers TTTTAAAAAAAAAAA, eleven characters of which come out of bits that were never written; both shifts take their distance modulo 32 the way Java's do, which is why the port uses the wrapping forms. THE CYCLE'S SIGN IS THE LOW BIT: cycle 3 is key 6 and cycle -3 is key 7, so key 1 decodes to negative zero, which is zero; second-of-pair flips the sign and a negative strand counts from the far end, and all four corners are in the corpus. INDEL CYCLE KEYS ARE -1 WITHIN FOUR BASES OF EITHER END, a cushion the substitution keys have none of. PAST THE MAXIMUM CYCLE IT IS A UserException whose message reports the ABSOLUTE value, so cycle -501 is refused with 'a larger cycle (501)'. AND A READ WITH BASES AND NO QUALITIES IS AN EXCEPTION rather than a covariate value, from the low-quality clip indexing an empty quality array by the read's length.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 2903,
+      "expect_contains": [
+        "rgids\tunit-rg1,unit-rg2,unit-rg3",
+        "rgidentifier\trg-no-pu\tnull\trg-no-pu",
+        "covariate\t2\tContextCovariate\tContext\t1011\t2",
+        "context\tAC\t66\tAC",
+        "contextfromkey\t4095\tTTTTAAAAAAAAAAA",
+        "cycle\t-3\t500\t7\t-3",
+        "matrix\tfresh\t68\t-\t-\tE:NullPointerException:Cannot invoke \"htsjdk.samtools.SAMReadGroupRecord.getPlatformUnit()\" because \"rg\" is null",
+        "error\treadgroup-format-unknown\tIllegalStateException\tmissing key 99"
+      ],
+      "cases": [
+        {
+          "dump": "CovariatesDump",
+          "golden": null,
+          "why": "2903 rows: the key matrix of every read of the corpus printed cell by cell, three times over, once with the shared key cache BQSR uses, once with a fresh cache per read and once without indel values, plus the clipped stranded bases at four low-quality thresholds, the context and cycle encodings in both directions, every formatKey and keyFromValue, and fourteen refusals. The corpus is the shared read-filter one plus ten reads that exist only to separate these covariates: a low-quality tail at each end, an N in the middle and an N in the first context, the same read on the negative strand, both second-of-pair corners, a nine-base read, a two-base read shorter than the indel context, an all-low-quality read the clip empties, and a read whose group is not in the header."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

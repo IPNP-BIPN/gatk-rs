@@ -140,21 +140,10 @@ impl SeqToClip {
     }
 }
 
-/// `BaseUtils.simpleComplement`: **uppercasing**, and the identity on anything else.
-pub fn simple_complement(base: u8) -> u8 {
-    match base {
-        b'A' | b'a' => b'T',
-        b'C' | b'c' => b'G',
-        b'G' | b'g' => b'C',
-        b'T' | b't' => b'A',
-        other => other,
-    }
-}
-
-/// `BaseUtils.simpleReverseComplement`.
-pub fn simple_reverse_complement(bases: &[u8]) -> Vec<u8> {
-    bases.iter().rev().map(|b| simple_complement(*b)).collect()
-}
+/// `BaseUtils.simpleComplement` and `BaseUtils.simpleReverseComplement`, which now live in
+/// [`gatk_engine::base_utils`] because `ContextCovariate` reverse-complements a read the same way.
+/// Re-exported so this tool reads as it did.
+pub use gatk_engine::base_utils::{simple_complement, simple_reverse_complement};
 
 /// The arguments that are this tool's own, beside the [`Options`] every tool in the archetype has.
 #[derive(Debug, Clone, PartialEq, Eq)]
