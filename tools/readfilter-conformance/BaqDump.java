@@ -256,6 +256,25 @@ public class BaqDump {
             index++;
         }
 
+        // A tag no encoder produces, whose difference takes the quality below zero. The array form
+        // refuses it; only a hand-written tag can reach this.
+        final SAMRecord malformed = new SAMRecord(header);
+        malformed.setReadName("malformed");
+        malformed.setReferenceName("chr1");
+        malformed.setAlignmentStart(10);
+        malformed.setCigarString("4M");
+        malformed.setReadBases("ACGT".getBytes(StandardCharsets.UTF_8));
+        malformed.setBaseQualities(new byte[] {40, 40, 40, 40});
+        malformed.setAttribute(BAQ.BAQ_TAG, "zzzz");
+        final GATKRead malformedRead = new SAMRecordToGATKReadAdapter(malformed);
+        try {
+            System.out.printf("fromtag\tmalformed\t%s%n",
+                    bytes(BAQ.calcBAQFromTag(malformedRead, false, false)));
+        } catch (final Exception e) {
+            System.out.printf("error\tmalformed-tag\t%s\t%s%n", e.getClass().getSimpleName(),
+                    e.getMessage());
+        }
+
         // A read with no tag at all, asked for one both ways.
         final SAMRecord bare = new SAMRecord(header);
         bare.setReadName("bare");
