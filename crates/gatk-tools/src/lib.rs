@@ -10,6 +10,7 @@ pub mod apply_bqsr;
 pub mod base_recalibrator;
 pub mod clip_reads;
 pub mod convert_headerless_shard;
+pub mod counting_walkers;
 pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
 pub mod left_align_indels;
