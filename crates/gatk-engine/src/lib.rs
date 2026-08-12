@@ -41,6 +41,7 @@ pub mod math_utils;
 pub mod natural_log_utils;
 pub mod permutation;
 pub mod pileup;
+pub mod qual_quantizer;
 pub mod read;
 pub mod read_group;
 pub mod read_pileup;

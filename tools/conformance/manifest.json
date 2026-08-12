@@ -659,6 +659,34 @@
       ]
     },
     {
+      "id": "qual-quantizer",
+      "status": "oracle-backed",
+      "title": "QualQuantizer and QuantizationInfo",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The map from every original quality score to the quantized one that replaces it: the last table a recalibration report carries, computed by BaseRecalibrator and read back by ApplyBQSR, so it is the interface between the two tools. EVERY LEAF INTERVAL IS CREATED WITH A FIXED QUAL, so getErrorRate returns qualToErrorProb of its own quality score and NOT the (nErrors+1)/(nObservations+1) the same method also implements; that second formula is only ever reached by a MERGED interval, and a reader of the method would assume the opposite. THE ERROR COUNT OF A LEAF SATURATES: it is (int) Math.floor(nObservations * errorProb) stored in a long, and Java's narrowing cast clamps rather than wrapping, so two bins of three billion observations at qualities 0 and 1 merge into an interval of 6000000000 observations and 4294967294 errors, twice Integer.MAX_VALUE and not the six billion the counts imply. THE MERGE SEARCH KEEPS THE FIRST MINIMUM, strictly less-than over an iteration in qStart order, so ties go to the leftmost pair, and ties are the rule on an empty histogram. THE PENALTY OF A MERGED INTERVAL IS A SUM OVER ITS LEAVES against the merged interval's own error rate, with every leaf at or below minInterestingQual contributing ZERO, which is what makes the low qualities free to merge; a global error rate of zero is a penalty of zero, tested before the leaves are walked. errorProbToQual ROUNDS AND THEN CLAMPS TO [1, 93] and WIDENS BEFORE IT NARROWS: Math.round returns a long that is assigned to a double before the cast to int, so the cast saturates and an error rate of zero comes back as 93; going straight from the long would wrap and answer 1. A QUANTIZED QUALITY OF ZERO IS STILL REACHABLE, because a leaf that was never merged returns its fixed qual directly and never goes through that function: a five-bin histogram at sixteen levels quantizes to 0,1,2,3,4. nLevels = 0 IS A NullPointerException, not an empty map, and an empty histogram is a NoSuchElementException with no message. AND QuantizationInfo COUNTS ITS LEVELS BY WALKING THE MAP FOR CHANGES, so 2,2,10,10,2,2,30 is four levels and not three, while noQuantization writes the identity over the first 93 entries only and leaves the 94th alone.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 2414,
+      "expect_contains": [
+        "map\tshort@16\t16\t6\t0,1,2,3,4",
+        "interval\toverflowing@16\t0-78\t6000000000\t4294967294\t78\t-1\t1\t3fe6e80fe00c7b0e\t0",
+        "errorprob\t0.0\t93",
+        "errorprob\t1.0\t1",
+        "levels\trepeating\t4",
+        "error\tzero-levels\tNullPointerException\tCannot read field \"subIntervals\" because \"minMerge\" is null",
+        "error\tempty-histogram\tNoSuchElementException\tnull"
+      ],
+      "cases": [
+        {
+          "dump": "QualQuantizerDump",
+          "golden": "crates/gatk-engine/tests/data/qual_quantizer.txt.gz",
+          "why": "2414 rows: six histograms, each shaped for a different merge sequence, at seven level counts and three minimum interesting qualities, with the full quantization map of each and every interval of every final forest carrying its counts, its level, its fixed quality and both of its doubles as raw bits. Plus errorProbToQual at both ends of its range, QuantizationInfo's level count before and after noQuantization, the quantization report table of every histogram printed with its spaces shown as underscores, and seven refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31573851625, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

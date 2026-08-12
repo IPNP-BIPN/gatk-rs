@@ -178,6 +178,56 @@ pub fn format_value(format: &str, data_type: DataType, value: &Value) -> String 
     }
 }
 
+/// `GATKReportTable.ROW_COMPARATOR`, which is what `SORT_BY_COLUMN` sorts by.
+///
+/// **It compares the values, not their renderings.** The reference dispatches on the boxed type and
+/// uses `compareTo` for every numeric one, falling back to `toString` only for the rest and for two
+/// values of different classes. So a column of integers sorts 2 before 10, where comparing the
+/// formatted text would put 10 first. `QuantizationInfo`'s quantization map is 94 rows keyed by
+/// quality score and is the table that shows it.
+///
+/// **`toString` is the value's, not the column's format.** A double written `%.4f` still compares as
+/// `Double.toString` when it reaches the fallback, which it does only against a value of a different
+/// class.
+///
+/// Two places where this cannot be exactly the reference and the reason is in the type:
+///
+///  * Java boxes an `int` to `Integer` and a `long` to `Long`, and a column mixing them takes the
+///    different-class branch and compares as text. [`Value::Int`] is one variant, so a mixed column
+///    compares numerically here. Nothing in BQSR mixes them in one column;
+///  * `String.compareTo` orders by UTF-16 code unit and Rust's `str` ordering is by byte, which
+///    disagree only above the basic multilingual plane.
+///
+/// A null cell is a `NullPointerException` in the reference, because the comparator asks for its
+/// class before anything else. Here it sorts as the string `null`, which is what the row would have
+/// been written as.
+fn compare_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    match (left, right) {
+        // `((Integer) a).compareTo((Integer) b)`, numeric.
+        (Value::Int(left), Value::Int(right)) => left.cmp(right),
+        // `((Double) a).compareTo((Double) b)`, which orders NaN last and -0.0 below 0.0.
+        // `total_cmp` is that ordering exactly.
+        (Value::Double(left), Value::Double(right)) => left.total_cmp(right),
+        // Everything else, and every pair of different classes, is `toString().compareTo(...)`.
+        _ => java_to_string(left).cmp(&java_to_string(right)),
+    }
+}
+
+/// `Object.toString()` on a cell, which is not the column's rendering of it.
+fn java_to_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Int(number) => number.to_string(),
+        // `Double.toString`, which the writer also reaches for a non-finite value.
+        Value::Double(number) => format_decimals(*number, 0)
+            .trim_end_matches('.')
+            .to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Char(character) => character.to_string(),
+        Value::Str(text) => text.clone(),
+    }
+}
+
 /// `%.Nf` and `%s` over a double, which is every numeric conversion this format uses.
 fn apply_format(format: &str, number: f64) -> String {
     if let Some(rest) = format.strip_prefix("%.") {
@@ -267,17 +317,7 @@ impl Table {
             Sorting::SortByColumn => {
                 indices.sort_by(|a, b| {
                     for column in 0..self.columns.len() {
-                        let left = format_value(
-                            &self.columns[column].format,
-                            self.columns[column].data_type,
-                            &self.rows[*a][column],
-                        );
-                        let right = format_value(
-                            &self.columns[column].format,
-                            self.columns[column].data_type,
-                            &self.rows[*b][column],
-                        );
-                        match left.cmp(&right) {
+                        match compare_values(&self.rows[*a][column], &self.rows[*b][column]) {
                             std::cmp::Ordering::Equal => continue,
                             other => return other,
                         }
