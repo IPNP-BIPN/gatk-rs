@@ -2043,6 +2043,30 @@
           "why": "33 rows: three tables written and read back, three gatherings of which two are refused differently, a file with no sample metadata read on its own, the comparator's order, and two malformed fields. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31629778752, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "contamination-tables",
+      "status": "golden-pending",
+      "title": "The two contamination output tables",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The two tables CalculateContamination writes, built from the same tsv layer as PileupSummary and carrying different things. THE CONTAMINATION TABLE HAS NO METADATA AT ALL, so its first line is the header and its sample is a COLUMN, while the segments table writes `#<METADATA>SAMPLE=` before its own. A SAMPLE NAME HOLDING A TAB IS THEREFORE QUOTED AS A VALUE in one table and quoted as a WHOLE COMMENT LINE in the other, for the same name. BOTH DOUBLE COLUMNS ARE Double.toString's SPELLING, so zero is 0.0 and 1e-7 keeps its exponent. THE SEGMENTS TABLE'S START AND END GO THROUGH SimpleInterval, WHICH VALIDATES WHEN THE RECORD IS BUILT AND NOT WHEN THE FILE IS PARSED: an end before its start and a start of zero are both an IllegalArgumentException reading \"Invalid interval. Contig:chr1 start:100 end:50\", not the table's BadInput. THE READERS TAKE COLUMNS BY NAME, so the same columns in another order are read without complaint while a missing one is \"there is no such column: error\", raised when it is asked for. AND METADATA NOBODY ASKS FOR IS IGNORED, so a contamination table carrying a SAMPLE line reads exactly as one without.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 25,
+      "expect_contains": [
+        "error\tsegments-backwards\tjava.lang.IllegalArgumentException:Invalid interval. Contig:chr1 start:100 end:50",
+        "error\tcontamination-short\tjava.lang.IllegalArgumentException:there is no such column: error",
+        "written\tcontamination\tsample\\tcontamination\\terror\\n"
+      ],
+      "cases": [
+        {
+          "dump": "ContaminationTablesDump",
+          "golden": null,
+          "why": "25 rows: four tables written and read back, four hand-written files the readers take by name, and three refusals of which two come from the interval and not from the table."
+        }
+      ]
     }
   ],
   "probes": []

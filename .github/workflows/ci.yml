@@ -187,6 +187,10 @@ jobs:
             index: "19/19"
             slug: "check-pileup-dump-tabix-index-tsv-table-pileup-summary"
             suites: "check-pileup dump-tabix-index tsv-table pileup-summary"
+          - group: golden-pending
+            index: "1/1"
+            slug: "contamination-tables"
+            suites: "contamination-tables"
     steps:
       - uses: actions/checkout@v4
 
