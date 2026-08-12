@@ -45,6 +45,7 @@ pub mod math_utils;
 pub mod natural_log_utils;
 pub mod overhang_fixing_manager;
 pub mod permutation;
+pub mod persistence_optimizer;
 pub mod pileup;
 pub mod pileup_summary;
 pub mod qual_quantizer;
