@@ -45,6 +45,7 @@ pub mod read_pileup;
 pub mod read_states;
 pub mod read_utils;
 pub mod reads;
+pub mod recal_datum;
 pub mod reference;
 pub mod somatic_likelihoods;
 pub mod variant_getters;

@@ -601,6 +601,35 @@
       ]
     },
     {
+      "id": "recal-datum",
+      "status": "oracle-backed",
+      "title": "RecalDatum, the counter every BQSR table cell is",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The counter every BQSR table cell is, settled before either tool that fills one: a recalibration table is an array of these, and every number BaseRecalibrator writes and ApplyBQSR reads comes from one. THE MISMATCH COUNT IS STORED MULTIPLIED BY 100000 and divided back on the way out, which is not the 10000.0 the comment beside the constant names, so the comment is stale and the constant is the behaviour; combine goes through both the divide and the multiply because it calls the other datum's public getter and hands the result to the incrementer. THE EMPIRICAL QUALITY IS AN int, not a double, since February 2025, so a %.2f of it prints two zeros after the point and never anything else. IT IS CACHED AND EVERY SETTER CLEARS IT: asked with a prior of 10 it answers 13, asked again with a prior of 45 it answers 13 again, and only after a setter that stored the observation count it already had does 45 give 44. THE SMOOTHING IS ONE ERROR AND TWO OBSERVATIONS APPLIED TWICE WITH DIFFERENT ARITHMETIC: the error rate adds them as doubles, the quality adds them to (long)(mismatches + 0.5), a truncating cast after a half that the reference itself marks TODO, so half a mismatch counts as one error and 0.49999 counts as none. A NON-INTEGER QUALITY DIFFERENCE TRUNCATES TOWARD ZERO because getLogPrior casts before taking the absolute value, so 29.5 against a prior of 30 gets the same entry as 30 does. THE PRIOR CACHE HAS 41 ENTRIES AND THE SEARCH HAS 61 BINS, so every difference past 40 shares -3200.2257913526446, and the cache is built from commons-math's FastMath.log rather than Math.log, which is why all 41 entries travel as raw bits. ZERO OBSERVATIONS SHORT-CIRCUIT to a log likelihood of exactly 0.0, an infinite or NaN one becomes -Double.MAX_VALUE rather than -Infinity, and quality zero with every base an error gives NEGATIVE zero. MORE THAN Integer.MAX_VALUE-1 OBSERVATIONS ARE RESCALED, errors included, by a Math.round of the scaled count. AND combine RECOMPUTES THE REPORTED QUALITY FROM BOTH SIDES' EXPECTED ERRORS rather than averaging: for two empty datums that is -10*log10(0/0) and therefore NaN, assigned to the field directly rather than through the setter that refuses NaN, and combining onto that NaN throws from QualityUtils.qualToErrorProb's qual >= 0.0 guard, which is the one reachable error the port cannot drop. The sign bit of that NaN is the processor's: x86-64 makes the floating-point indefinite and AArch64 the default NaN, so it is the single value the port compares as a NaN rather than as bits.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 332,
+      "expect_contains": [
+        "const\tMULTIPLIER\t100000.0",
+        "const\tlogPriorCache.length\t41",
+        "logprior\t40\tc0a900739aec96a8\t-3200.2257913526446",
+        "getlogprior\t29.5\t30.0\tbfcce6bb25aa1314\t-0.22579135264472738",
+        "loglik\t0.0\t100\t100\t8000000000000000\t-0.0",
+        "combine\tboth-empty\treportedQuality\tfff8000000000000\tNaN",
+        "narrow\treported-127.5\t-128",
+        "error\tcombine-onto-nan-reported\tIllegalArgumentException\tqual must be >= 0.0 but got NaN"
+      ],
+      "cases": [
+        {
+          "dump": "RecalDatumDump",
+          "golden": "crates/gatk-engine/tests/data/recal_datum.txt.gz",
+          "why": "332 rows: the seven constants including the two private ones, all 41 entries of the Gaussian prior cache as raw bits, twelve prior lookups chosen to cross the truncation and the clamp, thirteen binomial likelihoods covering both ends of the range and the rescaling above Integer.MAX_VALUE-1, seventy-two posterior maxima, sixteen datums read by every getter in the order that decides what the cache holds, nine cache steps, six combines, seven narrowing casts, fourteen refusals and the three event types. Every double travels as its raw bits as well as its decimal, because the port has to reproduce the bits and a decimal cannot show the last of them. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31571805427, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",

@@ -314,6 +314,22 @@ pub fn qual_to_prob(qual: f64) -> f64 {
     1.0 - pow10(qual / -10.0)
 }
 
+/// `QualityUtils.qualToErrorProb(double)`: the probability that the call a Phred score describes is
+/// **wrong**. Q30 is one error in a thousand.
+///
+/// **How**: `10^(-q/10)`, which is the definition of the scale. It is the complement of
+/// [`qual_to_prob`] above, and the reference writes that one as `1.0 - qualToErrorProb(qual)`.
+///
+/// **The guard is not here.** The reference opens with
+/// `Utils.validateArg(qual >= 0.0, () -> "qual must be >= 0.0 but got " + qual)`, which is false for
+/// every negative number and for NaN. It is enforced at the one call site that can reach it,
+/// `RecalDatum::calc_expected_errors`, where a `combine` can leave a reported quality NaN; every
+/// other caller passes a loop index between zero and sixty. Putting it here would make an
+/// unreachable `Result` of the hot path of base quality score recalibration.
+pub fn qual_to_error_prob(qual: f64) -> f64 {
+    pow10(qual / -10.0)
+}
+
 // `#[cfg(test)]` compiles this module only when running tests, so none of it ships.
 #[cfg(test)]
 mod tests {
