@@ -802,6 +802,31 @@
       ]
     },
     {
+      "id": "apply-bqsr",
+      "status": "oracle-backed",
+      "title": "ApplyBQSR, the eighth whole record-transform tool",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ApplyBQSR"
+      ],
+      "why": "The eighth whole tool of the record-transform archetype, and the one every BQSR brick was built for. Its own body is four lines, so what this measures is where the transformer is hooked and what the traversal hands over. THE TRANSFORMER IS A POST-READ-FILTER ONE: makePostReadFilterTransformer runs AFTER the read filters, so a read the filters drop is never recalibrated AND never written, which is measured with a read whose cigar disagrees with its length: with the default WellformedReadFilter the output holds one read, with the filter disabled it holds two. THE RECALIBRATION FILE DECIDES THE READ GROUP KEYS, NOT THE BAM: the covariates come from the report's own RecalTable0, so a BAM whose read group the report does not name is GATKException 'Read group rg1 not found in the recalibration table.Set the allow-missing-read-group command line argument to ignore this error.' and with that flag every read is quantized but not recalibrated. THE WRITER IS CREATED PRESORTED, so an index is written beside every output and the traversal's order is the output's. THE OUTPUT HEADER GAINS A @PG RECORD whose command line is the one the argument parser reconstructed and not the one given: the flags come back in the parser's order with the defaults filled in, and --global-qscore-prior 20 reads back 20.0. --emit-original-quals WRITES THE OQ TAG ONLY WHERE THERE IS NONE, so the one read of the fixture that already carries one keeps its own. AND --quantize-quals AND --static-quantized-quals ARE SEPARATE MECHANISMS that both reach the output, the second applying on top of the first.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 52,
+      "expect_contains": [
+        "deflater\thtsjdk.samtools.util.zip.DeflaterFactory",
+        "error\tmissing-read-group\tGATKException\tRead group rg1 not found in the recalibration table.Set the allow-missing-read-group command line argument to ignore this error."
+      ],
+      "cases": [
+        {
+          "dump": "ApplyBqsrDump",
+          "golden": "crates/gatk-tools/tests/data/apply_bqsr.txt.gz",
+          "why": "52 rows: twelve runs of the tool, eleven of which finish, each with its output BAM and its index in full, plus the two input fixtures with their indexes and the two recalibration tables as text, so the port opens the same bytes rather than a rebuilt lookalike. The working directory is relative because the string handed to -I and -O is recorded inside the output BAM's own @PG, where canonicalisation cannot reach; the dump is byte-identical across two runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31577801679, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
