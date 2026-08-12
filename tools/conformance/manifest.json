@@ -1805,7 +1805,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 55,
+      "expect_rows": 57,
       "expect_contains": [
         "mismatch\tspan-5-of-9\tfalse",
         "mismatch\tone-of-two\ttrue",
@@ -1816,7 +1816,7 @@
         {
           "dump": "OverhangFixingManagerDump",
           "golden": null,
-          "why": "55 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection."
+          "why": "57 rows: twelve span decisions, eight overhang verdicts, three mate keys, six splice lifecycle steps, one refusal, seven runs of reads through the manager with every read they wrote, and six mate repairs. The two protected predicates and the package-private key builder are reached by reflection."
         }
       ]
     }
