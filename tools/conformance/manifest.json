@@ -1995,6 +1995,30 @@
           "why": "11 rows: three indexed files with their `.tbi` bytes, three dumps of them, and two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31605663198, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "tsv-table",
+      "status": "golden-pending",
+      "title": "The tsv table format, under every .table file GATK writes",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "GATK's own table format and the first shared piece of CalculateContamination. METADATA IS A TAGGED COMMENT, `#<METADATA>key=value`: a hand-written `#sample=s1` looks like metadata and is a plain comment. AND THE MAP IS FILLED BY processCommentLine ITSELF, so a subclass that overrides that method without calling super LOSES EVERY PAIR; the same file read twice, once with an override and once without, gives an empty map and `sample=s1`. A VALUE IS QUOTED ONLY WHEN IT HAS TO BE: a space and a comma pass through bare, a tab, a quote and a backslash force quotes, and a value beginning with the comment prefix is written unquoted. THE ESCAPE IS THE BACKSLASH inside quotes. THE HEADER IS WRITTEN EVEN WITH NO RECORDS AND EVEN WHEN IT WAS NEVER ASKED FOR. A DOUBLE IS String.valueOf's SPELLING, so a third is 0.3333333333333333, 1e-7 is 1.0E-7 and the non-finite ones are NaN and Infinity. A ROW OF THE WRONG WIDTH IS THE SAME REFUSAL IN BOTH DIRECTIONS, naming the file, the line and both counts. A COLUMN THE HEADER LACKS IS A PLAIN IllegalArgumentException AND NOT A UserException. AND AN EMPTY NUMERIC FIELD ONLY FAILS WHEN IT IS ASKED FOR AS A NUMBER, with a message that names the column and ends in a space because the value is printed unquoted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 45,
+      "expect_contains": [
+        "metadatadefault\tplain\tsample=s1",
+        "metadata\tplain\t",
+        "error\tmissing-column\tjava.lang.IllegalArgumentException:there is no such column: note"
+      ],
+      "cases": [
+        {
+          "dump": "TsvTableDump",
+          "golden": null,
+          "why": "45 rows: five tables written through the writer, four of them read back twice (once through a reader that overrides the comment hook and once through one that does not), and five hand-written files of which four are refused."
+        }
+      ]
     }
   ],
   "probes": []
