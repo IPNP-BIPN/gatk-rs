@@ -576,7 +576,7 @@
     },
     {
       "id": "gatk-report",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GATKReport, the format both BQSR tools are written in",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -595,8 +595,8 @@
       "cases": [
         {
           "dump": "GATKReportDump",
-          "golden": null,
-          "why": "Six reports: one column per data type with the two writeRow escapes in it, one that is numeric throughout so nothing asks for left alignment, one with two tables as a recalibration report has, and one per sorting over rows added out of order. Each travels as its whole text, as its lines with the spaces made visible, as the width and alignment the format computed for every column, and as whether a parse and a second writing reproduce it."
+          "golden": "crates/gatk-engine/tests/data/gatk_report.txt.gz",
+          "why": "Six reports: one column per data type with the two writeRow escapes in it, one that is numeric throughout so nothing asks for left alignment, one with two tables as a recalibration report has, and one per sorting over rows added out of order. Each travels as its whole text, as its lines with the spaces made visible, as the width and alignment the format computed for every column, and as whether a parse and a second writing reproduce it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31570262261, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
