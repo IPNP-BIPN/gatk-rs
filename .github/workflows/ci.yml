@@ -181,8 +181,8 @@ jobs:
             suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder overhang-fixing-manager"
           - group: oracle-backed
             index: "18/18"
-            slug: "split-n-cigar-reads"
-            suites: "split-n-cigar-reads"
+            slug: "split-n-cigar-reads-methylation-type-caller"
+            suites: "split-n-cigar-reads methylation-type-caller"
     steps:
       - uses: actions/checkout@v4
 

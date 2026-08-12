@@ -15,6 +15,7 @@ pub mod fix_misencoded_base_quality_reads;
 pub mod interval_walker;
 pub mod left_align_indels;
 pub mod locus_walker;
+pub mod methylation_type_caller;
 pub mod multi_pass;
 pub mod post_process_reads_for_rsem;
 pub mod print_distant_mates;
