@@ -189,8 +189,8 @@ jobs:
             suites: "check-pileup dump-tabix-index tsv-table pileup-summary contamination-tables"
           - group: oracle-backed
             index: "20/20"
-            slug: "persistence-optimizer-analyze-covariates"
-            suites: "persistence-optimizer analyze-covariates"
+            slug: "persistence-optimizer-analyze-covariates-remove-nearby-indels"
+            suites: "persistence-optimizer analyze-covariates remove-nearby-indels"
     steps:
       - uses: actions/checkout@v4
 
