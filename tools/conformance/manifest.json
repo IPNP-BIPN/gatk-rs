@@ -575,6 +575,32 @@
       ]
     },
     {
+      "id": "gatk-report",
+      "status": "oracle-backed",
+      "title": "GATKReport, the format both BQSR tools are written in",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The file format both BQSR tools are written in, measured before either tool that uses it: ApplyBQSR reads a recalibration table and BaseRecalibrator writes one, and both are this format, so the bytes are settled here or they are settled twice. THE COLUMN WIDTH IS THE WIDEST THING IN THE COLUMN, name included, and it is computed from the FORMATTED value rather than from the value, then frozen the first time getColumnFormat() is called. COLUMNS ARE SEPARATED BY EXACTLY TWO SPACES and the padding lives inside each column's own format, so a left-aligned last column carries trailing padding and a right-aligned one carries none; the dump prints every line with spaces replaced by underscores, because this format is decided by spaces and a diff cannot show them. ALIGNMENT IS RIGHT UNTIL A VALUE ASKS FOR LEFT: a value that is not numeric and is not one of null, NA, Infinity, -Infinity or NaN turns the whole column left-aligned, which is why the Flag column of booleans is LEFT and the Rate column holding NaN and -Infinity stays RIGHT. A COLUMN WITH AN EMPTY FORMAT IS Unknown AND A DOUBLE IN IT GETS %.8f rather than the column's %s, which is a special case in writeRow that nothing in the table declaration announces: measured as 0.50000000 and 0.33333333. A NON-FINITE DOUBLE ESCAPES ITS OWN FORMAT, because Double.isFinite decides and toString() is used instead, so a %.4f column holds -Infinity with no decimal point. A NULL IS THE FOUR CHARACTERS null whatever the column's type. AND THE TABLE HEADER CARRIES THE COLUMN FORMATS BUT NOT THEIR WIDTHS, so a reader recomputes every width from the values it parses; the dump round-trips each report through the parser and reports whether the second writing equals the first.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 88,
+      "expect_contains": [
+        "version\t#:GATKReport.v1.1:1",
+        "line\ttypes\t1\t#:GATKTable:6:4:%s:%d:%.4f:%b:%c:%s:;",
+        "line\ttypes\t6\tnull_______________________________0________NaN__true___x_________Infinity",
+        "width\ttypes\tRate\t9\tRIGHT",
+        "roundtrip\ttypes\ttrue"
+      ],
+      "cases": [
+        {
+          "dump": "GATKReportDump",
+          "golden": "crates/gatk-engine/tests/data/gatk_report.txt.gz",
+          "why": "Six reports: one column per data type with the two writeRow escapes in it, one that is numeric throughout so nothing asks for left alignment, one with two tables as a recalibration report has, and one per sorting over rows added out of order. Each travels as its whole text, as its lines with the spaces made visible, as the width and alignment the format computed for every column, and as whether a parse and a second writing reproduce it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31570262261, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
