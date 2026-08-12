@@ -909,6 +909,31 @@
       ]
     },
     {
+      "id": "read-anonymizer",
+      "status": "oracle-backed",
+      "title": "ReadAnonymizer, whose transform changes the length of the read",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ReadAnonymizer"
+      ],
+      "why": "The ninth whole tool of the record-transform archetype, and the first whose transform makes the read a DIFFERENT LENGTH. Every base that disagrees with the reference is replaced by the reference base and the cigar is rewritten to say so. A DELETION ADDS BASES TO THE READ: case X and case D put the reference bases in, so a 4M2D6M read comes out twelve bases long from ten, and no other record-transform tool ported so far makes a read longer. AN INSERTION REMOVES THEM, and its cigar contribution is currentNewCigarOp with a count of ZERO, so it merges into whatever came before rather than ending that element; a leading insertion therefore contributes nothing at all, because the accumulator is still null. EVERY M, X AND D BECOMES ONE OPERATOR, = by default and M under --use-simple-cigar, so consecutive elements of different kinds collapse into one and 4M2D6M comes out as a single 12=. THE LAST ELEMENT IS ADDED UNCONDITIONALLY after the loop, so a read whose cigar ends in an insertion emits whatever the accumulator held. THE QUALITY OF A REPLACED BASE BECOMES --ref-base-quality AND THE OTHERS ARE KEPT, so the fixture's quality gradient survives where the bases matched and does not where they did not. EVERY ATTRIBUTE IS CLEARED EXCEPT THE READ GROUP. ITS WRITER IS NOT PRESORTED, createSAMWriter(output, false) where every other record-transform tool ported so far passes true, and an index is still written because --create-output-bam-index is a separate argument, so the flag decides the sorting and not the index. AND ITS DEFAULT READ FILTERS ARE A SIXTH PATTERN, the first that does not include WellformedReadFilter at all: valid alignment start, valid alignment end, read length equals cigar length, sequence is stored, matching bases and quals, mapped, and alignment agrees with the header, which is six of the seven parts WellformedReadFilter is itself made of, listed separately. --ref-base-quality above sixty is refused by the argument parser rather than by the tool, with OutOfRangeArgumentValue.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 28,
+      "expect_contains": [
+        "reference\tACGTACGTACGTTTTTGGGGCCCCAAAAACGTACGTACGTGATTACAGGCTCTAGCATCGATCGATCGATTAGCTAGCTAGCTAACCGGTTACGT",
+        "index\tno-index\tabsent"
+      ],
+      "cases": [
+        {
+          "dump": "ReadAnonymizerDump",
+          "golden": "crates/gatk-tools/tests/data/read_anonymizer.txt.gz",
+          "why": "28 rows: the input BAM with its index, the reference, and seven runs of which six finish, each with its output BAM, its index and its header. The twelve reads cover a deletion that lengthens the read, an insertion that shortens it, a leading and a trailing insertion, a soft clip, an explicit X, an already-= cigar, tags the transform clears, and two reads the default filters drop. The seventh run asks for a reference quality above sixty, which the argument parser refuses. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31591376340, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
