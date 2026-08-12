@@ -2022,7 +2022,7 @@
     },
     {
       "id": "pileup-summary",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The pileup summary record and its table",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2039,8 +2039,8 @@
       "cases": [
         {
           "dump": "PileupSummaryDump",
-          "golden": null,
-          "why": "33 rows: three tables written and read back, three gatherings of which two are refused differently, a file with no sample metadata read on its own, the comparator's order, and two malformed fields."
+          "golden": "crates/gatk-engine/tests/data/pileup_summary.txt.gz",
+          "why": "33 rows: three tables written and read back, three gatherings of which two are refused differently, a file with no sample metadata read on its own, the comparator's order, and two malformed fields. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31629778752, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
