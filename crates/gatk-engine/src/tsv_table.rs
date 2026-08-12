@@ -100,6 +100,8 @@ pub struct Table {
     pub metadata: HashMap<String, String>,
     /// Every comment line, tagged or not, with the prefix stripped.
     pub comments: Vec<String>,
+    /// The line number each row was read from, which the numeric refusals name.
+    pub row_lines: Vec<u64>,
 }
 
 impl Table {
@@ -112,8 +114,16 @@ impl Table {
 
         for (index, line) in text.lines().enumerate() {
             let number = index as u64 + 1;
-            if let Some(comment) = line.strip_prefix(COMMENT_PREFIX) {
-                table.comments.push(comment.to_string());
+            let values = split_line(line);
+            // A comment is recognised **after** the line is parsed, on the first field, and its
+            // text is rebuilt by joining the fields with tabs. So a metadata value holding a tab,
+            // which the writer quotes, is still read as one comment and not as a row.
+            if values[0].starts_with(COMMENT_PREFIX) {
+                let mut comment = values[0][COMMENT_PREFIX.len()..].to_string();
+                for value in &values[1..] {
+                    comment.push(COLUMN_SEPARATOR);
+                    comment.push_str(value);
+                }
                 if let Some(pair) = comment.strip_prefix(METADATA_TAG) {
                     // `split("=")` with no limit, so a value containing `=` keeps only its first
                     // piece, and the reference would throw on a line with no `=` at all.
@@ -122,9 +132,9 @@ impl Table {
                         table.metadata.insert(key.to_string(), value.to_string());
                     }
                 }
+                table.comments.push(comment);
                 continue;
             }
-            let values = split_line(line);
             if !header_seen {
                 table.columns = values;
                 header_seen = true;
@@ -139,6 +149,7 @@ impl Table {
                 });
             }
             table.rows.push(values);
+            table.row_lines.push(number);
         }
         Ok(table)
     }
@@ -178,7 +189,13 @@ impl Table {
 pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &str)]) -> String {
     let mut out = String::new();
     for (key, value) in metadata {
-        let _ = writeln!(out, "{COMMENT_PREFIX}{METADATA_TAG}{key}={value}");
+        // `writeComment` hands the whole line to the same csv writer a row goes through, so a
+        // value holding a tab gets the **comment line** quoted rather than escaped in place.
+        let _ = writeln!(
+            out,
+            "{}",
+            quote_if_needed(&format!("{COMMENT_PREFIX}{METADATA_TAG}{key}={value}"))
+        );
     }
     let _ = writeln!(
         out,
@@ -200,6 +217,55 @@ pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &s
         );
     }
     out
+}
+
+/// `DataLine.set(index, double)`, whose short form never survives.
+///
+/// ```java
+/// final long rounded = Math.round(value);
+/// if (rounded == value) {
+///     set(index, Long.toString(rounded));
+/// } else {
+///     set(index, Double.toString(value));
+/// }
+/// return set(index, Double.toString(value));
+/// ```
+///
+/// The `return` writes over whatever the branch above chose, so the rounding is dead: `1.0` is
+/// written `1.0` and never `1`. A port that read the intent rather than the code would differ on
+/// every integral frequency, which is why this function is only `Double.toString`.
+///
+/// Java prints the shortest decimal that round-trips, with `E` notation outside `[1e-3, 1e7)` and
+/// always a digit after the point. Rust's `{}` and `{:e}` have the same shortest-round-trip
+/// property, so the two agree on everything the contamination tables carry; the pre-JDK19
+/// `FloatingDecimal` can emit one digit more than needed for a few values needing 16 or 17
+/// significant digits, and the golden is what pins the ones this port writes.
+pub fn java_double_to_string(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    let magnitude = value.abs();
+    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
+        let rendered = format!("{value:e}");
+        let (mantissa, exponent) = rendered
+            .split_once('e')
+            .expect("an exponent form has its `e`");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        return format!("{mantissa}E{exponent}");
+    }
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        format!("{rendered}.0")
+    }
 }
 
 /// opencsv's `processLine` with `applyQuotesToAll = false`.
@@ -298,6 +364,35 @@ mod tests {
         let error = table.get(&table.rows[0], "c").unwrap_err();
         assert_eq!(error.java_class(), "java.lang.IllegalArgumentException");
         assert_eq!(error.message(), "there is no such column: c");
+    }
+
+    #[test]
+    fn a_double_keeps_its_point_and_the_short_form_is_dead_code() {
+        assert_eq!(java_double_to_string(1.0), "1.0");
+        assert_eq!(java_double_to_string(0.0), "0.0");
+        assert_eq!(java_double_to_string(-0.0), "-0.0");
+        assert_eq!(java_double_to_string(1.0 / 3.0), "0.3333333333333333");
+        assert_eq!(java_double_to_string(1e-7), "1.0E-7");
+        assert_eq!(java_double_to_string(1e21), "1.0E21");
+        assert_eq!(java_double_to_string(f64::NAN), "NaN");
+        assert_eq!(java_double_to_string(f64::INFINITY), "Infinity");
+        assert_eq!(java_double_to_string(f64::NEG_INFINITY), "-Infinity");
+    }
+
+    #[test]
+    fn a_metadata_value_with_a_tab_quotes_the_whole_comment_line() {
+        let text = write_table(&["a"], &[], &[("SAMPLE", "has\ta tab")]);
+        assert!(
+            text.starts_with("\"#<METADATA>SAMPLE=has\ta tab\"\n"),
+            "{text}"
+        );
+        // And it is read back as one comment, not as a row.
+        let table = Table::parse(&text, "x").expect("parses");
+        assert_eq!(
+            table.metadata.get("SAMPLE").map(String::as_str),
+            Some("has\ta tab")
+        );
+        assert!(table.rows.is_empty());
     }
 
     #[test]
