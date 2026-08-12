@@ -1945,6 +1945,31 @@
           "why": "28 rows: twenty lines of which ten decode and ten are refused, and eight paths through canDecode. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603866314, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "check-pileup",
+      "status": "oracle-backed",
+      "title": "CheckPileup, which compares GATK's own pileup against samtools'",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CheckPileup"
+      ],
+      "why": "The fourth tool of the reporting-walker archetype, and the one SAMPileupCodec was ported for. IT FIXES OVERLAPPING PAIRS BY DEFAULT the way samtools does, so two mates covering one locus with the same base are reported with qualities `r!`, one raised to their sum and one set to ZERO, where the reads carry `IJ`; --ignore-overlaps turns that off and the same run then agrees. ITS FILTERS ARE THE LOCUS WALKER'S PLUS NOT_DUPLICATE, PASSES_VENDOR_QUALITY_CHECK AND NOT_SECONDARY_ALIGNMENT, so a duplicate is absent from GATK's pileup and every locus disagrees on SIZE rather than on bases. THE BASES ARE COMPARED CASE-INSENSITIVELY AND THE QUALITIES ARE NOT. THE ERROR MESSAGE PRINTS THE QUALITIES AS RAW PHRED BYTES CAST TO CHARACTERS, so the same two qualities are `IJ` in the report line and `()` in the message. THE FOUR COMPARISONS STOP AT THE FIRST FAILURE, size then location then bases then quals. A LOCUS THE TRUTH FILE DOES NOT COVER PRINTS ITS LINE AND THEN REFUSES, with the locus written `chr1:24-24` in the message and `chr1 24` in the line. THE FILE IS WRITTEN BEFORE THE EXCEPTION. AND THE SUMMARY IS RETURNED RATHER THAN WRITTEN, counting the bases after the filters.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 33,
+      "expect_contains": [
+        "summary\tduplicate\tValidated 4 sites covered by 4 bases\\n",
+        "error\twrong-quals\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: The input pileup doesn't match the GATK's internal pileup: Quals not equal: () vs. (("
+      ],
+      "cases": [
+        {
+          "dump": "CheckPileupDump",
+          "golden": "crates/gatk-tools/tests/data/check_pileup.txt.gz",
+          "why": "33 rows: three input BAMs with their indexes, six truth files, and ten runs of which six finish, each with the file it wrote and either its summary or its refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31604740439, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
