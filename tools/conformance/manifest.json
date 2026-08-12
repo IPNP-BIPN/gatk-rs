@@ -775,7 +775,7 @@
     },
     {
       "id": "recalibration-report",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "RecalibrationReport, a recalibration table read off disk",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -796,8 +796,8 @@
       "cases": [
         {
           "dump": "RecalibrationReportDump",
-          "golden": null,
-          "why": "79 rows: three reports the reference wrote and read back, with the read group numbering each one produced, the eight arguments it recovered, every datum of every table with the keys it landed at and its reported quality as raw bits, the quantization map, whether a second writing reproduced the first, and four refusals. The reports are written by the reference rather than hand-aligned, because the reader cuts every data line at the header's word starts and that behaviour has its own suite."
+          "golden": "crates/gatk-engine/tests/data/recalibration_report.txt.gz",
+          "why": "79 rows: three reports the reference wrote and read back, with the read group numbering each one produced, the eight arguments it recovered, every datum of every table with the keys it landed at and its reported quality as raw bits, the quantization map, whether a second writing reproduced the first, and four refusals. The reports are written by the reference rather than hand-aligned, because the reader cuts every data line at the header's word starts and that behaviour has its own suite. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31577040964, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
