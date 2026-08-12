@@ -6,6 +6,7 @@
 //! and neither half can see the other.
 
 pub mod add_original_alignment_tags;
+pub mod apply_bqsr;
 pub mod clip_reads;
 pub mod convert_headerless_shard;
 pub mod fix_misencoded_base_quality_reads;

@@ -101,6 +101,8 @@ public class ApplyBqsrDump {
         // outside it.
         final Path other = dir.resolve("other.table");
         writeRecalTable(other, List.of("elsewhere"));
+        System.out.printf("recal\telsewhere\t%s%n",
+                ReferenceQueryDump.escape(Files.readString(other)));
 
         run(dir, bam, recal, "plain", new String[] {});
         run(dir, bam, recal, "emit-original-quals",
@@ -125,6 +127,13 @@ public class ApplyBqsrDump {
         // A BAM with a read the default filters drop, to show the transformer never sees it.
         final Path filtered = dir.resolve("filtered.bam");
         buildFilteredFixture(filtered.toFile());
+        // The inputs travel too, so the port opens the same bytes rather than a rebuilt lookalike.
+        for (final String name : new String[] {"input", "filtered"}) {
+            System.out.printf("fixture\t%s\t%s%n", name,
+                    RecordTransformDump.base64(dir.resolve(name + ".bam")));
+            System.out.printf("fixtureindex\t%s\t%s%n", name,
+                    RecordTransformDump.base64(dir.resolve(name + ".bai")));
+        }
         run(dir, filtered, recal, "filtered-read", new String[] {});
         run(dir, filtered, recal, "filters-disabled",
                 new String[] {"--disable-read-filter", "WellformedReadFilter"});
