@@ -1773,7 +1773,7 @@
     },
     {
       "id": "sa-tag-builder",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SATagBuilder, the SA tag a split read carries",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -1790,8 +1790,8 @@
       "cases": [
         {
           "dump": "SATagBuilderDump",
-          "golden": null,
-          "why": "30 rows: nine tags that round trip, six that are refused, five units built from reads, and six families of reads set as supplemental to each other."
+          "golden": "crates/gatk-engine/tests/data/sa_tag.txt.gz",
+          "why": "30 rows: nine tags that round trip, six that are refused, five units built from reads, and six families of reads set as supplemental to each other. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31597074001, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
