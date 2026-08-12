@@ -185,8 +185,8 @@ jobs:
             suites: "split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities sam-pileup-codec"
           - group: oracle-backed
             index: "19/19"
-            slug: "check-pileup"
-            suites: "check-pileup"
+            slug: "check-pileup-dump-tabix-index"
+            suites: "check-pileup dump-tabix-index"
     steps:
       - uses: actions/checkout@v4
 
