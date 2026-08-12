@@ -2067,6 +2067,31 @@
           "why": "25 rows: four tables written and read back, four hand-written files the readers take by name, and three refusals of which two come from the interval and not from the table. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31631616075, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "persistence-optimizer",
+      "status": "golden-pending",
+      "title": "PersistenceOptimizer, the watershed under the kernel segmenter",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The watershed under the kernel segmenter, which is how CalculateContamination picks changepoint candidates: given one-dimensional data it returns every local minimum ordered by topological persistence. THE GLOBAL MINIMUM IS PREPENDED to the sorted run, so the first index is not part of it and the first persistence is the whole range rather than any pair's. THE INDICES ARE SORTED BY Comparator.comparingDouble, WHICH IS Double.compare, so -0.0 SORTS BELOW 0.0 and NaN SORTS ABOVE EVERYTHING: on [0.0, -0.0, 0.0, -0.0] the global minimum is index 1 and one persistence comes out as NEGATIVE ZERO, and on data holding a NaN the NaN is the global maximum and two persistences are NaN. A port comparing with `<` would order neither the same way. THE SORT IS STABLE, so a plateau is entered from the left and its LEFTMOST point is the local minimum. MERGING KEEPS THE COMPONENT WITH THE LOWER MINIMUM and, on a tie, the LOWER COLOUR, which is the earlier component and not the earlier index, while the local maximum takes the colour of the point on its left read AFTER the merge. A SINGLE POINT HAS NO PAIRS, so the answer is one index and a persistence of zero. AND EMPTY DATA IS REFUSED by the argument check, \"Data must contain at least one element.\"",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 46,
+      "expect_contains": [
+        "persistence\tsigned-zeroes\t0.0,-0.0",
+        "persistence\twith-nan\tNaN,NaN,1.5",
+        "minima\tplateau-at-start\t4,0",
+        "error\tempty\tjava.lang.IllegalArgumentException:Data must contain at least one element."
+      ],
+      "cases": [
+        {
+          "dump": "PersistenceOptimizerDump",
+          "golden": null,
+          "why": "46 rows: fifteen data sets with their minima and persistences, covering both signed zeroes, a NaN, both infinities, plateaus at either end of a maximum, twin valleys that tie, and one computed wiggle long enough for several merges, plus the one refusal."
+        }
+      ]
     }
   ],
   "probes": []
