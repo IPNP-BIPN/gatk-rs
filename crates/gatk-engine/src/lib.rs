@@ -42,6 +42,7 @@ pub mod locus_shards;
 pub mod mann_whitney;
 pub mod math_utils;
 pub mod natural_log_utils;
+pub mod overhang_fixing_manager;
 pub mod permutation;
 pub mod pileup;
 pub mod qual_quantizer;
