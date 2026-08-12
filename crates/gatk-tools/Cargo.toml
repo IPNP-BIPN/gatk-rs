@@ -9,6 +9,7 @@ repository.workspace = true
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
 htsjdk-bam.workspace = true
+htsjdk-vcf.workspace = true
 
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.

@@ -1844,6 +1844,31 @@
           "why": "114 rows: seven cigars through the NDN refactor, five input BAMs with their indexes, and ten runs of which nine finish, each with its header, its command line, its output BAM, its index and every record it wrote. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31599678016, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "methylation-type-caller",
+      "status": "golden-pending",
+      "title": "MethylationTypeCaller, the first tool of the archetype whose output is a VCF",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MethylationTypeCaller"
+      ],
+      "why": "The last non-Spark record-transform tool GATK wrote itself, and the first whose output is a VCF. THE STRAND IS CHOSEN BY THE REFERENCE BASE AND NOT BY THE READS: a C is counted from forward reads alone and a G from reverse ones alone, so a C covered only by reverse reads produces no record at all. DP IS THE WHOLE PILEUP while the two counts are one strand and two bases, so the numbers of a record do not add up: DP=5 where the counts are 1 and 1. A SITE WITH NO METHYLATED COVERAGE WRITES NOTHING, `unconverted + converted > 0`. THE FORWARD CONTEXT IS getBases(0, 2) AND THE REVERSE CONTEXT IS getBases(2, 0) REVERSE COMPLEMENTED, so both read from the C of their own strand, and a site near the contig edge gets a SHORTER context rather than an error: CC at 59 and C at 60 of a sixty-base contig. AN UNMAPPED READ IS DROPPED BY THE LOCUS WALKER'S FILTERS and a deletion contributes no base. THE SAMPLES ARE THE READ GROUPS' SAMPLES SORTED THEN DEDUPLICATED and the records carry no genotypes, so every record of a two-sample header ends with two `./.` columns. AND THE DEFAULT HEADER CARRIES A ##GATKCommandLine LINE WITH THE RUN'S OWN DATE, which no golden can hold: three runs pass --add-output-vcf-command-line false and the fourth is dumped with its date masked.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 74,
+      "expect_contains": [
+        "vcfline\tplain\tchr1\\t60\\t.\\tC\\tT\\t.\\t.\\tCONVERTED_BASE_COV=0;DP=1;REFERENCE_CONTEXT=C;UNCONVERTED_BASE_COV=1\\tGT\\t./.",
+        "vcfline\ttwo-samples\t#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\tFORMAT\\ts1\\ts2"
+      ],
+      "cases": [
+        {
+          "dump": "MethylationTypeCallerDump",
+          "golden": null,
+          "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header."
+        }
+      ]
     }
   ],
   "probes": []
