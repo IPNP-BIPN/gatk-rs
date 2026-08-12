@@ -827,6 +827,35 @@
       ]
     },
     {
+      "id": "baq",
+      "status": "oracle-backed",
+      "title": "BAQ, the hidden Markov model BaseRecalibrator caps qualities with",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Base Alignment Quality: a hidden Markov model that caps each base's quality by how confidently the aligner could have placed it. BaseRecalibrator runs it over every read before counting, so the recalibration table rests on these bytes and they come out of a forward-backward pass in doubles. THE EMISSION TABLE IS 256 x 256 x 94 AND MOST OF IT IS 1.0: only the sixteen ACGT-by-acgt pairs are ever filled, so an N against an A has an emission probability of ONE, which is not a special case in the algorithm but what the uninitialised table holds. It is visible in the output: a read with an N scores 43,46,78,83,86,77,62,45 where the same read with a real mismatch drops to 43,46,60,49,46,46,46,42. AND THE EMISSION'S QUALITY IS FLOORED, NOT THE BASE'S: qual2prob[q < minBaseQual ? minBaseQual : q] raises a quality below four for the emission only. CONFIDENCE IS ABOUT PLACEMENT, NOT ABOUT MATCHING: an exact match against a reference with no internal repeat scores up to 91, and the same kind of exact match against ACACAC... scores 4 everywhere because the model cannot tell the placements apart. THE STATE ARRAY IS BIT-PACKED, the aligned position shifted left by two with the indel flag in the low bits, and the band is indexed (k + 1 - max(i - b, 0)) * 3, three states a cell. THE REFERENCE WINDOW IS NOT THE READ'S SPAN: the alignment start minus half the band width minus the FIRST insertion's offset, to the end plus half the band width plus the LAST insertion's offset, clamped at one, so a ten-base read at 50 needs chr1:47-62 and the same read with a leading 3I needs chr1:44-59. AN INSERTION OR A SOFT CLIP KEEPS ITS RAW QUALITY, because the capping loop copies rawQuals over bq for those elements and case S falls through into case I after moving the reference, which the reference's own comment questions. A CIGAR WITH AN N, AND A READ CLIPPED ENTIRELY AWAY, GET NO BAQ AT ALL: a null rather than a shorter answer. AND THE BQ TAG IS THE DIFFERENCE, NOT THE VALUE: encodeBQTag writes (char)(quality - baq + 64), so a read whose BAQ equals its quality carries @@@@, a BAQ above the quality encodes below @ and decodes back above the quality with no clamp, and only a hand-written tag whose difference goes below zero is refused.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 196,
+      "expect_contains": [
+        "const\tminBaseQual\t4",
+        "hmm\texact\t0\t43,46,78,91,91,77,62,45\t8,12,16,20,24,28,32,36",
+        "hmm\trepeat\t0\t4,4,4,4,4,4\t0,4,32,36,48,60",
+        "hmm\tn-in-read\t0\t43,46,78,83,86,77,62,45\t8,12,16,20,24,28,32,36",
+        "window\tleading-insertion\tchr1:44-59",
+        "baq\tskipped-region\tnull",
+        "tag\t0\t@@@@",
+        "error\tmalformed-tag\tMalformedRead\tRead malformed chr1:10-13 is malformed: BAQ tag error: the BAQ value is larger than the base quality"
+      ],
+      "cases": [
+        {
+          "dump": "BaqDump",
+          "golden": "crates/gatk-engine/tests/data/baq.txt.gz",
+          "why": "196 rows: ten runs of the model over sequences shaped for each of its branches, with the whole bq array and the whole state array of each; thirteen entries of the quality cache and 120 of the emission table as raw bits, including the pairs the table never fills; ten reads through the reference window and the per-read calculation, covering both insertion offsets, a soft clip, a deletion, both contig edges, a cigar with an N and a read clipped entirely away; and the BQ tag in both directions with its two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31579379297, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
