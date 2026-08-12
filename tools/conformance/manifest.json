@@ -828,7 +828,7 @@
     },
     {
       "id": "baq",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "BAQ, the hidden Markov model BaseRecalibrator caps qualities with",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -850,8 +850,8 @@
       "cases": [
         {
           "dump": "BaqDump",
-          "golden": null,
-          "why": "196 rows: ten runs of the model over sequences shaped for each of its branches, with the whole bq array and the whole state array of each; thirteen entries of the quality cache and 120 of the emission table as raw bits, including the pairs the table never fills; ten reads through the reference window and the per-read calculation, covering both insertion offsets, a soft clip, a deletion, both contig edges, a cigar with an N and a read clipped entirely away; and the BQ tag in both directions with its two refusals."
+          "golden": "crates/gatk-engine/tests/data/baq.txt.gz",
+          "why": "196 rows: ten runs of the model over sequences shaped for each of its branches, with the whole bq array and the whole state array of each; thirteen entries of the quality cache and 120 of the emission table as raw bits, including the pairs the table never fills; ten reads through the reference window and the per-read calculation, covering both insertion offsets, a soft clip, a deletion, both contig edges, a cigar with an N and a read clipped entirely away; and the BQ tag in both directions with its two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31579379297, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
