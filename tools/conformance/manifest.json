@@ -631,7 +631,7 @@
     },
     {
       "id": "covariates",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The four BQSR covariates",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -653,8 +653,8 @@
       "cases": [
         {
           "dump": "CovariatesDump",
-          "golden": null,
-          "why": "2903 rows: the key matrix of every read of the corpus printed cell by cell, three times over, once with the shared key cache BQSR uses, once with a fresh cache per read and once without indel values, plus the clipped stranded bases at four low-quality thresholds, the context and cycle encodings in both directions, every formatKey and keyFromValue, and fourteen refusals. The corpus is the shared read-filter one plus ten reads that exist only to separate these covariates: a low-quality tail at each end, an N in the middle and an N in the first context, the same read on the negative strand, both second-of-pair corners, a nine-base read, a two-base read shorter than the indel context, an all-low-quality read the clip empties, and a read whose group is not in the header."
+          "golden": "crates/gatk-engine/tests/data/covariates.txt.gz",
+          "why": "2903 rows: the key matrix of every read of the corpus printed cell by cell, three times over, once with the shared key cache BQSR uses, once with a fresh cache per read and once without indel values, plus the clipped stranded bases at four low-quality thresholds, the context and cycle encodings in both directions, every formatKey and keyFromValue, and fourteen refusals. The corpus is the shared read-filter one plus ten reads that exist only to separate these covariates: a low-quality tail at each end, an N in the middle and an N in the first context, the same read on the negative strand, both second-of-pair corners, a nine-base read, a two-base read shorter than the indel context, an all-low-quality read the clip empties, and a read whose group is not in the header. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31573193851, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
