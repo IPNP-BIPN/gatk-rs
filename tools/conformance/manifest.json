@@ -2092,6 +2092,33 @@
           "why": "46 rows: fifteen data sets with their minima and persistences, covering both signed zeroes, a NaN, both infinities, plateaus at either end of a maximum, twin valleys that tie, and one computed wiggle long enough for several merges, plus the one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31633883387, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "analyze-covariates",
+      "status": "oracle-backed",
+      "title": "AnalyzeCovariates' intermediate csv",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AnalyzeCovariates"
+      ],
+      "why": "The last non-Spark, non-Picard tool of the reporting-walker archetype that is not CalculateContamination. The tool draws plots and the plots are R's, so what it produces is the intermediate csv the R script reads, and that csv is the whole observable. THE QUALITY SCORE TABLE IS FILED UNDER AN INDEX THAT IS NOT A COVARIATE'S: `newCovs[1] = covariates.size()`, one past the last real index, which the code itself calls a HACK, and reading it back that same out-of-range index is what names the row QualityScore. THE OPTIONAL COVARIATES DROP THE QUALITY SCORE FROM THEIR KEY, `covs[2] = leaf.keys[2]` skipping keys[1], so a context row is SUMMED OVER THE REPORTED QUALITY: two data at the same context and different qualities become one row of 150 observations. THE READ GROUP TABLE NEVER REACHES THE CSV AT ALL. THE MODES COME OUT IN THE MAP'S ORDER, BQSR then Before then After, whatever order the arguments were given in. A DATUM IS PRINTED AT %.2f THREE TIMES OVER, which is HALF_UP and not ties-to-even. THE EVENT TYPE IS SPELT OUT, \"Base Substitution\". AND THE CONSISTENCY CHECK IS PARTLY DEAD: four of its fifteen comparisons pass the SAME CONSTANT on both sides, and indels_context_size is not compared at all, so two reports built with different indel contexts are combined without a word while a mismatch context difference is refused. The two argument refusals fire before anything is read, and the first of them has an UNCLOSED PARENTHESIS in its message.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "alpha,AC,Context,Base Substitution,150,1.00,22.00,22.84,-0.84,BQSR",
+        "alpha,20,QualityScore,Base Substitution,120,3.00,20.00,20.00,0.00,BQSR",
+        "error\tno-report\torg.broadinstitute.hellbender.exceptions.UserException:you must provide at least one recalibration report file (arguments -bqsr, -before or -after",
+        "Mismatches_context_size: differences between 'Before' {2} and 'After' {3}."
+      ],
+      "cases": [
+        {
+          "dump": "AnalyzeCovariatesDump",
+          "golden": "crates/gatk-tools/tests/data/analyze_covariates.txt.gz",
+          "why": "15 rows: five recalibration reports, six csv files covering one report, two read groups, both orders of before and after, all three roles at once, and a difference the check does not look at, plus four refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31635215625, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
