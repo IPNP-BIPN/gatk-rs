@@ -2119,6 +2119,33 @@
           "why": "15 rows: five recalibration reports, six csv files covering one report, two read groups, both orders of before and after, all three roles at once, and a difference the check does not look at, plus four refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31635215625, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "remove-nearby-indels",
+      "status": "golden-pending",
+      "title": "RemoveNearbyIndels, the first variant transform",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "RemoveNearbyIndels"
+      ],
+      "why": "The first member of the variant-transform archetype: a VariantWalker that buffers one indel at a time and drops any PAIR of indels closer than a spacing, keeping whatever non-indels sat between them. THE DISTANCE IS END TO START, `right.getStart() - left.getEnd()`, so a deletion's length counts against it and the test is STRICT: two indels exactly the spacing apart are kept and one base closer are both dropped, which the golden holds at 5 and at 4 for the same file. AND lastIndel IS UPDATED EVEN WHEN THE INDEL WAS JUST THROWN AWAY, so a third indel is measured against one that never reached the output: three indels in a row lose all three, and at a spacing of 1000 an indel 790 bases past a discarded one is discarded too. THROWING OUT A PAIR EMITS THE NON-INDELS BETWEEN THEM. `nearby` REQUIRES THE SAME CONTIG, so a contig boundary flushes. THE LAST INDEL OF A FILE IS KEPT BY A REFERENCE COMPARISON, `vc == lastIndel`, and not by an equality: without it the buffered indel would be measured against ITSELF and dropped, since start minus end is below any positive spacing. AND `isIndel` IS `getType() == INDEL`, WHICH A MIXED SITE IS NOT: a record whose alternates are all a different length from the reference is an INDEL and buffers like one, while a record carrying a snp and an insertion side by side is MIXED, so it is never buffered and cannot pair with anything, and one carrying two snps is a plain SNP. AND THE HEADER IS REBUILT FROM THE INPUT'S SORTED METADATA plus the tool's own lines, so a ##GATKCommandLine carrying the run's date is added, which is masked in the golden.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 102,
+      "expect_contains": [
+        "vcfline\tboundary-at-5\tchr1\\t106\\t.\\tA\\tAGG\\t.\\t.\\t.",
+        "vcfline\tboundary-at-4\tchr1\\t205\\t.\\tA\\tAGG\\t.\\t.\\t.",
+        "vcfline\ttrailing-at-20\tchr1\\t500\\t.\\tA\\tAGG\\t.\\t.\\t.",
+        "vcfline\tmulti-allelic-at-20\tchr1\\t100\\t.\\tA\\tC,AGG\\t.\\t.\\t."
+      ],
+      "cases": [
+        {
+          "dump": "RemoveNearbyIndelsDump",
+          "golden": null,
+          "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped."
+        }
+      ]
     }
   ],
   "probes": []
