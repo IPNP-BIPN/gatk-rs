@@ -153,15 +153,17 @@ fn check_consistency(reports: &[&RoleReport<'_>]) -> Result<(), AnalyzeCovariate
     Ok(())
 }
 
-/// `compareReportArguments`, whose fifteen comparisons are not fifteen checks.
+/// `compareReportArguments`, whose fourteen comparisons are not fourteen checks.
 ///
 /// ```java
 /// compareSimpleReportArgument(result,"no_standard_covs", DO_NOT_USE_STANDARD_COVARIATES, DO_NOT_USE_STANDARD_COVARIATES, thisRole, otherRole);
 /// ```
 ///
-/// The first four pass the **same constant** on both sides, so they can never differ, and
-/// `indels_context_size` is not among the fifteen at all: two reports built with different indel
-/// contexts are combined without a word.
+/// Fourteen calls, of which the first four pass the **same constant** on both sides: those four
+/// arguments are `static final` fields kept only for reading GATK3 reports, so they cannot differ
+/// and the comparison cannot fire. And `indels_context_size` is not among the fourteen at all, so
+/// two reports built with different indel contexts are combined without a word. (The `15` in
+/// `new LinkedHashMap<>(15)` is the map's initial capacity and not a count of the checks.)
 ///
 /// What is compared here is the intersection of the reference's live comparisons with the
 /// arguments a parsed report actually carries. The three default-quality arguments, the two
