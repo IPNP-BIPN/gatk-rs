@@ -1869,6 +1869,32 @@
           "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31601435587, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "get-sample-name",
+      "status": "oracle-backed",
+      "title": "GetSampleName, the smallest tool of the reporting-walker archetype",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GetSampleName"
+      ],
+      "why": "The second tool of the reporting-walker archetype and the smallest: `traverse` is empty and everything happens in onTraversalStart. IT WRITES EVERY DISTINCT SAMPLE ONE PER LINE WITH NO TRAILING NEWLINE, so `sample1` is seven bytes and two samples are eleven; the file's length is dumped beside its text because that is the only place the missing newline shows. distinct() KEEPS THE FIRST OCCURRENCE AND ITS ORDER, so two read groups naming one sample give one line and `zebra` then `alpha` come out unsorted. A HEADER WITH NO READ GROUPS TAKES THE SECOND REFUSAL AND NOT THE FIRST, because getReadGroups() returns an empty list rather than null, so the guard about \"no header or no read groups\" is unreachable from a BAM. A READ GROUP WITH NO SM WRITES THE FOUR LETTERS `null` and the tool finishes. --use-url-encoding HAS NO DEFAULT IN THE SOURCE AND IS STILL OPTIONAL. URL ENCODING IS java.net.URLEncoder's, so a SPACE BECOMES `+` AND NOT `%20`. AND THE TOOL READS ONLY THE HEADER, so a BAM with no records still writes its sample.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 35,
+      "expect_contains": [
+        "sample\tno-sample\tnull",
+        "sample\tspecial-encoded\ta+sample%2Fwith%2Bodd+chars+%26+more",
+        "error\tno-read-groups\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: The given bam input has no sample names."
+      ],
+      "cases": [
+        {
+          "dump": "GetSampleNameDump",
+          "golden": "crates/gatk-tools/tests/data/get_sample_name.txt.gz",
+          "why": "35 rows: seven input BAMs with their indexes, and eleven runs of which ten finish, each with the file's text and its length in bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31602296883, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
