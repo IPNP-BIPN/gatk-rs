@@ -2070,7 +2070,7 @@
     },
     {
       "id": "persistence-optimizer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "PersistenceOptimizer, the watershed under the kernel segmenter",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2088,8 +2088,8 @@
       "cases": [
         {
           "dump": "PersistenceOptimizerDump",
-          "golden": null,
-          "why": "46 rows: fifteen data sets with their minima and persistences, covering both signed zeroes, a NaN, both infinities, plateaus at either end of a maximum, twin valleys that tie, and one computed wiggle long enough for several merges, plus the one refusal."
+          "golden": "crates/gatk-engine/tests/data/persistence_optimizer.txt.gz",
+          "why": "46 rows: fifteen data sets with their minima and persistences, covering both signed zeroes, a NaN, both infinities, plateaus at either end of a maximum, twin valleys that tie, and one computed wiggle long enough for several merges, plus the one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31633883387, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
