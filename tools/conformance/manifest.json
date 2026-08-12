@@ -1770,6 +1770,30 @@
           "why": "30 rows: three fixtures with their indexes, and eight runs of each. The corpus covers every branch of FlagStat's counter, an empty file where the percentages divide by zero, and a file holding only reads the default filter drops. Each fixture is run whole, over an interval that keeps half of it, and with WellformedReadFilter disabled. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31592539751, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "sa-tag-builder",
+      "status": "golden-pending",
+      "title": "SATagBuilder, the SA tag a split read carries",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The first piece of SplitNCigarReads, whose `repairSupplementaryTags` marks every piece after the first as supplementary and calls `setReadsAsSupplemental`. A UNIT IS SIX FIELDS SPLIT WITH `split(\",\", -1)`, so `chr1,100,+,10M,60,;` parses with an empty NM where the zero-limit split would have dropped the field and refused it. THE THREE VALIDATIONS ARE POS, CIGAR AND MAPQ, each accepting `*`; NM IS NOT VALIDATED AT ALL, so `not-a-number` round trips. THE STRAND IS NORMALISED ON THE WAY OUT, the one field that does not survive a round trip. A UNIT BUILT FROM AN UNMAPPED READ IS `*,0,+,*,0,*;`, where the position and the mapping quality are the read's own zeroes and not `toString`'s defaults, which no read can reach. addTag PUTS A NON-SUPPLEMENTARY READ AT THE FRONT, and setReadsAsSupplemental MARKS EVERY READ BUT THE FIRST BEFORE BUILDING ANY TAG, so the primary is the first unit of every tag. EXISTING SA TAGS ARE PRESERVED AND STAY FIRST. THE PRIMARY IS NEVER UN-MARKED, so a family whose primary arrives with 0x800 comes out with no primary line at all. AND A FAMILY OF ONE WRITES NOTHING, because `setSATag` on an empty builder leaves the read alone rather than giving it an empty tag.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 30,
+      "expect_contains": [
+        "parse\ttext-nm\tchr1,100,+,10M,60,not-a-number;",
+        "unit\tunmapped\t*,0,+,*,0,*;",
+        "group\tsingle\talone:100\t0\tabsent"
+      ],
+      "cases": [
+        {
+          "dump": "SATagBuilderDump",
+          "golden": null,
+          "why": "30 rows: nine tags that round trip, six that are refused, five units built from reads, and six families of reads set as supplemental to each other."
+        }
+      ]
     }
   ],
   "probes": []

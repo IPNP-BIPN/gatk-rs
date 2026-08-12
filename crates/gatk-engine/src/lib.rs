@@ -56,6 +56,7 @@ pub mod recal_utils;
 pub mod recalibration_report;
 pub mod recalibration_tables;
 pub mod reference;
+pub mod sa_tag;
 pub mod somatic_likelihoods;
 pub mod variant_getters;
 pub mod variant_source;
