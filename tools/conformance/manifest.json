@@ -1895,6 +1895,32 @@
           "why": "35 rows: seven input BAMs with their indexes, and eleven runs of which ten finish, each with the file's text and its length in bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31602296883, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "compare-base-qualities",
+      "status": "oracle-backed",
+      "title": "CompareBaseQualities, the first tool here that reads two BAMs at once",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CompareBaseQualities"
+      ],
+      "why": "The third tool of the reporting-walker archetype and the first that is not a walker: PicardCommandLineProgram.doWork with two positional arguments. IT HAS NO READ FILTERS, so a duplicate and a vendor failure are counted like any other read, BUT ITS READER IS STRICT rather than the engine's SILENT, so an unmapped read that kept its mapping quality is a SAMFormatException where a walker would have carried on. A SECONDARY OR SUPPLEMENTARY READ IS SKIPPED by htsjdk's SecondaryOrSupplementarySkippingIterator, independently in each file, so the two line up on their primary reads and not on their record counts. THE TWO REFUSALS ARE DIFFERENT MESSAGES: \"files do not have the same exact order of reads:r2 vs other\" against \"files do not have the same exact number of reads\". RAGGED QUALITIES NAME THE TWO LENGTHS AND NOT THE READ. THE SUMMARY COLLAPSES THE MATRIX ONTO ITS DIAGONALS, one sentence when everything is on the main one and otherwise a table whose percentage is %.4f. THE FULL MATRIX PRINTS ONLY NON-ZERO ENTRIES with diff = QRead1 - QRead2, so reversing the inputs flips every sign. AND THE BINNED HALF CAN CONTRADICT THE RAW ONE: with --static-quantized-quals 10 20 30 the same run reports four differences above and \"all 8 quality scores are the same\" below.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 31,
+      "expect_contains": [
+        "error\trenamed\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: files do not have the same exact order of reads:r2 vs other",
+        "error\tragged\torg.broadinstitute.hellbender.exceptions.UserException:The length of the quality scores are not the same for read 4,3",
+        "result\tshifted\t1"
+      ],
+      "cases": [
+        {
+          "dump": "CompareBaseQualitiesDump",
+          "golden": "crates/gatk-tools/tests/data/compare_base_qualities.txt.gz",
+          "why": "31 rows: nine input BAMs, and fourteen runs of which eight finish, each with the whole report it wrote and the value the tool returns as its exit code. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31603123061, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []

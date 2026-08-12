@@ -9,6 +9,7 @@ pub mod add_original_alignment_tags;
 pub mod apply_bqsr;
 pub mod base_recalibrator;
 pub mod clip_reads;
+pub mod compare_base_qualities;
 pub mod convert_headerless_shard;
 pub mod counting_walkers;
 pub mod fix_misencoded_base_quality_reads;
