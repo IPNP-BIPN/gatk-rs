@@ -20,6 +20,7 @@ pub mod bqsr_transformer;
 pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;
+pub mod contamination_tables;
 pub mod context;
 pub mod context_iterator;
 pub mod covariates;
