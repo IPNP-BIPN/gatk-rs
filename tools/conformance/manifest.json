@@ -774,6 +774,34 @@
       ]
     },
     {
+      "id": "recalibration-report",
+      "status": "golden-pending",
+      "title": "RecalibrationReport, a recalibration table read off disk",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What ApplyBQSR is given: five named tables in a GATKReport, turned back into a RecalibrationTables, a StandardCovariateList and a QuantizationInfo. The reader, the covariates, the tables and the quantizer are measured already; this is the assembly, and the assembly is where the keys are chosen. THE READ GROUP KEYS ARE THE SORTED ORDER, NOT THE FILE'S: getReadGroups returns a TreeSet and the covariate list is built from it, so a report written with zebra first comes back with alpha as key 0, which is what makes a gathered report number its groups the same way whichever input was read first. AND getReadGroups RUNS BEFORE ANYTHING ELSE, because the public constructor is this(report, report.getReadGroups()) and Java evaluates the argument before the body, so a report with no RecalTable0 is refused by that name and not by the argument table. IT READS ONLY RecalTable0, so a read group named in RecalTable1 but not there gets the missing key -1 and is written at a negative index: ArrayIndexOutOfBoundsException, Index -1 out of bounds for length 1. EVERY DATUM IS BUILT WITH A REPORTED QUALITY OF 1 AND THEN CORRECTED through the setter, because the constructor refuses a negative quality and the setter is what the report's own value goes through. THE READ GROUP TABLE READS ITS REPORTED QUALITY FROM EstimatedQReported, a %.4f column that parses as a Double, AND THE OTHERS FROM QualityScore, a %s column that parses as a String and goes through decodeByte; asDouble would refuse it. THE EmpiricalQuality COLUMN IS IGNORED ON THE WAY IN, deliberately, so every datum can be recomputed against whatever prior ApplyBQSR is run with. null IN THE Arguments TABLE BECOMES A REAL ABSENCE before the chain of name comparisons, so binary_tag_name of null is nothing rather than the four characters. NON-STANDARD COVARIATES ARE REFUSED by comparing the covariate argument against the four standard class names, with both lists in the message. AND ALL THREE REPORTS ROUND-TRIP: parsing one the reference wrote and writing it again reproduces it byte for byte, which is what makes gathering reports safe.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 79,
+      "expect_contains": [
+        "readgroups\ttwo-groups\talpha,zebra",
+        "datum\ttwo-groups\t0\t0,0\t1001\t11.00\t403f000000000000",
+        "roundtrip\ttwo-groups\ttrue",
+        "argument\ttwo-groups\tbinary_tag_name\tnull",
+        "error\tgroup-missing-from-read-group-table\tArrayIndexOutOfBoundsException\tIndex -1 out of bounds for length 1",
+        "error\tunknown-event-type\tIllegalArgumentException\tEvent X does not exist.",
+        "error\tno-read-group-table\tGATKException\tTable is not in GATKReport: RecalTable0"
+      ],
+      "cases": [
+        {
+          "dump": "RecalibrationReportDump",
+          "golden": null,
+          "why": "79 rows: three reports the reference wrote and read back, with the read group numbering each one produced, the eight arguments it recovered, every datum of every table with the keys it landed at and its reported quality as raw bits, the quantization map, whether a second writing reproduced the first, and four refusals. The reports are written by the reference rather than hand-aligned, because the reader cuts every data line at the header's word starts and that behaviour has its own suite."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
