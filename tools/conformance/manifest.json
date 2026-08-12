@@ -856,6 +856,34 @@
       ]
     },
     {
+      "id": "base-recalibration-engine",
+      "status": "golden-pending",
+      "title": "BaseRecalibrationEngine, BQSR's counting pass",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "BQSR's counting pass, the other half of the cycle ApplyBQSR closes. ONLY SUBSTITUTIONS ARE COUNTED BY DEFAULT: cachedEventTypes is computeIndelBQSRTables ? EventType.values() : {BASE_SUBSTITUTION}, and that argument is HIDDEN with a default of false, so the insertion and deletion tables exist for the whole run and stay empty; all 46 datums of the default run carry event index zero. BAQ IS OFF BY DEFAULT TOO, so the ordinary run uses flatBAQArray, the constant 64, and it is skipped when the read has no errors at all whatever the flag says. AND WHAT calculateBAQArray RETURNS IS NOT THE BAQ ARRAY: it calls baqRead with ADD_TAG, which writes the ENCODED tag (char)(quality - baq + 64), and then reads those characters straight back out with getBAQTag, so the array that reaches calculateFractionalErrorArray is the tag's encoding and NO_BAQ_UNCERTAINTY being 64 is exactly the character for 'the BAQ equals the quality'. The model also runs over the REFERENCE WINDOW and not the read's span. AN INDEL IS MARKED AT A DIFFERENT BASE ON EACH STRAND: a deletion marks readPos-1 forward and readPos reverse, an insertion marks readPos-1 BEFORE advancing and readPos AFTER, both naming the base on the far side, and both clamped away rather than wrapping so 1D9M and 1I9M mark nothing while 9M1D and 9M1I mark the last base. THE FRACTIONAL ERROR ARRAY SPREADS EACH ERROR OVER A BLOCK that starts ONE BASE BEFORE the uncertain run and includes the base that CLOSES it, so an uncertain run of two spreads one error over four bases. A KNOWN SITE IS SKIPPED BY READ OFFSET through getReadIndexForReferenceCoordinate, whose deletion case steps back one base. THE READ GROUP TABLE IS NOT COUNTED, IT IS COLLAPSED: finalizeData marginalises the quality score table over the reported quality, which is the only place RecalDatum.combine runs in BQSR. AND THE TABLE IS ROUNDED to what a file would hold, Math.round((in + Math.ulp(in)) * 10^n) / 10^n, with the ulp added BEFORE the rounding.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 211,
+      "expect_contains": [
+        "const\tenableBAQ\tfalse",
+        "events\tdeletion\t7\t0,0,0,0,1,1,1,1,1,1\t0,0,0,0,0,0,0,0,0,0\t0,0,0,1,0,0,0,0,0,0",
+        "events\tdeletion-reverse\t7\t0,0,0,0,1,1,1,1,1,1\t0,0,0,0,0,0,0,0,0,0\t0,0,0,0,1,0,0,0,0,0",
+        "events\tleading-deletion\t9\t1,1,1,1,1,1,1,1,1,0\t0,0,0,0,0,0,0,0,0,0\t0,0,0,0,0,0,0,0,0,0",
+        "error\tfractional-length-mismatch\tGATKException\tArray length mismatch detected. Malformed read?",
+        "error\tround-zero-places\tIllegalArgumentException\tmust round to at least one decimal place",
+        "reads\tplain\t5"
+      ],
+      "cases": [
+        {
+          "dump": "BaseRecalibrationEngineDump",
+          "golden": null,
+          "why": "211 rows: fifteen cigars through the counting loop with all three mark arrays and the event count, twenty fractional error arrays as raw bits over four error patterns and five BAQ shapes, twenty-eight roundings at two decimal places each, and four whole-engine runs over the same five reads, with and without known sites and with BAQ on, each carrying every datum of every table with its keys, its counts and its reported quality as raw bits."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
