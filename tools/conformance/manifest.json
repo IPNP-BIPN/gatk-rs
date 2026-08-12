@@ -1998,7 +1998,7 @@
     },
     {
       "id": "tsv-table",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The tsv table format, under every .table file GATK writes",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2015,8 +2015,8 @@
       "cases": [
         {
           "dump": "TsvTableDump",
-          "golden": null,
-          "why": "45 rows: five tables written through the writer, four of them read back twice (once through a reader that overrides the comment hook and once through one that does not), and five hand-written files of which four are refused."
+          "golden": "crates/gatk-engine/tests/data/tsv_table.txt.gz",
+          "why": "45 rows: five tables written through the writer, four of them read back twice (once through a reader that overrides the comment hook and once through one that does not), and five hand-written files of which four are refused. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31628098540, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
