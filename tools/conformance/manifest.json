@@ -688,7 +688,7 @@
     },
     {
       "id": "recalibration-tables",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "NestedIntegerArray and RecalibrationTables",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -710,8 +710,8 @@
       "cases": [
         {
           "dump": "RecalibrationTablesDump",
-          "golden": null,
-          "why": "70 rows: the four table shapes and the read groups they were computed from, twenty-six lookups across the varargs form and the four specialisations at every kind of out-of-range and negative key, nine insertions with their exact messages, the tree walk of an empty and a populated four-dimensional table with the order it returns values in, and the combining, including the reference-identity tests that show which datum object each table ends up holding."
+          "golden": "crates/gatk-engine/tests/data/recalibration_tables.txt.gz",
+          "why": "70 rows: the four table shapes and the read groups they were computed from, twenty-six lookups across the varargs form and the four specialisations at every kind of out-of-range and negative key, nine insertions with their exact messages, the tree walk of an empty and a populated four-dimensional table with the order it returns values in, and the combining, including the reference-identity tests that show which datum object each table ends up holding. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31574682025, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
