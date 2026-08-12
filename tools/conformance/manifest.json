@@ -717,7 +717,7 @@
     },
     {
       "id": "gatk-report-reader",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Reading a GATKReport",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -740,8 +740,8 @@
       "cases": [
         {
           "dump": "GATKReportReaderDump",
-          "golden": null,
-          "why": "83 rows: the fixed-width split on eleven lines including four cut with a different header's word starts, five reports parsed in full with every table, every column's recovered format and data type and every cell's Java class and value, the round-trip claim for each, getReadGroups over a table deliberately out of order and with a repeat, and eight refusals with their exact wording."
+          "golden": "crates/gatk-engine/tests/data/gatk_report_reader.txt.gz",
+          "why": "83 rows: the fixed-width split on eleven lines including four cut with a different header's word starts, five reports parsed in full with every table, every column's recovered format and data type and every cell's Java class and value, the round-trip claim for each, getReadGroups over a table deliberately out of order and with a repeat, and eight refusals with their exact wording. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31575363926, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
