@@ -602,7 +602,7 @@
     },
     {
       "id": "recal-datum",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "RecalDatum, the counter every BQSR table cell is",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -624,8 +624,8 @@
       "cases": [
         {
           "dump": "RecalDatumDump",
-          "golden": null,
-          "why": "332 rows: the seven constants including the two private ones, all 41 entries of the Gaussian prior cache as raw bits, twelve prior lookups chosen to cross the truncation and the clamp, thirteen binomial likelihoods covering both ends of the range and the rescaling above Integer.MAX_VALUE-1, seventy-two posterior maxima, sixteen datums read by every getter in the order that decides what the cache holds, nine cache steps, six combines, seven narrowing casts, fourteen refusals and the three event types. Every double travels as its raw bits as well as its decimal, because the port has to reproduce the bits and a decimal cannot show the last of them."
+          "golden": "crates/gatk-engine/tests/data/recal_datum.txt.gz",
+          "why": "332 rows: the seven constants including the two private ones, all 41 entries of the Gaussian prior cache as raw bits, twelve prior lookups chosen to cross the truncation and the clamp, thirteen binomial likelihoods covering both ends of the range and the rescaling above Integer.MAX_VALUE-1, seventy-two posterior maxima, sixteen datums read by every getter in the order that decides what the cache holds, nine cache steps, six combines, seven narrowing casts, fourteen refusals and the three event types. Every double travels as its raw bits as well as its decimal, because the port has to reproduce the bits and a decimal cannot show the last of them. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31571805427, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
