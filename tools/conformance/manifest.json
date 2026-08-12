@@ -747,7 +747,7 @@
     },
     {
       "id": "bqsr-transformer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "BQSRReadTransformer, the thing ApplyBQSR is",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -768,8 +768,8 @@
       "cases": [
         {
           "dump": "BqsrTransformerDump",
-          "golden": null,
-          "why": "84 rows: the four reads and the header their read group identifiers come from, twelve runs of the transformer over a hand-built table with a datum in every place it looks, both static rounding modes over six lists of static qualities with the caller's list printed after each call, thirteen roundings including the double below a half, and every combination of present and absent datums in the hierarchical estimate with its result as raw bits."
+          "golden": "crates/gatk-engine/tests/data/bqsr_transformer.txt.gz",
+          "why": "84 rows: the four reads and the header their read group identifiers come from, twelve runs of the transformer over a hand-built table with a datum in every place it looks, both static rounding modes over six lists of static qualities with the caller's list printed after each call, thirteen roundings including the double below a half, and every combination of present and absent datums in the hierarchical estimate with its result as raw bits. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31576243381, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
