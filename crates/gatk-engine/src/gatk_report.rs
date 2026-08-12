@@ -571,3 +571,269 @@ mod tests {
         assert!(text.ends_with("\n\n"), "{text:?}");
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------------------------
+
+/// `TextFormattingUtils.getWordStarts(line)`.
+///
+/// Every index whose previous character is whitespace and whose own is not, **excluding zero**.
+/// This is where a parsed table's column boundaries come from: no width is declared anywhere in the
+/// file, and the reader infers them from where the header line's words begin.
+pub fn word_starts(line: &str) -> Vec<usize> {
+    let characters: Vec<char> = line.chars().collect();
+    let mut starts = Vec::new();
+    for i in 1..characters.len() {
+        if characters[i - 1].is_whitespace() && !characters[i].is_whitespace() {
+            starts.push(i);
+        }
+    }
+    starts
+}
+
+/// `TextFormattingUtils.splitFixedWidth(line, columnStarts)`.
+///
+/// Cut at the given indexes and trim every field. With no starts the whole line is one field.
+///
+/// **A line shorter than the last start is an error, not a short row.** The reference calls
+/// `substring` with the header's indexes and no clamping, so it throws
+/// `StringIndexOutOfBoundsException`. That is reachable from a hand-edited report and is why this
+/// returns a `Result`.
+pub fn split_fixed_width(line: &str, starts: &[usize]) -> Result<Vec<String>, ReportReadError> {
+    let characters: Vec<char> = line.chars().collect();
+    let slice = |from: usize, to: usize| -> Result<String, ReportReadError> {
+        if from > characters.len() || to > characters.len() || from > to {
+            return Err(ReportReadError::LineTooShort {
+                begin: from,
+                end: to,
+                length: characters.len(),
+            });
+        }
+        Ok(characters[from..to]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string())
+    };
+    if starts.is_empty() {
+        return Ok(vec![line.trim().to_string()]);
+    }
+    let mut row = Vec::with_capacity(starts.len() + 1);
+    row.push(slice(0, starts[0])?);
+    for i in 1..starts.len() {
+        row.push(slice(starts[i - 1], starts[i])?);
+    }
+    row.push(slice(starts[starts.len() - 1], characters.len())?);
+    Ok(row)
+}
+
+/// Everything reading a report can refuse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReportReadError {
+    /// `UserException`: the stream had no first line at all.
+    Empty,
+    /// `UserException.BadInput`: the header names a version this reader does not know, or is not a
+    /// header at all.
+    UnknownVersion(String),
+    /// The reference's `NullPointerException`: the header promised more tables than the file holds,
+    /// so a `readLine` returned null and was split.
+    MissingTable,
+    /// `GATKException("line is null")`: the header promised more rows than the file holds.
+    MissingRow,
+    /// `NumberFormatException`, from a `%d` or a `%.Nf` column holding something else.
+    NotANumber(String),
+    /// `StringIndexOutOfBoundsException` from the fixed-width cut. See [`split_fixed_width`].
+    LineTooShort {
+        begin: usize,
+        end: usize,
+        length: usize,
+    },
+    /// `GATKException`: `getTable` asked for a name the report does not carry.
+    NoSuchTable(String),
+}
+
+impl ReportReadError {
+    /// The exact message, which the golden compares character for character.
+    pub fn message(&self) -> String {
+        match self {
+            // `RECAL_FILE` is the reference's name for the file this reader is for.
+            ReportReadError::Empty => {
+                "input covariates table file for base quality score recalibration is empty."
+                    .to_string()
+            }
+            ReportReadError::UnknownVersion(header) => format!(
+                "Bad input: The GATK report has an unknown/unsupported version in the header: {header}"
+            ),
+            ReportReadError::MissingTable => {
+                "Cannot invoke \"String.split(String)\" because the return value of \
+                 \"java.io.BufferedReader.readLine()\" is null"
+                    .to_string()
+            }
+            ReportReadError::MissingRow => "line is null".to_string(),
+            ReportReadError::NotANumber(text) => format!("For input string: \"{text}\""),
+            ReportReadError::LineTooShort {
+                begin,
+                end,
+                length,
+            } => format!("begin {begin}, end {end}, length {length}"),
+            ReportReadError::NoSuchTable(name) => {
+                format!("Table is not in GATKReport: {name}")
+            }
+        }
+    }
+}
+
+impl Report {
+    /// `new GATKReport(InputStream)`.
+    ///
+    /// The header is `#:GATKReport.<version>:<numTables>`, and the reader then reads exactly that
+    /// many tables. Nothing checks that the file ends there.
+    pub fn parse(text: &str) -> Result<Report, ReportReadError> {
+        let mut lines = text.lines();
+        let header = lines.next().ok_or(ReportReadError::Empty)?;
+        // The reference's `GATKReportVersion.fromHeader`, which matches the whole prefix and then
+        // the version string. v0.1 and v0.2 are known and refused; anything else is unknown, and
+        // both come out of the same message here because only v1.1 is accepted.
+        let version = header
+            .strip_prefix("#:GATKReport.")
+            .and_then(|rest| rest.split(':').next())
+            .filter(|version| *version == REPORT_VERSION)
+            .ok_or_else(|| ReportReadError::UnknownVersion(header.to_string()))?;
+        let _ = version;
+        let count: usize = header
+            .split(':')
+            .nth(2)
+            .and_then(|count| count.parse().ok())
+            .ok_or_else(|| ReportReadError::UnknownVersion(header.to_string()))?;
+
+        let mut report = Report::new();
+        for _ in 0..count {
+            report.tables.push(Table::parse(&mut lines)?);
+        }
+        Ok(report)
+    }
+
+    /// `getTable(name)`, which fails rather than answering nothing.
+    pub fn table_named(&self, name: &str) -> Result<&Table, ReportReadError> {
+        self.tables
+            .iter()
+            .find(|table| table.name == name)
+            .ok_or_else(|| ReportReadError::NoSuchTable(name.to_string()))
+    }
+
+    /// `getReadGroups()`: the read group column of `RecalTable0`, **sorted and deduplicated**.
+    ///
+    /// The order of a parsed report's read groups is therefore alphabetical and not the file's,
+    /// which is what makes two reports gathered together agree on their key numbering.
+    pub fn read_groups(&self) -> Result<Vec<String>, ReportReadError> {
+        let table = self.table_named("RecalTable0")?;
+        let column = table
+            .columns
+            .iter()
+            .position(|column| column.name == "ReadGroup")
+            .ok_or_else(|| ReportReadError::NoSuchTable("ReadGroup".to_string()))?;
+        let mut groups: Vec<String> = table
+            .rows
+            .iter()
+            .map(|row| java_to_string(&row[column]))
+            .collect();
+        groups.sort();
+        groups.dedup();
+        Ok(groups)
+    }
+}
+
+impl Table {
+    /// `new GATKReportTable(reader, version)`.
+    ///
+    /// Four header pieces and then the rows: the data header carrying the column count, the row
+    /// count and one format per column; the name header; the column-name line, which is what the
+    /// widths are inferred from; the rows; and one blank line that is read and discarded.
+    ///
+    /// **A parsed table is `DO_NOT_SORT`** whatever it was written with, and its row keys are its
+    /// indexes. That is what makes a parse and a second writing reproduce the first.
+    fn parse<'a>(lines: &mut impl Iterator<Item = &'a str>) -> Result<Table, ReportReadError> {
+        let data_header = lines.next().ok_or(ReportReadError::MissingTable)?;
+        let name_header = lines.next().ok_or(ReportReadError::MissingTable)?;
+
+        let data: Vec<&str> = data_header.split(':').collect();
+        let name_data: Vec<&str> = name_header.split(':').collect();
+        // `TableNameHeaderFields.NAME` is index 2 and `DESCRIPTION` is 3, and a table may have no
+        // description at all.
+        let name = name_data.get(2).copied().unwrap_or("").to_string();
+        let description = name_data.get(3).copied().unwrap_or("").to_string();
+
+        // `TableDataHeaderFields`: COLS is 2, ROWS is 3, FORMAT_START is 4.
+        let columns: usize = data
+            .get(2)
+            .and_then(|value| value.parse().ok())
+            .ok_or(ReportReadError::MissingTable)?;
+        let rows: usize = data
+            .get(3)
+            .and_then(|value| value.parse().ok())
+            .ok_or(ReportReadError::MissingTable)?;
+
+        let column_line = lines.next().ok_or(ReportReadError::MissingRow)?;
+        let starts = word_starts(column_line);
+        let column_names = split_fixed_width(column_line, &starts)?;
+
+        let mut table = Table::new(&name, &description, Sorting::DoNotSort);
+        for index in 0..columns {
+            let format = data.get(4 + index).copied().unwrap_or("");
+            let name = column_names.get(index).map(String::as_str).unwrap_or("");
+            table.columns.push(Column::new(name, format));
+        }
+
+        for _ in 0..rows {
+            let line = lines.next().ok_or(ReportReadError::MissingRow)?;
+            let fields = split_fixed_width(line, &starts)?;
+            let mut row = Vec::with_capacity(columns);
+            for index in 0..columns {
+                let text = fields.get(index).map(String::as_str).unwrap_or("");
+                row.push(parse_value(table.columns[index].data_type, text)?);
+            }
+            // The widths of a parsed table are recomputed from its values, exactly as they are when
+            // it is built by hand, which is why a second writing reproduces the first.
+            for (index, value) in row.iter().enumerate() {
+                let rendered = format_value(
+                    &table.columns[index].format,
+                    table.columns[index].data_type,
+                    value,
+                );
+                table.columns[index].observe(&rendered);
+            }
+            table.row_keys.push(table.rows.len().to_string());
+            table.rows.push(row);
+        }
+
+        // The blank line after the table, read and discarded. Its absence is not an error: the
+        // reference's `readLine` simply answers null at the end of the file.
+        let _ = lines.next();
+        Ok(table)
+    }
+}
+
+/// `GATKReportDataType.Parse(String)`, which is where the Java types of a parsed table come from.
+///
+/// **An `Integer` column parses to a `Long`.** `Long.parseLong` is what the reference calls, which
+/// is why `RecalibrationReport.asLong` has an `Integer` branch it never takes from a parsed table.
+/// A `Character` column takes the **first character** and drops the rest. Everything else, `Unknown`
+/// included, is the string.
+fn parse_value(data_type: DataType, text: &str) -> Result<Value, ReportReadError> {
+    match data_type {
+        DataType::Decimal => text
+            .parse::<f64>()
+            .map(Value::Double)
+            .map_err(|_| ReportReadError::NotANumber(text.to_string())),
+        DataType::Boolean => Ok(Value::Bool(text.eq_ignore_ascii_case("true"))),
+        DataType::Integer => text
+            .parse::<i64>()
+            .map(Value::Int)
+            .map_err(|_| ReportReadError::NotANumber(text.to_string())),
+        DataType::Character => Ok(Value::Char(text.chars().next().unwrap_or('\0'))),
+        // `String` and `Unknown` both keep the text, which is why the `%.8f` an untyped double was
+        // written with comes back as the characters `0.50000000`.
+        DataType::String | DataType::Unknown => Ok(Value::Str(text.to_string())),
+    }
+}

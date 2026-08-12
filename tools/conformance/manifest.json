@@ -716,6 +716,36 @@
       ]
     },
     {
+      "id": "gatk-report-reader",
+      "status": "oracle-backed",
+      "title": "Reading a GATKReport",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Reading a GATKReport, which is the direction ApplyBQSR uses: a recalibration report is parsed back into typed values, and which Java type each cell comes back as decides which branch RecalibrationReport's asLong, asDouble and decodeByte take. THE COLUMNS ARE CUT AT THE POSITIONS OF THE HEADER LINE'S WORDS: getWordStarts records every index whose previous character is whitespace and whose own is not, and splitFixedWidth cuts every data line at exactly those indexes, so no width is declared anywhere in the file and all of them are inferred from where the header's words begin. SO A HAND-EDITED FILE IS CUT IN THE WRONG PLACES: a value wider than its header swallows the next column's start and comes back as 'k  7', which a %d column then refuses with NumberFormatException, and a data line SHORTER than the header's last column start is a StringIndexOutOfBoundsException, because substring is called with the header's indexes and no clamp. EVERY FIELD IS TRIMMED after the cut. A %d COLUMN PARSES TO Long AND NOT Integer, which is why asLong has an Integer branch it never takes from a parsed table while decodeByte has a Long branch it always takes. AN EMPTY FORMAT IS WRITTEN %s AND READ BACK AS A String, so the %.8f rendering an untyped double got on the way out comes back as the eight characters 0.50000000; null in a %s column comes back as the four characters and not as a null, while NaN in a %.4f column comes back as a Double. A PARSED TABLE IS DO_NOT_SORT whatever it was written with and its row ids are its indexes, which is what makes a parse and a second writing reproduce the first: four of the five parsed reports round-trip, and the one that does not was hand-written without the trailing colon the writer always emits after a table name. AND getReadGroups READS RecalTable0 AND RETURNS A SORTED SET, so zebra, alpha, alpha, middle comes back as alpha, middle, zebra.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 83,
+      "expect_contains": [
+        "starts\tAlpha__Beta__Gamma\t7,13",
+        "split\theader:1234567__2__3\t1234567|2  3|",
+        "split\theader:1\tE:StringIndexOutOfBoundsException:begin 0, end 7, length 1",
+        "cell\ttypes\tTypes\t0\tCount\tLong\t1",
+        "cell\ttypes\tTypes\t0\tUntyped\tString\t0.50000000",
+        "cell\ttypes\tTypes\t1\tName\tString\tnull",
+        "readgroups\trecal\talpha,middle,zebra",
+        "error\tread@ragged\tNumberFormatException\tFor input string: \"k  7\"",
+        "error\tempty-stream\tUserException\tinput covariates table file for base quality score recalibration is empty."
+      ],
+      "cases": [
+        {
+          "dump": "GATKReportReaderDump",
+          "golden": "crates/gatk-engine/tests/data/gatk_report_reader.txt.gz",
+          "why": "83 rows: the fixed-width split on eleven lines including four cut with a different header's word starts, five reports parsed in full with every table, every column's recovered format and data type and every cell's Java class and value, the round-trip claim for each, getReadGroups over a table deliberately out of order and with a repeat, and eight refusals with their exact wording. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31575363926, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
+    },
+    {
       "id": "intervalwalker",
       "title": "IntervalWalker traversal",
       "status": "oracle-backed",
