@@ -803,7 +803,7 @@
     },
     {
       "id": "apply-bqsr",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ApplyBQSR, the eighth whole record-transform tool",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -821,8 +821,8 @@
       "cases": [
         {
           "dump": "ApplyBqsrDump",
-          "golden": null,
-          "why": "52 rows: twelve runs of the tool, eleven of which finish, each with its output BAM and its index in full, plus the two input fixtures with their indexes and the two recalibration tables as text, so the port opens the same bytes rather than a rebuilt lookalike. The working directory is relative because the string handed to -I and -O is recorded inside the output BAM's own @PG, where canonicalisation cannot reach; the dump is byte-identical across two runs."
+          "golden": "crates/gatk-tools/tests/data/apply_bqsr.txt.gz",
+          "why": "52 rows: twelve runs of the tool, eleven of which finish, each with its output BAM and its index in full, plus the two input fixtures with their indexes and the two recalibration tables as text, so the port opens the same bytes rather than a rebuilt lookalike. The working directory is relative because the string handed to -I and -O is recorded inside the output BAM's own @PG, where canonicalisation cannot reach; the dump is byte-identical across two runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31577801679, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
