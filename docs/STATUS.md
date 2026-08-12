@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 47 | 15.1% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 48 | 15.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 251 | 80.7% |
 | **total** | **311** | |
@@ -83,7 +83,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
-| `ReadAnonymizer` | unclassified | golden-pending | read-anonymizer | 1 | not measured |
+| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
 | `SamToFastqWithTags` | unclassified | unchecked | samtofastqwithtags | 1 | not measured |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | not measured |

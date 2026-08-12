@@ -910,7 +910,7 @@
     },
     {
       "id": "read-anonymizer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ReadAnonymizer, whose transform changes the length of the read",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -928,8 +928,8 @@
       "cases": [
         {
           "dump": "ReadAnonymizerDump",
-          "golden": null,
-          "why": "28 rows: the input BAM with its index, the reference, and seven runs of which six finish, each with its output BAM, its index and its header. The twelve reads cover a deletion that lengthens the read, an insertion that shortens it, a leading and a trailing insertion, a soft clip, an explicit X, an already-= cigar, tags the transform clears, and two reads the default filters drop. The seventh run asks for a reference quality above sixty, which the argument parser refuses."
+          "golden": "crates/gatk-tools/tests/data/read_anonymizer.txt.gz",
+          "why": "28 rows: the input BAM with its index, the reference, and seven runs of which six finish, each with its output BAM, its index and its header. The twelve reads cover a deletion that lengthens the read, an insertion that shortens it, a leading and a trailing insertion, a soft clip, an explicit X, an already-= cigar, tags the transform clears, and two reads the default filters drop. The seventh run asks for a reference quality above sixty, which the argument parser refuses. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31591376340, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     },
