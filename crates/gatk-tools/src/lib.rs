@@ -6,6 +6,7 @@
 //! and neither half can see the other.
 
 pub mod add_original_alignment_tags;
+pub mod analyze_covariates;
 pub mod apply_bqsr;
 pub mod base_recalibrator;
 pub mod check_pileup;
