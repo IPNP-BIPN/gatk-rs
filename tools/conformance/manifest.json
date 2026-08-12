@@ -1847,7 +1847,7 @@
     },
     {
       "id": "methylation-type-caller",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "MethylationTypeCaller, the first tool of the archetype whose output is a VCF",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -1865,8 +1865,8 @@
       "cases": [
         {
           "dump": "MethylationTypeCallerDump",
-          "golden": null,
-          "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header."
+          "golden": "crates/gatk-tools/tests/data/methylation_type_caller.txt.gz",
+          "why": "74 rows: two input BAMs with their indexes, the reference bases, and four runs of which three are comparable line by line while the fourth contributes only its masked command-line header. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31601435587, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
