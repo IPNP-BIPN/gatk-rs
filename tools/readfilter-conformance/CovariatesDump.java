@@ -7,18 +7,24 @@
  *
  * Nine behaviours this is built to catch.
  *
- *   - THE KEY MATRIX IS REUSED ACROSS READS OF THE SAME LENGTH. PerReadCovariateMatrix takes a
- *     CovariateKeyCache and, on a hit, hands back THE SAME int[][][] a previous read filled in.
- *     Nothing clears it. Every covariate that writes a key at every position hides that, and
- *     ContextCovariate is the one that does not: when the low-quality clip shortens a read it zeroes
- *     the whole array first, and when it does not shorten it, positions the context cannot reach
- *     keep whatever the previous read left there. The dump runs the same corpus twice, once with one
- *     shared cache and once with a fresh cache per read, and prints both matrices;
+ *   - THE KEY MATRIX IS REUSED ACROSS READS OF THE SAME LENGTH AND IT DOES NOT LEAK.
+ *     PerReadCovariateMatrix takes a CovariateKeyCache and, on a hit, hands back THE SAME int[][][]
+ *     a previous read filled in, with nothing clearing it in between. That looks like stale data
+ *     waiting to happen, and it is not: the dump runs the whole corpus twice, once with one shared
+ *     cache as BQSR does and once with a fresh cache per read, and prints both matrices so the two
+ *     can be compared cell by cell. They agree everywhere, because every covariate writes a key at
+ *     every position of the read and ContextCovariate zeroes the whole array first on the one path
+ *     that would otherwise leave a gap, the low-quality clip shortening the read. A port is
+ *     therefore free to allocate per read, and this is the measurement that says so;
  *   - THE READ GROUP IS IDENTIFIED BY PU AND NOT BY ID, falling back to ID only when PU is absent,
  *     so two read groups with the same PU would collide and a table keyed by ID would be a different
  *     table;
- *   - A READ WHOSE GROUP IS NOT IN THE TABLE GETS -1 rather than an exception, which is the code
- *     ApplyBQSR turns into an error unless --allow-missing-read-group is set;
+ *   - A READ WHOSE GROUP IS NOT IN THE HEADER IS A NullPointerException, not the -1 key. The -1 is
+ *     documented as the missing-read-group code, and the path that produces it is
+ *     keyForReadGroup on an identifier the covariate's own table does not hold; a read whose RG
+ *     names a group the HEADER does not declare never gets that far, because
+ *     ReadUtils.getSAMReadGroupRecord answers null and getReadGroupIdentifier dereferences it. The
+ *     dump carries both: a read like that, and keyFromValue("nonesuch") answering -1;
  *   - THE CONTEXT IS OF THE READ'S OWN BASES, REVERSE-COMPLEMENTED FOR A NEGATIVE-STRAND READ, and
  *     the low-quality tail is overwritten with N first. The first contextSize-1 positions have no
  *     context and get -1;
@@ -32,8 +38,10 @@
  *     from the far end;
  *   - INDEL CYCLE KEYS ARE -1 WITHIN FOUR BASES OF EITHER END, which is a cushion the substitution
  *     keys do not have;
- *   - AND THE QUALITY COVARIATE READS THE BASE QUALITY COUNT, NOT THE READ LENGTH, so a read whose
- *     qualities are absent writes nothing at all and leaves whatever was in the matrix.
+ *   - AND A READ WITH BASES AND NO QUALITIES IS AN EXCEPTION, not a covariate value. The quality
+ *     covariate reads the base quality COUNT and writes nothing, and then ContextCovariate's
+ *     low-quality clip indexes an empty quality array by the read's length and throws
+ *     ArrayIndexOutOfBoundsException. Nothing in the covariates guards it.
  *
  * Output:
  *
@@ -67,6 +75,7 @@ import org.broadinstitute.hellbender.utils.recalibration.covariates.PerReadCovar
 import org.broadinstitute.hellbender.utils.recalibration.covariates.ReadGroupCovariate;
 import org.broadinstitute.hellbender.utils.recalibration.covariates.StandardCovariateList;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -199,9 +208,18 @@ public class CovariatesDump {
         for (int i = 0; i < corpus.size(); i++) {
             final GATKRead read = new SAMRecordToGATKReadAdapter(corpus.get(i));
             for (final byte lowQual : new byte[] {0, 2, 20, 30}) {
-                final byte[] bases = (byte[]) method.invoke(null, read, lowQual);
-                System.out.printf("clipped\t%d\t%d\t%s%n", i, lowQual,
-                        new String(bases, StandardCharsets.UTF_8));
+                try {
+                    final byte[] bases = (byte[]) method.invoke(null, read, lowQual);
+                    System.out.printf("clipped\t%d\t%d\t%s%n", i, lowQual,
+                            new String(bases, StandardCharsets.UTF_8));
+                } catch (final InvocationTargetException e) {
+                    // A read with bases and no qualities: clipLowQualEnds indexes the quality array
+                    // by the read's length and runs off the end of an empty one. The covariate has
+                    // no guard, so this is a real end of the code path and not a fixture mistake.
+                    final Throwable cause = e.getCause();
+                    System.out.printf("clipped\t%d\t%d\tE:%s:%s%n", i, lowQual,
+                            cause.getClass().getSimpleName(), cause.getMessage());
+                }
             }
         }
     }
@@ -387,22 +405,22 @@ public class CovariatesDump {
 
         // The same read on the negative strand, so the context is of the reverse complement and the
         // cycle counts from the far end.
-        final SAMRecord reverse = ReadFilterDump.read(header, "cov_reverse", 0, 16, 100, 60,
+        final SAMRecord reverse = ReadFilterDump.read(header, "cov_reverse", 16, 0, 100, 60,
                 "10M", 0, 200, 100, true);
         reverse.setReadString("ACGTNACGTA");
         reverse.setBaseQualityString("IIIIIIIIII");
         out.add(reverse);
 
         // Second of pair, which flips the sign of every cycle.
-        final SAMRecord secondOfPair = ReadFilterDump.read(header, "cov_second_of_pair", 0,
-                0x1 | 0x80, 100, 60, "10M", 0, 200, 100, true);
+        final SAMRecord secondOfPair = ReadFilterDump.read(header, "cov_second_of_pair",
+                0x1 | 0x80, 0, 100, 60, "10M", 0, 200, 100, true);
         secondOfPair.setReadString("ACGTACGTAC");
         secondOfPair.setBaseQualityString("IIIIIIIIII");
         out.add(secondOfPair);
 
         // Second of pair AND negative strand, which is the fourth corner of the cycle sign.
-        final SAMRecord secondReverse = ReadFilterDump.read(header, "cov_second_reverse", 0,
-                0x1 | 0x80 | 0x10, 100, 60, "10M", 0, 200, 100, true);
+        final SAMRecord secondReverse = ReadFilterDump.read(header, "cov_second_reverse",
+                0x1 | 0x80 | 0x10, 0, 100, 60, "10M", 0, 200, 100, true);
         secondReverse.setReadString("ACGTACGTAC");
         secondReverse.setBaseQualityString("IIIIIIIIII");
         out.add(secondReverse);
