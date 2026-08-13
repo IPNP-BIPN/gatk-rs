@@ -2394,6 +2394,34 @@
           "why": "55 rows: six input vcfs and thirteen gathers, of which six write a file and seven refuse, covering both gathering modes, the two different order checks, the two flags that weaken them, and a bgzipped output recorded by size since a compressor is not reproduced here. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31734011165, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "select-variants-samples",
+      "status": "golden-pending",
+      "title": "SelectVariants' sample selection, where matching nothing selects everything",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "why": "Which genotype columns survive -sn, -se, -xl-sn and -xl-se, decided once before any record is read. THE EXPRESSIONS ARE UNANCHORED find() AND NOT matches(), so -se s1 selects xs10 as well as s1 and a list written as names reaches further than it reads. AN EXPRESSION THAT MATCHES NOTHING SELECTS EVERYTHING, because the empty accumulated set is the same emptiness as no sample requested, and --allow-nonoverlapping-command-line-samples reaches the same place: asking for one sample that does not exist and permitting it outputs THE WHOLE COHORT. THE MISSING-NAME CHECK LOOKS AT -sn ONLY and never at the expressions. THE OUTPUT ORDER IS THE SORTED ORDER and not the command line's, since both the header set and the accumulated set are TreeSets. EXCLUSION TAKES PRECEDENCE OVER INCLUSION and an emptied set is a UserException rather than an empty output, which excluding every sample reaches as well. The missing-name refusal is a four-paragraph BadInput listing the names in the order they were given, and an uncompilable expression is the regex engine's own PatternSyntaxException rather than a UserException.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 55,
+      "expect_contains": [
+        "expressions\tsubstring\ts1,xs10",
+        "samples\texpression-matches-nothing\tNA12878,NA12891,s0,s1,tumor,xs10",
+        "samples\tmissing-name-allowed\tNA12878,NA12891,s0,s1,tumor,xs10",
+        "error\texclude-everything\torg.broadinstitute.hellbender.exceptions.UserException:All samples requested to be included were also requested to be excluded.",
+        "error\tuncompilable-expression\tjava.util.regex.PatternSyntaxException:Unclosed character class near index 0\\n[\\n^"
+      ],
+      "cases": [
+        {
+          "dump": "SampleSelectionDump",
+          "golden": null,
+          "why": "55 rows: seven calls to the expression matcher on its own and nineteen runs of the tool, of which sixteen write a file and three refuse, covering the unanchored match, the two different ways an empty selection becomes the whole cohort, the sorted output order, exclusion beating inclusion, the four-paragraph missing-name refusal and the regex engine's own. Six samples written in an order that is not their sorted order, one of them a substring of another. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
