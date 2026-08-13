@@ -12,6 +12,7 @@
 //!  * **and each direction can be asked for on its own**, which the same record shows three ways.
 
 use gatk_corpus as corpus;
+use gatk_engine::subset_alleles::Genotype;
 use gatk_engine::variant_context_utils::{trim_alleles, Allele, Variant};
 
 fn golden() -> String {
@@ -68,24 +69,31 @@ fn alleles(text: &str) -> Vec<Allele> {
 }
 
 /// `s1=ACGT/AGT` back into allele indices.
-fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<Option<usize>>> {
+fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Genotype> {
     if text.is_empty() {
         return Vec::new();
     }
     text.split(';')
         .map(|entry| {
             let (_, called) = entry.split_once('=').expect("a sample");
-            called
-                .split('/')
-                .map(|bases| {
-                    Some(
-                        alleles
-                            .iter()
-                            .position(|allele| allele.bases == bases.as_bytes())
-                            .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
-                    )
-                })
-                .collect()
+            Genotype {
+                alleles: called
+                    .split('/')
+                    .map(|bases| {
+                        Some(
+                            alleles
+                                .iter()
+                                .position(|allele| allele.bases == bases.as_bytes())
+                                .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
+                        )
+                    })
+                    .collect(),
+                pl: None,
+                gq: None,
+                ad: None,
+                dp: None,
+                attributes: Vec::new(),
+            }
         })
         .collect()
 }

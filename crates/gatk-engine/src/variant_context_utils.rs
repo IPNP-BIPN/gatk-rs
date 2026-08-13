@@ -35,6 +35,7 @@
 //! caller produces for two adjacent variants, `min(maxLeadingBases, distanceToLastVariant - 1)`.
 
 use crate::alignment_utils::{normalize_alleles, AlignmentError, IndexRange};
+use crate::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
 
 /// One allele: its bases and whether it is the reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,15 +75,15 @@ impl Allele {
 }
 
 /// As much of a `VariantContext` as these functions read and write.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Variant {
     pub contig: String,
     pub start: i32,
     pub stop: i32,
     /// The reference allele first, then the alternates.
     pub alleles: Vec<Allele>,
-    /// One list of allele indices per sample, which the map rewrites. `None` is a no-call.
-    pub genotypes: Vec<Vec<Option<usize>>>,
+    /// One call per sample, which the splitting rewrites and the alignment carries.
+    pub genotypes: Vec<Genotype>,
     /// The INFO attributes, in the order they were set. Only the three the splitter keeps are
     /// modelled by name; anything else is carried and dropped as a whole.
     pub attributes: Vec<(String, String)>,
@@ -454,7 +455,19 @@ pub fn split_variant_context_to_biallelics(
                 .collect()
         };
 
-        let genotypes = subset_genotypes(variant, alternate, no_annotations)?;
+        let method = if no_annotations {
+            AssignmentMethod::SetToNoCallNoAnnotations
+        } else {
+            AssignmentMethod::BestMatchToOriginal
+        };
+        let genotypes = subset_alleles(
+            &variant.genotypes,
+            2,
+            variant.alleles.len(),
+            &[0, alternate],
+            method,
+        )
+        .map_err(SplitError::GenotypeIndex)?;
         // And then they are recomputed from the genotypes, which is why a record with none loses
         // all three however well they survived the filter.
         let attributes = if no_annotations {
@@ -481,19 +494,15 @@ pub fn split_variant_context_to_biallelics(
 pub enum SplitError {
     /// The trimming underneath refused.
     Alignment(AlignmentError),
-    /// A genotype carrying likelihoods, which `AlleleSubsettingUtils` reindexes and this port does
-    /// not: no row of the golden carries one, so there is nothing to check a guess against.
-    LikelihoodsNotPorted,
+    /// The genotype-index combinatorics refused, which only a very large allele count reaches.
+    GenotypeIndex(crate::genotype_index::GenotypeIndexError),
 }
 
 impl SplitError {
     pub fn message(&self) -> String {
         match self {
             SplitError::Alignment(error) => error.message(),
-            SplitError::LikelihoodsNotPorted => {
-                "subsetting genotype likelihoods is not ported: no measurement covers it"
-                    .to_string()
-            }
+            SplitError::GenotypeIndex(error) => error.message(),
         }
     }
 }
@@ -501,40 +510,10 @@ impl SplitError {
 /// `hasHetNonRef`: a genotype calling two different alternates, `1/2`.
 fn has_het_non_ref(variant: &Variant) -> bool {
     variant.genotypes.iter().any(|genotype| {
-        genotype.len() == 2
-            && matches!((genotype[0], genotype[1]), (Some(first), Some(second))
+        genotype.alleles.len() == 2
+            && matches!((genotype.alleles[0], genotype.alleles[1]), (Some(first), Some(second))
                 if first != second && first != 0 && second != 0)
     })
-}
-
-/// The genotypes of one split record.
-///
-/// With no likelihoods, `BEST_MATCH_TO_ORIGINAL` keeps a called allele that is in the pair and
-/// replaces one that is not with the REFERENCE, which is not the same as a no-call.
-fn subset_genotypes(
-    variant: &Variant,
-    alternate: usize,
-    no_annotations: bool,
-) -> Result<Vec<Vec<Option<usize>>>, SplitError> {
-    let mut out = Vec::with_capacity(variant.genotypes.len());
-    for genotype in &variant.genotypes {
-        if no_annotations {
-            out.push(vec![None; genotype.len()]);
-            continue;
-        }
-        let mut called = Vec::with_capacity(genotype.len());
-        for allele in genotype {
-            called.push(match allele {
-                None => None,
-                Some(0) => Some(0),
-                Some(index) if *index == alternate => Some(1),
-                // An alternate this record did not keep: the reference, not a no-call.
-                Some(_) => Some(0),
-            });
-        }
-        out.push(called);
-    }
-    Ok(out)
 }
 
 /// `addInfoFieldAnnotations` for the three counts, which is all a split record keeps.
@@ -542,17 +521,14 @@ fn subset_genotypes(
 /// AN is every called allele, AC is the alternate's, and AF is the one over the other. A record
 /// with no genotypes gets none of the three, which is why they vanish however well they survived
 /// the attribute filter.
-fn chromosome_counts(
-    genotypes: &[Vec<Option<usize>>],
-    original_samples: usize,
-) -> Vec<(String, String)> {
+fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(String, String)> {
     if original_samples == 0 {
         return Vec::new();
     }
     let mut allele_number = 0;
     let mut allele_count = 0;
     for genotype in genotypes {
-        for allele in genotype.iter().flatten() {
+        for allele in genotype.alleles.iter().flatten() {
             allele_number += 1;
             if *allele == 1 {
                 allele_count += 1;

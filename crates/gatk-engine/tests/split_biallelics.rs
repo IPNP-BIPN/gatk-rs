@@ -12,6 +12,7 @@
 //!  * **and every output is right trimmed on its own**, so two alternates land in two places.
 
 use gatk_corpus as corpus;
+use gatk_engine::subset_alleles::Genotype;
 use gatk_engine::variant_context_utils::{split_variant_context_to_biallelics, Allele, Variant};
 
 fn golden() -> String {
@@ -75,27 +76,34 @@ fn attributes(text: &str) -> Vec<(String, String)> {
 }
 
 /// `s0=A/C;s1=C/G` back into allele indices, an empty call being a no-call.
-fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<Option<usize>>> {
+fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Genotype> {
     if text.is_empty() {
         return Vec::new();
     }
     text.split(';')
         .map(|entry| {
             let (_, called) = entry.split_once('=').expect("a sample");
-            called
-                .split('/')
-                .map(|bases| {
-                    if bases.is_empty() {
-                        return None;
-                    }
-                    Some(
-                        alleles
-                            .iter()
-                            .position(|allele| allele.bases == bases.as_bytes())
-                            .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
-                    )
-                })
-                .collect()
+            Genotype {
+                alleles: called
+                    .split('/')
+                    .map(|bases| {
+                        if bases.is_empty() {
+                            return None;
+                        }
+                        Some(
+                            alleles
+                                .iter()
+                                .position(|allele| allele.bases == bases.as_bytes())
+                                .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
+                        )
+                    })
+                    .collect(),
+                pl: None,
+                gq: None,
+                ad: None,
+                dp: None,
+                attributes: Vec::new(),
+            }
         })
         .collect()
 }
@@ -139,6 +147,7 @@ fn rendered(variant: &Variant, samples: &[String]) -> String {
         .zip(samples)
         .map(|(genotype, sample)| {
             let called: Vec<String> = genotype
+                .alleles
                 .iter()
                 .map(|allele| match allele {
                     None => String::new(),
@@ -243,7 +252,7 @@ fn one_het_non_ref_call_empties_everything() {
         assert!(record
             .genotypes
             .iter()
-            .all(|genotype| genotype.iter().all(Option::is_none)));
+            .all(|genotype| genotype.alleles.iter().all(Option::is_none)));
     }
 }
 

@@ -2318,6 +2318,30 @@
           "why": "30 rows: fifteen subsettings of six genotypes, covering each way of keeping the alleles of a three-allele site, all four assignment methods, a PL array of the wrong length, a genotype with a GQ and no PLs, the two no-data cases, and the attributes that are removed. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31721036590, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-with-likelihoods",
+      "status": "oracle-backed",
+      "title": "Splitting a record whose genotypes carry likelihoods",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The junction between the splitter and the subsetting: what a real genotyped vcf goes through, which split-biallelics measured without likelihoods and subset-alleles measured one genotype at a time. EVERY OUTPUT RECORD CARRIES ITS OWN SUBSET of the PLs, so one record with two alternates leaves two whose likelihood vectors are different permutations of the same six numbers, each rescaled on its own, with its own GQ. AND THE CALL DOES NOT FOLLOW THE PLs: under BEST_MATCH_TO_ORIGINAL a sample whose alternate this record dropped is called HOM-REF even where its own subset likelihoods make the heterozygote the most likely genotype by 10 phred, so `A/G` comes out `A/A` beside PLs of `10,0,30`. THE AC AND AF ARE RECOMPUTED FROM THE SUBSET CALLS, so a sample counts towards one record and not the other, and a hom-alt gives AF=1.0 in its own record and 0.0 in the other. ONE HET-NON-REF GENOTYPE STILL EMPTIES EVERYTHING, calls, likelihoods, AD and attributes, keeping only the depth. THE AD IS SPLIT BY ALLELE and the dropped alternate's depth is gone rather than folded into the reference. A SAMPLE WITHOUT LIKELIHOODS KEEPS ITS GQ beside one that has them and loses it. AND THE TRIMMING STILL HAPPENS AFTER ALL OF IT, so one record moves to 100-102 while its genotypes are being rewritten.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 19,
+      "expect_contains": [
+        "out\ttwo-samples\t0\t100-100\tA(ref),C\tAC=1;AF=0.25;AN=4\ts0=A/C|50,0,60|50|10,12|30;s1=A/A|10,0,30|10|9,4|24",
+        "out\thom-alt\t1\t100-100\tA(ref),G\tAC=2;AF=1.0;AN=2\ts0=G/G|70,30,0|30|2,15|20",
+        "out\tindels\t1\t100-102\tACG(ref),ACGT\tAC=0;AF=0.0;AN=2\ts0=ACG/ACG|10,0,30|10|6,5|18"
+      ],
+      "cases": [
+        {
+          "dump": "SplitWithLikelihoodsDump",
+          "golden": "crates/gatk-engine/tests/data/split_with_likelihoods.txt.gz",
+          "why": "19 rows: six genotyped records through the splitter, covering two samples het for different alternates, a hom-alt, a het-non-ref that empties everything, indels that trim to different places, a sample without likelihoods beside one with them, and a four-allele record that leaves three. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31727125181, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []

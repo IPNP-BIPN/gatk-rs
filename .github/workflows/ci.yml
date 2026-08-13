@@ -112,89 +112,93 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/21"
+            index: "1/22"
             slug: "annotation-original-alignment-annotation-per-allele-variant-getters-annotation-likelihood-counts-genotyper-allele-likelihoods"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
-            index: "2/21"
+            index: "2/22"
             slug: "genotyper-allele-list-annotation-counting-readfilters-readsdatasource-referencecontext"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
-            index: "3/21"
+            index: "3/22"
             slug: "readwalker-printreads-record-transform-fix-misencoded-add-oa-tags"
             suites: "readwalker printreads record-transform fix-misencoded add-oa-tags"
           - group: oracle-backed
-            index: "4/21"
+            index: "4/22"
             slug: "print-distant-mates-split-reads-left-align-indels-left-align-indels-tool-clip-reads"
             suites: "print-distant-mates split-reads left-align-indels left-align-indels-tool clip-reads"
           - group: oracle-backed
-            index: "5/21"
+            index: "5/22"
             slug: "transfer-read-tags-print-reads-header-post-process-reads-for-rsem-convert-headerless-shard-gatk-report"
             suites: "transfer-read-tags print-reads-header post-process-reads-for-rsem convert-headerless-shard gatk-report"
           - group: oracle-backed
-            index: "6/21"
+            index: "6/22"
             slug: "recal-datum-covariates-qual-quantizer-recalibration-tables-gatk-report-reader"
             suites: "recal-datum covariates qual-quantizer recalibration-tables gatk-report-reader"
           - group: oracle-backed
-            index: "7/21"
+            index: "7/22"
             slug: "bqsr-transformer-recalibration-report-apply-bqsr-baq-base-recalibration-engine"
             suites: "bqsr-transformer recalibration-report apply-bqsr baq base-recalibration-engine"
           - group: oracle-backed
-            index: "8/21"
+            index: "8/22"
             slug: "base-recalibrator-read-anonymizer-intervalwalker-alignmentstate-pileupelement"
             suites: "base-recalibrator read-anonymizer intervalwalker alignmentstate pileupelement"
           - group: oracle-backed
-            index: "9/21"
+            index: "9/22"
             slug: "intervalfile-jexlfilter-featurecache-readpileup-readstates"
             suites: "intervalfile jexlfilter featurecache readpileup readstates"
           - group: oracle-backed
-            index: "10/21"
+            index: "10/22"
             slug: "locusiterator-acbuilder-locuswalker-javarandom-reservoir"
             suites: "locusiterator acbuilder locuswalker javarandom reservoir"
           - group: oracle-backed
-            index: "11/21"
+            index: "11/22"
             slug: "well19937c-leveling-variantwalker-activityprofile-assemblyregion"
             suites: "well19937c leveling variantwalker activityprofile assemblyregion"
           - group: oracle-backed
-            index: "12/21"
+            index: "12/22"
             slug: "intervaliterators-assemblyregioniterator-assemblyregionwalker-mann-whitney-annotation-rank-sum"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
-            index: "13/21"
+            index: "13/22"
             slug: "annotation-strand-bias-annotation-read-grouping-annotation-depth-per-allele-annotation-flow-annotation-site-statistics"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
           - group: oracle-backed
-            index: "14/21"
+            index: "14/22"
             slug: "annotation-heterozygosity-and-mq-annotation-allele-specific-rank-sum-annotation-allele-specific-strand-bias-annotation-allele-specific-site-statistics-annotation-pedigree"
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
           - group: oracle-backed
-            index: "15/21"
+            index: "15/22"
             slug: "annotation-fragment-counts-annotation-haplotype-filtering-multipasswalker-barclay-value-model-barclay-tagged-arguments"
             suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model barclay-tagged-arguments"
           - group: oracle-backed
-            index: "16/21"
+            index: "16/22"
             slug: "barclay-argument-collections-barclay-arguments-file-barclay-plugin-descriptors-natural-log-utils-somatic-likelihoods"
             suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
           - group: oracle-backed
-            index: "17/21"
+            index: "17/22"
             slug: "decimal-format-allele-pseudo-depth-counting-walkers-sa-tag-builder-overhang-fixing-manager"
             suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder overhang-fixing-manager"
           - group: oracle-backed
-            index: "18/21"
+            index: "18/22"
             slug: "split-n-cigar-reads-methylation-type-caller-get-sample-name-compare-base-qualities-sam-pileup-codec"
             suites: "split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities sam-pileup-codec"
           - group: oracle-backed
-            index: "19/21"
+            index: "19/22"
             slug: "check-pileup-dump-tabix-index-tsv-table-pileup-summary-contamination-tables"
             suites: "check-pileup dump-tabix-index tsv-table pileup-summary contamination-tables"
           - group: oracle-backed
-            index: "20/21"
+            index: "20/22"
             slug: "persistence-optimizer-analyze-covariates-remove-nearby-indels-update-vcf-sequence-dictionary-left-align-and-trim"
             suites: "persistence-optimizer analyze-covariates remove-nearby-indels update-vcf-sequence-dictionary left-align-and-trim"
           - group: oracle-backed
-            index: "21/21"
+            index: "21/22"
             slug: "trim-alleles-split-biallelics-left-align-and-trim-variants-genotype-index-subset-alleles"
             suites: "trim-alleles split-biallelics left-align-and-trim-variants genotype-index subset-alleles"
+          - group: oracle-backed
+            index: "22/22"
+            slug: "split-with-likelihoods"
+            suites: "split-with-likelihoods"
     steps:
       - uses: actions/checkout@v4
 
