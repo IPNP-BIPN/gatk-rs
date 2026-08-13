@@ -2146,6 +2146,32 @@
           "why": "102 rows: eight input vcfs and eleven runs of the tool over them, including the same file at the spacing that keeps a pair and the one that drops it, a chain of three indels, a contig boundary, a file ending on an indel, two multi-allelic sites of which one is MIXED and therefore not an indel, and one file where every record is dropped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31637109094, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "update-vcf-sequence-dictionary",
+      "status": "golden-pending",
+      "title": "UpdateVCFSequenceDictionary, the second variant transform",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "UpdateVCFSequenceDictionary"
+      ],
+      "why": "The second member of the variant-transform archetype and the calibration point: the same walker shape as RemoveNearbyIndels doing something else, replacing a vcf's contig lines with a dictionary taken from elsewhere. THE HEADER IS REBUILT FROM getMetaDataInInputOrder() where RemoveNearbyIndels uses getMetaDataInSortedOrder(), AND THE DIFFERENCE NEVER REACHES THE FILE, because the writer emits the lines in its own order: an input carrying INFO before ALT comes out ALT before INFO either way. setSequenceDictionary REPLACES the contig lines rather than adding to them, so a contig the input had and the dictionary lacks is gone from the header while its records are refused only when they are reached. WITHOUT --replace AN INPUT THAT ALREADY HAS A DICTIONARY IS REFUSED, and the message names the FEATURE INPUT's name, `drivingVariantFile`, not the file. A VARIANT ON AN ABSENT CONTIG IS REFUSED with its ID quoted, which is \".\" when the record has none, and A VARIANT THAT ENDS PAST THE SEQUENCE LENGTH IS REFUSED TOO, where the end is vc.getEnd() and the INFO field END overrides it: a one-base record with END=250000001 is refused. THE VALIDATION IS PER RECORD AND THE WRITER IS ALREADY OPEN, so a header and every earlier record are on disk before the refusal. AN EMPTY DICTIONARY SOURCE IS A BadArgumentValue naming the source; A SEQUENCE OF UNKNOWN LENGTH, WHICH IS LN:0, IS A DIFFERENT EXCEPTION ENTIRELY; giving BOTH dictionary arguments is a plain CommandLineException; and giving NEITHER is a MissingArgument naming only source-dictionary.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 71,
+      "expect_contains": [
+        "error\twith-contigs-refused\torg.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue:Illegal argument value: The input variant file drivingVariantFile already contains a sequence dictionary.",
+        "error\tboth-dictionaries\torg.broadinstitute.barclay.argparser.CommandLineException:Only one of sequence-dictionary or source-dictionary may be specified on the command line",
+        "vcfline\tpartial-partial\tchr1\\t100\\t.\\tA\\tC\\t.\\t.\\t."
+      ],
+      "cases": [
+        {
+          "dump": "UpdateVCFSequenceDictionaryDump",
+          "golden": null,
+          "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk."
+        }
+      ]
     }
   ],
   "probes": []

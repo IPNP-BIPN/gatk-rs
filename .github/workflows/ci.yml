@@ -191,6 +191,10 @@ jobs:
             index: "20/20"
             slug: "persistence-optimizer-analyze-covariates-remove-nearby-indels"
             suites: "persistence-optimizer analyze-covariates remove-nearby-indels"
+          - group: golden-pending
+            index: "1/1"
+            slug: "update-vcf-sequence-dictionary"
+            suites: "update-vcf-sequence-dictionary"
     steps:
       - uses: actions/checkout@v4
 
