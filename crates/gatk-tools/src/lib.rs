@@ -35,3 +35,4 @@ pub mod split_n_cigar_reads;
 pub mod split_reads;
 pub mod transfer_read_tags;
 pub mod unmark_duplicates;
+pub mod update_vcf_sequence_dictionary;
