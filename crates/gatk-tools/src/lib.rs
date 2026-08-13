@@ -33,6 +33,7 @@ pub mod read_walker;
 pub mod remove_nearby_indels;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
+pub mod select_variants;
 pub mod split_n_cigar_reads;
 pub mod split_reads;
 pub mod transfer_read_tags;
