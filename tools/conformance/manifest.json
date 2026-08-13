@@ -2247,7 +2247,7 @@
     },
     {
       "id": "left-align-and-trim-variants",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "LeftAlignAndTrimVariants, the tool",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2266,8 +2266,8 @@
       "cases": [
         {
           "dump": "LeftAlignAndTrimVariantsDump",
-          "golden": null,
-          "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish."
+          "golden": "crates/gatk-tools/tests/data/left_align_and_trim_variants.txt.gz",
+          "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31688879823, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
