@@ -2422,6 +2422,35 @@
           "why": "55 rows: seven calls to the expression matcher on its own and nineteen runs of the tool, of which sixteen write a file and three refuse, covering the unanchored match, the two different ways an empty selection becomes the whole cohort, the sorted output order, exclusion beating inclusion, the four-paragraph missing-name refusal and the regex engine's own. Six samples written in an order that is not their sorted order, one of them a substring of another. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31750844820, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "java-regex",
+      "status": "oracle-backed",
+      "title": "java.util.regex as GATK asks it, compile and find()",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What `-se`, `-xl-se` and ClipReads' `-X` compile, and what they then call: find(), a SEARCH, which is why `-se s1` selects a sample named `xs10`. `$` MATCHES BEFORE A FINAL LINE TERMINATOR and takes a trailing CRLF as one. `.` REFUSES FOUR LINE TERMINATORS and not one. THE PREDEFINED CLASSES ARE ASCII without UNICODE_CHARACTER_CLASS, so an Arabic-Indic digit is not a digit and an accented letter is not a word character. POSSESSIVE QUANTIFIERS TAKE AND NEVER GIVE BACK, so `^.*+1$` fails where `^.*1$` succeeds. Matching backtracks and alternation prefers the branch written first. A class whose first character is `]` contains it. AND A COMPILE FAILURE CARRIES A DESCRIPTION AND AN INDEX that reach the user unwrapped, with the index not always where a reader would put it: `a)` reports 0 and a trailing backslash reports 1, so the invalid patterns vary their prefix to pin the rule rather than one example of it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 2138,
+      "expect_contains": [
+        "find\ts1\txs10\ttrue",
+        "find\t^s1$\ts1\\r\\n\ttrue",
+        "find\t^.*+1$\ts1\tfalse",
+        "find\t\\\\d\t\\u0663\tfalse",
+        "compile\t{2}\tok",
+        "compile\t{a}\terror\tIllegal repetition\t1\tIllegal repetition near index 1\\n{a}\\n ^",
+        "compile\t)\terror\tUnmatched closing ')'\t-1\tUnmatched closing ')'\\n)",
+        "compile\ta{2,1}\terror\tIllegal repetition range\t5\tIllegal repetition range near index 5\\na{2,1}\\n     ^"
+      ],
+      "cases": [
+        {
+          "dump": "JavaRegexDump",
+          "golden": "crates/gatk-engine/tests/data/java_regex.txt.gz",
+          "why": "2138 rows: eighty-four patterns compiled and, where they compile, searched against thirty-one inputs. The patterns cover what a sample expression is, the constructs a subset may leave out, and thirty-four invalid or awkward ones whose prefix is varied so each rule is measured rather than guessed. An unclosed class reports the bracket, an unclosed group the character after it, an unmatched `)` the one BEFORE it (so a bare `)` reports -1 and gets no caret line at all), a bad repetition range the closing brace, a count that is not a count the character after the brace, and a trailing backslash the end, where the caret is again omitted. `{2}` with nothing before it COMPILES and matches everywhere, because the brace quantifies the empty atom. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31754530353, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []

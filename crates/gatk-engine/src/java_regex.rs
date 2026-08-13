@@ -46,21 +46,32 @@ pub struct Pattern {
 pub struct PatternSyntaxError {
     /// The description, e.g. `Unclosed character class`.
     pub description: String,
-    /// The index the caret points at, in characters.
-    pub index: usize,
+    /// The index the caret points at, in characters. Negative where Java has nothing to point
+    /// at: a bare `)` reports -1.
+    pub index: i32,
     pub pattern: String,
 }
 
 impl PatternSyntaxError {
-    /// `getMessage()`: the description, the pattern, and a caret line.
+    /// `getMessage()`, whose three parts are each conditional.
+    ///
+    /// Java appends the "near index" clause only for a non-negative index, and the caret line only
+    /// when that index is inside the pattern. A bare `)` reports -1 and gets neither; a trailing
+    /// backslash reports the length and gets the clause without the caret.
     pub fn message(&self) -> String {
-        format!(
-            "{} near index {}\n{}\n{}^",
-            self.description,
-            self.index,
-            self.pattern,
-            " ".repeat(self.index)
-        )
+        let mut out = self.description.clone();
+        if self.index >= 0 {
+            out.push_str(&format!(" near index {}", self.index));
+        }
+        out.push('\n');
+        out.push_str(&self.pattern);
+        let length = self.pattern.chars().count() as i32;
+        if self.index >= 0 && self.index < length {
+            out.push('\n');
+            out.push_str(&" ".repeat(self.index as usize));
+            out.push('^');
+        }
+        out
     }
 
     pub fn java_class(&self) -> &'static str {
@@ -136,7 +147,7 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn error(&self, description: &str, index: usize) -> PatternSyntaxError {
+    fn error(&self, description: &str, index: i32) -> PatternSyntaxError {
         PatternSyntaxError {
             description: description.to_string(),
             index,
@@ -168,7 +179,15 @@ impl<'a> Parser<'a> {
             if character == '|' || character == ')' {
                 break;
             }
-            let atom = self.parse_atom()?;
+            // Measured: `{2}` with nothing before it compiles, and matches everywhere. Java reads
+            // the brace as a quantifier over the EMPTY atom rather than as a literal or an error,
+            // which is why it is the one metacharacter that may open an expression. `*` in the
+            // same place is a dangling meta character.
+            let atom = if character == '{' {
+                Node::Sequence(Vec::new())
+            } else {
+                self.parse_atom()?
+            };
             let node = self.parse_quantifier(atom)?;
             nodes.push(node);
         }
@@ -187,21 +206,25 @@ impl<'a> Parser<'a> {
                 if self.peek() == Some('?') {
                     // Non-capturing groups, look-around and named groups all start `(?`; only the
                     // first is representable here and telling them apart is not worth guessing.
-                    return Err(self.error("Unsupported group", self.at));
+                    // Java reads `(?` as an inline modifier and names it that way; the
+                    // constructs it introduces are all outside this subset either way.
+                    return Err(self.error("Unknown inline modifier", self.at as i32 + 1));
                 }
                 let inner = self.parse_alternation()?;
                 if self.peek() != Some(')') {
-                    return Err(self.error("Unclosed group", self.pattern.len()));
+                    // Measured: the index is the character AFTER the `(`.
+                    return Err(self.error("Unclosed group", start as i32 + 1));
                 }
                 self.at += 1;
                 Ok(inner)
             }
-            ')' => Err(self.error("Unmatched closing ')'", start)),
+            ')' => Err(self.error("Unmatched closing ')'", start as i32 - 1)),
             '[' => self.parse_class(start),
             '\\' => self.parse_escape(start),
-            '*' | '+' | '?' => {
-                Err(self.error(&format!("Dangling meta character '{character}'"), start))
-            }
+            '*' | '+' | '?' => Err(self.error(
+                &format!("Dangling meta character '{character}'"),
+                start as i32,
+            )),
             other => Ok(Node::Literal(other)),
         }
     }
@@ -209,7 +232,8 @@ impl<'a> Parser<'a> {
     /// A `\` and what follows it, either a shorthand class or a literal.
     fn parse_escape(&mut self, start: usize) -> Result<Node, PatternSyntaxError> {
         let Some(character) = self.peek() else {
-            return Err(self.error("Unexpected internal error", start));
+            // Measured: a trailing backslash reports the length, and gets no caret line.
+            return Err(self.error("Unexpected internal error", self.at as i32));
         };
         self.at += 1;
         match character {
@@ -225,9 +249,9 @@ impl<'a> Parser<'a> {
             'f' => Ok(Node::Literal('\u{c}')),
             'a' => Ok(Node::Literal('\u{7}')),
             'e' => Ok(Node::Literal('\u{1b}')),
-            '0'..='9' => Err(self.error("Unsupported escape sequence", start)),
+            '0'..='9' => Err(self.error("Unsupported escape sequence", start as i32)),
             other if other.is_ascii_alphabetic() => {
-                Err(self.error("Unsupported escape sequence", start))
+                Err(self.error("Unsupported escape sequence", start as i32))
             }
             other => Ok(Node::Literal(other)),
         }
@@ -244,7 +268,7 @@ impl<'a> Parser<'a> {
         let mut first = true;
         loop {
             let Some(character) = self.peek() else {
-                return Err(self.error("Unclosed character class", start));
+                return Err(self.error("Unclosed character class", start as i32));
             };
             if character == ']' && !first {
                 self.at += 1;
@@ -274,7 +298,7 @@ impl<'a> Parser<'a> {
                 }
             } else if character == '[' {
                 // Java reads a nested `[` as the start of a union, which this does not represent.
-                return Err(self.error("Unsupported class union", self.at - 1));
+                return Err(self.error("Unsupported class union", self.at as i32 - 1));
             } else {
                 Some(character)
             };
@@ -292,10 +316,14 @@ impl<'a> Parser<'a> {
                 let high = self.peek().expect("a range end");
                 self.at += 1;
                 if high == '\\' {
-                    return Err(self.error("Unsupported escaped range", self.at - 1));
+                    // Measured: `[a-\d]` is "Illegal character range" pointing at the letter, one
+                    // past the backslash. An escape that stands for a single character would be a
+                    // valid range end in the reference; this subset has none of those, so the
+                    // whole case lands here.
+                    return Err(self.error("Illegal character range", self.at as i32));
                 }
                 if high < low {
-                    return Err(self.error("Illegal character range", self.at - 1));
+                    return Err(self.error("Illegal character range", self.at as i32 - 1));
                 }
                 members.push(ClassMember::Range(low, high));
             } else {
@@ -333,11 +361,13 @@ impl<'a> Parser<'a> {
             self.at += 1;
         }
         if low.is_empty() {
-            return Err(self.error("Unclosed counted closure", open + 1));
+            // Measured: `{a}`, `{}` and `a{,2}` are all "Illegal repetition" at the character
+            // after the brace, while `{2` unterminated is an "Unclosed counted closure".
+            return Err(self.error("Illegal repetition", open as i32 + 1));
         }
         let min: usize = low
             .parse()
-            .map_err(|_| self.error("Illegal repetition", open))?;
+            .map_err(|_| self.error("Illegal repetition", open as i32))?;
         let max = match self.peek() {
             Some('}') => min,
             Some(',') => {
@@ -351,13 +381,17 @@ impl<'a> Parser<'a> {
                     usize::MAX
                 } else {
                     high.parse()
-                        .map_err(|_| self.error("Illegal repetition", open))?
+                        .map_err(|_| self.error("Illegal repetition", open as i32))?
                 }
             }
-            _ => return Err(self.error("Unclosed counted closure", self.at)),
+            _ => return Err(self.error("Unclosed counted closure", self.at as i32)),
         };
         if self.peek() != Some('}') {
-            return Err(self.error("Unclosed counted closure", self.at));
+            return Err(self.error("Unclosed counted closure", self.at as i32));
+        }
+        // Measured: a range whose low is above its high reports the CLOSING BRACE.
+        if min > max {
+            return Err(self.error("Illegal repetition range", self.at as i32));
         }
         self.at += 1;
         Ok(Node::Repeat {
@@ -401,8 +435,9 @@ impl Pattern {
         };
         let node = parser.parse_alternation()?;
         if parser.at < characters.len() {
-            // Only a `)` can stop the parse without consuming the input.
-            return Err(parser.error("Unmatched closing ')'", parser.at));
+            // Only a `)` can stop the parse without consuming the input, and Java points at the
+            // character before it.
+            return Err(parser.error("Unmatched closing ')'", parser.at as i32 - 1));
         }
         Ok(Pattern {
             node,
