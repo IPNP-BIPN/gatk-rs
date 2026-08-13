@@ -193,12 +193,8 @@ jobs:
             suites: "persistence-optimizer analyze-covariates remove-nearby-indels update-vcf-sequence-dictionary left-align-and-trim"
           - group: oracle-backed
             index: "21/21"
-            slug: "trim-alleles-split-biallelics-left-align-and-trim-variants-genotype-index"
-            suites: "trim-alleles split-biallelics left-align-and-trim-variants genotype-index"
-          - group: golden-pending
-            index: "1/1"
-            slug: "subset-alleles"
-            suites: "subset-alleles"
+            slug: "trim-alleles-split-biallelics-left-align-and-trim-variants-genotype-index-subset-alleles"
+            suites: "trim-alleles split-biallelics left-align-and-trim-variants genotype-index subset-alleles"
     steps:
       - uses: actions/checkout@v4
 

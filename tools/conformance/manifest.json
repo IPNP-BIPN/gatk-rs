@@ -2297,7 +2297,7 @@
     },
     {
       "id": "subset-alleles",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "subsetAlleles, what a split does to a genotype's likelihoods",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2314,8 +2314,8 @@
       "cases": [
         {
           "dump": "SubsetAllelesDump",
-          "golden": null,
-          "why": "30 rows: fifteen subsettings of six genotypes, covering each way of keeping the alleles of a three-allele site, all four assignment methods, a PL array of the wrong length, a genotype with a GQ and no PLs, the two no-data cases, and the attributes that are removed."
+          "golden": "crates/gatk-engine/tests/data/subset_alleles.txt.gz",
+          "why": "30 rows: fifteen subsettings of six genotypes, covering each way of keeping the alleles of a three-allele site, all four assignment methods, a PL array of the wrong length, a genotype with a GQ and no PLs, the two no-data cases, and the attributes that are removed. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31721036590, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
