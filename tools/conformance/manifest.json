@@ -2149,7 +2149,7 @@
     },
     {
       "id": "update-vcf-sequence-dictionary",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "UpdateVCFSequenceDictionary, the second variant transform",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2168,8 +2168,8 @@
       "cases": [
         {
           "dump": "UpdateVCFSequenceDictionaryDump",
-          "golden": null,
-          "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk."
+          "golden": "crates/gatk-tools/tests/data/update_vcf_sequence_dictionary.txt.gz",
+          "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31681979381, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
