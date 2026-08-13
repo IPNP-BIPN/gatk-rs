@@ -11,6 +11,7 @@
 //!  * **and the genotypes are remapped**, which is visible only because the alleles moved.
 
 use gatk_corpus as corpus;
+use gatk_engine::subset_alleles::Genotype;
 use gatk_engine::variant_context_utils::{
     left_align_and_trim, left_align_and_trim_reporting, Alignment, Allele, Variant,
 };
@@ -85,24 +86,31 @@ fn alleles(text: &str) -> Vec<Allele> {
 }
 
 /// `s1=AA/A;s2=A/A` back into allele indices, which is how the port carries a genotype.
-fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<Option<usize>>> {
+fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Genotype> {
     if text.is_empty() {
         return Vec::new();
     }
     text.split(';')
         .map(|entry| {
             let (_, called) = entry.split_once('=').expect("a sample");
-            called
-                .split('/')
-                .map(|bases| {
-                    Some(
-                        alleles
-                            .iter()
-                            .position(|allele| allele.bases == bases.as_bytes())
-                            .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
-                    )
-                })
-                .collect()
+            Genotype {
+                alleles: called
+                    .split('/')
+                    .map(|bases| {
+                        Some(
+                            alleles
+                                .iter()
+                                .position(|allele| allele.bases == bases.as_bytes())
+                                .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
+                        )
+                    })
+                    .collect(),
+                pl: None,
+                gq: None,
+                ad: None,
+                dp: None,
+                attributes: Vec::new(),
+            }
         })
         .collect()
 }
@@ -215,10 +223,12 @@ fn the_genotypes_are_remapped_with_the_alleles() {
     let text = golden();
     let bases = reference(&text);
     let input = variant(&row(&text, "in", "with-genotypes"));
-    assert_eq!(
-        input.genotypes,
-        vec![vec![Some(0), Some(1)], vec![Some(1), Some(1)]]
-    );
+    let calls: Vec<Vec<Option<usize>>> = input
+        .genotypes
+        .iter()
+        .map(|genotype| genotype.alleles.clone())
+        .collect();
+    assert_eq!(calls, vec![vec![Some(0), Some(1)], vec![Some(1), Some(1)]]);
     let ours = left_align_and_trim(&input, &bases, 1000, true).expect("aligned");
     assert_eq!(ours.genotypes, input.genotypes);
 
@@ -230,6 +240,7 @@ fn the_genotypes_are_remapped_with_the_alleles() {
         .zip(["s1", "s2"])
         .map(|(genotype, sample)| {
             let called: Vec<String> = genotype
+                .alleles
                 .iter()
                 .map(|index| {
                     String::from_utf8_lossy(&ours.alleles[index.expect("a call")].bases).to_string()
