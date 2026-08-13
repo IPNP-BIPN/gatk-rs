@@ -2199,7 +2199,7 @@
     },
     {
       "id": "trim-alleles",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "trimAlleles, the other half of LeftAlignAndTrimVariants",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2216,8 +2216,8 @@
       "cases": [
         {
           "dump": "TrimAllelesDump",
-          "golden": null,
-          "why": "51 rows: seventeen records through the trimmer, covering a shared prefix, a shared suffix, both at once, each direction asked for on its own, the length-one allele that stops everything, the spanning deletion and the symbolic allele that do not, an allele trimmed to nothing from either end, and genotypes remapped through the map."
+          "golden": "crates/gatk-engine/tests/data/trim_alleles.txt.gz",
+          "why": "51 rows: seventeen records through the trimmer, covering a shared prefix, a shared suffix, both at once, each direction asked for on its own, the length-one allele that stops everything, the spanning deletion and the symbolic allele that do not, an allele trimmed to nothing from either end, and genotypes remapped through the map. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31686824619, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
