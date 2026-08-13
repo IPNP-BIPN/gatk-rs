@@ -2345,7 +2345,7 @@
     },
     {
       "id": "variant-filtration",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "VariantFiltration, the FILTER column",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2364,8 +2364,8 @@
       "cases": [
         {
           "dump": "VariantFiltrationDump",
-          "golden": null,
-          "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written."
+          "golden": "crates/gatk-tools/tests/data/variant_filtration.txt.gz",
+          "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31731234951, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
