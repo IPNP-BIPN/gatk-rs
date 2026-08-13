@@ -2244,6 +2244,32 @@
           "why": "58 rows: twelve records through the splitter, covering the two shapes that never split, alternates of equal and differing lengths, left trimming on and off, attributes with and without genotypes to recompute them from, and the single het-non-ref call that empties everything. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31687913996, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "left-align-and-trim-variants",
+      "status": "oracle-backed",
+      "title": "LeftAlignAndTrimVariants, the tool",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "LeftAlignAndTrimVariants"
+      ],
+      "why": "The tool the last three bricks were built for. Its own logic is short: choose a window, call leftAlignAndTrim, remember the record just written. THE WINDOW IS BOUNDED BY THE PREVIOUS RECORD, min(maxLeadingBases, distanceToLastVariant - 1), measured from that record's END to this one's START, AND THE PREVIOUS RECORD IS THE ONE AS WRITTEN, NOT AS READ: lastVariant is the ALIGNED record, which has moved left, so aligning a variant RELAXES the bound on the next. Two indels a base apart in the input are eight apart by the time the second is measured, and both move. A NEW CONTIG IS Integer.MAX_VALUE AWAY, so the bound does not cross one. AN INDEL LONGER THAN --max-indel-length IS WRITTEN UNCHANGED and STILL BECOMES lastVariant, so it bounds the record after it though it was never aligned: the same file gives a deletion at 30 by default and at 34 with --max-indel-length 5. --dont-trim-alleles passes !dontTrimAlleles down, so a record moves without shrinking. --split-multi-allelics SPLITS FIRST AND ALIGNS EACH PIECE, and the pieces bound EACH OTHER through the same lastVariant, so one record at 17 becomes two at 10 and 12 rather than two at 10. AND THE HEADER'S CONTIG LINES COME FROM THE REFERENCE, so a contig the input never mentions is in the output header, carrying assembly=reference.fasta.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 128,
+      "expect_contains": [
+        "vcfline\tmultiallelic-split\tchr1\\t12\\t.\\tA\\tAA\\t.\\t.\\t.",
+        "vcfline\tlong-indel-skipped\tchr1\\t34\\t.\\tTTTTTTTTTTTTTTTTTTTTTTTTTT\\tT\\t.\\t.\\t.",
+        "vcfline\tnarrow-window\tchr1\\t15\\t.\\tAA\\tA\\t.\\t.\\t."
+      ],
+      "cases": [
+        {
+          "dump": "LeftAlignAndTrimVariantsDump",
+          "golden": "crates/gatk-tools/tests/data/left_align_and_trim_variants.txt.gz",
+          "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31688879823, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []

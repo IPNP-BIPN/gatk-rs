@@ -18,6 +18,7 @@ pub mod dump_tabix_index;
 pub mod fix_misencoded_base_quality_reads;
 pub mod get_sample_name;
 pub mod interval_walker;
+pub mod left_align_and_trim_variants;
 pub mod left_align_indels;
 pub mod locus_walker;
 pub mod methylation_type_caller;
