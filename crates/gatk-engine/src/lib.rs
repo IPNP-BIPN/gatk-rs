@@ -38,6 +38,7 @@ pub mod interval_args;
 pub mod java_format;
 pub mod java_hash;
 pub mod java_random;
+pub mod java_regex;
 pub mod jexl;
 pub mod locus_iterator;
 pub mod locus_shards;
