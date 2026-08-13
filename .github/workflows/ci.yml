@@ -197,8 +197,8 @@ jobs:
             suites: "trim-alleles split-biallelics left-align-and-trim-variants genotype-index subset-alleles"
           - group: oracle-backed
             index: "22/22"
-            slug: "split-with-likelihoods-variant-filtration"
-            suites: "split-with-likelihoods variant-filtration"
+            slug: "split-with-likelihoods-variant-filtration-gather-vcfs"
+            suites: "split-with-likelihoods variant-filtration gather-vcfs"
     steps:
       - uses: actions/checkout@v4
 

@@ -16,6 +16,7 @@ pub mod convert_headerless_shard;
 pub mod counting_walkers;
 pub mod dump_tabix_index;
 pub mod fix_misencoded_base_quality_reads;
+pub mod gather_vcfs;
 pub mod get_sample_name;
 pub mod interval_walker;
 pub mod left_align_and_trim_variants;
