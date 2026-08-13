@@ -2342,6 +2342,32 @@
           "why": "19 rows: six genotyped records through the splitter, covering two samples het for different alternates, a hom-alt, a het-non-ref that empties everything, indels that trim to different places, a sample without likelihoods beside one with them, and a four-allele record that leaves three. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31727125181, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "variant-filtration",
+      "status": "golden-pending",
+      "title": "VariantFiltration, the FILTER column",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VariantFiltration"
+      ],
+      "why": "A variant transform whose whole job is the FILTER column: JEXL expressions at the site and at the genotype, a clustered-SNP test that looks at neighbours, and a mask read from a second file. THE FILTER SET IS SEEDED FROM THE RECORD'S OWN FILTERS, so an existing filter survives a run that adds another, but THE ORDER IN THE FILE IS THE WRITER'S AND NOT THE TOOL'S: `OldFilter` plus `LowQD` comes out `LowQD;OldFilter`, and two expressions given as LowQD then LowDP come out `LowDP;LowQD`. AN EMPTY SET BECOMES `PASS` AND NOT NOTHING, which the source comments on, EXCEPT under --invalidate-previous-filters where the same emptiness leaves a `.` and wipes the filter the record arrived with. THE CLUSTER TEST IGNORES NON-SNPs as candidate and as neighbour, and a window below 1 disables it: three SNPs within 20 bases are all SnpCluster while the indel between them passes, and the same file at a window of 5 filters nothing. A GENOTYPE FILTER WRITES FT AND KEEPS THE CALL, unless --set-filtered-genotype-to-no-call which replaces it with `./.`, AND THE FT COLUMN IS PER RECORD: it appears only where at least one genotype was filtered, the unfiltered samples of that record then carrying `PASS`, while a record with nothing filtered has no FT field at all. AN EXISTING FT IS CARRIED beside the new names. --invert-filter-expression FLIPS THE MATCH, so the column carries the complement. AND A MISSING ANNOTATION IS NOT A FAILURE unless --missing-values-evaluate-as-failing, which is what decides a record that lacks the field entirely.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 227,
+      "expect_contains": [
+        "vcfline\ttwo-filters\tchr1\\t100\\t.\\tA\\tC\\t50\\tLowDP;LowQD",
+        "vcfline\tcluster\tchr1\\t1005\\t.\\tACG\\tA\\t50\\tPASS",
+        "vcfline\tno-filters-invalidated\tchr1\\t200\\t.\\tA\\tC\\t50\\t."
+      ],
+      "cases": [
+        {
+          "dump": "VariantFiltrationDump",
+          "golden": null,
+          "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written."
+        }
+      ]
     }
   ],
   "probes": []
