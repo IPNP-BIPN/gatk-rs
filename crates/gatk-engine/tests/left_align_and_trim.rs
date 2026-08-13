@@ -85,7 +85,7 @@ fn alleles(text: &str) -> Vec<Allele> {
 }
 
 /// `s1=AA/A;s2=A/A` back into allele indices, which is how the port carries a genotype.
-fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<usize>> {
+fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<Option<usize>>> {
     if text.is_empty() {
         return Vec::new();
     }
@@ -95,10 +95,12 @@ fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<usize>> {
             called
                 .split('/')
                 .map(|bases| {
-                    alleles
-                        .iter()
-                        .position(|allele| allele.bases == bases.as_bytes())
-                        .unwrap_or_else(|| panic!("allele {bases} is not in the record"))
+                    Some(
+                        alleles
+                            .iter()
+                            .position(|allele| allele.bases == bases.as_bytes())
+                            .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
+                    )
                 })
                 .collect()
         })
@@ -115,6 +117,7 @@ fn variant(fields: &[String]) -> Variant {
         stop,
         alleles,
         genotypes,
+        attributes: Vec::new(),
     }
 }
 
@@ -212,7 +215,10 @@ fn the_genotypes_are_remapped_with_the_alleles() {
     let text = golden();
     let bases = reference(&text);
     let input = variant(&row(&text, "in", "with-genotypes"));
-    assert_eq!(input.genotypes, vec![vec![0, 1], vec![1, 1]]);
+    assert_eq!(
+        input.genotypes,
+        vec![vec![Some(0), Some(1)], vec![Some(1), Some(1)]]
+    );
     let ours = left_align_and_trim(&input, &bases, 1000, true).expect("aligned");
     assert_eq!(ours.genotypes, input.genotypes);
 
@@ -225,7 +231,9 @@ fn the_genotypes_are_remapped_with_the_alleles() {
         .map(|(genotype, sample)| {
             let called: Vec<String> = genotype
                 .iter()
-                .map(|index| String::from_utf8_lossy(&ours.alleles[*index].bases).to_string())
+                .map(|index| {
+                    String::from_utf8_lossy(&ours.alleles[index.expect("a call")].bases).to_string()
+                })
                 .collect();
             format!("{sample}={}", called.join("/"))
         })
