@@ -2425,7 +2425,7 @@
     },
     {
       "id": "java-regex",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "java.util.regex as GATK asks it, compile and find()",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2447,8 +2447,8 @@
       "cases": [
         {
           "dump": "JavaRegexDump",
-          "golden": null,
-          "why": "2138 rows: eighty-four patterns compiled and, where they compile, searched against thirty-one inputs. The patterns cover what a sample expression is, the constructs a subset may leave out, and thirty-four invalid or awkward ones whose prefix is varied so each rule is measured rather than guessed. An unclosed class reports the bracket, an unclosed group the character after it, an unmatched `)` the one BEFORE it (so a bare `)` reports -1 and gets no caret line at all), a bad repetition range the closing brace, a count that is not a count the character after the brace, and a trailing backslash the end, where the caret is again omitted. `{2}` with nothing before it COMPILES and matches everywhere, because the brace quantifies the empty atom. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/java_regex.txt.gz",
+          "why": "2138 rows: eighty-four patterns compiled and, where they compile, searched against thirty-one inputs. The patterns cover what a sample expression is, the constructs a subset may leave out, and thirty-four invalid or awkward ones whose prefix is varied so each rule is measured rather than guessed. An unclosed class reports the bracket, an unclosed group the character after it, an unmatched `)` the one BEFORE it (so a bare `)` reports -1 and gets no caret line at all), a bad repetition range the closing brace, a count that is not a count the character after the brace, and a trailing backslash the end, where the caret is again omitted. `{2}` with nothing before it COMPILES and matches everywhere, because the brace quantifies the empty atom. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31754530353, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
