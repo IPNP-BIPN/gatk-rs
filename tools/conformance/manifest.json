@@ -2397,7 +2397,7 @@
     },
     {
       "id": "select-variants-samples",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SelectVariants' sample selection, where matching nothing selects everything",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2418,8 +2418,8 @@
       "cases": [
         {
           "dump": "SampleSelectionDump",
-          "golden": null,
-          "why": "55 rows: seven calls to the expression matcher on its own and nineteen runs of the tool, of which sixteen write a file and three refuse, covering the unanchored match, the two different ways an empty selection becomes the whole cohort, the sorted output order, exclusion beating inclusion, the four-paragraph missing-name refusal and the regex engine's own. Six samples written in an order that is not their sorted order, one of them a substring of another. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/select_variants_samples.txt.gz",
+          "why": "55 rows: seven calls to the expression matcher on its own and nineteen runs of the tool, of which sixteen write a file and three refuse, covering the unanchored match, the two different ways an empty selection becomes the whole cohort, the sorted output order, exclusion beating inclusion, the four-paragraph missing-name refusal and the regex engine's own. Six samples written in an order that is not their sorted order, one of them a substring of another. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31750844820, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
