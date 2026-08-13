@@ -2273,7 +2273,7 @@
     },
     {
       "id": "genotype-index",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The genotype index combinatorics under every PL array",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2290,8 +2290,8 @@
       "cases": [
         {
           "dump": "GenotypeIndexDump",
-          "golden": null,
-          "why": "75 rows: twenty-five genotype counts over five ploidies and five allele counts, the canonical order of six shapes, nine indices including one whose pairs are reversed and one refusal, and seven subsettings including a permutation and a subset to the reference alone."
+          "golden": "crates/gatk-engine/tests/data/genotype_index.txt.gz",
+          "why": "75 rows: twenty-five genotype counts over five ploidies and five allele counts, the canonical order of six shapes, nine indices including one whose pairs are reversed and one refusal, and seven subsettings including a permutation and a subset to the reference alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31695413079, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
