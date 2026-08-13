@@ -2172,6 +2172,30 @@
           "why": "71 rows: five input vcfs, four dictionary sources, and eleven runs, of which three write a file and eight refuse, four of those after the header and some records are already on disk. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31681979381, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "left-align-and-trim",
+      "status": "oracle-backed",
+      "title": "leftAlignAndTrim, the workhorse under LeftAlignAndTrimVariants",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The workhorse under LeftAlignAndTrimVariants, measured on its own before the tool. It slides an indel as far left as the reference lets it, WIDENING ITS OWN WINDOW as it goes: `leadingBases = min(maxLeadingBases, 10)` then doubling, so an insertion that walks 19 bases costs two passes. THE LOOP ONLY CONTINUES WHEN THE SHIFT REACHED THE EDGE of the slice, so A WINDOW THAT IS TOO NARROW SILENTLY EMITS A RECORD THAT IS NOT LEFT ALIGNED: the same deletion at max-leading-bases 2 lands at 15, at 10 lands at 49, at 20 at 39, and only a wide enough window reaches the run's start. A SHIFT OF ZERO RETURNS THE SAME OBJECT, and so do maxLeadingBases <= 0 and a non-indel, which is a TYPE test, so a MIXED site is never aligned. THE START AND THE END MOVE BY DIFFERENT AMOUNTS, start by shifts.left and stop by shifts.right, and with trimming on an untrimmed pair of alleles loses its shared trailing base while with trimming off the record moves at full length. GENOTYPES ARE REMAPPED THROUGH THE SAME MAP the alleles came out of, and an allele outside that map would become NO_CALL, which no valid record can reach: htsjdk refuses to build a VariantContext whose genotype calls an allele it does not list.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 58,
+      "expect_contains": [
+        "out\tdeletion-narrow-window\tchr1:15-16\tAA*,A",
+        "out\tinsertion-in-repeat\tchr1:70-70\tG*,GCA",
+        "same\talready-aligned\ttrue"
+      ],
+      "cases": [
+        {
+          "dump": "LeftAlignAndTrimDump",
+          "golden": "crates/gatk-engine/tests/data/left_align_and_trim.txt.gz",
+          "why": "58 rows: nineteen calls over one reference holding two homopolymers and a dinucleotide repeat, covering the doubling window at four widths, both early exits, trimming on and off, genotypes, and a three-allele record the doc says cannot arrive. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31684873068, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
