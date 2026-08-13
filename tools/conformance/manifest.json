@@ -2223,7 +2223,7 @@
     },
     {
       "id": "split-biallelics",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "splitVariantContextToBiallelics, what --split-multiallelics does",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2240,8 +2240,8 @@
       "cases": [
         {
           "dump": "SplitBiallelicsDump",
-          "golden": null,
-          "why": "58 rows: thirteen records through the splitter, covering the two shapes that never split, alternates of equal and differing lengths, left trimming on and off, attributes with and without genotypes to recompute them from, and the single het-non-ref call that empties everything."
+          "golden": "crates/gatk-engine/tests/data/split_biallelics.txt.gz",
+          "why": "58 rows: twelve records through the splitter, covering the two shapes that never split, alternates of equal and differing lengths, left trimming on and off, attributes with and without genotypes to recompute them from, and the single het-non-ref call that empties everything. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31687913996, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
