@@ -2368,6 +2368,32 @@
           "why": "227 rows: three input vcfs and thirteen runs, covering a site expression and its inversion, two expressions at once, the missing-value flag, genotype filters with and without the no-call replacement, the cluster test at three window sizes, the mask both ways round, and the two different ways an empty filter set is written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31731234951, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "gather-vcfs",
+      "status": "golden-pending",
+      "title": "GatherVcfsCloud, two gathering modes and four refusals",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GatherVcfsCloud"
+      ],
+      "why": "Concatenating vcfs that are already in order, which sounds like `cat` and is not. THERE ARE TWO ORDER CHECKS AND THEY THROW DIFFERENT CLASSES: the validation before writing compares the FIRST record of each file and refuses with an IllegalArgumentException, while the conventional writer compares the LAST record written against the next file's first and refuses with an IllegalStateException naming both positions, so files overlapping in the middle pass one and are caught by the other. --disable-contig-ordering-check DOES NOT DISABLE THE CHECK BUT WEAKENS IT, comparing positions only within a contig, and the result is an INVALID FILE: a chr2 shard gathered before a chr1 shard is accepted and the output holds chr2:100 followed by chr1:100. --ignore-safety-checks SKIPS THE SAMPLE-LIST COMPARISON AND WRITES ANYWAY, so a record belonging to s1 is written under a header declaring only s0: the genotype is RELABELLED rather than dropped. A MISSING SEQUENCE DICTIONARY IS REFUSED BY THE INDEXER and not by the validation, with a message about ##contig lines that arrives after validation has passed. AUTOMATIC picks BLOCK only when every input and the output are block compressed, and asking for BLOCK on a plain vcf is a BadInput rather than a fallback. And the output header is the first file's, whichever mode ran.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 55,
+      "expect_contains": [
+        "error\toverlapping-records\tjava.lang.IllegalStateException:First variant in file file:///work/gathervcfs-dump/overlapping.vcf is at chr1:150 but last variant in earlier file file:///work/gathervcfs-dump/first.vcf is at chr1:200",
+        "vcfline\tcontig-out-of-order-check-disabled\tchr2\\t100\\t.\\tA\\tC\\t50\\t.\\t.\\tGT\\t0/1",
+        "error\tdifferent-samples\tjava.lang.IllegalArgumentException:VCFs do not have identical sample lists. Samples unique to first file: [s0]. Samples unique to file:///work/gathervcfs-dump/other-sample.vcf: [s1]."
+      ],
+      "cases": [
+        {
+          "dump": "GatherVcfsDump",
+          "golden": null,
+          "why": "55 rows: six input vcfs and thirteen gathers, of which six write a file and seven refuse, covering both gathering modes, the two different order checks, the two flags that weaken them, and a bgzipped output recorded by size since a compressor is not reproduced here."
+        }
+      ]
     }
   ],
   "probes": []
