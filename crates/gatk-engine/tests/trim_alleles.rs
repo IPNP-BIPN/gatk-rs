@@ -68,7 +68,7 @@ fn alleles(text: &str) -> Vec<Allele> {
 }
 
 /// `s1=ACGT/AGT` back into allele indices.
-fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<usize>> {
+fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<Option<usize>>> {
     if text.is_empty() {
         return Vec::new();
     }
@@ -78,10 +78,12 @@ fn genotypes(text: &str, alleles: &[Allele]) -> Vec<Vec<usize>> {
             called
                 .split('/')
                 .map(|bases| {
-                    alleles
-                        .iter()
-                        .position(|allele| allele.bases == bases.as_bytes())
-                        .unwrap_or_else(|| panic!("allele {bases} is not in the record"))
+                    Some(
+                        alleles
+                            .iter()
+                            .position(|allele| allele.bases == bases.as_bytes())
+                            .unwrap_or_else(|| panic!("allele {bases} is not in the record")),
+                    )
                 })
                 .collect()
         })
@@ -98,6 +100,7 @@ fn variant(fields: &[String]) -> Variant {
         stop,
         alleles,
         genotypes,
+        attributes: Vec::new(),
     }
 }
 

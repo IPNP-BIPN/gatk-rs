@@ -2220,6 +2220,30 @@
           "why": "51 rows: seventeen records through the trimmer, covering a shared prefix, a shared suffix, both at once, each direction asked for on its own, the length-one allele that stops everything, the spanning deletion and the symbolic allele that do not, an allele trimmed to nothing from either end, and genotypes remapped through the map. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31686824619, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-biallelics",
+      "status": "oracle-backed",
+      "title": "splitVariantContextToBiallelics, what --split-multiallelics does",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What --split-multiallelics does in LeftAlignAndTrimVariants: one record with N alternates becomes N records with one each. A NON-VARIANT RECORD BECOMES AN EMPTY LIST rather than a list of one, so it disappears; A BIALLELIC ONE IS RETURNED AS THE SAME OBJECT, untrimmed, so the trimming every split record gets is not applied to one that did not need splitting. ONE HET-NON-REF GENOTYPE ANYWHERE CHANGES THE RULE FOR EVERY RECORD: `hasHetNonRef` swaps the assignment method to SET_TO_NO_CALL_NO_ANNOTATIONS for all of them, so a single 1/2 call in one sample empties the calls of every sample in every output record and strips every attribute. THE ATTRIBUTE FILTER IS A NEGATED DISJUNCTION, so AC, AF and AN survive a normal split, AND THEY ARE THEN RECOMPUTED FROM THE GENOTYPES: three diploid samples give AN=6 and AF=0.16666666666666666, and A RECORD WITH NO GENOTYPES LOSES THEM ALTOGETHER, the recomputation having nothing to count. EVERY OUTPUT IS RIGHT TRIMMED and only left trimmed when asked, so two alternates of different lengths come out AT DIFFERENT POSITIONS, 102-103 and 103-103 from one record. AND THE GENOTYPES ARE SUBSET rather than remapped: with no likelihoods to go on, BEST_MATCH_TO_ORIGINAL turns an allele that is not in the pair into the REFERENCE, so A/G becomes A/A in the record that kept C.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 58,
+      "expect_contains": [
+        "count\tno-alternate\t0",
+        "same\tbiallelic\ttrue",
+        "out\tno-het-non-ref\t0\t100-100\tA(ref),C\tAC=1;AF=0.16666666666666666;AN=6\ts0=A/C;s1=A/A;s2=A/A"
+      ],
+      "cases": [
+        {
+          "dump": "SplitBiallelicsDump",
+          "golden": "crates/gatk-engine/tests/data/split_biallelics.txt.gz",
+          "why": "58 rows: twelve records through the splitter, covering the two shapes that never split, alternates of equal and differing lengths, left trimming on and off, attributes with and without genotypes to recompute them from, and the single het-non-ref call that empties everything. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31687913996, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
