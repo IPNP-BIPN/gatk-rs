@@ -55,6 +55,7 @@
 //! nothing is lost, and it is also why a line-by-line comparison of input and output shows a
 //! difference that is not a rewriting.
 
+use gatk_engine::java_hash::compare_strings;
 use gatk_engine::java_regex::{self, PatternSyntaxError};
 
 /// The four sample arguments and the flag that forgives a missing name.
@@ -130,8 +131,11 @@ pub fn create_sample_name_inclusion_list(
     arguments: &SampleArguments,
 ) -> Result<SampleSelection, SampleSelectionError> {
     // `VcfUtils.getSortedSampleSet` is a TreeSet, so the order the file declares is already lost.
+    // Its order is `String.compareTo`'s, which is UTF-16 code units and not UTF-8 bytes: measured,
+    // the two disagree above the BMP, where a sample named with a supplementary character sorts
+    // before one named `Ａ` in Java and after it under Rust's own `Ord`.
     let mut vcf_samples: Vec<String> = header_samples.to_vec();
-    vcf_samples.sort();
+    vcf_samples.sort_by(|left, right| compare_strings(left, right));
     vcf_samples.dedup();
 
     let from_expressions = filter(&vcf_samples, &arguments.sample_expressions)?;
@@ -187,6 +191,11 @@ fn filter(values: &[String], expressions: &[String]) -> Result<Vec<String>, Samp
 }
 
 /// The `TreeSet<String>` the reference accumulates into: sorted, and without duplicates.
+///
+/// Sorted by `String.compareTo`, which is UTF-16 code-unit order. Rust's own `Ord` for `str` is
+/// UTF-8 byte order, and the two disagree for every supplementary character: `"\u{1f600}"` sorts
+/// before `"\u{ff21}"` in Java and after it here. Sample names are ASCII in practice, and a sort
+/// order that is right in practice is exactly the kind of thing that is wrong once.
 struct SortedSet {
     values: Vec<String>,
 }
@@ -198,7 +207,10 @@ impl SortedSet {
 
     fn extend(&mut self, values: &[String]) {
         for value in values {
-            if let Err(at) = self.values.binary_search(value) {
+            if let Err(at) = self
+                .values
+                .binary_search_by(|held| compare_strings(held, value))
+            {
                 self.values.insert(at, value.clone());
             }
         }
@@ -214,5 +226,32 @@ impl SortedSet {
 
     fn into_vec(self) -> Vec<String> {
         self.values
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    /// `TreeSet<String>` is `String.compareTo`, which is UTF-16 code units. Measured against the
+    /// reference: Java orders a supplementary character before `Ａ`, Rust's own `Ord` after it.
+    #[test]
+    fn the_sorted_order_is_javas_and_not_rusts() {
+        let samples = names(&["\u{ff21}", "\u{1f600}", "s0"]);
+        let selection =
+            create_sample_name_inclusion_list(&samples, &SampleArguments::default()).expect("all");
+        assert_eq!(
+            selection.samples,
+            names(&["s0", "\u{1f600}", "\u{ff21}"]),
+            "the emoji sorts before Ａ, as its leading surrogate 0xd83d is below 0xff21"
+        );
+
+        let mut rusts_own = samples.clone();
+        rusts_own.sort();
+        assert_ne!(selection.samples, rusts_own);
     }
 }
