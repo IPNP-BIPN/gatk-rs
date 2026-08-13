@@ -20,6 +20,14 @@
 //! with a window of 2, at 49 with 10, at 39 with 20, and at the start of its run with a wide
 //! enough one. Nothing in the record says which of those happened.
 //!
+//! # The window that ran out is not the same as the record that had nowhere to go
+//!
+//! The reference returns a `VariantContext` and nothing else, so those two cases are
+//! indistinguishable to its caller: a record stopped by `--max-leading-bases` looks exactly like
+//! one that is genuinely left aligned. [`left_align_and_trim_reporting`] returns the same record
+//! with an [`Alignment`] beside it. The bytes do not change, which is why this is not a divergence;
+//! what changes is that the answer stops being silent.
+//!
 //! # What comes back unchanged
 //!
 //! A non-indel, a `maxLeadingBases` of zero or less, and a shift of zero all return the input
@@ -89,18 +97,54 @@ impl Variant {
     }
 }
 
+/// Whether the record that came back is as far left as the reference would allow.
+///
+/// The reference does not carry this: `leftAlignAndTrim` returns a `VariantContext` and nothing
+/// else, so a record that ran out of window is indistinguishable from one that had nowhere left to
+/// go. The bytes of the record are the same either way, which is why reporting this changes no
+/// output; it only stops the answer from being silent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alignment {
+    /// The shift stopped before the edge of the window, so widening it would change nothing.
+    Complete,
+    /// The shift reached the edge of a window that was already at `maxLeadingBases`. The record is
+    /// shifted as far as the argument allowed and NOT as far as the reference would allow: a
+    /// larger `--max-leading-bases` would move it further.
+    WindowExhausted,
+    /// Nothing was attempted: a non-indel, or a `maxLeadingBases` of zero or less.
+    NotAttempted,
+}
+
 /// `leftAlignAndTrim(vc, ref, maxLeadingBases, trim)`.
 ///
 /// `reference_bases` is the whole contig, one-based positions indexing from 1, which is what a
 /// `ReferenceContext` hands back a slice of.
+///
+/// The record this returns is the reference's, byte for byte. Use
+/// [`left_align_and_trim_reporting`] where it matters whether the window ran out.
 pub fn left_align_and_trim(
     variant: &Variant,
     reference_bases: &[u8],
     max_leading_bases: i32,
     trim: bool,
 ) -> Result<Variant, AlignmentError> {
+    left_align_and_trim_reporting(variant, reference_bases, max_leading_bases, trim)
+        .map(|(variant, _)| variant)
+}
+
+/// The same alignment, with what the reference throws away: whether the window ran out.
+///
+/// GATK's own loop knows the difference, in `shifts.getLeft() == variantOffsetInRef &&
+/// leadingBases < maxLeadingBases`, and drops it on the floor when the second half is false. A
+/// caller that wants to widen the window and try again, or to warn, has no way to ask.
+pub fn left_align_and_trim_reporting(
+    variant: &Variant,
+    reference_bases: &[u8],
+    max_leading_bases: i32,
+    trim: bool,
+) -> Result<(Variant, Alignment), AlignmentError> {
     if !variant.is_indel() || max_leading_bases <= 0 {
-        return Ok(variant.clone());
+        return Ok((variant.clone(), Alignment::NotAttempted));
     }
 
     let mut leading_bases = max_leading_bases.min(10);
@@ -135,13 +179,27 @@ pub fn left_align_and_trim(
         let (left, right) = normalize_alleles(&borrowed, &mut ranges, variant_offset, trim)?;
 
         if left == 0 && right == 0 {
-            return Ok(variant.clone());
+            return Ok((variant.clone(), Alignment::Complete));
         }
         // The shift reached the edge of the slice and a wider one is allowed: try again.
         if left == variant_offset && leading_bases < max_leading_bases {
             leading_bases = (2 * leading_bases).min(max_leading_bases);
             continue;
         }
+        // Falling through with the shift still on the edge is the case the reference cannot tell
+        // its caller about. Landing ON the edge is not enough to call the window exhausted: a
+        // window of exactly the distance the record wants to walk lands there and is complete. The
+        // only way to tell is to offer one more base and see whether the shift grows, which is one
+        // extra pass and only in this case.
+        let alignment = if left == variant_offset {
+            if would_shift_further(variant, reference_bases, leading_bases, trim)? {
+                Alignment::WindowExhausted
+            } else {
+                Alignment::Complete
+            }
+        } else {
+            Alignment::Complete
+        };
 
         let alleles: Vec<Allele> = variant
             .alleles
@@ -154,16 +212,59 @@ pub fn left_align_and_trim(
             })
             .collect();
 
-        return Ok(Variant {
-            contig: variant.contig.clone(),
-            start: variant.start - left,
-            stop: variant.stop - right,
-            // The reference builds this list from a HashMap's values, so the order is the map's.
-            // Rebuilding it in record order is what the golden shows, and all it shows.
-            alleles,
-            genotypes: variant.genotypes.clone(),
-        });
+        return Ok((
+            Variant {
+                contig: variant.contig.clone(),
+                start: variant.start - left,
+                stop: variant.stop - right,
+                // The reference builds this list from a HashMap's values, so the order is the
+                // map's. Rebuilding it in record order is what the golden shows, and all it shows.
+                alleles,
+                genotypes: variant.genotypes.clone(),
+            },
+            alignment,
+        ));
     }
+}
+
+/// Whether one more base of window would move the record further left.
+///
+/// Left alignment slides base by base, so a record that can still move moves by at least one when
+/// it is given one more base. A record already at the start of the contig cannot be given one.
+fn would_shift_further(
+    variant: &Variant,
+    reference_bases: &[u8],
+    leading_bases: i32,
+    trim: bool,
+) -> Result<bool, AlignmentError> {
+    let ref_start = (variant.start - leading_bases).max(1);
+    if ref_start == 1 {
+        return Ok(false);
+    }
+    let wider_start = ref_start - 1;
+    let slice = &reference_bases[(wider_start - 1) as usize..variant.stop as usize];
+    let variant_offset = variant.start - wider_start;
+
+    let sequences: Vec<Vec<u8>> = variant
+        .alleles
+        .iter()
+        .map(|allele| {
+            let mut sequence = slice[..variant_offset as usize].to_vec();
+            sequence.extend_from_slice(&allele.bases);
+            sequence
+        })
+        .collect();
+    let mut ranges: Vec<IndexRange> = variant
+        .alleles
+        .iter()
+        .map(|allele| IndexRange::new(variant_offset + 1, variant_offset + allele.len() as i32))
+        .collect();
+    let borrowed: Vec<&[u8]> = sequences
+        .iter()
+        .map(|sequence| sequence.as_slice())
+        .collect();
+    let (left, _) = normalize_alleles(&borrowed, &mut ranges, variant_offset, trim)?;
+    Ok(left > leading_bases)
 }
 
 #[cfg(test)]
@@ -206,6 +307,56 @@ mod tests {
         assert_eq!((wide.start, wide.stop), (10, 11));
         let narrow = left_align_and_trim(&variant, &bases, 2, true).expect("aligned");
         assert_eq!((narrow.start, narrow.stop), (15, 16));
+    }
+
+    /// The same two calls, asked which of them was stopped by the window.
+    #[test]
+    fn the_report_tells_the_two_apart() {
+        let bases = reference();
+        let variant = deletion(17, "AA", "A");
+
+        let (wide, alignment) =
+            left_align_and_trim_reporting(&variant, &bases, 1000, true).expect("aligned");
+        assert_eq!((wide.start, wide.stop), (10, 11));
+        assert_eq!(alignment, Alignment::Complete);
+
+        let (narrow, alignment) =
+            left_align_and_trim_reporting(&variant, &bases, 2, true).expect("aligned");
+        assert_eq!((narrow.start, narrow.stop), (15, 16));
+        assert_eq!(alignment, Alignment::WindowExhausted);
+
+        // Every window between the two, so the report follows the record and not the argument.
+        for (window, expected) in [
+            (7, Alignment::Complete),
+            (6, Alignment::WindowExhausted),
+            (10, Alignment::Complete),
+        ] {
+            let (_, alignment) =
+                left_align_and_trim_reporting(&variant, &bases, window, true).expect("aligned");
+            assert_eq!(alignment, expected, "window {window}");
+        }
+    }
+
+    /// A record the reference never touches reports that nothing was attempted, which is not the
+    /// same as a record it aligned and could not move.
+    #[test]
+    fn nothing_attempted_is_not_the_same_as_nothing_to_do() {
+        let bases = reference();
+        let snp = deletion(18, "A", "C");
+        let (_, alignment) =
+            left_align_and_trim_reporting(&snp, &bases, 1000, true).expect("untouched");
+        assert_eq!(alignment, Alignment::NotAttempted);
+
+        let (_, alignment) =
+            left_align_and_trim_reporting(&deletion(17, "AA", "A"), &bases, 0, true)
+                .expect("untouched");
+        assert_eq!(alignment, Alignment::NotAttempted);
+
+        // Already left aligned: attempted, and there was nowhere to go.
+        let (_, alignment) =
+            left_align_and_trim_reporting(&deletion(10, "GA", "G"), &bases, 1000, true)
+                .expect("untouched");
+        assert_eq!(alignment, Alignment::Complete);
     }
 
     #[test]

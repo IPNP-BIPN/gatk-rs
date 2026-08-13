@@ -11,7 +11,9 @@
 //!  * **and the genotypes are remapped**, which is visible only because the alleles moved.
 
 use gatk_corpus as corpus;
-use gatk_engine::variant_context_utils::{left_align_and_trim, Allele, Variant};
+use gatk_engine::variant_context_utils::{
+    left_align_and_trim, left_align_and_trim_reporting, Alignment, Allele, Variant,
+};
 
 fn golden() -> String {
     corpus::read_golden(
@@ -229,4 +231,32 @@ fn the_genotypes_are_remapped_with_the_alleles() {
         })
         .collect();
     assert_eq!(rendered.join(";"), expected[3]);
+}
+
+/// The record is the reference's whatever the report says, and the report is what the reference
+/// throws away: which of these calls was stopped by its window rather than by the reference.
+#[test]
+fn the_report_never_changes_the_record() {
+    let text = golden();
+    let bases = reference(&text);
+    for label in labels(&text) {
+        let input = variant(&row(&text, "in", &label));
+        let (max_leading_bases, trim) = arguments(&label);
+        let plain = left_align_and_trim(&input, &bases, max_leading_bases, trim).expect("a record");
+        let (reported, alignment) =
+            left_align_and_trim_reporting(&input, &bases, max_leading_bases, trim)
+                .expect("a record");
+        assert_eq!(plain, reported, "record/{label}");
+
+        let expected = match label.as_str() {
+            // The three the golden shows landing short of their run.
+            "deletion-narrow-window"
+            | "deletion-in-long-run-narrow"
+            | "deletion-in-long-run-twenty" => Alignment::WindowExhausted,
+            // The ones the reference never attempted at all.
+            "zero-window" | "negative-window" | "snp" | "mixed" => Alignment::NotAttempted,
+            _ => Alignment::Complete,
+        };
+        assert_eq!(alignment, expected, "alignment/{label}");
+    }
 }
