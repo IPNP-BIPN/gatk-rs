@@ -58,6 +58,19 @@ impl Allele {
     pub fn is_empty(&self) -> bool {
         self.bases.is_empty()
     }
+
+    /// `Allele.isSymbolic()`, as far as the trimmer needs it: `<DEL>` and its kind.
+    ///
+    /// htsjdk also calls a breakend symbolic; nothing measured here reaches one, and the trimmer
+    /// treats both the same way, which is to leave them alone.
+    pub fn is_symbolic(&self) -> bool {
+        self.bases.first() == Some(&b'<') && self.bases.last() == Some(&b'>')
+    }
+
+    /// `Allele.SPAN_DEL`, the `*` a record carries for a deletion that started earlier.
+    pub fn is_span_del(&self) -> bool {
+        self.bases == b"*"
+    }
 }
 
 /// As much of a `VariantContext` as this function reads and writes.
@@ -265,6 +278,118 @@ fn would_shift_further(
         .collect();
     let (left, _) = normalize_alleles(&borrowed, &mut ranges, variant_offset, trim)?;
     Ok(left > leading_bases)
+}
+
+/// `trimAlleles(inputVC, trimForward, trimReverse)`: cut the bases every allele shares.
+///
+/// ```java
+/// if ( inputVC.getNAlleles() <= 1 || inputVC.getAlleles().stream().anyMatch(a -> a.length() == 1 && !a.equals(Allele.SPAN_DEL)) ) {
+///     return inputVC;
+/// }
+/// ```
+///
+/// **One allele of length one turns the whole thing off.** A record carrying a snp beside a
+/// deletion is never trimmed, however much its other alleles share. The spanning deletion is the
+/// one exception, excluded by name, and neither it nor a symbolic allele is fed to the comparison
+/// though both are kept in the output.
+pub fn trim_alleles(
+    variant: &Variant,
+    trim_forward: bool,
+    trim_reverse: bool,
+) -> Result<Variant, AlignmentError> {
+    if variant.alleles.len() <= 1
+        || variant
+            .alleles
+            .iter()
+            .any(|allele| allele.len() == 1 && !allele.is_span_del())
+    {
+        return Ok(variant.clone());
+    }
+
+    let comparable: Vec<&Allele> = variant
+        .alleles
+        .iter()
+        .filter(|allele| !allele.is_symbolic() && !allele.is_span_del())
+        .collect();
+    let sequences: Vec<&[u8]> = comparable
+        .iter()
+        .map(|allele| allele.bases.as_slice())
+        .collect();
+    let mut ranges: Vec<IndexRange> = comparable
+        .iter()
+        .map(|allele| IndexRange::new(0, allele.len() as i32))
+        .collect();
+
+    // The ranges start at index 0, so the only way left is backwards: the forward trim is the
+    // NEGATIVE of the left shift.
+    let (left, right) = normalize_alleles(&sequences, &mut ranges, 0, true)?;
+    let end_trim = right;
+    let start_trim = -left;
+
+    // An allele trimmed to nothing gets one base back, at the end when nothing came off the front
+    // and at the start when something did. It is the only reason a record keeps its anchor base.
+    let empty_allele = ranges.iter().any(|range| range.size() == 0);
+    let restore_one_at_end = empty_allele && start_trim == 0;
+    let restore_one_at_start = empty_allele && start_trim > 0;
+
+    let end_bases_to_clip = if restore_one_at_end {
+        end_trim - 1
+    } else {
+        end_trim
+    };
+    let start_bases_to_clip = if restore_one_at_start {
+        start_trim - 1
+    } else {
+        start_trim
+    };
+
+    trim_alleles_at(
+        variant,
+        if trim_forward { start_bases_to_clip } else { 0 } - 1,
+        if trim_reverse { end_bases_to_clip } else { 0 },
+    )
+}
+
+/// `trimAlleles(inputVC, fwdTrimEnd, revTrim)`, whose first index is INCLUSIVE.
+///
+/// `-1` therefore means "trim nothing from the front", which is what the caller above passes when
+/// forward trimming is off, and `fwdTrimEnd == -1 && revTrim == 0` returns the input itself.
+pub fn trim_alleles_at(
+    variant: &Variant,
+    forward_trim_end: i32,
+    reverse_trim: i32,
+) -> Result<Variant, AlignmentError> {
+    if forward_trim_end == -1 && reverse_trim == 0 {
+        return Ok(variant.clone());
+    }
+
+    let alleles: Vec<Allele> = variant
+        .alleles
+        .iter()
+        .map(|allele| {
+            if allele.is_symbolic() || allele.is_span_del() {
+                allele.clone()
+            } else {
+                let from = (forward_trim_end + 1) as usize;
+                let to = allele.len() - reverse_trim as usize;
+                Allele::new(&allele.bases[from..to], allele.is_reference)
+            }
+        })
+        .collect();
+
+    // The reference remaps the genotypes through a LinkedHashMap of old allele to new, and leaves
+    // any allele the map does not hold as it is. Genotypes are allele INDICES here and the list
+    // keeps its order and length, so the remapping is the identity and the indices stand.
+    let start = variant.start + (forward_trim_end + 1);
+    Ok(Variant {
+        contig: variant.contig.clone(),
+        start,
+        // The end is recomputed from the reference allele's new length, not by subtracting the
+        // reverse trim, which is the same number by a different route.
+        stop: start + alleles[0].len() as i32 - 1,
+        alleles,
+        genotypes: variant.genotypes.clone(),
+    })
 }
 
 #[cfg(test)]

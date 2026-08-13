@@ -2196,6 +2196,30 @@
           "why": "58 rows: nineteen calls over one reference holding two homopolymers and a dinucleotide repeat, covering the doubling window at four widths, both early exits, trimming on and off, genotypes, and a three-allele record the doc says cannot arrive. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31684873068, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "trim-alleles",
+      "status": "oracle-backed",
+      "title": "trimAlleles, the other half of LeftAlignAndTrimVariants",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The other half of what LeftAlignAndTrimVariants does, and what the multiallelic splitter calls on every biallelic it makes: cut the bases every allele shares. ONE ALLELE OF LENGTH ONE STOPS EVERYTHING, `anyMatch(a -> a.length() == 1 && !a.equals(Allele.SPAN_DEL))` returning the input untouched, so a record carrying a snp beside a deletion is never trimmed however much its other alleles share. THE SPANNING DELETION IS THE ONE EXCEPTION to that test, and neither it nor a symbolic allele is fed to the comparison, though both are kept in the output, so `ACGT,AGT,*` still trims to `AC,A,*`. THE FORWARD TRIM IS A NEGATIVE SHIFT, `startTrim = -shifts.getLeft()`, normalizeAlleles being asked to move alleles that start at index 0 and can only go backwards. AN ALLELE TRIMMED TO NOTHING GETS ONE BASE BACK, at the END when nothing was trimmed from the front and at the START when something was, which is the only reason a record keeps an anchor base. THE INNER trimAlleles TAKES AN INCLUSIVE INDEX, so the caller passes startBasesToClip - 1 and -1 means trim nothing, and it returns the INPUT ITSELF when that index is -1 and the reverse trim is 0. THE START MOVES BY fwdTrimEnd + 1 AND THE END IS RECOMPUTED from the reference allele's new length rather than by subtracting the reverse trim. AND THE ALLELE MAP IS A LinkedHashMap here where leftAlignAndTrim uses a HashMap, so the output keeps the input's order.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 51,
+      "expect_contains": [
+        "out\tshared-prefix\t103-103\tG(ref),GT",
+        "out\tspanning-deletion\t100-101\tAC(ref),A,*",
+        "same\tone-base-allele\ttrue"
+      ],
+      "cases": [
+        {
+          "dump": "TrimAllelesDump",
+          "golden": "crates/gatk-engine/tests/data/trim_alleles.txt.gz",
+          "why": "51 rows: seventeen records through the trimmer, covering a shared prefix, a shared suffix, both at once, each direction asked for on its own, the length-one allele that stops everything, the spanning deletion and the symbolic allele that do not, an allele trimmed to nothing from either end, and genotypes remapped through the map. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31686824619, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
