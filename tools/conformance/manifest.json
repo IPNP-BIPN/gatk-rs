@@ -2294,6 +2294,30 @@
           "why": "75 rows: twenty-five genotype counts over five ploidies and five allele counts, the canonical order of six shapes, nine indices including one whose pairs are reversed and one refusal, and seven subsettings including a permutation and a subset to the reference alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31695413079, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "subset-alleles",
+      "status": "golden-pending",
+      "title": "subsetAlleles, what a split does to a genotype's likelihoods",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What splitVariantContextToBiallelics does to a genotype carrying likelihoods, which the split port refuses for want of a measurement. THE NEW PLs ARE THE OLD ONES PERMUTED AND THEN RESCALED by subtracting the maximum, so the smallest phred of the subset is 0 whatever it was: 50,0,60,40,30,70 keeping the SECOND alternate becomes 10,0,30. THE GQ IS RECOMPUTED FROM THE NEW PLs EVEN WHEN NOTHING IS DROPPED, so keeping all three alleles leaves the PLs untouched and changes the GQ from 50 to 30, and it is KEPT ONLY when the subset is the reference alone. A PL ARRAY OF THE WRONG LENGTH IS DROPPED ENTIRELY, along with the GQ, without a word. A HOM-REF OR NO-CALL GENOTYPE WITH GQ 0 IS NO-CALLED before the method is consulted, and IF ITS DP IS ALSO 0 EVERYTHING IS CLEARED. USE_PLS_TO_ASSIGN no-calls only when the best genotype is the reference AND the log10 GQ is above SUM_GL_THRESH_NOCALL, which is a GQ near zero, so a CONFIDENT hom-ref is called hom-ref and an uninformative one is not. THE AD IS PERMUTED, NOT SUMMED. POSTERIORS AND PRIORS ARE REMOVED WHATEVER HAPPENS while any other attribute is kept. AND SET_TO_NO_CALL EMPTIES THE CALL AND KEEPS EVERYTHING ELSE where SET_TO_NO_CALL_NO_ANNOTATIONS keeps only the depth: two names one word apart, two different genotypes out.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 30,
+      "expect_contains": [
+        "out\thet-keep-second\tBEST_MATCH_TO_ORIGINAL\t0,2\tA/A|10,0,30|10|10,8|30|",
+        "out\thet-keep-all\tBEST_MATCH_TO_ORIGINAL\t0,1,2\tA/C|50,0,60,40,30,70|30|10,12,8|30|",
+        "out\tgq-and-dp-zero\tBEST_MATCH_TO_ORIGINAL\t0,1\t/|||||"
+      ],
+      "cases": [
+        {
+          "dump": "SubsetAllelesDump",
+          "golden": null,
+          "why": "30 rows: fifteen subsettings of six genotypes, covering each way of keeping the alleles of a three-allele site, all four assignment methods, a PL array of the wrong length, a genotype with a GQ and no PLs, the two no-data cases, and the attributes that are removed."
+        }
+      ]
     }
   ],
   "probes": []
