@@ -2371,7 +2371,7 @@
     },
     {
       "id": "gather-vcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GatherVcfsCloud, two gathering modes and four refusals",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2390,8 +2390,8 @@
       "cases": [
         {
           "dump": "GatherVcfsDump",
-          "golden": null,
-          "why": "55 rows: six input vcfs and thirteen gathers, of which six write a file and seven refuse, covering both gathering modes, the two different order checks, the two flags that weaken them, and a bgzipped output recorded by size since a compressor is not reproduced here."
+          "golden": "crates/gatk-tools/tests/data/gather_vcfs.txt.gz",
+          "why": "55 rows: six input vcfs and thirteen gathers, of which six write a file and seven refuse, covering both gathering modes, the two different order checks, the two flags that weaken them, and a bgzipped output recorded by size since a compressor is not reproduced here. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31734011165, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }

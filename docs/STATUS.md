@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 62 | 19.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 63 | 20.3% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 236 | 75.9% |
 | **total** | **311** | |
@@ -85,7 +85,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
-| `GatherVcfsCloud` | variant-transform | golden-pending | gather-vcfs | 1 | not measured |
+| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs | 1 | not measured |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
