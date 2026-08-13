@@ -2270,6 +2270,30 @@
           "why": "128 rows: the two reference contigs, seven input vcfs over a two-contig reference and thirteen runs of the tool, covering the bound between records, a contig boundary, an indel skipped for its length and the same one aligned, splitting, trimming turned off, and two windows too narrow to finish. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31688879823, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "genotype-index",
+      "status": "oracle-backed",
+      "title": "The genotype index combinatorics under every PL array",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The combinatorics under every PL array, and the piece between LeftAlignAndTrimVariants and a genotyped vcf: which genotype each index of a likelihood vector means, and where a genotype lands when the allele list changes. THE INDEX IS A SUM OF BINOMIALS, `indexOfFirstGenotypeWithAllele(ploidy - n, allele)` summed over the alleles from highest to lowest, and THE NUMBER OF GENOTYPES IS THAT SAME FUNCTION at the allele count, C(alleles + ploidy - 1, alleles - 1), so a triploid site with four alleles has twenty genotypes and not sixty-four. THE CANONICAL ORDER is what GenotypeAlleleCounts walks: 0/0, 0/1, 1/1, 0/2, 1/2, 2/2. A GENOTYPE IS A MULTISET, so the pairs of allele and count may come in ANY ORDER and give the same index, while a count of zero contributes nothing; AN ODD-LENGTH COUNT ARRAY IS THE ONLY REFUSAL. PLOIDY ZERO HAS EXACTLY ONE GENOTYPE, the empty one at index 0. AND subsettedPLIndices IS A PERMUTATION, NOT A FILTER: keeping the alleles in the order 0, 2, 1 of three gives 0,3,5,1,4,2, and keeping only the reference gives a single index.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 75,
+      "expect_contains": [
+        "subset\tkeep-both-swapped\t2\t3\t0,2,1\t0,3,5,1,4,2",
+        "index\tdiploid-het-non-ref-reversed\t2,1,1,1\t4",
+        "error\todd-length\tjava.lang.IllegalArgumentException:the allele counts array cannot have odd length"
+      ],
+      "cases": [
+        {
+          "dump": "GenotypeIndexDump",
+          "golden": "crates/gatk-engine/tests/data/genotype_index.txt.gz",
+          "why": "75 rows: twenty-five genotype counts over five ploidies and five allele counts, the canonical order of six shapes, nine indices including one whose pairs are reversed and one refusal, and seven subsettings including a permutation and a subset to the reference alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31695413079, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
