@@ -30,6 +30,10 @@ use crate::genotype_index::{genotype_count, subsetted_pl_indices, GenotypeIndexE
 /// `GenotypeAssignmentMethod`, as far as a split reaches it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentMethod {
+    /// `DO_NOT_ASSIGN_GENOTYPES`, which falls through every branch of `makeGenotypeCall`: the
+    /// calls stay as they were while the likelihoods and the GQ are rewritten for the new allele
+    /// list. SelectVariants' `--remove-unused-alternates` is what asks for it.
+    DoNotAssignGenotypes,
     BestMatchToOriginal,
     UsePlsToAssign,
     SetToNoCall,
@@ -208,6 +212,10 @@ fn make_genotype_call(
     }
 
     match method {
+        // `DO_NOT_ASSIGN_GENOTYPES` matches none of the reference's branches, so the calls stay as
+        // the builder copied them. The likelihoods and the GQ above were rewritten regardless,
+        // which is what makes it different from doing nothing at all.
+        AssignmentMethod::DoNotAssignGenotypes => {}
         AssignmentMethod::SetToNoCall => result.alleles = vec![None; ploidy],
         AssignmentMethod::SetToNoCallNoAnnotations => {
             result.alleles = vec![None; ploidy];
