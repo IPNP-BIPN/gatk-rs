@@ -2532,6 +2532,33 @@
           "why": "64 rows: one input of six records over two contigs and nine runs. The first record shares four bases of prefix with its alternate, so trimming moves it from 100 to 104, where another record already is, and a third sits between them at 101: the three of them together are what shows the queue's drain rule. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31757410137, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "select-variants-concordance",
+      "status": "golden-pending",
+      "title": "SelectVariants' discordance and concordance, which are not opposites",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "why": "Both flags compare the record being read against a second VCF, and both change meaning entirely depending on whether any sample was named. WITHOUT -sn, --discordance IS ONLY 'the other file has nothing here' and --concordance ONLY 'the other file has something here': the genotypes are never looked at. WITH -sn they compare ALLELE SETS rather than genotypes, because haveSameGenotypes asks each list to contain the other, so 0/1 and 1/0 are the same call and so are 1/1 and a haploid 1. A FILTERED GENOTYPE NEVER MATCHES ANYTHING, INCLUDING ANOTHER FILTERED ONE, because haveSameGenotypes tests `g1.isCalled() && g2.isFiltered()` first and isCalled() is about alleles rather than filters: its third clause about two filtered genotypes is dead code, and --exclude-filtered moves no record in either direction for the same reason. Discordance skips hom-ref genotypes entirely; concordance requires EVERY selected sample to match. They are not negations of one another.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "kept\tdiscordance\t400",
+        "kept\tdiscordance-one-sample\t300,400,600,700,800",
+        "kept\tconcordance-one-sample\t100,200,900",
+        "kept\tdiscordance-exclude-filtered\t300,400,600,700,800"
+      ],
+      "cases": [
+        {
+          "dump": "SelectVariantsConcordanceDump",
+          "golden": null,
+          "why": "11 rows: two input files of nine and eight records and nine runs. The records pair a match, a match written the other way round, a mismatch, an absence, a hom-ref, one filtered genotype, two filtered genotypes, a position the other file has twice, and a haploid call against a diploid one of the same allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
