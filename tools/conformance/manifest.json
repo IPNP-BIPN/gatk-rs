@@ -2480,7 +2480,7 @@
     },
     {
       "id": "select-variants-filters",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SelectVariants' record filters, where one fraction is an integer division",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2502,8 +2502,8 @@
       "cases": [
         {
           "dump": "SelectVariantsFiltersDump",
-          "golden": null,
-          "why": "155 rows: one input of nine records and twenty-six runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/select_variants_filters.txt.gz",
+          "why": "155 rows: one input of nine records and twenty-six runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31756512742, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
