@@ -3242,7 +3242,7 @@
     ,
     {
       "id": "mutect-engine-construction",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect's engine as constructed, where every sample not named normal is a tumour",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3264,8 +3264,8 @@
       "cases": [
         {
           "dump": "MutectEngineConstructionDump",
-          "golden": null,
-          "why": "15 rows: no files at all. One engine built from a header naming two normal samples and a third under a key differing only in case, asked about five samples, its initial threshold, its two priors and three posteriors on each of two routes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/mutect_engine_construction.txt.gz",
+          "why": "15 rows: no files at all. One engine built from a header naming two normal samples and a third under a key differing only in case, asked about five samples, its initial threshold, its two priors and three posteriors on each of two routes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31839540310. The two posterior rows are not recomputed by the port: they go through the somatic clustering model, which is not ported."
         }
       ]
     }
