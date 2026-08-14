@@ -2944,7 +2944,7 @@
     ,
     {
       "id": "apply-vqsr-site-filtering",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ApplyVQSR's per-record filtering, where the last tranche means PASS",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2971,8 +2971,8 @@
       "cases": [
         {
           "dump": "ApplyVqsrSiteFilteringDump",
-          "golden": null,
-          "why": "56 rows: seven VCFs, one tranches file and eleven runs. The main pair puts one record in each of the three bands, one on a band boundary, one whose recal record has no culprit, an indel and an already-filtered record. A second pair has two recal records starting where the input record does, only one of which ends there, and a third has none that ends there. Three more runs cover the missing recal record, the recal record with no LOD and the LOD that will not parse. The runs cover SNP and INDEL mode, both filter-ignoring flags, --exclude-filtered and a plain LOD cutoff. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_site_filtering.txt.gz",
+          "why": "56 rows: seven VCFs, one tranches file and eleven runs. The main pair puts one record in each of the three bands, one on a band boundary, one whose recal record has no culprit, an indel and an already-filtered record. A second pair has two recal records starting where the input record does, only one of which ends there, and a third has none that ends there. Three more runs cover the missing recal record, the recal record with no LOD and the LOD that will not parse. The runs cover SNP and INDEL mode, both filter-ignoring flags, --exclude-filtered and a plain LOD cutoff. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31817438956."
         }
       ]
     }
