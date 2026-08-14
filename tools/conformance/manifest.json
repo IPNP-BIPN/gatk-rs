@@ -2848,7 +2848,7 @@
     },
     {
       "id": "concordance-filter-analysis",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Concordance's filter analysis, which counts without the flag that asks for it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2869,8 +2869,8 @@
       "cases": [
         {
           "dump": "ConcordanceFilterAnalysisDump",
-          "golden": null,
-          "why": "11 rows: six VCFs and four runs. The first pair carries a filtered record at a truth locus, a second carrying two filters, an agreement, a filtered record standing alone and a second carrying two filters, against a header declaring four filters one of which nothing carries. The other two pairs put an undeclared filter on a record standing alone and on a record at a truth locus, and each is run with and without the flag as far as it gets. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/concordance_filter_analysis.txt.gz",
+          "why": "11 rows: six VCFs and four runs. The first pair carries a filtered record at a truth locus, a second carrying two filters, an agreement, a filtered record standing alone and a second carrying two filters, against a header declaring four filters one of which nothing carries. The other two pairs put an undeclared filter on a record standing alone and on a record at a truth locus, and each is run with and without the flag as far as it gets. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31810119707."
         }
       ]
     }
