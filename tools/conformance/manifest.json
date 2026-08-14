@@ -2647,7 +2647,7 @@
     },
     {
       "id": "count-false-positives",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CountFalsePositives, where everything that is not an indel is a SNP",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2669,8 +2669,8 @@
       "cases": [
         {
           "dump": "CountFalsePositivesDump",
-          "golden": null,
-          "why": "14 rows: four input files and ten runs. The first file carries one record of every shape the two branches can see, a SNP, an insertion, a deletion, an MNP, a symbolic deletion, a mixed record and a record with no alternate, beside a filtered SNP and a filtered indel. The runs cover the whole contig, a file where nothing passes, overlapping and disjoint intervals, a three-base territory whose rate is a repeating decimal, an interval that changes the counts as well as the denominator, a name with two extensions, and both refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/count_false_positives.txt.gz",
+          "why": "14 rows: four input files and ten runs. The first file carries one record of every shape the two branches can see, a SNP, an insertion, a deletion, an MNP, a symbolic deletion, a mixed record and a record with no alternate, beside a filtered SNP and a filtered indel. The runs cover the whole contig, a file where nothing passes, overlapping and disjoint intervals, a three-base territory whose rate is a repeating decimal, an interval that changes the counts as well as the denominator, a name with two extensions, and both refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31780536101."
         }
       ]
     }

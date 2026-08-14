@@ -205,12 +205,8 @@ jobs:
             suites: "select-variants-subset select-variants-filters select-variants-output select-variants-concordance variants-to-table"
           - group: oracle-backed
             index: "24/24"
-            slug: "validate-variants-count-variants"
-            suites: "validate-variants count-variants"
-          - group: golden-pending
-            index: "1/1"
-            slug: "count-false-positives"
-            suites: "count-false-positives"
+            slug: "validate-variants-count-variants-count-false-positives"
+            suites: "validate-variants count-variants count-false-positives"
     steps:
       - uses: actions/checkout@v4
 
