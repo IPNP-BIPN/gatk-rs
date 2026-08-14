@@ -2873,6 +2873,37 @@
           "why": "11 rows: six VCFs and four runs. The first pair carries a filtered record at a truth locus, a second carrying two filters, an agreement, a filtered record standing alone and a second carrying two filters, against a header declaring four filters one of which nothing carries. The other two pairs put an undeclared filter on a record standing alone and on a record at a truth locus, and each is run with and without the flag as far as it gets. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31810119707."
         }
       ]
+    },
+    {
+      "id": "concordance-annotated-vcfs",
+      "status": "golden-pending",
+      "title": "Concordance's three annotated VCFs, where one step writes two different records",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Concordance"
+      ],
+      "why": "The tool's three optional record outputs, each record written out with a STATUS attribute naming its state. THREE OF THE FIVE STATES WRITE TO TWO FILES AND NOT THE SAME RECORD: a true positive puts the TRUTH record in -tpfn and the EVAL record in -tpfp, and a filtered false negative puts the TRUTH record in -tpfn and the EVAL record in -ftnfn, so the golden's two files carry chr1:100 twice, once as truth_tp with TRUTHONLY=1 and once as eval_tp with EVALONLY=11, both STATUS=TP. -tpfn IS WRITTEN AGAINST THE TRUTH HEADER and the other two against the eval header, so its sample column is truthsample and its INFO declarations are the truth file's. A FILTERED FALSE NEGATIVE IS LABELLED FFN IN BOTH FILES IT REACHES rather than FN in the file documented as false negatives, and the -ftnfn records keep the FILTER column that put them there. THE STATUS LINE AND THE DEFAULT TOOL LINES ARE ADDED IN OPPOSITE ORDERS for -tpfp and -ftnfn, to the same VCFHeader object, and the measurement is that it makes no difference: the writer emits getMetaDataInSortedOrder, so the run asking for -tpfp alone and the run asking for -ftnfn alone write the same header lines and differ only in the command line. The default tool lines DO reach the file here, unlike AnnotateVcfWithExpectedAlleleFraction, which builds its header before adding them.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 58,
+      "expect_contains": [
+        "vcfline\tall-three-tpfn\tchr1\\t100\\ttruth_tp\\tA\\tC\\t11\\tPASS\\tSTATUS=TP;TRUTHONLY=1\\tGT\\t0/1",
+        "vcfline\tall-three-tpfp\tchr1\\t100\\teval_tp\\tA\\tC\\t44\\tPASS\\tEVALONLY=11;STATUS=TP\\tGT\\t0/1",
+        "vcfline\tall-three-tpfn\tchr1\\t200\\ttruth_ffn\\tA\\tC\\t22\\tPASS\\tSTATUS=FFN;TRUTHONLY=2\\tGT\\t0/1",
+        "vcfline\tall-three-ftnfn\tchr1\\t200\\teval_ffn\\tA\\tC\\t55\\tweak\\tEVALONLY=22;STATUS=FFN\\tGT\\t0/1",
+        "vcfline\tall-three-ftnfn\tchr1\\t500\\teval_ftn\\tA\\tC\\t77\\tweak\\tEVALONLY=55;STATUS=FTN\\tGT\\t0/1",
+        "vcfline\tall-three-tpfn\t#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\tFORMAT\\ttruthsample",
+        "vcfline\tall-three-tpfp\t#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\tFORMAT\\tevalsample",
+        "vcfline\tall-three-tpfn\t##source=Concordance"
+      ],
+      "cases": [
+        {
+          "dump": "ConcordanceAnnotatedVcfsDump",
+          "golden": null,
+          "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
