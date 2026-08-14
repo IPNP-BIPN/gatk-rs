@@ -3070,6 +3070,45 @@
         }
       ]
     }
+    ,
+    {
+      "id": "threshold-calculator",
+      "status": "oracle-backed",
+      "title": "The Mutect threshold calculator, whose optimal F score keeps the last tie",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The piece of FilterMutectCalls that decides where the error probability is cut: a list of per-variant posteriors in, one threshold out, by one of three strategies. THE LIST IS SORTED IN PLACE, so the caller's own list comes back reordered. THE OPTIMAL F SCORE KEEPS THE LAST TIE, the comparison being F >= optimalFScore rather than >, so four equal posteriors of 0.2 resolve to the last index and therefore to a threshold of 1.0. ITS ANSWER IS THREE-WAY: no index at all is 0, the last index is 1, and anything else is the posterior AT that index, so three hopeless posteriors answer 0.97 while three clean ones answer 1.0. THE FALSE DISCOVERY RATE WALKS UNTIL THE RATE IS EXCEEDED AND STEPS BACK ONE, so the threshold is the last posterior that kept the cumulative rate acceptable, 0.0 when that was the very first one and 1.0 when the rate was never exceeded. CONSTANT LEAVES THE INITIAL THRESHOLD ALONE whatever was accumulated. RELEARNING CLEARS THE ACCUMULATED PROBABILITIES, so relearning twice computes the second threshold from an empty list, and THE TWO STRATEGIES ANSWER AN EMPTY LIST DIFFERENTLY: 1.0 for the false discovery rate and 0.0 for the F score. And a negative beta or rate is refused by ParamUtils with the caller's own wording.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 32,
+      "expect_contains": [
+        "threshold\tCONSTANT-spread\t0.123",
+        "threshold\tFALSE_DISCOVERY_RATE-spread\t0.02",
+        "threshold\tFALSE_DISCOVERY_RATE-empty\t1.0",
+        "threshold\tFALSE_DISCOVERY_RATE-clean\t1.0",
+        "threshold\tFALSE_DISCOVERY_RATE-tied\t0.0",
+        "threshold\tOPTIMAL_F_SCORE-spread\t0.5",
+        "threshold\tOPTIMAL_F_SCORE-tied\t1.0",
+        "threshold\tOPTIMAL_F_SCORE-hopeless\t0.97",
+        "threshold\tOPTIMAL_F_SCORE-empty\t0.0",
+        "threshold\tOPTIMAL_F_SCORE-beta-zero\t0.02",
+        "threshold\tOPTIMAL_F_SCORE-beta-ten\t1.0",
+        "threshold\tFALSE_DISCOVERY_RATE-second\t1.0",
+        "threshold\tOPTIMAL_F_SCORE-second\t0.0",
+        "sorted\tbefore\t[0.9, 0.1, 0.5]",
+        "sorted\tafter\t[0.1, 0.5, 0.9]",
+        "error\tnegative-beta\tjava.lang.IllegalArgumentException:requested F-score beta must be non-negative",
+        "error\tnegative-rate\tjava.lang.IllegalArgumentException:requested FPR must be non-negative"
+      ],
+      "cases": [
+        {
+          "dump": "ThresholdCalculatorDump",
+          "golden": "crates/gatk-engine/tests/data/threshold_calculator.txt.gz",
+          "why": "32 rows: six lists of posteriors and no files at all, driven through the calculator's public surface. The lists are a spread out of order, four equal posteriors, three nearly certain errors, three nearly certain calls, one posterior alone and none. Each of the three strategies runs over all six, plus a loose and a tight rate, a beta of zero and a beta of ten, the in-place sort shown as the same list before and after, three relearn-twice pairs and the two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31824479924."
+        }
+      ]
+    }
   ],
   "probes": []
 }

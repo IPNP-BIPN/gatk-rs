@@ -217,8 +217,8 @@ jobs:
             suites: "concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering apply-vqsr-allele-specific apply-vqsr-two-modes"
           - group: oracle-backed
             index: "27/27"
-            slug: "filter-variant-tranches"
-            suites: "filter-variant-tranches"
+            slug: "filter-variant-tranches-threshold-calculator"
+            suites: "filter-variant-tranches threshold-calculator"
     steps:
       - uses: actions/checkout@v4
 
