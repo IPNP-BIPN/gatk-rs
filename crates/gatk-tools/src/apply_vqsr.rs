@@ -39,6 +39,15 @@
 //! variant on **both** ends, by two different mechanisms, and the LOD is reparsed and written back
 //! through htsjdk's own double format, which sends every negative value to scientific notation.
 //!
+//! # One entry per alternate allele, whatever the mode
+//!
+//! With `-AS` the three lists are always as long as the alternate allele list:
+//! [`allele_specific_filtering`] **pads** an allele of the other mode and a spanning deletion rather
+//! than skipping either, and the spanning deletion is padded without its recal record ever being
+//! looked for. The class test behind that is a length comparison, so `*` counts as a SNP.
+//! [`site_filter_for_a_single_mode`] then leaves a mixed site unfiltered, because the other mode has
+//! not run yet.
+//!
 //! # The order is by sensitivity, then cut, then reversed
 //!
 //! `readTranches` sorts by `targetTruthSensitivity`; `onTraversalStart` keeps those at or above the
@@ -182,6 +191,8 @@ pub enum SiteFilteringError {
     NoLod { record: String },
     /// A `VQSLOD` that `Double.valueOf` will not take.
     UnreadableLod { record: String },
+    /// An alternate allele with no recal record of its own, which is the `-AS` wording.
+    NoRecalAllele { record: String },
 }
 
 impl SiteFilteringError {
@@ -200,6 +211,9 @@ impl SiteFilteringError {
             ),
             SiteFilteringError::UnreadableLod { record } => format!(
                 "Encountered a malformed record in the input recal file. The lod is unreadable for the record at: {record}"
+            ),
+            SiteFilteringError::NoRecalAllele { record } => format!(
+                "Encountered input allele which isn't found in the input recal file. Please make sure VariantRecalibrator and ApplyVQSR were run on the same set of input variants with flag -AS. First seen at: {record}"
             ),
         }
     }
@@ -335,6 +349,194 @@ pub fn recalibrates(
     of_this_mode && not_filtered
 }
 
+/// `AS_FILTER_STATUS_KEY`, `AS_VQS_LOD_KEY` and `AS_CULPRIT_KEY`.
+pub const AS_FILTER_STATUS_KEY: &str = "AS_FilterStatus";
+pub const AS_VQS_LOD_KEY: &str = "AS_VQSLOD";
+pub const AS_CULPRIT_KEY: &str = "AS_culprit";
+
+/// `emptyStringValue` and `emptyFloatValue`, the two paddings.
+pub const EMPTY_STRING_VALUE: &str = "NA";
+pub const EMPTY_FLOAT_VALUE: &str = "NaN";
+
+/// `AnnotationUtils.LIST_DELIMITER`.
+pub const LIST_DELIMITER: &str = ",";
+
+/// `VariantRecalibratorEngine.MIN_ACCEPTABLE_LOD_SCORE`, which is where `bestLod` starts.
+pub const MIN_ACCEPTABLE_LOD_SCORE: f64 = -20000.0;
+
+/// `VCFConstants.UNFILTERED`, the FILTER column of a site left for the other mode.
+pub const UNFILTERED: &str = ".";
+
+/// `GATKVCFConstants.isSpanningDeletion`, which knows the deprecated spelling too.
+pub fn is_spanning_deletion(allele: &str) -> bool {
+    allele == "*" || allele == "<*:DEL>"
+}
+
+/// `VariantDataManager.checkVariationClass(vc, allele, mode)`.
+///
+/// A **length** comparison rather than a type: SNP mode keeps every allele as long as the reference,
+/// which is why the reference's own comment says a spanning deletion counts as a SNP. INDEL mode
+/// keeps the rest, and anything symbolic.
+pub fn allele_is_of_mode(reference: &str, allele: &str, snp_mode: bool) -> bool {
+    // `isSymbolic()` is the angle brackets alone: the golden's INDEL-mode run pads `*` on both
+    // sides, which it would not if the spanning deletion counted as symbolic here.
+    let symbolic = allele.starts_with('<');
+    if snp_mode {
+        reference.len() == allele.len()
+    } else {
+        reference.len() != allele.len() || symbolic
+    }
+}
+
+/// The three lists `doAlleleSpecificFiltering` writes, and the best LOD it saw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlleleAnnotations {
+    pub filter_status: Vec<String>,
+    pub vqslod: Vec<String>,
+    pub culprit: Vec<String>,
+    /// Copied from whichever allele's recal record carried them.
+    pub positive_label: bool,
+    pub negative_label: bool,
+}
+
+impl AlleleAnnotations {
+    /// The three attributes as they are written, each one a `,`-joined list.
+    pub fn attributes(&self) -> Vec<(String, String)> {
+        vec![
+            (
+                AS_FILTER_STATUS_KEY.to_string(),
+                self.filter_status.join(LIST_DELIMITER),
+            ),
+            (AS_VQS_LOD_KEY.to_string(), self.vqslod.join(LIST_DELIMITER)),
+            (
+                AS_CULPRIT_KEY.to_string(),
+                self.culprit.join(LIST_DELIMITER),
+            ),
+        ]
+    }
+}
+
+/// What one record brings to [`allele_specific_filtering`]: its locus and its alleles.
+pub struct AlleleSpecificSite<'a> {
+    pub start: i32,
+    pub end: i32,
+    pub reference: &'a str,
+    pub alternates: &'a [String],
+    /// `VariantContext.toString()`, which only the refusal uses.
+    pub record: &'a str,
+}
+
+/// `doAlleleSpecificFiltering` for a first run, where no previous mode has left anything behind.
+///
+/// One entry per alternate allele, whatever mode is running: an allele of the other mode and a
+/// spanning deletion are **padded** rather than skipped, and the spanning deletion is padded without
+/// its recal record ever being looked for. The LOD is written with `%.4f`, and nothing site-level is
+/// written at all: in this mode there is no `VQSLOD` and no `culprit`.
+pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
+    site: &AlleleSpecificSite,
+    recals: &[T],
+    snp_mode: bool,
+    kept: &[&TruthSensitivityTranche],
+) -> Result<(AlleleAnnotations, f64), SiteFilteringError> {
+    let AlleleSpecificSite {
+        start,
+        end,
+        reference,
+        alternates,
+        record,
+    } = *site;
+    let mut best_lod = MIN_ACCEPTABLE_LOD_SCORE;
+    let mut annotations = AlleleAnnotations {
+        filter_status: Vec::new(),
+        vqslod: Vec::new(),
+        culprit: Vec::new(),
+        positive_label: false,
+        negative_label: false,
+    };
+
+    for allele in alternates {
+        if !allele_is_of_mode(reference, allele, snp_mode) {
+            // The first run has no previous lists to copy from, so the padding is all there is.
+            annotations
+                .filter_status
+                .push(EMPTY_STRING_VALUE.to_string());
+            annotations.vqslod.push(EMPTY_FLOAT_VALUE.to_string());
+            annotations.culprit.push(EMPTY_STRING_VALUE.to_string());
+            continue;
+        }
+        if is_spanning_deletion(allele) {
+            // Kept by the class test and then padded anyway, with no lookup at all.
+            annotations
+                .filter_status
+                .push(EMPTY_STRING_VALUE.to_string());
+            annotations.vqslod.push(EMPTY_FLOAT_VALUE.to_string());
+            annotations.culprit.push(EMPTY_STRING_VALUE.to_string());
+            continue;
+        }
+        let Some(recal) = matching_allele_recal(start, end, allele, recals) else {
+            return Err(SiteFilteringError::NoRecalAllele {
+                record: record.to_string(),
+            });
+        };
+        // `getAttributeAsDouble(VQS_LOD_KEY, MIN_ACCEPTABLE_LOD_SCORE)`: a missing key is the floor
+        // here rather than the refusal the site-level path makes of it.
+        let lod = recal
+            .lod_string()
+            .and_then(|text| text.trim().parse::<f64>().ok())
+            .unwrap_or(MIN_ACCEPTABLE_LOD_SCORE);
+        if lod > best_lod {
+            best_lod = lod;
+        }
+        annotations.filter_status.push(filter_string(kept, lod));
+        annotations.vqslod.push(format!("{lod:.4}"));
+        annotations
+            .culprit
+            .push(recal.culprit().unwrap_or_else(|| ".".to_string()));
+        annotations.positive_label |= recal.has_positive_label();
+        annotations.negative_label |= recal.has_negative_label();
+    }
+    Ok((annotations, best_lod))
+}
+
+/// `getMatchingRecalVC` in allele-specific mode, where the allele is compared too.
+pub fn matching_allele_recal<'a, T: RecalRecord + AllelicRecalRecord>(
+    start: i32,
+    end: i32,
+    allele: &str,
+    recals: &'a [T],
+) -> Option<&'a T> {
+    recals
+        .iter()
+        .filter(|recal| recal.start() == start)
+        .find(|recal| recal.end() == end && recal.first_alternate() == allele)
+}
+
+/// The one thing a recal record needs beyond [`RecalRecord`] for allele-specific matching.
+pub trait AllelicRecalRecord {
+    /// `getAlternateAllele(0)`, which is the allele the record was written for.
+    fn first_alternate(&self) -> String;
+}
+
+/// `generateFilterStringFromAlleles` for a first run, where neither mode has left a filter behind.
+///
+/// `both_modes_were_run` is false by construction here, so the site is left **unfiltered** unless
+/// `onlyOneModeNeeded` holds: the record must not be mixed and must be of the running mode. A mixed
+/// site therefore comes out with a FILTER of `.` while its `AS_FilterStatus` already names a tranche.
+/// The second run, which reads the first run's filter names back out of the header, is a slice of
+/// its own.
+pub fn site_filter_for_a_single_mode(
+    is_mixed: bool,
+    record_is_of_mode: bool,
+    best_lod: f64,
+    kept: &[&TruthSensitivityTranche],
+) -> String {
+    let only_one_mode_needed = !is_mixed && record_is_of_mode;
+    if !only_one_mode_needed {
+        return UNFILTERED.to_string();
+    }
+    filter_string(kept, best_lod)
+}
+
 /// Whether a record reaches the output.
 ///
 /// `--exclude-filtered` is consulted **only** for a record the tool recalibrated: one emitted
@@ -449,6 +651,8 @@ mod tests {
     struct Recal {
         start: i32,
         end: i32,
+        /// The record's first alternate allele, which allele-specific matching compares.
+        alternate: &'static str,
         lod: Option<&'static str>,
         culprit: Option<&'static str>,
         positive: bool,
@@ -485,6 +689,7 @@ mod tests {
         Recal {
             start,
             end,
+            alternate: "C",
             lod,
             culprit,
             positive: false,
@@ -591,6 +796,142 @@ mod tests {
         assert!(writes_out(false, "weak", true));
         assert!(!writes_out(true, "VQSRTrancheSNP99.00to100.00+", true));
         assert!(writes_out(true, "PASS", true));
+    }
+
+    impl AllelicRecalRecord for Recal {
+        fn first_alternate(&self) -> String {
+            self.alternate.to_string()
+        }
+    }
+
+    fn allelic(
+        start: i32,
+        end: i32,
+        alternate: &'static str,
+        lod: &'static str,
+        culprit: &'static str,
+    ) -> Recal {
+        Recal {
+            start,
+            end,
+            alternate,
+            lod: Some(lod),
+            culprit: Some(culprit),
+            positive: false,
+            negative: false,
+        }
+    }
+
+    fn alternates(list: &[&str]) -> Vec<String> {
+        list.iter().map(|allele| allele.to_string()).collect()
+    }
+
+    #[test]
+    fn a_spanning_deletion_counts_as_a_snp_and_is_padded_anyway() {
+        // The class test is a length comparison, so `*` is kept by SNP mode...
+        assert!(allele_is_of_mode("A", "*", true));
+        assert!(!allele_is_of_mode("A", "*", false));
+        assert!(is_spanning_deletion("*"));
+
+        // ...and then padded without its recal record being looked for.
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        let recals = [allelic(300, 300, "C", "2.0", "MQ")];
+        let alleles = alternates(&["*", "C"]);
+        let (annotations, best) = allele_specific_filtering(
+            &AlleleSpecificSite {
+                start: 300,
+                end: 300,
+                reference: "A",
+                alternates: &alleles,
+                record: "[VC]",
+            },
+            &recals,
+            true,
+            &kept,
+        )
+        .expect("the deletion needs nothing");
+        assert_eq!(
+            annotations.filter_status,
+            vec!["NA", "VQSRTrancheSNP90.00to99.00"]
+        );
+        assert_eq!(annotations.vqslod, vec!["NaN", "2.0000"]);
+        assert_eq!(annotations.culprit, vec!["NA", "MQ"]);
+        assert_eq!(best, 2.0);
+    }
+
+    #[test]
+    fn an_allele_of_the_other_mode_is_padded_rather_than_skipped() {
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        let recals = [
+            allelic(200, 200, "C", "-3.0", "FS"),
+            allelic(200, 200, "ACC", "4.0", "SOR"),
+        ];
+        // SNP mode: the insertion is padded, the SNP is scored.
+        let alleles = alternates(&["C", "ACC"]);
+        let site = AlleleSpecificSite {
+            start: 200,
+            end: 200,
+            reference: "A",
+            alternates: &alleles,
+            record: "[VC]",
+        };
+        let (snp, _) =
+            allele_specific_filtering(&site, &recals, true, &kept).expect("one of the two");
+        assert_eq!(
+            snp.filter_status,
+            vec!["VQSRTrancheSNP99.00to100.00+", "NA"]
+        );
+        assert_eq!(snp.vqslod, vec!["-3.0000", "NaN"]);
+        // INDEL mode: the padding swaps sides, and the lists keep one entry per allele.
+        let (indel, best) =
+            allele_specific_filtering(&site, &recals, false, &kept).expect("the other one");
+        assert_eq!(indel.filter_status, vec!["NA", "PASS"]);
+        assert_eq!(indel.vqslod, vec!["NaN", "4.0000"]);
+        assert_eq!(best, 4.0);
+    }
+
+    #[test]
+    fn a_mixed_site_is_left_unfiltered_until_both_modes_have_run() {
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        // Mixed: neither `bothModesWereRun` nor `onlyOneModeNeeded`, so the FILTER column is `.`
+        // even though the allele's own status names a tranche.
+        assert_eq!(site_filter_for_a_single_mode(true, true, -3.0, &kept), ".");
+        // A pure indel under a SNP-mode run: not of this mode, so also unfiltered.
+        assert_eq!(site_filter_for_a_single_mode(false, false, 4.0, &kept), ".");
+        // A pure SNP under a SNP-mode run: the best allele's band.
+        assert_eq!(
+            site_filter_for_a_single_mode(false, true, 2.0, &kept),
+            "VQSRTrancheSNP90.00to99.00"
+        );
+    }
+
+    #[test]
+    fn an_allele_with_no_recal_record_has_a_refusal_of_its_own() {
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        // The right locus, the wrong allele.
+        let recals = [allelic(500, 500, "G", "5.0", "QD")];
+        let alleles = alternates(&["C"]);
+        let error = allele_specific_filtering(
+            &AlleleSpecificSite {
+                start: 500,
+                end: 500,
+                reference: "A",
+                alternates: &alleles,
+                record: "[VC]",
+            },
+            &recals,
+            true,
+            &kept,
+        )
+        .expect_err("no record for C");
+        assert!(error
+            .message()
+            .starts_with("Encountered input allele which isn't found in the input recal file."));
+        assert!(error.message().contains("with flag -AS."));
     }
 
     #[test]
