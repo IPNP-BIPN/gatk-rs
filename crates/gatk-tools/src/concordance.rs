@@ -77,6 +77,19 @@
 //! null, and the increment on it is a `NullPointerException` on a run that asked for no such table.
 //! [`FilterAnalysis::apply`] keeps the condition in that shape rather than the one the layout
 //! suggests, and returns the null as an error rather than reaching for a record that is not there.
+//!
+//! # One step writes two different records
+//!
+//! ```java
+//! tryToWrite(truePositivesAndFalseNegativesVcfWriter, annotateWithConcordanceState(truthVersusEval.getTruth(), state));
+//! tryToWrite(truePositivesAndFalsePositivesVcfWriter, annotateWithConcordanceState(truthVersusEval.getEval(), state));
+//! ```
+//!
+//! Three of the five states reach two of the three optional VCFs, and never with the same record:
+//! [`writes`] is that routing. A true positive is truth's record in `-tpfn` and eval's in `-tpfp`,
+//! and a filtered false negative is truth's in `-tpfn` and eval's in `-ftnfn`, labelled `FFN` in
+//! both rather than `FN` in the file documented as false negatives. Only `-tpfn` is written against
+//! the truth header, so its sample column is the truth file's.
 
 use gatk_engine::base_recalibration_engine::round_to_n_decimal_places;
 use gatk_engine::concordance_walker::ConcordanceState;
@@ -340,6 +353,77 @@ impl FilterAnalysis {
     }
 }
 
+/// `TRUTH_STATUS_VCF_ATTRIBUTE`.
+pub const TRUTH_STATUS_VCF_ATTRIBUTE: &str = "STATUS";
+
+/// `TRUTH_STATUS_HEADER_LINE`, whose description names three of the five states it can hold.
+pub const TRUTH_STATUS_HEADER_LINE: &str = "##INFO=<ID=STATUS,Number=1,Type=String,Description=\"Truth status: TP/FP/FN for true positive/false positive/false negative.\">";
+
+/// The three optional record outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotatedVcf {
+    /// `-tpfn`, everything truth had.
+    TruePositivesAndFalseNegatives,
+    /// `-tpfp`, everything eval called.
+    TruePositivesAndFalsePositives,
+    /// `-ftnfn`, everything eval filtered.
+    FilteredTrueNegativesAndFalseNegatives,
+}
+
+/// Which of a step's two records is the one written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Truth,
+    Eval,
+}
+
+impl AnnotatedVcf {
+    /// Which header the file is written against.
+    ///
+    /// `-tpfn` is the only one built on the **truth** header, so its sample column and its INFO
+    /// declarations are the truth file's while the other two are the eval file's.
+    pub fn header(&self) -> Side {
+        match self {
+            AnnotatedVcf::TruePositivesAndFalseNegatives => Side::Truth,
+            AnnotatedVcf::TruePositivesAndFalsePositives
+            | AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives => Side::Eval,
+        }
+    }
+}
+
+/// `writeTruePositive` and its four siblings: which files a step reaches, and with which record.
+///
+/// Three of the five states write twice, and never the same record: a true positive is truth's
+/// record in `-tpfn` and eval's in `-tpfp`, and a filtered false negative is truth's in `-tpfn` and
+/// eval's in `-ftnfn`. Both copies carry the same STATUS, so the two files agree on the label and
+/// disagree on everything the two records disagree on.
+pub fn writes(state: ConcordanceState) -> Vec<(AnnotatedVcf, Side)> {
+    match state {
+        ConcordanceState::TruePositive => vec![
+            (AnnotatedVcf::TruePositivesAndFalseNegatives, Side::Truth),
+            (AnnotatedVcf::TruePositivesAndFalsePositives, Side::Eval),
+        ],
+        ConcordanceState::FalsePositive => {
+            vec![(AnnotatedVcf::TruePositivesAndFalsePositives, Side::Eval)]
+        }
+        ConcordanceState::FalseNegative => {
+            vec![(AnnotatedVcf::TruePositivesAndFalseNegatives, Side::Truth)]
+        }
+        // Labelled FFN in both, rather than FN in the file documented as false negatives.
+        ConcordanceState::FilteredFalseNegative => vec![
+            (AnnotatedVcf::TruePositivesAndFalseNegatives, Side::Truth),
+            (
+                AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives,
+                Side::Eval,
+            ),
+        ],
+        ConcordanceState::FilteredTrueNegative => vec![(
+            AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives,
+            Side::Eval,
+        )],
+    }
+}
+
 /// `areVariantsAtSameLocusConcordant`, as the two allele lists.
 pub fn variants_at_same_locus_are_concordant(
     truth_reference: &str,
@@ -573,6 +657,59 @@ mod tests {
              noisy\t1\t0\t0\t0\n\
              weak\t1\t2\t1\t1\n"
         );
+    }
+
+    #[test]
+    fn three_of_the_five_states_write_two_different_records() {
+        assert_eq!(
+            writes(ConcordanceState::TruePositive),
+            vec![
+                (AnnotatedVcf::TruePositivesAndFalseNegatives, Side::Truth),
+                (AnnotatedVcf::TruePositivesAndFalsePositives, Side::Eval),
+            ]
+        );
+        // A filtered false negative reaches the file documented as false negatives, as truth's
+        // record, and the filtered file as eval's.
+        assert_eq!(
+            writes(ConcordanceState::FilteredFalseNegative),
+            vec![
+                (AnnotatedVcf::TruePositivesAndFalseNegatives, Side::Truth),
+                (
+                    AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives,
+                    Side::Eval
+                ),
+            ]
+        );
+        // The two that write once.
+        assert_eq!(writes(ConcordanceState::FalseNegative).len(), 1);
+        assert_eq!(writes(ConcordanceState::FilteredTrueNegative).len(), 1);
+    }
+
+    #[test]
+    fn only_the_first_file_is_written_against_the_truth_header() {
+        assert_eq!(
+            AnnotatedVcf::TruePositivesAndFalseNegatives.header(),
+            Side::Truth
+        );
+        assert_eq!(
+            AnnotatedVcf::TruePositivesAndFalsePositives.header(),
+            Side::Eval
+        );
+        assert_eq!(
+            AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives.header(),
+            Side::Eval
+        );
+    }
+
+    #[test]
+    fn the_status_of_a_filtered_state_is_its_own_abbreviation() {
+        // What the STATUS attribute holds, which the header line's description does not list.
+        assert_eq!(
+            ConcordanceState::FilteredFalseNegative.abbreviation(),
+            "FFN"
+        );
+        assert_eq!(ConcordanceState::FilteredTrueNegative.abbreviation(), "FTN");
+        assert!(TRUTH_STATUS_HEADER_LINE.contains("ID=STATUS,Number=1,Type=String"));
     }
 
     #[test]
