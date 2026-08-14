@@ -1017,3 +1017,142 @@ impl PendingWriter {
             .map(|(index, _)| index)
     }
 }
+
+/// `--discordance` and `--concordance`, which need the other file's records at the same position.
+#[derive(Debug, Clone, Default)]
+pub struct ComparisonArguments {
+    pub discordance_only: bool,
+    pub concordance_only: bool,
+    /// `--exclude-filtered`, which both comparisons read and neither is changed by. See
+    /// [`have_same_genotypes`].
+    pub exclude_filtered: bool,
+}
+
+/// `haveSameGenotypes`, which compares ALLELE SETS and refuses anything filtered.
+///
+/// Two things about it are worth stating, because both are surprising and both are measured:
+///
+///  * the comparison is `a1.containsAll(a2) && a2.containsAll(a1)`, so multiplicity is invisible:
+///    `0/1` matches `1/0`, and `1/1` matches a haploid `1`;
+///  * **a filtered genotype never matches anything, including another filtered genotype.** The
+///    first clause is `g1.isCalled() && g2.isFiltered()`, and `isCalled()` is about alleles rather
+///    than filters, so a genotype carrying an FT is still called. Two identically filtered
+///    genotypes therefore take that clause and are declared different, which makes the third
+///    clause, `g1.isFiltered() && g2.isFiltered() && excludeFiltered`, unreachable. It is written
+///    out here anyway, in the reference's order, because a reader who deletes it will conclude the
+///    behaviour is a bug in the port rather than in what it ports.
+pub fn have_same_genotypes(
+    left: Option<(&Genotype, &[Allele])>,
+    right: Option<(&Genotype, &[Allele])>,
+    exclude_filtered: bool,
+) -> bool {
+    let (Some((left, left_alleles)), Some((right, right_alleles))) = (left, right) else {
+        return false;
+    };
+    let called = |genotype: &Genotype| {
+        !genotype.alleles.is_empty() && genotype.alleles.iter().any(Option::is_some)
+    };
+    if (called(left) && is_filtered(right))
+        || (called(right) && is_filtered(left))
+        || (is_filtered(left) && is_filtered(right) && exclude_filtered)
+    {
+        return false;
+    }
+    let bases = |genotype: &Genotype, alleles: &[Allele]| -> Vec<Vec<u8>> {
+        genotype
+            .alleles
+            .iter()
+            .map(|allele| match allele {
+                Some(index) => alleles[*index].bases.clone(),
+                None => b".".to_vec(),
+            })
+            .collect()
+    };
+    let left_bases = bases(left, left_alleles);
+    let right_bases = bases(right, right_alleles);
+    left_bases.iter().all(|allele| right_bases.contains(allele))
+        && right_bases.iter().all(|allele| left_bases.contains(allele))
+}
+
+/// `isDiscordant`: without a sample it is only "the other file has nothing here".
+pub fn is_discordant(
+    record: &Record,
+    others: &[Record],
+    selection: &SampleSelection,
+    arguments: &ComparisonArguments,
+) -> bool {
+    if selection.no_samples_specified {
+        return others.is_empty();
+    }
+    for (index, name) in record.samples.iter().enumerate() {
+        if !selection.samples.contains(name) {
+            continue;
+        }
+        let genotype = &record.variant.genotypes[index];
+        // `sampleHasVariant`, whose `isFiltered && !excludeFiltered` half is unreachable for the
+        // same reason as above: a filtered genotype with alleles is still called.
+        let hom_ref =
+            !genotype.alleles.is_empty() && genotype.alleles.iter().all(|a| *a == Some(0));
+        let called = !genotype.alleles.is_empty() && genotype.alleles.iter().any(Option::is_some);
+        if hom_ref || !(called || (is_filtered(genotype) && !arguments.exclude_filtered)) {
+            continue;
+        }
+        let found = others.iter().any(|other| {
+            have_same_genotypes(
+                Some((genotype, &record.variant.alleles)),
+                genotype_of(other, name),
+                arguments.exclude_filtered,
+            )
+        });
+        if !found {
+            return true;
+        }
+    }
+    false
+}
+
+/// `isConcordant`: every selected sample must match somewhere, which is not the negation of
+/// discordance.
+pub fn is_concordant(
+    record: &Record,
+    others: &[Record],
+    selection: &SampleSelection,
+    arguments: &ComparisonArguments,
+) -> bool {
+    if others.is_empty() {
+        return false;
+    }
+    if selection.no_samples_specified {
+        return true;
+    }
+    for (index, name) in record.samples.iter().enumerate() {
+        if !selection.samples.contains(name) {
+            continue;
+        }
+        let genotype = &record.variant.genotypes[index];
+        let found = others.iter().any(|other| {
+            have_same_genotypes(
+                Some((genotype, &record.variant.alleles)),
+                genotype_of(other, name),
+                arguments.exclude_filtered,
+            )
+        });
+        if !found {
+            return false;
+        }
+    }
+    true
+}
+
+fn genotype_of<'a>(record: &'a Record, sample: &str) -> Option<(&'a Genotype, &'a [Allele])> {
+    record
+        .samples
+        .iter()
+        .position(|name| name == sample)
+        .map(|index| {
+            (
+                &record.variant.genotypes[index],
+                &record.variant.alleles[..],
+            )
+        })
+}
