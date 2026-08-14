@@ -3239,6 +3239,36 @@
         }
       ]
     }
+    ,
+    {
+      "id": "mutect-engine-construction",
+      "status": "golden-pending",
+      "title": "Mutect's engine as constructed, where every sample not named normal is a tumour",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Mutect2FilteringEngine as constructed, before any record reaches it, which is measurable because the engine takes an argument collection, a header and a stats file that need not exist. THE NORMAL SAMPLES ARE A HEADER LINE, ##normal_sample=, AND EVERY OTHER SAMPLE IS A TUMOUR SAMPLE: isTumor is !isNormal, so a sample the header never mentions is tumour, and so is one declared under a key that differs only in case, the comparison being exact. THE THRESHOLD STARTS AT 0.1, the argument collection's own default, and not at anything learned. A CLUSTERING MODEL WITH NO DATA STILL HAS PRIORS: the prior of a variant against an artifact is log10ToLog(-1), and the prior of a somatic variant is log10ToLog(-6) for a SNV and log10ToLog(-7) for an indel, THE SNV ONE PLUS LOG(1/3) because a SNV has three possible alternate bases: -14.914122846632385 against -16.11809565095832. THE MISSING STATS FILE IS NOT AN ERROR, the engine reading it only if it exists. And the two posteriors the engine offers on top of those priors are what every filter's first pass is weighed against.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "sample\tT1\ttumour",
+        "sample\tN1\tnormal",
+        "sample\tN3\ttumour",
+        "sample\tnever-mentioned\ttumour",
+        "value\tinitial-threshold\t0.1",
+        "value\tlog-prior-variant-versus-artifact\t-2.302585092994046",
+        "value\tlog-somatic-prior-snp\t-14.914122846632385",
+        "value\tlog-somatic-prior-indel\t-16.11809565095832"
+      ],
+      "cases": [
+        {
+          "dump": "MutectEngineConstructionDump",
+          "golden": null,
+          "why": "15 rows: no files at all. One engine built from a header naming two normal samples and a third under a key differing only in case, asked about five samples, its initial threshold, its two priors and three posteriors on each of two routes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    }
   ],
   "probes": []
 }
