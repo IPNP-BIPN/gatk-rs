@@ -35,6 +35,75 @@
 
 use crate::allele_likelihoods::log10_to_log;
 use crate::natural_log_utils::{log1mexp, normalize_from_log_to_linear_space, NonFiniteSum};
+#[cfg(test)]
+use crate::tsv_table::java_double_to_string;
+
+/// `Mutect2Engine.NORMAL_SAMPLE_KEY_IN_VCF_HEADER`.
+pub const NORMAL_SAMPLE_KEY_IN_VCF_HEADER: &str = "normal_sample";
+
+/// `M2FiltersArgumentCollection.DEFAULT_INITIAL_POSTERIOR_THRESHOLD`.
+pub const DEFAULT_INITIAL_POSTERIOR_THRESHOLD: f64 = 0.1;
+
+/// `DEFAULT_LOG_SNV_PRIOR`, which is `log10ToLog(-6)` rather than a decimal literal.
+pub fn default_log_snv_prior() -> f64 {
+    log10_to_log(-6.0)
+}
+
+/// `DEFAULT_LOG_INDEL_PRIOR`.
+pub fn default_log_indel_prior() -> f64 {
+    log10_to_log(-7.0)
+}
+
+/// `DEFAULT_INITIAL_LOG_PRIOR_OF_VARIANT_VERSUS_ARTIFACT`.
+pub fn default_log_prior_of_variant_versus_artifact() -> f64 {
+    log10_to_log(-1.0)
+}
+
+/// `MathUtils.LOG_ONE_THIRD`, the three alternate bases a SNV could have been.
+pub fn log_one_third() -> f64 {
+    (1.0f64 / 3.0).ln()
+}
+
+/// `isNormal`: the sample is named by a `##normal_sample=` line of the header.
+///
+/// The key is compared **exactly**, so a header line spelled `Normal_Sample` names no normal sample
+/// at all.
+pub fn is_normal(normal_samples: &[String], sample: &str) -> bool {
+    normal_samples.iter().any(|normal| normal == sample)
+}
+
+/// `isTumor`, which is `!isNormal` and therefore catches every sample the header does not name,
+/// including one that is not in the VCF.
+pub fn is_tumor(normal_samples: &[String], sample: &str) -> bool {
+    !is_normal(normal_samples, sample)
+}
+
+/// The `##normal_sample=` values of a header, in the order the lines appear.
+pub fn normal_samples(header_lines: &[(String, String)]) -> Vec<String> {
+    header_lines
+        .iter()
+        .filter(|(key, _)| key == NORMAL_SAMPLE_KEY_IN_VCF_HEADER)
+        .map(|(_, value)| value.clone())
+        .collect()
+}
+
+/// `SomaticClusteringModel.getLogPriorOfSomaticVariant`, for a model that has learned nothing.
+///
+/// A SNV is an indel length of zero, and only a SNV gets `log(1/3)` added: the prior is per
+/// mutation, and a SNV could have been any of three bases. An indel length the map has never seen
+/// takes the **minimum** of the priors already in it, which the reference then stores.
+pub fn log_prior_of_somatic_variant(indel_length: i32) -> f64 {
+    let prior = if indel_length == 0 {
+        default_log_snv_prior()
+    } else {
+        default_log_indel_prior()
+    };
+    if indel_length == 0 {
+        prior + log_one_third()
+    } else {
+        prior
+    }
+}
 
 /// `EPSILON`.
 pub const EPSILON: f64 = 1.0e-10;
@@ -155,6 +224,46 @@ mod tests {
         assert_eq!(tumor_log_odds(None), None);
         // An empty annotation is not the same thing as none at all.
         assert_eq!(tumor_log_odds(Some(&[])), Some(Vec::new()));
+    }
+
+    #[test]
+    fn every_sample_not_named_normal_is_a_tumour_sample() {
+        let lines = [
+            ("normal_sample".to_string(), "N1".to_string()),
+            ("normal_sample".to_string(), "N2".to_string()),
+            // A key differing only in case names nothing.
+            ("Normal_Sample".to_string(), "N3".to_string()),
+        ];
+        let normals = normal_samples(&lines);
+        assert_eq!(normals, vec!["N1".to_string(), "N2".to_string()]);
+        assert!(is_normal(&normals, "N1"));
+        assert!(is_tumor(&normals, "T1"));
+        // Declared under the wrong key, and never declared at all.
+        assert!(is_tumor(&normals, "N3"));
+        assert!(is_tumor(&normals, "never-mentioned"));
+    }
+
+    #[test]
+    fn a_model_with_no_data_still_has_priors() {
+        // The prior of a variant against an artifact, which is exactly minus one decimal order.
+        assert_eq!(
+            default_log_prior_of_variant_versus_artifact(),
+            -std::f64::consts::LN_10
+        );
+        assert_eq!(
+            java_double_to_string(default_log_prior_of_variant_versus_artifact()),
+            "-2.302585092994046"
+        );
+        // A SNV takes the SNV prior plus log(1/3); an indel takes its own prior and nothing else.
+        assert_eq!(log_prior_of_somatic_variant(0), -14.914122846632385);
+        assert_eq!(log_prior_of_somatic_variant(-2), -16.11809565095832);
+        assert_eq!(log_prior_of_somatic_variant(3), -16.11809565095832);
+        // The two defaults are one decimal order apart; the log(1/3) on the SNV side closes some
+        // of that gap, so the two priors are nearer each other than the defaults they come from.
+        assert!(
+            (log_prior_of_somatic_variant(0) - log_prior_of_somatic_variant(1)).abs()
+                < (default_log_snv_prior() - default_log_indel_prior()).abs()
+        );
     }
 
     #[test]

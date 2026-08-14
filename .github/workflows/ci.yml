@@ -221,8 +221,8 @@ jobs:
             suites: "filter-variant-tranches threshold-calculator filter-stats mutect-hard-filters mutect-engine-arithmetic"
           - group: oracle-backed
             index: "28/28"
-            slug: "germline-probability"
-            suites: "germline-probability"
+            slug: "germline-probability-mutect-engine-construction"
+            suites: "germline-probability mutect-engine-construction"
     steps:
       - uses: actions/checkout@v4
 
