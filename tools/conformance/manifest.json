@@ -2817,6 +2817,34 @@
           "why": "13 rows: seven VCFs and six runs. The first pair carries four SNP true positives with equal deltas, an indel true positive, a true positive whose truth record lacks the key, a truth-only record, an eval-only record and a filtered one; the second pair spreads its deltas so the standard deviation is a real number; the third agrees on nothing. Two runs cover the two missing-key refusals and one takes a different key from each side. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31784430042."
         }
       ]
+    },
+    {
+      "id": "concordance-summary",
+      "status": "golden-pending",
+      "title": "Concordance's summary table, where an empty callset's recall is zero rather than NaN",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Concordance"
+      ],
+      "why": "The tool the concordance iterator was written for, measured on its --summary table alone: five states tallied into six columns, one row for SNPs and one for everything else. AN EMPTY CALLSET REPORTS ZERO RATHER THAN NaN, both rates being long divisions printed through MathUtils.roundToNDecimalPlaces(x, 3), which is Math.round((x + ulp(x)) * 1000) / 1000, and Math.round of NaN is 0: the same 0/0 that EvaluateInfoFieldConcordance writes as NaN is written here as 0.0. A FILTERED EVAL RECORD ALONE LEAVES NO TRACE, FILTERED_TRUE_NEGATIVE being counted into the enum map and never read, while the FN column is FALSE_NEGATIVE + FILTERED_FALSE_NEGATIVE, so an unmatched filtered record moves neither rate and a filtered one at a truth locus counts as a miss without counting as a false positive. EVERYTHING THAT IS NOT A SNP IS AN INDEL, the stratification being one isSNP() on getTruthIfPresentElseEval(), so an MNP and a symbolic record share a row. THE TRUTH SIDE DROPS SYMBOLIC AND SV RECORDS AND THE EVAL SIDE KEEPS EVERYTHING, so the same symbolic record in both files is a false positive rather than a true positive. AGREEMENT NEEDS THE SAME NUMBER OF ALTERNATES BUT ONLY TRUTH'S FIRST, so A/C against A/C,G disagrees on the count while A/C,G against A/G,C agrees. And the rounding is half-up after an ulp is added, so 2/3 prints 0.667.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "table\tbaseline\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t2\\t1\\t1\\t0.667\\t0.667\\nINDEL\\t1\\t1\\t1\\t0.5\\t0.5\\n",
+        "table\tfiltered\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t1\\t0\\t1\\t0.5\\t1.0\\nINDEL\\t0\\t0\\t0\\t0.0\\t0.0\\n",
+        "table\tempty\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t0\\t0\\t0\\t0.0\\t0.0\\nINDEL\\t0\\t0\\t0\\t0.0\\t0.0\\n",
+        "table\ttypes\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t1\\t0\\t0\\t1.0\\t1.0\\nINDEL\\t1\\t1\\t0\\t1.0\\t0.5\\n",
+        "table\talleles\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t1\\t1\\t1\\t0.5\\t0.5\\nINDEL\\t0\\t1\\t1\\t0.0\\t0.0\\n"
+      ],
+      "cases": [
+        {
+          "dump": "ConcordanceDump",
+          "golden": null,
+          "why": "15 rows: ten VCFs and five runs. The first pair puts two true positives, a false negative and a false positive on each row; the second pair carries a filtered eval record at a truth locus and a filtered one alone; the third is a pair of record-free files; the fourth carries an MNP, a symbolic record on both sides and a multi-allelic SNP whose alternates are ordered differently; the fifth disagrees on an alternate count and on a reference allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
