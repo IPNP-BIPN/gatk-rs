@@ -3272,7 +3272,7 @@
     ,
     {
       "id": "mutect-error-probabilities",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect's error probabilities, where a switched-off filter is dropped rather than zero",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3294,8 +3294,8 @@
       "cases": [
         {
           "dump": "MutectErrorProbabilitiesDump",
-          "golden": null,
-          "why": "25 rows: no files. One engine built from a two-sample header, four filters of one error type \u2014 one of them switched off \u2014 and seven records: one alternate failing one filter, the same failing two, one failing none, two alternates with one failing, a site filter firing on both, an annotation shorter than the allele list, and a symbolic alternate. Two more records add a filter that consults the engine, whose pileup p-value short circuit answers 1.0. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/mutect_error_probabilities.txt.gz",
+          "why": "25 rows: no files. One engine built from a two-sample header, four filters of one error type \u2014 one of them switched off \u2014 and seven records: one alternate failing one filter, the same failing two, one failing none, two alternates with one failing, a site filter firing on both, an annotation shorter than the allele list, and a symbolic alternate. Two more records add a filter that consults the engine, whose pileup p-value short circuit answers 1.0. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31840718496. The port is compared on the shape of the combination; its arithmetic on fractional probabilities is asserted in the module's own unit tests, on values this golden cannot produce."
         }
       ]
     }

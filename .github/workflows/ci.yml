@@ -221,12 +221,8 @@ jobs:
             suites: "filter-variant-tranches threshold-calculator filter-stats mutect-hard-filters mutect-engine-arithmetic"
           - group: oracle-backed
             index: "28/28"
-            slug: "germline-probability-mutect-engine-construction"
-            suites: "germline-probability mutect-engine-construction"
-          - group: golden-pending
-            index: "1/1"
-            slug: "mutect-error-probabilities"
-            suites: "mutect-error-probabilities"
+            slug: "germline-probability-mutect-engine-construction-mutect-error-probabilities"
+            suites: "germline-probability mutect-engine-construction mutect-error-probabilities"
     steps:
       - uses: actions/checkout@v4
 
