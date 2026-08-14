@@ -2509,7 +2509,7 @@
     },
     {
       "id": "select-variants-output",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SelectVariants' output order, where trimming moves a record right",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2528,8 +2528,8 @@
       "cases": [
         {
           "dump": "SelectVariantsOutputDump",
-          "golden": null,
-          "why": "64 rows: one input of six records over two contigs and nine runs. The first record shares four bases of prefix with its alternate, so trimming moves it from 100 to 104, where another record already is, and a third sits between them at 101: the three of them together are what shows the queue's drain rule. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/select_variants_output.txt.gz",
+          "why": "64 rows: one input of six records over two contigs and nine runs. The first record shares four bases of prefix with its alternate, so trimming moves it from 100 to 104, where another record already is, and a third sits between them at 101: the three of them together are what shows the queue's drain rule. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31757410137, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
