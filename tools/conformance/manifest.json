@@ -2764,7 +2764,7 @@
     },
     {
       "id": "concordance-walker",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The concordance iterator, where a disagreement advances truth alone",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2785,8 +2785,8 @@
       "cases": [
         {
           "dump": "ConcordanceWalkerDump",
-          "golden": null,
-          "why": "23 rows: four VCFs and three runs of two probe walkers written for this measurement, one with the base class's own filters and one with EvaluateInfoFieldConcordance's. The truth and eval files pair an agreement, a truth-only record, an eval-only record, an eval-only filtered record, a filtered record at a truth locus, a disagreement at a shared locus, the truth record after it, and a filtered truth record under an unfiltered eval one. The third run is a pair of contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/concordance_walker.txt.gz",
+          "why": "23 rows: four VCFs and three runs of two probe walkers written for this measurement, one with the base class's own filters and one with EvaluateInfoFieldConcordance's. The truth and eval files pair an agreement, a truth-only record, an eval-only record, an eval-only filtered record, a filtered record at a truth locus, a disagreement at a shared locus, the truth record after it, and a filtered truth record under an unfiltered eval one. The third run is a pair of contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31783687122."
         }
       ]
     }
