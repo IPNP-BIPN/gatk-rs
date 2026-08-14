@@ -213,8 +213,8 @@ jobs:
             suites: "annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance concordance-summary concordance-filter-analysis"
           - group: oracle-backed
             index: "26/26"
-            slug: "concordance-annotated-vcfs-apply-vqsr-tranches"
-            suites: "concordance-annotated-vcfs apply-vqsr-tranches"
+            slug: "concordance-annotated-vcfs-apply-vqsr-tranches-apply-vqsr-site-filtering"
+            suites: "concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering"
     steps:
       - uses: actions/checkout@v4
 

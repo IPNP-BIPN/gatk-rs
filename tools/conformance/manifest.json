@@ -2941,6 +2941,41 @@
         }
       ]
     }
+    ,
+    {
+      "id": "apply-vqsr-site-filtering",
+      "status": "oracle-backed",
+      "title": "ApplyVQSR's per-record filtering, where the last tranche means PASS",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "ApplyVQSR's per-record half, measured on an input VCF of eight records against a recal VCF and the three-tranche file of the apply-vqsr-tranches suite. THE TRANCHES ARE WALKED BACKWARDS AND THE LAST ONE MEANS PASS: the loop takes the first tranche whose minVQSLod the record reaches and answers PASS only when that tranche is the last of the reversed list, so the bands are exactly the intervals the FILTER header lines describe, a LOD equal to a minVQSLod belongs to the tranche below it, and anything under every tranche gets the FIRST tranche's name with a + appended. THE RECAL RECORD MUST AGREE ON BOTH ENDS, BY TWO DIFFERENT MECHANISMS: the query is getValues(recal, vc.getStart()), which keeps only records STARTING at the input record's start, and getMatchingRecalVC then takes the first of those whose END matches, so a recal record at the same start with another length is skipped and one with no partner at all is a refusal. EVERY NEGATIVE VQSLOD IS WRITTEN IN SCIENTIFIC NOTATION: the value is reparsed as a double and handed to htsjdk's formatVCFDouble, whose branch is on the SIGNED value, so -3.0 comes out -3.000e+00 while 5.0 comes out 5.00 and 0.0 comes out 0.00. A RECAL RECORD WITH NO CULPRIT WRITES culprit=. , the attribute being copied with getAttribute and no default. A RECORD OF THE WRONG CLASS OR ONE ALREADY FILTERED IS EMITTED UNTOUCHED, and --exclude-filtered NEVER DROPS IT: the exclusion is inside the branch that recalibrates, so an already-filtered record survives a run that drops every record the tool itself filtered. --ignore-all-filters and --ignore-filter each bring it back into the recalibration. AND THE THREE REFUSALS ARE WRAPPED: what apply throws is a UserException, and the walker rethrows it as a GATKException whose message is the locus and the whole VariantContext, so the tool's own wording survives only in the cause.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 56,
+      "expect_contains": [
+        "vcfline\tsnp-mode\tchr1\\t100\\t.\\tA\\tC\\t50\\tPASS\\tPOSITIVE_TRAIN_SITE;VQSLOD=5.00;culprit=QD\\tGT\\t0/1",
+        "vcfline\tsnp-mode\tchr1\\t200\\t.\\tA\\tC\\t50\\tVQSRTrancheSNP90.00to99.00\\tVQSLOD=2.00;culprit=MQ\\tGT\\t0/1",
+        "vcfline\tsnp-mode\tchr1\\t400\\t.\\tA\\tC\\t50\\tVQSRTrancheSNP99.00to100.00+\\tVQSLOD=-3.000e+00;culprit=.\\tGT\\t0/1",
+        "vcfline\tsnp-mode\tchr1\\t700\\t.\\tA\\tC\\t50\\tVQSRTrancheSNP90.00to99.00\\tVQSLOD=1.50;culprit=SOR\\tGT\\t0/1",
+        "vcfline\tsnp-mode\tchr1\\t500\\t.\\tACC\\tA\\t50\\t.\\t.\\tGT\\t0/1",
+        "vcfline\texclude-filtered\tchr1\\t600\\t.\\tA\\tC\\t50\\tweak\\t.\\tGT\\t0/1",
+        "vcfline\tignore-all-filters\tchr1\\t600\\t.\\tA\\tC\\t50\\tPASS\\tVQSLOD=4.00;culprit=QD\\tGT\\t0/1",
+        "vcfline\tlod-cutoff\tchr1\\t300\\t.\\tA\\tC\\t50\\tLOW_VQSLOD\\tNEGATIVE_TRAIN_SITE;VQSLOD=0.00;culprit=FS\\tGT\\t0/1",
+        "vcfline\tends\tchr1\\t800\\t.\\tA\\tC\\t50\\tPASS\\tVQSLOD=5.00;culprit=TAKEN\\tGT\\t0/1",
+        "cause\tends-mismatch\torg.broadinstitute.hellbender.exceptions.UserException:Encountered input variant which isn't found in the input recal file.",
+        "cause\tno-lod\torg.broadinstitute.hellbender.exceptions.UserException:Encountered a malformed record in the input recal file. There is no lod for the record at:",
+        "cause\tbad-lod\torg.broadinstitute.hellbender.exceptions.UserException:Encountered a malformed record in the input recal file. The lod is unreadable for the record at:",
+        "error\tno-lod\torg.broadinstitute.hellbender.exceptions.GATKException:Exception thrown at chr1:900"
+      ],
+      "cases": [
+        {
+          "dump": "ApplyVqsrSiteFilteringDump",
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_site_filtering.txt.gz",
+          "why": "56 rows: seven VCFs, one tranches file and eleven runs. The main pair puts one record in each of the three bands, one on a band boundary, one whose recal record has no culprit, an indel and an already-filtered record. A second pair has two recal records starting where the input record does, only one of which ends there, and a third has none that ends there. Three more runs cover the missing recal record, the recal record with no LOD and the LOD that will not parse. The runs cover SNP and INDEL mode, both filter-ignoring flags, --exclude-filtered and a plain LOD cutoff. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31817438956."
+        }
+      ]
+    }
   ],
   "probes": []
 }
