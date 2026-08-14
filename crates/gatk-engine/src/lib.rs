@@ -33,6 +33,7 @@ pub mod fisher_exact;
 pub mod fragment;
 pub mod gatk_report;
 pub mod genotype_index;
+pub mod germline_filter;
 pub mod haplotype;
 pub mod histogram;
 pub mod interval;
