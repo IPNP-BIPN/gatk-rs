@@ -58,8 +58,9 @@
 use gatk_engine::genotype_index::GenotypeIndexError;
 use gatk_engine::java_hash::compare_strings;
 use gatk_engine::java_regex::{self, PatternSyntaxError};
+use gatk_engine::jexl::{create_expression, Value as JexlValue};
 use gatk_engine::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
-use gatk_engine::variant_context_utils::{trim_alleles, Variant};
+use gatk_engine::variant_context_utils::{trim_alleles, Allele, Variant};
 
 /// The four sample arguments and the flag that forgives a missing name.
 #[derive(Debug, Clone, Default)]
@@ -525,4 +526,386 @@ fn set_attribute(variant: &mut Variant, key: &str, value: &str) {
             .attributes
             .push((key.to_string(), value.to_string())),
     }
+}
+
+/// `VariantContext.Type`, as `determineType` decides it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariantType {
+    NoVariation,
+    Snp,
+    Mnp,
+    Indel,
+    Symbolic,
+    Mixed,
+}
+
+/// `determineType`: one alternate decides alone, several must agree or the record is MIXED.
+///
+/// The spanning deletion is not symbolic here: `*` is one base against a one-base reference, so a
+/// record whose only alternate is `*` is a SNP, and `--select-type-to-include SNP` keeps it.
+pub fn variant_type(alleles: &[Allele]) -> VariantType {
+    if alleles.len() < 2 {
+        return VariantType::NoVariation;
+    }
+    let reference = &alleles[0];
+    let mut kind: Option<VariantType> = None;
+    for alternate in &alleles[1..] {
+        let this = if alternate.is_symbolic() {
+            VariantType::Symbolic
+        } else if alternate.len() == reference.len() {
+            if reference.len() == 1 {
+                VariantType::Snp
+            } else {
+                VariantType::Mnp
+            }
+        } else {
+            VariantType::Indel
+        };
+        match kind {
+            None => kind = Some(this),
+            Some(seen) if seen != this => return VariantType::Mixed,
+            Some(_) => {}
+        }
+    }
+    kind.unwrap_or(VariantType::NoVariation)
+}
+
+/// `getIndelLengths`, which is `null` for anything but an INDEL or a MIXED record.
+fn indel_lengths(alleles: &[Allele]) -> Option<Vec<i32>> {
+    match variant_type(alleles) {
+        VariantType::Indel | VariantType::Mixed => Some(
+            alleles[1..]
+                .iter()
+                .map(|alternate| alternate.len() as i32 - alleles[0].len() as i32)
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// `--restrict-alleles-to`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlleleRestriction {
+    All,
+    Biallelic,
+    Multiallelic,
+}
+
+/// The arguments that decide which records survive.
+#[derive(Debug, Clone)]
+pub struct FilterArguments {
+    pub types_to_include: Vec<VariantType>,
+    pub types_to_exclude: Vec<VariantType>,
+    pub allele_restriction: AlleleRestriction,
+    pub max_indel_size: i32,
+    pub min_indel_size: i32,
+    pub keep_ids: Vec<String>,
+    pub exclude_ids: Vec<String>,
+    pub exclude_filtered: bool,
+    pub exclude_non_variants: bool,
+    pub max_filtered_genotypes: i32,
+    pub min_filtered_genotypes: i32,
+    pub max_fraction_filtered_genotypes: f64,
+    pub min_fraction_filtered_genotypes: f64,
+    pub max_nocall_number: i32,
+    pub max_nocall_fraction: f64,
+    pub select_expressions: Vec<String>,
+    pub select_genotype_expressions: Vec<String>,
+    pub invert_select: bool,
+    pub apply_jexl_filters_first: bool,
+}
+
+impl Default for FilterArguments {
+    fn default() -> FilterArguments {
+        FilterArguments {
+            types_to_include: Vec::new(),
+            types_to_exclude: Vec::new(),
+            allele_restriction: AlleleRestriction::All,
+            max_indel_size: i32::MAX,
+            min_indel_size: 0,
+            keep_ids: Vec::new(),
+            exclude_ids: Vec::new(),
+            exclude_filtered: false,
+            exclude_non_variants: false,
+            max_filtered_genotypes: i32::MAX,
+            min_filtered_genotypes: 0,
+            max_fraction_filtered_genotypes: 1.0,
+            min_fraction_filtered_genotypes: 0.0,
+            max_nocall_number: i32::MAX,
+            max_nocall_fraction: 1.0,
+            select_expressions: Vec::new(),
+            select_genotype_expressions: Vec::new(),
+            invert_select: false,
+            apply_jexl_filters_first: false,
+        }
+    }
+}
+
+impl FilterArguments {
+    /// `considerFilteredGenotypes`: the gate runs only where an argument moved a default.
+    fn consider_filtered_genotypes(&self) -> bool {
+        self.max_filtered_genotypes != i32::MAX
+            || self.min_filtered_genotypes != 0
+            || self.max_fraction_filtered_genotypes != 1.0
+            || self.min_fraction_filtered_genotypes != 0.0
+    }
+
+    fn consider_no_call_genotypes(&self) -> bool {
+        self.max_nocall_number != i32::MAX || self.max_nocall_fraction != 1.0
+    }
+}
+
+/// What an expression can refuse with, both of which reach the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectError {
+    /// The expression compiled and then failed on a record, which a per-allele annotation does.
+    Invalid { index: usize, genotype: bool },
+    /// The expression did not compile, refused by the argument parser before any record was read.
+    Unparseable { index: usize, text: String },
+}
+
+impl SelectError {
+    pub fn message(&self) -> String {
+        match self {
+            SelectError::Invalid { index, genotype } => format!(
+                "Invalid JEXL expression detected for {}-{index}\nSee \
+                 https://gatk.broadinstitute.org/hc/en-us/articles/360035891011-JEXL-filtering-expressions \
+                 for documentation on using JEXL in GATK",
+                if *genotype { "select-genotype" } else { "select" }
+            ),
+            // The reference's own string, missing the space after the argument name.
+            SelectError::Unparseable { index, text } => format!(
+                "Argument select-{index}has a bad value. Invalid expression used ({text}). Please \
+                 see the JEXL docs for correct syntax."
+            ),
+        }
+    }
+
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            SelectError::Invalid { .. } => "org.broadinstitute.hellbender.exceptions.UserException",
+            SelectError::Unparseable { .. } => "java.lang.IllegalArgumentException",
+        }
+    }
+}
+
+/// As much of a record as the filtering reads, beside the [`Record`] the subsetting works on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FilterRecord {
+    pub id: String,
+    /// The FILTER column: empty for `.` or `PASS`, the names otherwise.
+    pub filters: Vec<String>,
+    /// The INFO fields as an expression reads them, which is the decoded value's `toString`. A
+    /// `Number=A` field decodes to a list, so its value here is `[2]` or `[1, 1]`, and nothing
+    /// numeric compares against that: an expression over a per-allele annotation is a refusal
+    /// rather than a false, which is what the golden holds.
+    pub info: std::collections::HashMap<String, String>,
+    /// Per sample, the fields a genotype expression reads.
+    pub genotype_fields: Vec<std::collections::HashMap<String, String>>,
+}
+
+/// `applyFirstRoundOfFiltering` plus the two genotype-count gates, which run before the subset.
+///
+/// Returns whether the record survives. The Mendelian and random-fraction gates are not here:
+/// one needs a pedigree and the other a random generator, and neither is measured.
+pub fn keeps_before_subset(
+    record: &Record,
+    filter_record: &FilterRecord,
+    arguments: &FilterArguments,
+    selection: &SampleSelection,
+) -> Result<bool, SelectError> {
+    if arguments.exclude_filtered && !filter_record.filters.is_empty() {
+        return Ok(false);
+    }
+
+    // `makeVariantFilter` runs before `apply` and is the same decision, so it is here.
+    let selected_types = selected_types(arguments);
+    if !selected_types.contains(&variant_type(&record.variant.alleles)) {
+        return Ok(false);
+    }
+    if !arguments.keep_ids.is_empty() && !arguments.keep_ids.contains(&filter_record.id) {
+        return Ok(false);
+    }
+    if arguments.exclude_ids.contains(&filter_record.id) {
+        return Ok(false);
+    }
+
+    let biallelic = record.variant.alleles.len() == 2;
+    match arguments.allele_restriction {
+        AlleleRestriction::Biallelic if !biallelic => return Ok(false),
+        AlleleRestriction::Multiallelic if biallelic => return Ok(false),
+        _ => {}
+    }
+
+    // Both gates are about ABSOLUTE length and both reject the RECORD: one alternate out of range
+    // takes the whole record with it.
+    if let Some(lengths) = indel_lengths(&record.variant.alleles) {
+        if lengths.iter().any(|length| {
+            length.abs() > arguments.max_indel_size || length.abs() < arguments.min_indel_size
+        }) {
+            return Ok(false);
+        }
+    }
+
+    if arguments.apply_jexl_filters_first && !passes_jexl_filters(filter_record, arguments)? {
+        return Ok(false);
+    }
+
+    // The two counting gates, over the SELECTED samples.
+    let kept: Vec<usize> = record
+        .samples
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| selection.samples.contains(name))
+        .map(|(index, _)| index)
+        .collect();
+    let sample_count = selection.samples.len();
+
+    if arguments.consider_filtered_genotypes() {
+        let filtered = kept
+            .iter()
+            .filter(|index| is_filtered(&record.variant.genotypes[**index]))
+            .count() as i32;
+        // `numFilteredSamples / samples.size()` is INT OVER INT in the reference, assigned to a
+        // double afterwards: the fraction is 0 unless every sample is filtered. Reproduced, since
+        // a port that divided properly would keep different records.
+        let fraction = if sample_count == 0 {
+            0.0
+        } else {
+            f64::from(filtered / sample_count as i32)
+        };
+        if filtered > arguments.max_filtered_genotypes
+            || filtered < arguments.min_filtered_genotypes
+            || fraction > arguments.max_fraction_filtered_genotypes
+            || fraction < arguments.min_fraction_filtered_genotypes
+        {
+            return Ok(false);
+        }
+    }
+
+    if arguments.consider_no_call_genotypes() {
+        let no_calls = kept
+            .iter()
+            .filter(|index| {
+                let genotype = &record.variant.genotypes[**index];
+                !genotype.alleles.is_empty() && genotype.alleles.iter().all(Option::is_none)
+            })
+            .count() as i32;
+        // One line below the other in the reference, and this one casts.
+        let fraction = if sample_count == 0 {
+            0.0
+        } else {
+            f64::from(no_calls) / sample_count as f64
+        };
+        if no_calls > arguments.max_nocall_number || fraction > arguments.max_nocall_fraction {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+/// `--exclude-non-variants` and the JEXL expressions that did not run first, both of which see the
+/// record as the subset left it.
+pub fn keeps_after_subset(
+    subset: &Record,
+    filter_record: &FilterRecord,
+    arguments: &FilterArguments,
+) -> Result<bool, SelectError> {
+    if arguments.exclude_non_variants {
+        // `isPolymorphicInSamples`: some genotype calls an alternate. `isSpanningDeletionOnly`
+        // takes the other half: a record whose only alternate is `*` is not a variant either.
+        let polymorphic = subset
+            .variant
+            .genotypes
+            .iter()
+            .any(|genotype| genotype.alleles.iter().flatten().any(|allele| *allele > 0));
+        let spanning_only =
+            subset.variant.alleles.len() == 2 && subset.variant.alleles[1].is_span_del();
+        if !polymorphic || spanning_only {
+            return Ok(false);
+        }
+    }
+
+    if !arguments.apply_jexl_filters_first && !passes_jexl_filters(filter_record, arguments)? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `passesJexlFilters`: the expressions are OR-ed, and `--invert-select` inverts EACH of them
+/// before the or, which is not the complement of the whole.
+fn passes_jexl_filters(
+    record: &FilterRecord,
+    arguments: &FilterArguments,
+) -> Result<bool, SelectError> {
+    if arguments.select_expressions.is_empty() && arguments.select_genotype_expressions.is_empty() {
+        return Ok(true);
+    }
+    for (index, text) in arguments.select_expressions.iter().enumerate() {
+        let expression = create_expression(text).map_err(|_| SelectError::Unparseable {
+            index,
+            text: text.clone(),
+        })?;
+        let matched = match expression.evaluate(&record.info) {
+            Ok(JexlValue::Bool(value)) => value,
+            Ok(_) => false,
+            // A per-allele annotation reaches here: the comparison is not defined over a list, and
+            // the reference turns the engine's complaint into a UserException naming the index.
+            Err(_) => {
+                return Err(SelectError::Invalid {
+                    index,
+                    genotype: false,
+                })
+            }
+        };
+        if matched != arguments.invert_select {
+            return Ok(true);
+        }
+    }
+    for (index, text) in arguments.select_genotype_expressions.iter().enumerate() {
+        let expression = create_expression(text).map_err(|_| SelectError::Unparseable {
+            index,
+            text: text.clone(),
+        })?;
+        // Any genotype matching is enough, and the result joins the or above rather than an and.
+        for fields in &record.genotype_fields {
+            let matched = match expression.evaluate(fields) {
+                Ok(JexlValue::Bool(value)) => value,
+                Ok(_) => false,
+                Err(_) => {
+                    return Err(SelectError::Invalid {
+                        index,
+                        genotype: true,
+                    })
+                }
+            };
+            if matched != arguments.invert_select {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// `createSampleTypeInclusionList`: every type when none is asked for, minus the exclusions, which
+/// is why an exclusion beats an inclusion of the same type.
+fn selected_types(arguments: &FilterArguments) -> Vec<VariantType> {
+    let all = [
+        VariantType::NoVariation,
+        VariantType::Snp,
+        VariantType::Mnp,
+        VariantType::Indel,
+        VariantType::Symbolic,
+        VariantType::Mixed,
+    ];
+    let included: Vec<VariantType> = if arguments.types_to_include.is_empty() {
+        all.to_vec()
+    } else {
+        arguments.types_to_include.clone()
+    };
+    included
+        .into_iter()
+        .filter(|kind| !arguments.types_to_exclude.contains(kind))
+        .collect()
 }
