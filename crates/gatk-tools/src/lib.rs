@@ -13,6 +13,7 @@ pub mod check_pileup;
 pub mod clip_reads;
 pub mod compare_base_qualities;
 pub mod convert_headerless_shard;
+pub mod count_false_positives;
 pub mod count_variants;
 pub mod counting_walkers;
 pub mod dump_tabix_index;

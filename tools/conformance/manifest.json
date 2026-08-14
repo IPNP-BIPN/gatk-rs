@@ -2644,6 +2644,35 @@
           "why": "32 rows: six input files and fourteen runs. The files pair a five-record one of five different shapes with a filtered-only file, a header with no records, a file whose two records span far more than their positions, a two-contig file and one with no index beside it. The runs cover the count with and without -O, the overwrite of a longer file, four interval selections, and the three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31779686239."
         }
       ]
+    },
+    {
+      "id": "count-false-positives",
+      "status": "oracle-backed",
+      "title": "CountFalsePositives, where everything that is not an indel is a SNP",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountFalsePositives"
+      ],
+      "why": "Two counters, a denominator and a six-column table, and each hides a decision. EVERYTHING THAT IS NOT AN INDEL IS A SNP: apply is `if (variant.isIndel()) indel++ else snp++` and isIndel() is getType() == INDEL and nothing looser, so an MNP, a symbolic allele, a mixed record and a record with no alternate at all land in the snp column, which is therefore not what its name says. THE ID IS A FILE NAME rather than a sample, GATKPath.getBaseName() stripping ONE extension, so a name carrying two keeps the first. THE TERRITORY IS THE MERGED INTERVALS in bases, so two overlapping -L arguments contribute their union once and 1-100 with 900-1000 is 201. THE RATES ARE PER MEGABASE AND DIVIDED BEFORE THEY ARE SCALED, count / territory * 1e6, written through DataLine.set(double) whose rounding branch is dead, so an integral rate keeps its .0 and 1 over 201 bases is 4975.124378109453. The two refusals come from opposite ends: requiresIntervals() makes -L a required argument, so its absence is Barclay's MissingArgument before the tool is built, while an output that cannot be opened is a plain UserException after the whole traversal, saying only that it encountered an IO exception while opening it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 14,
+      "expect_contains": [
+        "table\twhole-contig\tid\\tsnp\\tindel\\tsnp_FPR\\tindel_FPR\\ttarget_territory\\nmixed\\t5\\t2\\t5000.0\\t2000.0\\t1000\\n",
+        "table\tdisjoint-intervals\tid\\tsnp\\tindel\\tsnp_FPR\\tindel_FPR\\ttarget_territory\\none-snp\\t1\\t0\\t4975.124378109453\\t0.0\\t201\\n",
+        "table\toverlapping-intervals\tid\\tsnp\\tindel\\tsnp_FPR\\tindel_FPR\\ttarget_territory\\none-snp\\t1\\t0\\t2500.0\\t0.0\\t400\\n",
+        "table\ttwo-extensions\tid\\tsnp\\tindel\\tsnp_FPR\\tindel_FPR\\ttarget_territory\\ntwo-extensions.vcf\\t1\\t0\\t1000.0\\t0.0\\t1000\\n",
+        "error\tno-intervals\torg.broadinstitute.barclay.argparser.CommandLineException$MissingArgument:Argument intervals was missing: Argument 'intervals' is required",
+        "error\toutput-is-a-directory\torg.broadinstitute.hellbender.exceptions.UserException:Encountered an IO exception while opening countfalsepositives-dump/."
+      ],
+      "cases": [
+        {
+          "dump": "CountFalsePositivesDump",
+          "golden": "crates/gatk-tools/tests/data/count_false_positives.txt.gz",
+          "why": "14 rows: four input files and ten runs. The first file carries one record of every shape the two branches can see, a SNP, an insertion, a deletion, an MNP, a symbolic deletion, a mixed record and a record with no alternate, beside a filtered SNP and a filtered indel. The runs cover the whole contig, a file where nothing passes, overlapping and disjoint intervals, a three-base territory whose rate is a repeating decimal, an interval that changes the counts as well as the denominator, a name with two extensions, and both refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31780536101."
+        }
+      ]
     }
   ],
   "probes": []
