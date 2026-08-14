@@ -3206,6 +3206,39 @@
         }
       ]
     }
+    ,
+    {
+      "id": "germline-probability",
+      "status": "golden-pending",
+      "title": "The germline probability, whose answer is the first entry and not the second",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "GermlineFilter.germlineProbability: the probability that an allele Mutect called somatic is really germline, from five numbers and nothing else. THE POPULATION FREQUENCY IS THREE PRIORS AT ONCE, log(2f(1-f)) for a het, log(f^2) for a hom alt and log((1-f)^2) for neither, so a frequency of zero makes both germline hypotheses impossible and answers 0.0 while a frequency of one makes the somatic hypothesis impossible and answers 1.0. THE ANSWER IS THE FIRST ENTRY of the normalisation, the germline one, where Mutect2FilteringEngine.posteriorProbabilityOfError returns the second: the two functions have the same shape and answer opposite questions. THE SOMATIC PRIOR ENTERS TWICE, once as itself on the somatic side and once through log1mexp on both germline sides, so a prior of one answers 0.0 whatever the odds say and a prior of negative infinity answers 1.0. THE HOM ALT HYPOTHESIS IS SWITCHED OFF BY A NEGATIVE INFINITY rather than by a flag, which is what the caller passes when the allele fraction is too low for a germline hom alt, and at a population frequency of 0.001 it moves the answer only in the seventh decimal. THE NORMAL'S LOG ODDS ARE ADDED TO BOTH GERMLINE HYPOTHESES AND NEITHER SOMATIC ONE, so they move the answer monotonically, from 4.6E-19 at -50 to 1.0 at +50 \u2014 and an infinite value is refused outright, the normaliser rejecting a non-finite entry.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 34,
+      "expect_contains": [
+        "germline\tbaseline\t0.9999972019198777",
+        "germline\taf-0.0\t0.0",
+        "germline\taf-1.0\t1.0",
+        "germline\tprior-0.0\t0.0",
+        "germline\tprior--Infinity\t1.0",
+        "germline\tnormal--50.0\t4.64453386557221E-19",
+        "germline\tnormal--Infinity\t0.0",
+        "error\tnormal-Infinity\tjava.lang.IllegalArgumentException:logValues must be non-infinite and non-NAN",
+        "germline\thomalt-off\t0.9999972014046858",
+        "germline\taf-zero-and-certain-somatic\t0.0",
+        "germline\taf-one-and-impossible-somatic\t1.0"
+      ],
+      "cases": [
+        {
+          "dump": "GermlineProbabilityDump",
+          "golden": null,
+          "why": "34 rows: no files at all, five doubles per call. A baseline and four sweeps that vary one axis each \u2014 nine population frequencies from 0 to 1, nine normal log odds including both infinities, five het log odds and six somatic priors \u2014 plus the hom-alt hypothesis switched off at two frequencies and the two corners where one side of the normalisation has nothing left in it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    }
   ],
   "probes": []
 }
