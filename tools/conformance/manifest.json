@@ -2676,7 +2676,7 @@
     },
     {
       "id": "calculate-mixing-fractions",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CalculateMixingFractions, whose output order is a hash bucket order",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2697,8 +2697,8 @@
       "cases": [
         {
           "dump": "CalculateMixingFractionsDump",
-          "golden": null,
-          "why": "11 rows: one pooled BAM with its index, three input VCFs and six runs. The BAM carries four reads at the first site of which two are alt, three at the second of which one is vendor-failed, a read spanning the third site inside a deletion beside one that ends before it, and one alt read at the fourth. The VCFs carry every shape the two singleton tests can see. The runs cover the baseline, a file where every sample is counted, one where two are not, a run with no reads at all, an interval that leaves one sample counted, and the refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/calculate_mixing_fractions.txt.gz",
+          "why": "11 rows: one pooled BAM with its index, three input VCFs and six runs. The BAM carries four reads at the first site of which two are alt, three at the second of which one is vendor-failed, a read spanning the third site inside a deletion beside one that ends before it, and one alt read at the fourth. The VCFs carry every shape the two singleton tests can see. The runs cover the baseline, a file where every sample is counted, one where two are not, a run with no reads at all, an interval that leaves one sample counted, and the refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31781710551."
         }
       ]
     }
