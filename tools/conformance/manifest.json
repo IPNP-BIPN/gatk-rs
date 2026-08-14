@@ -3109,6 +3109,33 @@
         }
       ]
     }
+    ,
+    {
+      "id": "filter-stats",
+      "status": "oracle-backed",
+      "title": "The Mutect filtering stats file, whose two roundings disagree",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The .filteringStats.tsv that FilterMutectCalls writes beside its VCF, measured through FilterStats.writeM2FilterSummary directly. THE TWO ROUNDINGS DISAGREE: the columns go through DataLine.set(name, value, 2) and the metadata through roundToNDecimalPlaces(x, 3), so the same number is written to two decimals in the table and three above it. BOTH TURN NaN INTO ZERO, the rounding being Math.round((x + ulp(x)) * mult) / mult and Math.round answering 0 for NaN, so a run with no passing call divides by zero and writes 0.0 rather than NaN. BUT INFINITY BECOMES A VERY LARGE NUMBER rather than Infinity: Math.round saturates at Long.MAX_VALUE, so a false-positive count over zero calls writes fdr=9.223372036854776E15. AND A NEGATIVE ROUNDS THE OTHER WAY, since the rounding is floor(x + 0.5) after an ulp: -1.005 comes out -1.0 where 1.005 comes out 1.01, and -0.0005 comes out 0.0 with the sign gone. THE METADATA IS WRITTEN BEFORE THE COLUMN LINE, the clustering pairs first and then threshold, fdr and sensitivity in that order. THE ROWS ARE THE CALLER'S, in the caller's order and unfiltered: the rule that drops a filter accounting for nothing lives in FilteringOutputStats rather than here. And a filter name holding a tab or a quote is quoted by the same table writer every GATK table goes through, while a comma is not.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 7,
+      "expect_contains": [
+        "table\tbaseline\t#<METADATA>clustering=1\\n#<METADATA>other=two\\n#<METADATA>threshold=0.234\\n#<METADATA>fdr=0.15\\n#<METADATA>sensitivity=0.833\\nfilter\\tFP\\tFDR\\tFN\\tFNR\\n",
+        "table\trounding\t#<METADATA>threshold=0.123\\n#<METADATA>fdr=0.333\\n#<METADATA>sensitivity=0.667\\nfilter\\tFP\\tFDR\\tFN\\tFNR\\nhalves\\t1.01\\t2.68\\t0.12\\t0.01\\n",
+        "table\tno-calls\t#<METADATA>threshold=0.5\\n#<METADATA>fdr=0.0\\n#<METADATA>sensitivity=0.0\\n",
+        "table\tinfinite-fdr\t#<METADATA>threshold=0.5\\n#<METADATA>fdr=9.223372036854776E15\\n",
+        "table\tnegatives\t#<METADATA>threshold=0.0\\n#<METADATA>fdr=0.25\\n#<METADATA>sensitivity=0.667\\nfilter\\tFP\\tFDR\\tFN\\tFNR\\nodd\\t-1.0\\t-0.12\\t-2.5\\t0.0\\n"
+      ],
+      "cases": [
+        {
+          "dump": "FilterStatsDump",
+          "golden": "crates/gatk-engine/tests/data/filter_stats.txt.gz",
+          "why": "7 rows: no input files at all, the writer being driven directly with hand-built rows. An ordinary run with two filters and two clustering pairs; a run whose numbers land on both roundings; a run with no passing call, where three metadata values are 0/0; a run whose false-positive count over zero calls is infinite; a run of negative counts; a run with no rows; and a run whose filter names need quoting. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31826316075."
+        }
+      ]
+    }
   ],
   "probes": []
 }
