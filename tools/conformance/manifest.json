@@ -2673,6 +2673,34 @@
           "why": "14 rows: four input files and ten runs. The first file carries one record of every shape the two branches can see, a SNP, an insertion, a deletion, an MNP, a symbolic deletion, a mixed record and a record with no alternate, beside a filtered SNP and a filtered indel. The runs cover the whole contig, a file where nothing passes, overlapping and disjoint intervals, a three-base territory whose rate is a repeating decimal, an interval that changes the counts as well as the denominator, a name with two extensions, and both refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31780536101."
         }
       ]
+    },
+    {
+      "id": "calculate-mixing-fractions",
+      "status": "golden-pending",
+      "title": "CalculateMixingFractions, whose output order is a hash bucket order",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalculateMixingFractions"
+      ],
+      "why": "One bucket per sample, filled at singleton het SNPs and normalised by the sum of every bucket's alt fraction. THE ROW ORDER IS A HASH BUCKET ORDER: sampleCounts is a HashMap<String, ...> walked through its entrySet(), so a header listing zebra, alpha, mike writes zebra, mike, alpha. A SAMPLE WITH NO COUNTED SITE POISONS EVERY ROW, its 0/0 being NaN and the normalizer being the sum, so a run restricted to one site and a run with no -I at all are NaN throughout, samples counted perfectly well included. SINGLETON IS EITHER OF TWO TESTS AND THE FIRST ONE WINS: AC=1, or, only when that fails, exactly one het genotype, so AC=2 with one het is counted and AC=1 with two hets is counted too. THE SAMPLE IS THE FIRST HET IN GENOTYPE ORDER, so a record with two hets is attributed entirely to the one the header lists first, and a singleton with no het at all is dropped after passing the test. The pileup walks each read to the variant's start with an AlignmentStateMachine, so a read passing the position inside a DELETION lands there and contributes to the total but never to the alt, while a read ending before it contributes nothing; VENDOR-FAILED READS ARE SKIPPED BY THE TOOL rather than by a filter. The refusal for an output that cannot be created is a plain UserException whose format string ends in a full stop after the path.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "table\tevery-shape\tSAMPLE\\tMIXING_FRACTION\\nzebra\\t0.5454545454545454\\nmike\\t0.0\\nalpha\\t0.45454545454545453\\n",
+        "table\tevery-sample-counted\tSAMPLE\\tMIXING_FRACTION\\nzebra\\t0.25\\nmike\\t0.5\\nalpha\\t0.25\\n",
+        "table\tone-site\tSAMPLE\\tMIXING_FRACTION\\nzebra\\tNaN\\nmike\\tNaN\\nalpha\\tNaN\\n",
+        "table\tno-reads\tSAMPLE\\tMIXING_FRACTION\\nzebra\\tNaN\\nmike\\tNaN\\nalpha\\tNaN\\n",
+        "error\toutput-is-a-directory\torg.broadinstitute.hellbender.exceptions.UserException:Encountered an IO exception while trying to create output file calculatemixingfractions-dump/.."
+      ],
+      "cases": [
+        {
+          "dump": "CalculateMixingFractionsDump",
+          "golden": null,
+          "why": "11 rows: one pooled BAM with its index, three input VCFs and six runs. The BAM carries four reads at the first site of which two are alt, three at the second of which one is vendor-failed, a read spanning the third site inside a deletion beside one that ends before it, and one alt read at the fourth. The VCFs carry every shape the two singleton tests can see. The runs cover the baseline, a file where every sample is counted, one where two are not, a run with no reads at all, an interval that leaves one sample counted, and the refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
