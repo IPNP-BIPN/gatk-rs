@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 65 | 20.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 66 | 21.2% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 233 | 74.9% |
 | **total** | **311** | |
@@ -104,7 +104,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | not measured |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | not measured |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | not measured |
-| `ValidateVariants` | variant-walker | golden-pending | validate-variants | 1 | not measured |
+| `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | not measured |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | not measured |
 

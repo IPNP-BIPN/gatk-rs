@@ -2589,7 +2589,7 @@
     },
     {
       "id": "validate-variants",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ValidateVariants, whose whole output is what it refuses",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2610,8 +2610,8 @@
       "cases": [
         {
           "dump": "ValidateVariantsDump",
-          "golden": null,
-          "why": "25 rows: a two-contig reference of A, eight input files and fifteen runs. The files pair a clean one with an unused alternate, a wrong AC, the same wrong AC behind a FILTER column, a sites-only record, a wrong reference base, a GVCF, a file missing <NON_REF>, one whose records are out of order and one that changes contig. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/validate_variants.txt.gz",
+          "why": "25 rows: a two-contig reference of A, eight input files and fifteen runs. The files pair a clean one with an unused alternate, a wrong AC, the same wrong AC behind a FILTER column, a sites-only record, a wrong reference base, a GVCF, a file missing <NON_REF>, one whose records are out of order and one that changes contig. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31759430650, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
