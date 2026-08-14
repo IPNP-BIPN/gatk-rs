@@ -3005,6 +3005,34 @@
         }
       ]
     }
+    ,
+    {
+      "id": "apply-vqsr-two-modes",
+      "status": "oracle-backed",
+      "title": "ApplyVQSR run twice, where the leniency regex loses a digit",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "ApplyVQSR run twice over the same records, which is how a mixed site is filtered at all: the second run reads the first run's own FILTER lines back out of the header and then compares the two modes' filter names. THE PREVIOUS RUN IS DETECTED BY THREE MAGIC NUMBERS: a FILTER ID of at least 12 characters whose first 11 are VQSRTranche ignoring case and whose 12th is S or I, with the interval taken as substring(14) or substring(16), the lengths of VQSRTrancheSNP and VQSRTrancheINDEL. THE PREFIX TEST IS CASE-INSENSITIVE AND THE MODE TEST IS NOT, so a header line named vqsrtranchesnp90.00to99.00 passes the first and fails the second and the run behaves as though no SNP mode had ever been applied. A NAME WHOSE INTERVAL SPLITS INTO TWO PIECES THAT ARE NOT NUMBERS IS A UserException thrown before any record, worded 'Poorly formatted tranche filter name does not contain two sensitivity interval end points.' THE SITE FILTER OF THE SECOND RUN IS THE MOST LENIENT OF BOTH MODES, and most lenient means the smallest lower limit pulled out of the filter NAME by the regex VQSRTranche\\\\S+(\\\\d+\\\\.\\\\d+)to(\\\\d+\\\\.\\\\d+). THAT REGEX IS GREEDY AND LOSES A DIGIT: \\\\S+ eats as much as it can, so VQSRTrancheINDEL90.00to99.00 has a lower limit of 0.00 rather than 90.00 while VQSRTrancheSNP5.00to90.00 keeps its 5.00, and the second run therefore filters the site with the LESS lenient of the two names. The golden runs the same pair twice, once with names the loss does not reorder and once with names it does. A MIXED SITE IS FILTERED ONLY ONCE BOTH MODES HAVE RUN, the same record coming out . after the first run and carrying a filter after the second, and its AS_FilterStatus is the first run's entry beside the second's.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 45,
+      "expect_contains": [
+        "vcfline\tfirst-snp\tchr1\\t100\\t.\\tA\\tC,ACC\\t50\\t.\\tAS_FilterStatus=VQSRTrancheSNP90.00to99.00,NA;AS_VQSLOD=2.0000,NaN;AS_culprit=QD,NA\\tGT\\t1/2",
+        "vcfline\tsecond-indel\tchr1\\t100\\t.\\tA\\tC,ACC\\t50\\tVQSRTrancheSNP90.00to99.00\\tAS_FilterStatus=VQSRTrancheSNP90.00to99.00,VQSRTrancheINDEL99.00to100.00;AS_VQSLOD=2.0000,0.0000;AS_culprit=QD,FS\\tGT\\t1/2",
+        "vcfline\tfirst-snp-inverted\tchr1\\t300\\t.\\tA\\tC,ACC\\t50\\t.\\tAS_FilterStatus=VQSRTrancheSNP5.00to90.00,NA;AS_VQSLOD=2.0000,NaN;AS_culprit=QD,NA\\tGT\\t1/2",
+        "vcfline\tsecond-indel-inverted\tchr1\\t300\\t.\\tA\\tC,ACC\\t50\\tVQSRTrancheINDEL90.00to99.00\\tAS_FilterStatus=VQSRTrancheSNP5.00to90.00,VQSRTrancheINDEL90.00to99.00;AS_VQSLOD=2.0000,2.0000;AS_culprit=QD,FS\\tGT\\t1/2",
+        "vcfline\tlowercase-tranche\tchr1\\t200\\t.\\tA\\tC\\t50\\t.\\tAS_FilterStatus=NA;AS_VQSLOD=NaN;AS_culprit=NA\\tGT\\t0/1",
+        "error\tmalformed-tranche\torg.broadinstitute.hellbender.exceptions.UserException:Poorly formatted tranche filter name does not contain two sensitivity interval end points."
+      ],
+      "cases": [
+        {
+          "dump": "ApplyVqsrTwoModesDump",
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_two_modes.txt.gz",
+          "why": "45 rows: eight VCFs, four tranches files and six runs. The first pair runs SNP mode and then INDEL mode over the first run's own output, so the second run reads its predecessor's FILTER lines; the second pair does the same with two tranche names whose lower limits the greedy regex reorders. Two more runs give the input header a lowercase tranche name and a tranche name whose interval is not a pair of numbers. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31819970925."
+        }
+      ]
+    }
   ],
   "probes": []
 }

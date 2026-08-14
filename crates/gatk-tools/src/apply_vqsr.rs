@@ -48,6 +48,15 @@
 //! [`site_filter_for_a_single_mode`] then leaves a mixed site unfiltered, because the other mode has
 //! not run yet.
 //!
+//! # The second run reads the first run's header
+//!
+//! [`previous_runs`] is `checkForPreviousApplyRecalRun`: a FILTER line counts as a tranche of the
+//! other mode by three magic numbers, and its prefix is compared ignoring case while its mode letter
+//! is not. [`site_filter_from_alleles`] then takes the most lenient filter across both modes, where
+//! lenient means the smallest lower limit [`parse_filter_lower_limit`] pulls out of the **name** —
+//! and that regex is greedy enough to lose a digit, so a tranche starting at 90 can beat one
+//! starting at 5.
+//!
 //! # The order is by sensitivity, then cut, then reversed
 //!
 //! `readTranches` sorts by `targetTruthSensitivity`; `onTraversalStart` keeps those at or above the
@@ -75,12 +84,22 @@ pub enum ApplyVqsrError {
     NoTranches(f64),
     /// Both cutoffs at once, checked only after the tranches file has been read.
     MutuallyExclusiveCutoffs,
+    /// A FILTER line that looks like a tranche and whose interval is not a pair of numbers.
+    PoorlyFormattedTrancheName,
+    /// `substring` past the end of a name too short to hold an interval, which is the JDK's own
+    /// out-of-range exception. Not covered by any golden here.
+    TrancheNameTooShort { begin: usize, length: usize },
 }
 
 impl ApplyVqsrError {
-    /// A plain `UserException` either way.
+    /// A plain `UserException` but for the one the JDK throws.
     pub fn class(&self) -> &'static str {
-        "org.broadinstitute.hellbender.exceptions.UserException"
+        match self {
+            ApplyVqsrError::TrancheNameTooShort { .. } => {
+                "java.lang.StringIndexOutOfBoundsException"
+            }
+            _ => "org.broadinstitute.hellbender.exceptions.UserException",
+        }
     }
 
     pub fn message(&self) -> String {
@@ -90,6 +109,10 @@ impl ApplyVqsrError {
                 gatk_engine::tsv_table::java_double_to_string(*level)
             ),
             ApplyVqsrError::MutuallyExclusiveCutoffs => "Arguments --truth-sensitivity-filter-level and --lod-score-cutoff are mutually exclusive. Please only specify one option.".to_string(),
+            ApplyVqsrError::PoorlyFormattedTrancheName => "Poorly formatted tranche filter name does not contain two sensitivity interval end points.".to_string(),
+            ApplyVqsrError::TrancheNameTooShort { begin, length } => {
+                format!("begin {begin}, end {length}, length {length}")
+            }
         }
     }
 }
@@ -524,6 +547,194 @@ pub trait AllelicRecalRecord {
 /// site therefore comes out with a FILTER of `.` while its `AS_FilterStatus` already names a tranche.
 /// The second run, which reads the first run's filter names back out of the header, is a slice of
 /// its own.
+/// `trancheFilterString`, the prefix a FILTER line must have to be read as a tranche.
+pub const TRANCHE_FILTER_STRING: &str = "VQSRTranche";
+
+/// Which modes the input header says have already been applied.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PreviousRuns {
+    pub snp: bool,
+    pub indel: bool,
+}
+
+impl PreviousRuns {
+    /// `bothModesWereRun` for the mode now running.
+    pub fn both_modes_were_run(&self, snp_mode: bool) -> bool {
+        if snp_mode {
+            self.indel
+        } else {
+            self.snp
+        }
+    }
+}
+
+/// `trancheIntervalIsValid`: two pieces on `to`, both of them numbers.
+///
+/// `String.split` drops trailing empty pieces, so `90.00to` is one piece and simply not a tranche,
+/// while two pieces that are not numbers is a refusal rather than a `false`.
+pub fn tranche_interval_is_valid(limits: &str) -> Result<bool, ApplyVqsrError> {
+    let mut parts: Vec<&str> = limits.split("to").collect();
+    while parts.last() == Some(&"") {
+        parts.pop();
+    }
+    if parts.len() != 2 {
+        return Ok(false);
+    }
+    let lower = parts[0].trim().parse::<f64>();
+    // The upper limit of the widest tranche ends in `+`, which is stripped before parsing.
+    let upper = parts[1].replace('+', "").trim().parse::<f64>();
+    if lower.is_err() || upper.is_err() {
+        return Err(ApplyVqsrError::PoorlyFormattedTrancheName);
+    }
+    Ok(true)
+}
+
+/// `checkForPreviousApplyRecalRun`, over the input header's FILTER IDs.
+///
+/// Three magic numbers: at least 12 characters, `VQSRTranche` **ignoring case** in the first 11, and
+/// `S` or `I` — case-sensitively — in the 12th, after which the interval is `substring(14)` or
+/// `substring(16)`, the lengths of `VQSRTrancheSNP` and `VQSRTrancheINDEL`. A lowercase name
+/// therefore passes the prefix test and is not a tranche.
+pub fn previous_runs(filter_ids: &[String]) -> Result<PreviousRuns, ApplyVqsrError> {
+    let mut runs = PreviousRuns::default();
+    for id in filter_ids {
+        if id.len() < 12 || !id[..11].eq_ignore_ascii_case(TRANCHE_FILTER_STRING) {
+            continue;
+        }
+        let (from, target) = match id.as_bytes()[11] {
+            b'S' => (14, &mut runs.snp),
+            b'I' => (16, &mut runs.indel),
+            _ => continue,
+        };
+        // `substring(from)` on a shorter name is the JDK's own out-of-range exception. Not covered
+        // by the golden: no header here names a tranche too short to hold an interval.
+        let Some(limits) = id.get(from..) else {
+            return Err(ApplyVqsrError::TrancheNameTooShort {
+                begin: from,
+                length: id.len(),
+            });
+        };
+        if tranche_interval_is_valid(limits)? {
+            *target = true;
+        }
+    }
+    Ok(runs)
+}
+
+/// `parseFilterLowerLimit`: the lower limit of a tranche name, as its regex reads it.
+///
+/// ```java
+/// final Pattern pattern = Pattern.compile("VQSRTranche\\S+(\\d+\\.\\d+)to(\\d+\\.\\d+)");
+/// return m.find() ? Double.parseDouble(m.group(1)) : -1;
+/// ```
+///
+/// **`\S+` is greedy**, so it eats into the lower limit itself: it takes as many characters as it
+/// can while still leaving a `digits.digits` before the `to`. `VQSRTrancheINDEL90.00to99.00`
+/// therefore answers `0.00` rather than `90.00`, while `VQSRTrancheSNP5.00to90.00`, whose limit is a
+/// single digit, answers `5.00`. Comparing those two puts the wrong one first, which is exactly what
+/// the golden's second pair of runs writes into the FILTER column.
+pub fn parse_filter_lower_limit(name: &str) -> f64 {
+    let bytes = name.as_bytes();
+    for start in 0..name.len() {
+        if !name[start..].starts_with(TRANCHE_FILTER_STRING) {
+            continue;
+        }
+        let after = start + TRANCHE_FILTER_STRING.len();
+        let non_space = bytes[after..]
+            .iter()
+            .take_while(|byte| !byte.is_ascii_whitespace())
+            .count();
+        // Greedy: the longest `\S+` that still leaves the rest of the pattern a match.
+        for taken in (1..=non_space).rev() {
+            if let Some(lower) = two_decimals(bytes, after + taken) {
+                return lower;
+            }
+        }
+    }
+    -1.0
+}
+
+/// `(\d+\.\d+)to(\d+\.\d+)` at one position, with the first group's value.
+///
+/// Each `\d+` is greedy over a run of digits, and giving one back would leave a digit where the
+/// pattern needs `.` or `t`, so there is nothing to backtrack into: every run is taken whole.
+fn two_decimals(bytes: &[u8], at: usize) -> Option<f64> {
+    let digits = |from: usize| {
+        from + bytes[from..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count()
+    };
+    let whole = digits(at);
+    if whole == at || bytes.get(whole) != Some(&b'.') {
+        return None;
+    }
+    let fraction = digits(whole + 1);
+    if fraction == whole + 1 || !bytes[fraction..].starts_with(b"to") {
+        return None;
+    }
+    let second = fraction + 2;
+    let second_whole = digits(second);
+    if second_whole == second || bytes.get(second_whole) != Some(&b'.') {
+        return None;
+    }
+    if digits(second_whole + 1) == second_whole + 1 {
+        return None;
+    }
+    std::str::from_utf8(&bytes[at..fraction])
+        .ok()
+        .and_then(|text| text.parse::<f64>().ok())
+}
+
+/// `generateFilterStringFromAlleles` in full, including the second run's leniency comparison.
+///
+/// `previous_status` is the record's own `AS_FilterStatus`, which the earlier run left behind.
+pub fn site_filter_from_alleles(
+    is_mixed: bool,
+    record_is_of_mode: bool,
+    both_modes_were_run: bool,
+    previous_status: Option<&str>,
+    best_lod: f64,
+    kept: &[&TruthSensitivityTranche],
+) -> String {
+    let only_one_mode_needed = !is_mixed && record_is_of_mode;
+    if !both_modes_were_run && !only_one_mode_needed {
+        return UNFILTERED.to_string();
+    }
+
+    let mut most_lenient = filter_string(kept, best_lod);
+    match previous_status {
+        // A site nothing has filtered yet takes this mode's answer, whatever it is.
+        None => most_lenient,
+        Some(status) if status == UNFILTERED => most_lenient,
+        Some(status) => {
+            if most_lenient == PASSES_FILTERS {
+                return most_lenient;
+            }
+            let mut lowest = parse_filter_lower_limit(&most_lenient);
+            for entry in status.split(LIST_DELIMITER) {
+                // `replaceAll("[\\[\\]\\s]", "").trim()`: the brackets a Java list prints with.
+                let entry: String = entry
+                    .chars()
+                    .filter(|c| !matches!(c, '[' | ']') && !c.is_whitespace())
+                    .collect();
+                if entry == PASSES_FILTERS {
+                    return entry;
+                }
+                let limit = parse_filter_lower_limit(&entry);
+                if limit == -1.0 {
+                    continue;
+                }
+                if limit < lowest {
+                    lowest = limit;
+                    most_lenient = entry;
+                }
+            }
+            most_lenient
+        }
+    }
+}
+
 pub fn site_filter_for_a_single_mode(
     is_mixed: bool,
     record_is_of_mode: bool,
@@ -890,6 +1101,131 @@ mod tests {
         assert_eq!(indel.filter_status, vec!["NA", "PASS"]);
         assert_eq!(indel.vqslod, vec!["NaN", "4.0000"]);
         assert_eq!(best, 4.0);
+    }
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn the_previous_run_is_detected_by_three_magic_numbers() {
+        let runs = previous_runs(&ids(&[
+            "PASS",
+            "VQSRTrancheSNP90.00to99.00",
+            "VQSRTrancheINDEL99.00to100.00+",
+        ]))
+        .expect("all well formed");
+        assert_eq!(
+            runs,
+            PreviousRuns {
+                snp: true,
+                indel: true
+            }
+        );
+        // Both modes were run, from the point of view of either.
+        assert!(runs.both_modes_were_run(true));
+        assert!(runs.both_modes_were_run(false));
+
+        // The prefix is compared ignoring case and the mode letter is not, so a lowercase name
+        // passes the first test and is not a tranche.
+        let lowercase = previous_runs(&ids(&["vqsrtranchesnp90.00to99.00"])).expect("no refusal");
+        assert_eq!(lowercase, PreviousRuns::default());
+        // Too short to hold a mode letter at all.
+        assert_eq!(
+            previous_runs(&ids(&["VQSRTranche"])).expect("skipped"),
+            PreviousRuns::default()
+        );
+    }
+
+    #[test]
+    fn an_interval_that_is_not_a_pair_of_numbers_is_a_refusal() {
+        let error =
+            previous_runs(&ids(&["VQSRTrancheSNPaatobb"])).expect_err("two pieces, no numbers");
+        assert_eq!(
+            error.message(),
+            "Poorly formatted tranche filter name does not contain two sensitivity interval end points."
+        );
+        // One piece is not a tranche and not a refusal: `split` drops the trailing empty piece.
+        assert!(!tranche_interval_is_valid("90.00to").expect("one piece"));
+        assert!(tranche_interval_is_valid("99.00to100.00+").expect("the widest tranche"));
+    }
+
+    #[test]
+    fn the_leniency_regex_is_greedy_and_loses_a_digit() {
+        // `\S+` eats into the lower limit whenever it can.
+        assert_eq!(
+            parse_filter_lower_limit("VQSRTrancheINDEL90.00to99.00"),
+            0.0
+        );
+        assert_eq!(parse_filter_lower_limit("VQSRTrancheSNP99.00to100.00"), 9.0);
+        // A single-digit limit has nothing to give away.
+        assert_eq!(parse_filter_lower_limit("VQSRTrancheSNP5.00to90.00"), 5.0);
+        // Anything the pattern does not match at all.
+        assert_eq!(parse_filter_lower_limit("PASS"), -1.0);
+        assert_eq!(parse_filter_lower_limit("NA"), -1.0);
+    }
+
+    #[test]
+    fn the_second_run_can_keep_the_less_lenient_of_the_two_names() {
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        // The golden's inverted pair: this mode answers a tranche starting at 90 and the previous
+        // mode left one starting at 5, and 90 wins because it parses as 0.
+        let filter = site_filter_from_alleles(
+            true,
+            false,
+            true,
+            Some("VQSRTrancheSNP5.00to90.00,VQSRTrancheINDEL90.00to99.00"),
+            2.0,
+            &[
+                &TruthSensitivityTranche {
+                    name: "VQSRTrancheINDEL90.00to99.00".to_string(),
+                    min_vqslod: -0.5,
+                    ..tranches[1].clone()
+                },
+                // The last one is the tranche kept whole, so it is the one that means PASS.
+                &TruthSensitivityTranche {
+                    min_vqslod: 3.5,
+                    ..tranches[0].clone()
+                },
+            ],
+        );
+        assert_eq!(filter, "VQSRTrancheINDEL90.00to99.00");
+
+        // And the straightforward pair, where the previous mode's name is the more lenient one on
+        // both readings.
+        let filter = site_filter_from_alleles(
+            true,
+            false,
+            true,
+            Some("VQSRTrancheSNP90.00to99.00,NA"),
+            0.0,
+            &kept,
+        );
+        assert_eq!(filter, "VQSRTrancheSNP90.00to99.00");
+    }
+
+    #[test]
+    fn a_pass_anywhere_lets_the_whole_site_pass() {
+        let tranches = three();
+        let kept = keep(&tranches, 0.0);
+        // This mode's own best allele passes.
+        assert_eq!(
+            site_filter_from_alleles(
+                true,
+                false,
+                true,
+                Some("VQSRTrancheSNP90.00to99.00"),
+                5.0,
+                &kept
+            ),
+            "PASS"
+        );
+        // Or one of the previous mode's alleles did.
+        assert_eq!(
+            site_filter_from_alleles(true, false, true, Some("PASS,NA"), 0.0, &kept),
+            "PASS"
+        );
     }
 
     #[test]
