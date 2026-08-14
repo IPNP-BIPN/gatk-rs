@@ -3136,6 +3136,41 @@
         }
       ]
     }
+    ,
+    {
+      "id": "mutect-hard-filters",
+      "status": "golden-pending",
+      "title": "Mutect's hard filters, where a long indel is judged by the reference's mapping quality",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Seven of FilterMutectCalls' filters read one INFO annotation and answer without consulting the filtering engine at all, which is what makes them measurable on their own, one VariantContext at a time. ONLY A LONG INSERTION IS JUDGED BY THE REFERENCE'S MAPPING QUALITY. MappingQualityFilter substitutes the ref annotation for any allele whose indel length reaches the long-indel size, and getIndelLengths() is the ALT length minus the REF length, which is NEGATIVE for a deletion: the golden's seven-base deletion and seven-base insertion carry the same MMQ of 60,20 and come out true and false. THE remove(0) THAT DOES IT TOUCHES NOTHING, getAttributeAsIntList having built a list of its own, so the record's annotation is the same before and after. A NEGATIVE MEDIAN READ POSITION IS NEVER AN ARTIFACT, ReadPositionFilter guarding with readPos > -1 against a bug the reference's own comment links to GATK issue 5492. MPOS HAS NO REFERENCE ENTRY while MBQ and MMQ do, so one filter reads its whole list and the other two skip the first element. THE FRAGMENT LENGTH FILTER LOOKS AT ONE ALLELE ONLY, get(1) - get(0), and being a site-level filter its single answer is copied to every alternate allele. STRICT STRAND BIAS ANSWERS AN EMPTY LIST rather than a list of falses when it is switched off or the strand table is missing, which is not the length of the allele list. AND A RECORD MISSING THE ANNOTATIONS BREAKS FOUR OF THEM IN FOUR DIFFERENT WAYS: an IndexOutOfBoundsException from the mapping-quality remove(0) and another from the fragment-length get(1), a NoSuchElementException from the clustered-events max().getAsInt(), and a NullPointerException from the multiallelic filter's null array. The guard that keeps those from ever firing is the requiredInfoAnnotations check in Mutect2VariantFilter.errorProbabilities, one level up.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 52,
+      "expect_contains": [
+        "filter\tmapping-quality-long-deletion\t[true]",
+        "filter\tmapping-quality-long-insertion\t[false]",
+        "filter\tread-position-negative-position\t[false]",
+        "filter\tbase-quality-triallelic\t[true, false]",
+        "filter\tfragment-length-triallelic\ttrue",
+        "filter\tmultiallelic-triallelic\ttrue",
+        "filter\tstrict-strand-off-poor-snp\t[]",
+        "filter\tmutation-before\t[60, 20]",
+        "filter\tmutation-after\t[60, 20]",
+        "error\tmapping-quality-no-annotations\tjava.lang.IndexOutOfBoundsException:Index 0 out of bounds for length 0",
+        "error\tfragment-length-no-annotations\tjava.lang.IndexOutOfBoundsException:Index 1 out of bounds for length 0",
+        "error\tclustered-events-no-annotations\tjava.util.NoSuchElementException:No value present",
+        "error\tmultiallelic-no-annotations\tjava.lang.NullPointerException:Cannot read the array length because \"array\" is null"
+      ],
+      "cases": [
+        {
+          "dump": "MutectHardFiltersDump",
+          "golden": null,
+          "why": "52 rows: no files at all, seven VariantContexts built in memory and driven through seven filters each. The records are a biallelic SNP poor on every annotation, the same one comfortably good, a triallelic, a seven-base deletion and a seven-base insertion carrying identical annotations, a record whose median read position is -1, and a record with no annotations at all. Two more rows show the strand filter switched off and the annotation list before and after the filter's remove(0). From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    }
   ],
   "probes": []
 }
