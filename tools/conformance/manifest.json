@@ -2845,6 +2845,34 @@
           "why": "15 rows: ten VCFs and five runs. The first pair puts two true positives, a false negative and a false positive on each row; the second pair carries a filtered eval record at a truth locus and a filtered one alone; the third is a pair of record-free files; the fourth carries an MNP, a symbolic record on both sides and a multi-allelic SNP whose alternates are ordered differently; the fifth disagrees on an alternate count and on a reference allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31808190609."
         }
       ]
+    },
+    {
+      "id": "concordance-filter-analysis",
+      "status": "golden-pending",
+      "title": "Concordance's filter analysis, which counts without the flag that asks for it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Concordance"
+      ],
+      "why": "The tool's second output: one row per FILTER declared in the EVAL header, counting the filtered eval records that filter accounts for, split by whether truth had anything at the locus and by whether the filter was the only one on the record. THE COUNTING HAPPENS WITHOUT THE FLAG THAT ASKS FOR IT, the guard `filterAnalysis != null && state == FILTERED_TRUE_NEGATIVE || state == FILTERED_FALSE_NEGATIVE` parsing as (flag && FTN) || FFN, so a filtered false negative walks into the map on every run and a filtered true negative only on a run that asked for the table. Nothing is written on a run with no flag, so the difference shows as a CRASH: the lookup is keyed by the eval header's own FILTER lines and an undeclared filter is a null that is then incremented, which is fatal at a truth locus with no --filter-analysis on the command line and harmless on a record standing alone. A RECORD WITH TWO FILTERS INCREMENTS NEITHER UNIQUE COLUMN, `unique` being filters.size() == 1, a property of the record computed once and handed to every filter on it. A DECLARED FILTER NOTHING CARRIES STILL GETS A ROW, the map being filled from the header before the traversal. AND THE ROW ORDER IS A HashMap'S: weak, shallow, noisy, unused in the header come out shallow, unused, noisy, weak.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "table\tbaseline\tfilter\\ttn\\tfn\\tuniq_tn\\tuniq_fn\\nshallow\\t1\\t1\\t0\\t0\\nunused\\t0\\t0\\t0\\t0\\nnoisy\\t1\\t0\\t0\\t0\\nweak\\t1\\t2\\t1\\t1\\n",
+        "summary\tbaseline\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t1\\t0\\t2\\t0.333\\t1.0\\nINDEL\\t0\\t0\\t0\\t0.0\\t0.0\\n",
+        "summary\tftn-undeclared-no-flag\ttype\\tTP\\tFP\\tFN\\tRECALL\\tPRECISION\\nSNP\\t0\\t0\\t1\\t0.0\\t0.0\\nINDEL\\t0\\t0\\t0\\t0.0\\t0.0\\n",
+        "error\tftn-undeclared-with-flag\tjava.lang.NullPointerException:Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.validation.FilterAnalysisRecord.incrementTrueNegative()\" because \"record\" is null",
+        "error\tffn-undeclared-no-flag\tjava.lang.NullPointerException:Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.validation.FilterAnalysisRecord.incrementFalseNegative()\" because \"record\" is null"
+      ],
+      "cases": [
+        {
+          "dump": "ConcordanceFilterAnalysisDump",
+          "golden": null,
+          "why": "11 rows: six VCFs and four runs. The first pair carries a filtered record at a truth locus, a second carrying two filters, an agreement, a filtered record standing alone and a second carrying two filters, against a header declaring four filters one of which nothing carries. The other two pairs put an undeclared filter on a record standing alone and on a record at a truth locus, and each is run with and without the flag as far as it gets. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
