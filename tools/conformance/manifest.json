@@ -2792,7 +2792,7 @@
     },
     {
       "id": "evaluate-info-field-concordance",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "EvaluateInfoFieldConcordance, whose standard deviation can be NaN by arithmetic",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2813,8 +2813,8 @@
       "cases": [
         {
           "dump": "EvaluateInfoFieldConcordanceDump",
-          "golden": null,
-          "why": "13 rows: seven VCFs and six runs. The first pair carries four SNP true positives with equal deltas, an indel true positive, a true positive whose truth record lacks the key, a truth-only record, an eval-only record and a filtered one; the second pair spreads its deltas so the standard deviation is a real number; the third agrees on nothing. Two runs cover the two missing-key refusals and one takes a different key from each side. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/evaluate_info_field_concordance.txt.gz",
+          "why": "13 rows: seven VCFs and six runs. The first pair carries four SNP true positives with equal deltas, an indel true positive, a true positive whose truth record lacks the key, a truth-only record, an eval-only record and a filtered one; the second pair spreads its deltas so the standard deviation is a real number; the third agrees on nothing. Two runs cover the two missing-key refusals and one takes a different key from each side. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31784430042."
         }
       ]
     }

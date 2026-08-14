@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 71 | 22.8% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 72 | 23.2% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 227 | 73.0% |
 | **total** | **311** | |
@@ -88,7 +88,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountReads` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |
-| `EvaluateInfoFieldConcordance` | variant-walker | golden-pending | evaluate-info-field-concordance | 1 | not measured |
+| `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs | 1 | not measured |
