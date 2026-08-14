@@ -2562,7 +2562,7 @@
     },
     {
       "id": "variants-to-table",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "VariantsToTable, where every column is a decision",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2582,8 +2582,8 @@
       "cases": [
         {
           "dump": "VariantsToTableDump",
-          "golden": null,
-          "why": "75 rows: one input of four records and sixteen runs, one per argument that changes a column. The records carry an rsID, an integer quality, a decimal one, a multi-allelic site, a filtered record, an indel missing an INFO field entirely, a filtered genotype and per-allele fields of both Number=A and Number=R. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/variants_to_table.txt.gz",
+          "why": "75 rows: one input of four records and sixteen runs, one per argument that changes a column. The records carry an rsID, an integer quality, a decimal one, a multi-allelic site, a filtered record, an indel missing an INFO field entirely, a filtered genotype and per-allele fields of both Number=A and Number=R. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31758741297, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
