@@ -205,12 +205,8 @@ jobs:
             suites: "select-variants-subset select-variants-filters select-variants-output select-variants-concordance variants-to-table"
           - group: oracle-backed
             index: "24/24"
-            slug: "validate-variants-count-variants-count-false-positives-calculate-mixing-fractions"
-            suites: "validate-variants count-variants count-false-positives calculate-mixing-fractions"
-          - group: golden-pending
-            index: "1/1"
-            slug: "annotate-vcf-with-bam-depth"
-            suites: "annotate-vcf-with-bam-depth"
+            slug: "validate-variants-count-variants-count-false-positives-calculate-mixing-fractions-annotate-vcf-with-bam-depth"
+            suites: "validate-variants count-variants count-false-positives calculate-mixing-fractions annotate-vcf-with-bam-depth"
     steps:
       - uses: actions/checkout@v4
 
