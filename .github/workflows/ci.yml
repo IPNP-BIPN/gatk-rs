@@ -217,12 +217,8 @@ jobs:
             suites: "concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering apply-vqsr-allele-specific apply-vqsr-two-modes"
           - group: oracle-backed
             index: "27/27"
-            slug: "filter-variant-tranches-threshold-calculator"
-            suites: "filter-variant-tranches threshold-calculator"
-          - group: golden-pending
-            index: "1/1"
-            slug: "filter-stats"
-            suites: "filter-stats"
+            slug: "filter-variant-tranches-threshold-calculator-filter-stats"
+            suites: "filter-variant-tranches threshold-calculator filter-stats"
     steps:
       - uses: actions/checkout@v4
 

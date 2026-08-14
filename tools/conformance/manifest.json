@@ -3112,7 +3112,7 @@
     ,
     {
       "id": "filter-stats",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The Mutect filtering stats file, whose two roundings disagree",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3131,8 +3131,8 @@
       "cases": [
         {
           "dump": "FilterStatsDump",
-          "golden": null,
-          "why": "7 rows: no input files at all, the writer being driven directly with hand-built rows. An ordinary run with two filters and two clustering pairs; a run whose numbers land on both roundings; a run with no passing call, where three metadata values are 0/0; a run whose false-positive count over zero calls is infinite; a run of negative counts; a run with no rows; and a run whose filter names need quoting. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/filter_stats.txt.gz",
+          "why": "7 rows: no input files at all, the writer being driven directly with hand-built rows. An ordinary run with two filters and two clustering pairs; a run whose numbers land on both roundings; a run with no passing call, where three metadata values are 0/0; a run whose false-positive count over zero calls is infinite; a run of negative counts; a run with no rows; and a run whose filter names need quoting. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31826316075."
         }
       ]
     }
