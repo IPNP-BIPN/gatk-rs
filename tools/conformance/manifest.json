@@ -2908,7 +2908,7 @@
     ,
     {
       "id": "apply-vqsr-tranches",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The tranches file, whose two optional columns are not optional",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2936,8 +2936,8 @@
       "cases": [
         {
           "dump": "ApplyVqsrTranchesDump",
-          "golden": null,
-          "why": "36 rows: eleven tranches files and sixteen runs against one record-free VCF. The good file writes its three tranches out of sensitivity order so the sort is visible, and a second copy names them loose, middling and tight. The other six each break one thing: a required key the header does not name, an optional key it does not name, a model the enum does not have, a sensitivity the constructor calls unreasonable, a value that is not a number, a numNovel past the range of an int, a header that does not name the model column, a row one field short and a header one column short. The runs cover two filter levels, a level above every tranche, no level at all, both cutoffs at once and both cutoffs with a broken file. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_tranches.txt.gz",
+          "why": "36 rows: eleven tranches files and sixteen runs against one record-free VCF. The good file writes its three tranches out of sensitivity order so the sort is visible, and a second copy names them loose, middling and tight. The other six each break one thing: a required key the header does not name, an optional key it does not name, a model the enum does not have, a sensitivity the constructor calls unreasonable, a value that is not a number, a numNovel past the range of an int, a header that does not name the model column, a row one field short and a header one column short. The runs cover two filter levels, a level above every tranche, no level at all, both cutoffs at once and both cutoffs with a broken file. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31815211728."
         }
       ]
     }
