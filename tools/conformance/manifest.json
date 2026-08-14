@@ -2735,7 +2735,7 @@
     },
     {
       "id": "annotate-vcf-with-expected-allele-fraction",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AnnotateVcfWithExpectedAlleleFraction, whose header loses the lines the tool adds to it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2757,8 +2757,8 @@
       "cases": [
         {
           "dump": "AnnotateVcfWithExpectedAlleleFractionDump",
-          "golden": null,
-          "why": "30 rows: one input VCF, four mixing-fraction tables and five runs, each output written out line by line. The VCF's columns are deliberately not in sorted order and carry a het, a hom var, an all-hom-var record, a no-call beside a half-call, and a 1/2 call. The tables are one that does not sum to one, one that does, one missing a sample and one naming a sample twice. Neither output carries a ##source= line, which is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/annotate_vcf_with_expected_allele_fraction.txt.gz",
+          "why": "30 rows: one input VCF, four mixing-fraction tables and five runs, each output written out line by line. The VCF's columns are deliberately not in sorted order and carry a het, a hom var, an all-hom-var record, a no-call beside a half-call, and a 1/2 call. The tables are one that does not sum to one, one that does, one missing a sample and one naming a sample twice. Neither output carries a ##source= line, which is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31783051420."
         }
       ]
     }
