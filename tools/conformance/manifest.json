@@ -2614,6 +2614,36 @@
           "why": "25 rows: a two-contig reference of A, eight input files and fifteen runs. The files pair a clean one with an unused alternate, a wrong AC, the same wrong AC behind a FILTER column, a sites-only record, a wrong reference base, a GVCF, a file missing <NON_REF>, one whose records are out of order and one that changes contig. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31759430650, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "count-variants",
+      "status": "oracle-backed",
+      "title": "CountVariants, whose count is the traversal's",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountVariants"
+      ],
+      "why": "The tool's own body is three lines, so what is measured is the traversal on one side of it and the output collection on the other. THE COUNT REACHES NO STREAM WITHOUT -O: the class documentation says it prints to standard output and OptionalTextOutputArgumentCollection.print writes nothing at all when output is null, so the number survives only as the traversal's return value and the engine's log line. THE FILE HAS NO TRAILING NEWLINE, because onTraversalSuccess calls print rather than println, and it is TRUNCATED RATHER THAN APPENDED, because Files.write with no options is CREATE, TRUNCATE_EXISTING and WRITE: a count of 5 over a ten-byte file leaves one byte. EVERY ROW COUNTS, filtered or not, symbolic or not, and a second record at a position already seen counts again. A RECORD IS SELECTED BY ITS WHOLE SPAN AND NOT BY ITS POSITION, since the interval traversal is a Tribble query and the decoded stop comes from END or from the length of REF: a record at chr1:100 with END=400 is counted by -L chr1:300-310. A record spanning two intervals is still counted once, which is FeatureIntervalIterator's one-interval memory. The two refusals come from opposite ends of the run: -L without an index is thrown before any record is read, and -O onto a directory after the whole traversal, AND THAT SECOND MESSAGE IS THE PATH ALONE, because new CouldNotCreateOutputFile(output.toString(), e) selects the (String message, Exception e) overload and the IOException never reaches the text.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 32,
+      "expect_contains": [
+        "count\tplain-no-output\t5\tjava.lang.Long",
+        "file\tplain-no-output\tno-output-argument",
+        "file\tplain\tpresent\t1\t5",
+        "file\toverwrite\tpresent\t1\t5",
+        "count\tspan-by-end\t1\tjava.lang.Long",
+        "count\ttwo-intervals-one-record\t1\tjava.lang.Long",
+        "error\toutput-is-a-directory\torg.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile:countvariants-dump/."
+      ],
+      "cases": [
+        {
+          "dump": "CountVariantsDump",
+          "golden": "crates/gatk-tools/tests/data/count_variants.txt.gz",
+          "why": "32 rows: six input files and fourteen runs. The files pair a five-record one of five different shapes with a filtered-only file, a header with no records, a file whose two records span far more than their positions, a two-contig file and one with no index beside it. The runs cover the count with and without -O, the overwrite of a longer file, four interval selections, and the three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31779686239."
+        }
+      ]
     }
   ],
   "probes": []
