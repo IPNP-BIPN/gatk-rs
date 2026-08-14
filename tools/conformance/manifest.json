@@ -2535,7 +2535,7 @@
     },
     {
       "id": "select-variants-concordance",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SelectVariants' discordance and concordance, which are not opposites",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2555,8 +2555,8 @@
       "cases": [
         {
           "dump": "SelectVariantsConcordanceDump",
-          "golden": null,
-          "why": "11 rows: two input files of nine and eight records and nine runs. The records pair a match, a match written the other way round, a mismatch, an absence, a hom-ref, one filtered genotype, two filtered genotypes, a position the other file has twice, and a haploid call against a diploid one of the same allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/select_variants_concordance.txt.gz",
+          "why": "11 rows: two input files of nine and eight records and nine runs. The records pair a match, a match written the other way round, a mismatch, an absence, a hom-ref, one filtered genotype, two filtered genotypes, a position the other file has twice, and a haploid call against a diploid one of the same allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31758055591, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
