@@ -909,3 +909,111 @@ fn selected_types(arguments: &FilterArguments) -> Vec<VariantType> {
         .filter(|kind| !arguments.types_to_exclude.contains(kind))
         .collect()
 }
+
+/// `--set-filtered-gt-to-nocall`, `--drop-info-annotation` and `--drop-genotype-annotation`.
+#[derive(Debug, Clone, Default)]
+pub struct OutputArguments {
+    pub set_filtered_genotypes_to_no_call: bool,
+    pub info_annotations_to_drop: Vec<String>,
+    pub genotype_annotations_to_drop: Vec<String>,
+}
+
+/// `setFilteredGenotypeToNocall`, which replaces the call and keeps the filter that caused it.
+///
+/// The counts are recomputed **here** rather than left stale, and only when something was actually
+/// replaced: `calculateChromosomeCounts` is called with `removeStaleValues`, so a whole-cohort run
+/// that rewrites nothing else still rewrites this record's AC and AN, and adds the AF an input
+/// without one never had.
+pub fn set_filtered_genotypes_to_no_call(record: &mut Record) {
+    let mut replaced = false;
+    for genotype in &mut record.variant.genotypes {
+        let called = !genotype.alleles.is_empty() && genotype.alleles.iter().any(Option::is_some);
+        if called && is_filtered(genotype) {
+            replaced = true;
+            genotype.alleles = vec![None; genotype.alleles.len()];
+        }
+    }
+    if replaced {
+        calculate_chromosome_counts(&mut record.variant);
+    }
+}
+
+/// `dropAnnotations`, which is a no-op when nothing is named.
+///
+/// The genotype keys it can reach are the EXTENDED attributes alone: GT, GQ, DP, AD and PL live in
+/// their own fields and survive whatever is asked for.
+pub fn drop_annotations(record: &mut Record, arguments: &OutputArguments) {
+    if arguments.info_annotations_to_drop.is_empty()
+        && arguments.genotype_annotations_to_drop.is_empty()
+    {
+        return;
+    }
+    record
+        .variant
+        .attributes
+        .retain(|(key, _)| !arguments.info_annotations_to_drop.contains(key));
+    if arguments.genotype_annotations_to_drop.is_empty() {
+        return;
+    }
+    for genotype in &mut record.variant.genotypes {
+        genotype
+            .attributes
+            .retain(|(key, _)| !arguments.genotype_annotations_to_drop.contains(key));
+    }
+}
+
+/// The writer's queue: records are held until the record being read is at or past them.
+///
+/// `apply` drains with `<=` against the current record's start, or entirely when the contig
+/// changes, then adds the record it just finished. `onTraversalSuccess` drains the rest. The queue
+/// exists because trimming moves a record RIGHT, so a file written in the order it was read would
+/// not be sorted; it is the tool repairing an order it broke itself.
+#[derive(Debug, Default)]
+pub struct PendingWriter {
+    pending: Vec<Record>,
+}
+
+impl PendingWriter {
+    pub fn new() -> PendingWriter {
+        PendingWriter {
+            pending: Vec::new(),
+        }
+    }
+
+    /// What is written before `record` is read, in order.
+    pub fn drain_before(&mut self, contig: &str, start: i32) -> Vec<Record> {
+        let mut written = Vec::new();
+        // `PriorityQueue.peek` is the smallest start; ties keep insertion order here, which is the
+        // order the reference's heap gives for equal keys of a two-element comparison.
+        while let Some(head) = self.head() {
+            let same_contig = self.pending[head].variant.contig == contig;
+            if same_contig && self.pending[head].variant.start > start {
+                break;
+            }
+            written.push(self.pending.remove(head));
+        }
+        written
+    }
+
+    /// The record joins the queue rather than the file.
+    pub fn add(&mut self, record: Record) {
+        self.pending.push(record);
+    }
+
+    /// `onTraversalSuccess`: whatever is left, in start order.
+    pub fn drain(&mut self) -> Vec<Record> {
+        let mut written = Vec::new();
+        while let Some(head) = self.head() {
+            written.push(self.pending.remove(head));
+        }
+        written
+    }
+
+    fn head(&self) -> Option<usize> {
+        self.pending
+            .iter()
+            .enumerate()
+            .min_by_key(|(index, record)| (record.variant.start, *index))
+            .map(|(index, _)| index)
+    }
+}
