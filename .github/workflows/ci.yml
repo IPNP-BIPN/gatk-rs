@@ -209,8 +209,8 @@ jobs:
             suites: "validate-variants count-variants count-false-positives calculate-mixing-fractions annotate-vcf-with-bam-depth"
           - group: oracle-backed
             index: "25/25"
-            slug: "annotate-vcf-with-expected-allele-fraction-concordance-walker-evaluate-info-field-concordance-concordance-summary"
-            suites: "annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance concordance-summary"
+            slug: "annotate-vcf-with-expected-allele-fraction-concordance-walker-evaluate-info-field-concordance-concordance-summary-concordance-filter-analysis"
+            suites: "annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance concordance-summary concordance-filter-analysis"
     steps:
       - uses: actions/checkout@v4
 

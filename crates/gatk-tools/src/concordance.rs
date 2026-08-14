@@ -63,9 +63,24 @@
 //!
 //! The size test asks for nothing but the count and the membership test asks for one allele, so
 //! truth `A/C,G` against eval `A/G,C` agrees while truth `A/C` against eval `A/C,G` does not.
+//!
+//! # The filter analysis counts without the flag that asks for it
+//!
+//! ```java
+//! if (filterAnalysis != null && concordanceState == ConcordanceState.FILTERED_TRUE_NEGATIVE || concordanceState == ConcordanceState.FILTERED_FALSE_NEGATIVE) {
+//! ```
+//!
+//! `&&` binds tighter than `||`, so this is `(flag && FTN) || FFN`: a filtered false negative walks
+//! into the map whether or not `--filter-analysis` was given. Nothing is written when it was not, so
+//! the only way the difference reaches a user is as a crash. The map is keyed by the **eval
+//! header's** FILTER lines and the lookup is unguarded, so a filter the header does not declare is a
+//! null, and the increment on it is a `NullPointerException` on a run that asked for no such table.
+//! [`FilterAnalysis::apply`] keeps the condition in that shape rather than the one the layout
+//! suggests, and returns the null as an error rather than reaching for a record that is not there.
 
 use gatk_engine::base_recalibration_engine::round_to_n_decimal_places;
 use gatk_engine::concordance_walker::ConcordanceState;
+use gatk_engine::java_hash::{hash_map_order, string_hash_code, HashOrderError};
 use gatk_engine::tsv_table::{java_double_to_string, write_table};
 
 /// `GATKTool.getToolName()` for this tool.
@@ -164,6 +179,165 @@ pub fn rate(value: f64) -> String {
 /// The eval side has no filter of its own, the base class's being `vc -> true`.
 pub fn truth_variant_filter(is_filtered: bool, is_symbolic_or_sv: bool) -> bool {
     !is_filtered && !is_symbolic_or_sv
+}
+
+/// `FilterAnalysisTableColumn.COLUMNS`.
+pub const FILTER_ANALYSIS_COLUMNS: [&str; 5] = ["filter", "tn", "fn", "uniq_tn", "uniq_fn"];
+
+/// What the filter analysis can fail with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FilterAnalysisError {
+    /// `filterAnalysisRecords.get(filter)` answered null and was incremented anyway.
+    UndeclaredFilter {
+        /// The increment the reference reached for, which is the state's own.
+        method: &'static str,
+    },
+    /// A bucket nothing here has measured, from [`hash_map_order`].
+    HashOrder(HashOrderError),
+}
+
+impl FilterAnalysisError {
+    /// The exception class the reference throws.
+    pub fn class(&self) -> &'static str {
+        match self {
+            FilterAnalysisError::UndeclaredFilter { .. } => "java.lang.NullPointerException",
+            FilterAnalysisError::HashOrder(_) => "unmeasured",
+        }
+    }
+
+    /// The message, which is the JDK's own helpful wording rather than anything GATK writes.
+    pub fn message(&self) -> String {
+        match self {
+            FilterAnalysisError::UndeclaredFilter { method } => format!(
+                "Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.validation.FilterAnalysisRecord.{method}()\" because \"record\" is null"
+            ),
+            FilterAnalysisError::HashOrder(HashOrderError::BucketTreeified { bucket, length }) => {
+                format!("bucket {bucket} holds {length} filters, which is past what is measured")
+            }
+        }
+    }
+}
+
+/// `FilterAnalysisRecord`: one filter, and the four counters it accumulates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterAnalysisRecord {
+    pub filter: String,
+    pub true_negative: i32,
+    pub false_negative: i32,
+    pub unique_true_negative: i32,
+    pub unique_false_negative: i32,
+}
+
+/// The `HashMap<String, FilterAnalysisRecord>` of `onTraversalStart`, in declaration order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FilterAnalysis {
+    records: Vec<FilterAnalysisRecord>,
+}
+
+impl FilterAnalysis {
+    /// One record per FILTER line of the **eval** header, whatever any record carries.
+    ///
+    /// The truth header's filters are never looked at, and a declared filter nothing carries still
+    /// gets a row of zeroes.
+    pub fn new(declared_by_the_eval_header: &[String]) -> Self {
+        FilterAnalysis {
+            records: declared_by_the_eval_header
+                .iter()
+                .map(|filter| FilterAnalysisRecord {
+                    filter: filter.clone(),
+                    true_negative: 0,
+                    false_negative: 0,
+                    unique_true_negative: 0,
+                    unique_false_negative: 0,
+                })
+                .collect(),
+        }
+    }
+
+    /// The tail of `apply`, condition and all.
+    ///
+    /// `requested` is `filterAnalysis != null`, and it is deliberately consulted for one of the two
+    /// states only: that is what the reference's precedence says.
+    pub fn apply(
+        &mut self,
+        state: ConcordanceState,
+        filters_on_the_eval_record: &[String],
+        requested: bool,
+    ) -> Result<(), FilterAnalysisError> {
+        let filtered_true_negative = state == ConcordanceState::FilteredTrueNegative;
+        let filtered_false_negative = state == ConcordanceState::FilteredFalseNegative;
+        if !((requested && filtered_true_negative) || filtered_false_negative) {
+            return Ok(());
+        }
+        // `filters.size() == 1`: a property of the record, decided once and handed to each of its
+        // filters, so a record carrying two of them makes neither of the two unique.
+        let unique = filters_on_the_eval_record.len() == 1;
+        let method = if filtered_true_negative {
+            "incrementTrueNegative"
+        } else {
+            "incrementFalseNegative"
+        };
+        for filter in filters_on_the_eval_record {
+            let Some(record) = self
+                .records
+                .iter_mut()
+                .find(|record| &record.filter == filter)
+            else {
+                // The unguarded `filterAnalysisRecords.get(filter)`, on a filter the eval header
+                // never declared.
+                return Err(FilterAnalysisError::UndeclaredFilter { method });
+            };
+            if filtered_true_negative {
+                record.true_negative += 1;
+                if unique {
+                    record.unique_true_negative += 1;
+                }
+            } else {
+                record.false_negative += 1;
+                if unique {
+                    record.unique_false_negative += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The records in the order `filterAnalysisRecords.values()` hands them over.
+    pub fn ordered(&self) -> Result<Vec<&FilterAnalysisRecord>, FilterAnalysisError> {
+        let entries: Vec<(String, i32)> = self
+            .records
+            .iter()
+            .map(|record| (record.filter.clone(), string_hash_code(&record.filter)))
+            .collect();
+        let order = hash_map_order(&entries).map_err(FilterAnalysisError::HashOrder)?;
+        Ok(order
+            .into_iter()
+            .map(|filter| {
+                self.records
+                    .iter()
+                    .find(|record| record.filter == filter)
+                    .expect("the order is of these very keys")
+            })
+            .collect())
+    }
+
+    /// The whole filter-analysis table, written only when the flag asked for it.
+    pub fn table(&self) -> Result<String, FilterAnalysisError> {
+        let rows: Vec<Vec<String>> = self
+            .ordered()?
+            .into_iter()
+            .map(|record| {
+                vec![
+                    record.filter.clone(),
+                    record.true_negative.to_string(),
+                    record.false_negative.to_string(),
+                    record.unique_true_negative.to_string(),
+                    record.unique_false_negative.to_string(),
+                ]
+            })
+            .collect();
+        Ok(write_table(&FILTER_ANALYSIS_COLUMNS, &rows, &[]))
+    }
 }
 
 /// `areVariantsAtSameLocusConcordant`, as the two allele lists.
@@ -272,6 +446,133 @@ mod tests {
         ));
         // A truth record with no alternate at all agrees with nothing.
         assert!(!variants_at_same_locus_are_concordant("A", &[], "A", &[]));
+    }
+
+    fn declared() -> Vec<String> {
+        ["weak", "shallow", "noisy", "unused"]
+            .iter()
+            .map(|filter| filter.to_string())
+            .collect()
+    }
+
+    fn filters(list: &[&str]) -> Vec<String> {
+        list.iter().map(|filter| filter.to_string()).collect()
+    }
+
+    #[test]
+    fn a_filtered_false_negative_counts_without_the_flag_that_asks_for_it() {
+        let mut analysis = FilterAnalysis::new(&declared());
+        // No flag, and a filtered false negative still walks into the map.
+        analysis
+            .apply(
+                ConcordanceState::FilteredFalseNegative,
+                &filters(&["weak"]),
+                false,
+            )
+            .expect("weak is declared");
+        // No flag, and a filtered true negative does not.
+        analysis
+            .apply(
+                ConcordanceState::FilteredTrueNegative,
+                &filters(&["weak"]),
+                false,
+            )
+            .expect("nothing happens at all");
+        let weak = analysis
+            .records
+            .iter()
+            .find(|record| record.filter == "weak")
+            .expect("declared");
+        assert_eq!((weak.false_negative, weak.true_negative), (1, 0));
+    }
+
+    #[test]
+    fn an_undeclared_filter_is_the_references_null_pointer() {
+        let mut analysis = FilterAnalysis::new(&declared());
+        // At a truth locus, with no flag: the crash happens on a run that asked for no table.
+        let error = analysis
+            .apply(
+                ConcordanceState::FilteredFalseNegative,
+                &filters(&["ghost"]),
+                false,
+            )
+            .expect_err("ghost is not declared");
+        assert_eq!(error.class(), "java.lang.NullPointerException");
+        assert_eq!(
+            error.message(),
+            "Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.validation.FilterAnalysisRecord.incrementFalseNegative()\" because \"record\" is null"
+        );
+        // Standing alone, with no flag: the guard keeps it away from the map entirely.
+        analysis
+            .apply(
+                ConcordanceState::FilteredTrueNegative,
+                &filters(&["ghost"]),
+                false,
+            )
+            .expect("the state never reaches the lookup");
+        // Standing alone, with the flag: the same null, reached through the other increment.
+        let error = analysis
+            .apply(
+                ConcordanceState::FilteredTrueNegative,
+                &filters(&["ghost"]),
+                true,
+            )
+            .expect_err("ghost is not declared");
+        assert!(error.message().contains("incrementTrueNegative()"));
+    }
+
+    #[test]
+    fn a_record_with_two_filters_increments_neither_unique_column() {
+        let mut analysis = FilterAnalysis::new(&declared());
+        analysis
+            .apply(
+                ConcordanceState::FilteredFalseNegative,
+                &filters(&["weak", "shallow"]),
+                true,
+            )
+            .expect("both declared");
+        for name in ["weak", "shallow"] {
+            let record = analysis
+                .records
+                .iter()
+                .find(|record| record.filter == name)
+                .expect("declared");
+            assert_eq!(
+                (record.false_negative, record.unique_false_negative),
+                (1, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn the_row_order_is_a_hash_maps_and_every_declared_filter_has_one() {
+        // The golden's baseline: two filtered false negatives, one of them carrying two filters,
+        // and two filtered true negatives, one of them carrying two.
+        let mut analysis = FilterAnalysis::new(&declared());
+        for (state, on_the_record) in [
+            (ConcordanceState::FilteredFalseNegative, filters(&["weak"])),
+            (
+                ConcordanceState::FilteredFalseNegative,
+                filters(&["weak", "shallow"]),
+            ),
+            (ConcordanceState::FilteredTrueNegative, filters(&["weak"])),
+            (
+                ConcordanceState::FilteredTrueNegative,
+                filters(&["shallow", "noisy"]),
+            ),
+        ] {
+            analysis
+                .apply(state, &on_the_record, true)
+                .expect("all declared");
+        }
+        assert_eq!(
+            analysis.table().expect("four filters in sixteen buckets"),
+            "filter\ttn\tfn\tuniq_tn\tuniq_fn\n\
+             shallow\t1\t1\t0\t0\n\
+             unused\t0\t0\t0\t0\n\
+             noisy\t1\t0\t0\t0\n\
+             weak\t1\t2\t1\t1\n"
+        );
     }
 
     #[test]
