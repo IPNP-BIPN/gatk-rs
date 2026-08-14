@@ -2506,6 +2506,32 @@
           "why": "155 rows: one input of nine records and twenty-six runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31756512742, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "select-variants-output",
+      "status": "oracle-backed",
+      "title": "SelectVariants' output order, where trimming moves a record right",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "why": "Records do not go straight to the writer: they go into a PriorityQueue ordered by start, drained only as far as the record being read, because TRIMMING CAN MOVE A RECORD RIGHT and a file written in input order would be unsorted. The queue is drained with `<=`, so a pending record at the same start as the record being read is written FIRST, and a contig change drains it entirely. Trimming only happens on the subsetting path, so adding one -sn both shortens the alleles and reorders the file. --set-filtered-gt-to-nocall replaces the call and KEEPS the FT, and recomputes AC, AN and AF itself when it replaced something, so a whole-cohort run that recomputes nothing else still rewrites the counts of that record and adds an AF the input never had. --drop-info-annotation removes a field the tool itself would have written, and --drop-genotype-annotation rebuilds every genotype through noAttributes, dropping the named key and keeping GT, GQ, DP, AD and PL, which are not extended attributes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 64,
+      "expect_contains": [
+        "order\tall-samples\tchr1:100,chr1:101,chr1:104,chr1:200,chr2:50,chr2:51",
+        "order\tsubset\tchr1:101,chr1:104,chr1:104,chr1:200,chr2:51,chr2:54",
+        "vcfline\tset-filtered-to-nocall\tchr1\\t200\\t.\\tA\\tC\\t50\\t.\\tAC=1;AF=0.500;AN=2;DP=30;QD=20.0\\tGT:DP:FT:GQ:XX\\t./.:10:LowGQ:60:7\\t0/1:10:PASS:60:7\\t./.:10:LowGQ:60:7"
+      ],
+      "cases": [
+        {
+          "dump": "SelectVariantsOutputDump",
+          "golden": "crates/gatk-tools/tests/data/select_variants_output.txt.gz",
+          "why": "64 rows: one input of six records over two contigs and nine runs. The first record shares four bases of prefix with its alternate, so trimming moves it from 100 to 104, where another record already is, and a third sits between them at 101: the three of them together are what shows the queue's drain rule. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31757410137, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
