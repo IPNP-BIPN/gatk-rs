@@ -2876,7 +2876,7 @@
     },
     {
       "id": "concordance-annotated-vcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Concordance's three annotated VCFs, where one step writes two different records",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2900,8 +2900,8 @@
       "cases": [
         {
           "dump": "ConcordanceAnnotatedVcfsDump",
-          "golden": null,
-          "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/concordance_annotated_vcfs.txt.gz",
+          "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31812968769."
         }
       ]
     }
