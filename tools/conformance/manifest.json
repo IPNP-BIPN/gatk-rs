@@ -2976,6 +2976,35 @@
         }
       ]
     }
+    ,
+    {
+      "id": "apply-vqsr-allele-specific",
+      "status": "golden-pending",
+      "title": "ApplyVQSR's allele-specific mode, where a spanning deletion counts as a SNP",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "ApplyVQSR's -AS path: every alternate allele scored against a recal record of its own and written into three comma-separated lists. THE PER-ALLELE CLASS TEST IS A LENGTH COMPARISON rather than a type, SNP mode keeping an allele whose length equals the reference's, so A SPANNING DELETION COUNTS AS A SNP, as the reference's own comment says. AN ALLELE OF THE OTHER MODE IS NOT SKIPPED BUT PADDED with NA for its filter and its culprit and NaN for its LOD, and so is the spanning deletion, WITHOUT BEING LOOKED UP: the lists always carry one entry per alternate allele, and chr1:300 comes out AS_FilterStatus=NA,VQSRTrancheSNP90.00to99.00 in SNP mode. A MIXED SITE IS LEFT UNFILTERED UNTIL BOTH MODES HAVE RUN, generateFilterStringFromAlleles returning the unfiltered value when neither bothModesWereRun nor onlyOneModeNeeded holds, so chr1:200's FILTER is . while its AS_FilterStatus already names a tranche. EVERY RECORD IS EVALUATED IN AS MODE, evaluateThisVariant being useASannotations || checkVariationClass, so a pure indel is annotated by a SNP-mode run rather than passed through untouched. THERE IS NO SITE-LEVEL VQSLOD OR CULPRIT AT ALL in this mode, only the three lists, each LOD formatted with %.4f rather than through the writer's double format, while the two training labels are still written at the site. AND AN ALLELE WITH NO RECAL RECORD IS A REFUSAL OF ITS OWN, worded for -AS, which the walker rethrows as a GATKException naming the locus.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "vcfline\tas-snp-mode\tchr1\\t100\\t.\\tA\\tC,G\\t50\\tPASS\\tAS_FilterStatus=PASS,VQSRTrancheSNP90.00to99.00;AS_VQSLOD=5.0000,2.0000;AS_culprit=QD,MQ;POSITIVE_TRAIN_SITE\\tGT\\t1/2",
+        "vcfline\tas-snp-mode\tchr1\\t200\\t.\\tA\\tC,ACC\\t50\\t.\\tAS_FilterStatus=VQSRTrancheSNP99.00to100.00+,NA;AS_VQSLOD=-3.0000,NaN;AS_culprit=FS,NA\\tGT\\t1/2",
+        "vcfline\tas-snp-mode\tchr1\\t300\\t.\\tA\\t*,C\\t50\\tVQSRTrancheSNP90.00to99.00\\tAS_FilterStatus=NA,VQSRTrancheSNP90.00to99.00;AS_VQSLOD=NaN,2.0000;AS_culprit=NA,MQ\\tGT\\t1/2",
+        "vcfline\tas-snp-mode\tchr1\\t400\\t.\\tACC\\tA\\t50\\t.\\tAS_FilterStatus=NA;AS_VQSLOD=NaN;AS_culprit=NA\\tGT\\t0/1",
+        "vcfline\tas-indel-mode\tchr1\\t200\\t.\\tA\\tC,ACC\\t50\\t.\\tAS_FilterStatus=NA,PASS;AS_VQSLOD=NaN,4.0000;AS_culprit=NA,SOR\\tGT\\t1/2",
+        "vcfline\tas-indel-mode\tchr1\\t400\\t.\\tACC\\tA\\t50\\tPASS\\tAS_FilterStatus=PASS;AS_VQSLOD=4.0000;AS_culprit=QD\\tGT\\t0/1",
+        "cause\tas-missing-allele\torg.broadinstitute.hellbender.exceptions.UserException:Encountered input allele which isn't found in the input recal file. Please make sure VariantRecalibrator and ApplyVQSR were run on the same set of input variants with flag -AS."
+      ],
+      "cases": [
+        {
+          "dump": "ApplyVqsrAlleleSpecificDump",
+          "golden": null,
+          "why": "15 rows: four VCFs, one tranches file and three runs. The input carries a multi-allelic SNP, a mixed site, a spanning deletion beside a SNP and a pure indel, against one recal record per allele told apart by its first alternate. The same four records are run in SNP mode and in INDEL mode, which is what shows the padding swapping sides, and a third run gives an allele a recal record at the right locus with the wrong allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    }
   ],
   "probes": []
 }
