@@ -3073,7 +3073,7 @@
     ,
     {
       "id": "threshold-calculator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The Mutect threshold calculator, whose optimal F score keeps the last tie",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3104,8 +3104,8 @@
       "cases": [
         {
           "dump": "ThresholdCalculatorDump",
-          "golden": null,
-          "why": "32 rows: six lists of posteriors and no files at all, driven through the calculator's public surface. The lists are a spread out of order, four equal posteriors, three nearly certain errors, three nearly certain calls, one posterior alone and none. Each of the three strategies runs over all six, plus a loose and a tight rate, a beta of zero and a beta of ten, the in-place sort shown as the same list before and after, three relearn-twice pairs and the two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/threshold_calculator.txt.gz",
+          "why": "32 rows: six lists of posteriors and no files at all, driven through the calculator's public surface. The lists are a spread out of order, four equal posteriors, three nearly certain errors, three nearly certain calls, one posterior alone and none. Each of the three strategies runs over all six, plus a loose and a tight rate, a beta of zero and a beta of ten, the in-place sort shown as the same list before and after, three relearn-twice pairs and the two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31824479924."
         }
       ]
     }
