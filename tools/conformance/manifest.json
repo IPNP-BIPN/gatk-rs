@@ -1757,7 +1757,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 30,
+      "expect_rows": 36,
       "expect_contains": [
         "count\tCountBases\tfull\t120",
         "count\tCountReads\tmalformed\t0",
@@ -1781,7 +1781,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 30,
+      "expect_rows": 36,
       "expect_contains": [
         "parse\ttext-nm\tchr1,100,+,10M,60,not-a-number;",
         "unit\tunmapped\t*,0,+,*,0,*;",
@@ -2305,7 +2305,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 30,
+      "expect_rows": 36,
       "expect_contains": [
         "out\thet-keep-second\tBEST_MATCH_TO_ORIGINAL\t0,2\tA/A|10,0,30|10|10,8|30|",
         "out\thet-keep-all\tBEST_MATCH_TO_ORIGINAL\t0,1,2\tA/C|50,0,60,40,30,70|30|10,12,8|30|",
@@ -2745,7 +2745,7 @@
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 30,
+      "expect_rows": 36,
       "expect_contains": [
         "vcfline\tannotated\tchr1\\t20\\t.\\tA\\tC\\t50\\tPASS\\tAA=1;AF_EXP=0.100\\tGT\\t0/1\\t0/0\\t0/0",
         "vcfline\tannotated\tchr1\\t60\\t.\\tA\\tC\\t50\\tPASS\\tAF_EXP=0.600\\tGT\\t1/1\\t1/1\\t1/1",
@@ -2902,6 +2902,42 @@
           "dump": "ConcordanceAnnotatedVcfsDump",
           "golden": "crates/gatk-tools/tests/data/concordance_annotated_vcfs.txt.gz",
           "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31812968769."
+        }
+      ]
+    }
+    ,
+    {
+      "id": "apply-vqsr-tranches",
+      "status": "oracle-backed",
+      "title": "The tranches file, whose two optional columns are not optional",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "ApplyVQSR's first slice, and the file both VQSR tools pass between them: TruthSensitivityTranche.readTranches and the FILTER header lines onTraversalStart makes of the tranches that survive --truth-sensitivity-filter-level, measured with an input VCF holding no record so the header is the whole output. THE TWO OPTIONAL COLUMNS ARE NOT OPTIONAL: numKnown is read with getOptionalInteger(..., -1) and the Tranche constructor then refuses numKnown < 0, so a header that does not name the column is a GATKException 'Invalid tranche <filterName> - no. variants is < 0 : known -1 novel 9' rather than a default, while accessibleTruthSites and callsAtTruthSites default to -1 and are never checked. THE HEADER NAMES THE COLUMNS AND THERE MUST BE ELEVEN OF THEM, the bindings being built header-to-value, so the order is free while a header of another length is refused before any row and a row of another length against the header's. THE SAME READER WORDS ITS TWO REFUSALS DIFFERENTLY: the missing-key path builds a MalformedFile with no file at all and reads 'Unknown file is malformed', while the two length checks name the file. THE FILTER IDs ARE THE filterName COLUMN rather than anything synthesized, and THE LAST TRANCHE NEVER BECOMES A FILTER: the lines run to size - 1, so the tranche kept whole has no line, the first tranche after the reversal is described with the NEXT tranche's minVQSLod, and it gets a SECOND line with a + appended to its own name, appearing twice in one header under two IDs. model and filterName are read with a bare bindings.get and handed to Mode.valueOf unchecked, so a header not naming the model column is a NullPointerException 'Name is null', while numNovel is a long field parsed with Integer.valueOf, so a count past the range of an int cannot be read back at all. A LEVEL ABOVE EVERY TRANCHE IS A UserException rather than an empty filter set, and the mutual exclusion of --truth-sensitivity-filter-level and --lod-score-cutoff is checked AFTER the file is read, so a broken file wins over the mutex. With no level at all there is one filter line, LOW_VQSLOD, described with the default cutoff 0.0.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 36,
+      "expect_contains": [
+        "filter\tlevel-99\t##FILTER=<ID=VQSRTrancheSNP99.00to100.00+,Description=\"Truth sensitivity tranche level for SNP model at VQS Lod < -0.5\">",
+        "filter\tlevel-99\t##FILTER=<ID=VQSRTrancheSNP99.00to100.00,Description=\"Truth sensitivity tranche level for SNP model at VQS Lod: -0.5 <= x < 1.5\">",
+        "filter\tlevel-0\t##FILTER=<ID=VQSRTrancheSNP90.00to99.00,Description=\"Truth sensitivity tranche level for SNP model at VQS Lod: 1.5 <= x < 3.5\">",
+        "filter\tcustom-names\t##FILTER=<ID=tight+,Description=\"Truth sensitivity tranche level for SNP model at VQS Lod < -0.5\">",
+        "filter\tno-level\t##FILTER=<ID=LOW_VQSLOD,Description=\"VQSLOD < 0.0\">",
+        "error\tmissing-optional\torg.broadinstitute.hellbender.exceptions.GATKException:Invalid tranche VQSRTrancheSNP90.00to99.00 - no. variants is < 0 : known -1 novel 9",
+        "error\tmissing-required\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:Unknown file is malformed: Malformed tranches file.  Missing required key minVQSLod",
+        "error\tboth-cutoffs-broken-file\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:Unknown file is malformed: Malformed tranches file.  Missing required key minVQSLod",
+        "error\tlevel-above-everything\torg.broadinstitute.hellbender.exceptions.UserException:No tranches were found in the file or were above the truth sensitivity filter level 100.1",
+        "error\tunreasonable\torg.broadinstitute.hellbender.exceptions.GATKException:Target FDR is unreasonable 150.0",
+        "error\tbad-model\tjava.lang.IllegalArgumentException:No enum constant org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibratorArgumentCollection.Mode.GERMLINE",
+        "error\tmissing-model\tjava.lang.NullPointerException:Name is null",
+        "error\tinvalid-value\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:Unknown file is malformed: Malformed tranches file. Invalid value for key numNovel",
+        "error\tnovel-past-int\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:Unknown file is malformed: Malformed tranches file. Invalid value for key numNovel"
+      ],
+      "cases": [
+        {
+          "dump": "ApplyVqsrTranchesDump",
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_tranches.txt.gz",
+          "why": "36 rows: eleven tranches files and sixteen runs against one record-free VCF. The good file writes its three tranches out of sensitivity order so the sort is visible, and a second copy names them loose, middling and tight. The other six each break one thing: a required key the header does not name, an optional key it does not name, a model the enum does not have, a sensitivity the constructor calls unreasonable, a value that is not a number, a numNovel past the range of an int, a header that does not name the model column, a row one field short and a header one column short. The runs cover two filter levels, a level above every tranche, no level at all, both cutoffs at once and both cutoffs with a broken file. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31815211728."
         }
       ]
     }
