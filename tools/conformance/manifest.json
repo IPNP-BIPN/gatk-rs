@@ -3209,7 +3209,7 @@
     ,
     {
       "id": "germline-probability",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The germline probability, whose answer is the first entry and not the second",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3234,8 +3234,8 @@
       "cases": [
         {
           "dump": "GermlineProbabilityDump",
-          "golden": null,
-          "why": "34 rows: no files at all, five doubles per call. A baseline and four sweeps that vary one axis each \u2014 nine population frequencies from 0 to 1, nine normal log odds including both infinities, five het log odds and six somatic priors \u2014 plus the hom-alt hypothesis switched off at two frequencies and the two corners where one side of the normalisation has nothing left in it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/germline_probability.txt.gz",
+          "why": "34 rows: no files at all, five doubles per call. A baseline and four sweeps that vary one axis each \u2014 nine population frequencies from 0 to 1, nine normal log odds including both infinities, five het log odds and six somatic priors \u2014 plus the hom-alt hypothesis switched off at two frequencies and the two corners where one side of the normalisation has nothing left in it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31838328451. Thirty-one of the thirty-four probabilities are bit-identical against the port; three (a population frequency of 1e-8 and normal log odds of -10 and -50) differ by a single ulp, for the same reason the mutect-engine-arithmetic suite has one: every entry of the normalisation goes through exp, whose bit-exact transcription is withdrawn under htsjdk-rs decision 0014."
         }
       ]
     }
