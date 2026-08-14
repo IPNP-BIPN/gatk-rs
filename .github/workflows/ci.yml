@@ -219,6 +219,10 @@ jobs:
             index: "27/27"
             slug: "filter-variant-tranches"
             suites: "filter-variant-tranches"
+          - group: golden-pending
+            index: "1/1"
+            slug: "threshold-calculator"
+            suites: "threshold-calculator"
     steps:
       - uses: actions/checkout@v4
 
