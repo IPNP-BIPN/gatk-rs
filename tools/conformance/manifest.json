@@ -3171,6 +3171,41 @@
         }
       ]
     }
+    ,
+    {
+      "id": "mutect-engine-arithmetic",
+      "status": "oracle-backed",
+      "title": "Mutect's engine arithmetic, where rounding the error is a clamp",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The three public statics of Mutect2FilteringEngine that every filter goes through, measured before the engine that calls them exists. THE POSTERIOR IS A TWO-ENTRY NORMALISATION, [logOdds + logPrior, log1mexp(logPrior)] through normalizeFromLogToLinearSpace, of which the SECOND entry is returned: it is the probability of ERROR, and it falls as the odds of being real rise. A PRIOR OF ONE MAKES THE ERROR IMPOSSIBLE, log1mexp(0) being negative infinity, so every finite log odds answers 0.0 against a prior of 1. BUT THE TWO INFINITIES DO NOT AGREE: log odds of -Infinity against a prior of 1 makes both entries -Infinity and answers NaN, while log odds of +Infinity against a prior of 0 makes the sum NaN and is refused outright with 'logValues must be non-infinite and non-NAN'. roundFinitePrecisionErrors IS A CLAMP rather than a rounding, max(min(p, 1), 0): it moves 1.0000000001 to 1.0 and -Infinity to 0.0, AND IT LEAVES NaN ALONE, because Java's Math.min and Math.max propagate NaN where a naive clamp would not. AND getTumorLogOdds CONVERTS FROM LOG10 TO NATURAL LOG, so a TLOD of 6.0 is 13.815510557964275 by the time any threshold sees it, and a missing annotation is null rather than an empty array.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 64,
+      "expect_contains": [
+        "posterior\t0.0,-1.0\t0.6321205588285577",
+        "posterior\t10.0,-10.0\t0.4999886497599093",
+        "posterior\t100.0,-100.0\t0.5",
+        "posterior\t-10.0,0.0\t0.0",
+        "posterior\t-Infinity,0.0\tNaN",
+        "error\tInfinity,-Infinity\tjava.lang.IllegalArgumentException:logValues must be non-infinite and non-NAN",
+        "round\tNaN\tNaN",
+        "round\t-Infinity\t0.0",
+        "round\tInfinity\t1.0",
+        "round\t1.0000000001\t1.0",
+        "round\tEPSILON\t1.0E-10",
+        "tumorlogodds\tone\t[13.815510557964275]",
+        "tumorlogodds\tabsent\tnull"
+      ],
+      "cases": [
+        {
+          "dump": "MutectEngineArithmeticDump",
+          "golden": "crates/gatk-engine/tests/data/mutect_engine_arithmetic.txt.gz",
+          "why": "64 rows: no files at all. Forty-eight posteriors over a grid of six log priors and eight log odds, including both infinities on each axis; ten clamps, over both bounds, both infinities and NaN; four conversions, one of them of a record with no annotation; and the engine's two public constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31832059604. Forty-seven of the forty-eight posteriors are bit-identical against the port and one, 100.0 against a prior of -1.0, differs by a single ulp, because every entry of the normalisation goes through exp, whose bit-exact transcription is withdrawn under htsjdk-rs decision 0014."
+        }
+      ]
+    }
   ],
   "probes": []
 }
