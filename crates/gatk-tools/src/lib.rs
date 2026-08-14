@@ -20,6 +20,7 @@ pub mod count_false_positives;
 pub mod count_variants;
 pub mod counting_walkers;
 pub mod dump_tabix_index;
+pub mod evaluate_info_field_concordance;
 pub mod fix_misencoded_base_quality_reads;
 pub mod gather_vcfs;
 pub mod get_sample_name;
