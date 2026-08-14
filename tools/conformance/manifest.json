@@ -3008,7 +3008,7 @@
     ,
     {
       "id": "apply-vqsr-two-modes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ApplyVQSR run twice, where the leniency regex loses a digit",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3028,8 +3028,8 @@
       "cases": [
         {
           "dump": "ApplyVqsrTwoModesDump",
-          "golden": null,
-          "why": "45 rows: eight VCFs, four tranches files and six runs. The first pair runs SNP mode and then INDEL mode over the first run's own output, so the second run reads its predecessor's FILTER lines; the second pair does the same with two tranche names whose lower limits the greedy regex reorders. Two more runs give the input header a lowercase tranche name and a tranche name whose interval is not a pair of numbers. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_two_modes.txt.gz",
+          "why": "45 rows: eight VCFs, four tranches files and six runs. The first pair runs SNP mode and then INDEL mode over the first run's own output, so the second run reads its predecessor's FILTER lines; the second pair does the same with two tranche names whose lower limits the greedy regex reorders. Two more runs give the input header a lowercase tranche name and a tranche name whose interval is not a pair of numbers. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31819970925."
         }
       ]
     }
