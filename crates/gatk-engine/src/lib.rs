@@ -26,6 +26,7 @@ pub mod context;
 pub mod context_iterator;
 pub mod covariates;
 pub mod downsampling;
+pub mod error_probabilities;
 pub mod feature_intervals;
 pub mod features;
 pub mod filtering_stats;
