@@ -2979,7 +2979,7 @@
     ,
     {
       "id": "apply-vqsr-allele-specific",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ApplyVQSR's allele-specific mode, where a spanning deletion counts as a SNP",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3000,8 +3000,8 @@
       "cases": [
         {
           "dump": "ApplyVqsrAlleleSpecificDump",
-          "golden": null,
-          "why": "15 rows: four VCFs, one tranches file and three runs. The input carries a multi-allelic SNP, a mixed site, a spanning deletion beside a SNP and a pure indel, against one recal record per allele told apart by its first alternate. The same four records are run in SNP mode and in INDEL mode, which is what shows the padding swapping sides, and a third run gives an allele a recal record at the right locus with the wrong allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/apply_vqsr_allele_specific.txt.gz",
+          "why": "15 rows: four VCFs, one tranches file and three runs. The input carries a multi-allelic SNP, a mixed site, a spanning deletion beside a SNP and a pure indel, against one recal record per allele told apart by its first alternate. The same four records are run in SNP mode and in INDEL mode, which is what shows the padding swapping sides, and a third run gives an allele a recal record at the right locus with the wrong allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31818727133."
         }
       ]
     }
