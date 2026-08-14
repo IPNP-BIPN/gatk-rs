@@ -2617,7 +2617,7 @@
     },
     {
       "id": "count-variants",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CountVariants, whose count is the traversal's",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2640,8 +2640,8 @@
       "cases": [
         {
           "dump": "CountVariantsDump",
-          "golden": null,
-          "why": "32 rows: six input files and fourteen runs. The files pair a five-record one of five different shapes with a filtered-only file, a header with no records, a file whose two records span far more than their positions, a two-contig file and one with no index beside it. The runs cover the count with and without -O, the overwrite of a longer file, four interval selections, and the three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/count_variants.txt.gz",
+          "why": "32 rows: six input files and fourteen runs. The files pair a five-record one of five different shapes with a filtered-only file, a header with no records, a file whose two records span far more than their positions, a two-contig file and one with no index beside it. The runs cover the count with and without -O, the overwrite of a longer file, four interval selections, and the three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31779686239."
         }
       ]
     }
