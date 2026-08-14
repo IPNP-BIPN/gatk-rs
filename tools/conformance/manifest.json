@@ -2477,6 +2477,35 @@
           "why": "65 rows: one input of five records and twelve runs, covering the whole cohort, three subsets, each flag that changes what is written, and the drop of a record nobody varies at. The records are built so that one alternate loses every carrier under subsetting, one genotype is filtered, one is a no-call, one record has no genotype DP at all and one is an indel whose alternates both disappear. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31755681212, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "select-variants-filters",
+      "status": "golden-pending",
+      "title": "SelectVariants' record filters, where one fraction is an integer division",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "why": "Which records survive, decided in three places that are not interchangeable: a first round before anything is subset, two genotype-count gates in the middle, and --exclude-non-variants after the subset, with the JEXL expressions on either side depending on one flag. THE FILTERED-GENOTYPE FRACTION IS AN INTEGER DIVISION: numFilteredSamples / samples.size() is int over int assigned to a double, so --max-fraction-filtered-genotypes does nothing at any value above 0, while --max-nocall-fraction one line below casts and works. --select-type-to-exclude BEATS --select-type-to-include. The indel size gates are about ABSOLUTE length and reject the RECORD rather than the allele. --exclude-non-variants runs AFTER the subset, so it drops a record whose alternates only the unselected samples carried, and a spanning deletion alone counts as non-variant. The JEXL expressions are OR-ed and --invert-select inverts EACH of them before the or, which is not the complement of the whole; --apply-jexl-filters-first moves them before the subset, so an expression over AC sees the record's own annotation rather than the recomputed one. An expression over a per-allele annotation is a UserException at evaluation rather than a compile failure, and an unparseable one is an IllegalArgumentException whose message runs the argument name into the next word.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 155,
+      "expect_contains": [
+        "kept\tmax-filtered-genotypes\t100,200,300,400,500,600,700,900",
+        "kept\tmax-fraction-filtered-genotypes\t100,200,300,400,500,600,700,800,900",
+        "kept\tmax-nocall-fraction\t100,200,300,400,500,600,700",
+        "kept\tselect-inverted\t200",
+        "kept\texclude-non-variants-subset\t100,200,300,400,500,800,900",
+        "error\tselect-unparseable\tjava.lang.IllegalArgumentException:Argument select-0has a bad value. Invalid expression used (QD >). Please see the JEXL docs for correct syntax."
+      ],
+      "cases": [
+        {
+          "dump": "SelectVariantsFiltersDump",
+          "golden": null,
+          "why": "155 rows: one input of nine records and twenty-six runs, one per gate and one per flag that moves a gate. The records are built so that each gate has something to catch: two indels of very different length, a MIXED multi-allelic, a spanning deletion alone, a record only the unselected samples vary at, one with two filtered genotypes and one with three no-calls. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
