@@ -9,6 +9,7 @@ pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
 pub mod apply_bqsr;
 pub mod base_recalibrator;
+pub mod calculate_mixing_fractions;
 pub mod check_pileup;
 pub mod clip_reads;
 pub mod compare_base_qualities;
