@@ -55,8 +55,11 @@
 //! nothing is lost, and it is also why a line-by-line comparison of input and output shows a
 //! difference that is not a rewriting.
 
+use gatk_engine::genotype_index::GenotypeIndexError;
 use gatk_engine::java_hash::compare_strings;
 use gatk_engine::java_regex::{self, PatternSyntaxError};
+use gatk_engine::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
+use gatk_engine::variant_context_utils::{trim_alleles, Variant};
 
 /// The four sample arguments and the flag that forgives a missing name.
 #[derive(Debug, Clone, Default)]
@@ -253,5 +256,273 @@ mod tests {
         let mut rusts_own = samples.clone();
         rusts_own.sort();
         assert_ne!(selection.samples, rusts_own);
+    }
+}
+
+/// The four arguments that change what is written once the samples are known.
+#[derive(Debug, Clone, Default)]
+pub struct SubsetArguments {
+    /// `--remove-unused-alternates`, which also forces the subsetting path for a whole-cohort run.
+    pub remove_unused_alternates: bool,
+    /// `--preserve-alleles`, which skips the trimming the subset would otherwise end with.
+    pub preserve_alleles: bool,
+    /// `--keep-original-ac`.
+    pub keep_original_chr_counts: bool,
+    /// `--keep-original-dp`.
+    pub keep_original_depth: bool,
+}
+
+/// A record and the names its genotype columns carry, which the engine's `Variant` does not hold.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Record {
+    pub variant: Variant,
+    pub samples: Vec<String>,
+}
+
+/// `subsetGenotypesBySampleNames` followed by `addAnnotations`, which between them decide the whole
+/// of the output record.
+///
+/// Returns the record unchanged where the reference returns `vc` itself, which is what keeps a
+/// whole-cohort run from gaining annotations. The two early exits are both the reference's: the
+/// first is `noSamplesSpecified && !removeUnusedAlternates`, before anything is decoded, and the
+/// second is the subset having as many samples and as many alleles as the original.
+pub fn subset_record(
+    record: &Record,
+    selection: &SampleSelection,
+    arguments: &SubsetArguments,
+) -> Result<Record, GenotypeIndexError> {
+    if selection.no_samples_specified && !arguments.remove_unused_alternates {
+        return Ok(record.clone());
+    }
+
+    // `subContextFromSamples`: the kept columns, in the record's own order.
+    let kept_samples: Vec<usize> = record
+        .samples
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| selection.samples.contains(name))
+        .map(|(index, _)| index)
+        .collect();
+    let kept_genotypes: Vec<Genotype> = kept_samples
+        .iter()
+        .map(|index| record.variant.genotypes[*index].clone())
+        .collect();
+
+    // `rederiveAllelesFromGenotypes`: the alleles some kept genotype actually calls, in the
+    // record's order, with the reference put back when no genotype called it.
+    let kept_alleles: Vec<usize> = if arguments.remove_unused_alternates {
+        let mut called = vec![false; record.variant.alleles.len()];
+        let mut added_reference = false;
+        for genotype in &kept_genotypes {
+            for allele in genotype.alleles.iter().flatten() {
+                added_reference = added_reference || *allele == 0;
+                called[*allele] = true;
+            }
+        }
+        if !added_reference {
+            called[0] = true;
+        }
+        (0..record.variant.alleles.len())
+            .filter(|index| called[*index])
+            .collect()
+    } else {
+        (0..record.variant.alleles.len()).collect()
+    };
+
+    // The second early exit, which is why an exclusion naming nobody leaves the record alone.
+    if kept_samples.len() == record.variant.genotypes.len()
+        && kept_alleles.len() == record.variant.alleles.len()
+    {
+        return Ok(record.clone());
+    }
+
+    let genotypes = if kept_alleles.len() == record.variant.alleles.len() {
+        kept_genotypes
+    } else {
+        subset_alleles(
+            &kept_genotypes,
+            2,
+            record.variant.alleles.len(),
+            &kept_alleles,
+            AssignmentMethod::DoNotAssignGenotypes,
+        )?
+    };
+
+    let mut subset = Variant {
+        contig: record.variant.contig.clone(),
+        start: record.variant.start,
+        stop: record.variant.stop,
+        alleles: kept_alleles
+            .iter()
+            .map(|index| record.variant.alleles[*index].clone())
+            .collect(),
+        genotypes,
+        // The MLE tags describe a calling that no longer applies, so the reference strips them
+        // rather than recomputing them. AC and AF are recomputed below, not stripped.
+        attributes: record
+            .variant
+            .attributes
+            .iter()
+            .filter(|(key, _)| key != "MLEAC" && key != "MLEAF")
+            .cloned()
+            .collect(),
+    };
+    let names: Vec<String> = kept_samples
+        .iter()
+        .map(|index| record.samples[*index].clone())
+        .collect();
+
+    add_annotations(&mut subset, &record.variant, &kept_alleles, arguments);
+
+    let variant = if arguments.preserve_alleles {
+        subset
+    } else {
+        // The trimmer refuses nothing this path can produce: the alleles come from the record's
+        // own list, and a subset of them is still a set of plain alleles.
+        trim_alleles(&subset, true, true).expect("a subset of the record's own alleles")
+    };
+    Ok(Record {
+        variant,
+        samples: names,
+    })
+}
+
+/// `addAnnotations`, in the reference's order: the originals first, then the recount, then the
+/// depth.
+fn add_annotations(
+    subset: &mut Variant,
+    original: &Variant,
+    kept_alleles: &[usize],
+    arguments: &SubsetArguments,
+) {
+    if arguments.keep_original_chr_counts {
+        // The per-allele originals are reordered to the new allele list; `.` stands where an
+        // allele the original counted no longer exists. AN is a single number and is copied.
+        let reorder = |value: &str| -> String {
+            if kept_alleles.len() == original.alleles.len() {
+                return value.to_string();
+            }
+            let parts: Vec<&str> = value.split(',').collect();
+            let mapped: Vec<String> = kept_alleles
+                .iter()
+                .skip(1)
+                .map(|index| {
+                    parts
+                        .get(index - 1)
+                        .map(|part| part.to_string())
+                        .unwrap_or_else(|| ".".to_string())
+                })
+                .collect();
+            if mapped.is_empty() {
+                ".".to_string()
+            } else {
+                mapped.join(",")
+            }
+        };
+        for (key, original_key) in [("AC", "AC_Orig"), ("AF", "AF_Orig")] {
+            if let Some((_, value)) = original.attributes.iter().find(|(name, _)| name == key) {
+                let reordered = reorder(value);
+                set_attribute(subset, original_key, &reordered);
+            }
+        }
+        if let Some((_, value)) = original.attributes.iter().find(|(name, _)| name == "AN") {
+            set_attribute(subset, "AN_Orig", &value.clone());
+        }
+    }
+
+    calculate_chromosome_counts(subset);
+
+    if arguments.keep_original_depth {
+        if let Some((_, value)) = original.attributes.iter().find(|(name, _)| name == "DP") {
+            set_attribute(subset, "DP_Orig", &value.clone());
+        }
+    }
+
+    // The depth is summed over the KEPT genotypes, skipping the filtered ones, and written only
+    // where at least one of them had a DP at all: where none does, the record keeps its own.
+    let mut saw_depth = false;
+    let mut depth = 0;
+    for genotype in &subset.genotypes {
+        if is_filtered(genotype) {
+            continue;
+        }
+        if let Some(value) = genotype.dp {
+            depth += value;
+            saw_depth = true;
+        }
+    }
+    if saw_depth {
+        set_attribute(subset, "DP", &depth.to_string());
+    }
+}
+
+/// `VariantContextUtils.calculateChromosomeCounts(builder, false)`.
+///
+/// AN is the called chromosome count, AC the count per alternate and AF each of those over AN,
+/// and all three skip a FILTERED genotype: a genotype carrying FT is not a called one. AC and AF
+/// are removed outright where no alternate is left, which is what an ALT column of `.` means.
+fn calculate_chromosome_counts(variant: &mut Variant) {
+    if variant.genotypes.is_empty() {
+        return;
+    }
+    let called: Vec<Genotype> = variant
+        .genotypes
+        .iter()
+        .filter(|genotype| !is_filtered(genotype))
+        .cloned()
+        .collect();
+    let allele_number: i32 = called
+        .iter()
+        .map(|genotype| genotype.alleles.iter().flatten().count() as i32)
+        .sum();
+    set_attribute(variant, "AN", &allele_number.to_string());
+
+    if variant.alleles.len() < 2 {
+        variant
+            .attributes
+            .retain(|(key, _)| key != "AC" && key != "AF");
+        return;
+    }
+    let mut counts: Vec<String> = Vec::new();
+    let mut frequencies: Vec<String> = Vec::new();
+    for index in 1..variant.alleles.len() {
+        let count: i32 = called
+            .iter()
+            .map(|genotype| {
+                genotype
+                    .alleles
+                    .iter()
+                    .filter(|allele| **allele == Some(index))
+                    .count() as i32
+            })
+            .sum();
+        counts.push(count.to_string());
+        // `(double) count / AN`, formatted by the writer rather than here, which is why 0.5 is
+        // `0.500` and 0.0 is `0.00`.
+        let frequency = if allele_number == 0 {
+            0.0
+        } else {
+            f64::from(count) / f64::from(allele_number)
+        };
+        frequencies.push(htsjdk_vcf::variant::format_vcf_double(frequency));
+    }
+    set_attribute(variant, "AC", &counts.join(","));
+    set_attribute(variant, "AF", &frequencies.join(","));
+}
+
+/// `Genotype.isFiltered()`, which `PASS` and an absent field are not.
+fn is_filtered(genotype: &Genotype) -> bool {
+    genotype
+        .attributes
+        .iter()
+        .any(|(key, value)| key == "FT" && value != "PASS" && value != ".")
+}
+
+fn set_attribute(variant: &mut Variant, key: &str, value: &str) {
+    match variant.attributes.iter_mut().find(|(name, _)| name == key) {
+        Some((_, held)) => *held = value.to_string(),
+        None => variant
+            .attributes
+            .push((key.to_string(), value.to_string())),
     }
 }

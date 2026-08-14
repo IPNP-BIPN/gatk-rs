@@ -2451,6 +2451,32 @@
           "why": "2138 rows: eighty-four patterns compiled and, where they compile, searched against thirty-one inputs. The patterns cover what a sample expression is, the constructs a subset may leave out, and thirty-four invalid or awkward ones whose prefix is varied so each rule is measured rather than guessed. An unclosed class reports the bracket, an unclosed group the character after it, an unmatched `)` the one BEFORE it (so a bare `)` reports -1 and gets no caret line at all), a bad repetition range the closing brace, a count that is not a count the character after the brace, and a trailing backslash the end, where the caret is again omitted. `{2}` with nothing before it COMPILES and matches everywhere, because the brace quantifies the empty atom. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31754530353, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "select-variants-subset",
+      "status": "oracle-backed",
+      "title": "SelectVariants subsetting a record, where the INFO DP is replaced by a sum",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "why": "What subsetGenotypesBySampleNames and addAnnotations do once the sample list is known. THE INFO DP IS RECOMPUTED FROM THE KEPT GENOTYPES AND OVERWRITES THE RECORD'S OWN, summing only the UNFILTERED ones, and it is written only where some kept genotype had a DP at all, so the same argument either replaces the field or leaves it depending on the FORMAT column. AC, AF and AN are recomputed from the kept genotypes, AC being a list for several alternates and a scalar for one. AF IS A DOUBLE THE WRITER FORMATS, so 0.5 comes out 0.500 and 0.0 comes out 0.00 in the same column. MLEAC and MLEAF are STRIPPED whenever the record is rewritten while AC and AF are replaced. --remove-unused-alternates drops an alternate nobody calls and rewrites PL and AD through AlleleSubsettingUtils, and the result is TRIMMED unless --preserve-alleles, so dropping an alternate can respell every remaining allele. --keep-original-ac writes AC_Orig, AF_Orig and AN_Orig from the input's own attributes rather than from a recount, reordering the per-allele ones when the allele list changed. And a record is returned untouched when nothing was selected and no alternate was removed.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 65,
+      "expect_contains": [
+        "vcfline\tsubset-two\tchr1\\t100\\t.\\tA\\tC\\t50\\t.\\tAC=0;AF=0.00;AN=4;DP=30\\tGT:AD:DP:GQ:PL\\t0/0:10,0:10:60:0,30,300\\t0/0:20,0:20:60:0,60,600",
+        "vcfline\tsubset-two-remove-unused\tchr1\\t100\\t.\\tA\\t.\\t50\\t.\\tAN=4;DP=30\\tGT:AD:DP:GQ:PL\\t0/0:10:10:60:0\\t0/0:20:20:60:0",
+        "vcfline\tsubset-two-remove-unused-keep-original\tchr1\\t100\\t.\\tA\\t.\\t50\\t.\\tAC_Orig=.;AF_Orig=.;AN=4;AN_Orig=8;DP=30\\tGT:AD:DP:GQ:PL\\t0/0:10:10:60:0\\t0/0:20:20:60:0"
+      ],
+      "cases": [
+        {
+          "dump": "SelectVariantsSubsetDump",
+          "golden": "crates/gatk-tools/tests/data/select_variants_subset.txt.gz",
+          "why": "65 rows: one input of five records and twelve runs, covering the whole cohort, three subsets, each flag that changes what is written, and the drop of a record nobody varies at. The records are built so that one alternate loses every carrier under subsetting, one genotype is filtered, one is a no-call, one record has no genotype DP at all and one is an indel whose alternates both disappear. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31755681212, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
