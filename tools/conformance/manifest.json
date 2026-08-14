@@ -3174,7 +3174,7 @@
     ,
     {
       "id": "mutect-engine-arithmetic",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect's engine arithmetic, where rounding the error is a clamp",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3201,8 +3201,8 @@
       "cases": [
         {
           "dump": "MutectEngineArithmeticDump",
-          "golden": null,
-          "why": "64 rows: no files at all. Forty-eight posteriors over a grid of six log priors and eight log odds, including both infinities on each axis; ten clamps, over both bounds, both infinities and NaN; four conversions, one of them of a record with no annotation; and the engine's two public constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/mutect_engine_arithmetic.txt.gz",
+          "why": "64 rows: no files at all. Forty-eight posteriors over a grid of six log priors and eight log odds, including both infinities on each axis; ten clamps, over both bounds, both infinities and NaN; four conversions, one of them of a record with no annotation; and the engine's two public constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31832059604. Forty-seven of the forty-eight posteriors are bit-identical against the port and one, 100.0 against a prior of -1.0, differs by a single ulp, because every entry of the normalisation goes through exp, whose bit-exact transcription is withdrawn under htsjdk-rs decision 0014."
         }
       ]
     }
