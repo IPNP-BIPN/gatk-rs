@@ -15,6 +15,7 @@ pub mod calculate_mixing_fractions;
 pub mod check_pileup;
 pub mod clip_reads;
 pub mod compare_base_qualities;
+pub mod concordance;
 pub mod convert_headerless_shard;
 pub mod count_false_positives;
 pub mod count_variants;
