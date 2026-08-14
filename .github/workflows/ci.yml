@@ -201,8 +201,8 @@ jobs:
             suites: "split-with-likelihoods variant-filtration gather-vcfs select-variants-samples java-regex"
           - group: oracle-backed
             index: "23/23"
-            slug: "select-variants-subset-select-variants-filters-select-variants-output-select-variants-concordance"
-            suites: "select-variants-subset select-variants-filters select-variants-output select-variants-concordance"
+            slug: "select-variants-subset-select-variants-filters-select-variants-output-select-variants-concordance-variants-to-table"
+            suites: "select-variants-subset select-variants-filters select-variants-output select-variants-concordance variants-to-table"
     steps:
       - uses: actions/checkout@v4
 

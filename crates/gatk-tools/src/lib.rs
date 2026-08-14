@@ -40,3 +40,4 @@ pub mod transfer_read_tags;
 pub mod unmark_duplicates;
 pub mod update_vcf_sequence_dictionary;
 pub mod variant_filtration;
+pub mod variants_to_table;

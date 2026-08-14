@@ -2559,6 +2559,33 @@
           "why": "11 rows: two input files of nine and eight records and nine runs. The records pair a match, a match written the other way round, a mismatch, an absence, a hom-ref, one filtered genotype, two filtered genotypes, a position the other file has twice, and a haploid call against a diploid one of the same allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31758055591, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "variants-to-table",
+      "status": "oracle-backed",
+      "title": "VariantsToTable, where every column is a decision",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VariantsToTable"
+      ],
+      "why": "A VCF in and a tab-separated table out, where almost no column is a copy. NO FIELDS AT ALL MEANS EVERY FIELD THE HEADER DECLARES, and asking for no genotype field EMPTIES THE SAMPLE LIST. A missing field is the string NA rather than an empty cell, unless --error-if-missing-data turns it into a UserException. A field ending in `*` is a wildcard over the INFO keys joined in SORTED order. QUAL is Double.toString of the phred score, so an integer quality comes out 50.0, and FILTER is PASS for a record whose column said `.`. --split-multi-allelic produces one row per alternate and spreads a value across them ONLY when it is a list of exactly the right length, so a Number=R field lands whole in every row while a Number=A field is split; -ASF subsets an R-type field by dropping its first entry, and -ASGF AD is special-cased to a reference-and-alternate pair per row. --moltenize replaces the table with four columns and one line per value. Two of its cells carry Java's own rendering: the wildcard sorts the VALUES rather than the keys and joins a list as `[10, 5]`, brackets and space included, while -ASF strips the brackets and leaves the SPACE, so a split R-type column reads ` 5` with a leading blank.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 75,
+      "expect_contains": [
+        "line\twildcard\t100\\t20.0,[10, 5]",
+        "line\tsplit-allele-specific\t200\\tG\\t 3\\t 30.0",
+        "line\tallele-specific-unsplit\t100\\t10, 5",
+        "line\tno-fields\tchr1\\t100\\trs100\\tA\\tC\\t50.0\\tPASS\\t30\\t1\\t10,5\\t20.0\\tA/C\\t60\\t15,15\\tNA\\tA/A\\t60\\t30,0\\tNA"
+      ],
+      "cases": [
+        {
+          "dump": "VariantsToTableDump",
+          "golden": "crates/gatk-tools/tests/data/variants_to_table.txt.gz",
+          "why": "75 rows: one input of four records and sixteen runs, one per argument that changes a column. The records carry an rsID, an integer quality, a decimal one, a multi-allelic site, a filtered record, an indel missing an INFO field entirely, a filtered genotype and per-allele fields of both Number=A and Number=R. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31758741297, and byte for byte what an Apple Silicon laptop produced."
+        }
+      ]
     }
   ],
   "probes": []
