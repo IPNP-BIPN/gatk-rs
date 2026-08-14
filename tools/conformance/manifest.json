@@ -2789,6 +2789,34 @@
           "why": "23 rows: four VCFs and three runs of two probe walkers written for this measurement, one with the base class's own filters and one with EvaluateInfoFieldConcordance's. The truth and eval files pair an agreement, a truth-only record, an eval-only record, an eval-only filtered record, a filtered record at a truth locus, a disagreement at a shared locus, the truth record after it, and a filtered truth record under an unfiltered eval one. The third run is a pair of contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31783687122."
         }
       ]
+    },
+    {
+      "id": "evaluate-info-field-concordance",
+      "status": "oracle-backed",
+      "title": "EvaluateInfoFieldConcordance, whose standard deviation can be NaN by arithmetic",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "EvaluateInfoFieldConcordance"
+      ],
+      "why": "The first tool written on the concordance iterator: for every true positive it takes the difference between one INFO field of each side and reports a mean and a standard deviation per variant type. A RECORD WHOSE KEY IS ABSENT IS COUNTED BUT CONTRIBUTES NOTHING, the counter being incremented in apply and the delta only inside infoDifference, which returns early unless BOTH records carry their key: the baseline's four deltas of 1.0 over five counted true positives report 0.8. THE STANDARD DEVIATION CAN BE NaN BY ARITHMETIC ALONE, the variance being the cancelling form (sumSq - sum * sum / n) / n with no guard, so equal deltas can land just below zero and the square root of that is NaN. AN EMPTY BUCKET IS TWO NaN COLUMNS, n = 0 making both 0/0, so a run with no indel among its true positives still writes an INDEL row and that row is NaN NaN, and a run where nothing agrees writes two of them. The mean is of absolute differences computed as sqrt(delta * delta) rather than abs(delta), which is not the same function of a double in general. Only true positives are looked at, and this walker drops filtered records on both sides, so two of the iterator's five states cannot occur. A key either header does not declare is a UserException before any record, worded with the file it was not found in.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 13,
+      "expect_contains": [
+        "table\tbaseline\ttype\\teval_info_key\\ttrue_info_key\\tmean_difference\\tstd_difference\\nSNP\\tSCORE\\tSCORE\\t0.8\\t0.39999999999999997\\nINDEL\\tSCORE\\tSCORE\\t1.5\\t0.0\\n",
+        "table\tspread\ttype\\teval_info_key\\ttrue_info_key\\tmean_difference\\tstd_difference\\nSNP\\tSCORE\\tSCORE\\t33.75\\t46.84593543378835\\nINDEL\\tSCORE\\tSCORE\\tNaN\\tNaN\\n",
+        "table\tnothing-agrees\ttype\\teval_info_key\\ttrue_info_key\\tmean_difference\\tstd_difference\\nSNP\\tSCORE\\tSCORE\\tNaN\\tNaN\\nINDEL\\tSCORE\\tSCORE\\tNaN\\tNaN\\n",
+        "error\tmissing-eval-key\torg.broadinstitute.hellbender.exceptions.UserException:Missing key:SCORE in Eval VCF:evaluateinfofieldconcordance-dump/no-key.vcf",
+        "error\tmissing-truth-key\torg.broadinstitute.hellbender.exceptions.UserException:Missing key:SCORE in Truth VCF:evaluateinfofieldconcordance-dump/no-key.vcf"
+      ],
+      "cases": [
+        {
+          "dump": "EvaluateInfoFieldConcordanceDump",
+          "golden": "crates/gatk-tools/tests/data/evaluate_info_field_concordance.txt.gz",
+          "why": "13 rows: seven VCFs and six runs. The first pair carries four SNP true positives with equal deltas, an indel true positive, a true positive whose truth record lacks the key, a truth-only record, an eval-only record and a filtered one; the second pair spreads its deltas so the standard deviation is a real number; the third agrees on nothing. Two runs cover the two missing-key refusals and one takes a different key from each side. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31784430042."
+        }
+      ]
     }
   ],
   "probes": []
