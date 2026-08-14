@@ -3033,6 +3033,43 @@
         }
       ]
     }
+    ,
+    {
+      "id": "filter-variant-tranches",
+      "status": "oracle-backed",
+      "title": "FilterVariantTranches, whose cutoff is a truncated index into the resource scores",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FilterVariantTranches"
+      ],
+      "why": "A two-pass walker: the first pass collects the INPUT record's own score wherever it overlaps a resource, and the second turns those scores into cutoffs and filters against them. THE CUTOFF IS A TRUNCATED INDEX INTO THE RESOURCE SCORES: they are sorted DESCENDING and the index is (int)((t / 100.0) * (size - 1)), so five scores and a tranche of 50 answer index 2 and a higher tranche means a LOWER cutoff. THE SCORE STORED IS THE INPUT'S, NOT THE RESOURCE'S, and it is stored once: the loop returns on its first match, so a record overlapping two resources contributes one score. MEMBERSHIP IS DECIDED BY THE FIRST CUTOFF ALONE, score <= cutoffs.get(0), which is the smallest tranche's cutoff because the list was sorted, and the comparison is <=, so the golden's indel scoring exactly 8.0 against a cutoff of 8.0 is filtered. THE BAND IS THEN FOUND BY WALKING THE CUTOFFS, and a score below every one of them lands in the last band, which always runs to 100.00. THE TRANCHE LIST IS DEDUPLICATED AND SORTED before any of that, and refused outright unless every value is in [0, 100): a tranche of 100 is a CommandLineException, and the golden runs the same two tranches given out of order with one of them twice to show the result is identical. THE FILTER NAMES ARE BUILT WITH %.2f as <info key>_<type>_Tranche_<t1>_<t2>. A RECORD WITH NO SCORE IS STILL WRITTEN AND STILL PASSES, since passFilters() is applied to anything the tool did not filter. --invalidate-previous-filters clears the FILTER lines of the header as well as the records'. And the four refusals of afterFirstPass each say something different, beside the refusal for an info key the header does not declare.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 60,
+      "expect_contains": [
+        "vcfline\ttwo-tranches\tchr1\\t200\\t.\\tA\\tC\\t50\\tPASS\\tSCORE=4.0\\tGT\\t0/1",
+        "vcfline\ttwo-tranches\tchr1\\t300\\t.\\tA\\tC\\t50\\tSCORE_SNP_Tranche_50.00_99.00\\tSCORE=3.0\\tGT\\t0/1",
+        "vcfline\ttwo-tranches\tchr1\\t400\\t.\\tA\\tC\\t50\\tSCORE_SNP_Tranche_99.00_100.00\\tSCORE=2.0\\tGT\\t0/1",
+        "vcfline\ttwo-tranches\tchr1\\t500\\t.\\tA\\tC\\t50\\tSCORE_SNP_Tranche_99.00_100.00;weak\\tSCORE=1.0\\tGT\\t0/1",
+        "vcfline\ttwo-tranches\tchr1\\t700\\t.\\tACC\\tA\\t50\\tSCORE_INDEL_Tranche_50.00_100.00\\tSCORE=8.0\\tGT\\t0/1",
+        "vcfline\ttwo-tranches\tchr1\\t900\\t.\\tA\\tC\\t50\\tPASS\\t.\\tGT\\t0/1",
+        "vcfline\tinvalidate-previous-filters\tchr1\\t500\\t.\\tA\\tC\\t50\\tSCORE_SNP_Tranche_99.00_100.00\\tSCORE=1.0\\tGT\\t0/1",
+        "vcfline\tone-tranche\tchr1\\t400\\t.\\tA\\tC\\t50\\tSCORE_SNP_Tranche_50.00_100.00\\tSCORE=2.0\\tGT\\t0/1",
+        "filter\ttwo-tranches\t##FILTER=<ID=SCORE_SNP_Tranche_50.00_99.00,Description=\"SNP truth resource sensitivity between 50.00 and 99.00 for info key SCORE\">",
+        "error\ttranche-of-a-hundred\torg.broadinstitute.barclay.argparser.CommandLineException:At least 1 tranche value must be given and all tranches must be greater than 0 and less than 100.",
+        "error\tinfo-key-not-in-header\torg.broadinstitute.hellbender.exceptions.UserException:Input VCF does not contain a header line for specified info key:MISSING",
+        "error\tnothing-scored\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: VCF contains no variants or no variants with INFO score key \"SCORE\"",
+        "error\tno-overlap\torg.broadinstitute.hellbender.exceptions.UserException$BadInput:Bad input: Neither SNP nor indel resource contains variants overlapping input.  Filtering cannot be performed."
+      ],
+      "cases": [
+        {
+          "dump": "FilterVariantTranchesDump",
+          "golden": "crates/gatk-tools/tests/data/filter_variant_tranches.txt.gz",
+          "why": "60 rows: six VCFs and nine runs. The input carries five SNPs and three indels at resource sites, one record already filtered and one with no score at all, against a resource file holding both classes. Four runs filter: two tranches, the same two out of order and repeated, the same two with --invalidate-previous-filters, and one tranche alone. Five refuse: a tranche of 100, an info key the header does not declare, an input with nothing scored, a resource overlapping nothing, and a resource holding indels alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31822513561."
+        }
+      ]
+    }
   ],
   "probes": []
 }
