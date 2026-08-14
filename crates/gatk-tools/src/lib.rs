@@ -8,6 +8,7 @@
 pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
 pub mod annotate_vcf_with_bam_depth;
+pub mod annotate_vcf_with_expected_allele_fraction;
 pub mod apply_bqsr;
 pub mod base_recalibrator;
 pub mod calculate_mixing_fractions;

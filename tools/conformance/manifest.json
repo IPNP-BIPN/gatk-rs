@@ -2732,6 +2732,35 @@
           "why": "54 rows: one BAM with its index, one input VCF and four runs, each output written out line by line with the GATKCommandLine's date masked. The BAM carries four reads over the first site of which one is a duplicate and one vendor-failed, a one-base read on the second, a read covering the first base of a four-base deletion beside one covering all of it, and a read at the block that carries END. The VCF carries a record already declaring BAM_DEPTH, in both its header and its INFO column. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31782370221."
         }
       ]
+    },
+    {
+      "id": "annotate-vcf-with-expected-allele-fraction",
+      "status": "oracle-backed",
+      "title": "AnnotateVcfWithExpectedAlleleFraction, whose header loses the lines the tool adds to it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AnnotateVcfWithExpectedAlleleFraction"
+      ],
+      "why": "One Float INFO field per record, the dot product of each sample's genotype weight with its mixing fraction, and two of the three lines that produce it are not what they look like. THE WEIGHTS AND THE FRACTIONS ARE IN DIFFERENT ORDERS: getSampleNamesInOrder() is SORTED while vc.getGenotypes() is the VCF's COLUMN order, and the two arrays are multiplied element by element, so a file whose columns are zebra, alpha, mike with fractions zebra=0.3, alpha=0.2, mike=0.1 annotates a zebra-only het as AF_EXP=0.100, zebra's weight against ALPHA's fraction. THE DEFAULT TOOL HEADER LINES NEVER REACH THE FILE, the set being added to after the header was built from it, so this tool writes no ##source= and no ##GATKCommandLine where its sibling AnnotateVcfWithBamDepth, whose two statements are the other way round, writes both. The weight is 1.0 for hom var, 0.5 for het and zero for everything else, a no-call and a half-call included, and a 1/2 call is a het like any other. Nothing checks that the fractions sum to one. A sample of the VCF the table does not name is a NullPointerException out of unboxing a null, whose message is the word null, and a sample named twice is an IllegalStateException naming both values.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 30,
+      "expect_contains": [
+        "vcfline\tannotated\tchr1\\t20\\t.\\tA\\tC\\t50\\tPASS\\tAA=1;AF_EXP=0.100\\tGT\\t0/1\\t0/0\\t0/0",
+        "vcfline\tannotated\tchr1\\t60\\t.\\tA\\tC\\t50\\tPASS\\tAF_EXP=0.600\\tGT\\t1/1\\t1/1\\t1/1",
+        "vcfline\tannotated\tchr1\\t80\\t.\\tA\\tC\\t50\\tPASS\\tAF_EXP=0.00\\tGT\\t./.\\t./1\\t0/0",
+        "vcfline\tnormalized\tchr1\\t60\\t.\\tA\\tC\\t50\\tPASS\\tAF_EXP=1.00\\tGT\\t1/1\\t1/1\\t1/1",
+        "error\tmissing-sample\tjava.lang.NullPointerException:null",
+        "error\tduplicate-sample\tjava.lang.IllegalStateException:Duplicate key zebra (attempted merging values 0.5 and 0.4)"
+      ],
+      "cases": [
+        {
+          "dump": "AnnotateVcfWithExpectedAlleleFractionDump",
+          "golden": "crates/gatk-tools/tests/data/annotate_vcf_with_expected_allele_fraction.txt.gz",
+          "why": "30 rows: one input VCF, four mixing-fraction tables and five runs, each output written out line by line. The VCF's columns are deliberately not in sorted order and carry a het, a hom var, an all-hom-var record, a no-call beside a half-call, and a 1/2 call. The tables are one that does not sum to one, one that does, one missing a sample and one naming a sample twice. Neither output carries a ##source= line, which is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31783051420."
+        }
+      ]
     }
   ],
   "probes": []
