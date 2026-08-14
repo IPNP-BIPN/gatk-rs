@@ -28,6 +28,7 @@ pub mod covariates;
 pub mod downsampling;
 pub mod feature_intervals;
 pub mod features;
+pub mod filtering_stats;
 pub mod fisher_exact;
 pub mod fragment;
 pub mod gatk_report;
