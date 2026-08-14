@@ -67,6 +67,7 @@ pub mod sa_tag;
 pub mod sam_pileup;
 pub mod somatic_likelihoods;
 pub mod subset_alleles;
+pub mod tranches;
 pub mod tsv_table;
 pub mod variant_context_utils;
 pub mod variant_getters;
