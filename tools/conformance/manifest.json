@@ -2454,7 +2454,7 @@
     },
     {
       "id": "select-variants-subset",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SelectVariants subsetting a record, where the INFO DP is replaced by a sum",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2473,8 +2473,8 @@
       "cases": [
         {
           "dump": "SelectVariantsSubsetDump",
-          "golden": null,
-          "why": "65 rows: one input of five records and twelve runs, covering the whole cohort, three subsets, each flag that changes what is written, and the drop of a record nobody varies at. The records are built so that one alternate loses every carrier under subsetting, one genotype is filtered, one is a no-call, one record has no genotype DP at all and one is an indel whose alternates both disappear. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/select_variants_subset.txt.gz",
+          "why": "65 rows: one input of five records and twelve runs, covering the whole cohort, three subsets, each flag that changes what is written, and the drop of a record nobody varies at. The records are built so that one alternate loses every carrier under subsetting, one genotype is filtered, one is a no-call, one record has no genotype DP at all and one is an indel whose alternates both disappear. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31755681212, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
     }
