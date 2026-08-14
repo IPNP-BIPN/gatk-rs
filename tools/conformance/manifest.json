@@ -2701,6 +2701,37 @@
           "why": "11 rows: one pooled BAM with its index, three input VCFs and six runs. The BAM carries four reads at the first site of which two are alt, three at the second of which one is vendor-failed, a read spanning the third site inside a deletion beside one that ends before it, and one alt read at the fourth. The VCFs carry every shape the two singleton tests can see. The runs cover the baseline, a file where every sample is counted, one where two are not, a run with no reads at all, an interval that leaves one sample counted, and the refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31781710551."
         }
       ]
+    },
+    {
+      "id": "annotate-vcf-with-bam-depth",
+      "status": "oracle-backed",
+      "title": "AnnotateVcfWithBamDepth, whose depth is not the pileup's",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AnnotateVcfWithBamDepth"
+      ],
+      "why": "Each record is written back out with one INFO field added, counting the reads of a separate bam that cover it, and the count is five conditions on the read's own coordinates rather than a pileup. A READ ONE BASE LONG IS NEVER COUNTED, the test being read.getEnd() > read.getStart() rather than >=. THE READ MUST CONTAIN THE VARIANT'S WHOLE SPAN, new SimpleInterval(read).contains(vc) being containment and not overlap, so a four-base deletion is counted only by reads covering all four bases and a record carrying END is asked about the whole block. Duplicates, vendor-failed and unmapped reads are excluded by the tool's own condition rather than by a read filter. THE HEADER ENDS UP WITH TWO BAM_DEPTH LINES when the input already declares one: `new HashSet<>(inputHeader.getMetaDataInSortedOrder())` is a set of LINES and not of IDs, so the input's line survives beside the tool's and the output VCF declares the same INFO ID twice. The annotation is written even when it is zero and overwrites what the record carried, so a BAM_DEPTH=99 on the input comes out as 0, and the writer sorts the INFO column, so it lands where its name sorts. An output that cannot be opened is htsjdk's own RuntimeIOException rather than a UserException.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 54,
+      "expect_contains": [
+        "vcfline\tannotated\tchr1\\t20\\t.\\tA\\tC\\t50\\tPASS\\tAA=1;BAM_DEPTH=2;ZZ=9\\tGT\\t0/1",
+        "vcfline\tannotated\tchr1\\t40\\t.\\tA\\tC\\t50\\tPASS\\tBAM_DEPTH=0\\tGT\\t0/1",
+        "vcfline\tannotated\tchr1\\t60\\t.\\tACCC\\tA\\t50\\tPASS\\tBAM_DEPTH=1\\tGT\\t0/1",
+        "vcfline\tannotated\tchr1\\t80\\t.\\tA\\t<DEL>\\t50\\tPASS\\tBAM_DEPTH=0;END=110\\tGT\\t0/1",
+        "vcfline\tannotated\tchr1\\t160\\t.\\tA\\tC\\t50\\tPASS\\tBAM_DEPTH=0\\tGT\\t0/1",
+        "vcfline\tannotated\t##INFO=<ID=BAM_DEPTH,Number=1,Type=Integer,Description=\"pooled bam depth\">",
+        "vcfline\tannotated\t##INFO=<ID=BAM_DEPTH,Number=1,Type=Integer,Description=\"was already here\">",
+        "error\toutput-is-a-directory\thtsjdk.samtools.util.RuntimeIOException:File not found: annotatevcfwithbamdepth-dump/."
+      ],
+      "cases": [
+        {
+          "dump": "AnnotateVcfWithBamDepthDump",
+          "golden": "crates/gatk-tools/tests/data/annotate_vcf_with_bam_depth.txt.gz",
+          "why": "54 rows: one BAM with its index, one input VCF and four runs, each output written out line by line with the GATKCommandLine's date masked. The BAM carries four reads over the first site of which one is a duplicate and one vendor-failed, a one-base read on the second, a read covering the first base of a four-base deletion beside one covering all of it, and a read at the block that carries END. The VCF carries a record already declaring BAM_DEPTH, in both its header and its INFO column. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31782370221."
+        }
+      ]
     }
   ],
   "probes": []
