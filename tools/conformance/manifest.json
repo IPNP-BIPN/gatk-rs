@@ -2820,7 +2820,7 @@
     },
     {
       "id": "concordance-summary",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Concordance's summary table, where an empty callset's recall is zero rather than NaN",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2841,8 +2841,8 @@
       "cases": [
         {
           "dump": "ConcordanceDump",
-          "golden": null,
-          "why": "15 rows: ten VCFs and five runs. The first pair puts two true positives, a false negative and a false positive on each row; the second pair carries a filtered eval record at a truth locus and a filtered one alone; the third is a pair of record-free files; the fourth carries an MNP, a symbolic record on both sides and a multi-allelic SNP whose alternates are ordered differently; the fifth disagrees on an alternate count and on a reference allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/concordance.txt.gz",
+          "why": "15 rows: ten VCFs and five runs. The first pair puts two true positives, a false negative and a false positive on each row; the second pair carries a filtered eval record at a truth locus and a filtered one alone; the third is a pair of record-free files; the fourth carries an MNP, a symbolic record on both sides and a multi-allelic SNP whose alternates are ordered differently; the fifth disagrees on an alternate count and on a reference allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31808190609."
         }
       ]
     }
