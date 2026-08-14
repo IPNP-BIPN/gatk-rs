@@ -3036,7 +3036,7 @@
     ,
     {
       "id": "filter-variant-tranches",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "FilterVariantTranches, whose cutoff is a truncated index into the resource scores",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -3065,8 +3065,8 @@
       "cases": [
         {
           "dump": "FilterVariantTranchesDump",
-          "golden": null,
-          "why": "60 rows: six VCFs and nine runs. The input carries five SNPs and three indels at resource sites, one record already filtered and one with no score at all, against a resource file holding both classes. Four runs filter: two tranches, the same two out of order and repeated, the same two with --invalidate-previous-filters, and one tranche alone. Five refuse: a tranche of 100, an info key the header does not declare, an input with nothing scored, a resource overlapping nothing, and a resource holding indels alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/filter_variant_tranches.txt.gz",
+          "why": "60 rows: six VCFs and nine runs. The input carries five SNPs and three indels at resource sites, one record already filtered and one with no score at all, against a resource file holding both classes. Four runs filter: two tranches, the same two out of order and repeated, the same two with --invalidate-previous-filters, and one tranche alone. Five refuse: a tranche of 100, an info key the header does not declare, an input with nothing scored, a resource overlapping nothing, and a resource holding indels alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31822513561."
         }
       ]
     }
