@@ -2586,6 +2586,34 @@
           "why": "75 rows: one input of four records and sixteen runs, one per argument that changes a column. The records carry an rsID, an integer quality, a decimal one, a multi-allelic site, a filtered record, an indel missing an INFO field entirely, a filtered genotype and per-allele fields of both Number=A and Number=R. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31758741297, and byte for byte what an Apple Silicon laptop produced."
         }
       ]
+    },
+    {
+      "id": "validate-variants",
+      "status": "golden-pending",
+      "title": "ValidateVariants, whose whole output is what it refuses",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ValidateVariants"
+      ],
+      "why": "The tool writes nothing, so the message is the only thing there is to be identical about. THE DEFAULT IS ALL AND ALL WITHOUT A REFERENCE IS TWO CHECKS RATHER THAN FOUR, the alternate alleles and the chromosome counts, because the reference-base check needs a reference and the ID check a dbSNP file: a plain run silently tests less than the name says. Asking for REF without a reference is a MissingReference refusal thrown before any record is read. The allele check is about GENOTYPES rather than the ALT column. --validate-GVCF adds THREE checks: the <NON_REF> allele in every record, the records being ordered, and THE FILE COVERING THE WHOLE REFERENCE, the last of which counts every uncovered locus and names the first gap, so a two-record GVCF over a 1900-base reference is refused for the 1898 loci it does not describe. The per-record checks fire before it. --warn-on-errors turns every refusal into a log line, so the tool exits 0 on a file it would otherwise refuse, and --do-not-validate-filtered-records lets a broken record hide behind a FILTER column. AND EXCLUDING ANY TYPE PUTS REF BACK IN THE SET: the excluded set is removed from the concrete types, which include REF, so `--validation-type-to-exclude ALLELES` without a reference is a MissingReference refusal even though ALLELES is the only thing being turned off.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 25,
+      "expect_contains": [
+        "error\tbad-counts\torg.broadinstitute.hellbender.exceptions.UserException$FailsStrictValidation:Input validatevariants-dump/bad-counts.vcf fails strict validation of type ALL: the Allele Count (AC) tag is incorrect for the record at position chr1:100, 4 vs. 2",
+        "error\twrong-reference-base\torg.broadinstitute.hellbender.exceptions.UserException$FailsStrictValidation:Input validatevariants-dump/wrong-reference-base.vcf fails strict validation of type ALL: the REF allele is incorrect for the record at position chr1:100, fasta says A vs. VCF says T",
+        "error\tgvcf\torg.broadinstitute.hellbender.exceptions.UserException$ValidationFailure:A GVCF must cover the entire region. Found 1898 loci with no VariantContext covering it. The first uncovered segment is:chr1:1-99",
+        "ok\tbad-counts-warn-only",
+        "ok\tfiltered-bad-counts-skipped"
+      ],
+      "cases": [
+        {
+          "dump": "ValidateVariantsDump",
+          "golden": null,
+          "why": "25 rows: a two-contig reference of A, eight input files and fifteen runs. The files pair a clean one with an unused alternate, a wrong AC, the same wrong AC behind a FILTER column, a sites-only record, a wrong reference base, a GVCF, a file missing <NON_REF>, one whose records are out of order and one that changes contig. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
