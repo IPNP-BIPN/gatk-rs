@@ -2761,6 +2761,34 @@
           "why": "30 rows: one input VCF, four mixing-fraction tables and five runs, each output written out line by line. The VCF's columns are deliberately not in sorted order and carry a het, a hom var, an all-hom-var record, a no-call beside a half-call, and a 1/2 call. The tables are one that does not sum to one, one that does, one missing a sample and one naming a sample twice. Neither output carries a ##source= line, which is the measurement. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31783051420."
         }
       ]
+    },
+    {
+      "id": "concordance-walker",
+      "status": "golden-pending",
+      "title": "The concordance iterator, where a disagreement advances truth alone",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The engine slice under the two remaining validation tools: a truth VCF and an eval VCF walked in lockstep, each step labelled with one of five states. A SAME-LOCUS DISAGREEMENT ADVANCES TRUTH ALONE, the reference's own comment saying it could equally well advance eval, so the eval record stays in place and is compared against the NEXT truth record: one disagreement at chr1:200 produces three steps, a false negative for truth 200, a false positive for eval 200 once truth has moved to 210, and a false negative for truth 210. A FILTERED EVAL RECORD IS LABELLED BY WHAT TRUTH HAS: at a truth locus it consumes both iterators as a filtered false negative without ever testing agreement, and alone it is a filtered true negative. TWO OF THE FIVE STATES DEPEND ON THE WALKER'S FILTERS: the base class drops filtered truth records and keeps every eval record, and a walker dropping filtered records on both sides, as EvaluateInfoFieldConcordance does, can never produce either filtered state, which the same two files run through both filter sets show. The order is the dictionary's, contig index then start, so nothing looks at the end of a record.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 23,
+      "expect_contains": [
+        "state\tdefault-filters\t4\tFILTERED_FALSE_NEGATIVE\tchr1:140 A/C PASS\tchr1:140 A/C weak",
+        "state\tdefault-filters\t3\tFILTERED_TRUE_NEGATIVE\t-\tchr1:130 A/C weak",
+        "state\tdefault-filters\t5\tFALSE_NEGATIVE\tchr1:200 AT/A PASS\t-",
+        "state\tdefault-filters\t6\tFALSE_POSITIVE\t-\tchr1:200 A/C PASS",
+        "state\tdefault-filters\t7\tFALSE_NEGATIVE\tchr1:210 A/G PASS\t-",
+        "state\tfiltered-dropped-both-sides\t3\tFALSE_NEGATIVE\tchr1:140 A/C PASS\t-",
+        "state\tacross-contigs\t1\tTRUE_POSITIVE\tchr2:100 A/C PASS\tchr2:100 A/C PASS"
+      ],
+      "cases": [
+        {
+          "dump": "ConcordanceWalkerDump",
+          "golden": null,
+          "why": "23 rows: four VCFs and three runs of two probe walkers written for this measurement, one with the base class's own filters and one with EvaluateInfoFieldConcordance's. The truth and eval files pair an agreement, a truth-only record, an eval-only record, an eval-only filtered record, a filtered record at a truth locus, a disagreement at a shared locus, the truth record after it, and a filtered truth record under an unfiltered eval one. The third run is a pair of contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
