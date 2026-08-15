@@ -3289,7 +3289,7 @@
     },
     {
       "id": "beta-binomial",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The beta-binomial Mutect's clusters are built on",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3314,8 +3314,8 @@
       "cases": [
         {
           "dump": "BetaBinomialDump",
-          "golden": null,
-          "why": "89 rows: no files at all. Fifty-two logBeta values over a 7x7 grid of shapes from 0.01 to 100 plus three shapes a fuzzy binomial cluster produces; fifteen binomial coefficients over five totals; twenty-one beta-binomial likelihoods over the two shapes SomaticClusteringModel starts with and three totals; and the two refusals. MEASURED AHEAD OF ANY PORT: the Rust side needs Beta.logBeta's four NSWC helpers, Gamma.gamma and both binomial-coefficient variants, of which jmath currently has log_gamma, log_gamma1p and the FastMath log. This golden is the instrument that port will be judged by. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/beta_binomial.txt.gz",
+          "why": "89 rows: no files at all. Fifty-two logBeta values over a 7x7 grid of shapes from 0.01 to 100 plus three shapes a fuzzy binomial cluster produces; fifteen binomial coefficients over five totals; twenty-one beta-binomial likelihoods over the two shapes SomaticClusteringModel starts with and three totals; and the two refusals. MEASURED AHEAD OF ANY PORT: the Rust side needs Beta.logBeta's four NSWC helpers, Gamma.gamma and both binomial-coefficient variants, of which jmath currently has log_gamma, log_gamma1p and the FastMath log. This golden is the instrument that port will be judged by. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31882061904."
         }
       ]
     }
