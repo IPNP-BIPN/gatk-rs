@@ -2904,8 +2904,7 @@
           "why": "58 rows: two VCFs and three runs. The inputs carry one record of every state that writes anything, each pair differing in its ID, its QUAL and its INFO so that which side reached which file is visible, and the two headers differ in their sample and in the one INFO key each declares. The first run asks for all three outputs and the other two ask for one each, which is what shows that the two header-building orders produce the same lines. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31812968769."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "apply-vqsr-tranches",
       "status": "oracle-backed",
@@ -2940,8 +2939,7 @@
           "why": "36 rows: eleven tranches files and sixteen runs against one record-free VCF. The good file writes its three tranches out of sensitivity order so the sort is visible, and a second copy names them loose, middling and tight. The other six each break one thing: a required key the header does not name, an optional key it does not name, a model the enum does not have, a sensitivity the constructor calls unreasonable, a value that is not a number, a numNovel past the range of an int, a header that does not name the model column, a row one field short and a header one column short. The runs cover two filter levels, a level above every tranche, no level at all, both cutoffs at once and both cutoffs with a broken file. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31815211728."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "apply-vqsr-site-filtering",
       "status": "oracle-backed",
@@ -2975,8 +2973,7 @@
           "why": "56 rows: seven VCFs, one tranches file and eleven runs. The main pair puts one record in each of the three bands, one on a band boundary, one whose recal record has no culprit, an indel and an already-filtered record. A second pair has two recal records starting where the input record does, only one of which ends there, and a third has none that ends there. Three more runs cover the missing recal record, the recal record with no LOD and the LOD that will not parse. The runs cover SNP and INDEL mode, both filter-ignoring flags, --exclude-filtered and a plain LOD cutoff. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31817438956."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "apply-vqsr-allele-specific",
       "status": "oracle-backed",
@@ -3004,8 +3001,7 @@
           "why": "15 rows: four VCFs, one tranches file and three runs. The input carries a multi-allelic SNP, a mixed site, a spanning deletion beside a SNP and a pure indel, against one recal record per allele told apart by its first alternate. The same four records are run in SNP mode and in INDEL mode, which is what shows the padding swapping sides, and a third run gives an allele a recal record at the right locus with the wrong allele. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31818727133."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "apply-vqsr-two-modes",
       "status": "oracle-backed",
@@ -3032,8 +3028,7 @@
           "why": "45 rows: eight VCFs, four tranches files and six runs. The first pair runs SNP mode and then INDEL mode over the first run's own output, so the second run reads its predecessor's FILTER lines; the second pair does the same with two tranche names whose lower limits the greedy regex reorders. Two more runs give the input header a lowercase tranche name and a tranche name whose interval is not a pair of numbers. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31819970925."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "filter-variant-tranches",
       "status": "oracle-backed",
@@ -3069,8 +3064,7 @@
           "why": "60 rows: six VCFs and nine runs. The input carries five SNPs and three indels at resource sites, one record already filtered and one with no score at all, against a resource file holding both classes. Four runs filter: two tranches, the same two out of order and repeated, the same two with --invalidate-previous-filters, and one tranche alone. Five refuse: a tranche of 100, an info key the header does not declare, an input with nothing scored, a resource overlapping nothing, and a resource holding indels alone. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31822513561."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "threshold-calculator",
       "status": "oracle-backed",
@@ -3108,8 +3102,7 @@
           "why": "32 rows: six lists of posteriors and no files at all, driven through the calculator's public surface. The lists are a spread out of order, four equal posteriors, three nearly certain errors, three nearly certain calls, one posterior alone and none. Each of the three strategies runs over all six, plus a loose and a tight rate, a beta of zero and a beta of ten, the in-place sort shown as the same list before and after, three relearn-twice pairs and the two refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31824479924."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "filter-stats",
       "status": "oracle-backed",
@@ -3135,8 +3128,7 @@
           "why": "7 rows: no input files at all, the writer being driven directly with hand-built rows. An ordinary run with two filters and two clustering pairs; a run whose numbers land on both roundings; a run with no passing call, where three metadata values are 0/0; a run whose false-positive count over zero calls is infinite; a run of negative counts; a run with no rows; and a run whose filter names need quoting. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31826316075."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "mutect-hard-filters",
       "status": "oracle-backed",
@@ -3170,8 +3162,7 @@
           "why": "52 rows: no files at all, seven VariantContexts built in memory and driven through seven filters each. The records are a biallelic SNP poor on every annotation, the same one comfortably good, a triallelic, a seven-base deletion and a seven-base insertion carrying identical annotations, a record whose median read position is -1, and a record with no annotations at all. Two more rows show the strand filter switched off and the annotation list before and after the filter's remove(0). From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31827604304."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "mutect-engine-arithmetic",
       "status": "oracle-backed",
@@ -3205,8 +3196,7 @@
           "why": "64 rows: no files at all. Forty-eight posteriors over a grid of six log priors and eight log odds, including both infinities on each axis; ten clamps, over both bounds, both infinities and NaN; four conversions, one of them of a record with no annotation; and the engine's two public constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31832059604. Forty-seven of the forty-eight posteriors are bit-identical against the port and one, 100.0 against a prior of -1.0, differs by a single ulp, because every entry of the normalisation goes through exp, whose bit-exact transcription is withdrawn under htsjdk-rs decision 0014."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "germline-probability",
       "status": "oracle-backed",
@@ -3238,8 +3228,7 @@
           "why": "34 rows: no files at all, five doubles per call. A baseline and four sweeps that vary one axis each \u2014 nine population frequencies from 0 to 1, nine normal log odds including both infinities, five het log odds and six somatic priors \u2014 plus the hom-alt hypothesis switched off at two frequencies and the two corners where one side of the normalisation has nothing left in it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31838328451. Thirty-one of the thirty-four probabilities are bit-identical against the port; three (a population frequency of 1e-8 and normal log odds of -10 and -50) differ by a single ulp, for the same reason the mutect-engine-arithmetic suite has one: every entry of the normalisation goes through exp, whose bit-exact transcription is withdrawn under htsjdk-rs decision 0014."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "mutect-engine-construction",
       "status": "oracle-backed",
@@ -3268,8 +3257,7 @@
           "why": "15 rows: no files at all. One engine built from a header naming two normal samples and a third under a key differing only in case, asked about five samples, its initial threshold, its two priors and three posteriors on each of two routes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31839540310. The two posterior rows are not recomputed by the port: they go through the somatic clustering model, which is not ported."
         }
       ]
-    }
-    ,
+    },
     {
       "id": "mutect-error-probabilities",
       "status": "oracle-backed",
@@ -3296,6 +3284,38 @@
           "dump": "MutectErrorProbabilitiesDump",
           "golden": "crates/gatk-engine/tests/data/mutect_error_probabilities.txt.gz",
           "why": "25 rows: no files. One engine built from a two-sample header, four filters of one error type \u2014 one of them switched off \u2014 and seven records: one alternate failing one filter, the same failing two, one failing none, two alternates with one failing, a site filter firing on both, an annotation shorter than the allele list, and a symbolic alternate. Two more records add a filter that consults the engine, whose pileup p-value short circuit answers 1.0. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31840718496. The port is compared on the shape of the combination; its arithmetic on fractional probabilities is asserted in the module's own unit tests, on values this golden cannot produce."
+        }
+      ]
+    },
+    {
+      "id": "beta-binomial",
+      "status": "oracle-backed",
+      "title": "The beta-binomial Mutect's clusters are built on",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The beta-binomial likelihood every Mutect cluster is built on. BetaBinomialDistribution.logProbability is three commons-math calls, binomialCoefficientLog(n, k) + logBeta(k + alpha, n - k + beta) - logBeta(alpha, beta), and SomaticClusteringModel.logLikelihoodGivenSomatic sums it over the clusters. THE THREE PIECES ARE MEASURED SEPARATELY AS WELL AS TOGETHER, because a port has a choice at logBeta: commons-math computes it by a four-branch NSWC expansion and the obvious identity logGamma(p) + logGamma(q) - logGamma(p + q) is a different sequence of roundings. The 52 logBeta rows cross every branch boundary: min(p,q) below 1, at 1, above 2, and at or above 10. THE FLAT BETA IS THE BACKGROUND CLUSTER, alpha = beta = 1, where logBeta(1, 1) is NEGATIVE zero -- a port whose test compares with == will not notice, since -0.0 equals 0.0 -- and the beta-binomial is uniform over the counts, THOUGH NOT BIT-IDENTICALLY SO: at n = 10 the answer is -2.3978952727983707 at k = 0, ...716 at k = 1 and ...700 at k = 5, because the cancellation between the coefficient and the two beta terms is only approximate. THE HIGH-AF CLUSTER IS alpha = 10, beta = 1, whose likelihood rises from -12.126791314602453 at no alternate reads to -0.693147180559945 at ten of ten. binomialCoefficientLog ITSELF HAS FOUR BRANCHES, exact integer arithmetic below n = 67, a floating product below 1030, a symmetry fold, and a sum of logs above that. A count past the total is negative infinity by an explicit branch, and a negative count is an IllegalArgumentException.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 89,
+      "expect_contains": [
+        "logbeta\t1.0,1.0\t-0.0",
+        "logbeta\t0.5,0.5\t1.1447298858494004",
+        "logbeta\t10.0,10.0\t-13.736229227036555",
+        "logbeta\t100.0,100.0\t-139.66525908670664",
+        "binomlog\t10,5\t5.529429087511423",
+        "binomlog\t1000,500\t689.4672615678512",
+        "betabinom\t1.0,1.0,10,0\t-2.3978952727983707",
+        "betabinom\t1.0,1.0,10,1\t-2.3978952727983716",
+        "betabinom\t10.0,1.0,10,0\t-12.126791314602453",
+        "betabinom\t10.0,1.0,10,10\t-0.693147180559945",
+        "error\t1.0,1.0,10,-1\tjava.lang.IllegalArgumentException:Number of successes must be greater than or equal to zero."
+      ],
+      "cases": [
+        {
+          "dump": "BetaBinomialDump",
+          "golden": "crates/gatk-engine/tests/data/beta_binomial.txt.gz",
+          "why": "89 rows: no files at all. Fifty-two logBeta values over a 7x7 grid of shapes from 0.01 to 100 plus three shapes a fuzzy binomial cluster produces; fifteen binomial coefficients over five totals; twenty-one beta-binomial likelihoods over the two shapes SomaticClusteringModel starts with and three totals; and the two refusals. MEASURED AHEAD OF ANY PORT: the Rust side needs Beta.logBeta's four NSWC helpers, Gamma.gamma and both binomial-coefficient variants, of which jmath currently has log_gamma, log_gamma1p and the FastMath log. This golden is the instrument that port will be judged by. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31882061904."
         }
       ]
     }
