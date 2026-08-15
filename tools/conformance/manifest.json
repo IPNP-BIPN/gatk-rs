@@ -3423,6 +3423,37 @@
           "why": "357 rows: no files at all. Binomial densities over two totals, four counts and six allele fractions; eleven learn calls over a clonal, a subclonal and an empty data set, at full, half and no responsibility and in two orders, each probed at three count pairs; seven whole models learned from four data sets and three callable-site settings; and one model learned twice with new data between the rounds. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31890003017, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "mutect-filter-list",
+      "status": "golden-pending",
+      "title": "Every Mutect filter's identity, and the header lines that describe them",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Every Mutect2Filter's identity, and the header lines FilterMutectCalls declares around them. THE FILTERS DISAGREE ON BOTH AXES THE ENGINE SORTS THEM BY: nine answer per allele and nine per site, and three error types are represented -- SEQUENCING for the tumour-evidence filter alone, NON_SOMATIC for contamination and germline, ARTIFACT for the other sixteen -- which is what decides whether two filters' probabilities are combined by a maximum or by independence. THE STATS FILE NAMES ONLY THE FILTERS THAT FIRED: an engine that has filtered nothing writes its metadata and its header row and NO filter rows at all, in every mode, so a missing row is a filter that found nothing rather than a filter that does not exist. MUTECT_FILTER_NAMES IS A DIFFERENT LIST FROM THE FILTERS and it includes PASS and FAIL, every entry becoming a ##FILTER header line whether or not the filter runs; MUTECT_AS_FILTER_NAMES is one entry, AS_FilterStatus, and it becomes an ##INFO line instead. AND THE TOOL WRITES OVER MUTECT2'S OWN HEADER LINE UNDER THE SAME KEY, replacing the warning that the calls are unfiltered. WHAT IS NOT MEASURED HERE: which filters a mode builds. buildFiltersList is private and the stats file names only what fired, so the six filters an if (!MTFAC.mitochondria) guards and the read-orientation filter an argument guards need the tool run end to end, which is its own slice.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 137,
+      "expect_contains": [
+        "filter\tTumorEvidenceFilter\tweak_evidence,SEQUENCING,per-allele",
+        "filter\tContaminationFilter\tcontamination,NON_SOMATIC,per-allele",
+        "filter\tGermlineFilter\tgermline,NON_SOMATIC,per-site",
+        "filter\tStrandArtifactFilter\tstrand_bias,ARTIFACT,per-allele",
+        "filter\tStrictStrandBiasFilter\tstrict_strand,ARTIFACT,per-allele",
+        "filter\tNormalArtifactFilter\tnormal_artifact,ARTIFACT,per-site",
+        "count\tdefault\t0",
+        "count\tmitochondria\t0",
+        "names\tMUTECT_AS_FILTER_NAMES\tAS_FilterStatus",
+        "filterline\tPASS\tFILTER=<ID=PASS,Description=\"Site contains at least one allele that passes filters\">"
+      ],
+      "cases": [
+        {
+          "dump": "MutectFilterListDump",
+          "golden": null,
+          "why": "137 rows: no files at all. Eighteen filters constructed directly, each printed as its name, its error type and whether it answers per allele; three engines -- the default, a mitochondrial one and one with three thresholds set -- each written out through a stats file it has put nothing into; every ##FILTER line MUTECT_FILTER_NAMES declares and the ##INFO lines AS_FilterStatus and STRQ produce; and the two filtering-status header lines, Mutect2's and the one the tool writes over it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
