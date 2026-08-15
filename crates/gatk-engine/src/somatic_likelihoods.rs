@@ -81,6 +81,36 @@ pub fn effective_log_multinomial_weights(alpha: &[f64]) -> Option<Vec<f64>> {
         .collect()
 }
 
+/// `SomaticLikelihoodsEngine.logDirichletNormalization(double...)`.
+///
+/// ```java
+/// final double logNumerator = Gamma.logGamma(MathUtils.sum(dirichletParams));
+/// final double logDenominator = MathUtils.sum(MathUtils.applyToArray(dirichletParams, Gamma::logGamma));
+/// return logNumerator - logDenominator;
+/// ```
+///
+/// Four of these make the allele-fraction clusters' correction, so the two sides of the subtraction
+/// matter more than the value does.
+///
+/// # A single parameter of one is negative zero
+///
+/// `logGamma(1.0)` is `-0.0`, and the denominator's sum starts from `0.0` and stays there, so the
+/// answer is `-0.0 - 0.0`. At `0.5` both sides are the same positive number and the answer is `0.0`.
+/// The two differ only in a sign bit no `==` can see.
+///
+/// # A parameter of zero is NaN, not an infinity
+///
+/// commons-math's `logGamma` answers `NaN` at and below zero rather than diverging, so a zero
+/// parameter poisons the denominator and the subtraction carries the `NaN` out.
+pub fn log_dirichlet_normalization(dirichlet_params: &[f64]) -> f64 {
+    let log_numerator = gamma::log_gamma(sum(dirichlet_params));
+    let logs: Vec<f64> = dirichlet_params
+        .iter()
+        .map(|p| gamma::log_gamma(*p))
+        .collect();
+    log_numerator - sum(&logs)
+}
+
 /// `MathUtils.sum(double[])`, accumulating in index order.
 pub fn sum(values: &[f64]) -> f64 {
     let mut total = 0.0;
