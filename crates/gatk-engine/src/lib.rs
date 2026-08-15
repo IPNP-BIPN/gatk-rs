@@ -51,6 +51,7 @@ pub mod locus_shards;
 pub mod mann_whitney;
 pub mod math_utils;
 pub mod mutect_engine;
+pub mod mutect_filter_list;
 pub mod mutect_hard_filters;
 pub mod natural_log_utils;
 pub mod overhang_fixing_manager;
