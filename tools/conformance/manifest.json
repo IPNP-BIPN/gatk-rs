@@ -3388,6 +3388,41 @@
           "why": "66 rows: no files at all. Priors over the whole window and outside it in two orders, the tuned and mitochondrial argument collections, the emission likelihood over eight count pairs, the sequencing-error posterior over four log odds and three indel lengths, six records with their arrays before and after, and the indel length of four record shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31885410451, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "somatic-clustering-learn",
+      "status": "golden-pending",
+      "title": "The EM iteration and the quantile initialisation the clustering model learns by",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What learnAndClearAccumulatedData does with the data record collected, and the two learn methods under it. BetaBinomialCluster.learn IS GRADIENT ASCENT WITH FLOORS: ten epochs over the data at a rate of 0.01, each step Math.max(alpha + rate * gradient * responsibility, 1.0) and the same for beta at 0.5, and THE FLOOR IS APPLIED EVERY STEP rather than at the end, so a shape that would have dipped below it and come back cannot. THE UPDATE IS SEQUENTIAL WITHIN AN EPOCH, alpha and beta being read and written per datum, so the same data in a different order learn a different shape -- which is why the same data are learned in two orders here. BinomialCluster.learn ADDS 0.0001 TO BOTH SUMS before dividing, which is what keeps a cluster with no responsibility from dividing zero by zero. initializeClusters SPLITS PEAKS OFF THE BACKGROUND UNTIL THE BIC STOPS IMPROVING, at most five times, refusing a peak below the 0.1 quantile. THE PRIOR MAP IS REWRITTEN FROM THE CALLABLE-SITE COUNT, floored at 1.0e-8 for a SNV and 1.0e-9 for an indel, so a model told how many sites were callable ends with different priors from one that was not, and the lengths the getter inserted earlier are rewritten too. clusteringMetadata FORMATS ITS WEIGHTS %.4f and its cluster descriptions %.2f and %.3f, so a cluster that moved in the last digits reads as unchanged -- every learned shape is therefore probed at three count pairs as well, at full precision. TWO ORDERS OF THE SAME DATA READ AS THE SAME CLUSTER AND ARE NOT ONE: both print alpha = 1.11, beta = 1.11 and their probes are -2.342355998103611 and -2.3423552672365258. A CLUSTER GIVEN NO RESPONSIBILITY AT ALL LANDS AT mean = 0.990, which is 0.0001/0.0001 clamped by the fuzzy binomial's own bound, while the beta-binomial beside it cannot move at all. A MODEL WITH NO CALLABLE-SITE COUNT KEEPS THE DEFAULT PRIORS, -13.815510557964275 for a SNV against -7.824061291459205 for the same data with a count. AND ONE DATUM MAKES FIVE IDENTICAL BINOMIAL CLUSTERS, the BIC never worsening before the cap. And the quantile responsibilities are binomial densities, binomialProbability(n, k, f) times n + 1, which is commons-math's BinomialDistribution.probability and its saddle point.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 357,
+      "expect_contains": [
+        "binomprob\t10,5,0.5\t0.24609375000000003",
+        "binomprob\t10,0,0.0\t1.0",
+        "binomprob\t100,10,0.01\t7.006035693977186E-8",
+        "learn\tbetabinomial-flat-clonal\talpha = 1.11, beta = 1.11",
+        "learn\tbetabinomial-flat-reversed\talpha = 1.11, beta = 1.11",
+        "probe\tbetabinomial-flat-clonal-10,5\t-2.342355998103611",
+        "probe\tbetabinomial-flat-reversed-10,5\t-2.3423552672365258",
+        "learn\tbinomial-zero\tmean = 0.990",
+        "learn\tbetabinomial-flat-zero\talpha = 1.00, beta = 1.00",
+        "metadata\tclonal\tBackground beta-binomial cluster=weight = 0.8300, alpha = 1.47, beta = 1.46",
+        "metadata\tclonal\tLn prior of SNV=-7.824061291459205",
+        "metadata\tclonal-no-callable-sites\tLn prior of SNV=-13.815510557964275",
+        "metadata\tno-data\tBackground beta-binomial cluster=weight = 0.5000, alpha = 1.00, beta = 1.00",
+        "metadata\tone-datum\tBinomial cluster=weight = 0.1495, mean = 0.500"
+      ],
+      "cases": [
+        {
+          "dump": "SomaticClusteringLearnDump",
+          "golden": null,
+          "why": "357 rows: no files at all. Binomial densities over two totals, four counts and six allele fractions; eleven learn calls over a clonal, a subclonal and an empty data set, at full, half and no responsibility and in two orders, each probed at three count pairs; seven whole models learned from four data sets and three callable-site settings; and one model learned twice with new data between the rounds. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
