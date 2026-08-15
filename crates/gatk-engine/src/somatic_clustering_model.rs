@@ -40,8 +40,15 @@
 //! and its quantile initialisation are their own slice; [`SomaticClusteringModel::record`]
 //! accumulates the data they would consume.
 
-use crate::allele_fraction_cluster::{AlleleFractionCluster, BetaDistributionShape, Datum};
+use crate::allele_fraction_cluster::{
+    double_stream_sum, learn_beta_binomial, learn_binomial, AlleleFractionCluster,
+    BetaDistributionShape, Datum, ShapeError,
+};
+use crate::java_format::format_decimals;
+use crate::java_hash::hash_map_order;
+use crate::math_utils::normalize_sum_to_one;
 use crate::mutect_engine::{log_one_third, posterior_probability_of_error};
+use crate::natural_log_utils::normalize_from_log_to_linear_space;
 use crate::natural_log_utils::{log_sum_exp, NonFiniteSum};
 
 /// `MAX_INDEL_SIZE_IN_PRIOR_MAP`.
@@ -157,6 +164,8 @@ pub struct SomaticClusteringModel {
     data: Vec<Datum>,
     /// `obviousArtifactCount`, incremented only on the artifact threshold and not on the other.
     obvious_artifact_count: i32,
+    /// `clustersHaveBeenInitialized`: the quantile initialisation runs once and never again.
+    clusters_have_been_initialized: bool,
 }
 
 impl SomaticClusteringModel {
@@ -194,6 +203,7 @@ impl SomaticClusteringModel {
             log_cluster_weights: vec![INITIAL_HIGH_AF_WEIGHT.ln_1p(), INITIAL_HIGH_AF_WEIGHT.ln()],
             data: Vec::new(),
             obvious_artifact_count: 0,
+            clusters_have_been_initialized: false,
         }
     }
 
@@ -332,6 +342,461 @@ impl SomaticClusteringModel {
             ));
         }
         Ok(())
+    }
+}
+
+/// `NUM_ITERATIONS`, the rounds of EM per call to learn.
+pub const NUM_ITERATIONS: usize = 5;
+
+/// `MAX_BINOMIAL_CLUSTERS`.
+pub const MAX_BINOMIAL_CLUSTERS: usize = 5;
+
+/// `NUM_INITIALIZATION_QUANTILES`.
+pub const NUM_INITIALIZATION_QUANTILES: usize = 50;
+
+/// `MIN_QUANTILE_INDEX_FOR_MAKING_CLUSTER`, `(int) (0.1 * 50)`.
+pub const MIN_QUANTILE_INDEX_FOR_MAKING_CLUSTER: usize = 5;
+
+/// `MAX_FRACTION_OF_BACKGROUND_TO_SPLIT_OFF`.
+pub const MAX_FRACTION_OF_BACKGROUND_TO_SPLIT_OFF: f64 = 0.9;
+
+/// `REGULARIZING_PSEUDOCOUNT`.
+pub const REGULARIZING_PSEUDOCOUNT: f64 = 1.0;
+
+/// `MathUtils.binomialProbability(n, k, p)`, which is commons-math's
+/// `BinomialDistribution.probability` over the saddle-point expansion.
+///
+/// The exponential is the reference's, so this is the one thing on the learning path that decision
+/// 0014 bounds rather than fixes.
+pub fn binomial_probability(n: i32, k: i32, p: f64) -> f64 {
+    if n == 0 {
+        return if k == 0 { 1.0 } else { 0.0 };
+    }
+    if k < 0 || k > n {
+        return 0.0;
+    }
+    let log_probability = jmath::saddle_point::log_binomial_probability(k, n, p, 1.0 - p);
+    if log_probability == f64::NEG_INFINITY {
+        0.0
+    } else {
+        log_probability.exp()
+    }
+}
+
+impl SomaticClusteringModel {
+    /// `probabilityOfSomaticVariant(datum)`.
+    fn probability_of_somatic_variant(&mut self, datum: &Datum) -> f64 {
+        let artifact_prob = datum.artifact_prob();
+        let non_somatic_prob = datum.non_sequencing_error_prob();
+        let sequencing_error_prob = self
+            .probability_of_sequencing_error(datum)
+            .unwrap_or(f64::NAN);
+        (1.0 - artifact_prob) * (1.0 - non_somatic_prob) * (1.0 - sequencing_error_prob)
+    }
+
+    /// `backgroundProbGivenSomatic(totalCount, altCount)`, the first cluster's normalised share.
+    fn background_prob_given_somatic(&self, total_count: i32, alt_count: i32) -> f64 {
+        normalize_from_log_to_linear_space(&self.cluster_log_likelihoods(total_count, alt_count))
+            .map(|probabilities| probabilities[0])
+            .unwrap_or(f64::NAN)
+    }
+
+    /// `learnAndClearAccumulatedData()`.
+    pub fn learn_and_clear_accumulated_data(&mut self) -> Result<(), ShapeError> {
+        if !self.clusters_have_been_initialized {
+            self.initialize_clusters()?;
+        }
+        for _ in 0..NUM_ITERATIONS {
+            self.perform_em_iteration(true)?;
+        }
+        self.data.clear();
+        self.obvious_artifact_count = 0;
+        Ok(())
+    }
+
+    /// `calculateAlleleFractionQuantiles()`.
+    ///
+    /// The sort is `Comparator.comparingDouble` on the allele fraction, which is stable, so equal
+    /// fractions keep the order the data arrived in. The final `distinct()` keeps the first of each.
+    fn allele_fraction_quantiles(&mut self) -> Vec<f64> {
+        let mut fractions_and_probs: Vec<(f64, f64)> = Vec::with_capacity(self.data.len());
+        for index in 0..self.data.len() {
+            let datum = self.data[index];
+            let fraction = datum.alt_count() as f64 / datum.total_count() as f64;
+            fractions_and_probs.push((fraction, self.probability_of_somatic_variant(&datum)));
+        }
+        fractions_and_probs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let total_somatic_prob: f64 = double_stream_sum(
+            &fractions_and_probs
+                .iter()
+                .map(|p| p.1)
+                .collect::<Vec<f64>>(),
+        );
+        let mut cumulative_prob = 0.0;
+        let quantile_step = total_somatic_prob / NUM_INITIALIZATION_QUANTILES as f64;
+        let mut quantile_prob = quantile_step;
+        let mut quantiles: Vec<f64> = Vec::new();
+        for (fraction, prob) in &fractions_and_probs {
+            cumulative_prob += prob;
+            if cumulative_prob > quantile_prob {
+                quantiles.push(*fraction);
+                while cumulative_prob > quantile_prob {
+                    quantile_prob += quantile_step;
+                }
+            }
+        }
+        // `distinct()`, which is by equality and keeps the first.
+        let mut distinct: Vec<f64> = Vec::new();
+        for quantile in quantiles {
+            if !distinct.contains(&quantile) {
+                distinct.push(quantile);
+            }
+        }
+        distinct
+    }
+
+    /// `calculateQuantileBackgroundResponsibilities(alleleFractionQuantiles, backgroundProbs)`.
+    ///
+    /// The density is the binomial one times `n + 1`, which is the flat-prior posterior density at
+    /// that allele fraction.
+    fn quantile_background_responsibilities(
+        &self,
+        quantiles: &[f64],
+        background_probs: &[f64],
+    ) -> Vec<f64> {
+        let mut totals = vec![0.0; quantiles.len()];
+        for (index, datum) in self.data.iter().enumerate() {
+            let background_prob = background_probs[index];
+            for (q, fraction) in quantiles.iter().enumerate() {
+                let density =
+                    binomial_probability(datum.total_count(), datum.alt_count(), *fraction);
+                totals[q] += density * background_prob * (datum.total_count() as f64 + 1.0);
+            }
+        }
+        totals
+    }
+
+    /// `calculatePeaksAndMasses(alleleFractionQuantiles, totalQuantileResponsibilities)`.
+    ///
+    /// Trapezoid quadrature between local minima, where the minimum test is on
+    /// `Double.compare` rather than on `<`, so a NaN responsibility sorts above everything.
+    fn peaks_and_masses(quantiles: &[f64], responsibilities: &[f64]) -> Vec<(f64, f64)> {
+        let mut peaks: Vec<(f64, f64)> = Vec::new();
+        let mut current_peak_mass = 0.0;
+        let mut current_peak = 0.0;
+        let mut current_peak_responsibility = 0.0;
+        for q in 0..quantiles.len() {
+            let left_responsibility = if q == 0 { 0.0 } else { responsibilities[q - 1] };
+            let responsibility = responsibilities[q];
+            let right_responsibility = if q == quantiles.len() - 1 {
+                0.0
+            } else {
+                responsibilities[q + 1]
+            };
+            let left_fraction = if q == 0 { 0.0 } else { quantiles[q - 1] };
+            let fraction = quantiles[q];
+            current_peak_mass +=
+                (fraction - left_fraction) * (left_responsibility + responsibility) / 2.0;
+            if responsibility > current_peak_responsibility {
+                current_peak = fraction;
+                current_peak_responsibility = responsibility;
+            }
+            let left_compare = responsibility.total_cmp(&left_responsibility);
+            let right_compare = responsibility.total_cmp(&right_responsibility);
+            let local_min = (left_compare.is_lt() && right_compare.is_le())
+                || (left_compare.is_le() && right_compare.is_lt());
+            if (local_min && q > 0) || q == quantiles.len() - 1 {
+                peaks.push((current_peak, current_peak_mass));
+                current_peak_mass = 0.0;
+                current_peak = fraction;
+                current_peak_responsibility = responsibility;
+            }
+        }
+        peaks
+    }
+
+    /// `initializeClusters()`.
+    ///
+    /// Splits the biggest peak off the background, runs five silent EM iterations, and keeps the
+    /// split only while the BIC improves -- at most five times. A peak below the 0.1 quantile stops
+    /// it outright.
+    fn initialize_clusters(&mut self) -> Result<(), ShapeError> {
+        let data = self.data.clone();
+        let somatic_probs: Vec<f64> = data
+            .iter()
+            .map(|datum| self.probability_of_somatic_variant(datum))
+            .collect();
+        let mut previous_bic = f64::NEG_INFINITY;
+        for _ in 0..MAX_BINOMIAL_CLUSTERS {
+            let old_log_cluster_weights = self.log_cluster_weights.clone();
+            let background_probs: Vec<f64> = data
+                .iter()
+                .enumerate()
+                .map(|(index, datum)| {
+                    somatic_probs[index]
+                        * self.background_prob_given_somatic(datum.total_count(), datum.alt_count())
+                })
+                .collect();
+            let quantiles = self.allele_fraction_quantiles();
+            let responsibilities =
+                self.quantile_background_responsibilities(&quantiles, &background_probs);
+            let peaks = Self::peaks_and_masses(&quantiles, &responsibilities);
+            if peaks.is_empty() {
+                break;
+            }
+            // `sorted(comparingDouble(getRight).reversed()).findFirst()`: a stable sort, so the
+            // first of equal masses wins.
+            let mut sorted = peaks.clone();
+            sorted.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let (biggest_peak, biggest_mass) = sorted[0];
+            let floor_index = MIN_QUANTILE_INDEX_FOR_MAKING_CLUSTER.min(quantiles.len() - 1);
+            if biggest_peak < quantiles[floor_index] {
+                break;
+            }
+            let total_mass = double_stream_sum(&peaks.iter().map(|p| p.1).collect::<Vec<f64>>());
+            let fraction_of_background_to_split =
+                MAX_FRACTION_OF_BACKGROUND_TO_SPLIT_OFF.min(biggest_mass / total_mass);
+            let new_cluster_log_weight =
+                fraction_of_background_to_split.ln() + self.log_cluster_weights[0];
+            // `log1p`, not `log(1 - x)`: the background keeps MORE weight than it had.
+            let new_background_weight =
+                fraction_of_background_to_split.ln_1p() + self.log_cluster_weights[0];
+            self.clusters
+                .push(AlleleFractionCluster::binomial(biggest_peak)?);
+            self.log_cluster_weights.push(new_cluster_log_weight);
+            self.log_cluster_weights[0] = new_background_weight;
+
+            for _ in 0..NUM_ITERATIONS {
+                self.perform_em_iteration(false)?;
+            }
+
+            let log_likelihoods: Vec<f64> = data
+                .iter()
+                .map(|datum| {
+                    self.log_likelihood_given_somatic(datum.total_count(), datum.alt_count())
+                        .unwrap_or(f64::NAN)
+                })
+                .collect();
+            let weighted: Vec<f64> = log_likelihoods
+                .iter()
+                .enumerate()
+                .map(|(index, value)| somatic_probs[index] * value)
+                .collect();
+            // `MathUtils.sum`, a plain loop, over a product formed first: not the compensated sum.
+            let weighted_log_likelihood = crate::somatic_likelihoods::sum(&weighted);
+            let effective_somatic_count = crate::somatic_likelihoods::sum(&somatic_probs);
+            let num_parameters = 2.0 * self.clusters.len() as f64;
+            let current_bic =
+                weighted_log_likelihood - num_parameters * effective_somatic_count.ln();
+            if current_bic < previous_bic {
+                self.clusters.pop();
+                self.log_cluster_weights = old_log_cluster_weights;
+                break;
+            }
+            previous_bic = current_bic;
+        }
+        self.clusters_have_been_initialized = true;
+        Ok(())
+    }
+
+    /// `performEMIteration(updateSomaticPriors)`.
+    fn perform_em_iteration(&mut self, update_somatic_priors: bool) -> Result<(), ShapeError> {
+        // `Collectors.toMap` over `-10..=10`, which is a HashMap: its iteration order is the one the
+        // variant count is summed in, and a length outside the window is appended by `putIfAbsent`.
+        let mut counts: Vec<(i32, f64)> = (-MAX_INDEL_SIZE_IN_PRIOR_MAP
+            ..=MAX_INDEL_SIZE_IN_PRIOR_MAP)
+            .map(|length| (length, 0.0))
+            .collect();
+        let data = self.data.clone();
+        let mut responsibilities: Vec<Vec<f64>> = Vec::with_capacity(data.len());
+        let mut total_cluster_responsibilities = vec![0.0; self.clusters.len()];
+        for datum in &data {
+            let somatic_prob = self.probability_of_somatic_variant(datum);
+            let indel_length = datum.indel_length();
+            if !counts.iter().any(|(length, _)| *length == indel_length) {
+                counts.push((indel_length, 0.0));
+            }
+            if let Some(entry) = counts
+                .iter_mut()
+                .find(|(length, _)| *length == indel_length)
+            {
+                entry.1 += somatic_prob;
+            }
+            let cluster_log_likelihoods =
+                self.cluster_log_likelihoods(datum.total_count(), datum.alt_count());
+            let if_somatic = normalize_from_log_to_linear_space(&cluster_log_likelihoods)
+                .unwrap_or_else(|_| vec![f64::NAN; cluster_log_likelihoods.len()]);
+            let scaled: Vec<f64> = if_somatic
+                .iter()
+                .map(|value| somatic_prob * value)
+                .collect();
+            for (index, value) in scaled.iter().enumerate() {
+                total_cluster_responsibilities[index] += value;
+            }
+            responsibilities.push(scaled);
+        }
+        for value in total_cluster_responsibilities.iter_mut() {
+            *value += REGULARIZING_PSEUDOCOUNT;
+        }
+        self.log_cluster_weights = normalize_sum_to_one(&total_cluster_responsibilities)
+            .expect("the pseudocount keeps the sum positive")
+            .iter()
+            .map(|value| value.ln())
+            .collect();
+        let technical_artifact_count = self.obvious_artifact_count as f64
+            + double_stream_sum(
+                &data
+                    .iter()
+                    .map(|datum| datum.artifact_prob())
+                    .collect::<Vec<f64>>(),
+            );
+        // The map's values in the HashMap's own iteration order, summed the compensated way.
+        let variant_count = double_stream_sum(&Self::hash_map_values(&counts));
+
+        if update_somatic_priors {
+            self.log_variant_vs_artifact_prior = ((variant_count + REGULARIZING_PSEUDOCOUNT)
+                / (variant_count + technical_artifact_count + REGULARIZING_PSEUDOCOUNT * 2.0))
+                .ln();
+            if let Some(callable_sites) = self.callable_sites {
+                for length in -MAX_INDEL_SIZE_IN_PRIOR_MAP..=MAX_INDEL_SIZE_IN_PRIOR_MAP {
+                    let empirical_ratio = counts
+                        .iter()
+                        .find(|(key, _)| *key == length)
+                        .map(|(_, value)| *value)
+                        .unwrap_or(0.0)
+                        / callable_sites;
+                    let floor = if length == 0 { 1.0e-8 } else { 1.0e-9 };
+                    let prior = empirical_ratio.max(floor).ln();
+                    if let Some(entry) = self
+                        .log_variant_priors
+                        .iter_mut()
+                        .find(|(key, _)| *key == length)
+                    {
+                        entry.1 = prior;
+                    } else {
+                        self.log_variant_priors.push((length, prior));
+                    }
+                }
+            }
+        }
+
+        for index in 0..self.clusters.len() {
+            let for_this_cluster: Vec<f64> = responsibilities
+                .iter()
+                .map(|values| values[index])
+                .collect();
+            let shape = self.clusters[index].shape();
+            self.clusters[index] = match self.clusters[index] {
+                AlleleFractionCluster::Binomial(_) => {
+                    AlleleFractionCluster::Binomial(learn_binomial(&data, &for_this_cluster)?)
+                }
+                AlleleFractionCluster::BetaBinomial(_) => AlleleFractionCluster::BetaBinomial(
+                    learn_beta_binomial(shape, &data, &for_this_cluster)?,
+                ),
+            };
+        }
+        Ok(())
+    }
+
+    /// The values of the reference's `HashMap<Integer, MutableDouble>`, in its iteration order.
+    ///
+    /// `Integer.hashCode` is the value itself, so the order is the table's and not the insertion
+    /// order: it is what decides how the variant count's compensated sum accumulates.
+    fn hash_map_values(counts: &[(i32, f64)]) -> Vec<f64> {
+        // `Integer.hashCode` is the value itself.
+        let entries: Vec<(i32, i32)> = counts
+            .iter()
+            .map(|(length, _)| (*length, *length))
+            .collect();
+        match hash_map_order(&entries) {
+            Ok(order) => order
+                .iter()
+                .map(|key| {
+                    counts
+                        .iter()
+                        .find(|(length, _)| length == key)
+                        .map(|(_, value)| *value)
+                        .unwrap_or(0.0)
+                })
+                .collect(),
+            // An order the hash port has not measured: fall back to insertion order rather than
+            // guessing, which a test will catch as a wrong sum rather than as a silent one.
+            Err(_) => counts.iter().map(|(_, value)| *value).collect(),
+        }
+    }
+
+    /// `clusteringMetadata()`, whose numbers are formatted before anyone sees them.
+    ///
+    /// `%.4f` on the weights and `%.2f`/`%.3f` on the shapes, all of them Java's HALF_UP. A cluster
+    /// that moved in its last digits reads here as one that did not.
+    pub fn clustering_metadata(&self) -> Vec<(String, String)> {
+        let mut result = Vec::new();
+        for length in -MAX_INDEL_SIZE_IN_PRIOR_MAP..=MAX_INDEL_SIZE_IN_PRIOR_MAP {
+            let log_prior = self
+                .log_variant_priors
+                .iter()
+                .find(|(key, _)| *key == length)
+                .map(|(_, value)| *value)
+                .unwrap_or(f64::NAN);
+            let kind = if length == 0 {
+                "SNV".to_string()
+            } else if length < 0 {
+                format!("deletion of length {}", length.abs())
+            } else {
+                format!("insertion of length {length}")
+            };
+            result.push((
+                format!("Ln prior of {kind}"),
+                crate::tsv_table::java_double_to_string(log_prior),
+            ));
+        }
+        result.push((
+            "Background beta-binomial cluster".to_string(),
+            format!(
+                "weight = {}, {}",
+                format_decimals(self.log_cluster_weights[0].exp(), 4),
+                Self::describe(&self.clusters[0])
+            ),
+        ));
+        result.push((
+            "High-AF beta-binomial cluster".to_string(),
+            format!(
+                "weight = {}, {}",
+                format_decimals(self.log_cluster_weights[1].exp(), 4),
+                Self::describe(&self.clusters[1])
+            ),
+        ));
+        let mut rest: Vec<usize> = (2..self.clusters.len()).collect();
+        // `sorted(comparingDouble(c -> -logClusterWeights[c]))`, a stable sort on the negated weight.
+        rest.sort_by(|a, b| {
+            (-self.log_cluster_weights[*a]).total_cmp(&-self.log_cluster_weights[*b])
+        });
+        for index in rest {
+            result.push((
+                "Binomial cluster".to_string(),
+                format!(
+                    "weight = {}, {}",
+                    format_decimals(self.log_cluster_weights[index].exp(), 4),
+                    Self::describe(&self.clusters[index])
+                ),
+            ));
+        }
+        result
+    }
+
+    /// The two `toString`s: `alpha = %.2f, beta = %.2f` and `mean = %.3f`.
+    fn describe(cluster: &AlleleFractionCluster) -> String {
+        match cluster {
+            AlleleFractionCluster::BetaBinomial(shape) => format!(
+                "alpha = {}, beta = {}",
+                format_decimals(shape.alpha(), 2),
+                format_decimals(shape.beta(), 2)
+            ),
+            AlleleFractionCluster::Binomial(shape) => format!(
+                "mean = {}",
+                format_decimals(shape.alpha() / (shape.alpha() + shape.beta()), 3)
+            ),
+        }
     }
 }
 

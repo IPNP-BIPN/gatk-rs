@@ -147,7 +147,9 @@ pub fn fuzzy_binomial(unbounded_mean: f64) -> Result<BetaDistributionShape, Shap
     } else {
         unbounded_mean.min(bound)
     };
-    let alpha_plus_beta = ((1.0 - mean) / (mean * STD_DEV_OVER_MEAN * STD_DEV_OVER_MEAN)) - 1.0;
+    // `mean * MathUtils.square(STD_DEV_OVER_MEAN)`: the square is formed first, and
+    // `(mean * 0.01) * 0.01` is a different double.
+    let alpha_plus_beta = ((1.0 - mean) / (mean * (STD_DEV_OVER_MEAN * STD_DEV_OVER_MEAN))) - 1.0;
     let alpha = mean * alpha_plus_beta;
     BetaDistributionShape::new(alpha, alpha_plus_beta - alpha)
 }
@@ -192,6 +194,122 @@ pub fn log_likelihood(
 ) -> Result<f64, BetaBinomialError> {
     BetaBinomialDistribution::new(shape.alpha(), shape.beta(), total_count)?
         .log_probability(alt_count)
+}
+
+/// `BetaBinomialCluster`'s learning rate, its cap and its epoch count.
+const RATE: f64 = 0.01;
+const NUM_EPOCHS: usize = 10;
+
+/// `BetaBinomialCluster.learn(data, responsibilities)`.
+///
+/// Ten epochs of gradient ascent over `Gamma.digamma`, and three things about it that a smoother
+/// implementation would get wrong:
+///
+///  * **the update is sequential within an epoch.** Alpha and beta are read and written per datum,
+///    so the same data in a different order learn a different shape;
+///  * **the floors are applied every step**, not at the end, so a shape that would have dipped below
+///    `1.0` or `0.5` and come back cannot;
+///  * **`Math.max` propagates NaN** where Rust's `f64::max` answers the other argument, so the
+///    clamps are written out.
+pub fn learn_beta_binomial(
+    shape: BetaDistributionShape,
+    data: &[Datum],
+    responsibilities: &[f64],
+) -> Result<BetaDistributionShape, ShapeError> {
+    let mut alpha = shape.alpha();
+    let mut beta = shape.beta();
+    for _ in 0..NUM_EPOCHS {
+        for (index, datum) in data.iter().enumerate() {
+            let alt = datum.alt_count() as f64;
+            let reference = (datum.total_count() - datum.alt_count()) as f64;
+            let digamma_of_total_plus_alpha_plus_beta =
+                digamma(datum.total_count() as f64 + alpha + beta);
+            let digamma_of_alpha_plus_beta = digamma(alpha + beta);
+            let alpha_gradient =
+                digamma(alpha + alt) - digamma_of_total_plus_alpha_plus_beta - digamma(alpha)
+                    + digamma_of_alpha_plus_beta;
+            let beta_gradient =
+                digamma(beta + reference) - digamma_of_total_plus_alpha_plus_beta - digamma(beta)
+                    + digamma_of_alpha_plus_beta;
+            alpha = java_max(alpha + RATE * alpha_gradient * responsibilities[index], 1.0);
+            beta = java_max(beta + RATE * beta_gradient * responsibilities[index], 0.5);
+        }
+    }
+    BetaDistributionShape::new(alpha, beta)
+}
+
+/// `Gamma.digamma`, which jmath carries and which refuses nothing this reaches.
+fn digamma(x: f64) -> f64 {
+    jmath::gamma::digamma(x).unwrap_or(f64::NAN)
+}
+
+/// `Math.max`, which answers NaN when either argument is NaN.
+fn java_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// `BinomialCluster.learn(data, responsibilities)`.
+///
+/// A responsibility-weighted mean with `0.0001` added to **both** sums. That is not a tie-breaker:
+/// it is what keeps a cluster given no responsibility at all from dividing zero by zero. Such a
+/// cluster lands at `0.0001 / 0.0001`, which the fuzzy binomial's own clamp turns into `0.99`.
+///
+/// Both sums are `DoubleStream.sum`, which is compensated rather than a plain loop.
+pub fn learn_binomial(
+    data: &[Datum],
+    responsibilities: &[f64],
+) -> Result<BetaDistributionShape, ShapeError> {
+    let alt_count = double_stream_sum(
+        &data
+            .iter()
+            .enumerate()
+            .map(|(index, datum)| datum.alt_count() as f64 * responsibilities[index])
+            .collect::<Vec<f64>>(),
+    ) + 0.0001;
+    let total_count = double_stream_sum(
+        &data
+            .iter()
+            .enumerate()
+            .map(|(index, datum)| datum.total_count() as f64 * responsibilities[index])
+            .collect::<Vec<f64>>(),
+    ) + 0.0001;
+    fuzzy_binomial(alt_count / total_count)
+}
+
+/// `DoubleStream.sum()`, which is Kahan summation with a simple sum kept beside it.
+///
+/// ```java
+/// double tmp = summands[0] + summands[1];
+/// double simpleSum = summands[summands.length - 1];
+/// if (Double.isNaN(tmp) && Double.isInfinite(simpleSum)) { return simpleSum; } else { return tmp; }
+/// ```
+///
+/// A plain loop is a different double on almost any list of more than two values, which is why this
+/// is not `MathUtils.sum`.
+pub fn double_stream_sum(values: &[f64]) -> f64 {
+    let mut sum = 0.0;
+    let mut compensation = 0.0;
+    let mut simple = 0.0;
+    for value in values {
+        let tmp = value - compensation;
+        let velvel = sum + tmp;
+        compensation = (velvel - sum) - tmp;
+        sum = velvel;
+        simple += value;
+    }
+    // The JDK ADDS the compensation rather than subtracting it -- "better error bounds to add both
+    // terms as the final sum", says the comment beside it -- even though the accumulator stores the
+    // error with the opposite sign. A textbook Kahan sum is a different double here.
+    let total = sum + compensation;
+    if total.is_nan() && simple.is_infinite() {
+        simple
+    } else {
+        total
+    }
 }
 
 /// The two clusters, which differ only in where their shape comes from.
