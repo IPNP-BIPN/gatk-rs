@@ -225,12 +225,8 @@ jobs:
             suites: "germline-probability mutect-engine-construction mutect-error-probabilities beta-binomial allele-fraction-cluster"
           - group: oracle-backed
             index: "29/29"
-            slug: "somatic-clustering-model"
-            suites: "somatic-clustering-model"
-          - group: golden-pending
-            index: "1/1"
-            slug: "somatic-clustering-learn"
-            suites: "somatic-clustering-learn"
+            slug: "somatic-clustering-model-somatic-clustering-learn"
+            suites: "somatic-clustering-model somatic-clustering-learn"
     steps:
       - uses: actions/checkout@v4
 

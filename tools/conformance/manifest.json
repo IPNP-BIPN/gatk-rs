@@ -3391,7 +3391,7 @@
     },
     {
       "id": "somatic-clustering-learn",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The EM iteration and the quantile initialisation the clustering model learns by",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3419,8 +3419,8 @@
       "cases": [
         {
           "dump": "SomaticClusteringLearnDump",
-          "golden": null,
-          "why": "357 rows: no files at all. Binomial densities over two totals, four counts and six allele fractions; eleven learn calls over a clonal, a subclonal and an empty data set, at full, half and no responsibility and in two orders, each probed at three count pairs; seven whole models learned from four data sets and three callable-site settings; and one model learned twice with new data between the rounds. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/somatic_clustering_learn.txt.gz",
+          "why": "357 rows: no files at all. Binomial densities over two totals, four counts and six allele fractions; eleven learn calls over a clonal, a subclonal and an empty data set, at full, half and no responsibility and in two orders, each probed at three count pairs; seven whole models learned from four data sets and three callable-site settings; and one model learned twice with new data between the rounds. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31890003017, and byte for byte what this laptop produced."
         }
       ]
     }
