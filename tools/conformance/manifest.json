@@ -3353,6 +3353,41 @@
           "why": "215 rows: no files at all. Nine Dirichlet normalisations including a single parameter and a zero; nine mean-to-shape maps across the clamp; the two clusters' likelihood and corrected likelihood over seven count pairs each; five TLODs carried through the correction, both infinities among them; six datum combinations; and the shape refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31884305133, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "somatic-clustering-model",
+      "status": "golden-pending",
+      "title": "The somatic clustering model as constructed, whose prior map grows when it is asked",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "SomaticClusteringModel before any learning: the state its constructor puts it in and the answers it gives from that state. getLogPriorOfSomaticVariant MUTATES THE MAP IT READS -- an indel length outside the +/-10 window is not in logVariantPriors, so the getter inserts the current minimum for it and returns that, and asking about a length once changes what a later question can be answered with. The same lengths are therefore asked in two orders, in two models built identically. A SNV'S PRIOR HAS LOG_ONE_THIRD ADDED TO IT AND AN INDEL'S DOES NOT. THE MITOCHONDRIAL DEFAULTS APPLY ONLY WHILE THE FIELD STILL HOLDS THE DEFAULT, the getter comparing field with default by ==. record MUTATES THE CALLER'S ARRAY, zeroing tumorADs for symbolic alleles in place before summing, so the array is printed before and after. TWO THRESHOLDS THAT LOOK ALIKE DO DIFFERENT THINGS: an artifact probability above 0.9 increments the obvious-artifact count and drops the datum, a non-somatic probability above 0.9 drops it silently, and the threshold itself is > and keeps the datum. THE INITIAL WEIGHTS ARE log1p(0.01) AND log(0.01), not a normalised pair: the background weight is log(1.01). logLikelihoodGivenSomatic is a logSumExp over the two initial clusters and is the first thing on this path carrying exp, so it is the part a port bounds at one ulp under decision 0014 rather than asserting equal. THE UNNORMALISED WEIGHTS ARE VISIBLE IN THE ANSWER: logLikelihoodGivenSomatic(0, 0) is 0.019802627296179723, a POSITIVE log likelihood, because the two weights sum to 1.01 rather than to 1. A SYMBOLIC ALTERNATE'S INDEL LENGTH IS -1 rather than zero or a refusal. The EM iteration and the quantile initialisation are out of scope.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 66,
+      "expect_contains": [
+        "prior\tin-window-0\t-14.914122846632385",
+        "prior\tin-window-1\t-16.11809565095832",
+        "prior\trepeated-in-window\t-14.914122846632385",
+        "prior\tmito-snv\t-6.855075021153225",
+        "prior\tmito-snv-overridden\t-6.09861228866811",
+        "prior\tmito-indel-untouched\t-8.634694098727673",
+        "artifactprior\tdefault\t-2.302585092994046",
+        "loglike\t0,0\t0.019802627296179723",
+        "loglike\t10,5\t-2.386765488798953",
+        "ads\tsymbolic-alt-after\t[80, 20, 0]",
+        "artifactprior\tobvious-artifact-learned\t-1.0986122886681098",
+        "artifactprior\tobvious-non-somatic-learned\t-0.6931471805599453",
+        "indellength\tsymbolic\t-1",
+        "error\tshort-array\tjava.lang.IllegalArgumentException:tumorADs must have one entry per allele including the ref allele"
+      ],
+      "cases": [
+        {
+          "dump": "SomaticClusteringModelDump",
+          "golden": null,
+          "why": "66 rows: no files at all. Priors over the whole window and outside it in two orders, the tuned and mitochondrial argument collections, the emission likelihood over eight count pairs, the sequencing-error posterior over four log odds and three indel lengths, six records with their arrays before and after, and the indel length of four record shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
