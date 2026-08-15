@@ -3315,7 +3315,7 @@
         {
           "dump": "BetaBinomialDump",
           "golden": "crates/gatk-engine/tests/data/beta_binomial.txt.gz",
-          "why": "89 rows: no files at all. Fifty-two logBeta values over a 7x7 grid of shapes from 0.01 to 100 plus three shapes a fuzzy binomial cluster produces; fifteen binomial coefficients over five totals; twenty-one beta-binomial likelihoods over the two shapes SomaticClusteringModel starts with and three totals; and the two refusals. MEASURED AHEAD OF ANY PORT: the Rust side needs Beta.logBeta's four NSWC helpers, Gamma.gamma and both binomial-coefficient variants, of which jmath currently has log_gamma, log_gamma1p and the FastMath log. This golden is the instrument that port will be judged by. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31882061904."
+          "why": "89 rows: no files at all. Fifty-two logBeta values over a 7x7 grid of shapes from 0.01 to 100 plus three shapes a fuzzy binomial cluster produces; fifteen binomial coefficients over five totals; twenty-one beta-binomial likelihoods over the two shapes SomaticClusteringModel starts with and three totals; and the two refusals. MEASURED AHEAD OF THE PORT, which then reproduced all 89 rows bit-identically: Beta.logBeta's four NSWC helpers, Gamma.gamma and both binomial-coefficient variants went into jmath beside the log_gamma and FastMath log it already had, and BetaBinomialDistribution into gatk-engine on top of them. Nothing here goes through exp, so decision 0014 does not apply and the comparison has no ulp allowance. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31882061904."
         }
       ]
     }

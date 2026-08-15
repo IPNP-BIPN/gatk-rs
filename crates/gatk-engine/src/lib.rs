@@ -16,6 +16,7 @@ pub mod assembly_region_walker;
 pub mod baq;
 pub mod base_recalibration_engine;
 pub mod base_utils;
+pub mod beta_binomial;
 pub mod bqsr_transformer;
 pub mod cigar_builder;
 pub mod cigar_utils;
