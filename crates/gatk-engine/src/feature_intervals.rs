@@ -174,13 +174,16 @@ impl RegisteredCodecs {
             // a malformed header and a malformed record in the same file are two classes.
             Err(error) => return Err(IntervalArgumentError::FeatureSourceFailed(error.0)),
         };
+        // The version the file declared, which the codec's text transformer needs: the percent
+        // escapes are read back only from 4.3 onwards.
+        let version = frame.version;
         let header = htsjdk_vcf::header::VcfHeader {
             lines: Vec::new(),
             samples: frame.samples,
         };
         let mut intervals = Vec::new();
         for (number, line) in text.lines().enumerate() {
-            match htsjdk_vcf::record_parse::decode_line(line, &header, number) {
+            match htsjdk_vcf::record_parse::decode_line(line, &header, number, version) {
                 Ok(Some(decoded)) => {
                     let variant = decoded.variant;
                     intervals.push(crate::interval::parse_interval(
