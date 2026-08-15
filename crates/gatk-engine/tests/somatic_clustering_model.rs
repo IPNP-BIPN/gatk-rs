@@ -13,17 +13,25 @@
 //!  * **and the initial weights do not sum to one**, which makes
 //!    `logLikelihoodGivenSomatic(0, 0)` positive.
 //!
-//! # What is compared, and what is not
+//! # Every row, including the five that once waited on the EM iteration
 //!
-//! Every row except the five `artifactprior <label>-learned` ones, which are the dump reading back
-//! what `record` accumulated by running `learnAndClearAccumulatedData`. That call is the EM
-//! iteration and its quantile initialisation, which are not ported: the port asserts what `record`
-//! kept through `accumulated()` and `obvious_artifact_count()` in the module's own unit tests
-//! instead. The five labels are named in `NEEDS_THE_EM`, so a sixth cannot appear silently.
+//! The `artifactprior <label>-learned` rows are the dump reading back what `record` accumulated by
+//! running `learnAndClearAccumulatedData`. That call is the EM iteration and its quantile
+//! initialisation, which the sibling `somatic-clustering-learn` slice ported, so the five rows are
+//! reproduced here rather than deferred.
 //!
-//! The `loglike` and `seqerror` rows go through `logSumExp` and therefore `exp`, whose bit-exact
-//! transcription is withdrawn under htsjdk-rs decision 0014. Both are bit-identical here anyway;
-//! `EXP_BOUNDED` is empty, and the test fails if a row needs to be added to it.
+//! # Where the exponential shows
+//!
+//! Everything on this path that carries `exp` -- `logSumExp` under `logLikelihoodGivenSomatic` and
+//! `probabilityOfSequencingError`, and the round of EM behind the `-learned` rows -- is bounded
+//! rather than equal, `exp` having no bit-exact transcription under htsjdk-rs decision 0014.
+//!
+//! Only two rows need the allowance and both need **90 ulps**: `one-alt-learned` and
+//! `symbolic-alt-learned`, whose data carry a TLOD of 6 where the sequencing-error probability is
+//! large enough to matter. One ulp of `exp` there moves a somatic probability, which moves the
+//! variant count, which the prior takes the log of. The three `-learned` rows beside them are
+//! bit-identical, as are every `loglike` and `seqerror` row. `EXP_BOUNDED` names the two with the
+//! size each needs, so neither a third row nor a larger divergence can appear quietly.
 
 use gatk_corpus as corpus;
 use gatk_engine::allele_fraction_cluster::Datum;
@@ -39,17 +47,8 @@ fn golden() -> String {
     )
 }
 
-/// The rows that need the EM iteration, which is the next slice rather than this one.
-const NEEDS_THE_EM: [&str; 5] = [
-    "one-alt-learned",
-    "symbolic-alt-learned",
-    "obvious-artifact-learned",
-    "obvious-non-somatic-learned",
-    "at-threshold-learned",
-];
-
-/// The rows allowed to sit one ulp away because they carry `exp`. None do.
-const EXP_BOUNDED: [&str; 0] = [];
+/// The rows allowed to differ because they carry `exp`, with the allowance each needs.
+const EXP_BOUNDED: [(&str, i64); 2] = [("one-alt-learned", 90), ("symbolic-alt-learned", 90)];
 
 fn double(text: &str) -> f64 {
     text.parse().unwrap_or_else(|_| panic!("a double: {text}"))
@@ -175,6 +174,15 @@ fn ads_rows() -> Vec<String> {
             .is_ok()
         {
             rows.push(format!("ads\t{label}-after\t{ads:?}"));
+            // What the model accumulated, read back through the prior one round of EM rewrites: a
+            // datum that was dropped cannot move it.
+            model
+                .learn_and_clear_accumulated_data()
+                .expect("the initial shapes stay in range");
+            rows.push(format!(
+                "artifactprior\t{label}-learned\t{}",
+                java_double_to_string(model.log_prior_of_variant_versus_artifact())
+            ));
         }
     };
     push(
@@ -324,32 +332,26 @@ fn every_row_matches_the_golden() {
         ));
     }
 
-    // The golden's rows, minus the ones the EM iteration would answer.
-    let expected: Vec<&str> = lines
-        .iter()
-        .copied()
-        .filter(|line| {
-            let label = line.split('\t').nth(1).unwrap_or_default();
-            !(line.starts_with("artifactprior\t") && NEEDS_THE_EM.contains(&label))
-        })
-        .collect();
-    let deferred = lines.len() - expected.len();
-    assert_eq!(deferred, NEEDS_THE_EM.len(), "the deferred rows changed");
+    let expected = &lines;
     assert_eq!(lines.len(), 66, "the golden's row count");
 
-    for (mine, theirs) in ours.iter().zip(&expected) {
+    for (mine, theirs) in ours.iter().zip(expected) {
         if mine == theirs {
             continue;
         }
         let label = theirs.split('\t').nth(1).unwrap_or_default();
-        assert!(
-            EXP_BOUNDED.contains(&label),
-            "{label}: {mine} against {theirs}"
-        );
+        let allowed = EXP_BOUNDED
+            .iter()
+            .find(|(name, _)| *name == label)
+            .map(|(_, ulps)| *ulps)
+            .unwrap_or_else(|| panic!("{label}: {mine} against {theirs}"));
         let value: f64 = double(mine.rsplit('\t').next().expect("a value"));
         let reference: f64 = double(theirs.rsplit('\t').next().expect("a value"));
         let ulps = ((value.to_bits() as i64) - (reference.to_bits() as i64)).abs();
-        assert!(ulps <= 1, "{label}: {mine} against {theirs}, {ulps} ulps");
+        assert!(
+            ulps <= allowed,
+            "{label}: {mine} against {theirs}, {ulps} ulps"
+        );
     }
     assert_eq!(ours.len(), expected.len(), "every row is accounted for");
 }
