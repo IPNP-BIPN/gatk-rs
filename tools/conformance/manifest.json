@@ -3321,7 +3321,7 @@
     },
     {
       "id": "allele-fraction-cluster",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The allele-fraction clusters, whose corrected likelihood is a Dirichlet normalisation",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3349,8 +3349,8 @@
       "cases": [
         {
           "dump": "AlleleFractionClusterDump",
-          "golden": null,
-          "why": "215 rows: no files at all. Nine Dirichlet normalisations including a single parameter and a zero; nine mean-to-shape maps across the clamp; the two clusters' likelihood and corrected likelihood over seven count pairs each; five TLODs carried through the correction, both infinities among them; six datum combinations; and the shape refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/allele_fraction_cluster.txt.gz",
+          "why": "215 rows: no files at all. Nine Dirichlet normalisations including a single parameter and a zero; nine mean-to-shape maps across the clamp; the two clusters' likelihood and corrected likelihood over seven count pairs each; five TLODs carried through the correction, both infinities among them; six datum combinations; and the shape refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31884305133, and byte for byte what this laptop produced."
         }
       ]
     }
