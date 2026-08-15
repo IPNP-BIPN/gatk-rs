@@ -3356,7 +3356,7 @@
     },
     {
       "id": "somatic-clustering-model",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The somatic clustering model as constructed, whose prior map grows when it is asked",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3384,8 +3384,8 @@
       "cases": [
         {
           "dump": "SomaticClusteringModelDump",
-          "golden": null,
-          "why": "66 rows: no files at all. Priors over the whole window and outside it in two orders, the tuned and mitochondrial argument collections, the emission likelihood over eight count pairs, the sequencing-error posterior over four log odds and three indel lengths, six records with their arrays before and after, and the indel length of four record shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/somatic_clustering_model.txt.gz",
+          "why": "66 rows: no files at all. Priors over the whole window and outside it in two orders, the tuned and mitochondrial argument collections, the emission likelihood over eight count pairs, the sequencing-error posterior over four log odds and three indel lengths, six records with their arrays before and after, and the indel length of four record shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31885410451, and byte for byte what this laptop produced."
         }
       ]
     }
