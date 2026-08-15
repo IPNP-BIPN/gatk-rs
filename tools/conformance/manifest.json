@@ -3426,7 +3426,7 @@
     },
     {
       "id": "mutect-filter-list",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Every Mutect filter's identity, and the header lines that describe them",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3450,8 +3450,8 @@
       "cases": [
         {
           "dump": "MutectFilterListDump",
-          "golden": null,
-          "why": "137 rows: no files at all. Eighteen filters constructed directly, each printed as its name, its error type and whether it answers per allele; three engines -- the default, a mitochondrial one and one with three thresholds set -- each written out through a stats file it has put nothing into; every ##FILTER line MUTECT_FILTER_NAMES declares and the ##INFO lines AS_FilterStatus and STRQ produce; and the two filtering-status header lines, Mutect2's and the one the tool writes over it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/mutect_filter_list.txt.gz",
+          "why": "137 rows: no files at all. Eighteen filters constructed directly, each printed as its name, its error type and whether it answers per allele; three engines -- the default, a mitochondrial one and one with three thresholds set -- each written out through a stats file it has put nothing into; every ##FILTER line MUTECT_FILTER_NAMES declares and the ##INFO lines AS_FilterStatus and STRQ produce; and the two filtering-status header lines, Mutect2's and the one the tool writes over it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31891693162, and byte for byte what this laptop produced."
         }
       ]
     }
