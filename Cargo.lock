@@ -247,6 +247,7 @@ dependencies = [
  "htsjdk-bam",
  "htsjdk-bgzf",
  "htsjdk-vcf",
+ "jmath",
 ]
 
 [[package]]

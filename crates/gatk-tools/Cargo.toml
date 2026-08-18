@@ -10,6 +10,8 @@ gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
 htsjdk-bam.workspace = true
 htsjdk-vcf.workspace = true
+# The coverage filter takes a median, which is commons-math's `Median` and therefore jmath's.
+jmath.workspace = true
 
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.

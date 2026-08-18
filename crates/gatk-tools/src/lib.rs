@@ -12,6 +12,7 @@ pub mod annotate_vcf_with_expected_allele_fraction;
 pub mod apply_bqsr;
 pub mod apply_vqsr;
 pub mod base_recalibrator;
+pub mod calculate_contamination;
 pub mod calculate_mixing_fractions;
 pub mod check_pileup;
 pub mod clip_reads;
