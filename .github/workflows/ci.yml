@@ -64,15 +64,27 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --release
 
-      - name: The ports below are pinned by revision, not by branch
+      - name: The ports below are pinned by revision, and every revision resolves
         # GATK's build.gradle pins picardVersion and htsjdkVersion. A floating dependency would let
         # the layer underneath change under a byte-identity claim without anything failing.
+        #
+        # Checking the FORM of the pin is not enough. `picard-analysis` carried htsjdk-rs's SHA on a
+        # picard-rs URL for months and nothing noticed, because no crate depended on it: cargo never
+        # resolved the pin, so it never had to exist. Every revision named in Cargo.toml must also
+        # appear in Cargo.lock, which is cargo's own record of having resolved it.
         run: |
           if grep -E '^(htsjdk|picard|jmath)[a-z-]* = \{ git' Cargo.toml | grep -qv 'rev = "'; then
             echo "a dependency is not pinned to a revision"
             exit 1
           fi
-          grep -c 'rev = "' Cargo.toml
+          revisions=$(grep -oE 'rev = "[0-9a-f]+"' Cargo.toml | grep -oE '[0-9a-f]+' | sort -u)
+          for revision in $revisions; do
+            if ! grep -q "$revision" Cargo.lock; then
+              echo "revision $revision is pinned in Cargo.toml and resolved nowhere in Cargo.lock"
+              exit 1
+            fi
+          done
+          echo "$revisions" | wc -l
 
 # The jobs below this line are generated from tools/conformance/manifest.json by
 # tools/conformance/generate_ci.py. Edit the manifest, not this file: the `guard` job
