@@ -55,6 +55,7 @@ pub mod mutect_engine;
 pub mod mutect_filter_list;
 pub mod mutect_hard_filters;
 pub mod natural_log_utils;
+pub mod normal_artifact_filter;
 pub mod overhang_fixing_manager;
 pub mod permutation;
 pub mod persistence_optimizer;
