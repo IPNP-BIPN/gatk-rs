@@ -3988,11 +3988,11 @@
     },
     {
       "id": "pair-hmm",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The three PairHMM implementations over the same pairs, before either is ported",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "HaplotypeCaller picks FASTEST_AVAILABLE, which resolves to VectorLoglessPairHMM -- Intel GKL, AVX, through JNI -- whenever the native library loads. Nobody had checked whether it produces the same bytes as the Java scalar LoglessPairHMM the port targets, and a golden taken without checking would pin whichever one happened to run. Twelve read and haplotype pairs cover an exact alignment, a substitution, a short read, a deletion, an insertion, both ends of the base-quality range, both sides of the model's quality threshold, cheap gaps, a long haplotype and a homopolymer. Each likelihood is printed as its RAW BITS as well as its decimal form, because comparing decimal renderings would hide exactly the difference this is looking for. THERE IS NO expect_rows, ON PURPOSE: the row count depends on which implementations the runner can build, and that is the question. WHAT THE LAPTOP ALREADY SHOWS: LoglessPairHMM and Log10PairHMM DISAGREE ON ALL TWELVE PAIRS. They are different algorithms -- one is documented as a slow reference with accurate log10 sums -- so the choice between them is not free, and every dump that reaches a PairHMM has to name one. AND NEITHER VECTORISED FLAVOUR LOADS IN THE PINNED CONTAINER on this laptop: the image has no libgomp.so.1, and emulated aarch64 has no AVX either. Whether the missing library also stops it on real x86-64 is what the runner's artefact answers, and if it does, then every golden this programme has ever taken from this image already pins the scalar implementation.",
+      "why": "HaplotypeCaller picks FASTEST_AVAILABLE, which resolves to VectorLoglessPairHMM -- Intel GKL, AVX, through JNI -- whenever the native library loads. Nobody had checked whether it produces the same bytes as the Java scalar LoglessPairHMM the port targets, and a golden taken without checking would pin whichever one happened to run. Twelve read and haplotype pairs cover an exact alignment, a substitution, a short read, a deletion, an insertion, both ends of the base-quality range, both sides of the model's quality threshold, cheap gaps, a long haplotype and a homopolymer. Each likelihood is printed as its RAW BITS as well as its decimal form, because comparing decimal renderings would hide exactly the difference this is looking for. THERE IS NO expect_rows, ON PURPOSE: the row count depends on which implementations the runner can build, and that is the question. WHAT THE LAPTOP ALREADY SHOWS: LoglessPairHMM and Log10PairHMM DISAGREE ON ALL TWELVE PAIRS. They are different algorithms -- one is documented as a slow reference with accurate log10 sums -- so the choice between them is not free, and every dump that reaches a PairHMM has to name one. AND NEITHER VECTORISED FLAVOUR LOADS IN THE PINNED CONTAINER on this laptop: the image has no libgomp.so.1, and emulated aarch64 has no AVX either. THE RUNNER ANSWERED: IT DOES NOT LOAD THERE EITHER. On real x86-64, in the same image, both flavours raise HardwareFeatureException, because the image carries no libgomp.so.1 and the Intel GKL utils fail to load with it. So the pinned oracle CANNOT RUN the vectorised PairHMM at all, and every golden this programme takes from this image already pins the scalar LoglessPairHMM -- including any HaplotypeCaller golden taken later. The runner's dump is byte for byte the laptop's, forty rows, so the conclusion does not depend on the host.",
       "compare": {
         "mode": "lines"
       },
@@ -4002,15 +4002,17 @@
         "likelihood\tidentical\tLoglessPairHMM=bff21647c8578300,-1.1304395509579876",
         "likelihood\tidentical\tLog10PairHMM=bff21647c857834b,-1.1304395509580043",
         "agree\tidentical\tno",
-        "agree\thomopolymer\tno"
+        "agree\thomopolymer\tno",
+        "loaded\tVectorLoglessPairHMM.AVX\tno:HardwareFeatureException"
       ],
       "cases": [
         {
           "dump": "PairHmmDump",
-          "golden": null,
-          "why": "Twelve read and haplotype pairs through every PairHMM implementation the container can build, each likelihood printed as raw bits and as a decimal. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure: whether the vectorised flavours run on the runner is the question this suite exists to answer. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/pair_hmm.txt.gz",
+          "why": "Twelve read and haplotype pairs through every PairHMM implementation the container can build, each likelihood printed as raw bits and as a decimal. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure: whether the vectorised flavours run on the runner is the question this suite exists to answer. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32174024726, and byte for byte what this laptop produced -- which is itself the point: the vectorised flavours are unavailable on both."
         }
-      ]
+      ],
+      "expect_rows": 40
     }
   ],
   "probes": []
