@@ -3985,6 +3985,32 @@
           "why": "18 rows, no files: the filter's identity, thirteen probabilities over records covering a rare and a common population allele, both ends of the frequency brackets, both sides of the hom-alt switch, a normal saying germline and saying somatic and saying nothing, two alternates where the second wins the log odds, a record with no depth, and both missing required annotations; and the two helpers over one tumour sample and two. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32162324966, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "pair-hmm",
+      "status": "golden-pending",
+      "title": "The three PairHMM implementations over the same pairs, before either is ported",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller picks FASTEST_AVAILABLE, which resolves to VectorLoglessPairHMM -- Intel GKL, AVX, through JNI -- whenever the native library loads. Nobody had checked whether it produces the same bytes as the Java scalar LoglessPairHMM the port targets, and a golden taken without checking would pin whichever one happened to run. Twelve read and haplotype pairs cover an exact alignment, a substitution, a short read, a deletion, an insertion, both ends of the base-quality range, both sides of the model's quality threshold, cheap gaps, a long haplotype and a homopolymer. Each likelihood is printed as its RAW BITS as well as its decimal form, because comparing decimal renderings would hide exactly the difference this is looking for. THERE IS NO expect_rows, ON PURPOSE: the row count depends on which implementations the runner can build, and that is the question. WHAT THE LAPTOP ALREADY SHOWS: LoglessPairHMM and Log10PairHMM DISAGREE ON ALL TWELVE PAIRS. They are different algorithms -- one is documented as a slow reference with accurate log10 sums -- so the choice between them is not free, and every dump that reaches a PairHMM has to name one. AND NEITHER VECTORISED FLAVOUR LOADS IN THE PINNED CONTAINER on this laptop: the image has no libgomp.so.1, and emulated aarch64 has no AVX either. Whether the missing library also stops it on real x86-64 is what the runner's artefact answers, and if it does, then every golden this programme has ever taken from this image already pins the scalar implementation.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "loaded\tLoglessPairHMM\tyes",
+        "loaded\tLog10PairHMM\tyes",
+        "likelihood\tidentical\tLoglessPairHMM=bff21647c8578300,-1.1304395509579876",
+        "likelihood\tidentical\tLog10PairHMM=bff21647c857834b,-1.1304395509580043",
+        "agree\tidentical\tno",
+        "agree\thomopolymer\tno"
+      ],
+      "cases": [
+        {
+          "dump": "PairHmmDump",
+          "golden": null,
+          "why": "Twelve read and haplotype pairs through every PairHMM implementation the container can build, each likelihood printed as raw bits and as a decimal. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure: whether the vectorised flavours run on the runner is the question this suite exists to answer. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
