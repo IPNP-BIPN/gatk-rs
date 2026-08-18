@@ -3622,6 +3622,38 @@
           "why": "25 rows, no files: the two argument defaults, the filter's identity, and twenty-two probabilities over a ten-base reference repeat contracted by one, moved through both slip directions, both sides of the minimum length, an empty repeat unit, a one-entry and two unparseable RPAs, both missing required annotations, four depth shapes, a triallelic record and three slippage rates, plus the same record twice through one engine. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32131954707, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "contamination-filter",
+      "status": "golden-pending",
+      "title": "The contamination filter, which can answer NaN for an allele its annotation does not cover",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "ContaminationFilter, the eighth of the ten filters the filter-mutect-calls golden needs, and one of only two in the NON_SOMATIC error type, which decides which other filters can mask it. THIS FILTER CAN ANSWER NaN: depthsAndPosteriorsPerAllele is sized from the record's alleles, but every loop that fills it runs over alleleFrequencies.length, which is POPAF's, so an allele the annotation does not cover keeps an EMPTY list, and an empty list is Double.NaN, which roundFinitePrecisionErrors passes through unchanged because Math.min and Math.max propagate NaN. A POPAF LONGER THAN THE RECORD IS AN ArrayIndexOutOfBoundsException, the same loop indexing altADs, which is sized from the genotype's AD. THE CONTAMINATION IS CLAMPED ON BOTH SIDES, Math.max(0, Math.min(fromFile, 1 - EPSILON)), where EPSILON is an INSTANCE field of 1.0e-10 and the comment says the clamp exists to handle a file with contamination == 1. THE TWO CONTAMINATION HYPOTHESES ARE COMPARED BY MAXIMUM AND LOGGED ONCE, log(max(single, many)), picking the larger rather than summing, so which hypothesis wins can change with the depth alone. THE PRIOR'S ALLELE INDEX IS THE LOOP'S, unlike PolymeraseSlippageFilter which hard-codes zero in the same call. AND THE ANSWER IS A DEPTH-WEIGHTED MEDIAN ACROSS SAMPLES rather than an average. WHAT THE RUN ADDED: a normal-only record answers [NaN, NaN], so a filter can report NaN for every allele and still be counted; a contamination of one and a contamination of two answer the same numbers, the clamp making both 1 - 1e-10; and a negative contamination, an infinite POPAF and the default contamination of zero all answer exactly 0.0, the binomial at p = 0 being zero, its logarithm negative infinity and the posterior of error zero.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 22,
+      "expect_contains": [
+        "default\tcontaminationEstimate\t0.0",
+        "name\tcontamination\tcontamination,NON_SOMATIC,CONTQ,POPAF",
+        "prob\tcontamination-default\t[0.0, 0.0]",
+        "prob\tcontamination-negative\t[0.0, 0.0]",
+        "prob\tcontamination-one\t[2.4242278794837682E-4, 0.9649217819170469]",
+        "prob\tcontamination-above-one\t[2.4242278794837682E-4, 0.9649217819170469]",
+        "prob\tinfinite-popaf\t[0.0, 0.0]",
+        "prob\tshort-popaf\t[0.006028219175187632, NaN]",
+        "error\tlong-popaf\tjava.lang.ArrayIndexOutOfBoundsException:Index 2 out of bounds for length 2",
+        "prob\tno-popaf\t[]",
+        "prob\tnormal-only\t[NaN, NaN]"
+      ],
+      "cases": [
+        {
+          "dump": "ContaminationFilterDump",
+          "golden": null,
+          "why": "22 rows, no files: the argument default, the filter's identity, and twenty probabilities over a triallelic record moved through six contamination estimates including both ends of the clamp, four population frequencies including infinity, a POPAF shorter and longer than the record and none at all, a normal-only record, two tumour samples for the weighted median, and five depth shapes. No contamination tables are read, so every sample takes the default estimate. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
