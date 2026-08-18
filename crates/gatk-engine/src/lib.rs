@@ -12,6 +12,7 @@ pub mod allele_filter;
 pub mod allele_fraction_cluster;
 pub mod allele_likelihoods;
 pub mod allele_list;
+pub mod apply_filters;
 pub mod assembly_region;
 pub mod assembly_region_iterator;
 pub mod assembly_region_walker;
