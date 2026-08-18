@@ -1760,7 +1760,7 @@
     },
     {
       "id": "double-to-string",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Double.toString over a corpus wide enough to say which values the port disagrees on",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -1781,8 +1781,8 @@
       "cases": [
         {
           "dump": "DoubleToStringDump",
-          "golden": null,
-          "why": "1059 rows, no files: twenty-seven named values covering both ends of the range, the neighbours of one, the boundaries of the exponent form and the four ties the string-format suite uses; thirty-two powers of two stepping through the whole exponent range; and a thousand bit patterns from splitmix64 seeded at one. Each row carries the double's bits as sixteen hex digits, so the comparison is on the value and not on a parse. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/double_to_string.txt.gz",
+          "why": "1059 rows, no files: twenty-seven named values covering both ends of the range, the neighbours of one, the boundaries of the exponent form and the four ties the string-format suite uses; thirty-two powers of two stepping through the whole exponent range; and a thousand bit patterns from splitmix64 seeded at one. Each row carries the double's bits as sixteen hex digits, so the comparison is on the value and not on a parse. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32169248296, and byte for byte what this laptop produced."
         }
       ]
     },
