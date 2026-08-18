@@ -161,10 +161,11 @@ pub fn annotate<A: RankSumTest>(
 
 /// `String.format("%.3f", value)` for the values a Z score can take.
 ///
-/// Java's `%f` rounds HALF_UP on the *decimal* expansion of the double, which is not Rust's
-/// `{:.3}` (round-half-to-even on the same expansion). They differ on a value whose fourth decimal
-/// is exactly 5 and whose expansion terminates there, which a Z score can be: `0.0625` prints
-/// `0.063` in Java and `0.062` in Rust.
+/// Java's `%f` rounds HALF_UP on the digits `Double.toString` would produce, which is neither Rust's
+/// `{:.3}` (half-to-even on the *exact expansion*) nor a half-up rounding of that expansion. Two
+/// values a Z score can take show both differences: `0.0625` prints `0.063` in Java and `0.062` in
+/// Rust, and `1.2345` prints `1.235` in Java where a half-up rounding of the expansion, which is
+/// `1.23449999999999993...`, prints `1.234`. The `string-format` golden pins both.
 pub(crate) fn format_three_decimals(value: f64) -> String {
     format_decimals(value, 3)
 }
@@ -330,7 +331,9 @@ mod tests {
         assert_eq!(format_three_decimals(0.0625), "0.063");
         assert_eq!(format_three_decimals(-0.0625), "-0.063");
         assert_eq!(format_three_decimals(1.2344), "1.234");
-        assert_eq!(format_three_decimals(1.2345), "1.234");
+        // The double is `1.23449999999999993...`, and Java rounds the shortest digits
+        // `1.2345`, not that expansion.
+        assert_eq!(format_three_decimals(1.2345), "1.235");
         assert_eq!(format_three_decimals(0.0), "0.000");
         assert_eq!(format_three_decimals(-1.0), "-1.000");
         assert_eq!(format_three_decimals(9.9999), "10.000");
