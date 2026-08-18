@@ -123,16 +123,24 @@ pub struct Record {
 }
 
 impl Record {
-    fn alleles(&self) -> Vec<AlternateAllele> {
+    pub fn alleles(&self) -> Vec<AlternateAllele> {
         self.alternates.iter().map(|a| a.allele).collect()
     }
 
-    fn alternate_count(&self) -> usize {
+    pub fn alternate_count(&self) -> usize {
         self.alternates.len()
     }
 
+    /// `sumADsOverSamples(vc, true, false)`, which the clustering model is handed and writes back
+    /// through.
+    pub fn tumour_allele_depths(
+        &self,
+    ) -> Result<Vec<i32>, crate::allele_filter::AlleleDepthTooShort> {
+        sum_ads_over_samples(self.alternates.len() + 1, &self.genotypes, true, false)
+    }
+
     /// `MathUtils.applyToArrayInPlace(TLOD, MathUtils::log10ToLog)`.
-    fn tumor_log_odds(&self) -> Option<Vec<f64>> {
+    pub fn tumor_log_odds(&self) -> Option<Vec<f64>> {
         self.tumor_log_10_odds.as_ref().map(|odds| {
             odds.iter()
                 .map(|value| crate::allele_likelihoods::log10_to_log(*value))
@@ -140,7 +148,7 @@ impl Record {
         })
     }
 
-    fn phased_genotypes(&self) -> Vec<PhasedGenotype> {
+    pub fn phased_genotypes(&self) -> Vec<PhasedGenotype> {
         self.genotypes
             .iter()
             .enumerate()
