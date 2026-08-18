@@ -3625,7 +3625,7 @@
     },
     {
       "id": "contamination-filter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The contamination filter, which can answer NaN for an allele its annotation does not cover",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3650,8 +3650,8 @@
       "cases": [
         {
           "dump": "ContaminationFilterDump",
-          "golden": null,
-          "why": "22 rows, no files: the argument default, the filter's identity, and twenty probabilities over a triallelic record moved through six contamination estimates including both ends of the clamp, four population frequencies including infinity, a POPAF shorter and longer than the record and none at all, a normal-only record, two tumour samples for the weighted median, and five depth shapes. No contamination tables are read, so every sample takes the default estimate. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/contamination_filter.txt.gz",
+          "why": "22 rows, no files: the argument default, the filter's identity, and twenty probabilities over a triallelic record moved through six contamination estimates including both ends of the clamp, four population frequencies including infinity, a POPAF shorter and longer than the record and none at all, a normal-only record, two tumour samples for the weighted median, and five depth shapes. No contamination tables are read, so every sample takes the default estimate. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32135456593, and byte for byte what this laptop produced."
         }
       ]
     }
