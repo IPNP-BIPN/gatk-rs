@@ -229,12 +229,8 @@ jobs:
             suites: "somatic-clustering-model somatic-clustering-learn mutect-filter-list filter-mutect-calls allele-filter-base"
           - group: oracle-backed
             index: "30/30"
-            slug: "normal-artifact-filter"
-            suites: "normal-artifact-filter"
-          - group: golden-pending
-            index: "1/1"
-            slug: "remaining-hard-filters"
-            suites: "remaining-hard-filters"
+            slug: "normal-artifact-filter-remaining-hard-filters"
+            suites: "normal-artifact-filter remaining-hard-filters"
     steps:
       - uses: actions/checkout@v4
 
