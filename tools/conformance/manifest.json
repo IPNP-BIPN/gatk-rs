@@ -3588,6 +3588,40 @@
           "why": "27 rows, no files: the three argument defaults, the four filters' identities, and twenty probabilities over a triallelic record whose unique-alt-read counts, N count, allele fractions and panel-of-normals annotation are each moved in turn, at the default threshold and at one that can actually fire. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32130226236, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "slippage-filter",
+      "status": "golden-pending",
+      "title": "The slippage filter, whose beta is about one allele and whose likelihood is about all of them",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "PolymeraseSlippageFilter, the seventh of the ten filters the filter-mutect-calls golden needs, and the first to reach Beta.regularizedBeta for its own likelihood rather than through a binomial CDF. THE BETA IS ASKED ABOUT ADs[1], NOT ABOUT THE ALTERNATE COUNT: regularizedBeta(slippageRate, ADs[1] + 1, ADs[0] + 1) reads the depth of the FIRST alternate allele, while the somatic likelihood beside it uses depth and depth - ADs[0], which sums EVERY alternate, so on a triallelic record the two halves of one log-odds are about different alleles. THE PRIOR IS getLogPriorOfSomaticVariant(vc, 0), WITH THE INDEX HARD-CODED, so whichever allele slipped, the prior comes from alternate zero's indel length. getLogPriorOfSomaticVariant inserts into the clustering model before it reads, so the dump calls the filter twice on one record through one engine. RPA IS PARSED WITH Integer.parseInt(String.valueOf(o)), so a non-integer entry is a NumberFormatException out of a filter rather than a skip, and rpa.length < 2 is the only length guard. THE GATE IS ru.length() * rpa[0] >= minSlippageLength && Math.abs(rpa[0] - rpa[1]) == 1: an empty RU makes the base count zero, and exactly one slip is required in either direction, so a two-repeat contraction is not filtered at all. AND THE MaxCountExceededException FALLBACK CANNOT BE REACHED, regularizedBeta(x, a, b) passing Integer.MAX_VALUE iterations. WHAT THE RUN ADDED: two identical calls through one engine ARE two identical answers, so the model's insert does not reach this filter's output; a decimal RPA is a NumberFormatException on the string \"10.0\" rather than a truncation; and a slippage rate of zero answers 0.0 rather than refusing, the beta being zero and its logarithm negative infinity.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 25,
+      "expect_contains": [
+        "default\tminSlippageLength\t8",
+        "default\tslippageRate\t0.1",
+        "name\tslippage\tslippage,ARTIFACT,STRQ,RPA,RU",
+        "prob\tcalled-twice-first\t[0.9999989185369387]",
+        "prob\tcalled-twice-second\t[0.9999989185369387]",
+        "prob\tcontracted-by-two\t[0.0]",
+        "prob\tbelow-the-minimum\t[0.0]",
+        "prob\tempty-repeat-unit\t[0.0]",
+        "prob\tone-entry-in-rpa\t[0.0]",
+        "error\tdecimal-rpa\tjava.lang.NumberFormatException:For input string: \"10.0\"",
+        "prob\tno-rpa\t[0.0]",
+        "prob\tslippage-rate-zero\t[0.0]",
+        "prob\ttriallelic\t[0.9999992252824945, 0.9999992252824945]"
+      ],
+      "cases": [
+        {
+          "dump": "PolymeraseSlippageFilterDump",
+          "golden": null,
+          "why": "25 rows, no files: the two argument defaults, the filter's identity, and twenty-two probabilities over a ten-base reference repeat contracted by one, moved through both slip directions, both sides of the minimum length, an empty repeat unit, a one-entry and two unparseable RPAs, both missing required annotations, four depth shapes, a triallelic record and three slippage rates, plus the same record twice through one engine. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
