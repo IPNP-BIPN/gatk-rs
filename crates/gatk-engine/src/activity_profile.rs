@@ -93,6 +93,13 @@ pub struct ActivityProfile {
 /// Written as the reference writes it, including the order of operations: `exp(...)` divided by
 /// `sd * ROOT_TWO_PI` rather than multiplied by a precomputed reciprocal. The division is a
 /// separate rounding, so folding it in would change the last bits.
+///
+/// The `exp` is the **host** libm's, deliberately, and the choice is measured rather than assumed.
+/// The reference is `Math.exp` (`MathUtils.normalDistribution`), not `StrictMath.exp`, so
+/// `jmath::strict_math::exp` -- which is exact against `StrictMath` -- is faithful to a different
+/// function here. Built with it, ten of the 266 kernel values the `activityprofile` suite pins move
+/// by an ulp; built with the host `exp`, all 266 match the oracle bit for bit. Do not swap it
+/// without redoing that measurement: `docs/numeric-functions-a-ported-call-site-reaches.md`.
 pub fn normal_distribution(mean: f64, sd: f64, x: f64) -> f64 {
     assert!(sd >= 0.0, "sd: Standard deviation of normal must be >= 0");
     (-(x - mean) * (x - mean) / (2.0 * sd * sd)).exp() / (sd * root_two_pi())
