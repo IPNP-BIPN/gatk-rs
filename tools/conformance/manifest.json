@@ -3591,7 +3591,7 @@
     },
     {
       "id": "slippage-filter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The slippage filter, whose beta is about one allele and whose likelihood is about all of them",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3618,8 +3618,8 @@
       "cases": [
         {
           "dump": "PolymeraseSlippageFilterDump",
-          "golden": null,
-          "why": "25 rows, no files: the two argument defaults, the filter's identity, and twenty-two probabilities over a ten-base reference repeat contracted by one, moved through both slip directions, both sides of the minimum length, an empty repeat unit, a one-entry and two unparseable RPAs, both missing required annotations, four depth shapes, a triallelic record and three slippage rates, plus the same record twice through one engine. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/slippage_filter.txt.gz",
+          "why": "25 rows, no files: the two argument defaults, the filter's identity, and twenty-two probabilities over a ten-base reference repeat contracted by one, moved through both slip directions, both sides of the minimum length, an empty repeat unit, a one-entry and two unparseable RPAs, both missing required annotations, four depth shapes, a triallelic record and three slippage rates, plus the same record twice through one engine. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32131954707, and byte for byte what this laptop produced."
         }
       ]
     }
