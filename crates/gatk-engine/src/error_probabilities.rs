@@ -27,11 +27,26 @@
 
 use crate::mutect_engine::round_finite_precision_errors;
 
-/// `ErrorType`.
+/// `ErrorType`, in the enum's own declaration order.
+///
+/// The three categories exist because filters of one category are **not** independent: two of them
+/// combine by a maximum, and only across categories does `1 - (1 - p1)(1 - p2)` apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ErrorType {
     Artifact,
     NonSomatic,
+    Sequencing,
+}
+
+impl ErrorType {
+    /// The enum constant's name.
+    pub fn name(self) -> &'static str {
+        match self {
+            ErrorType::Artifact => "ARTIFACT",
+            ErrorType::NonSomatic => "NON_SOMATIC",
+            ErrorType::Sequencing => "SEQUENCING",
+        }
+    }
 }
 
 /// What `transpose` refuses.
@@ -103,7 +118,11 @@ pub fn kept(answers: &[FilterAnswer]) -> Vec<FilterAnswer> {
 pub fn combined(answers: &[FilterAnswer]) -> Result<Vec<f64>, RaggedLists> {
     let applied = kept(answers);
     let mut per_type: Vec<Vec<f64>> = Vec::new();
-    for error_type in [ErrorType::Artifact, ErrorType::NonSomatic] {
+    for error_type in [
+        ErrorType::Artifact,
+        ErrorType::NonSomatic,
+        ErrorType::Sequencing,
+    ] {
         let probabilities = by_type(&applied, error_type)?;
         if !probabilities.is_empty() {
             per_type.push(probabilities);
