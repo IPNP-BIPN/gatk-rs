@@ -3692,7 +3692,7 @@
     },
     {
       "id": "strand-artifact-estep",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The strand-artifact E step, whose counts come out of a string",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3720,8 +3720,8 @@
       "cases": [
         {
           "dump": "StrandArtifactEStepDump",
-          "golden": null,
-          "why": "50 rows, no files: the three initial parameters, the filter's identity, the E steps and probabilities of eighteen records covering both strand-only hypotheses, a balanced site, the depth range, all four indel-size branches and the one past them, two alternates, a symbolic alternate and six shapes of the AS_SB_TABLE string, and six direct calls to the package-private strandArtifactProbability over the prior's range and an indel size the record cannot vary on its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/strand_artifact_estep.txt.gz",
+          "why": "50 rows, no files: the three initial parameters, the filter's identity, the E steps and probabilities of eighteen records covering both strand-only hypotheses, a balanced site, the depth range, all four indel-size branches and the one past them, two alternates, a symbolic alternate and six shapes of the AS_SB_TABLE string, and six direct calls to the package-private strandArtifactProbability over the prior's range and an indel size the record cannot vary on its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32141151506, and byte for byte what this laptop produced."
         }
       ]
     }
