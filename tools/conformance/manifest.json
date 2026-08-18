@@ -3657,7 +3657,7 @@
     },
     {
       "id": "haplotype-filter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The haplotype filter, which answers from the previous pass and compares filter names with ==",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3685,8 +3685,8 @@
       "cases": [
         {
           "dump": "FilteredHaplotypeFilterDump",
-          "golden": null,
-          "why": "32 rows, no files: the argument default, the filter's identity, the accumulating and learned maps read by reflection before and after learning, twelve probabilities over one learned haplotype set covering the distance boundary in both directions and every way the phasing string can be absent, the two-tumour cases that expose which genotype is read, and nine accumulations that vary only in which filters are in the ErrorProbabilities and whether their names are the interned constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/haplotype_filter.txt.gz",
+          "why": "32 rows, no files: the argument default, the filter's identity, the accumulating and learned maps read by reflection before and after learning, twelve probabilities over one learned haplotype set covering the distance boundary in both directions and every way the phasing string can be absent, the two-tumour cases that expose which genotype is read, and nine accumulations that vary only in which filters are in the ErrorProbabilities and whether their names are the interned constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32138327423, and byte for byte what this laptop produced."
         }
       ]
     }
