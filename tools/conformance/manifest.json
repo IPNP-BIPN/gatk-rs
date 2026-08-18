@@ -3724,6 +3724,41 @@
           "why": "50 rows, no files: the three initial parameters, the filter's identity, the E steps and probabilities of eighteen records covering both strand-only hypotheses, a balanced site, the depth range, all four indel-size branches and the one past them, two alternates, a symbolic alternate and six shapes of the AS_SB_TABLE string, and six direct calls to the package-private strandArtifactProbability over the prior's range and an indel size the record cannot vary on its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32141151506, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "strand-artifact-mstep",
+      "status": "golden-pending",
+      "title": "The strand-artifact M step, and the Brent optimiser under it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "StrandArtifactFilter.learnParameters and the OptimizationUtils.max under it, which is commons-math's BrentOptimizer -- the only optimiser any ported path reaches, and the last thing the filter-mutect-calls golden needs. GoalType.MAXIMIZE IS IMPLEMENTED BY NEGATING INSIDE THE SEARCH rather than by negating the objective: fx = -fx after every evaluation, and the returned pair reports isMinim ? fx : -fx, so the value is the objective's while every comparison in between is on its negation. THE OPTIMISER RETURNS THE BEST POINT EVER SEEN, not the last one, best being folded over the previous and current pairs at every iteration with the initial guess as the first candidate. THE TOLERANCES ARE CHECKED AT CONSTRUCTION, a relative tolerance below 2 * ulp(1) and an absolute tolerance of zero or less being refusals rather than clamps, and the evaluation budget is a refusal too. potentialArtifacts IS getArtifactProbability() > 0.1 WHILE totalNonArtifacts IS OVER ALL the accumulated E steps, so the two sums are over different sets. WHAT THE RUN ADDED: the optimiser never reaches a bound -- a strictly increasing objective over [0.01, 100] answers 98.88158923714171, not 100 -- and it does not find the maximum of a flat function, answering the guess. A second learning pass with nothing accumulated does not keep the first pass's shape: alphaStrand goes back to 1.0, because the guess handed to the optimiser is INITIAL_ALPHA_STRAND and not the current value, and the objective over an empty set is constant. A NaN objective stops the search at its second point, 1.02, and reports NaN. And the exception messages format their numbers, so a relative tolerance of 1e-17 is refused with \"0 is smaller than the minimum (0)\".",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 32,
+      "expect_contains": [
+        "opt\tquadratic-at-three\t0.01,100.0,1.0,0.01,0.01,100=3.0000000000000013,-1.7749370367472766E-30",
+        "opt\tmaximum-at-the-upper-bound\t0.01,100.0,1.0,0.01,0.01,100=98.88158923714171,98.88158923714171",
+        "opt\tflat\t0.01,100.0,1.0,0.01,0.01,100=1.0,1.0",
+        "opt\tnan-objective\t0.01,100.0,1.0,0.01,0.01,100=1.02,NaN",
+        "error\treversed-interval\torg.apache.commons.math3.exception.NumberIsTooLargeException:100 is larger than, or equal to, the maximum (0.01)",
+        "error\ttoo-few-evaluations\torg.apache.commons.math3.exception.TooManyEvaluationsException:illegal state: maximal count (3) exceeded: evaluations",
+        "error\trelative-tolerance-too-small\torg.apache.commons.math3.exception.NumberIsTooSmallException:0 is smaller than the minimum (0)",
+        "error\tabsolute-tolerance-zero\torg.apache.commons.math3.exception.NotStrictlyPositiveException:0 is smaller than, or equal to, the minimum (0)",
+        "error\tguess-outside-the-interval\torg.apache.commons.math3.exception.OutOfRangeException:200 out of [0.01, 100] range",
+        "learned\tno-data\t9.99000999000999E-4,1.0,20.0",
+        "learned\tone-weak-site\t9.98003992015968E-4,1.0,20.0",
+        "learned\tone-strong-artifact\t0.0019011713262077753,80.00591923282064,273.32067196260874",
+        "learned\tlearned-twice-second\t9.99000999000999E-4,1.0,20.0",
+        "accumulated\tlearned-twice-after\t0"
+      ],
+      "cases": [
+        {
+          "dump": "StrandArtifactMStepDump",
+          "golden": null,
+          "why": "32 rows, no files: fifteen calls to OptimizationUtils.max over analytic objectives, covering the filter's own tolerances and evaluation budget, a maximum on each bound, a flat function, two maxima in one interval, the guess on each bound, a tolerance ten million times tighter, and all five refusals; and eight learning passes over accumulated E steps, from none at all to two strong artifacts, plus one filter learned twice. The optimiser's cases are analytic so the golden pins the search trajectory rather than only the filter's use of it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
