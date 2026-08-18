@@ -3554,6 +3554,40 @@
           "why": "65 rows, no files: twenty-two regularizedBeta values over both arrangements of the symmetry branch, its three guards and the boundary walked with nextUp and nextDown; twelve binomial CDFs over the three arms, including the -1 and the x >= trials the filter reaches; six qualToErrorProb values; the clustering model's log prior of variant versus artifact and seven posteriors against it; the filter's identity; and sixteen error probabilities over a triallelic record whose tumour, normal, median base quality and log odds are each moved in turn. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32127388942, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "remaining-hard-filters",
+      "status": "golden-pending",
+      "title": "The four hard filters that cannot fire with the default arguments",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "DuplicatedAltReadFilter, NRatioFilter, MinAlleleFractionFilter and PanelOfNormalsFilter, the rest of the HardFilter/HardAlleleFilter family the filter-mutect-calls golden needs. None of them does arithmetic; all four answer 1.0 or 0.0 from one annotation and a threshold. ALL FOUR ARE BUILT UNCONDITIONALLY AND NONE OF THEM CAN FIRE WITH THE DEFAULT ARGUMENTS: DEFAULT_MIN_UNIQUE_ALT_READS = 0 against count <= uniqueAltReadCount, DEFAULT_MAX_N_RATIO = Double.POSITIVE_INFINITY against ratio >= maxNRatio, DEFAULT_MIN_AF = 0 against max < minAf, and PanelOfNormalsFilter needs an annotation that only exists when Mutect2 was given a panel. A default run therefore builds four filters that are structurally incapable of filtering anything, which is not the same thing as four filters that found nothing. NRatioFilter'S COMMENT CLAIMS A GUARD THE CODE DOES NOT HAVE: \"if there is no NCount annotation or the altCount is 0, don't apply the filter\", but only the altCount == 0 arm is written, a missing NCount being getAttributeAsInt(key, 0), a zero rather than a skip. MinAlleleFractionFilter REQUIRES NO ANNOTATION AT ALL, so it is evaluated on every record, and an allele with no data is orElse(1.0): it answers \"not an artifact\" from an absence. Its .filter(entry -> !vc.getReference().equals(entry.getKey())) is dead code, because getAltDataByAllele keys its map on the alternate alleles alone. PanelOfNormalsFilter READS PRESENCE, NOT VALUE: hasAttribute is true for PON=false. AND DuplicatedAltReadFilter'S LIST LENGTH COMES FROM THE ANNOTATION, NOT THE RECORD. WHAT THE RUN ADDED: a four-element AS_UNIQ_ALT_READ_COUNT on a two-alternate record answers FOUR probabilities, [1.0, 1.0, 1.0, 1.0], and a one-element list answers one; nothing checks the length against the record. The same dump shows the two base classes disagreeing side by side on a missing required annotation: duplicate-no-annotation is the empty list, which ErrorProbabilities drops, and nratio-no-annotation is [0.0, 0.0], which it counts.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 27,
+      "expect_contains": [
+        "default\tuniqueAltReadCount\t0",
+        "default\tnRatio\tInfinity",
+        "default\tminAf\t0.0",
+        "name\tPanelOfNormalsFilter\tpanel_of_normals,ARTIFACT,none",
+        "filter\tduplicate-default\t[0.0, 0.0]",
+        "filter\tduplicate-long-list\t[1.0, 1.0, 1.0, 1.0]",
+        "filter\tduplicate-short-list\t[1.0]",
+        "filter\tduplicate-no-annotation\t[]",
+        "filter\tnratio-no-annotation\t[0.0, 0.0]",
+        "filter\tnratio-at-the-threshold\t[1.0, 1.0]",
+        "filter\tminaf-no-allele-fraction\t[0.0, 0.0]",
+        "filter\tminaf-full-length-list\t[0.0, 1.0]",
+        "filter\tpon-false\t[1.0, 1.0]"
+      ],
+      "cases": [
+        {
+          "dump": "RemainingHardFiltersDump",
+          "golden": null,
+          "why": "27 rows, no files: the three argument defaults, the four filters' identities, and twenty probabilities over a triallelic record whose unique-alt-read counts, N count, allele fractions and panel-of-normals annotation are each moved in turn, at the default threshold and at one that can actually fire. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
