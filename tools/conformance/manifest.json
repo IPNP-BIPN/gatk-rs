@@ -3522,7 +3522,7 @@
     },
     {
       "id": "normal-artifact-filter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The normal-artifact filter, whose binomial p-value needs the regularized beta",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3550,8 +3550,8 @@
       "cases": [
         {
           "dump": "NormalArtifactFilterDump",
-          "golden": null,
-          "why": "65 rows, no files: twenty-two regularizedBeta values over both arrangements of the symmetry branch, its three guards and the boundary walked with nextUp and nextDown; twelve binomial CDFs over the three arms, including the -1 and the x >= trials the filter reaches; six qualToErrorProb values; the clustering model's log prior of variant versus artifact and seven posteriors against it; the filter's identity; and sixteen error probabilities over a triallelic record whose tumour, normal, median base quality and log odds are each moved in turn. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/normal_artifact_filter.txt.gz",
+          "why": "65 rows, no files: twenty-two regularizedBeta values over both arrangements of the symmetry branch, its three guards and the boundary walked with nextUp and nextDown; twelve binomial CDFs over the three arms, including the -1 and the x >= trials the filter reaches; six qualToErrorProb values; the clustering model's log prior of variant versus artifact and seven posteriors against it; the filter's identity; and sixteen error probabilities over a triallelic record whose tumour, normal, median base quality and log odds are each moved in turn. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32127388942, and byte for byte what this laptop produced."
         }
       ]
     }
