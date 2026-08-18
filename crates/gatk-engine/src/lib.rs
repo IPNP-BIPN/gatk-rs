@@ -75,6 +75,7 @@ pub mod recalibration_tables;
 pub mod reference;
 pub mod sa_tag;
 pub mod sam_pileup;
+pub mod slippage_filter;
 pub mod somatic_clustering_model;
 pub mod somatic_likelihoods;
 pub mod subset_alleles;
