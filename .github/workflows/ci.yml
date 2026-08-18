@@ -233,12 +233,8 @@ jobs:
             suites: "normal-artifact-filter remaining-hard-filters slippage-filter contamination-filter haplotype-filter"
           - group: oracle-backed
             index: "31/31"
-            slug: "strand-artifact-estep"
-            suites: "strand-artifact-estep"
-          - group: golden-pending
-            index: "1/1"
-            slug: "strand-artifact-mstep"
-            suites: "strand-artifact-mstep"
+            slug: "strand-artifact-estep-strand-artifact-mstep"
+            suites: "strand-artifact-estep strand-artifact-mstep"
     steps:
       - uses: actions/checkout@v4
 
