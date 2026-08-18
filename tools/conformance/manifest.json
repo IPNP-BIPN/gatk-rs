@@ -3826,6 +3826,37 @@
           "why": "20 rows, no files: eighteen applications over biallelic and triallelic records, with the symbolic allele last and first, covering every allele filtered by one filter and by different ones, one allele carrying two, a site filter beside allele filters, the reporting floor from both sides, the phred-scaled annotation with and without its required annotations and with and without the filter firing, an empty list from a filter, and the threshold at each end of its clamp. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32154265444, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "accumulate-data",
+      "status": "golden-pending",
+      "title": "What a non-final pass records, and the record it skips",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Mutect2FilteringEngine.accumulateData and the pass schedule FilterMutectCalls drives it with: the last computation between the ported filters and an end-to-end run. THE TOOL TRAVERSES THE VCF FOUR TIMES, NOT TWO. numberOfPasses() is NUMBER_OF_LEARNING_PASSES + 2. Passes 0, 1 and 2 all accumulate; only 0 and 1 learn parameters afterwards. Pass 2 accumulates a whole traversal and uses it ONLY to relearn the threshold, the filters' parameters being deliberately frozen so the final threshold corresponds exactly to the filters; pass 3 applies and writes. A RECORD WHOSE ONLY ALTERNATE IS <NON_REF> IS SKIPPED ENTIRELY by noneMatch(a -> a.isNonReference() && !a.isNonRefAllele()), as is a record with no alternate at all. THE FILTERS ACCUMULATE BEFORE THE CLUSTERING MODEL RECORDS, and record mutates the tumour depth array it is handed while getTumorLogOdds mutates the TLOD array in place. WHAT THE RUN ADDED: a record with no TLOD is a NullPointerException inside record, not a skip, so a VCF missing that annotation crashes a non-final pass. A symbolic alternate that is not <NON_REF> is NOT skipped by the guard and still accumulates nothing, the symbolic removal inside ErrorProbabilities having emptied every list: two records that look identical from outside reach that state by different routes. And a triallelic record whose two alternates are both obvious artifacts accumulates NO clustering data while contributing two probabilities to the threshold and two to the obvious-artifact count, so the three accumulators do not move together.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 12,
+      "expect_contains": [
+        "passes\tnumberOfPasses\t4",
+        "passes\tlearningPasses\t2",
+        "accumulated\treal-alternate\t1,1,0",
+        "accumulated\ttwo-alternates\t0,2,2",
+        "accumulated\tonly-non-ref\t0,0,0",
+        "accumulated\talternate-and-non-ref\t1,1,0",
+        "accumulated\tsymbolic-not-non-ref\t0,0,0",
+        "accumulated\treference-only\t0,0,0",
+        "error\tno-tlod\tjava.lang.NullPointerException:Cannot read the array length because \"tumorLogOdds\" is null",
+        "accumulated\tthree-records\t3,3,0"
+      ],
+      "cases": [
+        {
+          "dump": "AccumulateDataDump",
+          "golden": null,
+          "why": "12 rows, no files: the pass schedule read off the tool's protected numberOfPasses, and eight accumulations over records covering a real alternate, two alternates, <NON_REF> alone and beside a real one, a symbolic alternate that is not <NON_REF>, a reference-only record, a record with no TLOD, and three records through one engine. Each prints the clustering model's data count, the threshold calculator's probability count and the obvious-artifact count, all three read by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
