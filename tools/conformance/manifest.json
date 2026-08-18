@@ -3519,6 +3519,41 @@
           "why": "41 rows: no files at all. One triallelic record over two tumour samples and a normal, gathered by allele and by alternate allele, then again with a short per-allele list, an overlong one and no tumour sample at all; seven weighted medians including an even split, an empty list and a list out of order, each printed with the caller's list after the call; five sumADsOverSamples over the flag combinations and a short AD array; and the tumour-evidence filter's identity and its probabilities over five TLOD shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32122372860, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "normal-artifact-filter",
+      "status": "golden-pending",
+      "title": "The normal-artifact filter, whose binomial p-value needs the regularized beta",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "NormalArtifactFilter, the second of the ten filters the filter-mutect-calls golden needs, and the first that reaches Beta.regularizedBeta -- a modified Lentz continued fraction nothing here has ported -- through BinomialDistribution.cumulativeProbability. THE FILTER READS ONE INDEX TWO DIFFERENT WAYS: indexOfMaxTumorLod is the ALTERNATE allele's index, so the depths are read at indexOfMaxTumorLod + 1, the AD array counting the reference, and the normal-artifact log odds at indexOfMaxTumorLod, NALOD not counting it. THE RATIO GATE COMPARES ALLELE FRACTIONS AND ONLY THE NORMAL SIDE IS GUARDED: normalDepth == 0 ? 0 : ... covers the normal, the tumour side is a bare division, so an empty tumour makes the gate x < NaN, which is false, and the record falls through to the arithmetic instead of returning zero. A MISSING MBQ IS NOT THE IMPUTED 30, IT IS AN IndexOutOfBoundsException: getAttributeAsIntList(key, 30) answers an EMPTY LIST for an absent key -- the default applies to a null or \".\" ELEMENT of a present list -- and the filter calls .get(0) on it, so the constant named IMPUTED_NORMAL_BASE_QUALITY is unreachable from a record that lacks the annotation. cumulativeProbability(normalAltDepth - 1) IS EVALUATED AT -1 when the normal has no alt read, which commons-math answers 0.0 rather than refusing, so the p-value is exactly 1 and the filter falls through to the posterior; at the other end x >= trials answers 1.0, the p-value is 0, below any threshold, and the filter returns a hard 1.0. Mutect2VariantFilter.errorProbabilities ANSWERS 0.0 PER ALLELE FOR A MISSING REQUIRED ANNOTATION where the per-allele base class answers an EMPTY LIST, and only the empty list is dropped by ErrorProbabilities rather than counted. regularizedBeta's SECOND CONJUNCT IS IMPLIED BY ITS FIRST IN THE REALS -- 1 - x <= (b + 1) / (2 + b + a) rearranges to x >= (a + 1) / (2 + b + a), which the strict first conjunct already asserts -- so the two can only disagree by a rounding, and the grid walks the boundary itself. AND THE CONTINUED FRACTION'S EPSILON IS Beta's 1E-14, NOT ContinuedFraction's OWN 10E-9, with |v| <= 1e-50 as its zero test rather than v == 0.0.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 65,
+      "expect_contains": [
+        "regbeta\tx-nan\tNaN,2.0,5.0=NaN",
+        "regbeta\tx-zero\t0.0,2.0,5.0=0.0",
+        "regbeta\tx-one\t1.0,2.0,5.0=1.0",
+        "regbeta\tboundary-exact\t0.3333333333333333,2.0,5.0=0.6488340192043897",
+        "regbeta\tboundary-above\t0.33333333333333337,2.0,5.0=0.6488340192043895",
+        "cdf\tno-alt-read\t100,0.001,-1=0.0",
+        "cdf\tno-trials\t0,0.001,0=1.0",
+        "cdf\tp-zero\t20,0.0,9=1.0",
+        "qualerr\tq30\t30=0.001",
+        "name\tnormal-artifact\tnormal_artifact,ARTIFACT,none,NALOD,TLOD",
+        "error\tprob-no-mbq\tjava.lang.IndexOutOfBoundsException:Index 0 out of bounds for length 0",
+        "prob\tnormal-is-clean\t[0.0, 0.0]",
+        "prob\tno-nalod\t[0.0, 0.0]",
+        "prob\tbiallelic\t[1.0]"
+      ],
+      "cases": [
+        {
+          "dump": "NormalArtifactFilterDump",
+          "golden": null,
+          "why": "65 rows, no files: twenty-two regularizedBeta values over both arrangements of the symmetry branch, its three guards and the boundary walked with nextUp and nextDown; twelve binomial CDFs over the three arms, including the -1 and the x >= trials the filter reaches; six qualToErrorProb values; the clustering model's log prior of variant versus artifact and seven posteriors against it; the filter's identity; and sixteen error probabilities over a triallelic record whose tumour, normal, median base quality and log odds are each moved in turn. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
