@@ -189,72 +189,68 @@ jobs:
             suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
           - group: oracle-backed
             index: "17/32"
-            slug: "decimal-format-allele-pseudo-depth-counting-walkers-sa-tag-builder-overhang-fixing-manager"
-            suites: "decimal-format allele-pseudo-depth counting-walkers sa-tag-builder overhang-fixing-manager"
+            slug: "decimal-format-string-format-allele-pseudo-depth-counting-walkers-sa-tag-builder"
+            suites: "decimal-format string-format allele-pseudo-depth counting-walkers sa-tag-builder"
           - group: oracle-backed
             index: "18/32"
-            slug: "split-n-cigar-reads-methylation-type-caller-get-sample-name-compare-base-qualities-sam-pileup-codec"
-            suites: "split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities sam-pileup-codec"
+            slug: "overhang-fixing-manager-split-n-cigar-reads-methylation-type-caller-get-sample-name-compare-base-qualities"
+            suites: "overhang-fixing-manager split-n-cigar-reads methylation-type-caller get-sample-name compare-base-qualities"
           - group: oracle-backed
             index: "19/32"
-            slug: "check-pileup-dump-tabix-index-tsv-table-pileup-summary-contamination-tables"
-            suites: "check-pileup dump-tabix-index tsv-table pileup-summary contamination-tables"
+            slug: "sam-pileup-codec-check-pileup-dump-tabix-index-tsv-table-pileup-summary"
+            suites: "sam-pileup-codec check-pileup dump-tabix-index tsv-table pileup-summary"
           - group: oracle-backed
             index: "20/32"
-            slug: "persistence-optimizer-analyze-covariates-remove-nearby-indels-update-vcf-sequence-dictionary-left-align-and-trim"
-            suites: "persistence-optimizer analyze-covariates remove-nearby-indels update-vcf-sequence-dictionary left-align-and-trim"
+            slug: "contamination-tables-persistence-optimizer-analyze-covariates-remove-nearby-indels-update-vcf-sequence-dictionary"
+            suites: "contamination-tables persistence-optimizer analyze-covariates remove-nearby-indels update-vcf-sequence-dictionary"
           - group: oracle-backed
             index: "21/32"
-            slug: "trim-alleles-split-biallelics-left-align-and-trim-variants-genotype-index-subset-alleles"
-            suites: "trim-alleles split-biallelics left-align-and-trim-variants genotype-index subset-alleles"
+            slug: "left-align-and-trim-trim-alleles-split-biallelics-left-align-and-trim-variants-genotype-index"
+            suites: "left-align-and-trim trim-alleles split-biallelics left-align-and-trim-variants genotype-index"
           - group: oracle-backed
             index: "22/32"
-            slug: "split-with-likelihoods-variant-filtration-gather-vcfs-select-variants-samples-java-regex"
-            suites: "split-with-likelihoods variant-filtration gather-vcfs select-variants-samples java-regex"
+            slug: "subset-alleles-split-with-likelihoods-variant-filtration-gather-vcfs-select-variants-samples"
+            suites: "subset-alleles split-with-likelihoods variant-filtration gather-vcfs select-variants-samples"
           - group: oracle-backed
             index: "23/32"
-            slug: "select-variants-subset-select-variants-filters-select-variants-output-select-variants-concordance-variants-to-table"
-            suites: "select-variants-subset select-variants-filters select-variants-output select-variants-concordance variants-to-table"
+            slug: "java-regex-select-variants-subset-select-variants-filters-select-variants-output-select-variants-concordance"
+            suites: "java-regex select-variants-subset select-variants-filters select-variants-output select-variants-concordance"
           - group: oracle-backed
             index: "24/32"
-            slug: "validate-variants-count-variants-count-false-positives-calculate-mixing-fractions-annotate-vcf-with-bam-depth"
-            suites: "validate-variants count-variants count-false-positives calculate-mixing-fractions annotate-vcf-with-bam-depth"
+            slug: "variants-to-table-validate-variants-count-variants-count-false-positives-calculate-mixing-fractions"
+            suites: "variants-to-table validate-variants count-variants count-false-positives calculate-mixing-fractions"
           - group: oracle-backed
             index: "25/32"
-            slug: "annotate-vcf-with-expected-allele-fraction-concordance-walker-evaluate-info-field-concordance-concordance-summary-concordance-filter-analysis"
-            suites: "annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance concordance-summary concordance-filter-analysis"
+            slug: "annotate-vcf-with-bam-depth-annotate-vcf-with-expected-allele-fraction-concordance-walker-evaluate-info-field-concordance-concordance-summary"
+            suites: "annotate-vcf-with-bam-depth annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance concordance-summary"
           - group: oracle-backed
             index: "26/32"
-            slug: "concordance-annotated-vcfs-apply-vqsr-tranches-apply-vqsr-site-filtering-apply-vqsr-allele-specific-apply-vqsr-two-modes"
-            suites: "concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering apply-vqsr-allele-specific apply-vqsr-two-modes"
+            slug: "concordance-filter-analysis-concordance-annotated-vcfs-apply-vqsr-tranches-apply-vqsr-site-filtering-apply-vqsr-allele-specific"
+            suites: "concordance-filter-analysis concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering apply-vqsr-allele-specific"
           - group: oracle-backed
             index: "27/32"
-            slug: "filter-variant-tranches-threshold-calculator-filter-stats-mutect-hard-filters-mutect-engine-arithmetic"
-            suites: "filter-variant-tranches threshold-calculator filter-stats mutect-hard-filters mutect-engine-arithmetic"
+            slug: "apply-vqsr-two-modes-filter-variant-tranches-threshold-calculator-filter-stats-mutect-hard-filters"
+            suites: "apply-vqsr-two-modes filter-variant-tranches threshold-calculator filter-stats mutect-hard-filters"
           - group: oracle-backed
             index: "28/32"
-            slug: "germline-probability-mutect-engine-construction-mutect-error-probabilities-beta-binomial-allele-fraction-cluster"
-            suites: "germline-probability mutect-engine-construction mutect-error-probabilities beta-binomial allele-fraction-cluster"
+            slug: "mutect-engine-arithmetic-germline-probability-mutect-engine-construction-mutect-error-probabilities-beta-binomial"
+            suites: "mutect-engine-arithmetic germline-probability mutect-engine-construction mutect-error-probabilities beta-binomial"
           - group: oracle-backed
             index: "29/32"
-            slug: "somatic-clustering-model-somatic-clustering-learn-mutect-filter-list-filter-mutect-calls-allele-filter-base"
-            suites: "somatic-clustering-model somatic-clustering-learn mutect-filter-list filter-mutect-calls allele-filter-base"
+            slug: "allele-fraction-cluster-somatic-clustering-model-somatic-clustering-learn-mutect-filter-list-filter-mutect-calls"
+            suites: "allele-fraction-cluster somatic-clustering-model somatic-clustering-learn mutect-filter-list filter-mutect-calls"
           - group: oracle-backed
             index: "30/32"
-            slug: "normal-artifact-filter-remaining-hard-filters-slippage-filter-contamination-filter-haplotype-filter"
-            suites: "normal-artifact-filter remaining-hard-filters slippage-filter contamination-filter haplotype-filter"
+            slug: "allele-filter-base-normal-artifact-filter-remaining-hard-filters-slippage-filter-contamination-filter"
+            suites: "allele-filter-base normal-artifact-filter remaining-hard-filters slippage-filter contamination-filter"
           - group: oracle-backed
             index: "31/32"
-            slug: "strand-artifact-estep-strand-artifact-mstep-filter-list-by-mode-apply-filters-accumulate-data"
-            suites: "strand-artifact-estep strand-artifact-mstep filter-list-by-mode apply-filters accumulate-data"
+            slug: "haplotype-filter-strand-artifact-estep-strand-artifact-mstep-filter-list-by-mode-apply-filters"
+            suites: "haplotype-filter strand-artifact-estep strand-artifact-mstep filter-list-by-mode apply-filters"
           - group: oracle-backed
             index: "32/32"
-            slug: "engine-assembly-germline-wrapper"
-            suites: "engine-assembly germline-wrapper"
-          - group: golden-pending
-            index: "1/1"
-            slug: "string-format"
-            suites: "string-format"
+            slug: "accumulate-data-engine-assembly-germline-wrapper"
+            suites: "accumulate-data engine-assembly germline-wrapper"
     steps:
       - uses: actions/checkout@v4
 
