@@ -3860,7 +3860,7 @@
     },
     {
       "id": "engine-assembly",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The eighteen filters over one record, and what the engine makes of their answers",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3887,8 +3887,8 @@
       "cases": [
         {
           "dump": "EngineAssemblyDump",
-          "golden": null,
-          "why": "155 rows, no files: eight records through a real engine, each printing every filter that answered in construction order, the two error-type maxima the engine exposes, the combined probability and the applied result. The records are a fully annotated biallelic site in default and mitochondrial mode, two alternates, a symbolic alternate beside a real one, a bare record with no annotations at all, a site in the panel of normals, a site with weak evidence and a site with a poor alternate base quality. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/engine_assembly.txt.gz",
+          "why": "155 rows, no files: eight records through a real engine, each printing every filter that answered in construction order, the two error-type maxima the engine exposes, the combined probability and the applied result. The records are a fully annotated biallelic site in default and mitochondrial mode, two alternates, a symbolic alternate beside a real one, a bare record with no annotations at all, a site in the panel of normals, a site with weak evidence and a site with a poor alternate base quality. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32161185422, and byte for byte what this laptop produced."
         }
       ]
     }
