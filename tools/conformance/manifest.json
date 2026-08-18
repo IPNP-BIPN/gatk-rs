@@ -1759,6 +1759,34 @@
       ]
     },
     {
+      "id": "double-to-string",
+      "status": "golden-pending",
+      "title": "Double.toString over a corpus wide enough to say which values the port disagrees on",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Double.toString, over 1059 values. gatk_engine::tsv_table::java_double_to_string defers to Rust's shortest-round-trip formatter, and the pre-JDK19 FloatingDecimal does not always emit the shortest digits; the module note has said so since it was written, and the string-format golden caught one value. This establishes WHICH values differ rather than assuming there are none. The corpus is deterministic on both sides: twenty-seven named values, the powers of two across the whole exponent range, and a thousand bit patterns from splitmix64 seeded at one with the non-finite ones skipped. Nothing here is random. WHAT THE RUN ADDED: fifteen of the 1059 differ, which is 1.4 per cent, and in every one of them JAVA EMITS MORE DIGITS THAN THE SHORTEST. Three shapes. The smallest subnormal is 4.9E-324 upstream and 5.0E-324 here. 1e23 is 9.999999999999999E22 upstream, sixteen digits where two round-trip. And eleven values needing sixteen digits get a seventeenth: 7.2911220195563975E-304 against 7.291122019556398E-304. Every one of the fifteen parses back to the same double, so this is a rendering difference and not a value difference -- which is exactly why nothing had caught it until a golden printed the renderings themselves.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 1059,
+      "expect_contains": [
+        "tostring\t0000000000000001\t4.9E-324",
+        "tostring\t7fefffffffffffff\t1.7976931348623157E308",
+        "tostring\t0010000000000000\t2.2250738585072014E-308",
+        "tostring\t44b52d02c7e14af6\t9.999999999999999E22",
+        "tostring\t0100000000000000\t7.2911220195563975E-304",
+        "tostring\t8000000000000000\t-0.0",
+        "tostring\t3ff0000000000000\t1.0"
+      ],
+      "cases": [
+        {
+          "dump": "DoubleToStringDump",
+          "golden": null,
+          "why": "1059 rows, no files: twenty-seven named values covering both ends of the range, the neighbours of one, the boundaries of the exponent form and the four ties the string-format suite uses; thirty-two powers of two stepping through the whole exponent range; and a thousand bit patterns from splitmix64 seeded at one. Each row carries the double's bits as sixteen hex digits, so the comparison is on the value and not on a parse. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    },
+    {
       "id": "allele-pseudo-depth",
       "status": "oracle-backed",
       "title": "DD and DF, the annotation G1.9 was opened for",
