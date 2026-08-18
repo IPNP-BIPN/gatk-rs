@@ -3454,6 +3454,38 @@
           "why": "137 rows: no files at all. Eighteen filters constructed directly, each printed as its name, its error type and whether it answers per allele; three engines -- the default, a mitochondrial one and one with three thresholds set -- each written out through a stats file it has put nothing into; every ##FILTER line MUTECT_FILTER_NAMES declares and the ##INFO lines AS_FilterStatus and STRQ produce; and the two filtering-status header lines, Mutect2's and the one the tool writes over it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 31891693162, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "filter-mutect-calls",
+      "status": "golden-pending",
+      "title": "FilterMutectCalls run end to end, where a mode builds a shorter filter list",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FilterMutectCalls"
+      ],
+      "why": "The tool the whole Mutect filtering stack exists for, run end to end: a VCF of unfiltered calls and its .stats table in, a filtered VCF and a filtering-stats file out. SIX FILTERS ARE BUILT ONLY WHEN THE RUN IS NOT MITOCHONDRIAL and this is the ONLY way that guard is visible: buildFiltersList is private and the stats file names only the filters that FIRED, so the same input filtered twice in the two modes is what shows ClusteredEventsFilter, MultiallelicFilter, FragmentLengthFilter, PolymeraseSlippageFilter, FilteredHaplotypeFilter and GermlineFilter appearing and disappearing. THE TOOL MAKES FOUR PASSES OVER THE INPUT, two learning, one for the threshold and one for calling, so the filters applied to the FIRST record come from a model that has already seen the LAST -- the same record filtered alone and filtered among seven others is the same record twice. THE THRESHOLD IS LEARNED IN A PASS OF ITS OWN, after the parameters stop moving, so the threshold in the stats file corresponds exactly to the filters that were applied. THE HEADER IS REWRITTEN: Mutect2's filtering_status line is dropped and replaced under the same key, every ##FILTER line is added whether or not its filter runs, and AS_FilterStatus and STRQ arrive as ##INFO. THE STATS FILE IS WRITTEN AFTER THE CALLING PASS with the counts a real run produces rather than the hand-built ones the filter-stats suite pins. WHAT THE RUN SHOWED: the mode guard is visible at chr1:800, germline;normal_artifact in the default run and normal_artifact alone in the mitochondrial one, with GERMQ present in the first output and absent from the second. THE INPUT HEADER MUST DECLARE THE KEYS THE FILTERS WRITE -- GERMQ, SEQQ, STRANDQ, CONTQ and ROQ -- because the tool adds ##FILTER lines and the two AS_FilterStatus and STRQ ##INFO lines and NOTHING ELSE: a header without them is an IllegalStateException at the first record written. And a missing stats table is a UserException naming the file.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 320,
+      "expect_contains": [
+        "vcfline\tdefault\tchr1\\t800\\t.\\tA\\tC\\t.\\tgermline;normal_artifact\\tAS_FilterStatus=SITE;DP=100;ECNT=1;GERMQ=1;MBQ=30,30;MFRL=300,300;MMQ=60,60;MPOS=25;NALOD=-3.0;NLOD=-5.0;POPAF=0.1;TLOD=30.0\\tGT:AD:AF:DP:SB\\t0/1:50,50:0.500:100:20,20,25,25\\t0/0:60,40:0.010:100:20,20,25,25",
+        "vcfline\tmitochondria\tchr1\\t800\\t.\\tA\\tC\\t.\\tnormal_artifact\\tAS_FilterStatus=SITE;DP=100;ECNT=1;MBQ=30,30;MFRL=300,300;MMQ=60,60;MPOS=25;NALOD=-3.0;NLOD=-5.0;POPAF=0.1;TLOD=30.0\\tGT:AD:AF:DP:SB\\t0/1:50,50:0.500:100:20,20,25,25\\t0/0:60,40:0.010:100:20,20,25,25",
+        "vcfline\tdefault\tchr1\\t500\\t.\\tA\\tC\\t.\\tbase_qual\\tAS_FilterStatus=base_qual;DP=100;ECNT=1;GERMQ=93;MBQ=30,5;MFRL=300,300;MMQ=60,60;MPOS=25;NALOD=2.0;NLOD=5.0;POPAF=6.0;TLOD=30.0\\tGT:AD:AF:DP:SB\\t0/1:80,20:0.200:100:20,20,10,10\\t0/0:99,1:0.010:100:20,20,10,10",
+        "vcfline\tsingle-record\tchr1\\t100\\t.\\tA\\tC\\t.\\tPASS\\tAS_FilterStatus=SITE;DP=100;ECNT=1;GERMQ=93;MBQ=30,30;MFRL=300,300;MMQ=60,60;MPOS=25;NALOD=2.0;NLOD=5.0;POPAF=6.0;TLOD=30.0\\tGT:AD:AF:DP:SB\\t0/1:80,20:0.200:100:20,20,10,10\\t0/0:99,1:0.010:100:20,20,10,10",
+        "filtering\tdefault\t#<METADATA>threshold=0.0",
+        "filtering\tconstant-threshold\t#<METADATA>threshold=0.5",
+        "filtering\tdefault\tweak_evidence\\t0.0\\t0.0\\t0.0\\t0.0",
+        "header\tdefault\t##filtering_status=These calls have been filtered by FilterMutectCalls to label false positives with a list of failed filters and true positives with PASS.",
+        "error\tmissing-stats\torg.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile:Mutect stats table filter-mutect-calls-dump/no-such.stats not found.  When Mutect2 outputs a file calls.vcf it also creates a calls.vcf.stats file.  Perhaps this file was not moved along with the vcf, or perhaps it was not delocalized from a virtual machine while running in the cloud."
+      ],
+      "cases": [
+        {
+          "dump": "FilterMutectCallsDump",
+          "golden": null,
+          "why": "320 rows: two input VCFs over one kilobase of reference, three stats tables and six runs. The main input carries eight records: three clean and clonal, one with weak evidence, one with a poor alternate base quality, one whose median read position is zero, one with nine events in its haplotype and one that looks germline. The runs are the default, mitochondrial mode over the same input, the one-record input, a stats table saying nothing was callable, a constant threshold strategy, and a stats table that is not there. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []

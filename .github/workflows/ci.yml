@@ -227,6 +227,10 @@ jobs:
             index: "29/29"
             slug: "somatic-clustering-model-somatic-clustering-learn-mutect-filter-list"
             suites: "somatic-clustering-model somatic-clustering-learn mutect-filter-list"
+          - group: golden-pending
+            index: "1/1"
+            slug: "filter-mutect-calls"
+            suites: "filter-mutect-calls"
     steps:
       - uses: actions/checkout@v4
 
