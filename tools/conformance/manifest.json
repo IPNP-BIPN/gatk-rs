@@ -3790,6 +3790,42 @@
           "why": "21 rows, no files: the filter list under each of the four combinations of the two mode flags, read off the engine's private list by reflection and printed in construction order; seven readings of the memoising mapping-quality getter, including the pair that shows it keeps its first answer; and five pairs of somatic priors, including the one where passing the default explicitly is indistinguishable from not passing it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32151987584, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "apply-filters",
+      "status": "golden-pending",
+      "title": "Applying the filters, where SITE is a placeholder and a filter can fire without being named",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Mutect2FilteringEngine.applyFiltersAndAccumulateOutputStats, the step that turns a record's per-filter probabilities into the FILTER column and the AS_FilterStatus annotation. The engine's filter list is replaced by reflection with filters whose name, type, arity and probabilities the dump chooses outright, so the input to the step is exact; FilteringOutputStats counts by filter OBJECT and its map is built at construction, so it is rebuilt over the replaced list. A FILTER CAN FIRE WITHOUT BEING NAMED IN THE FILTER COLUMN: only entries reaching min(maxErrorProb, MIN_REPORTABLE_ERROR_PROBABILITY = 0.1) are written, and the comment beside it says this will not change whether a variant is filtered -- it changes which names appear. SITE IS A PLACEHOLDER, NOT A FILTER, removed when an allele has any real filter and added back when it has none. A SITE-LEVEL FILTER IS DERIVED FROM THE ALLELE-LEVEL ONES ONLY WHEN EVERY ALLELE AGREES. FAIL IS THE SITE'S ANSWER WHEN EVERY ALLELE IS FILTERED FOR A DIFFERENT REASON, and only when no site filter has already been recorded. THE PHRED-SCALED ANNOTATION IS WRITTEN ONLY WHEN THE FILTER'S REQUIRED ANNOTATIONS ARE PRESENT, and it is written even when the filter did not fire. WHAT THE RUN ADDED, and it is a defect rather than a subtlety: THE SYMBOLIC-ALLELE REMOVAL IS APPLIED TWICE. ErrorProbabilities' constructor already calls removeDataForSymbolicAltAlleles on every filter's list, and applyFilters calls it again on the per-allele filter strings derived from those already-shortened lists. On a record whose symbolic allele comes FIRST, the second removal deletes the only surviving entry, the any-allele-passed check sees an empty list, and the site is FAILed although its one real allele passed every filter. AND A RECORD WITH NO PER-ALLELE FILTER AT ALL IS A NoSuchElementException: orderedASFilterStrings walks an iterator over an empty list, and every per-allele filter answers an empty list when its annotations are missing.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 20,
+      "expect_contains": [
+        "applied\teverything-passes\tPASS|SITE",
+        "applied\tone-allele-filtered\tPASS|base_qual|SITE",
+        "applied\tevery-allele-same-filter\tbase_qual|base_qual|base_qual",
+        "applied\tevery-allele-different-filters\tFAIL|base_qual|map_qual",
+        "applied\tone-allele-two-filters\tPASS|base_qual,map_qual|SITE",
+        "applied\tsite-and-allele-filters\tgermline|base_qual|map_qual",
+        "error\tonly-site-filters\tjava.util.NoSuchElementException:null",
+        "applied\tbelow-the-reporting-floor\tgermline|SITE",
+        "applied\tbelow-the-floor-alone\tcontamination|SITE",
+        "attribute\tannotation-written\tGERMQ=1",
+        "applied\tannotation-required-annotation-missing\tPASS|SITE",
+        "attribute\tannotation-without-the-filter\tGERMQ=10",
+        "applied\tsymbolic-last\tbase_qual|base_qual|SITE",
+        "applied\tsymbolic-first\tFAIL|SITE|SITE",
+        "error\tno-filters\tjava.util.NoSuchElementException:null"
+      ],
+      "cases": [
+        {
+          "dump": "ApplyFiltersDump",
+          "golden": null,
+          "why": "20 rows, no files: eighteen applications over biallelic and triallelic records, with the symbolic allele last and first, covering every allele filtered by one filter and by different ones, one allele carrying two, a site filter beside allele filters, the reporting floor from both sides, the phred-scaled annotation with and without its required annotations and with and without the filter firing, an empty list from a filter, and the threshold at each end of its clamp. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
