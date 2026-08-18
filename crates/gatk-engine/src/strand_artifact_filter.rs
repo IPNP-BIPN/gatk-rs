@@ -6,8 +6,8 @@
 //! against each other for every alternate: a forward-strand artifact, a reverse-strand artifact, and
 //! neither. The filter reports the first two added together.
 //!
-//! The M step, which re-estimates the prior and the beta shape between passes by brute-force
-//! optimisation, needs a Brent optimiser and is not here.
+//! The M step re-estimates the prior and the beta shape between passes, the shape by brute-force
+//! single-parameter optimisation: see [`learn_parameters`].
 //!
 //! # The strand counts come out of a string
 //!
@@ -54,6 +54,7 @@
 //! show -- so [`calculate_artifact_probabilities`] takes the sizes already paired with the table and
 //! refuses to guess at the shifted case.
 
+use crate::allele_fraction_cluster::double_stream_sum;
 use crate::beta_binomial::{BetaBinomialDistribution, BetaBinomialError};
 use crate::math_utils::{log10_sum_log10, pow10};
 use crate::somatic_clustering_model::AlternateAllele;
@@ -239,6 +240,147 @@ pub fn calculate_artifact_probabilities(
         }
     }
     Ok(steps)
+}
+
+/// `ARTIFACT_PSEUDOCOUNT`.
+pub const ARTIFACT_PSEUDOCOUNT: f64 = 1.0;
+
+/// `NON_ARTIFACT_PSEUDOCOUNT`, a thousand times the artifact one.
+pub const NON_ARTIFACT_PSEUDOCOUNT: f64 = 1000.0;
+
+/// The threshold above which an accumulated `EStep` counts as a potential artifact.
+pub const POTENTIAL_ARTIFACT_THRESHOLD: f64 = 0.1;
+
+/// What one pass learned: the prior and the beta shape the next pass reads.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LearnedParameters {
+    pub strand_artifact_prior: f64,
+    pub alpha_strand: f64,
+    pub beta_strand: f64,
+}
+
+impl Default for LearnedParameters {
+    /// The parameters before any pass has run.
+    fn default() -> Self {
+        Self {
+            strand_artifact_prior: INITIAL_STRAND_ARTIFACT_PRIOR,
+            alpha_strand: INITIAL_ALPHA_STRAND,
+            beta_strand: INITIAL_BETA_STRAND,
+        }
+    }
+}
+
+/// `learnParameters`, over the `EStep`s a pass accumulated.
+///
+/// # Two sums over two different sets
+///
+/// ```java
+/// final List<EStep> potentialArtifacts = eSteps.stream().filter(e -> e.getArtifactProbability() > 0.1)...
+/// final double totalArtifacts = potentialArtifacts.stream()...sum();
+/// final double totalNonArtifacts = eSteps.stream().mapToDouble(e -> 1 - e.getArtifactProbability()).sum();
+/// ```
+///
+/// The artifact mass is over the sites that look like artifacts; the non-artifact mass is over
+/// **all** of them. Every one of these sums is `DoubleStream.sum`, which is Kahan-compensated, so a
+/// plain loop is a different double.
+///
+/// # The guess is the initial alpha, not the current one
+///
+/// `OptimizationUtils.max(objective, 0.01, 100, INITIAL_ALPHA_STRAND, 0.01, 0.01, 100)`. A pass that
+/// accumulated nothing therefore does not keep the previous pass's shape: the objective over an
+/// empty set is constant, and a constant objective answers the guess, which is `1.0`.
+///
+/// # The mean is fixed and only alpha is searched
+///
+/// `beta = (1 / mean - 1) * alpha` is recomputed inside the objective and again after it, from the
+/// same expression. The two are written out separately here for the same reason they are there.
+pub fn learn_parameters(e_steps: &[EStep]) -> LearnedParameters {
+    let potential_artifacts: Vec<&EStep> = e_steps
+        .iter()
+        .filter(|step| step.artifact_probability() > POTENTIAL_ARTIFACT_THRESHOLD)
+        .collect();
+
+    let total_artifacts = double_stream_sum(
+        &potential_artifacts
+            .iter()
+            .map(|step| step.artifact_probability())
+            .collect::<Vec<f64>>(),
+    );
+    let total_non_artifacts = double_stream_sum(
+        &e_steps
+            .iter()
+            .map(|step| 1.0 - step.artifact_probability())
+            .collect::<Vec<f64>>(),
+    );
+    let strand_artifact_prior = (total_artifacts + ARTIFACT_PSEUDOCOUNT)
+        / (total_artifacts + ARTIFACT_PSEUDOCOUNT + total_non_artifacts + NON_ARTIFACT_PSEUDOCOUNT);
+
+    let artifact_alt_count = double_stream_sum(
+        &potential_artifacts
+            .iter()
+            .map(|step| {
+                step.forward_artifact_responsibility * f64::from(step.forward_alt_count)
+                    + step.reverse_artifact_responsibility * f64::from(step.reverse_alt_count)
+            })
+            .collect::<Vec<f64>>(),
+    );
+    let artifact_depth = double_stream_sum(
+        &potential_artifacts
+            .iter()
+            .map(|step| {
+                step.forward_artifact_responsibility * f64::from(step.forward_count)
+                    + step.reverse_artifact_responsibility * f64::from(step.reverse_count)
+            })
+            .collect::<Vec<f64>>(),
+    );
+    let artifact_beta_mean = (artifact_alt_count + INITIAL_ALPHA_STRAND)
+        / (artifact_depth + INITIAL_ALPHA_STRAND + INITIAL_BETA_STRAND);
+
+    let objective = |alpha: f64| {
+        let beta = (1.0 / artifact_beta_mean - 1.0) * alpha;
+        double_stream_sum(
+            &potential_artifacts
+                .iter()
+                .map(|step| {
+                    step.forward_artifact_responsibility
+                        * artifact_strand_log_likelihood(
+                            step.forward_count,
+                            step.forward_alt_count,
+                            alpha,
+                            beta,
+                        )
+                        .expect("alpha is inside the search interval and beta is positive")
+                        + step.reverse_artifact_responsibility
+                            * artifact_strand_log_likelihood(
+                                step.reverse_count,
+                                step.reverse_alt_count,
+                                alpha,
+                                beta,
+                            )
+                            .expect("alpha is inside the search interval and beta is positive")
+                })
+                .collect::<Vec<f64>>(),
+        )
+    };
+
+    let alpha_strand = jmath::brent::maximize(
+        objective,
+        0.01,
+        100.0,
+        INITIAL_ALPHA_STRAND,
+        0.01,
+        0.01,
+        100,
+    )
+    .expect("the interval, the tolerances and the budget are the reference's constants")
+    .point;
+    let beta_strand = (1.0 / artifact_beta_mean - 1.0) * alpha_strand;
+
+    LearnedParameters {
+        strand_artifact_prior,
+        alpha_strand,
+        beta_strand,
+    }
 }
 
 /// `calculateErrorProbabilityForAlleles`: the two responsibilities added, or an empty list.
@@ -493,5 +635,45 @@ mod tests {
         )
         .expect("answered");
         assert_eq!(zero.artifact_probability(), 0.0);
+    }
+
+    /// A pass that accumulated nothing does not keep the previous pass's shape: the guess handed to
+    /// the optimiser is `INITIAL_ALPHA_STRAND`, and a constant objective answers the guess.
+    #[test]
+    fn an_empty_pass_returns_to_the_initial_shape() {
+        let learned = learn_parameters(&[]);
+        assert_eq!(learned.alpha_strand, INITIAL_ALPHA_STRAND);
+        assert_eq!(learned.beta_strand, INITIAL_BETA_STRAND);
+        // The prior is the two pseudocounts alone.
+        assert_eq!(
+            learned.strand_artifact_prior,
+            ARTIFACT_PSEUDOCOUNT / (ARTIFACT_PSEUDOCOUNT + NON_ARTIFACT_PSEUDOCOUNT)
+        );
+    }
+
+    /// The two mass sums are over different sets: a site below the threshold contributes to the
+    /// non-artifact mass and to nothing else.
+    #[test]
+    fn a_site_below_the_threshold_moves_the_prior_and_not_the_shape() {
+        let table = parse_strand_bias_table("50,50|10,10").expect("parsed");
+        let weak = calculate_artifact_probabilities(
+            &table,
+            &[0],
+            INITIAL_STRAND_ARTIFACT_PRIOR,
+            INITIAL_ALPHA_STRAND,
+            INITIAL_BETA_STRAND,
+        )
+        .expect("answered");
+        assert!(weak[0].artifact_probability() < POTENTIAL_ARTIFACT_THRESHOLD);
+
+        let learned = learn_parameters(&weak);
+        assert_eq!(
+            learned.alpha_strand, INITIAL_ALPHA_STRAND,
+            "no potential artifacts"
+        );
+        assert!(
+            learned.strand_artifact_prior < learn_parameters(&[]).strand_artifact_prior,
+            "and yet the prior moved"
+        );
     }
 }
