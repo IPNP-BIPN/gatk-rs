@@ -3489,7 +3489,7 @@
     },
     {
       "id": "allele-filter-base",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The allele filter's shared machinery, whose zip stops at the shorter list",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3515,8 +3515,8 @@
       "cases": [
         {
           "dump": "AlleleFilterBaseDump",
-          "golden": null,
-          "why": "41 rows: no files at all. One triallelic record over two tumour samples and a normal, gathered by allele and by alternate allele, then again with a short per-allele list, an overlong one and no tumour sample at all; seven weighted medians including an even split, an empty list and a list out of order, each printed with the caller's list after the call; five sumADsOverSamples over the flag combinations and a short AD array; and the tumour-evidence filter's identity and its probabilities over five TLOD shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/allele_filter_base.txt.gz",
+          "why": "41 rows: no files at all. One triallelic record over two tumour samples and a normal, gathered by allele and by alternate allele, then again with a short per-allele list, an overlong one and no tumour sample at all; seven weighted medians including an even split, an empty list and a list out of order, each printed with the caller's list after the call; five sumADsOverSamples over the flag combinations and a short AD array; and the tumour-evidence filter's identity and its probabilities over five TLOD shapes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32122372860, and byte for byte what this laptop produced."
         }
       ]
     }
