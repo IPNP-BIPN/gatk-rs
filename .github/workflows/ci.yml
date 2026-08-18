@@ -237,12 +237,8 @@ jobs:
             suites: "strand-artifact-estep strand-artifact-mstep filter-list-by-mode apply-filters accumulate-data"
           - group: oracle-backed
             index: "32/32"
-            slug: "engine-assembly"
-            suites: "engine-assembly"
-          - group: golden-pending
-            index: "1/1"
-            slug: "germline-wrapper"
-            suites: "germline-wrapper"
+            slug: "engine-assembly-germline-wrapper"
+            suites: "engine-assembly germline-wrapper"
     steps:
       - uses: actions/checkout@v4
 

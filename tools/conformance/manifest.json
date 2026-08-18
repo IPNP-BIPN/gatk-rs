@@ -3894,7 +3894,7 @@
     },
     {
       "id": "germline-wrapper",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The germline filter's wrapper, the last unported filter body",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3920,8 +3920,8 @@
       "cases": [
         {
           "dump": "GermlineWrapperDump",
-          "golden": null,
-          "why": "18 rows, no files: the filter's identity, thirteen probabilities over records covering a rare and a common population allele, both ends of the frequency brackets, both sides of the hom-alt switch, a normal saying germline and saying somatic and saying nothing, two alternates where the second wins the log odds, a record with no depth, and both missing required annotations; and the two helpers over one tumour sample and two. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/germline_wrapper.txt.gz",
+          "why": "18 rows, no files: the filter's identity, thirteen probabilities over records covering a rare and a common population allele, both ends of the frequency brackets, both sides of the hom-alt switch, a normal saying germline and saying somatic and saying nothing, two alternates where the second wins the log odds, a record with no depth, and both missing required annotations; and the two helpers over one tumour sample and two. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32162324966, and byte for byte what this laptop produced."
         }
       ]
     }
