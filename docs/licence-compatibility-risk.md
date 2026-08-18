@@ -86,6 +86,32 @@ the 112** quarantined `FormatUtil` divergences with none introduced (htsjdk-rs #
 The 68 that remain are one cause, and it is the first bullet: Java 17's pre-Schubfach digit
 generation, which option 3 above already covers.
 
+### How wide that one cause is (2026-08-19)
+
+The 68 are the divergences the *suites* reach. A corpus that goes looking finds the same failure mode
+across the whole exponent range: `Double.toString` measured over 1059 deterministic values -- 27 named
+ones, 32 powers of two, and a thousand bit patterns from splitmix64 seeded at one -- differs on
+**fifteen**, 1.4 per cent, and in every one **Java emits more digits than the shortest**. Three shapes:
+
+| | the reference | this port |
+|---|---|---|
+| the smallest subnormal | `4.9E-324` | `5.0E-324` |
+| `1e23` | `9.999999999999999E22` | `1.0E23` |
+| eleven values needing sixteen digits | `7.2911220195563975E-304` | `7.291122019556398E-304` |
+
+Two things follow. It is **not confined above 2^53**: the smallest subnormal is in the list, so a
+claim that the region is unreachable has to be made per call site rather than per magnitude. And every
+one of the fifteen **parses back to the same double**, so this is a rendering difference and not a
+value difference -- which is why nothing caught it until a golden printed the renderings themselves.
+
+The fifteen are committed as the `double-to-string` suite and named in its conformance test with both
+renderings and an asserted count, which is option 4 carried out rather than proposed: a sixteenth
+value diverging, one of the fifteen changing, and one of them being fixed all fail a test. Option 1
+stays closed for this one -- htsjdk-rs decision 0013 blocks `FloatingDecimal` itself, and a clean-room
+implementation of the *specification* would agree with this port rather than with the oracle, which
+is what Android's `RealToString` demonstrated. Option 3 is the only route that removes them, and it is
+the same decision the 68 wait on.
+
 **The lesson is about the label, not the licence.** Once work is marked licence-blocked it stops
 being examined, and the mark covers whatever was nearby when it was applied. Option 1 was written
 down and correct; what failed was that nobody re-ran it after the classification. Anything
