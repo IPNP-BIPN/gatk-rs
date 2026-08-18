@@ -1726,6 +1726,39 @@
       ]
     },
     {
+      "id": "string-format",
+      "status": "golden-pending",
+      "title": "String.format(\"%.Nf\") over the shortest digits, not the exact expansion",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "java.util.Formatter's %f conversion, which gatk_engine::java_format::format_decimals ports. IT IS NOT THE EXACT DECIMAL EXPANSION OF THE DOUBLE. The Formatter takes the digits Double.toString would produce -- the shortest that round-trip -- and pads or rounds THOSE to the requested scale. A VALUE WHOSE SHORTEST FORM ENDS IN 5 THEREFORE ROUNDS UP EVEN WHEN ITS EXACT EXPANSION DOES NOT: 2.675 is 2.67499999999999982... exactly, and Java prints 2.68 where a formatter working from the expansion prints 2.67, which is what C's printf prints. A LARGE VALUE IS PADDED WITH ZEROS, NOT EXPANDED: 1e300 is a one and three hundred zeros, not the 1000000000000000052504760255204420248704... the double actually is. THE ROUNDING IS HALF_UP ON THOSE DIGITS, not half-even, so 0.0625 at three places is 0.063 where Rust's own formatter answers 0.062. AND THE THREE NON-FINITE SPELLINGS HAVE NO SIGN ON NaN. Each value's Double.toString is printed beside its formattings, so the golden shows which digits the conversion started from.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 54,
+      "expect_contains": [
+        "tostring\ttwo-point-six-seven-five\t2.675",
+        "format\ttwo-point-six-seven-five\t2=2.68",
+        "format\tone-sixteenth\t3=0.063",
+        "format\tone-point-zero-zero-five\t2=1.01",
+        "format\tone-e-twenty-one\t0=1000000000000000000000",
+        "format\tnegative-zero\t2=-0.00",
+        "format\tnegative\t2=-2.68",
+        "format\tnan\t2=NaN",
+        "format\tinfinity\t2=Infinity",
+        "format\tnegative-infinity\t2=-Infinity",
+        "format\tnine-nine-nine\t2=10.00",
+        "format\tmin-normal\t3=0.000"
+      ],
+      "cases": [
+        {
+          "dump": "StringFormatDump",
+          "golden": null,
+          "why": "54 rows, no files: twenty values, each with its Double.toString beside one to five formattings. The values are the four ties where the shortest digits and the exact expansion disagree, five magnitudes from 1e21 to Double.MIN_VALUE, the three percentages ClipReads prints, two carries that run the whole way up, zero and negative zero, a negative tie, and the three non-finite spellings. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
+    },
+    {
       "id": "allele-pseudo-depth",
       "status": "oracle-backed",
       "title": "DD and DF, the annotation G1.9 was opened for",
