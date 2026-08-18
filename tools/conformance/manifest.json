@@ -3689,6 +3689,41 @@
           "why": "32 rows, no files: the argument default, the filter's identity, the accumulating and learned maps read by reflection before and after learning, twelve probabilities over one learned haplotype set covering the distance boundary in both directions and every way the phasing string can be absent, the two-tumour cases that expose which genotype is read, and nine accumulations that vary only in which filters are in the ErrorProbabilities and whether their names are the interned constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32138327423, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "strand-artifact-estep",
+      "status": "golden-pending",
+      "title": "The strand-artifact E step, whose counts come out of a string",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "StrandArtifactFilter's E step, calculateArtifactProbabilities and the strandArtifactProbability under it, at the initial parameters. The tenth and last of the ten filters the filter-mutect-calls golden needs, split in two because the M step needs a Brent optimizer nothing here has ported. THE STRAND COUNTS COME OUT OF A STRING: AS_SB_TABLE is split on | and then on , with brackets stripped and each field trimmed before Integer.parseInt, so a non-integer field is a NumberFormatException out of a filter, an empty field likewise, and A TABLE WITH ONE ENTRY IS DROPPED, sbs.size() <= 1 guarding the whole filter rather than one allele. TWO BRANCHES ANSWER A HARD ZERO RATHER THAN A PROBABILITY: an alternate with no reads on either strand, and an indel longer than LONGEST_STRAND_ARTIFACT_INDEL_SIZE = 4, both build an EStep with both responsibilities zero, and the filter still reports for that allele. THE SEQUENCING-ERROR PRIOR TAKES THREE STEPS IN THE INDEL SIZE, 1000 at zero, 5000 below three and 50000 from three to four, the size being Math.abs(ref.length() - alt.length()) so an insertion and a deletion of the same length take the same branch. THE TOTALS ARE OVER EVERY ALLELE INCLUDING THE REFERENCE while the responsibilities are per alternate. THE NORMALISATION IS IN LOG10 AND THE LIKELIHOODS ARE NATURAL, converted by multiplying by MathUtils.LOG10_E. AND binomialCoefficientLog APPEARS THREE TIMES IN ONE EXPRESSION in the no-artifact branch. WHAT THE RUN ADDED: the symbolic allele's data is removed BEFORE the strand totals are summed, so a record carrying one has the same totals as a record without it; a strand-artifact prior of one answers a forward responsibility of exactly 1.0 beside a reverse one of 1.3e-25, so the two sum to more than one; and a prior of zero answers two hard zeros, both artifact log priors being negative infinity.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 50,
+      "expect_contains": [
+        "default\tinitialAlphaStrand\t1.0",
+        "default\tinitialBetaStrand\t20.0",
+        "default\tinitialStrandArtifactPrior\t0.001",
+        "name\tstrand-artifact\tstrand_bias,ARTIFACT,STRANDQ,AS_SB_TABLE",
+        "estep\tno-alt-reads\t0.0,0.0,50,50,0,0",
+        "estep\tfive-base-deletion\t0.0,0.0,70,50,20,0",
+        "prob\tone-entry-table\t[]",
+        "prob\tempty-table\t[]",
+        "prob\tno-table\t[]",
+        "error\tnon-integer-table\tjava.lang.NumberFormatException:For input string: \"twenty\"",
+        "error\tempty-field\tjava.lang.NumberFormatException:For input string: \"\"",
+        "estep\tsymbolic-alternate\t0.9049736688601909,3.468020378290341E-23,70,50,20,0",
+        "estep\tdirect-zero-prior\t0.0,0.0,50,50,20,0",
+        "estep\tdirect-prior-of-one\t1.0,1.296719061550773E-25,50,50,20,0"
+      ],
+      "cases": [
+        {
+          "dump": "StrandArtifactEStepDump",
+          "golden": null,
+          "why": "50 rows, no files: the three initial parameters, the filter's identity, the E steps and probabilities of eighteen records covering both strand-only hypotheses, a balanced site, the depth range, all four indel-size branches and the one past them, two alternates, a symbolic alternate and six shapes of the AS_SB_TABLE string, and six direct calls to the package-private strandArtifactProbability over the prior's range and an indel size the record cannot vary on its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
