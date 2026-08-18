@@ -3759,6 +3759,37 @@
           "why": "32 rows, no files: fifteen calls to OptimizationUtils.max over analytic objectives, covering the filter's own tolerances and evaluation budget, a maximum on each bound, a flat function, two maxima in one interval, the guess on each bound, a tolerance ten million times tighter, and all five refusals; and eight learning passes over accumulated E steps, from none at all to two strong artifacts, plus one filter learned twice. The optimiser's cases are analytic so the golden pins the search trajectory rather than only the filter's use of it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32144200296, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "filter-list-by-mode",
+      "status": "golden-pending",
+      "title": "The filter list a mode builds, and the getter that remembers its first answer",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Mutect2FilteringEngine.buildFiltersList and the mode-dependent getters on M2FiltersArgumentCollection: which filters a run builds is decided once, at construction, from two boolean flags, and neither the engine nor its stats file will say which -- which is what the filter-mutect-calls golden could not reach. THE LIST IS BUILT IN ONE ORDER AND THAT ORDER IS THE ENGINE'S, ErrorProbabilities collecting it into a LinkedHashMap so the construction order is the iteration order downstream. MITOCHONDRIAL MODE DROPS SIX FILTERS AND ADDS NONE, MICROBIAL MODE DROPS THE SAME SIX AND ADDS ONE BACK, so PolymeraseSlippageFilter sits SIXTEENTH by default and LAST in microbial mode. THE COMMENT CLAIMS A CONDITION THE CODE DOES NOT HAVE: \"Normal Artifact Filter doesn't apply to mitochondria because we are not comparing tumor and normal\" sits directly above an unguarded filters.add(new NormalArtifactFilter(...)), and the filter is built in every mode. getMinMedianMappingQuality() WRITES TO THE FIELD IT READS, memoising on first call. getLogSnvPrior() COMPARES AGAINST THE DEFAULT BY VALUE. WHAT THE RUN ADDED: the memoisation is observable -- a collection asked once with microbial unset answers 30 and goes on answering 30 after the flag is set, while the same collection with the flag set first answers 20; and passing the default prior explicitly under mitochondrial mode yields the MITOCHONDRIAL prior, -5.756462732485115 rather than -13.815510557964275, so an explicit argument and an absent one are indistinguishable. ReadOrientationFilter needs a tar.gz of artifact priors, a fixture rather than an argument, and its branch is recorded here rather than exercised.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 21,
+      "expect_contains": [
+        "list\tdefault\t18=TumorEvidenceFilter,BaseQualityFilter,MappingQualityFilter,DuplicatedAltReadFilter,StrandArtifactFilter,ContaminationFilter,StrictStrandBiasFilter,ReadPositionFilter,MinAlleleFractionFilter,NormalArtifactFilter,NRatioFilter,PanelOfNormalsFilter,ClusteredEventsFilter,MultiallelicFilter,FragmentLengthFilter,PolymeraseSlippageFilter,FilteredHaplotypeFilter,GermlineFilter",
+        "list\tmitochondria\t12=TumorEvidenceFilter,BaseQualityFilter,MappingQualityFilter,DuplicatedAltReadFilter,StrandArtifactFilter,ContaminationFilter,StrictStrandBiasFilter,ReadPositionFilter,MinAlleleFractionFilter,NormalArtifactFilter,NRatioFilter,PanelOfNormalsFilter",
+        "list\tmicrobial\t13=TumorEvidenceFilter,BaseQualityFilter,MappingQualityFilter,DuplicatedAltReadFilter,StrandArtifactFilter,ContaminationFilter,StrictStrandBiasFilter,ReadPositionFilter,MinAlleleFractionFilter,NormalArtifactFilter,NRatioFilter,PanelOfNormalsFilter,PolymeraseSlippageFilter",
+        "argument\tmapping-quality-asked-first\tminMedianMappingQuality=30",
+        "argument\tmapping-quality-asked-again\tminMedianMappingQuality=30",
+        "argument\tmapping-quality-flag-set-first\tminMedianMappingQuality=20",
+        "argument\tpriors-default\tlogSnvPrior=-13.815510557964275",
+        "argument\tpriors-mitochondria\tlogSnvPrior=-5.756462732485115",
+        "argument\tpriors-explicitly-the-default\tlogSnvPrior=-5.756462732485115",
+        "argument\tpriors-explicitly-other\tlogSnvPrior=-12.0"
+      ],
+      "cases": [
+        {
+          "dump": "FilterListByModeDump",
+          "golden": null,
+          "why": "21 rows, no files: the filter list under each of the four combinations of the two mode flags, read off the engine's private list by reflection and printed in construction order; seven readings of the memoising mapping-quality getter, including the pair that shows it keeps its first answer; and five pairs of somatic priors, including the one where passing the default explicitly is indistinguishable from not passing it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
