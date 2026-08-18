@@ -3891,6 +3891,39 @@
           "why": "155 rows, no files: eight records through a real engine, each printing every filter that answered in construction order, the two error-type maxima the engine exposes, the combined probability and the applied result. The records are a fully annotated biallelic site in default and mitochondrial mode, two alternates, a symbolic alternate beside a real one, a bare record with no annotations at all, a site in the panel of normals, a site with weak evidence and a site with a poor alternate base quality. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32161185422, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "germline-wrapper",
+      "status": "golden-pending",
+      "title": "The germline filter's wrapper, the last unported filter body",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "GermlineFilter.calculateErrorProbability and the two helpers it calls. The core germlineProbability is measured by the germline-probability suite; this is the layer that reads the record and decides what to hand it, and it is the last filter body the engine assembly still needs. TWO EARLY RETURNS BRACKET THE POPULATION FREQUENCY: below 1e-10 the answer is 0 and above 1 - 1e-10 it is 1, the frequency being Math.pow(10, -POPAF[maxLodIndex]), so a POPAF of 0 means an allele fixed in the population and answers a hard one. maxLodIndex IS CHOSEN FROM TLOD AND THEN INDEXES THREE ARRAYS with three conventions: POPAF per alternate, the depth array with + 1, and the weighted allele fractions per alternate. A TOTAL DEPTH OF ZERO ANSWERS 0, per a comment about GGA mode. THE GERMLINE HOM-ALT HYPOTHESIS IS SWITCHED OFF BY A VALUE, NOT A FLAG: an alternate allele fraction below 0.9 sets its log odds to negative infinity. THE NORMAL'S LOG ODDS ENTER NEGATED, and a record with no NLOD uses 0 rather than skipping the normal. AND WITH NO TUMOUR SEGMENTATION TABLE every sample's minor allele fraction is 0.5. WHAT THE RUN ADDED: the hom-alt switch is worth six orders of magnitude on one hundredth of allele fraction -- 2.418139476470768E-8 at 0.89 and 0.02912628351537378 at 0.9 -- so a port that rounded the comparison would be wrong by more than a rounding. And weightedAverageOfTumorAFs is a depth-weighted average that a second tumour sample moves to 0.33333333333333337 while the minor allele fraction stays 0.5, the two helpers weighting the same depths for different purposes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 18,
+      "expect_contains": [
+        "name\tgermline\tgermline,NON_SOMATIC,GERMQ,TLOD,POPAF",
+        "prob\tfixed-in-the-population\t[1.0]",
+        "prob\tbelow-the-epsilon\t[0.0]",
+        "prob\thom-alt-off\t[2.418139476470768E-8]",
+        "prob\thom-alt-on\t[0.02912628351537378]",
+        "prob\tno-nlod\t[2.536898466486791E-7]",
+        "prob\tsecond-allele-wins\t[0.962441621948459, 0.962441621948459]",
+        "prob\tno-depth\t[0.0]",
+        "prob\tno-tlod\t[0.0]",
+        "prob\tno-popaf\t[0.0]",
+        "weightedaf\ttwo-tumours\t[0.33333333333333337]",
+        "maf\ttwo-tumours\t0.5"
+      ],
+      "cases": [
+        {
+          "dump": "GermlineWrapperDump",
+          "golden": null,
+          "why": "18 rows, no files: the filter's identity, thirteen probabilities over records covering a rare and a common population allele, both ends of the frequency brackets, both sides of the hom-alt switch, a normal saying germline and saying somatic and saying nothing, two alternates where the second wins the log odds, a record with no depth, and both missing required annotations; and the two helpers over one tumour sample and two. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
