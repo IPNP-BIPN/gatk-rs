@@ -4016,7 +4016,7 @@
     },
     {
       "id": "kernel-segmentation",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The decomposition CalculateContamination waits on, and what it is used for",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -4040,8 +4040,8 @@
       "cases": [
         {
           "dump": "KernelSegmentationDump",
-          "golden": null,
-          "why": "131 rows, no files: three data series -- a step function with two changes, a flat series with none, and a ramp where every point differs from the last -- each decomposed at a six-point kernel approximation, giving six singular values and thirty-six U entries printed as raw bits; and five changepoint runs over the same series, including the same series at a lenient and a strict penalty. The dimension is small on purpose: the question is which bits differ, not how many there are. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/kernel_segmentation.txt.gz",
+          "why": "131 rows, no files: three data series -- a step function with two changes, a flat series with none, and a ramp where every point differs from the last -- each decomposed at a six-point kernel approximation, giving six singular values and thirty-six U entries printed as raw bits; and five changepoint runs over the same series, including the same series at a lenient and a strict penalty. The dimension is small on purpose: the question is which bits differ, not how many there are. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32183086474, and byte for byte what this laptop produced."
         }
       ]
     }
