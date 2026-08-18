@@ -69,14 +69,25 @@ pub fn max_element_index(array: &[f64], start: usize, end: usize) -> usize {
 ///
 /// **What**: ten raised to the power `x`.
 ///
-/// **How**: the platform's own `powf`. `10.0f64` writes the literal ten as a 64-bit float so that
-/// the method call resolves to the 64-bit version rather than the 32-bit one.
+/// **How**: the platform's own `powf`, called at run time and kept from being folded.
+///
+/// **Why it is not `jmath::strict_pow`**, which would be the obvious choice: `StrictMath.pow` and
+/// `Math.pow` are not the same function, and the goldens hold `Math.pow`. htsjdk-rs decision 0027
+/// measured the gap at one ulp, and one ulp is enough: swapping this to fdlibm makes the BAQ
+/// emission table match and makes `genotype-counts` stop matching. The host libm is the closer
+/// stand-in for the intrinsic on both platforms measured so far.
+///
+/// **Why the `black_box`**: without it LLVM folds `10.0f64.powf(constant)` at compile time with its
+/// own APFloat, and on aarch64 that disagrees with the same machine's libm in the last bit —
+/// `10^-0.4` is `3fd97a967f7524b2` at run time and `...b3` folded. The BAQ table is built from
+/// constants, so it passed in debug and failed in `--release`. Forcing the call keeps one answer
+/// per host rather than one per optimisation level.
 ///
 /// **Why it is a named function rather than inlined at each call site**: so that there is exactly
-/// one place to change if decision 0007 is ever closed by porting `Math.pow`, and so that a reader
-/// grepping for the deferred function finds every use of it.
+/// one place to change if decision 0007 is ever closed, and so that a reader grepping for the
+/// deferred function finds every use of it.
 pub fn pow10(x: f64) -> f64 {
-    10.0f64.powf(x)
+    std::hint::black_box(10.0f64).powf(x)
 }
 
 /// `MathUtils.log10SumLog10(array)`, with a **capital S**.
