@@ -24,6 +24,7 @@ pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;
 pub mod concordance_walker;
+pub mod contamination_filter;
 pub mod contamination_tables;
 pub mod context;
 pub mod context_iterator;

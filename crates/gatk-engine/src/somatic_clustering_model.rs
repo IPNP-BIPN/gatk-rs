@@ -366,8 +366,10 @@ pub const REGULARIZING_PSEUDOCOUNT: f64 = 1.0;
 /// `MathUtils.binomialProbability(n, k, p)`, which is commons-math's
 /// `BinomialDistribution.probability` over the saddle-point expansion.
 ///
-/// The exponential is the reference's, so this is the one thing on the learning path that decision
-/// 0014 bounds rather than fixes.
+/// The exponential is `FastMath.exp`, which is commons-math's own pure-Java one and therefore
+/// portable: this path is **not** the one decision 0014 bounds. Rust's `f64::exp` is the system
+/// libm and disagrees with it in the last bit often enough to show, which is what gatk-rs's
+/// `contamination-filter` golden caught.
 pub fn binomial_probability(n: i32, k: i32, p: f64) -> f64 {
     if n == 0 {
         return if k == 0 { 1.0 } else { 0.0 };
@@ -379,7 +381,7 @@ pub fn binomial_probability(n: i32, k: i32, p: f64) -> f64 {
     if log_probability == f64::NEG_INFINITY {
         0.0
     } else {
-        log_probability.exp()
+        jmath::fast_math::exp(log_probability)
     }
 }
 
