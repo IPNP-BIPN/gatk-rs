@@ -3557,7 +3557,7 @@
     },
     {
       "id": "remaining-hard-filters",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The four hard filters that cannot fire with the default arguments",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3584,8 +3584,8 @@
       "cases": [
         {
           "dump": "RemainingHardFiltersDump",
-          "golden": null,
-          "why": "27 rows, no files: the three argument defaults, the four filters' identities, and twenty probabilities over a triallelic record whose unique-alt-read counts, N count, allele fractions and panel-of-normals annotation are each moved in turn, at the default threshold and at one that can actually fire. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/remaining_hard_filters.txt.gz",
+          "why": "27 rows, no files: the three argument defaults, the four filters' identities, and twenty probabilities over a triallelic record whose unique-alt-read counts, N count, allele fractions and panel-of-normals annotation are each moved in turn, at the default threshold and at one that can actually fire. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32130226236, and byte for byte what this laptop produced."
         }
       ]
     }
