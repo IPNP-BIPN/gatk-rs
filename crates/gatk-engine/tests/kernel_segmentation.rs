@@ -18,11 +18,11 @@
 //! *different* implementation could be held to. This port is a transcription, so it is held to all
 //! of them.
 //!
-//! The changepoint rows of the golden are not read here: `findChangepoints` is the next brick, and
-//! a suite that read them would fail for a reason this one cannot fix.
+//! The changepoint rows are read too, and they are the point of the exercise: they are what
+//! `ContaminationSegmenter` consumes, and the only thing the decomposition sends downstream.
 
 use gatk_corpus as corpus;
-use gatk_engine::kernel_segmenter::sub_kernel_matrix;
+use gatk_engine::kernel_segmenter::{find_changepoints, sub_kernel_matrix, ChangepointSortOrder};
 use gatk_engine::singular_value_decomposition::SingularValueDecomposition;
 
 fn golden() -> String {
@@ -33,7 +33,7 @@ fn golden() -> String {
 }
 
 /// The dump's kernel: a Gaussian of the difference, through `Math.exp` rather than `FastMath.exp`.
-fn gaussian(variance: f64) -> impl Fn(f64, f64) -> f64 {
+fn gaussian(variance: f64) -> impl Fn(f64, f64) -> f64 + Copy {
     move |x: f64, y: f64| (-(x - y) * (x - y) / (2.0 * variance)).exp()
 }
 
@@ -130,4 +130,55 @@ fn the_flat_series_decomposes_to_a_rank_one_matrix() {
     for (index, value) in svd.singular_values.iter().enumerate().skip(1) {
         assert_eq!(*value, 0.0, "singular value {index} is an exact zero");
     }
+}
+
+/// The dump's changepoint cases: the series, the maximum, and the two penalty factors.
+fn changepoint_case(label: &str) -> (&'static str, usize, f64, f64) {
+    match label {
+        "two-steps" => ("two-steps", 10, 1.0, 1.0),
+        "flat" => ("flat", 10, 1.0, 1.0),
+        "ramp" => ("ramp", 10, 1.0, 1.0),
+        // The same series with no penalty at all, and with a penalty ten times the default.
+        "two-steps-lenient" => ("two-steps", 10, 0.0, 0.0),
+        "two-steps-strict" => ("two-steps", 10, 10.0, 10.0),
+        other => panic!("unknown case {other}"),
+    }
+}
+
+#[test]
+fn every_changepoint_row_matches_the_golden() {
+    let text = golden();
+    let mut rows = 0;
+
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("changepoints\t") else {
+            continue;
+        };
+        let (label, expected) = rest.split_once('\t').expect("a label");
+        let (series_label, maximum, linear, log_linear) = changepoint_case(label);
+        let found = find_changepoints(
+            &series(series_label),
+            maximum,
+            gaussian(0.01),
+            6,
+            &[8, 16],
+            linear,
+            log_linear,
+            ChangepointSortOrder::Index,
+        );
+        // The dump prints `(none)` rather than an empty field, so an empty answer is visible.
+        let printed = if found.is_empty() {
+            "(none)".to_string()
+        } else {
+            found
+                .iter()
+                .map(|index| index.to_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        };
+        assert_eq!(printed, expected, "changepoints for {label}");
+        rows += 1;
+    }
+
+    assert_eq!(rows, 5, "the golden's changepoint rows");
 }
