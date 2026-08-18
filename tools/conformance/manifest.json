@@ -3762,7 +3762,7 @@
     },
     {
       "id": "filter-list-by-mode",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The filter list a mode builds, and the getter that remembers its first answer",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3786,8 +3786,8 @@
       "cases": [
         {
           "dump": "FilterListByModeDump",
-          "golden": null,
-          "why": "21 rows, no files: the filter list under each of the four combinations of the two mode flags, read off the engine's private list by reflection and printed in construction order; seven readings of the memoising mapping-quality getter, including the pair that shows it keeps its first answer; and five pairs of somatic priors, including the one where passing the default explicitly is indistinguishable from not passing it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/filter_list_by_mode.txt.gz",
+          "why": "21 rows, no files: the filter list under each of the four combinations of the two mode flags, read off the engine's private list by reflection and printed in construction order; seven readings of the memoising mapping-quality getter, including the pair that shows it keeps its first answer; and five pairs of somatic priors, including the one where passing the default explicitly is indistinguishable from not passing it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32151987584, and byte for byte what this laptop produced."
         }
       ]
     }
