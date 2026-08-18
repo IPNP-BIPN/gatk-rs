@@ -34,8 +34,35 @@ libm the machine ships.
 | `gatk-engine/src/fisher_exact.rs:109` — `pow10` | `powf` | as above |
 | `gatk-annotation/src/allele_pseudo_depth.rs:339,341` — `calculateWeights` | `powf` ×2 | as above. Which of the two runs depends on `weightDecay`, so the exposure varies with an argument |
 | `gatk-engine/src/natural_log_utils.rs:172,174` — `log1mexp` | `ln_1p`, `exp_m1` | **not exact**, and the module says so at the call site. Neither has a ported equivalent, and nothing in G1 reaches this branch |
-| `gatk-engine/src/activity_profile.rs:98` | `exp` | the **host** `exp`, not `strict_math::exp`. 99.9711% against `Math.exp`. Worth revisiting when the activity profile gets its byte claim |
+| `gatk-engine/src/activity_profile.rs:98` | `exp` | the **host** `exp`, not `strict_math::exp`, and now **measured to be the right one**: the `activityprofile` suite compares 266 kernel values as raw bits and the host `exp` matches every one, where `strict_math::exp` moves 10 of them by an ulp. See below |
 | `gatk-engine/src/mann_whitney.rs:167` | `powi(3)` | **exact**: an integer power of a `f64` is repeated multiplication, and the reference computes it the same way |
+
+### The activity profile's `exp`, measured (2026-08-19)
+
+The row said the choice was worth revisiting once the call site had a byte claim. It has one:
+`MathUtils.normalDistribution` is the only `exp` a band-pass profile reaches, and the
+`activityprofile` suite pins **twenty kernels, 266 values, as raw bits** against the oracle.
+
+So the question is answerable rather than arguable, and the answer is that the current choice is
+correct:
+
+| what the kernel is built with | values matching the oracle bit-for-bit |
+|---|---|
+| the host `exp` (what the port calls) | **266 of 266** |
+| `jmath::strict_math::exp` | 256 of 266 — ten wrong, by one ulp, in two of the twenty kernels |
+
+The Java is `Math.exp`, not `StrictMath.exp` (`MathUtils.normalDistribution`, line 949), which is
+why the exact-against-`StrictMath` function is the *worse* choice here: it is faithful to a
+different reference. `Math.exp` is the HotSpot intrinsic, decision 0014 withdrew its transcription,
+and on this call site's inputs the host libm happens to agree with it everywhere.
+
+This is the same shape as the three `powf` rows, and it makes the shape a rule rather than a
+coincidence: **where the reference is `Math.*`, a bounded `StrictMath.*` port is not an improvement
+unless it is measured to be one.** All three measurements so far went the other way.
+
+The claim is not that the host `exp` equals `Math.exp` everywhere -- it does not, 99.9711% is the
+rate. It is that on the points this call site reaches it does, and the suite is what holds that: a
+future swap moves kernel bits and turns the suite red, which is the guard this row wanted.
 
 ## What this changes
 
