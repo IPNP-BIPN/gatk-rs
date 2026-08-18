@@ -3857,6 +3857,40 @@
           "why": "12 rows, no files: the pass schedule read off the tool's protected numberOfPasses, and eight accumulations over records covering a real alternate, two alternates, <NON_REF> alone and beside a real one, a symbolic alternate that is not <NON_REF>, a reference-only record, a record with no TLOD, and three records through one engine. Each prints the clustering model's data count, the threshold calculator's probability count and the obvious-artifact count, all three read by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32159276177, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "engine-assembly",
+      "status": "golden-pending",
+      "title": "The eighteen filters over one record, and what the engine makes of their answers",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The whole filtering engine over one record: every filter's answer in construction order, the per-type maxima, the combined probability, and what applyFilters makes of them. Every piece is measured on its own elsewhere; this is the thing that holds them, and it is what a Rust port needs in order to compare arithmetic rather than only control flow. AN EMPTY LIST, A ZERO AND A NaN ARE THREE DIFFERENT ANSWERS: ErrorProbabilities DROPS the filters that answered an empty list, counts the zeroes and combines the NaN. THE PER-TYPE MAXIMUM COMES FIRST AND THE INDEPENDENCE PRODUCT SECOND, so a filter can only be masked by another of its own error type. THE SYMBOLIC REMOVAL HAPPENS INSIDE ErrorProbabilities, once per filter. WHICH FILTERS ANSWERED AT ALL IS A PROPERTY OF THE RECORD'S ANNOTATIONS, not of the mode. WHAT THE RUN ADDED: seventeen of the eighteen filters answer even on a fully annotated record, because StrictStrandBiasFilter is switched off by its default of zero reads on each strand and an empty list is dropped. THE ENGINE EXPOSES TWO OF THE THREE ERROR TYPES: getTechnicalArtifactProbabilities and getNonSomaticProbabilities have getters and SEQUENCING has none, so the tumour-evidence filter's contribution is visible only through the combined probability -- on the weak-evidence record the two named types are 1e-16 and 2.5e-7 while the combined probability is 0.9999989353673424. MITOCHONDRIAL MODE CHANGES THE ARITHMETIC AND NOT ONLY THE LIST: the same record's tumour-evidence probability is 2.970295405296338E-14 by default and 9.383000947252313E-18 in mitochondrial mode, the somatic priors differing. AND A SITE-LEVEL FILTER CAN FIRE WHILE EVERY ALLELE PASSES: the two-alternate record is filtered multiallelic with AS_FilterStatus SITE|SITE.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 155,
+      "expect_contains": [
+        "filter\tfully-annotated\tTumorEvidenceFilter=[2.970295405296338E-14]",
+        "filter\tfully-annotated-mitochondria\tTumorEvidenceFilter=[9.383000947252313E-18]",
+        "type\tfully-annotated\tARTIFACT=[1.0181798645376772E-16]",
+        "type\tfully-annotated\tNON_SOMATIC=[2.536898466486791E-7]",
+        "combined\tfully-annotated\t[2.536898765503892E-7]",
+        "applied\tfully-annotated\tPASS|SITE",
+        "combined\tweak-evidence\t[0.9999989353673424]",
+        "applied\tweak-evidence\tweak_evidence|weak_evidence",
+        "applied\ttwo-alternates\tmultiallelic|SITE|SITE",
+        "applied\tin-panel-of-normals\tpanel_of_normals|SITE",
+        "applied\tpoor-base-quality\tbase_qual|base_qual",
+        "applied\tbare\tPASS|SITE",
+        "filter\tpoor-base-quality\tBaseQualityFilter=[1.0]"
+      ],
+      "cases": [
+        {
+          "dump": "EngineAssemblyDump",
+          "golden": null,
+          "why": "155 rows, no files: eight records through a real engine, each printing every filter that answered in construction order, the two error-type maxima the engine exposes, the combined probability and the applied result. The records are a fully annotated biallelic site in default and mitochondrial mode, two alternates, a symbolic alternate beside a real one, a bare record with no annotations at all, a site in the panel of normals, a site with weak evidence and a site with a poor alternate base quality. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
