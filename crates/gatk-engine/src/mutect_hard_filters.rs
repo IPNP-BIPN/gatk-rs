@@ -203,6 +203,90 @@ pub fn multiallelic_is_artifact(
     Ok(passing > number_of_alt_alleles_threshold)
 }
 
+/// `M2FiltersArgumentCollection.DEFAULT_MIN_UNIQUE_ALT_READS`, against `count <= threshold`.
+///
+/// Zero, and a unique-alt-read count is at least one, so the filter cannot fire as configured.
+pub const DEFAULT_MIN_UNIQUE_ALT_READS: i32 = 0;
+
+/// `M2FiltersArgumentCollection.DEFAULT_MAX_N_RATIO`, against `ratio >= maximum`.
+///
+/// Positive infinity, and no finite ratio reaches it.
+pub const DEFAULT_MAX_N_RATIO: f64 = f64::INFINITY;
+
+/// `M2FiltersArgumentCollection.DEFAULT_MIN_AF`, against `max < minimum`.
+///
+/// Zero, and no allele fraction is below it.
+pub const DEFAULT_MIN_AF: f64 = 0.0;
+
+/// `DuplicatedAltReadFilter`: PCR duplicates with unique UMIs amplifying one allele.
+///
+/// The list is as long as `AS_UNIQ_ALT_READ_COUNT`, **not** as long as the record's alternate
+/// alleles: the filter maps over the annotation and nothing compares the two. A four-element
+/// annotation on a two-alternate record answers four probabilities, and a one-element one answers
+/// one.
+pub fn duplicated_alt_read_artifacts(unique_alt_read_counts: &[i32], threshold: i32) -> Vec<bool> {
+    unique_alt_read_counts
+        .iter()
+        .map(|count| *count <= threshold)
+        .collect()
+}
+
+/// `NRatioFilter`: too many Ns beside the alternate reads.
+///
+/// `allele_depths` is `sumADsOverSamples(vc, true, true)`, tumour **and** normal, and the alternate
+/// count is the total minus the reference's entry.
+///
+/// The comment above the guard says "if there is no NCount annotation or the altCount is 0, don't
+/// apply the filter", and only the second half is written. A missing `NCount` is
+/// `getAttributeAsInt(key, 0)`, a zero rather than a skip; the skip lives one level up, in
+/// `requiredInfoAnnotations`. The comparison is `>=`, so a ratio exactly at the maximum is an
+/// artifact.
+pub fn n_ratio_is_artifact(allele_depths: &[i32], n_count: i32, max_n_ratio: f64) -> bool {
+    let total: i32 = allele_depths.iter().map(|d| i64::from(*d)).sum::<i64>() as i32;
+    let alt_count = total - allele_depths[0];
+    if alt_count == 0 {
+        return false;
+    }
+    f64::from(n_count) / f64::from(alt_count) >= max_n_ratio
+}
+
+/// `MinAlleleFractionFilter`: the tumour's allele fraction is too low to believe.
+///
+/// `fractions_by_alt_allele` is what `getAltDataByAllele` gathered over the tumour genotypes that
+/// carry `AF`, one list per alternate allele.
+///
+/// Two things this keeps. **An allele with no data is `orElse(1.0)`**, which is below no threshold,
+/// so the filter answers "not an artifact" from an absence; `requiredInfoAnnotations` is empty, so
+/// a record with no `AF` anywhere still reaches this and still passes. And the reference's
+/// `.filter(entry -> !vc.getReference().equals(entry.getKey()))` is **dead code**, since the map it
+/// filters is keyed on the alternate alleles alone; there is nothing here to model.
+pub fn min_allele_fraction_artifacts(
+    fractions_by_alt_allele: &[Vec<f64>],
+    minimum: f64,
+) -> Vec<bool> {
+    fractions_by_alt_allele
+        .iter()
+        .map(|fractions| {
+            // `Stream.max(Double::compare)`, which is a total order: `-0.0 < 0.0`, and NaN is the
+            // largest of all. `total_cmp` is the same order; `f64::max` is not.
+            fractions
+                .iter()
+                .copied()
+                .max_by(|a, b| a.total_cmp(b))
+                .unwrap_or(1.0)
+                < minimum
+        })
+        .collect()
+}
+
+/// `PanelOfNormalsFilter`: `vc.hasAttribute(PON)`.
+///
+/// Presence, not value. A record annotated `PON=false` or `PON=""` is filtered exactly as one
+/// annotated `PON=true` is.
+pub fn panel_of_normals_is_artifact(has_pon_attribute: bool) -> bool {
+    has_pon_attribute
+}
+
 /// `HardFilter.calculateErrorProbability`: a hard filter answers one or zero.
 pub fn error_probability(is_artifact: bool) -> f64 {
     if is_artifact {
@@ -319,5 +403,45 @@ mod tests {
     fn a_hard_filter_answers_one_or_zero() {
         assert_eq!(error_probability(true), 1.0);
         assert_eq!(error_probability(false), 0.0);
+    }
+
+    /// The three defaults are each on the wrong side of their own comparison.
+    #[test]
+    fn none_of_the_three_thresholds_can_be_met() {
+        // `count <= 0`, and a unique-alt-read count is at least one.
+        assert_eq!(
+            duplicated_alt_read_artifacts(&[1, 5, 100], DEFAULT_MIN_UNIQUE_ALT_READS),
+            vec![false, false, false]
+        );
+        // `ratio >= Infinity`, whatever the counts.
+        assert!(!n_ratio_is_artifact(
+            &[10, 10, 10],
+            1_000_000,
+            DEFAULT_MAX_N_RATIO
+        ));
+        // `max < 0`, and an allele fraction is not negative.
+        assert_eq!(
+            min_allele_fraction_artifacts(&[vec![0.0], vec![1.0]], DEFAULT_MIN_AF),
+            vec![false, false]
+        );
+    }
+
+    /// An allele with no fraction at all is `orElse(1.0)`: an absence answers "not an artifact".
+    #[test]
+    fn an_allele_with_no_data_passes_every_threshold() {
+        assert_eq!(
+            min_allele_fraction_artifacts(&[Vec::new(), vec![0.05]], 0.1),
+            vec![false, true]
+        );
+    }
+
+    /// The one guard the N-ratio filter has, and the `>=` beside it.
+    #[test]
+    fn the_n_ratio_guard_is_the_alternate_count_and_the_comparison_is_inclusive() {
+        // Every read is reference: the alternate count is zero and nothing is computed.
+        assert!(!n_ratio_is_artifact(&[100, 0, 0], 50, 0.5));
+        // Exactly at the maximum, which `>=` calls an artifact.
+        assert!(n_ratio_is_artifact(&[100, 20, 20], 20, 0.5));
+        assert!(!n_ratio_is_artifact(&[100, 20, 20], 19, 0.5));
     }
 }
