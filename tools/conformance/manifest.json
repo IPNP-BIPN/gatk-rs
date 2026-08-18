@@ -3829,7 +3829,7 @@
     },
     {
       "id": "accumulate-data",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "What a non-final pass records, and the record it skips",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3853,8 +3853,8 @@
       "cases": [
         {
           "dump": "AccumulateDataDump",
-          "golden": null,
-          "why": "12 rows, no files: the pass schedule read off the tool's protected numberOfPasses, and eight accumulations over records covering a real alternate, two alternates, <NON_REF> alone and beside a real one, a symbolic alternate that is not <NON_REF>, a reference-only record, a record with no TLOD, and three records through one engine. Each prints the clustering model's data count, the threshold calculator's probability count and the obvious-artifact count, all three read by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/accumulate_data.txt.gz",
+          "why": "12 rows, no files: the pass schedule read off the tool's protected numberOfPasses, and eight accumulations over records covering a real alternate, two alternates, <NON_REF> alone and beside a real one, a symbolic alternate that is not <NON_REF>, a reference-only record, a record with no TLOD, and three records through one engine. Each prints the clustering model's data count, the threshold calculator's probability count and the obvious-artifact count, all three read by reflection. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32159276177, and byte for byte what this laptop produced."
         }
       ]
     }
