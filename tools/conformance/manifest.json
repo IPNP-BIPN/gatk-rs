@@ -4013,6 +4013,37 @@
         }
       ],
       "expect_rows": 40
+    },
+    {
+      "id": "kernel-segmentation",
+      "status": "golden-pending",
+      "title": "The decomposition CalculateContamination waits on, and what it is used for",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "SingularValueDecomposition on the matrices KernelSegmenter builds, and the changepoints it turns them into. CalculateContamination is blocked on this decomposition and nothing else, and what has to be decided before a line is ported is whether byte identity is required THROUGH the decomposition or only through what the segmenter does with it. THE SUBSAMPLE IS SEEDED, new Random(1216) through RandomGeneratorFactory, so the matrix is deterministic and a port that subsampled differently would decompose a different matrix. THE SINGULAR VALUES ARE USED AS 1 / (sqrt(s) + 1e-10), so a small one is amplified. U'S SIGN CONVENTION REACHES THE OUTPUT, the reduced matrix multiplying by U column by column. AND THE CHANGEPOINTS ARE INDICES, so they can agree while the arithmetic under them does not. WHAT THE RUN ADDED, AND IT DECIDES THE QUESTION: THE KERNEL MATRIX IS RANK-DEFICIENT AND THE NULL SPACE IS AMPLIFIED. The two-step series gives singular values 4.43, 1.0, 0.57, 1.65e-17 and two exact zeros; the flat series gives 6.0 and five exact zeros. A zero singular value goes through 1 / (0 + 1e-10) = 1e10, so the U columns that span the null space -- which are NOT determined by the matrix, any orthonormal basis of it being as valid as any other -- are multiplied by ten billion and dominate the reduced observation matrix. Byte identity through this decomposition is therefore not merely hard: in the null space the reference's own U is an artefact of its bidiagonalisation order rather than a property of the input, and a conforming implementation is free to answer differently. What can be compared is the changepoints, and the golden holds those too: 29 and 59 for the two-step series, none for the flat one, five for the ramp, and none again when the penalty is raised.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 131,
+      "expect_contains": [
+        "changepoints\ttwo-steps\t29,59",
+        "changepoints\tflat\t(none)",
+        "changepoints\tramp\t16,36,52,63,71",
+        "changepoints\ttwo-steps-lenient\t29,59",
+        "changepoints\ttwo-steps-strict\t(none)",
+        "singular\ttwo-steps\t0=4011b78e116cbc65,4.429252884160722",
+        "singular\ttwo-steps\t3=3c731179bb60bc98,1.653908237106809E-17",
+        "singular\ttwo-steps\t4=0000000000000000,0.0",
+        "singular\tflat\t0=4018000000000000,6.0",
+        "singular\tflat\t1=0000000000000000,0.0"
+      ],
+      "cases": [
+        {
+          "dump": "KernelSegmentationDump",
+          "golden": null,
+          "why": "131 rows, no files: three data series -- a step function with two changes, a flat series with none, and a ramp where every point differs from the last -- each decomposed at a six-point kernel approximation, giving six singular values and thirty-six U entries printed as raw bits; and five changepoint runs over the same series, including the same series at a lenient and a strict penalty. The dimension is small on purpose: the question is which bits differ, not how many there are. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
