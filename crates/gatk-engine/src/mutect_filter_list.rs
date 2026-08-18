@@ -20,12 +20,12 @@
 //! becomes a `##FILTER` line whether or not the filter runs. `MUTECT_AS_FILTER_NAMES` is one entry
 //! and becomes an `##INFO` line instead.
 //!
-//! # What is not here
+//! # Which filters a run builds
 //!
-//! Which filters a run builds. `buildFiltersList` guards six of them with `if (!mitochondria)` and
-//! one with an argument, and neither the engine nor its stats file will say so: the stats file names
-//! only the filters that **fired**. That is measured by running the tool end to end, in its own
-//! slice.
+//! `buildFiltersList` guards six of them with `if (!MTFAC.mitochondria && !MTFAC.microbial)`, adds
+//! one back under `if (MTFAC.microbial)`, and one more under an argument. Neither the engine nor its
+//! stats file will say which were built: the stats file names only the filters that **fired**. See
+//! [`build_filters_list`], which is measured against the `filter-list-by-mode` golden.
 
 pub use crate::error_probabilities::ErrorType;
 
@@ -298,6 +298,139 @@ pub fn filter_line(name: &str) -> Option<String> {
         .map(|(_, description)| format!("FILTER=<ID={name},Description=\"{description}\">"))
 }
 
+/// `M2FiltersArgumentCollection.DEFAULT_MIN_MEDIAN_MAPPING_QUALITY`.
+pub const DEFAULT_MIN_MEDIAN_MAPPING_QUALITY: i32 = 30;
+
+/// `DEFAULT_MIN_MEDIAN_MAPPING_QUALITY_FOR_MICROBIAL`.
+pub const DEFAULT_MIN_MEDIAN_MAPPING_QUALITY_FOR_MICROBIAL: i32 = 20;
+
+/// The sentinel `minMedianMappingQuality` carries until it is asked for.
+pub const UNSET_MIN_MEDIAN_MAPPING_QUALITY: i32 = -1;
+
+/// `DEFAULT_LOG_SNV_PRIOR`, `MathUtils.log10ToLog(-6)`.
+pub fn default_log_snv_prior() -> f64 {
+    crate::allele_likelihoods::log10_to_log(-6.0)
+}
+
+/// `DEFAULT_LOG_INDEL_PRIOR`, `MathUtils.log10ToLog(-7)`.
+pub fn default_log_indel_prior() -> f64 {
+    crate::allele_likelihoods::log10_to_log(-7.0)
+}
+
+/// `DEFAULT_LOG_SNV_PRIOR_FOR_MITO`, `MathUtils.log10ToLog(-2.5)`.
+pub fn default_log_snv_prior_for_mito() -> f64 {
+    crate::allele_likelihoods::log10_to_log(-2.5)
+}
+
+/// `DEFAULT_LOG_INDEL_PRIOR_FOR_MITO`, `MathUtils.log10ToLog(-3.75)`.
+pub fn default_log_indel_prior_for_mito() -> f64 {
+    crate::allele_likelihoods::log10_to_log(-3.75)
+}
+
+/// `ReadOrientationFilter`, which is not in [`FILTERS`] because it is built only when a tar.gz of
+/// artifact priors is supplied.
+pub const READ_ORIENTATION_FILTER_CLASS: &str = "ReadOrientationFilter";
+
+/// As much of `M2FiltersArgumentCollection` as decides which filters exist and how two of them are
+/// configured.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FilterArguments {
+    pub mitochondria: bool,
+    pub microbial: bool,
+    /// `minMedianMappingQuality`, [`UNSET_MIN_MEDIAN_MAPPING_QUALITY`] until asked for.
+    pub min_median_mapping_quality: i32,
+    pub log_snv_prior: f64,
+    pub log_indel_prior: f64,
+    /// Whether `readOrientationPriorTarGzs` is non-empty.
+    pub read_orientation_priors: bool,
+}
+
+impl Default for FilterArguments {
+    fn default() -> Self {
+        Self {
+            mitochondria: false,
+            microbial: false,
+            min_median_mapping_quality: UNSET_MIN_MEDIAN_MAPPING_QUALITY,
+            log_snv_prior: default_log_snv_prior(),
+            log_indel_prior: default_log_indel_prior(),
+            read_orientation_priors: false,
+        }
+    }
+}
+
+impl FilterArguments {
+    /// `getMinMedianMappingQuality()`, which **writes to the field it reads**.
+    ///
+    /// It takes `&mut self` for that reason. The memoisation is observable: a collection asked once
+    /// while `microbial` is unset answers `30` and goes on answering `30` after the flag is set,
+    /// where the same collection with the flag set first answers `20`.
+    pub fn min_median_mapping_quality(&mut self) -> i32 {
+        if self.min_median_mapping_quality == UNSET_MIN_MEDIAN_MAPPING_QUALITY {
+            self.min_median_mapping_quality = if self.microbial {
+                DEFAULT_MIN_MEDIAN_MAPPING_QUALITY_FOR_MICROBIAL
+            } else {
+                DEFAULT_MIN_MEDIAN_MAPPING_QUALITY
+            };
+        }
+        self.min_median_mapping_quality
+    }
+
+    /// `getLogSnvPrior()`, which compares against the default **by value**.
+    ///
+    /// So passing the default explicitly under mitochondrial mode is indistinguishable from not
+    /// passing it, and yields the mitochondrial prior.
+    pub fn log_snv_prior(&self) -> f64 {
+        if self.mitochondria && self.log_snv_prior == default_log_snv_prior() {
+            default_log_snv_prior_for_mito()
+        } else {
+            self.log_snv_prior
+        }
+    }
+
+    /// `getLogIndelPrior()`, the same shape.
+    pub fn log_indel_prior(&self) -> f64 {
+        if self.mitochondria && self.log_indel_prior == default_log_indel_prior() {
+            default_log_indel_prior_for_mito()
+        } else {
+            self.log_indel_prior
+        }
+    }
+}
+
+/// `buildFiltersList`: the classes a run constructs, in construction order.
+///
+/// That order is the engine's: `ErrorProbabilities` collects the list into a `LinkedHashMap`, so it
+/// is the iteration order everywhere downstream.
+///
+/// Eighteen by default, twelve in mitochondrial mode, thirteen in microbial. The two modes drop the
+/// same six; microbial adds `PolymeraseSlippageFilter` back **at the end**, so that filter is
+/// sixteenth by default and last in microbial mode.
+///
+/// `NormalArtifactFilter` is built in every mode, directly under a comment saying it does not apply
+/// to mitochondria. The `add` has no guard.
+///
+/// The `ReadOrientationFilter` branch needs a tar.gz of artifact priors, which is a fixture rather
+/// than an argument; no golden exercises it, and it is written here rather than refused because it
+/// is a list membership with an unambiguous position, not an arithmetic path.
+pub fn build_filters_list(arguments: &FilterArguments) -> Vec<&'static str> {
+    // The first twelve, unconditionally, in the reference's order.
+    let mut classes: Vec<&'static str> = FILTERS[..12].iter().map(|f| f.class).collect();
+
+    if arguments.read_orientation_priors {
+        classes.push(READ_ORIENTATION_FILTER_CLASS);
+    }
+
+    if !arguments.mitochondria && !arguments.microbial {
+        classes.extend(FILTERS[12..].iter().map(|f| f.class));
+    }
+
+    if arguments.microbial {
+        classes.push("PolymeraseSlippageFilter");
+    }
+
+    classes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +478,72 @@ mod tests {
             assert!(MUTECT_FILTER_NAMES.contains(&name));
             assert!(!FILTERS.iter().any(|f| f.filter_name == name));
         }
+    }
+
+    /// The three lists, and where the slippage filter sits in each.
+    #[test]
+    fn the_mode_decides_the_list_and_the_order() {
+        let default = build_filters_list(&FilterArguments::default());
+        assert_eq!(default.len(), 18);
+        assert_eq!(
+            default[15], "PolymeraseSlippageFilter",
+            "sixteenth by default"
+        );
+
+        let mitochondria = build_filters_list(&FilterArguments {
+            mitochondria: true,
+            ..FilterArguments::default()
+        });
+        assert_eq!(mitochondria.len(), 12);
+        assert!(!mitochondria.contains(&"PolymeraseSlippageFilter"));
+        // The comment above the `add` says this one does not apply to mitochondria. It is here.
+        assert!(mitochondria.contains(&"NormalArtifactFilter"));
+
+        let microbial = build_filters_list(&FilterArguments {
+            microbial: true,
+            ..FilterArguments::default()
+        });
+        assert_eq!(microbial.len(), 13);
+        assert_eq!(
+            microbial[12], "PolymeraseSlippageFilter",
+            "and last in microbial mode"
+        );
+    }
+
+    /// The getter writes to the field it reads, so the order of calls decides the answer.
+    #[test]
+    fn the_mapping_quality_getter_remembers_its_first_answer() {
+        let mut asked_first = FilterArguments::default();
+        assert_eq!(asked_first.min_median_mapping_quality(), 30);
+        asked_first.microbial = true;
+        assert_eq!(
+            asked_first.min_median_mapping_quality(),
+            30,
+            "the flag came too late"
+        );
+
+        let mut set_first = FilterArguments {
+            microbial: true,
+            ..FilterArguments::default()
+        };
+        assert_eq!(set_first.min_median_mapping_quality(), 20);
+    }
+
+    /// Passing the default explicitly is indistinguishable from not passing it.
+    #[test]
+    fn an_explicit_default_prior_is_the_mitochondrial_one() {
+        let explicit = FilterArguments {
+            mitochondria: true,
+            log_snv_prior: default_log_snv_prior(),
+            ..FilterArguments::default()
+        };
+        assert_eq!(explicit.log_snv_prior(), default_log_snv_prior_for_mito());
+
+        let other = FilterArguments {
+            mitochondria: true,
+            log_snv_prior: -12.0,
+            ..FilterArguments::default()
+        };
+        assert_eq!(other.log_snv_prior(), -12.0);
     }
 }
