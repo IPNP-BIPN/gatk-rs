@@ -3727,7 +3727,7 @@
     },
     {
       "id": "strand-artifact-mstep",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The strand-artifact M step, and the Brent optimiser under it",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3755,8 +3755,8 @@
       "cases": [
         {
           "dump": "StrandArtifactMStepDump",
-          "golden": null,
-          "why": "32 rows, no files: fifteen calls to OptimizationUtils.max over analytic objectives, covering the filter's own tolerances and evaluation budget, a maximum on each bound, a flat function, two maxima in one interval, the guess on each bound, a tolerance ten million times tighter, and all five refusals; and eight learning passes over accumulated E steps, from none at all to two strong artifacts, plus one filter learned twice. The optimiser's cases are analytic so the golden pins the search trajectory rather than only the filter's use of it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/strand_artifact_mstep.txt.gz",
+          "why": "32 rows, no files: fifteen calls to OptimizationUtils.max over analytic objectives, covering the filter's own tolerances and evaluation budget, a maximum on each bound, a flat function, two maxima in one interval, the guess on each bound, a tolerance ten million times tighter, and all five refusals; and eight learning passes over accumulated E steps, from none at all to two strong artifacts, plus one filter learned twice. The optimiser's cases are analytic so the golden pins the search trajectory rather than only the filter's use of it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32144200296, and byte for byte what this laptop produced."
         }
       ]
     }
