@@ -35,6 +35,7 @@ pub mod downsampling;
 pub mod error_probabilities;
 pub mod feature_intervals;
 pub mod features;
+pub mod filtering_engine;
 pub mod filtering_stats;
 pub mod fisher_exact;
 pub mod fragment;
