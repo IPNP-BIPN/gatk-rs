@@ -1727,7 +1727,7 @@
     },
     {
       "id": "string-format",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "String.format(\"%.Nf\") over the shortest digits, not the exact expansion",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -1753,8 +1753,8 @@
       "cases": [
         {
           "dump": "StringFormatDump",
-          "golden": null,
-          "why": "54 rows, no files: twenty values, each with its Double.toString beside one to five formattings. The values are the four ties where the shortest digits and the exact expansion disagree, five magnitudes from 1e21 to Double.MIN_VALUE, the three percentages ClipReads prints, two carries that run the whole way up, zero and negative zero, a negative tie, and the three non-finite spellings. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/string_format.txt.gz",
+          "why": "54 rows, no files: twenty values, each with its Double.toString beside one to five formattings. The values are the four ties where the shortest digits and the exact expansion disagree, five magnitudes from 1e21 to Double.MIN_VALUE, the three percentages ClipReads prints, two carries that run the whole way up, zero and negative zero, a negative tie, and the three non-finite spellings. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32166667635, and byte for byte what this laptop produced."
         }
       ]
     },
