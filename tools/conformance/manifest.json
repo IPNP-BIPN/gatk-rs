@@ -3654,6 +3654,41 @@
           "why": "22 rows, no files: the argument default, the filter's identity, and twenty probabilities over a triallelic record moved through six contamination estimates including both ends of the clamp, four population frequencies including infinity, a POPAF shorter and longer than the record and none at all, a normal-only record, two tumour samples for the weighted median, and five depth shapes. No contamination tables are read, so every sample takes the default estimate. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32135456593, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "haplotype-filter",
+      "status": "golden-pending",
+      "title": "The haplotype filter, which answers from the previous pass and compares filter names with ==",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "FilteredHaplotypeFilter, the ninth of the ten filters the filter-mutect-calls golden needs, and the first with state that outlives a record: it accumulates one artifact probability per phased haplotype across the callset and answers from what the PREVIOUS pass learned. THE FIRST PASS ANSWERS ZERO TO EVERYTHING, phasedProbabilities being read while accumulatingPhasedProbabilities is written and learnParameters moving one to the other between passes, so the output depends on how many passes have run. TWO OF THE THREE NAME COMPARISONS ARE == ON String: germline and normal-artifact are matched by reference, the filter's own name by .equals. It works only because both sides are compile-time constants and therefore interned. .get() ON AN Optional WITH NO GUARD makes a record with no tumour sample a NoSuchElementException out of a filter. THE RECORD FILTERS ITSELF, the distance test including zero: the filter excludes its own FILTER from the accumulated probability, as its comment says, but not its own LOCUS. ONE ENTRY PER TUMOUR GENOTYPE, NOT PER RECORD. THE READING GENOTYPE IS THE ONE WITH THE GREATEST AF, AND A TIE KEEPS THE FIRST, Stream.max reducing with BinaryOperator.maxBy. WHAT THE RUN ADDED: the interning is measurable and it changes the answer. Three adjacent rows differ only in whether a filter's name is the constant or an equal copy of it -- germline-drops-normal-artifact accumulates 0.1, germline-name-not-interned accumulates 0.9, and self-name-not-interned accumulates 0.1 because that one comparison is .equals. A tie in AF answers 0.2 where the greater AF answers 0.8, so the reduce order is observable. And learnParametersAndClearAccumulatedData leaves the accumulating map empty while the learned one keeps all four loci.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 32,
+      "expect_contains": [
+        "default\tmaxDistanceToFilteredCallOnSameHaplotype\t100",
+        "name\thaplotype\thaplotype,ARTIFACT,none,none",
+        "prob\tfirst-pass\t[0.0]",
+        "accumulated\tafter-learning\t(empty)",
+        "prob\tat-its-own-locus\t[0.8]",
+        "prob\texactly-at-the-distance\t[0.8]",
+        "prob\tone-past-the-distance\t[0.4]",
+        "prob\tgreatest-af-wins\t[0.8]",
+        "prob\ttie-keeps-the-first\t[0.2]",
+        "error\tno-tumour-sample\tjava.util.NoSuchElementException:No value present",
+        "accumulated\tshared-haplotype\t0|1100_A_C=[(100,0.6), (100,0.6)]",
+        "accumulated\tgermline-drops-normal-artifact\t0|1100_A_C=[(100,0.1)]",
+        "accumulated\tgermline-name-not-interned\t0|1100_A_C=[(100,0.9)]",
+        "accumulated\tself-name-not-interned\t0|1100_A_C=[(100,0.1)]"
+      ],
+      "cases": [
+        {
+          "dump": "FilteredHaplotypeFilterDump",
+          "golden": null,
+          "why": "32 rows, no files: the argument default, the filter's identity, the accumulating and learned maps read by reflection before and after learning, twelve probabilities over one learned haplotype set covering the distance boundary in both directions and every way the phasing string can be absent, the two-tumour cases that expose which genotype is read, and nine accumulations that vary only in which filters are in the ErrorProbabilities and whether their names are the interned constants. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+        }
+      ]
     }
   ],
   "probes": []
