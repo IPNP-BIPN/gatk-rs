@@ -67,9 +67,16 @@ def main():
     if not arguments.fast:
         # CI tests in release. A debug-only run has passed while release failed before.
         step("cargo test --release", ["cargo", "test", "--workspace", "--release"])
-    step("The ports below are pinned by revision, not by branch",
+    step("The ports below are pinned by revision, and every revision resolves",
          'if grep -E \'^(htsjdk|picard|jmath)[a-z-]* = \\{ git\' Cargo.toml | grep -qv \'rev = "\'; '
-         'then echo "a dependency is not pinned to a revision"; exit 1; fi', shell=True)
+         'then echo "a dependency is not pinned to a revision"; exit 1; fi; '
+         # Checking the form of the pin is not enough: one pin named the wrong repository's SHA for
+         # months because no crate depended on it, so cargo never resolved it. Cargo.lock is cargo's
+         # own record of having resolved a revision.
+         'for revision in $(grep -oE \'rev = "[0-9a-f]+"\' Cargo.toml | grep -oE \'[0-9a-f]+\' | sort -u); do '
+         'if ! grep -q "$revision" Cargo.lock; then '
+         'echo "revision $revision is pinned in Cargo.toml and resolved nowhere in Cargo.lock"; exit 1; fi; done',
+         shell=True)
 
     # dashboard
     step("docs/STATUS.md is generated, not written",
