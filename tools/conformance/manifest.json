@@ -4047,7 +4047,7 @@
     },
     {
       "id": "contamination-model",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The contamination model and the tool around it",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -4058,7 +4058,8 @@
       "cases": [
         {
           "dump": "ContaminationModelDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/contamination_model.txt.gz",
+          "why": "606 rows, no files: three pileup tables built from a formula with integer counts -- a tumour of 350 sites over two contigs with a loss of heterozygosity in the second half of chr1, a matched normal of 200 without one, and a short contig of 40 below the segmenter's window. Each is passed through the tool's coverage filter, then segmented, then modelled, and the contamination is estimated three ways: tumour genotyping itself, the normal genotyping the tumour, and the short table where the segmenter finds nothing. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32195521709, and byte for byte what this laptop produced."
         }
       ]
     }
