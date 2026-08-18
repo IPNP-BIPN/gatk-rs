@@ -27,24 +27,7 @@
 //! only the filters that **fired**. That is measured by running the tool end to end, in its own
 //! slice.
 
-/// `Mutect2Filter.errorType()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorType {
-    Sequencing,
-    Artifact,
-    NonSomatic,
-}
-
-impl ErrorType {
-    /// The enum constant's name, which is what the dump prints.
-    pub fn name(self) -> &'static str {
-        match self {
-            ErrorType::Sequencing => "SEQUENCING",
-            ErrorType::Artifact => "ARTIFACT",
-            ErrorType::NonSomatic => "NON_SOMATIC",
-        }
-    }
-}
+pub use crate::error_probabilities::ErrorType;
 
 /// Whether a filter answers one probability per allele or one for the site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
