@@ -4044,6 +4044,23 @@
           "why": "131 rows, no files: three data series -- a step function with two changes, a flat series with none, and a ramp where every point differs from the last -- each decomposed at a six-point kernel approximation, giving six singular values and thirty-six U entries printed as raw bits; and five changepoint runs over the same series, including the same series at a lenient and a strict penalty. The dimension is small on purpose: the question is which bits differ, not how many there are. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32183086474, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "contamination-model",
+      "status": "golden-pending",
+      "title": "The contamination model and the tool around it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "CalculateContamination is the last unblocked member of the reporting-walker archetype and the decomposition under it is already ported and pinned by kernel-segmentation. This measures everything above it. THE COVERAGE FILTER USES A MEDIAN AND A MEAN, the low threshold a ratio of the median and the high threshold a ratio of the mean, both computed after dropping sites at or below MIN_COVERAGE. THE MODEL ITERATES THREE TIMES between minor allele fractions and contamination, feeding the previous contamination back in, so a port that solved once lands somewhere else. THE LOH SEARCH WALKS THE THRESHOLD DOWN in steps of 0.04 and stops at the first threshold keeping more than a quarter of the sites, so the answer depends on the order of the walk. THE STRATEGY CASCADE IS THREE STRATEGIES OVER ONE LOOP, hom alt above 0.25, hom ref down to 0.20, then the unscrupulous hom ref, returning the first estimate whose standard error is small enough relative to the estimate. THE STANDARD ERROR IS A BINARY SEARCH and the closed formula is only its fallback. THE UNSCRUPULOUS STRATEGY GOES THROUGH A PERCENTILE, so its threshold is commons-math's interpolation rather than a sorted index. AND THE SEGMENTATION IS PER CONTIG, so a contig with too few het sites for the window is one segment rather than none. The sites are built from a formula with integer counts so a port rebuilds exactly the same input.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ContaminationModelDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []
