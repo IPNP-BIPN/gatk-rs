@@ -3457,7 +3457,7 @@
     },
     {
       "id": "filter-mutect-calls",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "FilterMutectCalls run end to end, where a mode builds a shorter filter list",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -3482,8 +3482,8 @@
       "cases": [
         {
           "dump": "FilterMutectCallsDump",
-          "golden": null,
-          "why": "320 rows: two input VCFs over one kilobase of reference, three stats tables and six runs. The main input carries eight records: three clean and clonal, one with weak evidence, one with a poor alternate base quality, one whose median read position is zero, one with nine events in its haplotype and one that looks germline. The runs are the default, mitochondrial mode over the same input, the one-record input, a stats table saying nothing was callable, a constant threshold strategy, and a stats table that is not there. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-tools/tests/data/filter_mutect_calls.txt.gz",
+          "why": "320 rows: two input VCFs over one kilobase of reference, three stats tables and six runs. The main input carries eight records: three clean and clonal, one with weak evidence, one with a poor alternate base quality, one whose median read position is zero, one with nine events in its haplotype and one that looks germline. The runs are the default, mitochondrial mode over the same input, the one-record input, a stats table saying nothing was callable, a constant threshold strategy, and a stats table that is not there. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32110868113, and byte for byte what this laptop produced."
         }
       ]
     }
