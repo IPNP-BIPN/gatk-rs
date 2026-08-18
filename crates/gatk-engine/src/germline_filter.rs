@@ -33,9 +33,12 @@
 //! prior of one therefore answers `0.0` whatever the odds say, and a prior of negative infinity
 //! answers `1.0`.
 
+use crate::allele_filter::{sum_ads_over_samples, AlleleDepthTooShort, GenotypeData};
+use crate::math_utils::{max_element_index, pow10};
 use crate::natural_log_utils::{
     log1mexp, log_sum_exp, normalize_from_log_to_linear_space, NonFiniteSum,
 };
+use crate::somatic_clustering_model::{indel_length, AlternateAllele, SomaticClusteringModel};
 
 /// `germlineProbability`.
 ///
@@ -69,6 +72,222 @@ pub fn germline_probability(
     let normalized = normalize_from_log_to_linear_space(&[log_prob_germline, log_prob_somatic])?;
     // The FIRST entry: germline.
     Ok(normalized[0])
+}
+
+/// `GermlineFilter`'s identity.
+pub const FILTER_NAME: &str = "germline";
+
+/// `phredScaledPosteriorAnnotationName`, `GERMLINE_QUAL_KEY`.
+pub const ANNOTATION: &str = "GERMQ";
+
+/// `GermlineFilter.EPSILON`, which brackets the population frequency.
+pub const EPSILON: f64 = 1.0e-10;
+
+/// `MIN_ALLELE_FRACTION_FOR_GERMLINE_HOM_ALT`, below which the hom-alt hypothesis is switched off by
+/// a value rather than by a flag.
+pub const MIN_ALLELE_FRACTION_FOR_GERMLINE_HOM_ALT: f64 = 0.9;
+
+/// `NaturalLogUtils.LOG_ONE_HALF`.
+fn log_one_half() -> f64 {
+    jmath::math::log(0.5)
+}
+
+/// What the wrapper refuses.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GermlineError {
+    /// A genotype's `AD` shorter than the record's allele count.
+    AlleleDepth(AlleleDepthTooShort),
+    /// `MathUtils.addToArrayInPlace`: the arrays must have the same length, and a genotype with no
+    /// `AF` supplies a one-element default whatever the record's allele count is.
+    ArrayLengthsDiffer,
+    /// `logSumExp` or the normalisation over a sum that is not finite.
+    NonFiniteSum(NonFiniteSum),
+}
+
+impl GermlineError {
+    pub fn class(&self) -> &'static str {
+        match self {
+            GermlineError::AlleleDepth(_) => "java.lang.ArrayIndexOutOfBoundsException",
+            GermlineError::ArrayLengthsDiffer => "java.lang.IllegalArgumentException",
+            GermlineError::NonFiniteSum(_) => "java.lang.IllegalArgumentException",
+        }
+    }
+}
+
+impl From<AlleleDepthTooShort> for GermlineError {
+    fn from(error: AlleleDepthTooShort) -> Self {
+        GermlineError::AlleleDepth(error)
+    }
+}
+
+impl From<NonFiniteSum> for GermlineError {
+    fn from(error: NonFiniteSum) -> Self {
+        GermlineError::NonFiniteSum(error)
+    }
+}
+
+/// `Mutect2FilteringEngine.weightedAverageOfTumorAFs`.
+///
+/// The weights are the tumour genotypes' total depths, and the division by their sum comes last, so
+/// a record with no tumour depth divides by zero rather than refusing.
+pub fn weighted_average_of_tumor_afs<T>(
+    genotypes: &[GenotypeData<T>],
+    allele_fractions: &[Vec<f64>],
+    alternate_count: usize,
+) -> Result<Vec<f64>, GermlineError> {
+    let mut total_weight = 0.0;
+    let mut averages = vec![0.0; alternate_count];
+    for (index, genotype) in genotypes.iter().enumerate() {
+        if !genotype.tumor {
+            continue;
+        }
+        let weight: f64 = genotype.allele_depths.iter().map(|d| f64::from(*d)).sum();
+        total_weight += weight;
+        // `getAttributeAsDoubleArray(g, AF, () -> new double[] {0.0}, 0.0)`: a genotype with no `AF`
+        // supplies ONE zero, whatever the record's allele count is.
+        let sample: Vec<f64> = if allele_fractions[index].is_empty() {
+            vec![0.0]
+        } else {
+            allele_fractions[index].clone()
+        };
+        // `MathArrays.scaleInPlace` then `MathUtils.addToArrayInPlace`, which validates the lengths.
+        if sample.len() != averages.len() {
+            return Err(GermlineError::ArrayLengthsDiffer);
+        }
+        for (average, fraction) in averages.iter_mut().zip(&sample) {
+            *average += weight * fraction;
+        }
+    }
+    for average in averages.iter_mut() {
+        *average *= 1.0 / total_weight;
+    }
+    Ok(averages)
+}
+
+/// `GermlineFilter.computeMinorAlleleFraction`.
+///
+/// With no tumour segmentation table every sample's minor allele fraction is `0.5`, so this is a
+/// depth-weighted average of one repeated constant. `minor_allele_fractions` is one value per
+/// genotype, `0.5` where no segment overlaps the record; the denominator is the tumour-only depth
+/// sum the caller already computed.
+pub fn compute_minor_allele_fraction<T>(
+    genotypes: &[GenotypeData<T>],
+    minor_allele_fractions: &[f64],
+    allele_counts: &[i32],
+) -> f64 {
+    let mut weighted_sum = 0.0;
+    for (index, genotype) in genotypes.iter().enumerate() {
+        if !genotype.tumor {
+            continue;
+        }
+        let depth: f64 = genotype.allele_depths.iter().map(|d| f64::from(*d)).sum();
+        weighted_sum += minor_allele_fractions[index] * depth;
+    }
+    let total: f64 = allele_counts.iter().map(|d| f64::from(*d)).sum();
+    weighted_sum / total
+}
+
+/// `BinomialDistribution.logProbability(x)`.
+fn binomial_log_probability(trials: i32, x: i32, p: f64) -> f64 {
+    if trials == 0 {
+        return if x == 0 { 0.0 } else { f64::NEG_INFINITY };
+    }
+    if x < 0 || x > trials {
+        return f64::NEG_INFINITY;
+    }
+    jmath::saddle_point::log_binomial_probability(x, trials, p, 1.0 - p)
+}
+
+/// `GermlineFilter.calculateErrorProbability`, with `Mutect2VariantFilter`'s copy around it.
+///
+/// `tumor_log_10_odds` is `TLOD` and `population_negative_log10_af` is `POPAF`, both `None` when the
+/// annotation is absent, which the required-annotation check answers with `0.0` per allele.
+/// `normal_log_10_odds` is `NLOD`, absent meaning zero rather than a skip.
+#[allow(clippy::too_many_arguments)]
+pub fn germline_error_probabilities<T>(
+    model: &mut SomaticClusteringModel,
+    tumor_log_10_odds: Option<&[f64]>,
+    population_negative_log10_af: Option<&[f64]>,
+    normal_log_10_odds: Option<&[f64]>,
+    genotypes: &[GenotypeData<T>],
+    allele_fractions: &[Vec<f64>],
+    minor_allele_fractions: &[f64],
+    alternates: &[AlternateAllele],
+    reference_length: i32,
+) -> Result<Vec<f64>, GermlineError> {
+    let alternate_count = alternates.len();
+    let (Some(tumor_log_10_odds), Some(population_negative_log10_af)) =
+        (tumor_log_10_odds, population_negative_log10_af)
+    else {
+        return Ok(vec![0.0; alternate_count]);
+    };
+
+    // `getTumorLogOdds` converts to natural log before the maximum is taken.
+    let somatic_log_odds: Vec<f64> = tumor_log_10_odds
+        .iter()
+        .map(|value| crate::allele_likelihoods::log10_to_log(*value))
+        .collect();
+    let max_lod_index = max_element_index(&somatic_log_odds, 0, somatic_log_odds.len());
+
+    // `Math.pow(10, -POPAF[maxLodIndex])`, and the two brackets around it.
+    let population_af = pow10(-population_negative_log10_af[max_lod_index]);
+    if population_af < EPSILON {
+        return Ok(vec![0.0; alternate_count]);
+    } else if population_af > 1.0 - EPSILON {
+        return Ok(vec![1.0; alternate_count]);
+    }
+
+    let allele_counts = sum_ads_over_samples(alternate_count + 1, genotypes, true, false)?;
+    let total_count: i32 = allele_counts.iter().sum();
+    if total_count == 0 {
+        return Ok(vec![0.0; alternate_count]);
+    }
+    // The depth array carries the reference, so the alternate needs `+ 1`; the weighted fractions do
+    // not, so they take the index as it is.
+    let alt_count = allele_counts[max_lod_index + 1];
+    let alt_allele_fraction =
+        weighted_average_of_tumor_afs(genotypes, allele_fractions, alternate_count)?[max_lod_index];
+
+    let maf = compute_minor_allele_fraction(genotypes, minor_allele_fractions, &allele_counts);
+
+    // Alt minor and alt major, added and halved in log space.
+    let log_germline_likelihood = log_one_half()
+        + log_sum_exp(&[
+            binomial_log_probability(total_count, alt_count, maf),
+            binomial_log_probability(total_count, alt_count, 1.0 - maf),
+        ])?;
+    let log_somatic_likelihood = model.log_likelihood_given_somatic(total_count, alt_count)?;
+    let log_odds_of_germline_het_vs_somatic = log_germline_likelihood - log_somatic_likelihood;
+    // Switched off by a value, not by a flag.
+    let log_odds_of_germline_hom_alt_vs_somatic =
+        if alt_allele_fraction < MIN_ALLELE_FRACTION_FOR_GERMLINE_HOM_ALT {
+            f64::NEG_INFINITY
+        } else {
+            0.0
+        };
+
+    // `NLOD` is log10 and is converted; absent, it is zero rather than a skip.
+    let normal_lod = match normal_log_10_odds {
+        Some(odds) => crate::allele_likelihoods::log10_to_log(odds[max_lod_index]),
+        None => 0.0,
+    };
+
+    let prior = model
+        .log_prior_of_somatic_variant(indel_length(reference_length, alternates[max_lod_index]));
+    // The minus sign is the reference's: `NLOD` is the odds of the allele NOT being in the normal.
+    let probability = germline_probability(
+        -normal_lod,
+        log_odds_of_germline_het_vs_somatic,
+        log_odds_of_germline_hom_alt_vs_somatic,
+        population_af,
+        prior,
+    )?;
+    Ok(vec![
+        crate::mutect_engine::round_finite_precision_errors(
+            probability
+        );
+        alternate_count
+    ])
 }
 
 #[cfg(test)]
