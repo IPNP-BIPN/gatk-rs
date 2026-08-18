@@ -3793,7 +3793,7 @@
     },
     {
       "id": "apply-filters",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Applying the filters, where SITE is a placeholder and a filter can fire without being named",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3822,8 +3822,8 @@
       "cases": [
         {
           "dump": "ApplyFiltersDump",
-          "golden": null,
-          "why": "20 rows, no files: eighteen applications over biallelic and triallelic records, with the symbolic allele last and first, covering every allele filtered by one filter and by different ones, one allele carrying two, a site filter beside allele filters, the reporting floor from both sides, the phred-scaled annotation with and without its required annotations and with and without the filter firing, an empty list from a filter, and the threshold at each end of its clamp. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/apply_filters.txt.gz",
+          "why": "20 rows, no files: eighteen applications over biallelic and triallelic records, with the symbolic allele last and first, covering every allele filtered by one filter and by different ones, one allele carrying two, a site filter beside allele filters, the reporting floor from both sides, the phred-scaled annotation with and without its required annotations and with and without the filter firing, an empty list from a filter, and the threshold at each end of its clamp. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32154265444, and byte for byte what this laptop produced."
         }
       ]
     }
