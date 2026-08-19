@@ -500,6 +500,25 @@
       ]
     },
     {
+      "id": "filter-intervals",
+      "status": "golden-pending",
+      "title": "The intervals a copy-number panel may use",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FilterIntervals"
+      ],
+      "why": "THE FILTERS SHARE ONE MASK AND RUN IN ORDER, so an interval failed by the GC filter is not in the population the percentiles are computed over. THE ANNOTATION BOUNDS ARE INCLUSIVE. THE LOW-COUNT FILTER IS STRICTLY GREATER, failing an interval when the number of samples below the threshold exceeds percentage times numSamples over 100, so one sample of two is not enough at the default fifty per cent. THE PERCENTILE FILTER TAKES ITS PERCENTILES OVER THE SURVIVORS ONLY, per sample, with inclusive bounds. A PERCENTILE OF ZERO IS SHORT-CIRCUITED TO A THRESHOLD OF ZERO rather than evaluated. WITH NEITHER ANNOTATIONS NOR COUNTS THE TOOL REFUSES. AND THE OUTPUT IS A PICARD INTERVAL LIST rather than the TSV every other copy-number tool writes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FilterIntervalsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
