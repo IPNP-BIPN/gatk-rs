@@ -421,7 +421,7 @@
     },
     {
       "id": "call-copy-ratio-segments",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Copy-ratio segments called",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -434,7 +434,8 @@
       "cases": [
         {
           "dump": "CallCopyRatioSegmentsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/call_copy_ratio_segments.txt.gz",
+          "why": "16 rows, no files that travel: eight tables the harness writes, run through the tool and printed with the legacy .igv.seg beside each. A spread with two segments at exactly the bounds, an all-neutral set, a single copy-neutral segment (whose standard deviation divides by zero), an empty copy-neutral set, segments of very different lengths, moved bounds, a calling threshold of zero and inverted bounds. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32299022405, and byte for byte what this laptop produced."
         }
       ]
     },
