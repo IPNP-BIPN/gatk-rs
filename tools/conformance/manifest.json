@@ -481,7 +481,7 @@
     },
     {
       "id": "denoise-read-counts",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Standardization without a panel of normals",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -494,7 +494,8 @@
       "cases": [
         {
           "dump": "DenoiseReadCountsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/denoise_read_counts.txt.gz",
+          "why": "13 rows, no files that travel: seven read-count tables the harness writes, run with no panel and no GC annotations. Six produce two files each, printed as the standardized and the denoised copy ratios -- five intervals, the same five doubled, an even number of intervals, a zero count, every count equal, and a single interval -- and the seventh, every count zero, is a refusal: the sum is zero, every fractional value is a NaN, and isPositive refuses a NaN median. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32307005892, and byte for byte what this laptop produced."
         }
       ]
     },
