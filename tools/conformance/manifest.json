@@ -360,6 +360,25 @@
       ]
     },
     {
+      "id": "ase-read-counter",
+      "status": "golden-pending",
+      "title": "Reference and alternate counts at heterozygous sites",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ASEReadCounter"
+      ],
+      "why": "THE COUNTING CASCADE IS ORDERED: improper pair, then low mapping quality, then low base quality, then other-base, each of which continues, so a low-quality base on an improperly paired read counts as an improper pair and nothing else and rawDepth is the only counter that sees every read. OVERLAPPING MATES ARE ONE READ BY DEFAULT: COUNT_FRAGMENTS_REQUIRE_SAME_BASE keeps one element per read name and discards the pair entirely when the two disagree, COUNT_FRAGMENTS keeps the better-quality one either way, and COUNT_READS keeps both. A DISCARDED PAIR STAYS DISCARDED, because the filter remembers the names it deleted. THE SITE FILTERS ARE THREE DIFFERENT ANSWERS: a non-biallelic site is skipped, a site with no het genotype is skipped, and two records at one position is a UserException that stops the run. A SITE BELOW --min-depth-of-non-filtered-base PRODUCES NO LINE AT ALL. THE SEPARATOR IS THE ONLY DIFFERENCE BETWEEN TABLE AND RTABLE and CSV is a comma. AND THE HEADER IS PRINTED BEFORE THE TRAVERSAL, so a run with no rows still writes one line.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ASEReadCounterDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
