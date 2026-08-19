@@ -300,6 +300,25 @@
       ]
     },
     {
+      "id": "fasta-alternate-reference-maker",
+      "status": "golden-pending",
+      "title": "A reference with a VCF applied to it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FastaAlternateReferenceMaker"
+      ],
+      "why": "FastaReferenceMaker with a VCF applied, so every base of the traversal is copied, replaced, dropped or expanded. A DELETION KEEPS ITS FIRST BASE AND DROPS THE NEXT n through a counter that survives from one apply to the next, so the bases removed are the ones after the record's position. AN INSERTION EMITS THE WHOLE ALTERNATE ALLELE, anchor base included, so one locus contributes several bases. A FILTERED RECORD IS SKIPPED, and so is a record whose start is not this locus. THE FIRST CONCRETE ALTERNATE IS THE ONE USED, so a record whose first alternate is the spanning deletion uses the second. THE SNP MASK WRITES N and --snp-mask-priority decides whether it beats a called SNP at the same site. --use-iupac-sample REPLACES A HET WITH ITS AMBIGUITY CODE taken from that sample's genotype rather than from the alternate allele. AND THE ARGUMENT CHECKS FIRE BEFORE THE TRAVERSAL: a priority flag with no mask is a CommandLineException and a sample the VCF does not have is a UserException.BadInput.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FastaAlternateReferenceMakerDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
