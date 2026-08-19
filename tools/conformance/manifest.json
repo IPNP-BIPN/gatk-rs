@@ -381,7 +381,7 @@
     },
     {
       "id": "collect-allelic-counts",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Reference and alternate counts per locus",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -394,7 +394,8 @@
       "cases": [
         {
           "dump": "CollectAllelicCountsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/collect_allelic_counts.txt.gz",
+          "why": "6 rows, no files that travel: one BAM of seven reads the harness writes -- two carrying the reference bases, one all A, one all C, one all N, one with a base at quality 19 and one at mapping quality 20 -- run six ways. The default, two base quality thresholds, the reference's N run, a window with no reads at all, and the window covered only by the low-mapping-quality read. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32291444404, and byte for byte what this laptop produced."
         }
       ]
     },
