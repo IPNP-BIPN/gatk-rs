@@ -15,6 +15,7 @@ pub mod ase_read_counter;
 pub mod base_recalibrator;
 pub mod calculate_contamination;
 pub mod calculate_mixing_fractions;
+pub mod call_copy_ratio_segments;
 pub mod check_pileup;
 pub mod clip_reads;
 pub mod collect_allelic_counts;
