@@ -441,7 +441,7 @@
     },
     {
       "id": "annotate-intervals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GC content and BED-weighted annotations per interval",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -454,7 +454,8 @@
       "cases": [
         {
           "dump": "AnnotateIntervalsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/annotate_intervals.txt.gz",
+          "why": "7 rows, no files that travel: one FASTA and three BED tracks the harness writes and indexes, run eight ways. GC content alone over three windows, a window inside the reference's N run, two single bases, a mappability track, both tracks at once, an overlapping track, a touching one, and a run without the merging rule the tool requires. The @SQ lines carry a UR pointing at the container's own working directory, which is /work in the harness and in CI alike. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32300192529, and byte for byte what this laptop produced."
         }
       ]
     },
