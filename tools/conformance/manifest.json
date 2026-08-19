@@ -340,6 +340,25 @@
       ]
     },
     {
+      "id": "pileup-tool",
+      "status": "golden-pending",
+      "title": "A samtools-style pileup and its optional columns",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Pileup"
+      ],
+      "why": "THE DEFAULT FILTERS ARE THE WALKER'S PLUS THREE: this tool adds NotDuplicate, PassesVendorQualityCheck and NotSecondaryAlignment, so a duplicate that reaches CountReads never reaches this one. THE PILEUP IS FILTERED OF DELETIONS BEFORE ANYTHING IS PRINTED, so a deletion contributes to neither the base string nor the insert lengths, and the verbose column then reports a deletion count of zero at every locus because it counts them in the already-filtered pileup. WITHOUT A REFERENCE THE BASE IS 'N', which changes every base in the string that would have matched. THE FEATURES COLUMN IS ALWAYS PRINTED even when empty, so a line with no metadata ends in a trailing space. THE INSERT LENGTHS ARE ONE PER READ in pileup order, and a read with no mate has a fragment length of zero. AND THE VERBOSE COLUMN IS name@offset@length@mappingQuality per read, joined by commas, after the deletion count.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PileupDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
