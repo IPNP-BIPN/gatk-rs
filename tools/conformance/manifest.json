@@ -240,7 +240,7 @@
     },
     {
       "id": "count-reads-and-bases",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "CountReads and CountBases, and what the engine does before apply",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -254,7 +254,8 @@
       "cases": [
         {
           "dump": "CountReadsAndBasesDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/count_reads_and_bases.txt.gz",
+          "why": "21 rows, no files that travel: two BAMs the harness builds, the shared eleven-record fixture and a second one whose reads are fifteen, five, ten and zero bases long. Eight runs of each tool over the first -- everything, with a reference, each contig, the deletion window, a duplicate filter added, every default filter disabled, and an unknown contig -- and two over the second. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32269884234, and byte for byte what this laptop produced."
         }
       ]
     },
