@@ -85,6 +85,13 @@ pub enum IntervalArgumentError {
     UnmappedExcluded,
     /// `getTraversalParameters` without any interval argument at all.
     NoIntervalsSpecified,
+    /// `UserException.MalformedGenomeLoc`: the interval parsed, and then ran off its contig.
+    ///
+    /// `getResolvedIntervals` does not check the length -- it only asks whether the positions are
+    /// a valid interval at all -- so `chr2:20-40` on a 24-base contig resolves happily and dies in
+    /// `GenomeLocParser.validateGenomeLoc`, whose `mustBeOnReference` is true. A clip would be a
+    /// different tool: this is a refusal.
+    MalformedGenomeLoc(String),
     /// The argument ends in `.list` or `.intervals` and there is no such file.
     IntervalFileMissing(String),
     /// `UserException.MalformedFile`: the interval file held no intervals.
@@ -273,7 +280,12 @@ pub fn gatk_interval_file_to_list(
         if trimmed.is_empty() {
             continue;
         }
-        intervals.push(interval::parse_interval(trimmed, header)?);
+        let parsed = interval::parse_interval(trimmed, header)?;
+        // The same validation the literal `-L` path gets: an interval file goes through
+        // `GenomeLocParser` line by line upstream, so a line that runs off its contig is the same
+        // refusal as an argument that does.
+        validate_on_reference(&parsed, header)?;
+        intervals.push(parsed);
     }
     if intervals.is_empty() {
         return Err(IntervalArgumentError::IntervalFileEmpty);
@@ -352,7 +364,26 @@ pub fn parse_interval_arguments(
             query.to_string(),
         ));
     }
-    Ok(vec![interval::parse_interval(query, header)?])
+    let parsed = interval::parse_interval(query, header)?;
+    validate_on_reference(&parsed, header)?;
+    Ok(vec![parsed])
+}
+
+/// `GenomeLocParser.validateGenomeLoc` with `mustBeOnReference` true, reduced to the check the
+/// dictionary can make: the stop is on the contig.
+///
+/// The start is already at least one, because `SimpleInterval::is_valid` refused anything else
+/// before this is reached.
+fn validate_on_reference(
+    interval: &SimpleInterval,
+    header: &SamHeader,
+) -> Result<(), IntervalArgumentError> {
+    match contig_length(header, &interval.contig) {
+        Some(length) if interval.end > length => Err(IntervalArgumentError::MalformedGenomeLoc(
+            format!("{}:{}-{}", interval.contig, interval.start, interval.end),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// `IntervalUtils.loadIntervals`: parse each argument, pad it, fold it in under the set rule, then

@@ -73,6 +73,12 @@ impl ReferenceFileSource {
             .map(|(_, length)| *length)
     }
 
+    /// `getSequenceDictionary().getSequences()`: every contig and its length, in the `.fai`'s
+    /// order, which is the dictionary order every interval list is sorted into.
+    pub fn sequences(&self) -> &[(String, usize)] {
+        &self.lengths
+    }
+
     /// `getSequenceDictionary().getSequence(contig).getSequenceLength()`, or `None` where the
     /// reference has no such contig and throws.
     pub fn sequence_length(&self, contig: &str) -> Option<usize> {
