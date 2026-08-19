@@ -19,9 +19,12 @@
  *   - A ZERO COUNT IS FLOORED RATHER THAN INFINITE. `safeLog2` answers `log2(1e-9)` for anything
  *     below `1e-9`, so an interval no read started in reads -29.897353 and not minus infinity, and
  *     the row's median is computed over that floor like any other number;
- *   - AND THE TWO OUTPUT FILES ARE IDENTICAL when there is no panel: the tool writes the
- *     standardized result as the denoised one as well, which is a fact about the files rather than
- *     about the arithmetic.
+ *   - THE TWO OUTPUT FILES ARE IDENTICAL when there is no panel: the tool writes the standardized
+ *     result as the denoised one as well, which is a fact about the files rather than about the
+ *     arithmetic;
+ *   - AND AN ALL-ZERO ROW IS A REFUSAL RATHER THAN A ROW OF FLOORS. The sum is zero, so every
+ *     fractional value is a NaN, and the median is refused by `ParamUtils.isPositive` -- for which
+ *     a NaN is not positive. A port testing `median <= 0` would let it through and write NaNs.
  *
  * Output:
  *
@@ -99,6 +102,15 @@ public class DenoiseReadCountsDump {
         // One interval, where the median is the value itself.
         final String single = HEADER + "chr1\t1\t100\t42\n";
         run("single", dir, write(dir, "single.counts.tsv", single));
+
+        // Every count zero. The fractional-coverage step divides by a sum of zero, so every value
+        // is a NaN and the median is one too -- and `ParamUtils.isPositive` refuses a NaN, because
+        // `NaN > 0` is false. A port testing `median <= 0` would not refuse it.
+        final String allZero = HEADER
+                + "chr1\t1\t100\t0\n"
+                + "chr1\t101\t200\t0\n"
+                + "chr1\t201\t300\t0\n";
+        run("all-zero", dir, write(dir, "all-zero.counts.tsv", allZero));
     }
 
     static Path write(final Path dir, final String name, final String text) throws Exception {
