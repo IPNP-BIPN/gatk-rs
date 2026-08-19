@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 82 | 26.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 83 | 26.7% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 216 | 69.5% |
 | **total** | **311** | |
@@ -82,7 +82,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
 | `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
-| `CollectAllelicCounts` | locus-walker | golden-pending | collect-allelic-counts | 1 | not measured |
+| `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
