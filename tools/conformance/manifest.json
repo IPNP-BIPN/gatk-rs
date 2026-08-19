@@ -461,7 +461,7 @@
     },
     {
       "id": "collect-read-counts",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Read counts per interval",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -474,7 +474,8 @@
       "cases": [
         {
           "dump": "CollectReadCountsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/collect_read_counts.txt.gz",
+          "why": "6 rows, no files that travel: one BAM of six reads the harness writes, run six ways. Four adjacent intervals, an interval a long read covers entirely without starting in, an interval on the contig with no reads, two intervals given out of order, the window covered only by the read below the mapping quality threshold, and a run with no intervals at all. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32305470003, and byte for byte what this laptop produced."
         }
       ]
     },
