@@ -7,6 +7,7 @@
 
 pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
+pub mod annotate_intervals;
 pub mod annotate_vcf_with_bam_depth;
 pub mod annotate_vcf_with_expected_allele_fraction;
 pub mod apply_bqsr;
