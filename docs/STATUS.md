@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 88 | 28.3% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 89 | 28.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 210 | 67.5% |
 | **total** | **311** | |
@@ -99,7 +99,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | not measured |
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | not measured |
-| `FilterIntervals` | cnv-segmentation | golden-pending | filter-intervals | 1 | not measured |
+| `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | not measured |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | not measured |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
