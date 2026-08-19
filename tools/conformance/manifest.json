@@ -280,6 +280,25 @@
       ]
     },
     {
+      "id": "shift-fasta",
+      "status": "golden-pending",
+      "title": "A reference shifted, and the three files beside it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ShiftFasta"
+      ],
+      "why": "The fifth member of the reference archetype and the first that needs nothing new. THE DEFAULT OFFSET IS HALF THE CONTIG by integer division, computed per contig. THE SHIFTED SEQUENCE IS THE TWO HALVES SWAPPED, tail first, written as two appendBases calls so the line break does not fall at the join. A CONTIG WHOSE OFFSET IS 0 OR THE WHOLE LENGTH IS SKIPPED ENTIRELY rather than copied unshifted, so it is absent from the output FASTA and from the chain file. THE CHAIN FILE IS TWO RECORDS PER CONTIG with an id that counts across contigs, the first record's score being the shift-back offset and the second's the offset minus one. THE INTERVAL FILES DIFFER BY THE CONTIG'S PARITY: the shifted end gains contigLength % 2 and the unshifted one does not, and both starts are shiftOffset/2, which is zero for a contig shifted by one. AND AN OFFSET LIST OF THE WRONG LENGTH IS A UserException.BadInput checked before any contig is written.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ShiftFastaDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
