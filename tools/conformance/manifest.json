@@ -460,6 +460,25 @@
       ]
     },
     {
+      "id": "collect-read-counts",
+      "status": "golden-pending",
+      "title": "Read counts per interval",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CollectReadCounts"
+      ],
+      "why": "A READ IS COUNTED BY ITS START AND BY NOTHING ELSE: the overlap is computed against a one-base interval at the read's start, so a read spanning three intervals is counted in one and a read that starts before an interval and covers all of it is counted in neither. THE OVERLAP DETECTOR IS REBUILT PER CONTIG and holds only that contig's intervals. EVERY REQUESTED INTERVAL IS A ROW, in the order the interval argument produced, so an interval no read starts in is a row of zero. THE FILTERS ARE THE WALKER'S PLUS FOUR, one of them a mapping quality of 30. THE DEFAULT OUTPUT IS HDF5 AND THE TSV IS OPT-IN, carrying a SAM header, the sample as a read group and three columns. AND THE TOOL REQUIRES INTERVALS, refusing before it reads anything without them.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CollectReadCountsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
