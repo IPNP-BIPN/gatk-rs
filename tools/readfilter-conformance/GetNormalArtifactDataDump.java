@@ -16,8 +16,11 @@
  *   - A SITE WITH NO NORMAL ALTERNATE IS SKIPPED, and so is one whose normal alternate is more than
  *     a fifth of the normal pileup: the tool is looking for artefacts, not variants;
  *   - THE DOWNSAMPLE IS RANDOM BUT SEEDED. `Utils.getRandomGenerator()` is `new Random(47382911)`,
- *     shared across the whole run, so the sites that survive depend on how many `nextDouble` calls
- *     came before -- a port that drew at a different moment keeps a different set of sites;
+ *     ONE STATIC GENERATOR FOR THE PROCESS, drawn on once per candidate locus. A real run is one
+ *     tool per JVM and starts at the seed; this harness runs seven in one JVM, so it RESETS the
+ *     generator before each, which is what makes each case mean what the same command would mean on
+ *     its own. Without the reset the seventh case's answer depends on how many candidates the first
+ *     six had, which is a property of the harness rather than of the tool;
  *   - THE KEEP PROBABILITY HAS A FLOOR of 0.05 and comes from the tumour's binomial p-value, so a
  *     site the tumour supports strongly is always kept and one it does not is usually dropped;
  *   - A TUMOUR ALTERNATE ABOVE HALF THE TUMOUR PILEUP IS SKIPPED, and that test happens AFTER the
@@ -207,6 +210,12 @@ public class GetNormalArtifactDataDump {
         final List<String> argv = new ArrayList<>(Arrays.asList(
                 "-R", fasta.toString(), "-I", bam.toString(), "-O", out.toString()));
         argv.addAll(Arrays.asList(extra));
+        // `Utils.getRandomGenerator()` is ONE static generator for the whole process, and this tool
+        // draws from it once per candidate locus. A real run is one tool per JVM and therefore
+        // starts at the seed; seven runs in one JVM would not, and the sites the seventh keeps
+        // would depend on how many candidates the first six had. Resetting is what makes each case
+        // here mean what the same command would mean on its own.
+        org.broadinstitute.hellbender.utils.Utils.resetRandomGenerator();
         try {
             new GetNormalArtifactData().instanceMain(argv.toArray(new String[0]));
         } catch (final Exception | AssertionError e) {
