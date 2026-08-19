@@ -239,6 +239,26 @@
       ]
     },
     {
+      "id": "count-reads-and-bases",
+      "status": "golden-pending",
+      "title": "CountReads and CountBases, and what the engine does before apply",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountReads",
+        "CountBases"
+      ],
+      "why": "The two smallest tools in GATK, and the second and third members of the reference-and-coverage archetype: their whole implementation is an apply that increments a counter, so what is measured is everything the engine does before apply is reached. THE DEFAULT FILTERS ARE NOT NOTHING: WellformedReadFilter runs on every read walker, so the read with no read group and the read with an N operator never reach apply. COUNTBASES COUNTS getLength(), the sequence, NOT THE SPAN, so a read with a ten-base deletion contributes ten and not twenty. -L RESTRICTS BOTH, and an unmapped read parked at its mate's coordinate is inside the interval while an unplaced read is outside every one. AN ADDED --read-filter IS ADDITIONAL rather than a replacement, and --disable-tool-default-read-filters is what counts the records the file actually holds. AND THE TWO TOOLS SEE THE SAME READS, which is what makes them one archetype.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CountReadsAndBasesDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
