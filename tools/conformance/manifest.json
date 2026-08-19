@@ -341,7 +341,7 @@
     },
     {
       "id": "pileup-tool",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A samtools-style pileup and its optional columns",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -354,7 +354,8 @@
       "cases": [
         {
           "dump": "PileupDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/pileup_tool.txt.gz",
+          "why": "9 rows, no files that travel: one BAM and one metadata VCF the harness writes and indexes, run nine ways. Plain, verbose, insert lengths, both, metadata, no reference at all, the deletion read, the duplicate read (which produces an empty file) and the soft-masked stretch. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32288591691, and byte for byte what this laptop produced."
         }
       ]
     },
