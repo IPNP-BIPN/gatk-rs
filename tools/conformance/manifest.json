@@ -420,6 +420,25 @@
       ]
     },
     {
+      "id": "call-copy-ratio-segments",
+      "status": "golden-pending",
+      "title": "Copy-ratio segments called",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CallCopyRatioSegments"
+      ],
+      "why": "Pure arithmetic over a table: no reads, no reference, no walker. THE NEUTRAL BOUNDS ARE INCLUSIVE AT BOTH ENDS and are compared against 2^log2 rather than the log2 value. THE STATISTICS ARE COMPUTED TWICE, the outlier filter using the unfiltered mean and standard deviation and the calling threshold using the filtered ones. THE OUTLIER FILTER IS INCLUSIVE TOO. THE STANDARD DEVIATION'S DENOMINATOR IS ((n-1)/n) * totalLength, which is neither the population nor the sample form and is zero for a single copy-neutral segment. A RUN WHOSE COPY-NEUTRAL SET IS EMPTY CALLS EVERYTHING NEUTRAL, because the mean is NaN and every comparison against it is false. THE LENGTH IS THE INTERVAL'S, end minus start plus one. AND THE TOOL WRITES TWO FILES, the called segments and a legacy .igv.seg beside them whose columns are IGV's rather than GATK's.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CallCopyRatioSegmentsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
