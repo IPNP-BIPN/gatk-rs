@@ -26,6 +26,7 @@ pub mod count_variants;
 pub mod counting_walkers;
 pub mod dump_tabix_index;
 pub mod evaluate_info_field_concordance;
+pub mod fasta_reference_maker;
 pub mod filter_mutect_calls;
 pub mod filter_variant_tranches;
 pub mod fix_misencoded_base_quality_reads;
