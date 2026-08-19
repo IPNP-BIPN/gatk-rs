@@ -17,6 +17,7 @@ pub mod calculate_contamination;
 pub mod calculate_mixing_fractions;
 pub mod check_pileup;
 pub mod clip_reads;
+pub mod collect_allelic_counts;
 pub mod compare_base_qualities;
 pub mod concordance;
 pub mod convert_headerless_shard;
