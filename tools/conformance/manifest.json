@@ -219,6 +219,25 @@
       ]
     },
     {
+      "id": "reference-walker",
+      "status": "golden-pending",
+      "title": "What a ReferenceWalker traverses, and what CountBasesInReference counts",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountBasesInReference"
+      ],
+      "why": "The first member of the reference-utility archetype. AN ABSENT -L IS THE WHOLE REFERENCE, one apply per base of every contig in the sequence dictionary, which is a branch IntervalWalker cannot reach because its requiresIntervals() is true and Barclay rejects the run first. -XL ALONE IS THEREFORE LEGAL here and subtracts from that list. THE INTERVALS ARE SORTED INTO DICTIONARY ORDER rather than kept in the order given. EVERY LOCUS IS ONE BASE, IntervalLocusIterator at size one, so an eleven-base interval is eleven apply calls. THE BASE IS THE CACHING READER'S, not the file's: lower case comes back upper-cased and every IUPAC code comes back as N, which is what makes CountBasesInReference count five symbols rather than fifteen. AND getReferenceWindow IS A METHOD rather than an argument, so a walker that widens it sees more bases per locus while still being called once per base, clipped at the contig ends.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ReferenceWalkerDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
