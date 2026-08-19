@@ -38,6 +38,7 @@
 //! -1.0, and a `NaN` propagates. Only the alt fraction is guarded, and only against a total of
 //! zero, where it gives 0 rather than `NaN`.
 
+use crate::base_utils::simple_base_to_base_index;
 use crate::tsv_table::{java_double_to_string, write_table, Table, TableError};
 use std::cmp::Ordering;
 
@@ -90,6 +91,43 @@ impl PileupSummary {
             total_count: ref_count + alt_count + other_alt_count,
             allele_frequency,
         }
+    }
+
+    /// The other constructor: `PileupSummary(VariantContext, ReadPileup)`.
+    ///
+    /// The counts come from `getBaseCounts`, which counts `A`, `C`, `G` and `T` alone: a deletion
+    /// at the site is skipped and an `N` is not counted, so `totalCount` is over those four bases
+    /// and is NOT the pileup's depth. `otherAltsCount` is what is left after the reference and the
+    /// first alternate, so a site whose pileup holds nothing but `N`s summarises as all zeroes.
+    ///
+    /// A base that is not `ACGT` in the record's own alleles indexes at -1 upstream, which is an
+    /// array access with a negative index and therefore an exception; nothing that reaches this
+    /// constructor through `GetPileupSummaries` can, because the record has to be a SNP first.
+    pub fn from_base_counts(
+        contig: &str,
+        position: i32,
+        allele_frequency: f64,
+        reference_base: u8,
+        alternate_base: u8,
+        base_counts: [i32; 4],
+    ) -> Option<PileupSummary> {
+        let alt_index = simple_base_to_base_index(alternate_base);
+        let ref_index = simple_base_to_base_index(reference_base);
+        if alt_index < 0 || ref_index < 0 {
+            return None;
+        }
+        let alt_count = base_counts[alt_index as usize];
+        let ref_count = base_counts[ref_index as usize];
+        let total_count: i32 = base_counts.iter().sum();
+        Some(PileupSummary {
+            contig: contig.to_string(),
+            position,
+            ref_count,
+            alt_count,
+            other_alt_count: total_count - alt_count - ref_count,
+            total_count,
+            allele_frequency,
+        })
     }
 
     /// `getAltFraction`, whose only guard is against an empty site.
