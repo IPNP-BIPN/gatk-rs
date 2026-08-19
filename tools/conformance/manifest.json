@@ -440,6 +440,25 @@
       ]
     },
     {
+      "id": "annotate-intervals",
+      "status": "golden-pending",
+      "title": "GC content and BED-weighted annotations per interval",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AnnotateIntervals"
+      ],
+      "why": "GC CONTENT IS OVER ACGT ALONE and the denominator is gc plus at rather than the interval's length, so an interval holding IUPAC codes (which the reader has already turned into N) has a smaller denominator than its length and one holding nothing else is a NaN. THE BED TRACK IS ZERO-BASED AND THE INTERVAL IS ONE-BASED, bridged by passing feature.getEnd() - 1 into an overlap computed against one-based coordinates. A MISSING OR NaN SCORE IS ONE rather than zero or a skip. THE ANNOTATION IS A LENGTH-WEIGHTED AVERAGE over the interval's length. AN OVERLAPPING TRACK IS REFUSED, the tool merging with OVERLAPPING_ONLY and comparing counts, so features that touch are fine and features that overlap are a UserException.BadInput. AND THE OUTPUT'S COLUMNS FOLLOW THE ANNOTATORS THAT RAN, in the order they were added.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AnnotateIntervalsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
