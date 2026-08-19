@@ -320,6 +320,25 @@
       ]
     },
     {
+      "id": "get-pileup-summaries",
+      "status": "golden-pending",
+      "title": "The table CalculateContamination reads",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GetPileupSummaries"
+      ],
+      "why": "The tool that produces what CalculateContamination consumes, so this closes that chain from both ends. THE DEFAULT FILTER SET IS ELEVEN FILTERS rather than the walker's usual two, one of them parameterised at a mapping quality of 50. A SITE IS SUMMARISED ONLY IF ITS FIRST VARIANT IS BIALLELIC AND A SNP, so a triallelic site and an indel are skipped and only the first variant at a locus is looked at. THE ALLELE FREQUENCY BOUNDS ARE STRICT AT BOTH ENDS, so a site at exactly 0.01 or exactly 0.2 is excluded under the defaults. A VARIANT WITH NO AF IS SKIPPED, and if no variant had one the tool throws at the END of the traversal. A HEADER WITHOUT AF IS REFUSED BEFORE ANY READ IS TOUCHED, which is a different exception at a different moment. THE COUNTS COME FROM getBaseCounts, which counts A, C, G and T only, so otherAlts is over those four bases and not over the pileup's depth. AND THE TABLE CARRIES THE SAMPLE AS METADATA, taken from the first sample the read header names.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GetPileupSummariesDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
