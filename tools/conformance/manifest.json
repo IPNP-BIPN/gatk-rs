@@ -220,7 +220,7 @@
     },
     {
       "id": "reference-walker",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "What a ReferenceWalker traverses, and what CountBasesInReference counts",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -233,7 +233,8 @@
       "cases": [
         {
           "dump": "ReferenceWalkerDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/reference_walker.txt.gz",
+          "why": "192 rows, no files that travel beyond the FASTA the harness writes: ten traversals of a two-contig reference built awkward on purpose -- mixed case, a line width that does not divide the length, an N run and IUPAC codes -- and three runs of CountBasesInReference over it. The traversals cover an absent -L, an interval, a whole contig, two intervals given out of dictionary order, an exclusion with no inclusion, padding, two abutting intervals, an interval past the end of its contig, and a walker that widens its own window. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32221539233, and byte for byte what this laptop produced."
         }
       ]
     },
