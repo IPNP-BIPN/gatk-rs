@@ -269,7 +269,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 [[package]]
 name = "htsjdk-bam"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=f6f319c56f18271126e8c39ada67c10dc9bf81ac#f6f319c56f18271126e8c39ada67c10dc9bf81ac"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4#8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4"
 dependencies = [
  "htsjdk-bgzf",
  "md-5",
@@ -278,7 +278,7 @@ dependencies = [
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=f6f319c56f18271126e8c39ada67c10dc9bf81ac#f6f319c56f18271126e8c39ada67c10dc9bf81ac"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4#8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4"
 dependencies = [
  "flate2",
  "libz-sys",
@@ -287,7 +287,7 @@ dependencies = [
 [[package]]
 name = "htsjdk-tribble"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=f6f319c56f18271126e8c39ada67c10dc9bf81ac#f6f319c56f18271126e8c39ada67c10dc9bf81ac"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4#8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4"
 dependencies = [
  "flate2",
  "htsjdk-bam",
@@ -296,7 +296,7 @@ dependencies = [
 [[package]]
 name = "htsjdk-vcf"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=f6f319c56f18271126e8c39ada67c10dc9bf81ac#f6f319c56f18271126e8c39ada67c10dc9bf81ac"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4#8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4"
 dependencies = [
  "htsjdk-tribble",
  "jmath",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "jmath"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=f6f319c56f18271126e8c39ada67c10dc9bf81ac#f6f319c56f18271126e8c39ada67c10dc9bf81ac"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4#8c8496bbee6e9d7166b349b6b9b6e35e5ce6e1a4"
 
 [[package]]
 name = "lexical-core"
