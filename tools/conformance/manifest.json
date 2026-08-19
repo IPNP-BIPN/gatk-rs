@@ -501,7 +501,7 @@
     },
     {
       "id": "filter-intervals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The intervals a copy-number panel may use",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -514,7 +514,8 @@
       "cases": [
         {
           "dump": "FilterIntervalsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/filter_intervals.txt.gz",
+          "why": "11 rows, no files that travel: one annotated-intervals table and two read-count tables the harness writes, run eleven ways. Annotations at the default bounds, bounds leaving two intervals, bounds leaving one (which is a refusal, because a contig's only interval is filtered out), counts from one sample and from two, a raised low-count threshold, opened percentile bounds, both inputs at once, neither input, no intervals, and a -L naming the whole contig rather than the table's own intervals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32308429691, and byte for byte what this laptop produced."
         }
       ]
     },
