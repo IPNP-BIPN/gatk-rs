@@ -20,6 +20,7 @@ pub mod call_copy_ratio_segments;
 pub mod check_pileup;
 pub mod clip_reads;
 pub mod collect_allelic_counts;
+pub mod collect_read_counts;
 pub mod compare_base_qualities;
 pub mod concordance;
 pub mod convert_headerless_shard;
