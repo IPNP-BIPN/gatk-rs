@@ -261,7 +261,7 @@
     },
     {
       "id": "fasta-reference-maker",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A reference written out of a reference",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -274,7 +274,8 @@
       "cases": [
         {
           "dump": "FastaReferenceMakerDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/fasta_reference_maker.txt.gz",
+          "why": "29 rows, no files that travel: ten runs of the tool over the two-contig FASTA the harness writes, each printing the FASTA it produced with its .fai and its .dict. The runs cover no intervals at all, one interval, two intervals a base apart, two that abut, one per contig, the soft-masked stretch, the IUPAC stretch, a narrow line width, a line width of zero and a single base. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32277976227, and byte for byte what this laptop produced."
         }
       ]
     },
