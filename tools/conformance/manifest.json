@@ -401,7 +401,7 @@
     },
     {
       "id": "normal-artifact-data",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The normal-artifact training data",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -414,7 +414,8 @@
       "cases": [
         {
           "dump": "GetNormalArtifactDataDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/normal_artifact_data.txt.gz",
+          "why": "7 rows, no files that travel: two BAMs the harness writes, each carrying ten normal and ten tumour reads of forty bases, run seven ways with the shared random generator RESET before each so that every case means what the same command would mean on its own. The default window, a raised error probability, the whole forty bases, a single locus, a locus the normal has no alternate at, a normal sample the BAM does not have, and a second fixture whose tumour carries no alternate so the keep probability falls to its floor and the seeded generator keeps three loci of thirty. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32293455104, and byte for byte what this laptop produced."
         }
       ]
     },
