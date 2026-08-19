@@ -301,7 +301,7 @@
     },
     {
       "id": "fasta-alternate-reference-maker",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A reference with a VCF applied to it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -314,7 +314,8 @@
       "cases": [
         {
           "dump": "FastaAlternateReferenceMakerDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/fasta_alternate_reference_maker.txt.gz",
+          "why": "14 rows, no files that travel: one reference, one six-record VCF and a two-record mask, all written and indexed by the harness, run eight ways. Six produce a FASTA -- plain, masked, masked with priority, two IUPAC samples and a window that starts inside a deletion -- and two are argument refusals. One of the six is itself a refusal: a sample homozygous for a spanning deletion makes the tool write a space and the writer refuse it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32283687055, and byte for byte what this laptop produced."
         }
       ]
     },
