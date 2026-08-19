@@ -380,6 +380,25 @@
       ]
     },
     {
+      "id": "collect-allelic-counts",
+      "status": "golden-pending",
+      "title": "Reference and alternate counts per locus",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CollectAllelicCounts"
+      ],
+      "why": "EVERY LOCUS IN THE INTERVAL IS A ROW, because emitEmptyLoci is true, so a position with no reads is a row of zeroes rather than a gap. THE ALTERNATE COUNT IS TOTAL MINUS REFERENCE rather than the count of the alternate base, which the reference's own comment says. THE ALTERNATE BASE IS THE MOST COMMON NON-REFERENCE ONE and is N when the alternate count is zero. THE TOTAL IS OVER ACGT ONLY, so an N is in neither count and a deletion is filtered before the counting. THE BASE QUALITY THRESHOLD IS THE COLLECTOR'S rather than a read filter's, defaulting to 20, so a base at 19 is dropped while its read is kept. A REFERENCE BASE THAT IS NOT ACGT SKIPS THE LOCUS ENTIRELY, so an N in the reference produces no row even though emitEmptyLoci is true. AND THE TABLE'S HEADER IS A WHOLE SAM HEADER followed by the column names, with the sample taken from the read group.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CollectAllelicCountsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
