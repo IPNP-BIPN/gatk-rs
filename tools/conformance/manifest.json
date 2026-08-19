@@ -400,6 +400,25 @@
       ]
     },
     {
+      "id": "normal-artifact-data",
+      "status": "golden-pending",
+      "title": "The normal-artifact training data",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GetNormalArtifactData"
+      ],
+      "why": "The training data for Mutect2's normal-artifact filter, which this port already has. THE ALLELE IS CHOSEN IN THE NORMAL AND COUNTED IN THE TUMOUR. THE COUNTS HAVE SIX SLOTS, NOT FOUR: indices 4 and 5 are before-an-insertion and before-a-deletion-start, and an index at or above 4 is what makes the record's type INDEL. A SITE WITH NO NORMAL ALTERNATE IS SKIPPED, and so is one whose normal alternate is more than a fifth of the normal pileup. THE DOWNSAMPLE IS RANDOM BUT SEEDED, sharing one generator across the run, so the sites that survive depend on how many draws came before and a port that drew at a different moment keeps a different set. THE KEEP PROBABILITY HAS A FLOOR OF 0.05 and comes from the tumour's binomial p-value. A TUMOUR ALTERNATE ABOVE HALF THE TUMOUR PILEUP IS SKIPPED, and that test happens AFTER the draw, so it consumes a number either way. AND THE TABLE IS SIX COLUMNS with the downsample probability written as a double.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GetNormalArtifactDataDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
