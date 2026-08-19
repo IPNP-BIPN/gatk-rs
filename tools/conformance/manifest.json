@@ -361,7 +361,7 @@
     },
     {
       "id": "ase-read-counter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Reference and alternate counts at heterozygous sites",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -374,7 +374,8 @@
       "cases": [
         {
           "dump": "ASEReadCounterDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/ase_read_counter.txt.gz",
+          "why": "10 rows, no files that travel: one BAM of five reads (an overlapping pair that agrees at one site and disagrees at another, a read at mapping quality 30, a read with one low-quality base, and an improperly paired read) and two VCFs, run ten ways. The three overlap modes, the two quality thresholds, a depth threshold, the two other output formats, a window with no sites, and two records at one position. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32289966161, and byte for byte what this laptop produced."
         }
       ]
     },

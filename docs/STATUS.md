@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 81 | 26.0% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 82 | 26.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 217 | 69.8% |
 | **total** | **311** | |
@@ -72,7 +72,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
-| `ASEReadCounter` | locus-walker | golden-pending | ase-read-counter | 1 | not measured |
+| `ASEReadCounter` | locus-walker | oracle-backed | ase-read-counter | 1 | not measured |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | not measured |
