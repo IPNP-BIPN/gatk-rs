@@ -84,10 +84,10 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
-| `CountBases` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
+| `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
-| `CountReads` | locus-walker | oracle-backed | counting-walkers | 1 | not measured |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |
