@@ -321,7 +321,7 @@
     },
     {
       "id": "get-pileup-summaries",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The table CalculateContamination reads",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -334,7 +334,8 @@
       "cases": [
         {
           "dump": "GetPileupSummariesDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/get_pileup_summaries.txt.gz",
+          "why": "9 rows, no files that travel: two BAMs and three VCFs the harness writes and indexes, run eight ways. Six produce a table -- the defaults, opened bounds, a single site, a window with reads and no variants, and two over a second fixture that stacks six reads on one site -- and two are refusals, one before any read is touched and one at the end of the traversal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32286128479, and byte for byte what this laptop produced."
         }
       ]
     },
