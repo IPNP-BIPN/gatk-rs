@@ -60,9 +60,19 @@ fn row(text: &str, kind: &str, label: &str) -> String {
         .to_string()
 }
 
+/// A directory nothing else writes into.
+///
+/// The tests run in parallel and two of them unpack the same fixture, so a name built from the
+/// process alone is a race: one test opens the BAI while the other is still writing it. The counter
+/// is what makes each call its own directory.
 fn directory(name: &str) -> std::path::PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("gatk-rs-countreads-{}-{name}", std::process::id()));
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "gatk-rs-countreads-{}-{}-{name}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).expect("a temporary directory");
     dir
 }
