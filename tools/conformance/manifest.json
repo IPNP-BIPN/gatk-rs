@@ -480,6 +480,25 @@
       ]
     },
     {
+      "id": "denoise-read-counts",
+      "status": "golden-pending",
+      "title": "Standardization without a panel of normals",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "DenoiseReadCounts"
+      ],
+      "why": "With no panel and no GC annotations the tool does the one thing its documentation calls standardization: fractional coverage, divide by the sample median, log2, subtract the median again. THE FIRST STEP DIVIDES BY THE SUM, so every later step is scale-free and doubling every count changes nothing. THE MEDIAN IS COMMONS-MATH'S, interpolating between the two middle values for an even count. THE LOG IS BASE TWO and taken after the division. THE MEDIAN IS SUBTRACTED AFTER THE LOG and is taken over the log values rather than over the originals, so it is not the logarithm of the first. A ZERO COUNT BECOMES NEGATIVE INFINITY. AND THE TWO OUTPUT FILES ARE IDENTICAL when there is no panel, the tool writing the standardized result as the denoised one as well.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "DenoiseReadCountsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
