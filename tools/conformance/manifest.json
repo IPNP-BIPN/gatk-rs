@@ -260,6 +260,25 @@
       ]
     },
     {
+      "id": "fasta-reference-maker",
+      "status": "golden-pending",
+      "title": "A reference written out of a reference",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FastaReferenceMaker"
+      ],
+      "why": "The fourth member of the reference archetype and the first that WRITES a reference. THE OUTPUT SEQUENCES ARE NUMBERED rather than named after the contig they came from: the name is a counter starting at one and the contig and coordinates go in the description. A GAP STARTS A NEW SEQUENCE, the test being withinDistanceOf(interval, 1), so two abutting intervals are one output sequence and two a base apart are two. CROSSING A CONTIG IS A GAP TOO, so a run with no -L over a two-contig reference writes two sequences. THE DESCRIPTION'S START IS THE SEQUENCE'S FIRST BASE and its end the last position seen, so it is the span written rather than the interval asked for. THE BASES ARE THE CACHING READER'S, so a FASTA written by this tool is not the FASTA it read: lower case comes back upper-cased and IUPAC codes come back as N. AND --line-width IS PER RUN, recorded in every index row.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FastaReferenceMakerDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "readwalker",
       "title": "ReadWalker traversal",
       "status": "oracle-backed",
