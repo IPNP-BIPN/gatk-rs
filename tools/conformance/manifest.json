@@ -281,7 +281,7 @@
     },
     {
       "id": "shift-fasta",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A reference shifted, and the three files beside it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -294,7 +294,8 @@
       "cases": [
         {
           "dump": "ShiftFastaDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/shift_fasta.txt.gz",
+          "why": "38 rows, no files that travel: seven runs over the two-contig FASTA the harness writes, each printing the shifted FASTA, its .fai, its .dict, the shift-back chain file and the two interval files. The runs cover the default half-length offsets, an explicit offset per contig, an offset of zero and an offset of the whole length (both skipped), a shift of one, a narrow line width and an offset list of the wrong size. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32282575530, and byte for byte what this laptop produced."
         }
       ]
     },
