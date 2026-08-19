@@ -21,6 +21,7 @@ pub mod concordance;
 pub mod convert_headerless_shard;
 pub mod count_bases_in_reference;
 pub mod count_false_positives;
+pub mod count_reads;
 pub mod count_variants;
 pub mod counting_walkers;
 pub mod dump_tabix_index;
