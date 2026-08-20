@@ -300,28 +300,24 @@ jobs:
             suites: "mutect-hard-filters mutect-engine-arithmetic germline-probability mutect-engine-construction mutect-error-probabilities"
           - group: oracle-backed
             index: "32/36"
-            slug: "beta-binomial-allele-fraction-cluster-somatic-clustering-model-somatic-clustering-learn-mutect-filter-list"
-            suites: "beta-binomial allele-fraction-cluster somatic-clustering-model somatic-clustering-learn mutect-filter-list"
+            slug: "beta-binomial-somatic-validation-power-allele-fraction-cluster-somatic-clustering-model-somatic-clustering-learn"
+            suites: "beta-binomial somatic-validation-power allele-fraction-cluster somatic-clustering-model somatic-clustering-learn"
           - group: oracle-backed
             index: "33/36"
-            slug: "filter-mutect-calls-allele-filter-base-normal-artifact-filter-remaining-hard-filters-slippage-filter"
-            suites: "filter-mutect-calls allele-filter-base normal-artifact-filter remaining-hard-filters slippage-filter"
+            slug: "mutect-filter-list-filter-mutect-calls-allele-filter-base-normal-artifact-filter-remaining-hard-filters"
+            suites: "mutect-filter-list filter-mutect-calls allele-filter-base normal-artifact-filter remaining-hard-filters"
           - group: oracle-backed
             index: "34/36"
-            slug: "contamination-filter-haplotype-filter-strand-artifact-estep-strand-artifact-mstep-filter-list-by-mode"
-            suites: "contamination-filter haplotype-filter strand-artifact-estep strand-artifact-mstep filter-list-by-mode"
+            slug: "slippage-filter-contamination-filter-haplotype-filter-strand-artifact-estep-strand-artifact-mstep"
+            suites: "slippage-filter contamination-filter haplotype-filter strand-artifact-estep strand-artifact-mstep"
           - group: oracle-backed
             index: "35/36"
-            slug: "apply-filters-accumulate-data-engine-assembly-germline-wrapper-pair-hmm"
-            suites: "apply-filters accumulate-data engine-assembly germline-wrapper pair-hmm"
+            slug: "filter-list-by-mode-apply-filters-accumulate-data-engine-assembly-germline-wrapper"
+            suites: "filter-list-by-mode apply-filters accumulate-data engine-assembly germline-wrapper"
           - group: oracle-backed
             index: "36/36"
-            slug: "kernel-segmentation-contamination-model"
-            suites: "kernel-segmentation contamination-model"
-          - group: golden-pending
-            index: "1/1"
-            slug: "somatic-validation-power"
-            suites: "somatic-validation-power"
+            slug: "pair-hmm-kernel-segmentation-contamination-model"
+            suites: "pair-hmm kernel-segmentation contamination-model"
     steps:
       - uses: actions/checkout@v4
 

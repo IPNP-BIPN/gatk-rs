@@ -3683,7 +3683,7 @@
     },
     {
       "id": "somatic-validation-power",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The power a validation pileup has",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -3694,7 +3694,8 @@
       "cases": [
         {
           "dump": "SomaticValidationPowerDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/somatic_validation_power.txt.gz",
+          "why": "304 rows, no files: twenty-four beta-binomials over six shape pairs and four trial counts, each with its moments and its cumulative probability at every k up to one past the trial count; forty-eight powers over four validation depths, four discovery pileups and three minimum counts; twenty-five minimum counts over five depths and five noise ratios; and three refusals. The cumulative rows go through Math.exp and therefore carry decision 0014's one-ulp exposure rather than being bit-exact by construction. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32378694836, and byte for byte what this laptop produced."
         }
       ]
     },

@@ -106,6 +106,42 @@ impl BetaBinomialDistribution {
     pub fn probability(&self, k: i32) -> Result<f64, BetaBinomialError> {
         Ok(self.log_probability(k)?.exp())
     }
+
+    /// `cumulativeProbability(k)`: a PLAIN LOOP over `probability(i)`, summed with `+=`.
+    ///
+    /// Not a `DoubleStream.sum`. Every other accumulation this port has met was compensated and
+    /// this one is not, so it is written as an ordinary loop and the `somatic-validation-power`
+    /// golden is what says that is right.
+    ///
+    /// A negative `k` is refused rather than answering zero, which is what makes `minCount - 1` a
+    /// precondition in the power calculation rather than a convenience.
+    pub fn cumulative_probability(&self, k: i32) -> Result<f64, BetaBinomialError> {
+        if k < 0 {
+            return Err(BetaBinomialError::SuccessesNegative { k });
+        }
+        let mut result = 0.0;
+        for i in 0..=k {
+            result += self.probability(i)?;
+        }
+        Ok(result)
+    }
+
+    /// `getNumericalMean()`: `(n * alpha) / (alpha + beta)`.
+    ///
+    /// `n * alpha` is an int widened against a double, in that order, which is not the same
+    /// rounding as `alpha * n`.
+    pub fn numerical_mean(&self) -> f64 {
+        (f64::from(self.n) * self.alpha) / (self.alpha + self.beta)
+    }
+
+    /// `getNumericalVariance()`.
+    ///
+    /// `(n*alpha*beta)*(alpha+beta+n) / ((alpha+beta)*(alpha+beta)*(alpha+beta+1))`, with the
+    /// grouping the reference wrote: three products on top, three on the bottom, and one division.
+    pub fn numerical_variance(&self) -> f64 {
+        (f64::from(self.n) * self.alpha * self.beta) * (self.alpha + self.beta + f64::from(self.n))
+            / ((self.alpha + self.beta) * (self.alpha + self.beta) * (self.alpha + self.beta + 1.0))
+    }
 }
 
 #[cfg(test)]
