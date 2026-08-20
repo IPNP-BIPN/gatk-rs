@@ -4402,7 +4402,7 @@
     },
     {
       "id": "validate-basic-somatic-short-mutations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The validation table a tool writes",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4415,8 +4415,8 @@
       "cases": [
         {
           "dump": "ValidateBasicSomaticShortMutationsDump",
-          "golden": null,
-          "why": "171 rows over nine runs of one validation pair, two samples and eight loci: eight validation tables, eight concordance summaries, 154 annotated-VCF lines and one refusal. The loci cover a validated SNP, an unvalidated one, a normal artifact, an insertion, a deletion, a multiallelic record, a record with no AD, a filtered record and a count exactly at the artifact threshold; the reads at neighbouring loci overlap, so the validation depth of a record is larger than the reads placed at it and a port that counts only its own loci lands elsewhere. The runs vary the minimum power, the artifact maximum, the base-quality cutoff and the two sample names, and the refusal is the null-pointer the tool throws on a validatable genotype whose result is null. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/validate_basic_somatic_short_mutations.txt.gz",
+          "why": "171 rows over nine runs of one validation pair, two samples and eight loci: eight validation tables, eight concordance summaries, 154 annotated-VCF lines and one refusal. The loci cover a validated SNP, an unvalidated one, a normal artifact, an insertion, a deletion, a multiallelic record, a record with no AD, a filtered record and a count exactly at the artifact threshold; the reads at neighbouring loci overlap, so the validation depth of a record is larger than the reads placed at it and a port that counts only its own loci lands elsewhere. The runs vary the minimum power, the artifact maximum, the base-quality cutoff and the two sample names, and the refusal is the null-pointer the tool throws on a validatable genotype whose result is null. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32382682904, and byte for byte what this laptop produced."
         }
       ]
     }
