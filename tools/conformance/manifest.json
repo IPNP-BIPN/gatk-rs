@@ -4560,7 +4560,7 @@
     },
     {
       "id": "merge-annotated-regions-by-annotation",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The segments an annotation merge leaves behind",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4573,8 +4573,8 @@
       "cases": [
         {
           "dump": "MergeAnnotatedRegionsByAnnotationDump",
-          "golden": null,
-          "why": "Nine runs over one segment file of six regions, two of them abutting, one a thousand bases from its neighbour and one fifty thousand: the default distance, zero, one that reaches the thousand-base gap and not the other, matching on each annotation and on both, the three renamed output columns, an input carrying a SAM header, an annotation the file does not carry, and a negative distance. Nine rows, seven of them outputs. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/merge_annotated_regions_by_annotation.txt.gz",
+          "why": "Nine runs over one segment file of six regions, two of them abutting, one a thousand bases from its neighbour and one fifty thousand: the default distance, zero, one that reaches the thousand-base gap and not the other, matching on each annotation and on both, the three renamed output columns, an input carrying a SAM header, an annotation the file does not carry, and a negative distance. Nine rows, seven of them outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32398455363, and byte for byte what this laptop produced."
         }
       ]
     }
