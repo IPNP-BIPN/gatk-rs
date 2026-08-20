@@ -4597,6 +4597,28 @@
           "why": "Twelve runs over one two-contig reference: two files whose breakpoints interleave, the labels, one and two columns of interest, a column neither file carries, identical files, adjacent segments against one spanning both, disjoint segments, a single-base segment, one file carrying a SAM header, a file of no rows and a file overlapping itself. Nine write a file and three are refusals. --columns-of-interest is required, so every run names the columns it keeps. The M5 and UR fields of the sequence lines are masked, as in preprocess-intervals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32406121317, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "mutect-gathers",
+      "status": "golden-pending",
+      "title": "The three gathers a scattered Mutect run ends with",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MergeMutectStats",
+        "GatherPileupSummaries",
+        "GatherNormalArtifactData"
+      ],
+      "why": "MergeMutectStats SUMS EVERY STATISTIC IT KNOWS AND REFUSES EVERY OTHER, its aggregation map holding callable alone. THE SUM IS OVER DOUBLES AND WRITTEN AS ONE, so integer counts come back with a decimal point. GatherPileupSummaries SORTS ITS FILES BY THEIR FIRST RECORD against the sequence dictionary rather than by the order given, and DROPS A FILE WITH NO RECORDS before sorting, and REFUSES A FILE WHOSE SAMPLE DIFFERS. GatherNormalArtifactData CONCATENATES IN THE ORDER GIVEN with no sort and no empty check. AND EACH TOOL WRITES ITS OWN HEADER, so a gather's output is a file of the same shape as its inputs.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MutectGathersDump",
+          "golden": null,
+          "why": "Eleven rows over the three tools: five stats merges including an empty shard and an unknown statistic, three pileup gathers including shards out of order, an empty one and two samples, and three normal-artifact gathers in both orders and with an empty shard. Eight write a file and three are refusals. From the pinned container on a real x86-64 runner. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
