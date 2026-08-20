@@ -4600,7 +4600,7 @@
     },
     {
       "id": "mutect-gathers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The three gathers a scattered Mutect run ends with",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4615,8 +4615,8 @@
       "cases": [
         {
           "dump": "MutectGathersDump",
-          "golden": null,
-          "why": "Eleven rows over the three tools: five stats merges including an empty shard and an unknown statistic, three pileup gathers including shards out of order, an empty one and two samples, and three normal-artifact gathers in both orders and with an empty shard. Eight write a file and three are refusals. From the pinned container on a real x86-64 runner. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/mutect_gathers.txt.gz",
+          "why": "Eleven rows over the three tools: five stats merges including an empty shard and an unknown statistic, three pileup gathers including shards out of order, an empty one and two samples, and three normal-artifact gathers in both orders and with an empty shard. Eight write a file and three are refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32408383945, and byte for byte what this laptop produced."
         }
       ]
     }

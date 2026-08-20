@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 98 | 31.5% |
-| golden-pending | 3 | 1.0% |
+| oracle-backed | 101 | 32.5% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 198 | 63.7% |
 | **total** | **311** | |
@@ -107,8 +107,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
-| `GatherNormalArtifactData` | unclassified | golden-pending | mutect-gathers | 1 | not measured |
-| `GatherPileupSummaries` | unclassified | golden-pending | mutect-gathers | 1 | not measured |
+| `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
+| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs | 1 | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | not measured |
@@ -117,7 +117,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | not measured |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |
-| `MergeMutectStats` | unclassified | golden-pending | mutect-gathers | 1 | not measured |
+| `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
