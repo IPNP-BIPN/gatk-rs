@@ -4497,6 +4497,26 @@
           "why": "Fourteen pairs of interval files over one two-contig reference: equal in one and two contigs, abutting and overlapping intervals merged into one, a wider test and the same pair reversed, an extra interval on each side, disjoint intervals on one contig and on two, a test interval inside the master's, an empty file on each side, and an interval off the end of a contig. A file URI in a message has its directory masked: that is the working directory of the run rather than an answer of this tool's. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32393823950, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "callable-loci",
+      "status": "golden-pending",
+      "title": "The state every locus is given",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CallableLoci"
+      ],
+      "why": "THE RUN TEST DOES NOT COMPARE CONTIGS: a run continues when the next locus starts at the previous end plus one and carries the same state, so two intervals on different contigs whose coordinates run on come out as one BED line under the first contig's name. A DELETION COUNTS TOWARD THE QC DEPTH WHATEVER ITS BASE QUALITY. THE POOR-MAPPING-QUALITY TEST COMES BEFORE THE DEPTH TESTS and is a ratio at or above the fraction. THE LOW-MAPQ COUNT IS <= AND THE PASSING COUNT IS >=, so a run that sets the two thresholds equal has reads counted in both. EXCESSIVE_COVERAGE IS TESTED ON THE RAW DEPTH and only when a maximum was given. AN N IN THE REFERENCE IS REF_N WHATEVER THE PILEUP IS. THE BED IS ZERO-BASED ON ITS START AND ONE-BASED ON ITS END while the summary is a %30s %d table. AND THE TOOL REFUSES MORE THAN ONE SAMPLE.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CallableLociDump",
+          "golden": null,
+          "why": "23 rows: twelve runs over one two-contig reference and a single-sample fixture laid out so every state is reachable by moving one threshold, plus a two-sample fixture for the refusal. Each run contributes its whole BED file and its whole summary. The contig-run-on row is the reference bug in the open: two REF_N stretches on different contigs whose coordinates run on come out as one BED line of twenty bases under chr1's name. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
