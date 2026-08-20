@@ -4679,6 +4679,26 @@
           "why": "Nine files, each carried in the golden as base64 so a port replays the same bytes: a complete bgzipped file, the same with its terminator cut off, the same one byte shorter again, the terminator alone, one byte short of the terminator, nothing at all, a file that is not gzip, a complete file with a payload byte flipped, and one whose terminator's last byte is wrong. Each contributes its termination answer and the tool's exit code. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32415499567, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "rename-sample-in-vcf",
+      "status": "golden-pending",
+      "title": "A single-sample VCF with its column renamed",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "RenameSampleInVcf"
+      ],
+      "why": "Small, and every corner is in what the WRITER does rather than what the tool does. THE HEADER IS REBUILT FROM ITS METADATA IN INPUT ORDER and one sample name, so the order of the output's lines is the writer's. THE SAMPLE NAME IS NOT VALIDATED: a name with a space goes straight into the column header. A MULTI-SAMPLE INPUT IS REFUSED BUT A SITES-ONLY ONE IS NOT, so a VCF with no sample column gets one, every record carrying a missing genotype. OLD_SAMPLE_NAME IS CHECKED AGAINST THE FIRST SAMPLE ONLY and its refusal names the sample that was there. THE RECORDS ARE WRITTEN BACK THROUGH THE PARSER, so INFO order, float formatting and missing-value spellings are the writer's. THE QUAL COLUMN IS REFORMATTED, an integral quality printed as an integer and everything else to two places. AND THE OUTPUT CARRIES NO PROVENANCE LINE of its own.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "RenameSampleInVcfDump",
+          "golden": null,
+          "why": "Ten runs, each carrying its input as well as its output so a port reads the same bytes: a plain rename, the old name asserted rightly and wrongly, a name with a space, a name that is a number, a rename to the same name, a sites-only input, a two-sample input, a file declaring no INFO lines whose records use them, and a file with no records at all. Twenty rows: ten inputs, seven outputs and three refusals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
