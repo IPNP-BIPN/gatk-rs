@@ -383,3 +383,100 @@ pub fn merge_regions(
     }
     merged
 }
+
+/// `getDistance`: zero for OVERLAPPING regions, the gap between the nearer endpoints otherwise.
+///
+/// The method's own comment says overlapping *or abutting* regions answer zero. They do not:
+/// `IntervalUtils.overlaps` does not count an abuttal, so `1-100` and `101-200` are one apart and a
+/// maximum merge distance of zero merges nothing at all.
+///
+/// Regions on different contigs are `Long.MAX_VALUE` apart.
+pub fn distance(left: &AnnotatedInterval, right: &AnnotatedInterval) -> i64 {
+    if left.contig != right.contig {
+        return i64::MAX;
+    }
+    if left.start <= right.end && right.start <= left.end {
+        return 0;
+    }
+    if left.end < right.start {
+        i64::from(right.start - left.end)
+    } else {
+        i64::from(left.start - right.end)
+    }
+}
+
+/// `mergeRegionsByAnnotation`: neighbours merge when the named annotations agree and the distance
+/// is within the maximum.
+///
+/// The comparison is against the region built so far, so a run of short hops travels however far
+/// it goes in total. The annotations NOT named are reconciled the same way an overlap merge
+/// reconciles them.
+pub fn merge_regions_by_annotation(
+    records: &[AnnotatedInterval],
+    dictionary: &[String],
+    annotation_names: &[String],
+    separator: &str,
+    max_distance: i64,
+) -> Vec<AnnotatedInterval> {
+    let mut sorted = records.to_vec();
+    sort_by_dictionary(&mut sorted, dictionary);
+    let mut merged = Vec::new();
+    let mut index = 0;
+    while index < sorted.len() {
+        let mut current = sorted[index].clone();
+        index += 1;
+        while index < sorted.len() {
+            let next = &sorted[index];
+            let agrees = annotation_names
+                .iter()
+                .all(|name| current.annotations.get(name) == next.annotations.get(name));
+            if current.contig != next.contig || distance(&current, next) > max_distance || !agrees {
+                break;
+            }
+            current = merge(&current, next, separator);
+            index += 1;
+        }
+        merged.push(current);
+    }
+    merged
+}
+
+/// The file `MergeAnnotatedRegionsByAnnotation` writes, which goes through the writer rather than
+/// the collection: three column names of the caller's choosing, the annotations of the FIRST
+/// region, and no SAM header at all.
+pub fn write_without_header(
+    records: &[AnnotatedInterval],
+    contig_column: &str,
+    start_column: &str,
+    end_column: &str,
+) -> Result<String, CollectionError> {
+    let first = records.first().ok_or(CollectionError::NoRecords)?;
+    let annotations: Vec<String> = first.annotations.keys().cloned().collect();
+    let mut columns = vec![
+        contig_column.to_string(),
+        start_column.to_string(),
+        end_column.to_string(),
+    ];
+    columns.extend(annotations.iter().cloned());
+    let mut text = columns.join("\t");
+    text.push('\n');
+    for record in records {
+        let mut fields = vec![
+            record.contig.clone(),
+            record.start.to_string(),
+            record.end.to_string(),
+        ];
+        for annotation in &annotations {
+            fields.push(
+                record
+                    .annotations
+                    .get(annotation)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        text.push_str(&fields.join("\t"));
+        text.push('\n');
+    }
+    Ok(text)
+}
