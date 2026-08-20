@@ -4422,7 +4422,7 @@
     },
     {
       "id": "preprocess-intervals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The bins a copy-number run counts over",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4435,8 +4435,8 @@
       "cases": [
         {
           "dump": "PreprocessIntervalsDump",
-          "golden": null,
-          "why": "21 rows, no files: sixteen interval lists and five refusals, over one two-contig reference of 240 bases each carrying a sixty-base N run, a lower-case stretch and a contig that is all N but for an AC at 150. The lists cover the whole genome with and without padding, uneven bins, an interval shorter than a bin, no binning at all, padding clamped at both ends of a contig, two and three intervals whose padding overlaps, a bin straddling the edge of the N run, and intervals on two contigs, which never overlap. One list is two intervals two bases apart padded by sixty, which is as far as the overlap resolution can be pushed and still lands between them. The refusals are the three argument checks and the two parser bounds. The M5 and UR fields of the sequence lines are masked: both come from the .dict the reference indexer wrote and neither is this tool's. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/preprocess_intervals.txt.gz",
+          "why": "21 rows, no files: sixteen interval lists and five refusals, over one two-contig reference of 240 bases each carrying a sixty-base N run, a lower-case stretch and a contig that is all N but for an AC at 150. The lists cover the whole genome with and without padding, uneven bins, an interval shorter than a bin, no binning at all, padding clamped at both ends of a contig, two and three intervals whose padding overlaps, a bin straddling the edge of the N run, and intervals on two contigs, which never overlap. One list is two intervals two bases apart padded by sixty, which is as far as the overlap resolution can be pushed and still lands between them. The refusals are the three argument checks and the two parser bounds. The M5 and UR fields of the sequence lines are masked: both come from the .dict the reference indexer wrote and neither is this tool's. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32384544198, and byte for byte what this laptop produced."
         }
       ]
     }
