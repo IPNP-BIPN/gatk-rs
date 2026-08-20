@@ -320,12 +320,8 @@ jobs:
             suites: "pair-hmm kernel-segmentation contamination-model allele-pileup-counter validate-basic-somatic-short-mutations"
           - group: oracle-backed
             index: "37/37"
-            slug: "preprocess-intervals"
-            suites: "preprocess-intervals"
-          - group: golden-pending
-            index: "1/1"
-            slug: "interval-list-scatter"
-            suites: "interval-list-scatter"
+            slug: "preprocess-intervals-interval-list-scatter"
+            suites: "preprocess-intervals interval-list-scatter"
     steps:
       - uses: actions/checkout@v4
 

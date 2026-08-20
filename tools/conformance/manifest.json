@@ -4442,7 +4442,7 @@
     },
     {
       "id": "interval-list-scatter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The five ways an interval list is scattered",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -4453,8 +4453,8 @@
       "cases": [
         {
           "dump": "IntervalListScatterDump",
-          "golden": null,
-          "why": "Seven interval lists over five scatter counts and all five modes: an even list, one with an interval far wider than the rest, one with two overlaps and an abuttal, one over two contigs, one out of order and on the second contig first, one single interval and one of a single base. Each of the 175 combinations contributes its ideal split weight, its shard count and every shard, and two refusals close it: a scatter count of zero and a negative one. 785 rows. The intervals of a shard are separated by semicolons, because uniqued() joins the names it merged with a pipe. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-engine/tests/data/interval_list_scatter.txt.gz",
+          "why": "Seven interval lists over five scatter counts and all five modes: an even list, one with an interval far wider than the rest, one with two overlaps and an abuttal, one over two contigs, one out of order and on the second contig first, one single interval and one of a single base. Each of the 175 combinations contributes its ideal split weight, its shard count and every shard, and two refusals close it: a scatter count of zero and a negative one. 785 rows. The intervals of a shard are separated by semicolons, because uniqued() joins the names it merged with a pipe. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32385901764, and byte for byte what this laptop produced."
         }
       ]
     }

@@ -51,6 +51,7 @@ pub mod haplotype_filter;
 pub mod histogram;
 pub mod interval;
 pub mod interval_args;
+pub mod interval_list_scatter;
 pub mod java_format;
 pub mod java_hash;
 pub mod java_random;
