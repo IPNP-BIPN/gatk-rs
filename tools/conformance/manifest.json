@@ -4517,6 +4517,26 @@
           "why": "23 rows: twelve runs over one two-contig reference and a single-sample fixture laid out so every state is reachable by moving one threshold, plus a two-sample fixture for the refusal. Each run contributes its whole BED file and its whole summary. The contig-run-on row is the reference bug in the open: two REF_N stretches on different contigs whose coordinates run on come out as one BED line of twenty bases under chr1's name. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32394954776, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "merge-annotated-regions",
+      "status": "golden-pending",
+      "title": "The segments a merge leaves behind",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MergeAnnotatedRegions"
+      ],
+      "why": "The annotated-interval file format four copy-number tools share, measured through the tool that only merges. THE LOCATABLE COLUMNS ARE FOUND BY NAME FROM A FIXED LIST, and Position names BOTH the start and the end. THE OUTPUT IS ALWAYS TAB SEPARATED AND ALWAYS CARRIES A SAM HEADER whatever the input had. COMMENT LINES BECOME SAM HEADER COMMENTS. THE ANNOTATION COLUMNS ARE SORTED ALPHABETICALLY and the three locatable columns are renamed. MERGING IS ONE PASS WITH A PEEK OVER A SORTED LIST, so a chain merges into one row however long it is. ABUTTING REGIONS ARE NOT MERGED despite the tool's own summary saying touching. A CONFLICTING ANNOTATION IS SPLIT ON THE SEPARATOR, DEDUPLICATED, SORTED AND REJOINED. AN ANNOTATION MISSING FROM ONE SIDE IS PASSED THROUGH UNCHANGED. THE ROWS ARE SORTED BY THE SEQUENCE DICTIONARY FIRST. A CONTIG THE REFERENCE DOES NOT CARRY IS PASSED THROUGH rather than refused. A FILE OF NO ROWS THROWS, the collection reading its annotations off the first record. AND THE OUTPUT HEADER CARRIES THREE @CO LINES naming the locatable columns it renamed.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MergeAnnotatedRegionsDump",
+          "golden": null,
+          "why": "Fourteen segment files over one two-contig reference: a plain one, abutting regions, a chain of three overlaps whose values repeat, a region written between two that overlap it, an annotation missing from one side, values that already carry the separator, rows out of dictionary order, two other spellings of the locatable columns including the Position that names both ends, a comment preamble, an input SAM header, a file of no rows, an unknown contig and a file with no locatable columns. Twelve of the fourteen write a file; the other two are the empty file's IndexOutOfBoundsException and the missing-columns refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
