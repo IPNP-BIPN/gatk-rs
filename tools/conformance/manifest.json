@@ -4782,7 +4782,7 @@
     },
     {
       "id": "fix-vcf-header",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF header rebuilt from the records under it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4795,8 +4795,8 @@
       "cases": [
         {
           "dump": "FixVcfHeaderDump",
-          "golden": null,
-          "why": "Ten runs, each carrying its input and, where there is one, its replacement header: a file with undeclared INFO, FORMAT and FILTER keys, the same examined one record deep, a file missing nothing, a file with no records, a replacement header, one naming a different sample, the same unenforced, a sites-only header, an incomplete replacement, and a header file given beside a record limit. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/fix_vcf_header.txt.gz",
+          "why": "Ten runs, each carrying its input and, where there is one, its replacement header: a file with undeclared INFO, FORMAT and FILTER keys, the same examined one record deep, a file missing nothing, a file with no records, a replacement header, one naming a different sample, the same unenforced, a sites-only header, an incomplete replacement, and a header file given beside a record limit. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32424321216, and byte for byte what this laptop produced."
         }
       ]
     }
