@@ -4722,7 +4722,7 @@
     },
     {
       "id": "split-vcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The SNPs in one file and the indels in the other",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4735,8 +4735,8 @@
       "cases": [
         {
           "dump": "SplitVcfsDump",
-          "golden": null,
-          "why": "Eight runs, each carrying its input as well as its outputs: one file holding a record of every type the tool can meet, the same under STRICT, a file of only SNPs, one of only indels, one with no records, a STRICT run that does not refuse, a header declaring no contigs, and the same with the index off. Twenty-two rows: eight inputs, six pairs of outputs and two refusals, one for STRICT and one for the index. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/split_vcfs.txt.gz",
+          "why": "Eight runs, each carrying its input as well as its outputs: one file holding a record of every type the tool can meet, the same under STRICT, a file of only SNPs, one of only indels, one with no records, a STRICT run that does not refuse, a header declaring no contigs, and the same with the index off. Twenty-two rows: eight inputs, six pairs of outputs and two refusals, one for STRICT and one for the index. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32419743483, and byte for byte what this laptop produced."
         }
       ]
     }
