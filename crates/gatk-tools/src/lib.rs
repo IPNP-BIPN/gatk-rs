@@ -60,6 +60,7 @@ pub mod merge_vcfs;
 pub mod methylation_type_caller;
 pub mod multi_pass;
 pub mod mutect_gathers;
+pub mod picard_update_vcf_dictionary;
 pub mod pileup;
 pub mod post_process_reads_for_rsem;
 pub mod preprocess_intervals;
