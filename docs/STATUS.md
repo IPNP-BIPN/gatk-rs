@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 92 | 29.6% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 93 | 29.9% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 206 | 66.2% |
 | **total** | **311** | |
@@ -87,7 +87,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
-| `CompareIntervalLists` | unclassified | golden-pending | compare-interval-lists | 1 | not measured |
+| `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | not measured |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
