@@ -4460,7 +4460,7 @@
     },
     {
       "id": "split-intervals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The shards a scatter-gather run is given",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4473,8 +4473,8 @@
       "cases": [
         {
           "dump": "SplitIntervalsDump",
-          "golden": null,
-          "why": "78 rows over twenty-two runs on one two-contig reference of 240 bases each: the whole genome at three scatter counts, the contig-size filter with and without intervals, all five modes on the same three intervals, adjacent intervals under both merging rules, the contig split in both interval orders, five namings covering every width the formula can reach, a scatter count larger than the intervals can honour, and the two refusals. Each run contributes the names of the files it wrote and the whole content of each, with the M5 and UR fields masked as in preprocess-intervals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/split_intervals.txt.gz",
+          "why": "78 rows over twenty-two runs on one two-contig reference of 240 bases each: the whole genome at three scatter counts, the contig-size filter with and without intervals, all five modes on the same three intervals, adjacent intervals under both merging rules, the contig split in both interval orders, five namings covering every width the formula can reach, a scatter count larger than the intervals can honour, and the two refusals. Each run contributes the names of the files it wrote and the whole content of each, with the M5 and UR fields masked as in preprocess-intervals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32392380958, and byte for byte what this laptop produced."
         }
       ]
     }
