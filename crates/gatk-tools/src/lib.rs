@@ -52,6 +52,7 @@ pub mod left_align_indels;
 pub mod locus_walker;
 pub mod methylation_type_caller;
 pub mod multi_pass;
+pub mod mutect_gathers;
 pub mod pileup;
 pub mod post_process_reads_for_rsem;
 pub mod preprocess_intervals;
