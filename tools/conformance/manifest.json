@@ -4537,6 +4537,26 @@
           "why": "Fourteen segment files over one two-contig reference: a plain one, abutting regions, a chain of three overlaps whose values repeat, a region written between two that overlap it, an annotation missing from one side, values that already carry the separator, rows out of dictionary order, two other spellings of the locatable columns including the Position that names both ends, a comment preamble, an input SAM header, a file of no rows, an unknown contig and a file with no locatable columns. Twelve of the fourteen write a file; the other two are the empty file's IndexOutOfBoundsException and the missing-columns refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32396059127, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "tag-germline-events",
+      "status": "golden-pending",
+      "title": "Which tumour segments the normal explains",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "TagGermlineEvents"
+      ],
+      "why": "THE NORMAL IS MERGED BY CALL FIRST and the merged region keeps ONLY the call annotation. ONLY NON-NEUTRAL MERGED NORMAL REGIONS ARE CONSIDERED. A NORMAL REGION TAGS ITS TUMOUR SEGMENTS WHEN BOTH BREAKPOINTS ARE SEEN WITHIN THE PADDING OR a merged tumour run reciprocally overlaps it past the threshold, which is an OR. THE BREAKPOINT SEARCH IS OVER THE UNMERGED TUMOUR SEGMENTS while the reciprocal overlap is over the MERGED ones. THE PER-SEGMENT FILTER IS A DIFFERENT TEST AGAIN, one own breakpoint within the padding or strict containment, AND an intersection strictly larger than the segment's own length times the threshold. THE INTERSECTION TEST IS STRICT WHILE THE RECIPROCAL ONE IS NOT. THE DEFAULT TAG IS 0. AN EMPTY CALL ANYWHERE IS A REFUSAL, as are a negative padding and a threshold outside the unit interval. AND THE OUTPUT IS THE TUMOUR FILE'S OWN ANNOTATIONS PLUS THE TAG, SORTED ALPHABETICALLY.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "TagGermlineEventsDump",
+          "golden": null,
+          "why": "Fifteen pairs of segment files over one two-contig reference: an exact match, breakpoints shifted past the padding and the same pair with the padding widened, a normal that is neutral everywhere, a match on the second contig, a normal region strictly containing a tumour segment, a reciprocal overlap at three thresholds, another call column name, and five refusals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
