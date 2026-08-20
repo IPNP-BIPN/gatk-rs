@@ -4702,7 +4702,7 @@
     },
     {
       "id": "make-sites-only-vcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF with its genotypes dropped",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4715,8 +4715,8 @@
       "cases": [
         {
           "dump": "MakeSitesOnlyVcfDump",
-          "golden": null,
-          "why": "Ten runs over a three-sample file whose columns are deliberately out of alphabetical order, each carrying its input as well as its output: the default sites-only run, one sample, the same sample twice, two given unsorted, all three, a sample the file does not carry, that one beside a present one, a file that already has no samples, a header declaring no contigs, and the same with the index turned off. Twenty rows: ten inputs, nine outputs and one refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/make_sites_only_vcf.txt.gz",
+          "why": "Ten runs over a three-sample file whose columns are deliberately out of alphabetical order, each carrying its input as well as its output: the default sites-only run, one sample, the same sample twice, two given unsorted, all three, a sample the file does not carry, that one beside a present one, a file that already has no samples, a header declaring no contigs, and the same with the index turned off. Twenty rows: ten inputs, nine outputs and one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32418790241, and byte for byte what this laptop produced."
         }
       ]
     }

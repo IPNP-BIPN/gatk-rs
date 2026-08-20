@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 105 | 33.8% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 106 | 34.1% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 193 | 62.1% |
 | **total** | **311** | |
@@ -43,7 +43,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `IntervalListToBed` | interval-utility | unchecked | intervallisttobed | 1 | not measured |
 | `IntervalListTools` | interval-utility | oracle-backed | intervallisttools, intervallisttoolspadbreak | 4 | not measured |
 | `LiftOverIntervalList` | interval-utility | unchecked | liftoverintervallist | 1 | not measured |
-| `MakeSitesOnlyVcf` | variant-transform | golden-pending | make-sites-only-vcf | 1 | not measured |
+| `MakeSitesOnlyVcf` | variant-transform | oracle-backed | make-sites-only-vcf | 1 | not measured |
 | `MeanQualityByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `MergeBamAlignment` | record-transform | unchecked | mergebamalignment, mergebamalignment-full | 2 | not measured |
 | `MergeSamFiles` | record-transform | oracle-backed | merge | 1 | not measured |
