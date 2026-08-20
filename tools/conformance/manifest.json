@@ -4540,7 +4540,7 @@
     },
     {
       "id": "tag-germline-events",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Which tumour segments the normal explains",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4553,8 +4553,8 @@
       "cases": [
         {
           "dump": "TagGermlineEventsDump",
-          "golden": null,
-          "why": "Fifteen pairs of segment files over one two-contig reference: an exact match, breakpoints shifted past the padding and the same pair with the padding widened, a normal that is neutral everywhere, a match on the second contig, a normal region strictly containing a tumour segment, a reciprocal overlap at three thresholds, another call column name, and five refusals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/tag_germline_events.txt.gz",
+          "why": "Fifteen pairs of segment files over one two-contig reference: an exact match, breakpoints shifted past the padding and the same pair with the padding widened, a normal that is neutral everywhere, a match on the second contig, a normal region strictly containing a tumour segment, a reciprocal overlap at three thresholds, another call column name, and five refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32397346636, and byte for byte what this laptop produced."
         }
       ]
     }
