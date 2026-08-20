@@ -72,7 +72,23 @@ impl Sequence {
 
 /// The Picard interval list this tool writes: the dictionary, then five columns per bin.
 pub fn write_list(sequences: &[Sequence], intervals: &[Interval]) -> String {
-    let mut text = String::from("@HD\tVN:1.6\n");
+    write_list_with_sort_order(sequences, intervals, None)
+}
+
+/// The same, with the `@HD` line's optional `SO` field.
+///
+/// This tool never writes one; `SplitIntervals` writes one for four of its five modes, because a
+/// list that went through `sorted()` carries the stamp and one that went through `uniqued()` does
+/// not.
+pub fn write_list_with_sort_order(
+    sequences: &[Sequence],
+    intervals: &[Interval],
+    sort_order: Option<&str>,
+) -> String {
+    let mut text = match sort_order {
+        Some(order) => format!("@HD\tVN:1.6\tSO:{order}\n"),
+        None => String::from("@HD\tVN:1.6\n"),
+    };
     for sequence in sequences {
         text.push_str(&sequence.line());
         text.push('\n');

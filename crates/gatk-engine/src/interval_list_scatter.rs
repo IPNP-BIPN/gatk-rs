@@ -93,6 +93,17 @@ impl ScatterMode {
         }
     }
 
+    /// Whether the shards this mode produces carry `SO:coordinate` on their `@HD` line.
+    ///
+    /// A shard's header is the PREPROCESSED list's header, and the two preprocessing calls differ:
+    /// `sorted()` stamps `SortOrder.coordinate` on the copy it returns, while `uniqued()` builds a
+    /// fresh list around a clone of the ORIGINAL header and stamps nothing. So the four modes that
+    /// only sort write a sort order into every file, and the one that uniques does not, from lists
+    /// that are sorted either way.
+    pub fn stamps_sort_order(&self) -> bool {
+        !matches!(self, ScatterMode::IntervalSubdivision)
+    }
+
     /// `intervalWeight`.
     fn interval_weight(&self, interval: &Interval) -> i64 {
         if self.counts_bases() {
