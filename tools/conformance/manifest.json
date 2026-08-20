@@ -3682,6 +3682,23 @@
       ]
     },
     {
+      "id": "somatic-validation-power",
+      "status": "golden-pending",
+      "title": "The power a validation pileup has",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The layer above the beta-binomial suite, which pins logProbability and stops there. THE CUMULATIVE PROBABILITY IS A PLAIN LOOP over probability(i), summed with += and not compensated, so it is not the DoubleStream.sum every other accumulation in this port has had to be. EVERY TERM GOES THROUGH exp(log), which under decision 0014 is the platform's exp and carries the same one-ulp exposure the clustering model's rows do. k greater than n SHORT-CIRCUITS to negative infinity before any log term is evaluated. A NEGATIVE k IS REFUSED by cumulativeProbability rather than answering zero. THE MINIMUM COUNT IS A BINOMIAL QUANTILE FLOORED AT TWO, so a shallow pileup and a clean one both answer two. AND THE POWER IS one minus the cumulative probability at minCount minus one, on shapes that are the discovery counts plus one and therefore never zero.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SomaticValidationPowerDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "allele-fraction-cluster",
       "status": "oracle-backed",
       "title": "The allele-fraction clusters, whose corrected likelihood is a Dirichlet normalisation",
