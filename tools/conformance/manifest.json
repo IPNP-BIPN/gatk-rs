@@ -4719,6 +4719,26 @@
           "why": "Ten runs over a three-sample file whose columns are deliberately out of alphabetical order, each carrying its input as well as its output: the default sites-only run, one sample, the same sample twice, two given unsorted, all three, a sample the file does not carry, that one beside a present one, a file that already has no samples, a header declaring no contigs, and the same with the index turned off. Twenty rows: ten inputs, nine outputs and one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32418790241, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-vcfs",
+      "status": "golden-pending",
+      "title": "The SNPs in one file and the indels in the other",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SplitVcfs"
+      ],
+      "why": "THE INDEL TEST RUNS FIRST, so a record that is both lands in the indel file. A MIXED RECORD IS IN NEITHER FILE, and so is a monomorphic one, a symbolic one and an MNP: the tool counts them out in silence. A SPANNING-DELETION ALTERNATE BESIDE A SNP LEAVES THE RECORD A SNP, the star being one base long, so it goes to the SNP file. STRICT IS ON BY DEFAULT, so a record that is neither refuses naming the type it found unless the user turns it off, after the earlier records are already written. BOTH FILES GET THE INPUT'S OWN HEADER however few records they hold. AND CREATE_INDEX IS ON BY DEFAULT, so a header declaring no contigs is a refusal before either file is opened.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SplitVcfsDump",
+          "golden": null,
+          "why": "Eight runs, each carrying its input as well as its outputs: one file holding a record of every type the tool can meet, the same under STRICT, a file of only SNPs, one of only indels, one with no records, a STRICT run that does not refuse, a header declaring no contigs, and the same with the index off. Twenty-two rows: eight inputs, six pairs of outputs and two refusals, one for STRICT and one for the index. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
