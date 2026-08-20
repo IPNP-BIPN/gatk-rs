@@ -86,6 +86,57 @@ jobs:
           done
           echo "$revisions" | wc -l
 
+  determinism:
+    name: "Determinism: the same suites in a different environment"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned; must match rust-toolchain.toml.
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: The suites pass under a foreign locale, timezone, temporary directory and one thread
+        # V.7. Every claim in this repository is a byte claim, and a byte claim that holds only in
+        # one environment is not one. The `test` job already runs the suites in the runner's own
+        # environment; this runs them in a deliberately different one.
+        #
+        # LC_ALL is the axis that has actually bitten this programme: htsjdk-rs decision 0011
+        # established that the REFERENCE's metrics formatting is locale-dependent, and the oracle
+        # pins en_US because of it. Rust's `format!` is locale-independent by construction, so this
+        # gate is what turns "by construction" into "measured": under fr_FR a locale-sensitive
+        # formatter writes `0,333333` and every suite comparing a formatted number would fail.
+        #
+        # TZ moves any accidental date formatting; TMPDIR moves every fixture the suites write, so
+        # a path that leaked into an output would show; and one test thread removes the scheduling
+        # that hid a fixture race until it reached a loaded runner.
+        run: |
+          set -eux
+          mkdir -p /tmp/gatk-rs-elsewhere
+          sudo locale-gen fr_FR.UTF-8 || true
+          LC_ALL=fr_FR.UTF-8 LANG=fr_FR.UTF-8 TZ=Asia/Kolkata \
+            TMPDIR=/tmp/gatk-rs-elsewhere RUST_TEST_THREADS=1 \
+            cargo test --workspace --release
+
+      - name: Two clean builds of the same source are the same bytes
+        # A port whose own build is not reproducible cannot support a claim that its output is.
+        # One crate is enough to catch a build that embeds a path, a timestamp or a hostname, and
+        # `gatk-engine` is the one every tool depends on.
+        run: |
+          set -eux
+          cargo build --release -p gatk-engine
+          find target/release -maxdepth 1 -name 'libgatk_engine*.rlib' -exec sha256sum {} \; \
+            | sed 's#.*/##' > /tmp/build1.txt
+          cargo clean
+          cargo build --release -p gatk-engine
+          find target/release -maxdepth 1 -name 'libgatk_engine*.rlib' -exec sha256sum {} \; \
+            | sed 's#.*/##' > /tmp/build2.txt
+          diff /tmp/build1.txt /tmp/build2.txt
+          cat /tmp/build1.txt
+
 # {{ORACLE_JOBS}}
 
   inventory:
