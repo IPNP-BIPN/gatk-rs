@@ -4399,6 +4399,26 @@
           "why": "124 rows, no files: fifteen allele pairings through typeOfVariant and isComplexIndel; ten allele choices over six synthetic pileups covering a SNP, a mapping-quality-filtered pileup, an insertion, two deletion lengths, reads that end inside the allele and an empty locus; seven counter maps and the map of a counter never given a pileup; twelve alternate ratios; eight supporting-read counts; twelve genotypes through the validator with the result each produces; the nine lines those results are written as, which is the tool's own table; and nine refusals. Two of those refusals show that the counter's own symbolic-reference branch is unreachable: htsjdk refuses to tag a symbolic allele as the reference before the counter ever sees it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32380726292, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "validate-basic-somatic-short-mutations",
+      "status": "golden-pending",
+      "title": "The validation table a tool writes",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ValidateBasicSomaticShortMutations"
+      ],
+      "why": "The walker over the counting allele-pileup-counter pins and the arithmetic somatic-validation-power pins. THE VALIDATION TOTAL IS REF PLUS ALT FROM THE COUNTER, not the pileup depth, so a read that is neither the reference nor the first alternate lowers the depth the power is computed at. A NULL RESULT IS ADDED TO NOTHING AND THEN DEREFERENCED, so a genotype that is validatable but whose result is null throws out of the tool. THE NORMAL ARTIFACT TEST IS STRICTLY GREATER, so a count exactly at the maximum still validates. AN ARTIFACT IS POWERED WHATEVER ITS POWER IS. THE SUMMARY SPLITS ON THE RECORD'S OWN isSNP, not the genotype's. A GENOTYPE THAT CANNOT BE VALIDATED IS WRITTEN TO THE ANNOTATED VCF AND NOWHERE ELSE. A MISSING VALIDATION CONTROL SAMPLE SKIPS THE RECORD IN SILENCE. AND THE FILTER STRING IS THE RECORD'S FILTERS SORTED AND JOINED WITH SEMICOLONS, then concatenated with the genotype's own with no separator.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ValidateBasicSomaticShortMutationsDump",
+          "golden": null,
+          "why": "171 rows over nine runs of one validation pair, two samples and eight loci: eight validation tables, eight concordance summaries, 154 annotated-VCF lines and one refusal. The loci cover a validated SNP, an unvalidated one, a normal artifact, an insertion, a deletion, a multiallelic record, a record with no AD, a filtered record and a count exactly at the artifact threshold; the reads at neighbouring loci overlap, so the validation depth of a record is larger than the reads placed at it and a port that counts only its own loci lands elsewhere. The runs vary the minimum power, the artifact maximum, the base-quality cutoff and the two sample names, and the refusal is the null-pointer the tool throws on a validatable genotype whose result is null. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
