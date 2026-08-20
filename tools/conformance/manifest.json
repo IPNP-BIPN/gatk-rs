@@ -4577,6 +4577,26 @@
           "why": "Nine runs over one segment file of six regions, two of them abutting, one a thousand bases from its neighbour and one fifty thousand: the default distance, zero, one that reaches the thousand-base gap and not the other, matching on each annotation and on both, the three renamed output columns, an input carrying a SAM header, an annotation the file does not carry, and a negative distance. Nine rows, seven of them outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32398455363, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "combine-segment-breakpoints",
+      "status": "golden-pending",
+      "title": "The pieces two segment files cut each other into",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CombineSegmentBreakpoints"
+      ],
+      "why": "The fourth and last tool on the annotated-interval collection. THE BREAKPOINTS OF BOTH FILES ARE POOLED PER CONTIG AND SORTED WITH STARTS BEFORE ENDS at equal positions, which is what keeps a single-base segment from vanishing. A PIECE BETWEEN TWO SEGMENTS IS SHRUNK AT BOTH ENDS and dropped when they were adjacent. A GAP IN ONE FILE IS STILL AN INTERVAL if the other covers it, and its columns from the empty side are EMPTY STRINGS. COLUMNS PRESENT IN BOTH FILES ARE SUFFIXED WITH THE LABELS, which default to 1 and 2. THE OUTPUT COLUMNS ARE SORTED ALPHABETICALLY. columns-of-interest FILTERS BOTH FILES and naming one neither carries is a refusal. THE FIRST RECORD OF EACH FILE DECIDES ITS COLUMNS, so a file of no rows takes the run down. AND THE OUTPUT SAM HEADER IS THE MERGE OF THE TWO INPUTS' plus the reference's dictionary.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CombineSegmentBreakpointsDump",
+          "golden": null,
+          "why": "Twelve runs over one two-contig reference: two files whose breakpoints interleave, the labels, one and two columns of interest, a column neither file carries, identical files, adjacent segments against one spanning both, disjoint segments, a single-base segment, one file carrying a SAM header, a file of no rows and a file overlapping itself. Nine write a file and three are refusals. --columns-of-interest is required, so every run names the columns it keeps. The M5 and UR fields of the sequence lines are masked, as in preprocess-intervals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []

@@ -326,6 +326,10 @@ jobs:
             index: "38/38"
             slug: "merge-annotated-regions-tag-germline-events-merge-annotated-regions-by-annotation"
             suites: "merge-annotated-regions tag-germline-events merge-annotated-regions-by-annotation"
+          - group: golden-pending
+            index: "1/1"
+            slug: "combine-segment-breakpoints"
+            suites: "combine-segment-breakpoints"
     steps:
       - uses: actions/checkout@v4
 
