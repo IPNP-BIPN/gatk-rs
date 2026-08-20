@@ -4642,7 +4642,7 @@
     },
     {
       "id": "gather-tranches",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The gather that ends a scattered VQSR run",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4655,8 +4655,8 @@
       "cases": [
         {
           "dump": "GatherTranchesDump",
-          "golden": null,
-          "why": "Eleven runs over five hand-written VQSLOD tranche files: two shards of four levels, the same two reversed, one shard alone, a shard carrying a level the other does not, a shard with no known variants, one requested sensitivity, seven of them, two given out of order, the two other modes and a file of the wrong version. Eleven rows: ten gathered files and one refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/gather_tranches.txt.gz",
+          "why": "Eleven runs over five hand-written VQSLOD tranche files: two shards of four levels, the same two reversed, one shard alone, a shard carrying a level the other does not, a shard with no known variants, one requested sensitivity, seven of them, two given out of order, the two other modes and a file of the wrong version. Eleven rows: ten gathered files and one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32413651130, and byte for byte what this laptop produced."
         }
       ]
     }
