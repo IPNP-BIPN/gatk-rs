@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 111 | 35.7% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 112 | 36.0% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 187 | 60.1% |
 | **total** | **311** | |
@@ -67,7 +67,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SplitSamByLibrary` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitSamByNumberOfReads` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitVcfs` | variant-transform | oracle-backed | split-vcfs | 1 | not measured |
-| `UpdateVcfSequenceDictionary` | variant-transform | golden-pending | picard-update-vcf-dictionary | 1 | not measured |
+| `UpdateVcfSequenceDictionary` | variant-transform | oracle-backed | picard-update-vcf-dictionary | 1 | not measured |
 | `ValidateSamFile` | reporting-walker | oracle-backed | validatesam | 6 | not measured |
 | `ViewSam` | reporting-walker | oracle-backed | viewsam | 1 | not measured |
 

@@ -4822,7 +4822,7 @@
     },
     {
       "id": "picard-update-vcf-dictionary",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF's contig lines replaced, Picard's way",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4835,8 +4835,8 @@
       "cases": [
         {
           "dump": "PicardUpdateVcfDictionaryDump",
-          "golden": null,
-          "why": "Eight runs, each carrying its input and its dictionary: both contigs named, the same two reversed, a dictionary missing one of them, one naming a contig the file never mentions, one carrying the M5, UR and AS fields a real .dict has, an input with no contig lines, a dictionary with no sequences at all, and a file with no records. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/picard_update_vcf_dictionary.txt.gz",
+          "why": "Eight runs, each carrying its input and its dictionary: both contigs named, the same two reversed, a dictionary missing one of them, one naming a contig the file never mentions, one carrying the M5, UR and AS fields a real .dict has, an input with no contig lines, a dictionary with no sequences at all, and a file with no records. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32426935815, and byte for byte what this laptop produced."
         }
       ]
     }
