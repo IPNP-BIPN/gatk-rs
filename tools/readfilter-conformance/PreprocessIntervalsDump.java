@@ -51,7 +51,7 @@ public class PreprocessIntervalsDump {
      * lower-case to 120, a run of sixty Ns to 180 and upper-case again to 240; chr2 is all N but
      * for an `AC` at 150 and 151, with its second line written in lower case.
      */
-    static final String FASTA = ">chr1\n"
+    public static final String FASTA = ">chr1\n"
             + "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\n"
             + "acgtacgtacgtacgtacgtacgtacgtacgtacgtacgtacgtacgtacgtacgtacgt\n"
             + "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN\n"
@@ -141,7 +141,7 @@ public class PreprocessIntervalsDump {
      * a digest of the contig and the UR is wherever the fasta happened to sit. Masking them is what
      * keeps the golden about the bins.
      */
-    static String masked(final String text) {
+    public static String masked(final String text) {
         return text.replaceAll("\tM5:[0-9a-f]+", "\tM5:<masked>")
                 .replaceAll("\tUR:file:[^\t\n]+", "\tUR:<masked>");
     }

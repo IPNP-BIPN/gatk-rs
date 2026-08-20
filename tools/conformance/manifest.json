@@ -4457,6 +4457,26 @@
           "why": "Seven interval lists over five scatter counts and all five modes: an even list, one with an interval far wider than the rest, one with two overlaps and an abuttal, one over two contigs, one out of order and on the second contig first, one single interval and one of a single base. Each of the 175 combinations contributes its ideal split weight, its shard count and every shard, and two refusals close it: a scatter count of zero and a negative one. 785 rows. The intervals of a shard are separated by semicolons, because uniqued() joins the names it merged with a pipe. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32385901764, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-intervals",
+      "status": "golden-pending",
+      "title": "The shards a scatter-gather run is given",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SplitIntervals"
+      ],
+      "why": "The tool around the five modes interval-list-scatter already pins. THE FILE NAME'S WIDTH COMES FROM log10 OF scatterCount MINUS ONE, which at a count of one is negative infinity and floors to Integer.MIN_VALUE, so the max with --interval-file-num-digits is what saves the name. NO INTERVALS AT ALL MEANS THE WHOLE REFERENCE filtered by --min-contig-size, which is ignored the moment any -L is given. --dont-mix-contigs SPLITS AFTER THE SCATTER, so the requested count is a lower bound and the files can outnumber it, and THAT SPLIT ORDERS THE SUBLISTS BY DICTIONARY INDEX rather than by arrival. THE MERGING RULE IS THE COMMON DEFAULT, which is ALL, so adjacent intervals are merged before anything is scattered. THE PREFIX AND EXTENSION ARE CONCATENATED RAW. AND A SCATTER COUNT OF ZERO IS THE TOOL'S OWN REFUSAL while a zero number of digits is the parser's.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SplitIntervalsDump",
+          "golden": null,
+          "why": "78 rows over twenty-two runs on one two-contig reference of 240 bases each: the whole genome at three scatter counts, the contig-size filter with and without intervals, all five modes on the same three intervals, adjacent intervals under both merging rules, the contig split in both interval orders, five namings covering every width the formula can reach, a scatter count larger than the intervals can honour, and the two refusals. Each run contributes the names of the files it wrote and the whole content of each, with the M5 and UR fields masked as in preprocess-intervals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
