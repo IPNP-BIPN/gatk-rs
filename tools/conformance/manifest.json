@@ -4659,6 +4659,26 @@
           "why": "Eleven runs over five hand-written VQSLOD tranche files: two shards of four levels, the same two reversed, one shard alone, a shard carrying a level the other does not, a shard with no known variants, one requested sensitivity, seven of them, two given out of order, the two other modes and a file of the wrong version. Eleven rows: ten gathered files and one refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32413651130, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "check-terminator-block",
+      "status": "golden-pending",
+      "title": "Whether a block-compressed file finished",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CheckTerminatorBlock"
+      ],
+      "why": "A FILE SHORTER THAN THE EMPTY BLOCK IS DEFECTIVE before it is read. THE TERMINATOR IS COMPARED AS 28 LITERAL BYTES, so an empty gzip block from another deflater is not one. A FILE WITH NO TERMINATOR IS SEARCHED BACKWARDS for a block preamble and the FIRST match decides, so a healthy block earlier cannot rescue a truncated one after it. THE SIZE FIELD IS BSIZE, one less than the block's length. A FILE THAT IS NOT GZIP AT ALL IS DEFECTIVE rather than an exception. AND THE EXIT CODE IS 100 FOR DEFECTIVE and 0 for both other answers, so a file with a healthy last block but no terminator passes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CheckTerminatorBlockDump",
+          "golden": null,
+          "why": "Nine files, each carried in the golden as base64 so a port replays the same bytes: a complete bgzipped file, the same with its terminator cut off, the same one byte shorter again, the terminator alone, one byte short of the terminator, nothing at all, a file that is not gzip, a complete file with a payload byte flipped, and one whose terminator's last byte is wrong. Each contributes its termination answer and the tool's exit code. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
