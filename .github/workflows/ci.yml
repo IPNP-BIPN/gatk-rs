@@ -328,12 +328,8 @@ jobs:
             suites: "merge-annotated-regions tag-germline-events merge-annotated-regions-by-annotation combine-segment-breakpoints mutect-gathers"
           - group: oracle-backed
             index: "39/39"
-            slug: "gather-bqsr-reports"
-            suites: "gather-bqsr-reports"
-          - group: golden-pending
-            index: "1/1"
-            slug: "gather-tranches"
-            suites: "gather-tranches"
+            slug: "gather-bqsr-reports-gather-tranches"
+            suites: "gather-bqsr-reports gather-tranches"
     steps:
       - uses: actions/checkout@v4
 
