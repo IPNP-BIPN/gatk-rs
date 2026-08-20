@@ -42,6 +42,7 @@ pub mod filter_intervals;
 pub mod filter_mutect_calls;
 pub mod filter_variant_tranches;
 pub mod fix_misencoded_base_quality_reads;
+pub mod gather_bqsr_reports;
 pub mod gather_vcfs;
 pub mod get_normal_artifact_data;
 pub mod get_pileup_summaries;
