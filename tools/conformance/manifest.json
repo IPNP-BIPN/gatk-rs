@@ -4381,6 +4381,24 @@
           "why": "606 rows, no files: three pileup tables built from a formula with integer counts -- a tumour of 350 sites over two contigs with a loss of heterozygosity in the second half of chr1, a matched normal of 200 without one, and a short contig of 40 below the segmenter's window. Each is passed through the tool's coverage filter, then segmented, then modelled, and the contamination is estimated three ways: tumour genotyping itself, the normal genotyping the tumour, and the short table where the segmenter finds nothing. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32195521709, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "allele-pileup-counter",
+      "status": "golden-pending",
+      "title": "What a validation pileup says about an allele",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Everything ValidateBasicSomaticShortMutations does before the arithmetic somatic-validation-power already pins. typeOfVariant CALLS EQUAL-LENGTH ALLELES DIFFERING IN ONE BASE A SNP however long they are, and calls a spanning-deletion alternate NO_VARIATION. isComplexIndel IS A PREFIX TEST, so a deletion whose remaining base disagrees with the reference's first is complex and its genotype cannot be validated at all. chooseAlleleForRead DOES NOT STOP AT THE FIRST MATCH, so the last matching alternate wins. THE REFERENCE TEST INCLUDES THE INDEL LOOKAHEAD, so a read whose bases match the reference is still not reference when it precedes an insertion or a deletion. A READ THAT ENDS INSIDE THE ALLELE ANSWERS UNKNOWN rather than false and is neither reference nor alternate. THE QUALITY CUTOFF IS APPLIED LAST, to the chosen allele's own bases, and the minimum over an empty array is minus one. THE DELETION MATCH COMPARES LENGTHS ONLY, so an alternate of the right length matches whatever its bases are. AllelePileupCounter DROPS MAPPING QUALITY 0 AND 255 and drops nothing else. calculateMaxAltRatio's TWO FILTERS ARE NOT COMPLEMENTS, so a pileup of nothing but short reads is a ratio of zero rather than a NaN. AND A HAPLOID GENOTYPE THROWS rather than being refused, because isAbleToValidateGenotype types the variant from the second allele before the ploidy it just computed is consulted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AllelePileupCounterDump",
+          "golden": null,
+          "why": "124 rows, no files: fifteen allele pairings through typeOfVariant and isComplexIndel; ten allele choices over six synthetic pileups covering a SNP, a mapping-quality-filtered pileup, an insertion, two deletion lengths, reads that end inside the allele and an empty locus; seven counter maps and the map of a counter never given a pileup; twelve alternate ratios; eight supporting-read counts; twelve genotypes through the validator with the result each produces; the nine lines those results are written as, which is the tool's own table; and nine refusals. Two of those refusals show that the counter's own symbolic-reference branch is unreachable: htsjdk refuses to tag a symbolic allele as the reference before the counter ever sees it. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
