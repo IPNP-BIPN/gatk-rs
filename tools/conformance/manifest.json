@@ -4500,7 +4500,7 @@
     },
     {
       "id": "callable-loci",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The state every locus is given",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4513,8 +4513,8 @@
       "cases": [
         {
           "dump": "CallableLociDump",
-          "golden": null,
-          "why": "23 rows: twelve runs over one two-contig reference and a single-sample fixture laid out so every state is reachable by moving one threshold, plus a two-sample fixture for the refusal. Each run contributes its whole BED file and its whole summary. The contig-run-on row is the reference bug in the open: two REF_N stretches on different contigs whose coordinates run on come out as one BED line of twenty bases under chr1's name. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/callable_loci.txt.gz",
+          "why": "23 rows: twelve runs over one two-contig reference and a single-sample fixture laid out so every state is reachable by moving one threshold, plus a two-sample fixture for the refusal. Each run contributes its whole BED file and its whole summary. The contig-run-on row is the reference bug in the open: two REF_N stretches on different contigs whose coordinates run on come out as one BED line of twenty bases under chr1's name. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32394954776, and byte for byte what this laptop produced."
         }
       ]
     }
