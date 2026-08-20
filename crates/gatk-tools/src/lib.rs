@@ -66,6 +66,7 @@ pub mod read_anonymizer;
 pub mod read_walker;
 pub mod reference_walker;
 pub mod remove_nearby_indels;
+pub mod rename_sample_in_vcf;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
 pub mod select_variants;

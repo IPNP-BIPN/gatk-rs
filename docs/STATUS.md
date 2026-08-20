@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 104 | 33.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 105 | 33.8% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 194 | 62.4% |
 | **total** | **311** | |
@@ -49,7 +49,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `NonNFastaSize` | reference-utility | unchecked | nonnfastasize | 1 | not measured |
 | `NormalizeFasta` | reference-utility | unchecked | normalizefasta | 1 | not measured |
 | `QualityScoreDistribution` | reporting-walker | unchecked | qualityscoredistribution | 1 | not measured |
-| `RenameSampleInVcf` | variant-transform | golden-pending | rename-sample-in-vcf | 1 | not measured |
+| `RenameSampleInVcf` | variant-transform | oracle-backed | rename-sample-in-vcf | 1 | not measured |
 | `ReorderSam` | record-transform | oracle-backed | reordersam | 1 | not measured |
 | `ReplaceSamHeader` | record-transform | oracle-backed | replacesamheader | 1 | not measured |
 | `RevertOriginalBaseQualitiesAndAddMateCigar` | record-transform | oracle-backed | revertorigmatecigar | 1 | not measured |
