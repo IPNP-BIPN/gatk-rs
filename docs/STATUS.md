@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 107 | 34.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 108 | 34.7% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 191 | 61.4% |
 | **total** | **311** | |
@@ -60,7 +60,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ScatterIntervalsByNs` | reference-utility | unchecked | scatterintervalsbyns | 1 | not measured |
 | `SetNmMdAndUqTags` | record-transform | oracle-backed | setnmmduq | 1 | not measured |
 | `SortSam` | record-transform | oracle-backed | sortsam, sortsam-bam | 2 | not measured |
-| `SortVcf` | variant-transform | golden-pending | sort-vcf | 1 | not measured |
+| `SortVcf` | variant-transform | oracle-backed | sort-vcf | 1 | not measured |
 | `SplitSamByLibrary` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitSamByNumberOfReads` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitVcfs` | variant-transform | oracle-backed | split-vcfs | 1 | not measured |

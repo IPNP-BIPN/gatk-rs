@@ -4742,7 +4742,7 @@
     },
     {
       "id": "sort-vcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF sorted into its dictionary's order",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4755,8 +4755,8 @@
       "cases": [
         {
           "dump": "SortVcfDump",
-          "golden": null,
-          "why": "Eleven runs, each carrying every input it was given as well as its output: one unsorted file over a dictionary declaring chr10 before chr2, two files whose records interleave and collide at one locus, the same two reversed, a merged header, a conflicting one, two samples, two files whose sample order differs, two files whose dictionaries differ, a file with no dictionary, a record on an undeclared contig, and a file with no records. The one refusal that names a path has it masked. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/sort_vcf.txt.gz",
+          "why": "Eleven runs, each carrying every input it was given as well as its output: one unsorted file over a dictionary declaring chr10 before chr2, two files whose records interleave and collide at one locus, the same two reversed, a merged header, a conflicting one, two samples, two files whose sample order differs, two files whose dictionaries differ, a file with no dictionary, a record on an undeclared contig, and a file with no records. The one refusal that names a path has it masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32420753151, and byte for byte what this laptop produced."
         }
       ]
     }
