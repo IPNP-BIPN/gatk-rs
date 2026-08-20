@@ -10,6 +10,7 @@ pub mod analyze_covariates;
 pub mod annotate_intervals;
 pub mod annotate_vcf_with_bam_depth;
 pub mod annotate_vcf_with_expected_allele_fraction;
+pub mod annotated_interval;
 pub mod apply_bqsr;
 pub mod apply_vqsr;
 pub mod ase_read_counter;

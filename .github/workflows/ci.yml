@@ -175,155 +175,155 @@ jobs:
       matrix:
         include:
           - group: oracle-backed
-            index: "1/37"
+            index: "1/38"
             slug: "annotation-original-alignment-annotation-per-allele-variant-getters-annotation-likelihood-counts-genotyper-allele-likelihoods"
             suites: "annotation-original-alignment annotation-per-allele variant-getters annotation-likelihood-counts genotyper-allele-likelihoods"
           - group: oracle-backed
-            index: "2/37"
+            index: "2/38"
             slug: "genotyper-allele-list-annotation-counting-readfilters-readsdatasource-referencecontext"
             suites: "genotyper-allele-list annotation-counting readfilters readsdatasource referencecontext"
           - group: oracle-backed
-            index: "3/37"
+            index: "3/38"
             slug: "reference-walker-count-reads-and-bases-fasta-reference-maker-shift-fasta-fasta-alternate-reference-maker"
             suites: "reference-walker count-reads-and-bases fasta-reference-maker shift-fasta fasta-alternate-reference-maker"
           - group: oracle-backed
-            index: "4/37"
+            index: "4/38"
             slug: "get-pileup-summaries-pileup-tool-ase-read-counter-collect-allelic-counts-normal-artifact-data"
             suites: "get-pileup-summaries pileup-tool ase-read-counter collect-allelic-counts normal-artifact-data"
           - group: oracle-backed
-            index: "5/37"
+            index: "5/38"
             slug: "call-copy-ratio-segments-annotate-intervals-collect-read-counts-denoise-read-counts-filter-intervals"
             suites: "call-copy-ratio-segments annotate-intervals collect-read-counts denoise-read-counts filter-intervals"
           - group: oracle-backed
-            index: "6/37"
+            index: "6/38"
             slug: "readwalker-printreads-record-transform-fix-misencoded-add-oa-tags"
             suites: "readwalker printreads record-transform fix-misencoded add-oa-tags"
           - group: oracle-backed
-            index: "7/37"
+            index: "7/38"
             slug: "print-distant-mates-split-reads-left-align-indels-left-align-indels-tool-clip-reads"
             suites: "print-distant-mates split-reads left-align-indels left-align-indels-tool clip-reads"
           - group: oracle-backed
-            index: "8/37"
+            index: "8/38"
             slug: "transfer-read-tags-print-reads-header-post-process-reads-for-rsem-convert-headerless-shard-gatk-report"
             suites: "transfer-read-tags print-reads-header post-process-reads-for-rsem convert-headerless-shard gatk-report"
           - group: oracle-backed
-            index: "9/37"
+            index: "9/38"
             slug: "recal-datum-covariates-qual-quantizer-recalibration-tables-gatk-report-reader"
             suites: "recal-datum covariates qual-quantizer recalibration-tables gatk-report-reader"
           - group: oracle-backed
-            index: "10/37"
+            index: "10/38"
             slug: "bqsr-transformer-recalibration-report-apply-bqsr-baq-base-recalibration-engine"
             suites: "bqsr-transformer recalibration-report apply-bqsr baq base-recalibration-engine"
           - group: oracle-backed
-            index: "11/37"
+            index: "11/38"
             slug: "base-recalibrator-read-anonymizer-intervalwalker-alignmentstate-pileupelement"
             suites: "base-recalibrator read-anonymizer intervalwalker alignmentstate pileupelement"
           - group: oracle-backed
-            index: "12/37"
+            index: "12/38"
             slug: "intervalfile-jexlfilter-featurecache-readpileup-readstates"
             suites: "intervalfile jexlfilter featurecache readpileup readstates"
           - group: oracle-backed
-            index: "13/37"
+            index: "13/38"
             slug: "locusiterator-acbuilder-locuswalker-javarandom-reservoir"
             suites: "locusiterator acbuilder locuswalker javarandom reservoir"
           - group: oracle-backed
-            index: "14/37"
+            index: "14/38"
             slug: "well19937c-leveling-variantwalker-activityprofile-assemblyregion"
             suites: "well19937c leveling variantwalker activityprofile assemblyregion"
           - group: oracle-backed
-            index: "15/37"
+            index: "15/38"
             slug: "intervaliterators-assemblyregioniterator-assemblyregionwalker-mann-whitney-annotation-rank-sum"
             suites: "intervaliterators assemblyregioniterator assemblyregionwalker mann-whitney annotation-rank-sum"
           - group: oracle-backed
-            index: "16/37"
+            index: "16/38"
             slug: "annotation-strand-bias-annotation-read-grouping-annotation-depth-per-allele-annotation-flow-annotation-site-statistics"
             suites: "annotation-strand-bias annotation-read-grouping annotation-depth-per-allele annotation-flow annotation-site-statistics"
           - group: oracle-backed
-            index: "17/37"
+            index: "17/38"
             slug: "annotation-heterozygosity-and-mq-annotation-allele-specific-rank-sum-annotation-allele-specific-strand-bias-annotation-allele-specific-site-statistics-annotation-pedigree"
             suites: "annotation-heterozygosity-and-mq annotation-allele-specific-rank-sum annotation-allele-specific-strand-bias annotation-allele-specific-site-statistics annotation-pedigree"
           - group: oracle-backed
-            index: "18/37"
+            index: "18/38"
             slug: "annotation-fragment-counts-annotation-haplotype-filtering-multipasswalker-barclay-value-model-barclay-tagged-arguments"
             suites: "annotation-fragment-counts annotation-haplotype-filtering multipasswalker barclay-value-model barclay-tagged-arguments"
           - group: oracle-backed
-            index: "19/37"
+            index: "19/38"
             slug: "barclay-argument-collections-barclay-arguments-file-barclay-plugin-descriptors-natural-log-utils-somatic-likelihoods"
             suites: "barclay-argument-collections barclay-arguments-file barclay-plugin-descriptors natural-log-utils somatic-likelihoods"
           - group: oracle-backed
-            index: "20/37"
+            index: "20/38"
             slug: "decimal-format-string-format-double-to-string-allele-pseudo-depth-counting-walkers"
             suites: "decimal-format string-format double-to-string allele-pseudo-depth counting-walkers"
           - group: oracle-backed
-            index: "21/37"
+            index: "21/38"
             slug: "sa-tag-builder-overhang-fixing-manager-split-n-cigar-reads-methylation-type-caller-get-sample-name"
             suites: "sa-tag-builder overhang-fixing-manager split-n-cigar-reads methylation-type-caller get-sample-name"
           - group: oracle-backed
-            index: "22/37"
+            index: "22/38"
             slug: "compare-base-qualities-sam-pileup-codec-check-pileup-dump-tabix-index-tsv-table"
             suites: "compare-base-qualities sam-pileup-codec check-pileup dump-tabix-index tsv-table"
           - group: oracle-backed
-            index: "23/37"
+            index: "23/38"
             slug: "pileup-summary-contamination-tables-persistence-optimizer-analyze-covariates-remove-nearby-indels"
             suites: "pileup-summary contamination-tables persistence-optimizer analyze-covariates remove-nearby-indels"
           - group: oracle-backed
-            index: "24/37"
+            index: "24/38"
             slug: "update-vcf-sequence-dictionary-left-align-and-trim-trim-alleles-split-biallelics-left-align-and-trim-variants"
             suites: "update-vcf-sequence-dictionary left-align-and-trim trim-alleles split-biallelics left-align-and-trim-variants"
           - group: oracle-backed
-            index: "25/37"
+            index: "25/38"
             slug: "genotype-index-subset-alleles-split-with-likelihoods-variant-filtration-gather-vcfs"
             suites: "genotype-index subset-alleles split-with-likelihoods variant-filtration gather-vcfs"
           - group: oracle-backed
-            index: "26/37"
+            index: "26/38"
             slug: "select-variants-samples-java-regex-select-variants-subset-select-variants-filters-select-variants-output"
             suites: "select-variants-samples java-regex select-variants-subset select-variants-filters select-variants-output"
           - group: oracle-backed
-            index: "27/37"
+            index: "27/38"
             slug: "select-variants-concordance-variants-to-table-validate-variants-count-variants-count-false-positives"
             suites: "select-variants-concordance variants-to-table validate-variants count-variants count-false-positives"
           - group: oracle-backed
-            index: "28/37"
+            index: "28/38"
             slug: "calculate-mixing-fractions-annotate-vcf-with-bam-depth-annotate-vcf-with-expected-allele-fraction-concordance-walker-evaluate-info-field-concordance"
             suites: "calculate-mixing-fractions annotate-vcf-with-bam-depth annotate-vcf-with-expected-allele-fraction concordance-walker evaluate-info-field-concordance"
           - group: oracle-backed
-            index: "29/37"
+            index: "29/38"
             slug: "concordance-summary-concordance-filter-analysis-concordance-annotated-vcfs-apply-vqsr-tranches-apply-vqsr-site-filtering"
             suites: "concordance-summary concordance-filter-analysis concordance-annotated-vcfs apply-vqsr-tranches apply-vqsr-site-filtering"
           - group: oracle-backed
-            index: "30/37"
+            index: "30/38"
             slug: "apply-vqsr-allele-specific-apply-vqsr-two-modes-filter-variant-tranches-threshold-calculator-filter-stats"
             suites: "apply-vqsr-allele-specific apply-vqsr-two-modes filter-variant-tranches threshold-calculator filter-stats"
           - group: oracle-backed
-            index: "31/37"
+            index: "31/38"
             slug: "mutect-hard-filters-mutect-engine-arithmetic-germline-probability-mutect-engine-construction-mutect-error-probabilities"
             suites: "mutect-hard-filters mutect-engine-arithmetic germline-probability mutect-engine-construction mutect-error-probabilities"
           - group: oracle-backed
-            index: "32/37"
+            index: "32/38"
             slug: "beta-binomial-somatic-validation-power-allele-fraction-cluster-somatic-clustering-model-somatic-clustering-learn"
             suites: "beta-binomial somatic-validation-power allele-fraction-cluster somatic-clustering-model somatic-clustering-learn"
           - group: oracle-backed
-            index: "33/37"
+            index: "33/38"
             slug: "mutect-filter-list-filter-mutect-calls-allele-filter-base-normal-artifact-filter-remaining-hard-filters"
             suites: "mutect-filter-list filter-mutect-calls allele-filter-base normal-artifact-filter remaining-hard-filters"
           - group: oracle-backed
-            index: "34/37"
+            index: "34/38"
             slug: "slippage-filter-contamination-filter-haplotype-filter-strand-artifact-estep-strand-artifact-mstep"
             suites: "slippage-filter contamination-filter haplotype-filter strand-artifact-estep strand-artifact-mstep"
           - group: oracle-backed
-            index: "35/37"
+            index: "35/38"
             slug: "filter-list-by-mode-apply-filters-accumulate-data-engine-assembly-germline-wrapper"
             suites: "filter-list-by-mode apply-filters accumulate-data engine-assembly germline-wrapper"
           - group: oracle-backed
-            index: "36/37"
+            index: "36/38"
             slug: "pair-hmm-kernel-segmentation-contamination-model-allele-pileup-counter-validate-basic-somatic-short-mutations"
             suites: "pair-hmm kernel-segmentation contamination-model allele-pileup-counter validate-basic-somatic-short-mutations"
           - group: oracle-backed
-            index: "37/37"
+            index: "37/38"
             slug: "preprocess-intervals-interval-list-scatter-split-intervals-compare-interval-lists-callable-loci"
             suites: "preprocess-intervals interval-list-scatter split-intervals compare-interval-lists callable-loci"
-          - group: golden-pending
-            index: "1/1"
+          - group: oracle-backed
+            index: "38/38"
             slug: "merge-annotated-regions"
             suites: "merge-annotated-regions"
     steps:

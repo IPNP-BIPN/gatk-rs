@@ -4520,7 +4520,7 @@
     },
     {
       "id": "merge-annotated-regions",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The segments a merge leaves behind",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4533,8 +4533,8 @@
       "cases": [
         {
           "dump": "MergeAnnotatedRegionsDump",
-          "golden": null,
-          "why": "Fourteen segment files over one two-contig reference: a plain one, abutting regions, a chain of three overlaps whose values repeat, a region written between two that overlap it, an annotation missing from one side, values that already carry the separator, rows out of dictionary order, two other spellings of the locatable columns including the Position that names both ends, a comment preamble, an input SAM header, a file of no rows, an unknown contig and a file with no locatable columns. Twelve of the fourteen write a file; the other two are the empty file's IndexOutOfBoundsException and the missing-columns refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/merge_annotated_regions.txt.gz",
+          "why": "Fourteen segment files over one two-contig reference: a plain one, abutting regions, a chain of three overlaps whose values repeat, a region written between two that overlap it, an annotation missing from one side, values that already carry the separator, rows out of dictionary order, two other spellings of the locatable columns including the Position that names both ends, a comment preamble, an input SAM header, a file of no rows, an unknown contig and a file with no locatable columns. Twelve of the fourteen write a file; the other two are the empty file's IndexOutOfBoundsException and the missing-columns refusal. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32396059127, and byte for byte what this laptop produced."
         }
       ]
     }
