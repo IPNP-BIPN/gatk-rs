@@ -4699,6 +4699,26 @@
           "why": "Ten runs, each carrying its input as well as its output so a port reads the same bytes: a plain rename, the old name asserted rightly and wrongly, a name with a space, a name that is a number, a rename to the same name, a sites-only input, a two-sample input, a file declaring no INFO lines whose records use them, and a file with no records at all. Twenty rows: ten inputs, seven outputs and three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32416633089, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "make-sites-only-vcf",
+      "status": "golden-pending",
+      "title": "A VCF with its genotypes dropped",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MakeSitesOnlyVcf"
+      ],
+      "why": "SAMPLE IS A TreeSet, so the output's columns are alphabetical however they were typed and whatever order the input had. NO SAMPLE AT ALL IS THE DEFAULT and leaves eight columns, not an empty FORMAT. A NAME THE INPUT DOES NOT CARRY BECOMES A COLUMN OF ITS OWN, the header being built from the names asked for rather than the names the file has, so every record writes ./. under a sample that never existed. THE ANNOTATIONS ARE KEPT AS THEY WERE, so AC and AN can disagree with the genotypes that are left. THE ALLELES ARE RESET FROM THE ORIGINAL RECORD, so an alternate no remaining genotype calls still appears in ALT. THE FORMAT COLUMN IS RECOMPUTED from the genotypes that remain and can be shorter than the input's. AND CREATE_INDEX IS ON BY DEFAULT for this tool, so a header declaring no contigs is a refusal rather than an unindexed output.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MakeSitesOnlyVcfDump",
+          "golden": null,
+          "why": "Ten runs over a three-sample file whose columns are deliberately out of alphabetical order, each carrying its input as well as its output: the default sites-only run, one sample, the same sample twice, two given unsorted, all three, a sample the file does not carry, that one beside a present one, a file that already has no samples, a header declaring no contigs, and the same with the index turned off. Twenty rows: ten inputs, nine outputs and one refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
