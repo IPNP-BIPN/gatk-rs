@@ -4779,6 +4779,26 @@
           "why": "Thirteen runs, each carrying every input as well as its output: two files that interleave and tie at one locus, the same two reversed, one file alone, three files, two identical files, a file whose own records are out of order, a second file declaring a subset of the contigs, one declaring them in another order, two files whose sample columns are ordered differently, one with different samples, a run with two comments, a file with no contig lines, and an empty file merged with a full one. The refusals that name a path have it masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32421712465, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "fix-vcf-header",
+      "status": "golden-pending",
+      "title": "A VCF header rebuilt from the records under it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FixVcfHeader"
+      ],
+      "why": "AN INVENTED LINE IS ALWAYS Number=. AND Type=String whatever the value looks like, with a fixed description naming the tool. THE STANDARD FORMAT LINES ARE ADDED WHATEVER THE FILE USES, so the output declares more than the input ever needed. A FILTER ON A RECORD IS A DECLARATION TO INVENT and PASS is not. CHECK_FIRST_N_RECORDS STOPS THE SEARCH EARLY, so a key in a later record is not declared and the write then fails on it. THE HEADER FILE REPLACES THE HEADER WHOLESALE, nothing of the input's surviving but its samples. ENFORCE_SAME_SAMPLES IS ON BY DEFAULT and compares the lists pairwise, naming the first index that differs. WITH IT OFF THE INPUT'S SAMPLES ARE KEPT. A HEADER FILE AND A RECORD LIMIT TOGETHER ARE A COMMAND-LINE REFUSAL. AND THE WRITER HAS ALLOW_MISSING_FIELDS_IN_HEADER UNSET, so anything the fixing missed is a refusal rather than a silently written file.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FixVcfHeaderDump",
+          "golden": null,
+          "why": "Ten runs, each carrying its input and, where there is one, its replacement header: a file with undeclared INFO, FORMAT and FILTER keys, the same examined one record deep, a file missing nothing, a file with no records, a replacement header, one naming a different sample, the same unenforced, a sites-only header, an incomplete replacement, and a header file given beside a record limit. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
