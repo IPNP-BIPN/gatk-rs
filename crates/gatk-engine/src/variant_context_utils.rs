@@ -35,6 +35,7 @@
 //! caller produces for two adjacent variants, `min(maxLeadingBases, distanceToLastVariant - 1)`.
 
 use crate::alignment_utils::{normalize_alleles, AlignmentError, IndexRange};
+use crate::pileup::PileupElement;
 use crate::subset_alleles::{subset_alleles, AssignmentMethod, Genotype};
 
 /// One allele: its bases and whether it is the reference.
@@ -547,6 +548,278 @@ fn chromosome_counts(genotypes: &[Genotype], original_samples: usize) -> Vec<(St
         ),
         ("AN".to_string(), allele_number.to_string()),
     ]
+}
+
+/// `VariantContext.Type`, as far as `typeOfVariant` produces it.
+///
+/// MIXED is not here: the comment in the reference says a pairwise comparison cannot produce it,
+/// and the code proves it by returning INDEL for everything that is not a symbolic allele, a
+/// spanning deletion or a same-length pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariantType {
+    NoVariation,
+    Snp,
+    Mnp,
+    Indel,
+    Symbolic,
+}
+
+impl VariantType {
+    /// The enum constant's own name, which is what a Java `printf` of it writes.
+    pub fn name(&self) -> &'static str {
+        match self {
+            VariantType::NoVariation => "NO_VARIATION",
+            VariantType::Snp => "SNP",
+            VariantType::Mnp => "MNP",
+            VariantType::Indel => "INDEL",
+            VariantType::Symbolic => "SYMBOLIC",
+        }
+    }
+}
+
+/// `Trilean`, which is what `doesReadContainAllele` answers.
+///
+/// The third value is not a convenience: a read that ends inside the allele is UNKNOWN, and
+/// `calculateMaxAltRatio` counts UNKNOWN into neither the numerator nor the denominator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trilean {
+    True,
+    False,
+    Unknown,
+}
+
+/// What typing an allele pair, or choosing one for a read, refuses.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PileupAlleleError {
+    /// A symbolic reference allele. Unreachable through htsjdk, which refuses to build one.
+    SymbolicReference,
+    /// A spanning-deletion reference allele.
+    SpanDelReference,
+    /// `ParamUtils.isPositiveOrZero` on the cutoff, as `chooseAlleleForRead` words it.
+    NegativeMinimumBaseQuality,
+    /// The same check, as the two pileup halves of `PowerCalculationUtils` word it. Two messages
+    /// for one condition, and the golden carries both.
+    NegativeMinimumBaseQualityRatio,
+}
+
+impl PileupAlleleError {
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            PileupAlleleError::SymbolicReference | PileupAlleleError::SpanDelReference => {
+                "java.lang.IllegalStateException"
+            }
+            PileupAlleleError::NegativeMinimumBaseQuality
+            | PileupAlleleError::NegativeMinimumBaseQualityRatio => {
+                "java.lang.IllegalArgumentException"
+            }
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            PileupAlleleError::SymbolicReference => {
+                "Unexpected error: encountered a record with a symbolic reference allele"
+                    .to_string()
+            }
+            PileupAlleleError::SpanDelReference => {
+                "Unexpected error: encountered a record with a spanning deletion reference allele"
+                    .to_string()
+            }
+            PileupAlleleError::NegativeMinimumBaseQuality => {
+                "Minimum base quality must be positive or zero.".to_string()
+            }
+            PileupAlleleError::NegativeMinimumBaseQualityRatio => {
+                "Cannot have a negative minBaseQualityCutoff.".to_string()
+            }
+        }
+    }
+}
+
+/// `typeOfVariant(ref, allele)`, one alternate against the reference.
+///
+/// Two decisions worth naming. A SPANNING DELETION ALTERNATE IS NO_VARIATION, tested before the
+/// reference's own spanning-deletion refusal, so `*` against `*` answers rather than throwing. And
+/// EQUAL-LENGTH ALLELES DIFFERING IN EXACTLY ONE BASE ARE A SNP however long they are, so `ACGT`
+/// against `ACGA` is a SNP and only two or more differences make an MNP.
+pub fn type_of_variant(
+    reference: &Allele,
+    allele: &Allele,
+) -> Result<VariantType, PileupAlleleError> {
+    if reference.is_symbolic() {
+        return Err(PileupAlleleError::SymbolicReference);
+    }
+    if allele.is_symbolic() {
+        return Ok(VariantType::Symbolic);
+    }
+    // `allele.equals(Allele.SPAN_DEL)`, which is the bases and the reference flag both.
+    if allele.is_span_del() && !allele.is_reference {
+        return Ok(VariantType::NoVariation);
+    }
+    if reference.is_span_del() && reference.is_reference {
+        return Err(PileupAlleleError::SpanDelReference);
+    }
+    if reference.len() == allele.len() {
+        if reference.bases == allele.bases {
+            return Ok(VariantType::NoVariation);
+        }
+        if allele.len() == 1 {
+            return Ok(VariantType::Snp);
+        }
+        let differences = reference
+            .bases
+            .iter()
+            .zip(allele.bases.iter())
+            .filter(|(left, right)| left != right)
+            .count();
+        return Ok(if differences == 1 {
+            VariantType::Snp
+        } else {
+            VariantType::Mnp
+        });
+    }
+    Ok(VariantType::Indel)
+}
+
+/// `isComplexIndel(ref, allele)`: a prefix test, and nothing else.
+///
+/// Same length, either side empty or symbolic, or either side a single base: not complex. Past
+/// that the shorter allele has to be a prefix of the longer one, so a deletion of `AAA` to `TA` is
+/// complex and a genotype carrying it cannot be validated at all.
+pub fn is_complex_indel(reference: &Allele, allele: &Allele) -> bool {
+    if reference.is_symbolic() || reference.is_empty() {
+        return false;
+    }
+    if allele.is_symbolic() || allele.is_empty() {
+        return false;
+    }
+    if reference.len() == allele.len() {
+        return false;
+    }
+    if allele.len() == 1 || reference.len() == 1 {
+        return false;
+    }
+    let shorter = reference.len().min(allele.len());
+    let prefix = reference.bases[..shorter] == allele.bases[..shorter];
+    !prefix
+}
+
+/// `doesReadContainAllele(pileupElement, allele)`.
+///
+/// The subarray stops at the end of the read, so a read that ends inside the allele produces a
+/// short array and the answer is UNKNOWN rather than false. The comparison itself is exact: htsjdk
+/// upper-cases an allele's bases when it is built and does not upper-case the read's.
+pub fn does_read_contain_allele(element: &PileupElement<'_>, allele: &Allele) -> Trilean {
+    let bases = bases_for_allele_in_read(element, allele);
+    if bases.len() < allele.len() {
+        return Trilean::Unknown;
+    }
+    if bases == allele.bases {
+        Trilean::True
+    } else {
+        Trilean::False
+    }
+}
+
+/// `getBasesForAlleleInRead`, which is `ArrayUtils.subarray` and therefore clamps rather than
+/// throwing when the read ends first.
+fn bases_for_allele_in_read(element: &PileupElement<'_>, allele: &Allele) -> Vec<u8> {
+    let from = element.offset as usize;
+    let to = (from + allele.len()).min(element.read.read_bases.len());
+    if from >= to {
+        return Vec::new();
+    }
+    element.read.read_bases[from..to].to_vec()
+}
+
+/// `getMinBaseQualityForAlleleInRead`, whose minimum over an empty array is -1.
+///
+/// A read that ends exactly at the allele therefore fails any cutoff above -1, which includes a
+/// cutoff of zero.
+fn min_base_quality_for_allele_in_read(element: &PileupElement<'_>, allele: &Allele) -> i32 {
+    let from = element.offset as usize;
+    let to = (from + allele.len()).min(element.read.base_qualities.len());
+    if from >= to {
+        return -1;
+    }
+    element.read.base_qualities[from..to]
+        .iter()
+        .map(|quality| i32::from(*quality))
+        .min()
+        .unwrap_or(-1)
+}
+
+/// `isIndelInThePileupElement`: an insertion matches on its bases, a deletion on its length alone.
+fn is_indel_in_the_pileup_element(
+    element: &PileupElement<'_>,
+    reference: &Allele,
+    alternate: &Allele,
+) -> bool {
+    if element.is_before_insertion() {
+        // A deletion immediately preceding an insertion has no following insertion bases, which
+        // the reference reads as a null and ignores.
+        let Some(inserted) = element.bases_of_immediately_following_insertion() else {
+            return false;
+        };
+        let mut extended = reference.bases.clone();
+        extended.extend_from_slice(&inserted);
+        return extended == alternate.bases;
+    }
+    if element.is_before_deletion_start() {
+        let length = element.length_of_immediately_following_indel() as i64;
+        return (reference.len() as i64 - alternate.len() as i64) == length;
+    }
+    false
+}
+
+/// `chooseAlleleForRead(pileupElement, referenceAllele, altAlleles, minBaseQualityCutoff)`.
+///
+/// THE LOOP DOES NOT BREAK. Every alternate that matches assigns, so the last one wins, and two
+/// alternates that both match are not a refusal.
+///
+/// THE REFERENCE TEST INCLUDES THE INDEL LOOKAHEAD: a read whose bases match the reference is not
+/// the reference allele when it sits before an insertion or a deletion start, which is what lets
+/// that read be counted as an indel alternate instead.
+///
+/// THE QUALITY CUTOFF IS APPLIED LAST, over the chosen allele's own bases rather than the
+/// reference's, so a cutoff can turn an answer into none but never into a different allele.
+pub fn choose_allele_for_read(
+    element: &PileupElement<'_>,
+    reference: &Allele,
+    alternates: &[Allele],
+    minimum_base_quality: i32,
+) -> Result<Option<Allele>, PileupAlleleError> {
+    if minimum_base_quality < 0 {
+        return Err(PileupAlleleError::NegativeMinimumBaseQuality);
+    }
+    let is_reference = bases_for_allele_in_read(element, reference) == reference.bases
+        && !element.is_before_deletion_start()
+        && !element.is_before_insertion();
+    let mut chosen: Option<Allele> = None;
+    if is_reference {
+        chosen = Some(reference.clone());
+    } else {
+        for alternate in alternates {
+            match type_of_variant(reference, alternate)? {
+                VariantType::Indel => {
+                    if is_indel_in_the_pileup_element(element, reference, alternate) {
+                        chosen = Some(alternate.clone());
+                    }
+                }
+                VariantType::Mnp | VariantType::Snp => {
+                    if does_read_contain_allele(element, alternate) == Trilean::True {
+                        chosen = Some(alternate.clone());
+                    }
+                }
+                VariantType::NoVariation | VariantType::Symbolic => {}
+            }
+        }
+    }
+    if let Some(allele) = &chosen {
+        if min_base_quality_for_allele_in_read(element, allele) < minimum_base_quality {
+            chosen = None;
+        }
+    }
+    Ok(chosen)
 }
 
 #[cfg(test)]
