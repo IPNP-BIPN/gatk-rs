@@ -42,6 +42,7 @@ pub mod fasta_reference_maker;
 pub mod filter_intervals;
 pub mod filter_mutect_calls;
 pub mod filter_variant_tranches;
+pub mod filter_vcf;
 pub mod fix_misencoded_base_quality_reads;
 pub mod fix_vcf_header;
 pub mod gather_bqsr_reports;

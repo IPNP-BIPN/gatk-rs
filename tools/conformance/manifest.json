@@ -4802,7 +4802,7 @@
     },
     {
       "id": "filter-vcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF with its sites and genotypes filtered",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4815,8 +4815,8 @@
       "cases": [
         {
           "dump": "FilterVcfDump",
-          "golden": null,
-          "why": "Eleven runs over one three-sample file of nine records, one per behaviour: everything passing, a het whose balance is off in two samples, high FS with low QD, a record with neither, genotypes missing GQ and DP, a het with no AD, a record with no het at all, and one that already carries a filter. The runs move each threshold in turn, then all of them at once, and close with a file of no records and a header with no contigs. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/filter_vcf.txt.gz",
+          "why": "Eleven runs over one three-sample file of nine records, one per behaviour: everything passing, a het whose balance is off in two samples, high FS with low QD, a record with neither, genotypes missing GQ and DP, a het with no AD, a record with no het at all, and one that already carries a filter. The runs move each threshold in turn, then all of them at once, and close with a file of no records and a header with no contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32425686817, and byte for byte what this laptop produced."
         }
       ]
     }
