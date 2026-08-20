@@ -54,6 +54,7 @@ pub mod left_align_and_trim_variants;
 pub mod left_align_indels;
 pub mod locus_walker;
 pub mod make_sites_only_vcf;
+pub mod merge_vcfs;
 pub mod methylation_type_caller;
 pub mod multi_pass;
 pub mod mutect_gathers;
