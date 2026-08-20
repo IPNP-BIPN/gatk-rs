@@ -4477,6 +4477,26 @@
           "why": "78 rows over twenty-two runs on one two-contig reference of 240 bases each: the whole genome at three scatter counts, the contig-size filter with and without intervals, all five modes on the same three intervals, adjacent intervals under both merging rules, the contig split in both interval orders, five namings covering every width the formula can reach, a scatter count larger than the intervals can honour, and the two refusals. Each run contributes the names of the files it wrote and the whole content of each, with the M5 and UR fields masked as in preprocess-intervals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32392380958, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "compare-interval-lists",
+      "status": "golden-pending",
+      "title": "Whether two interval files agree",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CompareIntervalLists"
+      ],
+      "why": "THE COMPARISON IS NOT SYMMETRIC: equateIntervals consumes the master and pops the test in step, so a master that outlasts the test pops an empty list and dies with a NoSuchElementException while a test that outlasts the master is reported politely. A TEST INTERVAL WIDER THAN THE MASTER'S IS EQUAL, the test's overhang never being examined. THE REMAINDER IS PUSHED IN REVERSE ORDER. EACH FILE IS MERGED WITH THE ALL RULE BEFORE THE WALK, so abutting intervals and the single interval they add up to are equal. EQUALITY IS PRINTED AND INEQUALITY IS THROWN. AND AN INTERVAL OFF THE END OF A CONTIG IS REFUSED BY THE PARSER.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CompareIntervalListsDump",
+          "golden": null,
+          "why": "Fourteen pairs of interval files over one two-contig reference: equal in one and two contigs, abutting and overlapping intervals merged into one, a wider test and the same pair reversed, an extra interval on each side, disjoint intervals on one contig and on two, a test interval inside the master's, an empty file on each side, and an interval off the end of a contig. A file URI in a message has its directory masked: that is the working directory of the run rather than an answer of this tool's. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
