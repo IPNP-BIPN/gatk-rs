@@ -4639,6 +4639,26 @@
           "why": "Three scatters of one BaseRecalibrator run over the shared fixture, one of them an interval with no reads, and six gathers over them: two shards, the same two reversed, one shard alone, the same shard twice, one shard beside the empty one, and nothing but empty shards. Nine rows: three shard tables, five gathered tables and one refusal, each table compared character for character. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32410377868, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "gather-tranches",
+      "status": "golden-pending",
+      "title": "The gather that ends a scattered VQSR run",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GatherTranches"
+      ],
+      "why": "THE SHARDS ARE POOLED INTO A TreeMap BY minVQSLod and walked in DESCENDING key order. THE Ti/Tv OF A MERGED LEVEL IS A RATIO OF SUMS, each shard's ratio turned back into transitions and transversions first. A LEVEL WHOSE SHARDS HAVE NO KNOWN VARIANTS HAS A NaN RATIO. THE REQUESTED SENSITIVITIES ARE SORTED IN PLACE and matched by a walk that adds the PREVIOUS tranche when the distance to the target grows. THE FIRST MERGED TRANCHE IS NEVER A CANDIDATE on its own. THE WALK STOPS AT THE FIRST TARGET IT CANNOT ADVANCE PAST, so asking for more sensitivities than there are levels writes fewer rows. A FILE OF A DIFFERENT VERSION IS REFUSED by the version line. AND THE OUTPUT IS A TRUTH-SENSITIVITY FILE whose header says version 5 while its inputs must say version 6, and whose rows carry the requested sensitivity rather than the achieved one.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GatherTranchesDump",
+          "golden": null,
+          "why": "Eleven runs over five hand-written VQSLOD tranche files: two shards of four levels, the same two reversed, one shard alone, a shard carrying a level the other does not, a shard with no known variants, one requested sensitivity, seven of them, two given out of order, the two other modes and a file of the wrong version. Eleven rows: ten gathered files and one refusal. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
