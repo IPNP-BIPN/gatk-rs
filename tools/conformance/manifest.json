@@ -4819,6 +4819,26 @@
           "why": "Eleven runs over one three-sample file of nine records, one per behaviour: everything passing, a het whose balance is off in two samples, high FS with low QD, a record with neither, genotypes missing GQ and DP, a het with no AD, a record with no het at all, and one that already carries a filter. The runs move each threshold in turn, then all of them at once, and close with a file of no records and a header with no contigs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32425686817, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "picard-update-vcf-dictionary",
+      "status": "golden-pending",
+      "title": "A VCF's contig lines replaced, Picard's way",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "UpdateVcfSequenceDictionary"
+      ],
+      "why": "GATK has a tool of almost the same name, already ported, and the two disagree about nearly everything: this one has no --replace, no per-record validation and no refusals of its own. THE DICTIONARY REPLACES THE CONTIG LINES AND NOTHING ELSE. A CONTIG THE INPUT HAD AND THE DICTIONARY LACKS IS SIMPLY GONE and its RECORDS ARE STILL WRITTEN, so the output declares fewer contigs than its records use. THE INPUT'S OWN CONTIG ATTRIBUTES ARE LOST and only some of the dictionary's replace them: a sequence carrying M5, UR and AS writes a contig line with assembly= and nothing else. THE ORDER IS THE DICTIONARY'S. AN INPUT WITH NO CONTIG LINES GAINS THE WHOLE DICTIONARY. A DICTIONARY WITH NO SEQUENCES IS NOT REFUSED HERE. THE SAMPLES ARE UNTOUCHED, the header being mutated in place. The dump's class is named PicardUpdateVcfDictionaryDump because the GATK tool's dump already holds the other name, and on a case-insensitive filesystem the two are one file.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PicardUpdateVcfDictionaryDump",
+          "golden": null,
+          "why": "Eight runs, each carrying its input and its dictionary: both contigs named, the same two reversed, a dictionary missing one of them, one naming a contig the file never mentions, one carrying the M5, UR and AS fields a real .dict has, an input with no contig lines, a dictionary with no sequences at all, and a file with no records. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
