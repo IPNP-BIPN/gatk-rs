@@ -4557,6 +4557,26 @@
           "why": "Fifteen pairs of segment files over one two-contig reference: an exact match, breakpoints shifted past the padding and the same pair with the padding widened, a normal that is neutral everywhere, a match on the second contig, a normal region strictly containing a tumour segment, a reciprocal overlap at three thresholds, another call column name, and five refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32397346636, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "merge-annotated-regions-by-annotation",
+      "status": "golden-pending",
+      "title": "The segments an annotation merge leaves behind",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MergeAnnotatedRegionsByAnnotation"
+      ],
+      "why": "The sibling of merge-annotated-regions, which merges by agreement and distance rather than by overlap. THE DISTANCE OF ABUTTING REGIONS IS ONE, NOT ZERO, whatever getDistance's own comment says: it answers zero for overlapping regions only, so a maximum of zero merges nothing at all. THE COMPARISON IS AGAINST THE MERGED REGION, so a run of short hops travels however far it goes in total. THE ANNOTATIONS NOT NAMED ON THE COMMAND LINE ARE STILL RECONCILED with the separator. AN ANNOTATION NAMED THAT THE FILE DOES NOT CARRY IS A REFUSAL naming the missing ones. THE OUTPUT HEADER IS BUILT FROM THE FIRST MERGED REGION. THE THREE LOCATABLE COLUMN NAMES ARE ARGUMENTS. AND THIS TOOL GOES THROUGH THE WRITER DIRECTLY rather than through the collection, so an input's sequence lines do not reach the output.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MergeAnnotatedRegionsByAnnotationDump",
+          "golden": null,
+          "why": "Nine runs over one segment file of six regions, two of them abutting, one a thousand bases from its neighbour and one fifty thousand: the default distance, zero, one that reaches the thousand-base gap and not the other, matching on each annotation and on both, the three renamed output columns, an input carrying a SAM header, an annotation the file does not carry, and a negative distance. Nine rows, seven of them outputs. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
