@@ -20,6 +20,7 @@ pub mod calculate_mixing_fractions;
 pub mod call_copy_ratio_segments;
 pub mod callable_loci;
 pub mod check_pileup;
+pub mod check_terminator_block;
 pub mod clip_reads;
 pub mod collect_allelic_counts;
 pub mod collect_read_counts;

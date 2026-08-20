@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 103 | 33.1% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 104 | 33.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 195 | 62.7% |
 | **total** | **311** | |
@@ -24,7 +24,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `BamIndexStats` | reporting-walker | oracle-backed | bamindexstats | 1 | not measured |
 | `BedToIntervalList` | interval-utility | unchecked | bedtointervallist | 1 | not measured |
 | `CalculateReadGroupChecksum` | reporting-walker | oracle-backed | rgchecksum | 1 | not measured |
-| `CheckTerminatorBlock` | reporting-walker | golden-pending | check-terminator-block | 1 | not measured |
+| `CheckTerminatorBlock` | reporting-walker | oracle-backed | check-terminator-block | 1 | not measured |
 | `CleanSam` | record-transform | oracle-backed | cleansam | 1 | not measured |
 | `CollectAlignmentSummaryMetrics` | reporting-walker | oracle-backed | metrics, rejections | 5 | t=2, 0/16 rows (0%) |
 | `CollectBaseDistributionByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
