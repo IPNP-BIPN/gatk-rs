@@ -4622,7 +4622,7 @@
     },
     {
       "id": "gather-bqsr-reports",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The gather that ends a scattered BQSR run",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4635,8 +4635,8 @@
       "cases": [
         {
           "dump": "GatherBQSRReportsDump",
-          "golden": null,
-          "why": "Three scatters of one BaseRecalibrator run over the shared fixture, one of them an interval with no reads, and six gathers over them: two shards, the same two reversed, one shard alone, the same shard twice, one shard beside the empty one, and nothing but empty shards. Nine rows: three shard tables, five gathered tables and one refusal, each table compared character for character. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/gather_bqsr_reports.txt.gz",
+          "why": "Three scatters of one BaseRecalibrator run over the shared fixture, one of them an interval with no reads, and six gathers over them: two shards, the same two reversed, one shard alone, the same shard twice, one shard beside the empty one, and nothing but empty shards. Nine rows: three shard tables, five gathered tables and one refusal, each table compared character for character. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32410377868, and byte for byte what this laptop produced."
         }
       ]
     }
