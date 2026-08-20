@@ -125,14 +125,29 @@ impl RecalibrationReport {
     /// argument table. Then the arguments, which size the covariates; then the quantization map;
     /// then the three data tables, keyed by the read groups already fixed.
     pub fn parse(text: &str) -> Result<RecalibrationReport, RecalibrationReportError> {
+        RecalibrationReport::parse_with_read_groups(text, None)
+    }
+
+    /// `new RecalibrationReport(report, allReadGroups)`, the constructor the gather uses.
+    ///
+    /// `read_groups` is the UNION of every input's read groups, so that a shard which never saw one
+    /// still numbers its keys the same way as the shard that did. `None` is the public
+    /// constructor, which takes the report's own.
+    pub fn parse_with_read_groups(
+        text: &str,
+        read_groups: Option<&[String]>,
+    ) -> Result<RecalibrationReport, RecalibrationReportError> {
         let report = Report::parse(text).map_err(RecalibrationReportError::Report)?;
 
         // `RecalTable0` is asked for FIRST, before the arguments, because the public constructor is
         // `this(report, report.getReadGroups())` and Java evaluates the argument before the body. A
         // report with no read group table is refused by name here and not by the argument table.
-        let read_groups = report
+        let own_read_groups = report
             .read_groups()
             .map_err(RecalibrationReportError::Report)?;
+        let read_groups: Vec<String> = read_groups
+            .map(<[String]>::to_vec)
+            .unwrap_or(own_read_groups);
 
         let argument_table = report
             .table_named(ARGUMENT_REPORT_TABLE_TITLE)

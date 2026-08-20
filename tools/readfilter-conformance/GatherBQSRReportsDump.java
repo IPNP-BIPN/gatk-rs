@@ -12,8 +12,9 @@
  *     the FIRST report's quantizing level count;
  *   - THE EMPIRICAL QUALITY IS RECALCULATED, so a gathered row is not the sum of the shards'
  *     empirical qualities but the quality of the summed counts;
- *   - THE ARGUMENTS TABLE IS THE FIRST INPUT'S, so the gathered report names that shard's
- *     `--input` and its own known sites;
+ *   - THE ARGUMENTS TABLE IS THE FIRST INPUT'S, and what it holds is the recalibration ARGUMENT
+ *     COLLECTION rather than the command line, so every shard of one run carries the same one and
+ *     the `two-shards` and `reversed` rows come out byte for byte identical;
  *   - AN EMPTY SHARD IS SKIPPED BY THE COMBINE, and a gather of nothing but empty shards is a
  *     refusal saying there is no usable data;
  *   - THE SAME FILE TWICE IS READ TWICE, the inputs being a list, so the counts double;

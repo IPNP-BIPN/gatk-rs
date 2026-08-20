@@ -4622,21 +4622,21 @@
     },
     {
       "id": "gather-bqsr-reports",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The gather that ends a scattered BQSR run",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "GatherBQSRReports"
       ],
-      "why": "THE READ GROUPS ARE THE UNION OF EVERY INPUT'S, gathered before anything is combined. THE COMBINE DOES NOT RECALCULATE THE QUANTIZATION; the tool does, from the summed tables. THE EMPIRICAL QUALITY IS RECALCULATED, so a gathered row is the quality of the summed counts rather than a sum of qualities. THE ARGUMENTS TABLE IS THE FIRST INPUT'S. AN EMPTY SHARD IS SKIPPED BY THE COMBINE and a gather of nothing but empty shards is a refusal. THE SAME FILE TWICE IS READ TWICE, so the counts double. AND THE OUTPUT IS A GATKReport OF FIVE TABLES, so a gather of one shard is that shard requantized rather than a copy.",
+      "why": "THE READ GROUPS ARE THE UNION OF EVERY INPUT'S, gathered before anything is combined. THE COMBINE DOES NOT RECALCULATE THE QUANTIZATION; the tool does, from the summed tables. THE EMPIRICAL QUALITY IS RECALCULATED, so a gathered row is the quality of the summed counts rather than a sum of qualities. THE ARGUMENTS TABLE IS THE FIRST INPUT'S and holds the recalibration argument collection rather than the command line, so two shards gathered in either order are the same bytes. AN EMPTY SHARD IS SKIPPED BY THE COMBINE and a gather of nothing but empty shards is a refusal. THE SAME FILE TWICE IS READ TWICE, so the counts double. AND THE OUTPUT IS A GATKReport OF FIVE TABLES, so a gather of one shard is that shard requantized rather than a copy.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "GatherBQSRReportsDump",
-          "golden": null,
-          "why": "Three scatters of one BaseRecalibrator run over the shared fixture, one of them an interval with no reads, and six gathers over them: two shards, the same two reversed, one shard alone, the same shard twice, one shard beside the empty one, and nothing but empty shards. Nine rows: three shard tables, five gathered tables and one refusal, each table compared character for character. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/gather_bqsr_reports.txt.gz",
+          "why": "Three scatters of one BaseRecalibrator run over the shared fixture, one of them an interval with no reads, and six gathers over them: two shards, the same two reversed, one shard alone, the same shard twice, one shard beside the empty one, and nothing but empty shards. Nine rows: three shard tables, five gathered tables and one refusal, each table compared character for character. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32410377868, and byte for byte what this laptop produced."
         }
       ]
     }
