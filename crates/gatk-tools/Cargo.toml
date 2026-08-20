@@ -9,6 +9,8 @@ repository.workspace = true
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
 htsjdk-bam.workspace = true
+# CheckTerminatorBlock is the tool's decision over the termination check this carries.
+htsjdk-bgzf.workspace = true
 htsjdk-vcf.workspace = true
 # The coverage filter takes a median, which is commons-math's `Median` and therefore jmath's.
 jmath.workspace = true
@@ -16,5 +18,3 @@ jmath.workspace = true
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.
 gatk-corpus = { path = "../gatk-corpus" }
-# Only the tests need it: they read a port output's header back off its own bytes.
-htsjdk-bgzf.workspace = true
