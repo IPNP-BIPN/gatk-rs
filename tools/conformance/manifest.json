@@ -4682,7 +4682,7 @@
     },
     {
       "id": "rename-sample-in-vcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A single-sample VCF with its column renamed",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4695,8 +4695,8 @@
       "cases": [
         {
           "dump": "RenameSampleInVcfDump",
-          "golden": null,
-          "why": "Ten runs, each carrying its input as well as its output so a port reads the same bytes: a plain rename, the old name asserted rightly and wrongly, a name with a space, a name that is a number, a rename to the same name, a sites-only input, a two-sample input, a file declaring no INFO lines whose records use them, and a file with no records at all. Twenty rows: ten inputs, seven outputs and three refusals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/rename_sample_in_vcf.txt.gz",
+          "why": "Ten runs, each carrying its input as well as its output so a port reads the same bytes: a plain rename, the old name asserted rightly and wrongly, a name with a space, a name that is a number, a rename to the same name, a sites-only input, a two-sample input, a file declaring no INFO lines whose records use them, and a file with no records at all. Twenty rows: ten inputs, seven outputs and three refusals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32416633089, and byte for byte what this laptop produced."
         }
       ]
     }

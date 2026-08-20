@@ -328,12 +328,8 @@ jobs:
             suites: "merge-annotated-regions tag-germline-events merge-annotated-regions-by-annotation combine-segment-breakpoints mutect-gathers"
           - group: oracle-backed
             index: "39/39"
-            slug: "gather-bqsr-reports-gather-tranches-check-terminator-block"
-            suites: "gather-bqsr-reports gather-tranches check-terminator-block"
-          - group: golden-pending
-            index: "1/1"
-            slug: "rename-sample-in-vcf"
-            suites: "rename-sample-in-vcf"
+            slug: "gather-bqsr-reports-gather-tranches-check-terminator-block-rename-sample-in-vcf"
+            suites: "gather-bqsr-reports gather-tranches check-terminator-block rename-sample-in-vcf"
     steps:
       - uses: actions/checkout@v4
 
