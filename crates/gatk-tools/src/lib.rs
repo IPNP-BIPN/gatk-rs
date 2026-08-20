@@ -75,6 +75,7 @@ pub mod shift_fasta;
 pub mod split_intervals;
 pub mod split_n_cigar_reads;
 pub mod split_reads;
+pub mod split_vcfs;
 pub mod tag_germline_events;
 pub mod transfer_read_tags;
 pub mod unmark_duplicates;
