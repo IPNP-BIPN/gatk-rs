@@ -4384,7 +4384,7 @@
     },
     {
       "id": "allele-pileup-counter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "What a validation pileup says about an allele",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -4395,8 +4395,8 @@
       "cases": [
         {
           "dump": "AllelePileupCounterDump",
-          "golden": null,
-          "why": "124 rows, no files: fifteen allele pairings through typeOfVariant and isComplexIndel; ten allele choices over six synthetic pileups covering a SNP, a mapping-quality-filtered pileup, an insertion, two deletion lengths, reads that end inside the allele and an empty locus; seven counter maps and the map of a counter never given a pileup; twelve alternate ratios; eight supporting-read counts; twelve genotypes through the validator with the result each produces; the nine lines those results are written as, which is the tool's own table; and nine refusals. Two of those refusals show that the counter's own symbolic-reference branch is unreachable: htsjdk refuses to tag a symbolic allele as the reference before the counter ever sees it. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-engine/tests/data/allele_pileup_counter.txt.gz",
+          "why": "124 rows, no files: fifteen allele pairings through typeOfVariant and isComplexIndel; ten allele choices over six synthetic pileups covering a SNP, a mapping-quality-filtered pileup, an insertion, two deletion lengths, reads that end inside the allele and an empty locus; seven counter maps and the map of a counter never given a pileup; twelve alternate ratios; eight supporting-read counts; twelve genotypes through the validator with the result each produces; the nine lines those results are written as, which is the tool's own table; and nine refusals. Two of those refusals show that the counter's own symbolic-reference branch is unreachable: htsjdk refuses to tag a symbolic allele as the reference before the counter ever sees it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32380726292, and byte for byte what this laptop produced."
         }
       ]
     }

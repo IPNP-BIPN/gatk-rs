@@ -316,12 +316,8 @@ jobs:
             suites: "filter-list-by-mode apply-filters accumulate-data engine-assembly germline-wrapper"
           - group: oracle-backed
             index: "36/36"
-            slug: "pair-hmm-kernel-segmentation-contamination-model"
-            suites: "pair-hmm kernel-segmentation contamination-model"
-          - group: golden-pending
-            index: "1/1"
-            slug: "allele-pileup-counter"
-            suites: "allele-pileup-counter"
+            slug: "pair-hmm-kernel-segmentation-contamination-model-allele-pileup-counter"
+            suites: "pair-hmm kernel-segmentation contamination-model allele-pileup-counter"
     steps:
       - uses: actions/checkout@v4
 
