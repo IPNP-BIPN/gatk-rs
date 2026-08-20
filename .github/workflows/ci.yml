@@ -324,12 +324,8 @@ jobs:
             suites: "preprocess-intervals interval-list-scatter split-intervals compare-interval-lists callable-loci"
           - group: oracle-backed
             index: "38/38"
-            slug: "merge-annotated-regions-tag-germline-events-merge-annotated-regions-by-annotation-combine-segment-breakpoints"
-            suites: "merge-annotated-regions tag-germline-events merge-annotated-regions-by-annotation combine-segment-breakpoints"
-          - group: golden-pending
-            index: "1/1"
-            slug: "mutect-gathers"
-            suites: "mutect-gathers"
+            slug: "merge-annotated-regions-tag-germline-events-merge-annotated-regions-by-annotation-combine-segment-breakpoints-mutect-gathers"
+            suites: "merge-annotated-regions tag-germline-events merge-annotated-regions-by-annotation combine-segment-breakpoints mutect-gathers"
     steps:
       - uses: actions/checkout@v4
 
