@@ -50,6 +50,7 @@ pub mod methylation_type_caller;
 pub mod multi_pass;
 pub mod pileup;
 pub mod post_process_reads_for_rsem;
+pub mod preprocess_intervals;
 pub mod print_distant_mates;
 pub mod print_reads;
 pub mod print_reads_header;
