@@ -4759,6 +4759,26 @@
           "why": "Eleven runs, each carrying every input it was given as well as its output: one unsorted file over a dictionary declaring chr10 before chr2, two files whose records interleave and collide at one locus, the same two reversed, a merged header, a conflicting one, two samples, two files whose sample order differs, two files whose dictionaries differ, a file with no dictionary, a record on an undeclared contig, and a file with no records. The one refusal that names a path has it masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32420753151, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "merge-vcfs",
+      "status": "golden-pending",
+      "title": "Several sorted VCFs merged into one",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MergeVcfs"
+      ],
+      "why": "The sibling of sort-vcf, and the differences are the point. THE MERGE IS A HEAP OVER SORTED INPUTS, so a file whose own records are out of order is a refusal from the merging iterator rather than being repaired. A TIE BETWEEN TWO INPUTS IS NOT DECIDED BY THE ORDER THEY WERE GIVEN, which is the opposite of SortVcf. THE CONTIG CHECK IS isCompatible, which is about INDICES, so both a subset that shifts an index and a reordering are refused. THE SAMPLE CHECK IS ON THE SORTED NAMES. EVERY COMMENT IS A LINE KEYED MergeVcfs.comment and the smart merge keys unstructured lines by their key, so TWO COMMENTS COLLAPSE INTO ONE. THE HEADERS ARE A LinkedHashSet, so two identical input headers collapse before the merge sees them. A FILE WITH NO CONTIG LINES IS A REFUSAL unless a dictionary is supplied. AND THE RECORDS GO BACK OUT THROUGH THE WRITER.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MergeVcfsDump",
+          "golden": null,
+          "why": "Thirteen runs, each carrying every input as well as its output: two files that interleave and tie at one locus, the same two reversed, one file alone, three files, two identical files, a file whose own records are out of order, a second file declaring a subset of the contigs, one declaring them in another order, two files whose sample columns are ordered differently, one with different samples, a run with two comments, a file with no contig lines, and an empty file merged with a full one. The refusals that name a path have it masked. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []
