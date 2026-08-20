@@ -4662,7 +4662,7 @@
     },
     {
       "id": "check-terminator-block",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Whether a block-compressed file finished",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4675,8 +4675,8 @@
       "cases": [
         {
           "dump": "CheckTerminatorBlockDump",
-          "golden": null,
-          "why": "Nine files, each carried in the golden as base64 so a port replays the same bytes: a complete bgzipped file, the same with its terminator cut off, the same one byte shorter again, the terminator alone, one byte short of the terminator, nothing at all, a file that is not gzip, a complete file with a payload byte flipped, and one whose terminator's last byte is wrong. Each contributes its termination answer and the tool's exit code. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/check_terminator_block.txt.gz",
+          "why": "Nine files, each carried in the golden as base64 so a port replays the same bytes: a complete bgzipped file, the same with its terminator cut off, the same one byte shorter again, the terminator alone, one byte short of the terminator, nothing at all, a file that is not gzip, a complete file with a payload byte flipped, and one whose terminator's last byte is wrong. Each contributes its termination answer and the tool's exit code. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32415499567, and byte for byte what this laptop produced."
         }
       ]
     }
