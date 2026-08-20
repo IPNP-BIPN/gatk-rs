@@ -4762,7 +4762,7 @@
     },
     {
       "id": "merge-vcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Several sorted VCFs merged into one",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4775,8 +4775,8 @@
       "cases": [
         {
           "dump": "MergeVcfsDump",
-          "golden": null,
-          "why": "Thirteen runs, each carrying every input as well as its output: two files that interleave and tie at one locus, the same two reversed, one file alone, three files, two identical files, a file whose own records are out of order, a second file declaring a subset of the contigs, one declaring them in another order, two files whose sample columns are ordered differently, one with different samples, a run with two comments, a file with no contig lines, and an empty file merged with a full one. The refusals that name a path have it masked. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/merge_vcfs.txt.gz",
+          "why": "Thirteen runs, each carrying every input as well as its output: two files that interleave and tie at one locus, the same two reversed, one file alone, three files, two identical files, a file whose own records are out of order, a second file declaring a subset of the contigs, one declaring them in another order, two files whose sample columns are ordered differently, one with different samples, a run with two comments, a file with no contig lines, and an empty file merged with a full one. The refusals that name a path have it masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32421712465, and byte for byte what this laptop produced."
         }
       ]
     }

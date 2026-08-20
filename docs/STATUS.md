@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 108 | 34.7% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 109 | 35.0% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 190 | 61.1% |
 | **total** | **311** | |
@@ -47,7 +47,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MeanQualityByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `MergeBamAlignment` | record-transform | unchecked | mergebamalignment, mergebamalignment-full | 2 | not measured |
 | `MergeSamFiles` | record-transform | oracle-backed | merge | 1 | not measured |
-| `MergeVcfs` | variant-transform | golden-pending | merge-vcfs | 1 | not measured |
+| `MergeVcfs` | variant-transform | oracle-backed | merge-vcfs | 1 | not measured |
 | `NonNFastaSize` | reference-utility | unchecked | nonnfastasize | 1 | not measured |
 | `NormalizeFasta` | reference-utility | unchecked | normalizefasta | 1 | not measured |
 | `QualityScoreDistribution` | reporting-walker | unchecked | qualityscoredistribution | 1 | not measured |
