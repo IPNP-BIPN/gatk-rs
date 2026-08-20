@@ -4580,7 +4580,7 @@
     },
     {
       "id": "combine-segment-breakpoints",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The pieces two segment files cut each other into",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4593,8 +4593,8 @@
       "cases": [
         {
           "dump": "CombineSegmentBreakpointsDump",
-          "golden": null,
-          "why": "Twelve runs over one two-contig reference: two files whose breakpoints interleave, the labels, one and two columns of interest, a column neither file carries, identical files, adjacent segments against one spanning both, disjoint segments, a single-base segment, one file carrying a SAM header, a file of no rows and a file overlapping itself. Nine write a file and three are refusals. --columns-of-interest is required, so every run names the columns it keeps. The M5 and UR fields of the sequence lines are masked, as in preprocess-intervals. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+          "golden": "crates/gatk-tools/tests/data/combine_segment_breakpoints.txt.gz",
+          "why": "Twelve runs over one two-contig reference: two files whose breakpoints interleave, the labels, one and two columns of interest, a column neither file carries, identical files, adjacent segments against one spanning both, disjoint segments, a single-base segment, one file carrying a SAM header, a file of no rows and a file overlapping itself. Nine write a file and three are refusals. --columns-of-interest is required, so every run names the columns it keeps. The M5 and UR fields of the sequence lines are masked, as in preprocess-intervals. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32406121317, and byte for byte what this laptop produced."
         }
       ]
     }

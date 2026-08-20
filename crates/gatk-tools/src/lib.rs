@@ -23,6 +23,7 @@ pub mod check_pileup;
 pub mod clip_reads;
 pub mod collect_allelic_counts;
 pub mod collect_read_counts;
+pub mod combine_segment_breakpoints;
 pub mod compare_base_qualities;
 pub mod compare_interval_lists;
 pub mod concordance;
