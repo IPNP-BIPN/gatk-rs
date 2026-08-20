@@ -322,6 +322,10 @@ jobs:
             index: "37/37"
             slug: "preprocess-intervals-interval-list-scatter"
             suites: "preprocess-intervals interval-list-scatter"
+          - group: golden-pending
+            index: "1/1"
+            slug: "split-intervals"
+            suites: "split-intervals"
     steps:
       - uses: actions/checkout@v4
 
