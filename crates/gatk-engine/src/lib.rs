@@ -87,6 +87,7 @@ pub mod singular_value_decomposition;
 pub mod slippage_filter;
 pub mod somatic_clustering_model;
 pub mod somatic_likelihoods;
+pub mod somatic_validation_power;
 pub mod strand_artifact_filter;
 pub mod subset_alleles;
 pub mod threshold_calculator;
