@@ -4739,6 +4739,26 @@
           "why": "Eight runs, each carrying its input as well as its outputs: one file holding a record of every type the tool can meet, the same under STRICT, a file of only SNPs, one of only indels, one with no records, a STRICT run that does not refuse, a header declaring no contigs, and the same with the index off. Twenty-two rows: eight inputs, six pairs of outputs and two refusals, one for STRICT and one for the index. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32419743483, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "sort-vcf",
+      "status": "golden-pending",
+      "title": "A VCF sorted into its dictionary's order",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SortVcf"
+      ],
+      "why": "THE ORDER IS THE DICTIONARY'S, NOT THE ALPHABET'S, so a header declaring chr10 before chr2 sorts that way. THE SORT IS BY CONTIG AND POSITION ONLY, so records at the same locus keep the order they were read in, which for several inputs is the order the inputs were given. THE FIRST INPUT'S DICTIONARY BECOMES THE RUN'S and a second input whose dictionary differs is a refusal. THE SAMPLE CHECK IS ON THE SORTED NAMES, so two files listing the same samples in different column orders are not refused and the output's columns are the sorted names. THE HEADER IS THE SMART MERGE of every input's. A FILE WITH NO DICTIONARY IS A REFUSAL unless SEQUENCE_DICTIONARY is given. A RECORD ON AN UNDECLARED CONTIG stops the run with a null pointer rather than a message, the comparator unboxing what a map lookup did not find. AND THE RECORDS GO BACK OUT THROUGH THE WRITER, so their QUAL spellings are the writer's.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SortVcfDump",
+          "golden": null,
+          "why": "Eleven runs, each carrying every input it was given as well as its output: one unsorted file over a dictionary declaring chr10 before chr2, two files whose records interleave and collide at one locus, the same two reversed, a merged header, a conflicting one, two samples, two files whose sample order differs, two files whose dictionaries differ, a file with no dictionary, a record on an undeclared contig, and a file with no records. The one refusal that names a path has it masked. Golden pending: this laptop is not x86-64, so the artefact has to come from the runner."
+        }
+      ]
     }
   ],
   "probes": []

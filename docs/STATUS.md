@@ -7,14 +7,14 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 107 | 34.4% |
-| golden-pending | 0 | 0.0% |
+| golden-pending | 1 | 0.3% |
 | unchecked | 12 | 3.9% |
-| not started | 192 | 61.7% |
+| not started | 191 | 61.4% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
 
-## picard-origin tools (47 of 109 started)
+## picard-origin tools (48 of 109 started)
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
@@ -60,15 +60,16 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ScatterIntervalsByNs` | reference-utility | unchecked | scatterintervalsbyns | 1 | not measured |
 | `SetNmMdAndUqTags` | record-transform | oracle-backed | setnmmduq | 1 | not measured |
 | `SortSam` | record-transform | oracle-backed | sortsam, sortsam-bam | 2 | not measured |
+| `SortVcf` | variant-transform | golden-pending | sort-vcf | 1 | not measured |
 | `SplitSamByLibrary` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitSamByNumberOfReads` | record-transform | oracle-backed | split | 2 | not measured |
 | `SplitVcfs` | variant-transform | oracle-backed | split-vcfs | 1 | not measured |
 | `ValidateSamFile` | reporting-walker | oracle-backed | validatesam | 6 | not measured |
 | `ViewSam` | reporting-walker | oracle-backed | viewsam | 1 | not measured |
 
-<details><summary>62 not started</summary>
+<details><summary>61 not started</summary>
 
-`AccumulateVariantCallingMetrics`, `AddCommentsToBam`, `BaitDesigner`, `BamToBfq`, `BpmToNormalizationManifestCsv`, `BuildBamIndex`, `CalculateFingerprintMetrics`, `CheckFingerprint`, `CheckIlluminaDirectory`, `ClusterCrosscheckMetrics`, `CollectArraysVariantCallingMetrics`, `CollectDuplicateMetrics`, `CollectHiSeqXPfFailMetrics`, `CollectHsMetrics`, `CollectIlluminaBasecallingMetrics`, `CollectIlluminaLaneMetrics`, `CollectIndependentReplicateMetrics`, `CollectJumpingLibraryMetrics`, `CollectMultipleMetrics`, `CollectOxoGMetrics`, `CollectRawWgsMetrics`, `CollectRrbsMetrics`, `CollectSamErrorMetrics`, `CollectSequencingArtifactMetrics`, `CollectTargetedPcrMetrics`, `CollectUmiPrevalenceMetrics`, `CollectVariantCallingMetrics`, `CollectWgsMetrics`, `CollectWgsMetricsWithNonZeroCoverage`, `CombineGenotypingArrayVcfs`, `CompareMetrics`, `ConvertSequencingArtifactToOxoG`, `CreateBafRegressMetricsFile`, `CreateVerifyIDIntensityContaminationMetricsFile`, `CrosscheckFingerprints`, `EstimateLibraryComplexity`, `ExtractIlluminaBarcodes`, `FifoBuffer`, `FilterVcf`, `FindMendelianViolations`, `FixVcfHeader`, `GatherBamFiles`, `GatherVcfs`, `GenotypeConcordance`, `GtcToVcf`, `IlluminaBasecallsToFastq`, `IlluminaBasecallsToSam`, `LiftoverVcf`, `MarkDuplicates`, `MarkDuplicatesWithMateCigar`, `MarkIlluminaAdapters`, `MergePedIntoVcf`, `MergeVcfs`, `PositionBasedDownsampleSam`, `SetNmAndUqTags`, `SimpleMarkDuplicatesWithMateCigar`, `SortVcf`, `UmiAwareMarkDuplicatesWithMateCigar`, `UpdateVcfSequenceDictionary`, `VcfFormatConverter`, `VcfToAdpc`, `VcfToIntervalList`
+`AccumulateVariantCallingMetrics`, `AddCommentsToBam`, `BaitDesigner`, `BamToBfq`, `BpmToNormalizationManifestCsv`, `BuildBamIndex`, `CalculateFingerprintMetrics`, `CheckFingerprint`, `CheckIlluminaDirectory`, `ClusterCrosscheckMetrics`, `CollectArraysVariantCallingMetrics`, `CollectDuplicateMetrics`, `CollectHiSeqXPfFailMetrics`, `CollectHsMetrics`, `CollectIlluminaBasecallingMetrics`, `CollectIlluminaLaneMetrics`, `CollectIndependentReplicateMetrics`, `CollectJumpingLibraryMetrics`, `CollectMultipleMetrics`, `CollectOxoGMetrics`, `CollectRawWgsMetrics`, `CollectRrbsMetrics`, `CollectSamErrorMetrics`, `CollectSequencingArtifactMetrics`, `CollectTargetedPcrMetrics`, `CollectUmiPrevalenceMetrics`, `CollectVariantCallingMetrics`, `CollectWgsMetrics`, `CollectWgsMetricsWithNonZeroCoverage`, `CombineGenotypingArrayVcfs`, `CompareMetrics`, `ConvertSequencingArtifactToOxoG`, `CreateBafRegressMetricsFile`, `CreateVerifyIDIntensityContaminationMetricsFile`, `CrosscheckFingerprints`, `EstimateLibraryComplexity`, `ExtractIlluminaBarcodes`, `FifoBuffer`, `FilterVcf`, `FindMendelianViolations`, `FixVcfHeader`, `GatherBamFiles`, `GatherVcfs`, `GenotypeConcordance`, `GtcToVcf`, `IlluminaBasecallsToFastq`, `IlluminaBasecallsToSam`, `LiftoverVcf`, `MarkDuplicates`, `MarkDuplicatesWithMateCigar`, `MarkIlluminaAdapters`, `MergePedIntoVcf`, `MergeVcfs`, `PositionBasedDownsampleSam`, `SetNmAndUqTags`, `SimpleMarkDuplicatesWithMateCigar`, `UmiAwareMarkDuplicatesWithMateCigar`, `UpdateVcfSequenceDictionary`, `VcfFormatConverter`, `VcfToAdpc`, `VcfToIntervalList`
 
 </details>
 
