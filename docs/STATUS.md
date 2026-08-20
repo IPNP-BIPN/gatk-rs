@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 90 | 28.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 91 | 29.3% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 208 | 66.9% |
 | **total** | **311** | |
@@ -113,7 +113,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
-| `PreprocessIntervals` | interval-utility | golden-pending | preprocess-intervals | 1 | not measured |
+| `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
