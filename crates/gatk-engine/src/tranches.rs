@@ -90,6 +90,9 @@ pub enum TrancheError {
     InvalidValue(String),
     /// `Mode.valueOf(null)`, from a header that does not name the model column.
     NullModel,
+    /// A VQSLOD tranche file whose version line is not six. The message names no file at all: the
+    /// reference concatenates an empty string where the path should be, leaving two spaces.
+    VqslodVersion { found: String, expected: i32 },
     /// `Mode.valueOf` on something that is not a constant.
     UnknownModel(String),
     /// The `TruthSensitivityTranche` constructor's own range check.
@@ -113,6 +116,9 @@ impl TrancheError {
                 "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
             }
             TrancheError::NullModel => "java.lang.NullPointerException",
+            TrancheError::VqslodVersion { .. } => {
+                "org.broadinstitute.hellbender.exceptions.UserException$BadInput"
+            }
             TrancheError::UnknownModel(_) => "java.lang.IllegalArgumentException",
             TrancheError::UnreasonableTargetFdr(_) | TrancheError::NegativeCounts { .. } => {
                 "org.broadinstitute.hellbender.exceptions.GATKException"
@@ -143,6 +149,9 @@ impl TrancheError {
                 "Unknown file is malformed: Malformed tranches file. Invalid value for key {key}"
             ),
             TrancheError::NullModel => "Name is null".to_string(),
+            TrancheError::VqslodVersion { found, expected } => format!(
+                "Bad input: The file  contains version {found} tranches, but VQSLOD tranche parsing requires version {expected}"
+            ),
             TrancheError::UnknownModel(value) => format!(
                 "No enum constant org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibratorArgumentCollection.Mode.{value}"
             ),
