@@ -332,12 +332,8 @@ jobs:
             suites: "gather-bqsr-reports gather-tranches check-terminator-block rename-sample-in-vcf make-sites-only-vcf"
           - group: oracle-backed
             index: "40/40"
-            slug: "split-vcfs"
-            suites: "split-vcfs"
-          - group: golden-pending
-            index: "1/1"
-            slug: "sort-vcf"
-            suites: "sort-vcf"
+            slug: "split-vcfs-sort-vcf"
+            suites: "split-vcfs sort-vcf"
     steps:
       - uses: actions/checkout@v4
 

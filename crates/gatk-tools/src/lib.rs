@@ -72,6 +72,7 @@ pub mod revert_base_quality_scores;
 pub mod sam_output;
 pub mod select_variants;
 pub mod shift_fasta;
+pub mod sort_vcf;
 pub mod split_intervals;
 pub mod split_n_cigar_reads;
 pub mod split_reads;
