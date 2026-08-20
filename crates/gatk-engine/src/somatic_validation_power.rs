@@ -19,6 +19,11 @@
 //! answer two.
 
 use crate::beta_binomial::{BetaBinomialDistribution, BetaBinomialError};
+use crate::pileup::PileupElement;
+use crate::read_pileup::ReadPileup;
+use crate::variant_context_utils::{
+    choose_allele_for_read, does_read_contain_allele, Allele, PileupAlleleError, Trilean,
+};
 
 /// `PowerCalculationUtils.P_VALUE_FOR_NOISE`.
 pub const P_VALUE_FOR_NOISE: f64 = 0.99;
@@ -37,12 +42,17 @@ pub enum PowerError {
     Distribution(BetaBinomialError),
     /// The quantile refused.
     Quantile(jmath::binomial::BinomialError),
+    /// `ParamUtils.isPositiveOrZero` on the base-quality cutoff, or the allele choice underneath.
+    Allele(PileupAlleleError),
 }
 
 impl PowerError {
-    /// The exception class the reference throws for the two argument checks.
+    /// The exception class the reference throws.
     pub fn java_class(&self) -> &'static str {
-        "java.lang.IllegalArgumentException"
+        match self {
+            PowerError::Allele(error) => error.java_class(),
+            _ => "java.lang.IllegalArgumentException",
+        }
     }
 
     /// The message, including the reference's own doubled word in the second.
@@ -54,6 +64,7 @@ impl PowerError {
             }
             PowerError::Distribution(error) => format!("{error:?}"),
             PowerError::Quantile(error) => format!("{error:?}"),
+            PowerError::Allele(error) => error.message(),
         }
     }
 }
@@ -96,4 +107,89 @@ pub fn calculate_min_count_for_signal(
     )
     .map_err(PowerError::Quantile)?;
     Ok(quantile.max(MINIMUM_NUM_READS_FOR_SIGNAL_COUNT))
+}
+
+/// `retrievePileupElements`: not a deletion, and at or above the cutoff.
+///
+/// The quality here is the pileup element's own base quality, which for a deletion would be the
+/// constant 16, so the deletion filter runs first and the constant never decides anything.
+fn elements_passing_quality<'a>(
+    pileup: &ReadPileup<'a>,
+    minimum_base_quality: i32,
+) -> Vec<PileupElement<'a>> {
+    pileup
+        .elements
+        .iter()
+        .filter(|element| !element.is_deletion())
+        .filter(|element| i32::from(element.qual()) >= minimum_base_quality)
+        .cloned()
+        .collect()
+}
+
+/// `calculateMaxAltRatio`: the fraction of the pileup that is not the reference allele.
+///
+/// THE TWO FILTERS ARE NOT COMPLEMENTS. An element is alternate when it does not contain the
+/// reference allele OR it precedes an indel; it is reference when it does contain the reference
+/// allele AND precedes neither. An element that answers UNKNOWN, which is a read ending inside the
+/// allele, is in neither count, so a pileup of nothing but such reads has a denominator of zero and
+/// the ratio is the literal 0.0 rather than a NaN. The caller depends on that: a NaN ratio is what
+/// `calculateBasicValidationResult` refuses on.
+pub fn calculate_max_alt_ratio(
+    pileup: &ReadPileup<'_>,
+    reference: &Allele,
+    minimum_base_quality: i32,
+) -> Result<f64, PowerError> {
+    if minimum_base_quality < 0 {
+        return Err(PowerError::Allele(
+            PileupAlleleError::NegativeMinimumBaseQualityRatio,
+        ));
+    }
+    let passing = elements_passing_quality(pileup, minimum_base_quality);
+    let alternate = passing
+        .iter()
+        .filter(|element| {
+            does_read_contain_allele(element, reference) == Trilean::False
+                || element.is_before_deletion_start()
+                || element.is_before_insertion()
+        })
+        .count();
+    let reference_count = passing
+        .iter()
+        .filter(|element| {
+            does_read_contain_allele(element, reference) == Trilean::True
+                && !element.is_before_deletion_start()
+                && !element.is_before_insertion()
+        })
+        .count();
+    if reference_count + alternate == 0 {
+        return Ok(0.0);
+    }
+    Ok(alternate as f64 / (reference_count as f64 + alternate as f64))
+}
+
+/// `calculateNumReadsSupportingAllele`: the elements whose chosen allele is this alternate.
+///
+/// The choice is made against a list of exactly one alternate, so an element supporting a different
+/// alternate is not counted here even when the pileup was built for several.
+pub fn calculate_num_reads_supporting_allele(
+    pileup: &ReadPileup<'_>,
+    reference: &Allele,
+    alternate: &Allele,
+    minimum_base_quality: i32,
+) -> Result<i64, PowerError> {
+    if minimum_base_quality < 0 {
+        return Err(PowerError::Allele(
+            PileupAlleleError::NegativeMinimumBaseQualityRatio,
+        ));
+    }
+    let alternates = [alternate.clone()];
+    let mut count = 0;
+    for element in elements_passing_quality(pileup, minimum_base_quality) {
+        let chosen = choose_allele_for_read(&element, reference, &alternates, minimum_base_quality)
+            .map_err(PowerError::Allele)?;
+        if chosen.as_ref() == Some(alternate) {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
