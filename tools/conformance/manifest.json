@@ -4899,6 +4899,26 @@
           "why": "Nine runs over one two-sample file of four records, whose header lines are deliberately out of the writer's order and whose records carry a phased genotype, a no-call, two alternates and a symbolic allele: an indexed vcf to a vcf, the same file with no index with the requirement on and off, a file with no contig lines with the index on and off, a file with no records, block compressed output recorded as the text it decompresses to, binary output recorded as a digest and a length, and the round trip back from it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32462370522, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "build-bam-index",
+      "status": "golden-pending",
+      "title": "The .bai of a coordinate-sorted BAM",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "BuildBamIndex"
+      ],
+      "why": "The index itself is htsjdk's BAMIndexer, already ported and proven byte-identical; this suite is for everything around it. THE DEFAULT OUTPUT IS RELATIVE TO THE WORKING DIRECTORY AND NOT TO THE INPUT, the path being built from inputPath.getFileName(), so a BAM in a subdirectory writes its index where the process was started. AND THE EXTENSION IS REPLACED ONLY FOR A NAME ENDING .bam: anything else gets .bai appended. A SAM INPUT IS REFUSED BY THE READER'S TYPE and not by the extension. A BAM SORTED BY QUERYNAME IS REFUSED, and so is one whose header says unsorted, by the same message. The check reads the header's SO field and nothing else, but a file whose header lies cannot be built here, SAMFileWriterImpl.assertPresorted refusing to write records out of order under a coordinate header, so that claim stays unmeasured rather than guessed. READS WITH NO ALIGNMENT START ARE COUNTED rather than dropped. AND AN EMPTY BAM STILL PRODUCES AN INDEX.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BuildBamIndexDump",
+          "golden": null,
+          "why": "Seven runs over five fixtures: a coordinate-sorted BAM over two contigs with two unmapped reads at the end, the same reads under a queryname header and under an unsorted one, a BAM with no records, and a sam file. The runs index each of them with an explicit output, then twice with none at all: once for a name ending .bam and once for a name that does not. Every input and every index travels as base64."
+        }
+      ]
     }
   ],
   "probes": []
