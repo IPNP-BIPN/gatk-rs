@@ -5103,7 +5103,7 @@
     },
     {
       "id": "check-reference-compatibility",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "An input checked against several references",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5116,8 +5116,8 @@
       "cases": [
         {
           "dump": "CheckReferenceCompatibilityDump",
-          "golden": null,
-          "why": "Fifteen runs over three references, three VCFs and two BAMs: a VCF header carrying the base reference's contigs with their M5, the same without, one whose M5 is a lie, and BAM headers with and without M5. The runs check each input against an identical reference, an altered one and a superset, then all three at once, then a BAM and a VCF together, and close with no input at all."
+          "golden": "crates/gatk-tools/tests/data/check_reference_compatibility.txt.gz",
+          "why": "Fifteen runs over three references, three VCFs and two BAMs: a VCF header carrying the base reference's contigs with their M5, the same without, one whose M5 is a lie, and BAM headers with and without M5. The runs check each input against an identical reference, an altered one and a superset, then all three at once, then a BAM and a VCF together, and close with no input at all. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32509842159, and byte for byte what this laptop produced."
         }
       ]
     }
