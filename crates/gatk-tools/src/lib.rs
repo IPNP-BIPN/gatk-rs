@@ -66,6 +66,7 @@ pub mod picard_update_vcf_dictionary;
 pub mod pileup;
 pub mod post_process_reads_for_rsem;
 pub mod preprocess_intervals;
+pub mod print_bgzf_block_information;
 pub mod print_distant_mates;
 pub mod print_reads;
 pub mod print_reads_header;
