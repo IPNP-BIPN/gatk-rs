@@ -4922,7 +4922,7 @@
     },
     {
       "id": "print-bgzf-block-information",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A bgzf file walked block by block",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4935,8 +4935,8 @@
       "cases": [
         {
           "dump": "PrintBgzfBlockInformationDump",
-          "golden": null,
-          "why": "Nine runs over eight files, each travelling as base64: a well formed file of two blocks and a terminator, the same with the terminator dropped, two well formed files glued so a terminator sits in the middle, three glued so the summary has two numbers to join, a file that is only a terminator, a regular gzip file, an uncompressed file, a file whose last block is cut in half, and a path that does not exist."
+          "golden": "crates/gatk-tools/tests/data/print_bgzf_block_information.txt.gz",
+          "why": "Nine runs over eight files, each travelling as base64: a well formed file of two blocks and a terminator, the same with the terminator dropped, two well formed files glued so a terminator sits in the middle, three glued so the summary has two numbers to join, a file that is only a terminator, a regular gzip file, an uncompressed file, a file whose last block is cut in half, and a path that does not exist. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32481662405, and byte for byte what this laptop produced."
         }
       ]
     }
