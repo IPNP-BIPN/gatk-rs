@@ -5100,6 +5100,26 @@
           "why": "Ten runs over seven references built from three sequences: a base of two, the same bases renamed, the same names over altered bases, a superset, a subset, a dictionary with every M5 stripped and one whose M5 is a lie. The runs compare identical references, renamed ones, altered ones, a superset, a subset, three at once, the table by sequence name, and the three MD5 modes against the two broken dictionaries. Both halves of every run travel: the table file and what the run printed. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32508100615, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "check-reference-compatibility",
+      "status": "golden-pending",
+      "title": "An input checked against several references",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CheckReferenceCompatibility"
+      ],
+      "why": "WHETHER THE INPUT'S DICTIONARY CARRIES MD5s DECIDES THE WHOLE ALGORITHM: with them the MD5 table is built and the pair analysis read, without them the dictionaries are compared by name and length alone, AND dictionaryHasMD5s NEEDS EVERY SEQUENCE TO HAVE ONE. A VCF CAN NEVER TAKE THE MD5 PATH: VCFContigHeaderLine.getSAMSequenceRecord drops M5, so a header carrying it for every contig still produces a dictionary with none, and only a BAM reaches the MD5 branch. THE TWO PATHS PRODUCE DIFFERENT SUMMARIES FOR THE SAME VERDICT, the name-and-length one saying outright that mismatching bases cannot be ruled out. COMPATIBLE_SUBSET NEEDS THE STATUS SET TO BE EXACTLY {SUBSET}, any other flag beside it making the verdict NOT_COMPATIBLE whose summary quotes the EnumSet. AND THE TWO PATHS DISAGREE ON WHAT A SUBSET IS: the MD5 path reads ReferencePair's SUBSET, the other reads SequenceDictionaryUtils' SUPERSET, the same relation named from the other side. THE MISSING SEQUENCES ARE LISTED FROM THE REFERENCE'S SIDE as a Java list's toString. THE OUTPUT CARRIES A COMMENT LINE naming the input file before the header. A BAM AND A VCF TOGETHER IS A BadInput, and so is neither. AND A REFERENCE IS COMPARED AGAINST THE INPUT ONLY, never against another reference.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CheckReferenceCompatibilityDump",
+          "golden": null,
+          "why": "Fifteen runs over three references, three VCFs and two BAMs: a VCF header carrying the base reference's contigs with their M5, the same without, one whose M5 is a lie, and BAM headers with and without M5. The runs check each input against an identical reference, an altered one and a superset, then all three at once, then a BAM and a VCF together, and close with no input at all."
+        }
+      ]
     }
   ],
   "probes": []
