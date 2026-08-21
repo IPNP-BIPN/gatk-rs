@@ -4959,6 +4959,27 @@
           "why": "Twelve runs over six inputs, each travelling as base64: one vcf of fifty records over two contigs, the same bytes under a .g.vcf name, a bed file, the same records block compressed, a vcf whose last record is before its first, and a file in no supported format. The runs index each of them with no output given, then with an explicit output that is plain, one that merely looks like a tabix, one that a block compressed input refuses and one it accepts, and close with the two refusals and a path that does not exist. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32483151768, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "set-nm-md-uq-tags",
+      "status": "golden-pending",
+      "title": "NM, MD and UQ recalculated against the reference",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SetNmMdAndUqTags",
+        "SetNmAndUqTags"
+      ],
+      "why": "SetNmAndUqTags is the deprecated subclass of SetNmMdAndUqTags and adds nothing, so this measures both. THE TAGS ARE REPLACED, NOT FILLED IN. AN UNMAPPED READ IS LEFT ALONE ENTIRELY, so a wrong tag on one survives. UQ IS ONLY SET WHEN THE READ HAS QUALITIES, fixUq checking NULL_QUALS, so a record whose qualities are absent keeps the UQ it arrived with while its NM and MD are still fixed. SET_ONLY_UQ SKIPS NM AND MD. UQ IS A SUM OF BASE QUALITIES AT MISMATCHES, so a perfect read gets UQ=0 rather than no tag. THE MISMATCH TEST IS IUPAC-AWARE: an N in the reference is a mismatch against any read base, while an N in the READ against an N in the reference is a match. AN INSERTION IS NOT COMPARED AND A DELETION IS. IS_BISULFITE_SEQUENCE CHANGES BOTH TAGS, and the NM is then recomputed by a DIFFERENT function than the one that wrote MD. AND A QUERYNAME SORTED INPUT IS REFUSED, the message naming the order it found.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SetNmMdAndUqTagsDump",
+          "golden": null,
+          "why": "Four runs over one eight-record BAM against a thirty-base reference carrying an N: a perfect match with no tags, a read with two mismatches and three wrong tags, a read over the reference's N, one whose own base is N there, one with an insertion and a deletion, one with no qualities at all, a C-rich read on a C-only contig read entirely as T, and an unmapped read carrying nonsense. The runs are the defaults, SET_ONLY_UQ, IS_BISULFITE_SEQUENCE and a queryname sorted input. Every BAM travels as base64 and again as text, so a divergence reads as a tag rather than as a byte offset."
+        }
+      ]
     }
   ],
   "probes": []
