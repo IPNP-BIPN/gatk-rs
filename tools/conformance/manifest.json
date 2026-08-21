@@ -5000,6 +5000,26 @@
           "why": "Ten runs over six fixtures: two shards in coordinate order sharing a header, an empty shard, a shard declaring another read group, a shard whose records come before the first's, and the second shard written as a sam. The runs gather two shards, one alone, three with the empty one between, a pair whose read groups disagree, a pair out of order, a pair with a sam among them, then the same pair with an index and with a digest, then a list file, and close with a path that does not exist. The deflater factory is pinned and recorded, and every BAM travels as base64 and again as text. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32497693342, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "add-comments-to-bam",
+      "status": "golden-pending",
+      "title": "A BAM header gaining @CO lines",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AddCommentsToBam"
+      ],
+      "why": "THE COMMENTS ARE APPENDED IN ORDER AND AFTER ANY THE FILE ALREADY HAD. @CO IS ADDED BY htsjdk AND NOT BY THE TOOL, AND IT IS NOT DOUBLED: addComment prefixes only a comment that does not already start with @CO, which the measurement corrected. A COMMENT HOLDING A TAB SURVIVES WHOLE, so a comment can forge extra header fields, while a comment holding a NEWLINE never reaches the tool's own check, the parser refusing it first as an IllegalArgumentException, so the PicardException the tool carries for that case is unreachable from the command line. THE SAM REFUSAL IS ON THE PATH'S SUFFIX, not on the file's contents, so a BAM named .sam is refused by the tool while a sam named .bam gets past that check and is refused later by the block copy for having no valid GZIP block at its end. THE RECORDS ARE COPIED AS COMPRESSED BLOCKS, so only the header block is rewritten. THE HEADER IS REWRITTEN WHOLE, so its dictionary, read groups and program records come back in htsjdk's own order. NO COMMENT AT ALL IS STILL A REWRITE. AND CREATE_MD5_FILE AND CREATE_INDEX WRITE BESIDE THE OUTPUT without changing its bytes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AddCommentsToBamDump",
+          "golden": null,
+          "why": "Ten runs over one three-record BAM whose header already carries a comment, a read group and a program record: one comment, two, none at all, one already carrying the @CO prefix, one holding a tab, one holding a newline, the digest and the index, then the same bytes under a .sam name and a real sam under a .bam name. The deflater factory is pinned and recorded, and every BAM travels as base64 and again as text."
+        }
+      ]
     }
   ],
   "probes": []
