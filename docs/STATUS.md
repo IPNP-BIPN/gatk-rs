@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 120 | 38.6% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 121 | 38.9% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 178 | 57.2% |
 | **total** | **311** | |
@@ -19,7 +19,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
 | `AccumulateQualityYieldMetrics` | reporting-walker | unchecked | accumulatequalityyield | 1 | not measured |
-| `AddCommentsToBam` | record-transform | golden-pending | add-comments-to-bam | 1 | not measured |
+| `AddCommentsToBam` | record-transform | oracle-backed | add-comments-to-bam | 1 | not measured |
 | `AddOATag` | record-transform | oracle-backed | addoatag, addoatag-bam | 2 | t=2, 0/9 rows (0%) |
 | `AddOrReplaceReadGroups` | record-transform | oracle-backed | addreplacerg | 1 | not measured |
 | `BamIndexStats` | reporting-walker | oracle-backed | bamindexstats | 1 | not measured |

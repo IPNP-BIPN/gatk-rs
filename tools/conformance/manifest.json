@@ -5003,7 +5003,7 @@
     },
     {
       "id": "add-comments-to-bam",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A BAM header gaining @CO lines",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5016,8 +5016,8 @@
       "cases": [
         {
           "dump": "AddCommentsToBamDump",
-          "golden": null,
-          "why": "Ten runs over one three-record BAM whose header already carries a comment, a read group and a program record: one comment, two, none at all, one already carrying the @CO prefix, one holding a tab, one holding a newline, the digest and the index, then the same bytes under a .sam name and a real sam under a .bam name. The deflater factory is pinned and recorded, and every BAM travels as base64 and again as text."
+          "golden": "crates/gatk-tools/tests/data/add_comments_to_bam.txt.gz",
+          "why": "Ten runs over one three-record BAM whose header already carries a comment, a read group and a program record: one comment, two, none at all, one already carrying the @CO prefix, one holding a tab, one holding a newline, the digest and the index, then the same bytes under a .sam name and a real sam under a .bam name. The deflater factory is pinned and recorded, and every BAM travels as base64 and again as text. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32499865245, and byte for byte what this laptop produced."
         }
       ]
     }
