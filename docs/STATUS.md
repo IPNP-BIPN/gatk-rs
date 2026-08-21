@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 121 | 38.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 122 | 39.2% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 177 | 56.9% |
 | **total** | **311** | |
@@ -146,7 +146,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
-| `ReferenceBlockConcordance` | unclassified | golden-pending | reference-block-concordance | 1 | not measured |
+| `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
 | `SamToFastqWithTags` | unclassified | unchecked | samtofastqwithtags | 1 | not measured |

@@ -5023,7 +5023,7 @@
     },
     {
       "id": "reference-block-concordance",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The reference blocks of two GVCFs",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5036,8 +5036,8 @@
       "cases": [
         {
           "dump": "ReferenceBlockConcordanceDump",
-          "golden": null,
-          "why": "Four runs over hand-written GVCFs: a truth of three blocks, a variant site and a filtered block against an eval whose blocks overlap by fifty bases, by a whole block, by one base and not at all; the same file against itself; an empty truth; and a two-sample record which is filtered on its first genotype and then refused. Each run's three metrics files travel whole, with the header lines that carry the run's date and command line masked."
+          "golden": "crates/gatk-tools/tests/data/reference_block_concordance.txt.gz",
+          "why": "Four runs over hand-written GVCFs: a truth of three blocks, a variant site and a filtered block against an eval whose blocks overlap by fifty bases, by a whole block, by one base and not at all; the same file against itself; an empty truth; and a two-sample record which is filtered on its first genotype and then refused. Each run's three metrics files travel whole, with the header lines that carry the run's date and command line masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32501310335, and byte for byte what this laptop produced."
         }
       ]
     }
