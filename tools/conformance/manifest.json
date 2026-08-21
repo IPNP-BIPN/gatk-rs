@@ -4842,7 +4842,7 @@
     },
     {
       "id": "vcf-to-interval-list",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A VCF turned into a Picard interval list",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4855,8 +4855,8 @@
       "cases": [
         {
           "dump": "VcfToIntervalListDump",
-          "golden": null,
-          "why": "Six runs over one file of eighteen records covering each behaviour: named and unnamed records, a deletion overlapping the record inside it, an abutting pair and a pair one base apart, an UNNAMED filtered record before an unnamed one so that including it renumbers everything after, a filtered record bridging two others, a PASS filter, a symbolic ALT with END, two records sharing a name, an unnamed one merged with a named one, and a contig change. The runs are the defaults, INCLUDE_FILTERED, an unsorted file, a file with no records, a header with no contigs, and USE_FIRST last because VARIANT_ID_METHOD is static."
+          "golden": "crates/gatk-tools/tests/data/vcf_to_interval_list.txt.gz",
+          "why": "Six runs over one file of eighteen records covering each behaviour: named and unnamed records, a deletion overlapping the record inside it, an abutting pair and a pair one base apart, an UNNAMED filtered record before an unnamed one so that including it renumbers everything after, a filtered record bridging two others, a PASS filter, a symbolic ALT with END, two records sharing a name, an unnamed one merged with a named one, and a contig change. The runs are the defaults, INCLUDE_FILTERED, an unsorted file, a file with no records, a header with no contigs, and USE_FIRST last because VARIANT_ID_METHOD is static. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32458935026, and byte for byte what this laptop produced."
         }
       ]
     }
