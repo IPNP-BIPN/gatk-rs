@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 118 | 37.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 119 | 38.3% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 180 | 57.9% |
 | **total** | **311** | |
@@ -63,7 +63,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SamFormatConverter` | record-transform | oracle-backed | samformatconverter | 2 | not measured |
 | `SamToFastq` | record-transform | oracle-backed | samtofastq | 1 | not measured |
 | `ScatterIntervalsByNs` | reference-utility | unchecked | scatterintervalsbyns | 1 | not measured |
-| `SetNmAndUqTags` | record-transform | golden-pending | set-nm-md-uq-tags | 1 | not measured |
+| `SetNmAndUqTags` | record-transform | oracle-backed | set-nm-md-uq-tags | 1 | not measured |
 | `SetNmMdAndUqTags` | record-transform | oracle-backed | set-nm-md-uq-tags, setnmmduq | 2 | not measured |
 | `SortSam` | record-transform | oracle-backed | sortsam, sortsam-bam | 2 | not measured |
 | `SortVcf` | variant-transform | oracle-backed | sort-vcf | 1 | not measured |

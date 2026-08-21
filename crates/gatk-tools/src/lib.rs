@@ -79,6 +79,7 @@ pub mod rename_sample_in_vcf;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
 pub mod select_variants;
+pub mod set_nm_md_and_uq_tags;
 pub mod shift_fasta;
 pub mod sort_vcf;
 pub mod split_intervals;
