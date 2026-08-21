@@ -340,12 +340,8 @@ jobs:
             suites: "picard-update-vcf-dictionary vcf-to-interval-list picard-gather-vcfs vcf-format-converter build-bam-index"
           - group: oracle-backed
             index: "42/42"
-            slug: "print-bgzf-block-information-index-feature-file-set-nm-md-uq-tags"
-            suites: "print-bgzf-block-information index-feature-file set-nm-md-uq-tags"
-          - group: golden-pending
-            index: "1/1"
-            slug: "gather-bam-files"
-            suites: "gather-bam-files"
+            slug: "print-bgzf-block-information-index-feature-file-set-nm-md-uq-tags-gather-bam-files"
+            suites: "print-bgzf-block-information index-feature-file set-nm-md-uq-tags gather-bam-files"
     steps:
       - uses: actions/checkout@v4
 
