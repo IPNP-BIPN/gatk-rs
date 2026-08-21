@@ -12,6 +12,8 @@ htsjdk-bam.workspace = true
 # CheckTerminatorBlock is the tool's decision over the termination check this carries.
 htsjdk-bgzf.workspace = true
 # IndexFeatureFile writes a tribble index, which htsjdk-rs already builds byte for byte.
+# ReferenceBlockConcordance writes three metrics files, which is this crate's MetricsFile.
+htsjdk-metrics.workspace = true
 htsjdk-tribble.workspace = true
 htsjdk-vcf.workspace = true
 # The coverage filter takes a median, which is commons-math's `Median` and therefore jmath's.
