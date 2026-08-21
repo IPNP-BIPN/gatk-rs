@@ -5083,21 +5083,21 @@
     },
     {
       "id": "compare-references",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "References compared by sequence MD5",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CompareReferences"
       ],
-      "why": "THE TABLE IS KEYED BY MD5 and not by name, so two references whose sequences agree base for base share one row however differently they name them. THE COLUMN NAME IS THE FILE'S NAME, not its path. A MISSING ENTRY IS ---, and the row still carries the length. EVERY PAIR STARTS AS EXACT_MATCH and loses it on the first disagreement. DIFFER_IN_SEQUENCE_NAMES NEEDS BOTH SIDES PRESENT. DIFFER_IN_SEQUENCE IS COUNTED PER NAME, when a name is found in exactly two rows each of which has it on one side only. SUPERSET AND SUBSET REPLACE DIFFER_IN_SEQUENCES_PRESENT, but only when the missing entries all point the same way and no naming discrepancy was found. THE MD5 MODE DECIDES WHAT IS READ: USE_DICT refuses a dictionary with no M5 and trusts one that lies, while ALWAYS_RECALCULATE ignores the M5 that is there. THE ANALYSIS IS PRINTED TO STDOUT while the table goes to the output file. AND THE STATUS LINES COME OUT IN EnumSet ORDER, which is the enum's declaration order and not the order the flags were added. FULL_ALIGNMENT runs mummer and is not measured.",
+      "why": "THE TABLE IS KEYED BY MD5 and not by name, so two references whose sequences agree base for base share one row however differently they name them. THE COLUMN NAME IS THE FILE'S NAME, not its path. A MISSING ENTRY IS ---, and the row still carries the length. EVERY PAIR STARTS AS EXACT_MATCH and loses it on the first disagreement. DIFFER_IN_SEQUENCE_NAMES NEEDS BOTH SIDES PRESENT. DIFFER_IN_SEQUENCE IS COUNTED PER NAME, when a name is found in exactly two rows each of which has it on one side only. SUPERSET AND SUBSET REPLACE DIFFER_IN_SEQUENCES_PRESENT, but only when the missing entries all point the same way and no naming discrepancy was found. THE MD5 MODE DECIDES WHAT IS READ: USE_DICT refuses a dictionary with no M5 and trusts one that lies, while ALWAYS_RECALCULATE ignores the M5 that is there. THE ANALYSIS IS PRINTED TO STDOUT while the table goes to the output file. AND THE STATUS LINES COME OUT IN EnumSet ORDER, which is the enum's declaration order and not the order the flags were added. AND A REFERENCE COMPARED WITH ITSELF IS NOT A COMPARISON AT ALL: the two paths collapse into one map entry, no pair is generated, and the tool walks off the empty list with an IndexOutOfBoundsException. FULL_ALIGNMENT runs mummer and is not measured.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "CompareReferencesDump",
-          "golden": null,
-          "why": "Ten runs over seven references built from three sequences: a base of two, the same bases renamed, the same names over altered bases, a superset, a subset, a dictionary with every M5 stripped and one whose M5 is a lie. The runs compare identical references, renamed ones, altered ones, a superset, a subset, three at once, the table by sequence name, and the three MD5 modes against the two broken dictionaries. Both halves of every run travel: the table file and what the run printed."
+          "golden": "crates/gatk-tools/tests/data/compare_references.txt.gz",
+          "why": "Ten runs over seven references built from three sequences: a base of two, the same bases renamed, the same names over altered bases, a superset, a subset, a dictionary with every M5 stripped and one whose M5 is a lie. The runs compare identical references, renamed ones, altered ones, a superset, a subset, three at once, the table by sequence name, and the three MD5 modes against the two broken dictionaries. Both halves of every run travel: the table file and what the run printed. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32508100615, and byte for byte what this laptop produced."
         }
       ]
     }
