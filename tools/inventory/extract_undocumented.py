@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import collections
 import json
 import pathlib
 import re
@@ -102,6 +103,41 @@ def parse_help(text):
     return args
 
 
+def classes_in_jar(jar):
+    """Every class in the jar, as `simple name -> [package.Class]`.
+
+    An undocumented tool's origin cannot be guessed from its name: twelve of the tools
+    `gatk --list` reports are Picard's, bundled in the same jar, and calling them GATK-origin
+    puts them under the wrong milestone and the wrong archetype for good. The jar knows: a class
+    under `picard/` is Picard's and one under `org/broadinstitute/hellbender/` is GATK's.
+    """
+    import zipfile
+
+    found = collections.defaultdict(list)
+    with zipfile.ZipFile(jar) as z:
+        for entry in z.namelist():
+            if not entry.endswith(".class") or "$" in entry:
+                continue
+            fqn = entry[: -len(".class")].replace("/", ".")
+            found[fqn.rsplit(".", 1)[-1]].append(fqn)
+    return found
+
+
+def resolve_class(by_simple_name, name):
+    """The one class a tool's name resolves to, or `(None, None, "gatk")` when it is ambiguous.
+
+    Ambiguity is possible in principle (two packages, one simple name) and is reported rather
+    than guessed at: a wrong package is worse than an absent one.
+    """
+    candidates = by_simple_name.get(name, [])
+    tools = [c for c in candidates if c.startswith(("picard.", "org.broadinstitute.hellbender."))]
+    if len(tools) != 1:
+        return None, None, "gatk"
+    fqn = tools[0]
+    package, cls = fqn.rsplit(".", 1)
+    return package, fqn, ("picard" if fqn.startswith("picard.") else "gatk")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("jar", type=pathlib.Path)
@@ -122,18 +158,24 @@ def main():
     if phantom:
         print(f"  WARNING: documented but not runnable: {phantom[:5]}")
 
+    by_simple_name = classes_in_jar(a.jar)
+
     recovered = []
+    unresolved = []
     for i, name in enumerate(missing, 1):
         text = run(a.jar, [], [name, "--help"])
         parsed = parse_help(text)
         if not parsed:
             print(f"  [{i}/{len(missing)}] {name}: NO ARGUMENTS PARSED")
+        package, cls, origin = resolve_class(by_simple_name, name)
+        if cls is None:
+            unresolved.append(name)
         recovered.append({
             "name": name,
             "display_name": name,
-            "origin": "gatk",
-            "package": None,
-            "class": None,
+            "origin": origin,
+            "package": package,
+            "class": cls,
             "group": "Undocumented",
             "archetype": "unclassified",
             "spark": "Spark" in name,
@@ -141,12 +183,21 @@ def main():
             "experimental": False,
             "deprecated": False,
             "summary": None,
-            "branch": f"tool/gatk-{re.sub(r'[^a-z0-9]+', '', name.lower())}",
+            "branch": f"tool/{origin}-{re.sub(r'[^a-z0-9]+', '', name.lower())}",
             "kind": "tool",
             "documented": False,
             "arguments": parsed,
         })
         print(f"  [{i}/{len(missing)}] {name}: {len(parsed)} arguments")
+
+    if unresolved:
+        # Not fatal: the tool still exists and its arguments were read. But a tool whose class
+        # the jar cannot name is one whose origin is a guess, so it is printed rather than
+        # buried.
+        print(f"  WARNING: {len(unresolved)} undocumented tools resolved to no single class: "
+              f"{unresolved[:5]}")
+    by_origin = collections.Counter(t["origin"] for t in recovered)
+    print(f"  undocumented by origin: {dict(by_origin)}")
 
     for t in inv["tools"]:
         t["documented"] = True

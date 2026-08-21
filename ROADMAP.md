@@ -17,11 +17,11 @@ golden stays `[~]`.
 | Repo | Scope | State |
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
-| **picard-rs** | 109 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 202 tools | 6 crates, **58 conformance suites, all oracle-backed**; 3 tools byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
+| **picard-rs** | 121 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
+| **gatk-rs** | 190 tools | 6 crates, **58 conformance suites, all oracle-backed**; 3 tools byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
 
-Totals from the generated inventory (`tools/inventory`): **311 tools** (202 GATK-origin,
-109 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 163 GATK + 109 Picard.
+Totals from the generated inventory (`tools/inventory`): **311 tools** (190 GATK-origin,
+121 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 151 GATK + 121 Picard.
 
 ### What "100% repro" means, per tool
 
@@ -41,7 +41,7 @@ which is not yet this bar for any tool.
 
 ## Milestone G1: the GATK engine
 
-The single biggest unlock: 163 non-Spark GATK tools stand on it.
+The single biggest unlock: 151 non-Spark GATK tools stand on it.
 
 **Closed.** Every box below is `[x]` except four, and none of the four is G1 work:
 
@@ -425,7 +425,7 @@ copy, which is a worse position than reading the source rather than a better one
 
 ---
 
-## Milestone G2: the 163 non-Spark GATK tools, by archetype
+## Milestone G2: the 151 non-Spark GATK tools, by archetype
 
 - [x] `PrintReads`, byte-identical: six output BAMs and five `.bai` indexes, under the JDK
       deflater
@@ -1052,7 +1052,7 @@ Everything downstream inherits these, so they are front-loaded.
 
 ---
 
-## Milestone P: finish Picard (109 tools)
+## Milestone P: finish Picard (121 tools)
 
 - [~] **MergeBamAlignment** (in flight): transfer, `PG` linkage, `NM`/`MD`/`UQ` and the
       whole-file coordinate-sorted producer are done and oracle-backed. Remaining:
