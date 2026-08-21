@@ -5,6 +5,7 @@
 //! rather than inside either, because a traversal is a data source and a filter chain composed,
 //! and neither half can see the other.
 
+pub mod add_comments_to_bam;
 pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
 pub mod annotate_intervals;
