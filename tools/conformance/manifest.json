@@ -5140,6 +5140,26 @@
           "why": "Nine runs over one file of fourteen bins: ten adjacent hundred-base bins, a one-base gap, two more, then a contig change and two more. The runs are the defaults, a maximum that divides the bins evenly and one that does not, a minimum that drops the short runs, both at once, a file of one bin kept and the same dropped, a minimum above the maximum, and an output named for another feature type. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32518248413, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "site-depth-to-baf",
+      "status": "golden-pending",
+      "title": "Allele depths turned into B-allele fractions",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SiteDepthtoBAF"
+      ],
+      "why": "THE REF AND ALT ALLELES COME FROM THE SITES VCF, not from the depths. A SITE WHOSE TOTAL DEPTH IS BELOW THE FLOOR PRODUCES NOTHING, and the total is the sum of ALL FOUR counts. THE HET TEST IS A CHI-SQUARED FIT WITH ONE DEGREE OF FREEDOM against an expectation of half the total. A LOCUS WITH EXACTLY ONE SURVIVING SAMPLE IS WRITTEN AS 0.5 whatever it measured, the value replaced rather than adjusted. A LOCUS WITH TWO OR MORE IS ADJUSTED BY ITS OWN MEDIAN, so the numbers written are not the fractions measured, AND THAT WHOLE LOCUS IS DROPPED WHEN THE POPULATION STANDARD DEVIATION EXCEEDS --max-std. THE MEDIAN OF AN EVEN COUNT IS THE MEAN OF THE TWO MIDDLE VALUES. THE VALUE IS WRITTEN THROUGH DecimalFormat(#.00), so 0.5 comes out .50 with no leading zero. THE SITES FILE IS WALKED IN LOCKSTEP and must not run out first nor disagree about the locus. AND THE FILE IS ZERO-BASED ON DISK AND ONE-BASED INSIDE.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SiteDepthToBafDump",
+          "golden": null,
+          "why": "Ten runs over one fifteen-row depth file at six loci: three clean hets at one, a single sample at another, a shallow sample and a far-from-het sample at a third, three whose fractions are far apart at a fourth, three whose median is 0.6 at a fifth and three whose spread fails the deviation limit at a sixth. The runs move the het probability up and down, the depth floor up, the deviation limit up, take the two low-floor runs where the median adjustment and the deviation drop are both visible, then give a ref that is not a base, a sites file that runs out early, and one that names a locus the depths do not. The evidence files carry no dictionary, so every run is handed one."
+        }
+      ]
     }
   ],
   "probes": []
