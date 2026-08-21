@@ -5020,6 +5020,26 @@
           "why": "Ten runs over one three-record BAM whose header already carries a comment, a read group and a program record: one comment, two, none at all, one already carrying the @CO prefix, one holding a tab, one holding a newline, the digest and the index, then the same bytes under a .sam name and a real sam under a .bam name. The deflater factory is pinned and recorded, and every BAM travels as base64 and again as text. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32499865245, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "reference-block-concordance",
+      "status": "golden-pending",
+      "title": "The reference blocks of two GVCFs",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ReferenceBlockConcordance"
+      ],
+      "why": "ONLY HOM-REF SITES ARE WALKED, both filters being isHomRef, which reads GENOTYPE 0 AND NOTHING ELSE, so a multi-sample record is filtered on its first sample and only then refused by extractLengthAndGQ. A FILTERED BLOCK IS STILL WALKED, the filters testing the genotype alone. THE BLOCK HISTOGRAMS ARE KEYED BY A JAVA PAIR'S toString, which is length,GQ with no space and no brackets, and the metrics file SORTS THOSE KEYS AS STRINGS: 1,80 then 100,20 then 50,40, which is neither the lengths' order nor the file's. THE LENGTH IS getLengthOnReference(), so the END attribute decides it. THE CONCORDANCE HISTOGRAM IS INCREMENTED BY THE OVERLAP'S LENGTH, not by one, and only while both sides currently hold a block, THE CURRENT BLOCKS BEING CLEARED BY AN OVERLAP TEST AGAINST THE STEP ITSELF. A SITE PRESENT ON ONE SIDE ONLY STILL COUNTS TOWARDS THAT SIDE'S HISTOGRAM. AND THE THREE FILES ARE METRICS FILES WITH NO METRIC ROWS, each carrying a HISTOGRAM section alone.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ReferenceBlockConcordanceDump",
+          "golden": null,
+          "why": "Four runs over hand-written GVCFs: a truth of three blocks, a variant site and a filtered block against an eval whose blocks overlap by fifty bases, by a whole block, by one base and not at all; the same file against itself; an empty truth; and a two-sample record which is filtered on its first genotype and then refused. Each run's three metrics files travel whole, with the header lines that carry the run's date and command line masked."
+        }
+      ]
     }
   ],
   "probes": []
