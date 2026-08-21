@@ -5060,6 +5060,26 @@
           "why": "Five runs over one file of five records: a record with three called samples and two summed annotations, one whose divisor is zero, one carrying a single annotation, one carrying none, and one with two called samples. The runs ask for two annotations, then one, then an annotation the file never declares, then run over a file with no records, and close with a record missing RAW_GT_COUNT which is refused after an earlier record was already written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32502931791, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "print-file-diagnostics",
+      "status": "golden-pending",
+      "title": "An index printed as text",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintFileDiagnostics"
+      ],
+      "why": "THE ANALYZER IS CHOSEN BY THE EXTENSION and nothing else, anything unrecognised being a RuntimeException naming the raw argument. THE BAI BRANCH READS AN EXISTING .bai AND REWRITES IT AS TEXT through TextualBAMIndexWriter, which no other tool reaches, so its input is an index and never a BAM. EVERY REFERENCE IS PRINTED, including one with no bins, which gets its own spacing: n_bin=0 and n_intv=0 with NO SPACE after the =, where every other line writes n_bin= 4 with one. THE BIN COUNT INCLUDES THE METADATA BIN though that bin is printed separately and out of numeric order. EVERY BIN IS PRINTED WITH ITS RANGE SUMMARY and every chunk with its offsets IN HEXADECIMAL, lower case and unpadded. THE METADATA BIN IS ALWAYS 37450 AND ALWAYS CLAIMS TWO CHUNKS, one of which holds counts rather than offsets. THE LINEAR INDEX PRINTS ONLY ITS NON-ZERO ENTRIES. THE NO-COORDINATE COUNT IS THE LAST LINE, printed even when zero. AND THE CRAI BRANCH PRINTS A HEADER LINE AND ONE LINE PER ENTRY, which is CRAIEntry.toString and a different shape from the file it read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PrintFileDiagnosticsDump",
+          "golden": null,
+          "why": "Three runs: the .bai of a BAM over three contigs, one of which holds no read at all, with reads far enough apart to leave holes in the linear index and two unmapped reads at the end; a .crai written by hand holding three entries over two sequences; and a file whose extension no analyzer claims. Both index files travel as base64."
+        }
+      ]
     }
   ],
   "probes": []
