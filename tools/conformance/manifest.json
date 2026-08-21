@@ -5043,7 +5043,7 @@
     },
     {
       "id": "calculate-average-combined-annotations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Summed annotations averaged over the called samples",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5056,8 +5056,8 @@
       "cases": [
         {
           "dump": "CalculateAverageCombinedAnnotationsDump",
-          "golden": null,
-          "why": "Five runs over one file of five records: a record with three called samples and two summed annotations, one whose divisor is zero, one carrying a single annotation, one carrying none, and one with two called samples. The runs ask for two annotations, then one, then an annotation the file never declares, then run over a file with no records, and close with a record missing RAW_GT_COUNT which is refused after an earlier record was already written."
+          "golden": "crates/gatk-tools/tests/data/calculate_average_combined_annotations.txt.gz",
+          "why": "Five runs over one file of five records: a record with three called samples and two summed annotations, one whose divisor is zero, one carrying a single annotation, one carrying none, and one with two called samples. The runs ask for two annotations, then one, then an annotation the file never declares, then run over a file with no records, and close with a record missing RAW_GT_COUNT which is refused after an earlier record was already written. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32502931791, and byte for byte what this laptop produced."
         }
       ]
     }

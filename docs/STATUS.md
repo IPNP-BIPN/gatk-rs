@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 122 | 39.2% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 123 | 39.5% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 176 | 56.6% |
 | **total** | **311** | |
@@ -96,7 +96,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr | 1 | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
-| `CalculateAverageCombinedAnnotations` | unclassified | golden-pending | calculate-average-combined-annotations | 1 | not measured |
+| `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
 | `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
 | `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | not measured |
