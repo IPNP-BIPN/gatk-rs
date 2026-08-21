@@ -4902,7 +4902,7 @@
     },
     {
       "id": "build-bam-index",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The .bai of a coordinate-sorted BAM",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4915,8 +4915,8 @@
       "cases": [
         {
           "dump": "BuildBamIndexDump",
-          "golden": null,
-          "why": "Seven runs over five fixtures: a coordinate-sorted BAM over two contigs with two unmapped reads at the end, the same reads under a queryname header and under an unsorted one, a BAM with no records, and a sam file. The runs index each of them with an explicit output, then twice with none at all: once for a name ending .bam and once for a name that does not. Every input and every index travels as base64."
+          "golden": "crates/gatk-tools/tests/data/build_bam_index.txt.gz",
+          "why": "Seven runs over five fixtures: a coordinate-sorted BAM over two contigs with two unmapped reads at the end, the same reads under a queryname header and under an unsorted one, a BAM with no records, and a sam file. The runs index each of them with an explicit output, then twice with none at all: once for a name ending .bam and once for a name that does not. Every input and every index travels as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32463870586, and byte for byte what this laptop produced."
         }
       ]
     }
