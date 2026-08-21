@@ -33,6 +33,7 @@ pub mod compare_base_qualities;
 pub mod compare_interval_lists;
 pub mod compare_references;
 pub mod concordance;
+pub mod condense_depth_evidence;
 pub mod convert_headerless_shard;
 pub mod count_bases_in_reference;
 pub mod count_false_positives;
