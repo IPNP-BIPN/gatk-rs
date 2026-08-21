@@ -4939,6 +4939,26 @@
           "why": "Nine runs over eight files, each travelling as base64: a well formed file of two blocks and a terminator, the same with the terminator dropped, two well formed files glued so a terminator sits in the middle, three glued so the summary has two numbers to join, a file that is only a terminator, a regular gzip file, an uncompressed file, a file whose last block is cut in half, and a path that does not exist. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32481662405, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "index-feature-file",
+      "status": "golden-pending",
+      "title": "The index of a feature file",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "IndexFeatureFile"
+      ],
+      "why": "The tool every other dump in this harness already calls to make its fixtures, measured for itself at last. THE INDEX TYPE IS CHOSEN BY THE EXTENSION AND NOTHING ELSE: a block compressed file gets a TABIX index, a name ending .g.vcf gets a LINEAR index with a bin width of 128000, and anything else gets a DYNAMIC index built FOR_SEEK_TIME, SO THE SAME RECORDS INDEX TO DIFFERENT BYTES under two names. THE DEFAULT OUTPUT SITS BESIDE THE INPUT, Tribble.indexPath appending .idx to the whole name, so reads.vcf indexes to reads.vcf.idx and not to reads.idx, AND FOR A BLOCK COMPRESSED FILE IT IS .tbi APPENDED THE SAME WAY. AN EXPLICIT OUTPUT IS TAKEN AS GIVEN FOR A PLAIN FILE, whatever it is called, BUT A BLOCK COMPRESSED INPUT REFUSES AN OUTPUT THAT DOES NOT END .tbi and the message quotes the input rather than the output. THE TOOL RETURNS THE INDEX PATH as its result. THE INDEX EMBEDS THE SOURCE FILE'S URI, so the same records indexed from two directories differ byte for byte, AND IT EMBEDS THE SOURCE FILE'S MODIFICATION TIME, which is why indexing the same bytes twice produces two different files: the dump zeroes those eight bytes, the only masking in this golden, because a golden that carried them could never be re-derived. A FILE IN NO SUPPORTED FORMAT IS REFUSED BY THE CODEC LOOKUP as a NoSuitableCodecs. AND A VCF WHOSE RECORDS ARE OUT OF ORDER IS A CouldNotIndexFile wrapping the Tribble complaint.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "IndexFeatureFileDump",
+          "golden": null,
+          "why": "Twelve runs over six inputs, each travelling as base64: one vcf of fifty records over two contigs, the same bytes under a .g.vcf name, a bed file, the same records block compressed, a vcf whose last record is before its first, and a file in no supported format. The runs index each of them with no output given, then with an explicit output that is plain, one that merely looks like a tabix, one that a block compressed input refuses and one it accepts, and close with the two refusals and a path that does not exist."
+        }
+      ]
     }
   ],
   "probes": []
