@@ -340,12 +340,8 @@ jobs:
             suites: "picard-update-vcf-dictionary vcf-to-interval-list picard-gather-vcfs vcf-format-converter build-bam-index"
           - group: oracle-backed
             index: "42/42"
-            slug: "print-bgzf-block-information"
-            suites: "print-bgzf-block-information"
-          - group: golden-pending
-            index: "1/1"
-            slug: "index-feature-file"
-            suites: "index-feature-file"
+            slug: "print-bgzf-block-information-index-feature-file"
+            suites: "print-bgzf-block-information index-feature-file"
     steps:
       - uses: actions/checkout@v4
 

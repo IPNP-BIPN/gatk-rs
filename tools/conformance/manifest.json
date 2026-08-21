@@ -4942,7 +4942,7 @@
     },
     {
       "id": "index-feature-file",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The index of a feature file",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4955,8 +4955,8 @@
       "cases": [
         {
           "dump": "IndexFeatureFileDump",
-          "golden": null,
-          "why": "Twelve runs over six inputs, each travelling as base64: one vcf of fifty records over two contigs, the same bytes under a .g.vcf name, a bed file, the same records block compressed, a vcf whose last record is before its first, and a file in no supported format. The runs index each of them with no output given, then with an explicit output that is plain, one that merely looks like a tabix, one that a block compressed input refuses and one it accepts, and close with the two refusals and a path that does not exist."
+          "golden": "crates/gatk-tools/tests/data/index_feature_file.txt.gz",
+          "why": "Twelve runs over six inputs, each travelling as base64: one vcf of fifty records over two contigs, the same bytes under a .g.vcf name, a bed file, the same records block compressed, a vcf whose last record is before its first, and a file in no supported format. The runs index each of them with no output given, then with an explicit output that is plain, one that merely looks like a tabix, one that a block compressed input refuses and one it accepts, and close with the two refusals and a path that does not exist. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32483151768, and byte for byte what this laptop produced."
         }
       ]
     }
