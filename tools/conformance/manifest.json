@@ -5040,6 +5040,26 @@
           "why": "Four runs over hand-written GVCFs: a truth of three blocks, a variant site and a filtered block against an eval whose blocks overlap by fifty bases, by a whole block, by one base and not at all; the same file against itself; an empty truth; and a two-sample record which is filtered on its first genotype and then refused. Each run's three metrics files travel whole, with the header lines that carry the run's date and command line masked. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32501310335, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "calculate-average-combined-annotations",
+      "status": "golden-pending",
+      "title": "Summed annotations averaged over the called samples",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalculateAverageCombinedAnnotations"
+      ],
+      "why": "THE DIVISOR IS THE SECOND AND THIRD FIELDS OF RAW_GT_COUNT, het plus hom-var, read as DOUBLES. A RECORD WHOSE DIVISOR IS ZERO IS WRITTEN THROUGH UNTOUCHED, gaining no AVERAGE_ field at all. A RECORD MISSING RAW_GT_COUNT IS A UserException naming the site, raised AFTER the header and any earlier records were written. AN ANNOTATION THE RECORD DOES NOT CARRY IS SKIPPED for that record, so two records can come out with different sets of AVERAGE_ fields. THE ORIGINAL ANNOTATION IS KEPT beside the average, AND THE AVERAGE IS WRITTEN BY THE ENCODER'S OWN FORMAT: 30.0 / 3 comes out 3.00, two decimals, while the source keeps the one it was written with. THE HEADER GAINS ONE INFO LINE PER REQUESTED ANNOTATION whether any record carries it or not, Number=1 and Type=Float, AND EVEN FOR AN ANNOTATION THE INPUT NEVER DECLARED, so the output can declare AVERAGE_XX while XX itself is undeclared.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CalculateAverageCombinedAnnotationsDump",
+          "golden": null,
+          "why": "Five runs over one file of five records: a record with three called samples and two summed annotations, one whose divisor is zero, one carrying a single annotation, one carrying none, and one with two called samples. The runs ask for two annotations, then one, then an annotation the file never declares, then run over a file with no records, and close with a record missing RAW_GT_COUNT which is refused after an earlier record was already written."
+        }
+      ]
     }
   ],
   "probes": []
