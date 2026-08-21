@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 113 | 36.3% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 114 | 36.7% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 185 | 59.5% |
 | **total** | **311** | |
@@ -42,7 +42,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterVcf` | variant-transform | oracle-backed | filter-vcf | 1 | not measured |
 | `FixMateInformation` | record-transform | oracle-backed | fixmate | 1 | not measured |
 | `FixVcfHeader` | variant-transform | oracle-backed | fix-vcf-header | 1 | not measured |
-| `GatherVcfs` | variant-transform | golden-pending | picard-gather-vcfs | 1 | not measured |
+| `GatherVcfs` | variant-transform | oracle-backed | picard-gather-vcfs | 1 | not measured |
 | `IntervalListToBed` | interval-utility | unchecked | intervallisttobed | 1 | not measured |
 | `IntervalListTools` | interval-utility | oracle-backed | intervallisttools, intervallisttoolspadbreak | 4 | not measured |
 | `LiftOverIntervalList` | interval-utility | unchecked | liftoverintervallist | 1 | not measured |
