@@ -4879,6 +4879,26 @@
           "why": "Thirteen runs over shards of one scattered two-sample run: three ordered shards, one alone, two with comments, an empty shard in the middle, the shards out of order, the same reordered by the tool with the empty one among them, a pair whose records overlap though their first records do not, a shard with one sample, a shard with another dictionary, a pair with no contig lines with and without the index, and the same shards block compressed gathered into a plain vcf and into a block compressed one. The block compressed output is recorded as its decompressed text, its bgzf block sizes and its SHA-256. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32461456794, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "vcf-format-converter",
+      "status": "golden-pending",
+      "title": "A vcf rewritten in the format its name asks for",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VcfFormatConverter"
+      ],
+      "why": "REQUIRE_INDEX DEFAULTS TO TRUE, so a plain vcf with no index beside it is refused before a record is read, by Tribble and not by the tool. CREATE_INDEX ALSO DEFAULTS TO TRUE, set in the constructor rather than by the parser, and it is why a file with no contig lines is refused: the dictionary is null and the PicardException names the indexing, not the file. THE TWO ARE INDEPENDENT: REQUIRE_INDEX=false still refuses a file with no contigs, and CREATE_INDEX=false accepts it. THE HEADER IS COPIED THROUGH new VCFHeader(header) AND THE WRITER EMITS ITS OWN ORDER, so a header out of order comes back sorted. A CONVERSION IS A REWRITE, NOT A COPY: every record goes through the decoder and the encoder. THE OUTPUT FORMAT IS THE EXTENSION'S and nothing in the arguments overrides it. AND A ROUND TRIP THROUGH BCF IS THE IDENTITY, measured and not assumed: vcf -> bcf -> vcf returns the same bytes as vcf -> vcf, header included. The BCF output is recorded as a digest and a length rather than as bytes: a BCF codec is a brick of its own, and this golden pins the text paths a port can reproduce today while leaving the binary ones measured for later.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VcfFormatConverterDump",
+          "golden": null,
+          "why": "Nine runs over one two-sample file of four records, whose header lines are deliberately out of the writer's order and whose records carry a phased genotype, a no-call, two alternates and a symbolic allele: an indexed vcf to a vcf, the same file with no index with the requirement on and off, a file with no contig lines with the index on and off, a file with no records, block compressed output recorded as the text it decompresses to, binary output recorded as a digest and a length, and the round trip back from it."
+        }
+      ]
     }
   ],
   "probes": []
