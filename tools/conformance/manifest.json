@@ -4859,6 +4859,26 @@
           "why": "Six runs over one file of eighteen records covering each behaviour: named and unnamed records, a deletion overlapping the record inside it, an abutting pair and a pair one base apart, an UNNAMED filtered record before an unnamed one so that including it renumbers everything after, a filtered record bridging two others, a PASS filter, a symbolic ALT with END, two records sharing a name, an unnamed one merged with a named one, and a contig change. The runs are the defaults, INCLUDE_FILTERED, an unsorted file, a file with no records, a header with no contigs, and USE_FIRST last because VARIANT_ID_METHOD is static. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32458935026, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "picard-gather-vcfs",
+      "status": "golden-pending",
+      "title": "Shards of a scattered run concatenated, Picard's way",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GatherVcfs"
+      ],
+      "why": "GATK's GatherVcfsCloud is already measured under gather-vcfs; this is the other tool of nearly the same name and it refuses differently. A REFUSAL IS AN EXIT CODE, NOT AN EXCEPTION: doWork catches RuntimeException, logs, DELETES THE OUTPUT and returns 1. AND AN AssertionError IS NOT A RuntimeException, so the dictionary mismatch walks out while the sample mismatch beside it becomes exit 1. CREATE_INDEX DEFAULTS TO TRUE, set in the constructor, and an input with no contig lines is a PicardException RAISED BEFORE THE TRY; with CREATE_INDEX=false the same input reaches a null dictionary and becomes exit 1. THERE ARE TWO ORDER CHECKS AND THEY COMPARE DIFFERENT THINGS, the first the files' first records and the second the next file's first record against the last record written. AN EMPTY SHARD IS SKIPPED BY BOTH. REORDER_INPUT_BY_FIRST_VARIANT PUTS EVERY EMPTY FILE LAST. ONLY THE FIRST COMMENT SURVIVES: they are GatherVcfs.comment lines, a different key from the neighbouring MergeVcfs, and VCFHeader keys an unstructured line by its key alone, so the second CO= is dropped without a word. THE MODE IS CHOSEN BY FILE EXTENSION and needs every input and the output block compressed. AND THE BLOCK COPYING PATH REWRITES ONLY THE BLOCK THAT ENDS EACH LATER FILE'S HEADER, copying every other block byte for byte and appending one terminator of its own.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PicardGatherVcfsDump",
+          "golden": null,
+          "why": "Thirteen runs over shards of one scattered two-sample run: three ordered shards, one alone, two with comments, an empty shard in the middle, the shards out of order, the same reordered by the tool with the empty one among them, a pair whose records overlap though their first records do not, a shard with one sample, a shard with another dictionary, a pair with no contig lines with and without the index, and the same shards block compressed gathered into a plain vcf and into a block compressed one. The block compressed output is recorded as its decompressed text, its bgzf block sizes and its SHA-256."
+        }
+      ]
     }
   ],
   "probes": []
