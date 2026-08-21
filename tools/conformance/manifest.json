@@ -4962,7 +4962,7 @@
     },
     {
       "id": "set-nm-md-uq-tags",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "NM, MD and UQ recalculated against the reference",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4976,8 +4976,8 @@
       "cases": [
         {
           "dump": "SetNmMdAndUqTagsDump",
-          "golden": null,
-          "why": "Four runs over one eight-record BAM against a thirty-base reference carrying an N: a perfect match with no tags, a read with two mismatches and three wrong tags, a read over the reference's N, one whose own base is N there, one with an insertion and a deletion, one with no qualities at all, a C-rich read on a C-only contig read entirely as T, and an unmapped read carrying nonsense. The runs are the defaults, SET_ONLY_UQ, IS_BISULFITE_SEQUENCE and a queryname sorted input. Every BAM travels as base64 and again as text, so a divergence reads as a tag rather than as a byte offset."
+          "golden": "crates/gatk-tools/tests/data/set_nm_md_and_uq_tags.txt.gz",
+          "why": "Four runs over one eight-record BAM against a thirty-base reference carrying an N: a perfect match with no tags, a read with two mismatches and three wrong tags, a read over the reference's N, one whose own base is N there, one with an insertion and a deletion, one with no qualities at all, a C-rich read on a C-only contig read entirely as T, and an unmapped read carrying nonsense. The runs are the defaults, SET_ONLY_UQ, IS_BISULFITE_SEQUENCE and a queryname sorted input. Every BAM travels as base64 and again as text, so a divergence reads as a tag rather than as a byte offset. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32486676937, and byte for byte what this laptop produced."
         }
       ]
     }
