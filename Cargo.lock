@@ -281,6 +281,7 @@ dependencies = [
  "gatk-readfilter",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-metrics",
  "htsjdk-tribble",
  "htsjdk-vcf",
  "jmath",
@@ -306,7 +307,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 [[package]]
 name = "htsjdk-bam"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=e53841950fa0df3f49ef01cf3d8eb7edbc150456#e53841950fa0df3f49ef01cf3d8eb7edbc150456"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
 dependencies = [
  "htsjdk-bgzf",
  "md-5 0.10.6",
@@ -315,16 +316,21 @@ dependencies = [
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=e53841950fa0df3f49ef01cf3d8eb7edbc150456#e53841950fa0df3f49ef01cf3d8eb7edbc150456"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
 dependencies = [
  "flate2",
  "libz-sys",
 ]
 
 [[package]]
+name = "htsjdk-metrics"
+version = "0.1.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
+
+[[package]]
 name = "htsjdk-tribble"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=e53841950fa0df3f49ef01cf3d8eb7edbc150456#e53841950fa0df3f49ef01cf3d8eb7edbc150456"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
 dependencies = [
  "flate2",
  "htsjdk-bam",
@@ -333,7 +339,7 @@ dependencies = [
 [[package]]
 name = "htsjdk-vcf"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=e53841950fa0df3f49ef01cf3d8eb7edbc150456#e53841950fa0df3f49ef01cf3d8eb7edbc150456"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
 dependencies = [
  "htsjdk-tribble",
  "jmath",
@@ -361,7 +367,7 @@ dependencies = [
 [[package]]
 name = "jmath"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=e53841950fa0df3f49ef01cf3d8eb7edbc150456#e53841950fa0df3f49ef01cf3d8eb7edbc150456"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=557faab9186b7058dcd6f6b171b3cd99af642752#557faab9186b7058dcd6f6b171b3cd99af642752"
 
 [[package]]
 name = "lexical-core"

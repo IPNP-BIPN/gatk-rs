@@ -5063,7 +5063,7 @@
     },
     {
       "id": "print-file-diagnostics",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "An index printed as text",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5076,8 +5076,8 @@
       "cases": [
         {
           "dump": "PrintFileDiagnosticsDump",
-          "golden": null,
-          "why": "Three runs: the .bai of a BAM over three contigs, one of which holds no read at all, with reads far enough apart to leave holes in the linear index and two unmapped reads at the end; a .crai written by hand holding three entries over two sequences; and a file whose extension no analyzer claims. Both index files travel as base64."
+          "golden": "crates/gatk-tools/tests/data/print_file_diagnostics.txt.gz",
+          "why": "Three runs: the .bai of a BAM over three contigs, one of which holds no read at all, with reads far enough apart to leave holes in the linear index and two unmapped reads at the end; a .crai written by hand holding three entries over two sequences; and a file whose extension no analyzer claims. Both index files travel as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32504621626, and byte for byte what this laptop produced."
         }
       ]
     }
