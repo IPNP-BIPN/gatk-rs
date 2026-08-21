@@ -5120,6 +5120,26 @@
           "why": "Fifteen runs over three references, three VCFs and two BAMs: a VCF header carrying the base reference's contigs with their M5, the same without, one whose M5 is a lie, and BAM headers with and without M5. The runs check each input against an identical reference, an altered one and a superset, then all three at once, then a BAM and a VCF together, and close with no input at all. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32509842159, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "condense-depth-evidence",
+      "status": "golden-pending",
+      "title": "Adjacent depth bins merged",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CondenseDepthEvidence"
+      ],
+      "why": "THE LENGTH TESTED IS THE ONE ALREADY ACCUMULATED, BEFORE THE NEXT BIN IS ADDED, so an interval can come out LONGER than --max-interval-size. A RECORD SHORTER THAN --min-interval-size IS DROPPED, not merged and not written, AND THE MINIMUM IS APPLIED AGAIN TO THE LAST ACCUMULATOR. ADJACENCY IS end + 1 == start ON THE SAME CONTIG. THE COUNTS ARE SUMMED ELEMENTWISE and the merged record takes the FIRST bin's start and the LAST bin's end. THE FILE IS ZERO-BASED HALF-OPEN ON DISK AND ONE-BASED INSIDE. THE HEADER IS REWRITTEN FROM THE INPUT'S SAMPLE NAMES. A MINIMUM ABOVE THE MAXIMUM IS A UserException raised before anything is read. AND AN OUTPUT WHOSE EXTENSION IMPLIES ANOTHER FEATURE TYPE IS REFUSED BY NAME.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CondenseDepthEvidenceDump",
+          "golden": null,
+          "why": "Nine runs over one file of fourteen bins: ten adjacent hundred-base bins, a one-base gap, two more, then a contig change and two more. The runs are the defaults, a maximum that divides the bins evenly and one that does not, a minimum that drops the short runs, both at once, a file of one bin kept and the same dropped, a minimum above the maximum, and an output named for another feature type."
+        }
+      ]
     }
   ],
   "probes": []
