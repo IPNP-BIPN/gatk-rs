@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 115 | 37.0% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 116 | 37.3% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 183 | 58.8% |
 | **total** | **311** | |
@@ -23,7 +23,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AddOrReplaceReadGroups` | record-transform | oracle-backed | addreplacerg | 1 | not measured |
 | `BamIndexStats` | reporting-walker | oracle-backed | bamindexstats | 1 | not measured |
 | `BedToIntervalList` | interval-utility | unchecked | bedtointervallist | 1 | not measured |
-| `BuildBamIndex` | record-transform | golden-pending | build-bam-index | 1 | not measured |
+| `BuildBamIndex` | record-transform | oracle-backed | build-bam-index | 1 | not measured |
 | `CalculateReadGroupChecksum` | reporting-walker | oracle-backed | rgchecksum | 1 | not measured |
 | `CheckTerminatorBlock` | reporting-walker | oracle-backed | check-terminator-block | 1 | not measured |
 | `CleanSam` | record-transform | oracle-backed | cleansam | 1 | not measured |
