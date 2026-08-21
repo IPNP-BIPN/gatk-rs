@@ -344,12 +344,8 @@ jobs:
             suites: "print-bgzf-block-information index-feature-file set-nm-md-uq-tags gather-bam-files add-comments-to-bam"
           - group: oracle-backed
             index: "43/43"
-            slug: "reference-block-concordance-calculate-average-combined-annotations"
-            suites: "reference-block-concordance calculate-average-combined-annotations"
-          - group: golden-pending
-            index: "1/1"
-            slug: "print-file-diagnostics"
-            suites: "print-file-diagnostics"
+            slug: "reference-block-concordance-calculate-average-combined-annotations-print-file-diagnostics"
+            suites: "reference-block-concordance calculate-average-combined-annotations print-file-diagnostics"
     steps:
       - uses: actions/checkout@v4
 

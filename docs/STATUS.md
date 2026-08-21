@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 123 | 39.5% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 124 | 39.9% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 175 | 56.3% |
 | **total** | **311** | |
@@ -144,7 +144,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | not measured |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
-| `PrintFileDiagnostics` | unclassified | golden-pending | print-file-diagnostics | 1 | not measured |
+| `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
