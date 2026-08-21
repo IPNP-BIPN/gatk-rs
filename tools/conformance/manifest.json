@@ -4862,7 +4862,7 @@
     },
     {
       "id": "picard-gather-vcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Shards of a scattered run concatenated, Picard's way",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4875,8 +4875,8 @@
       "cases": [
         {
           "dump": "PicardGatherVcfsDump",
-          "golden": null,
-          "why": "Thirteen runs over shards of one scattered two-sample run: three ordered shards, one alone, two with comments, an empty shard in the middle, the shards out of order, the same reordered by the tool with the empty one among them, a pair whose records overlap though their first records do not, a shard with one sample, a shard with another dictionary, a pair with no contig lines with and without the index, and the same shards block compressed gathered into a plain vcf and into a block compressed one. The block compressed output is recorded as its decompressed text, its bgzf block sizes and its SHA-256."
+          "golden": "crates/gatk-tools/tests/data/picard_gather_vcfs.txt.gz",
+          "why": "Thirteen runs over shards of one scattered two-sample run: three ordered shards, one alone, two with comments, an empty shard in the middle, the shards out of order, the same reordered by the tool with the empty one among them, a pair whose records overlap though their first records do not, a shard with one sample, a shard with another dictionary, a pair with no contig lines with and without the index, and the same shards block compressed gathered into a plain vcf and into a block compressed one. The block compressed output is recorded as its decompressed text, its bgzf block sizes and its SHA-256. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32461456794, and byte for byte what this laptop produced."
         }
       ]
     }
