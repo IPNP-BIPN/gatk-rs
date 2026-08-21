@@ -4919,6 +4919,26 @@
           "why": "Seven runs over five fixtures: a coordinate-sorted BAM over two contigs with two unmapped reads at the end, the same reads under a queryname header and under an unsorted one, a BAM with no records, and a sam file. The runs index each of them with an explicit output, then twice with none at all: once for a name ending .bam and once for a name that does not. Every input and every index travels as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32463870586, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "print-bgzf-block-information",
+      "status": "golden-pending",
+      "title": "A bgzf file walked block by block",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintBGZFBlockInformation"
+      ],
+      "why": "THE REPORT NAMES THE FILE AND NOT THE PATH, getFileName() being what reaches the first line while every refusal quotes the whole path. A PREMATURE TERMINATOR IS REPORTED TWICE, once inline when the block AFTER it is read and once in a summary that joins the numbers with a comma and no space, AND THE NUMBER REPORTED IS THE TERMINATOR'S OWN, blockNumber - 1. THE INLINE MESSAGE COMES BEFORE THE BLOCK THAT TRIGGERED IT, so the report reads as though the error belonged to the following block. A FILE WITH NO TERMINATOR AT ALL EARNS THE MISSING BANNER, the check being previousBlockInfo == null || uncompressedSize != 0. A FILE THAT IS ONLY A TERMINATOR IS ACCEPTED as block #1 with an uncompressed size of 0. A REGULAR GZIP FILE IS REFUSED AT STARTUP by IOUtil.isBlockCompressed, with a message naming both possibilities, and an uncompressed file takes the same path. AND A TRUNCATED BLOCK IS AN IOException WRAPPED IN A UserException, so the report written so far is kept and the run still fails.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PrintBgzfBlockInformationDump",
+          "golden": null,
+          "why": "Nine runs over eight files, each travelling as base64: a well formed file of two blocks and a terminator, the same with the terminator dropped, two well formed files glued so a terminator sits in the middle, three glued so the summary has two numbers to join, a file that is only a terminator, a regular gzip file, an uncompressed file, a file whose last block is cut in half, and a path that does not exist."
+        }
+      ]
     }
   ],
   "probes": []
