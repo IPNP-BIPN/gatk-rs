@@ -5123,7 +5123,7 @@
     },
     {
       "id": "condense-depth-evidence",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Adjacent depth bins merged",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5136,8 +5136,8 @@
       "cases": [
         {
           "dump": "CondenseDepthEvidenceDump",
-          "golden": null,
-          "why": "Nine runs over one file of fourteen bins: ten adjacent hundred-base bins, a one-base gap, two more, then a contig change and two more. The runs are the defaults, a maximum that divides the bins evenly and one that does not, a minimum that drops the short runs, both at once, a file of one bin kept and the same dropped, a minimum above the maximum, and an output named for another feature type."
+          "golden": "crates/gatk-tools/tests/data/condense_depth_evidence.txt.gz",
+          "why": "Nine runs over one file of fourteen bins: ten adjacent hundred-base bins, a one-base gap, two more, then a contig change and two more. The runs are the defaults, a maximum that divides the bins evenly and one that does not, a minimum that drops the short runs, both at once, a file of one bin kept and the same dropped, a minimum above the maximum, and an output named for another feature type. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32518248413, and byte for byte what this laptop produced."
         }
       ]
     }
