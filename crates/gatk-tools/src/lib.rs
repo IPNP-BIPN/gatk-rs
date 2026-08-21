@@ -75,6 +75,7 @@ pub mod print_reads;
 pub mod print_reads_header;
 pub mod read_anonymizer;
 pub mod read_walker;
+pub mod reference_block_concordance;
 pub mod reference_walker;
 pub mod remove_nearby_indels;
 pub mod rename_sample_in_vcf;
