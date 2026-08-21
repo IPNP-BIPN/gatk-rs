@@ -4839,6 +4839,26 @@
           "why": "Eight runs, each carrying its input and its dictionary: both contigs named, the same two reversed, a dictionary missing one of them, one naming a contig the file never mentions, one carrying the M5, UR and AS fields a real .dict has, an input with no contig lines, a dictionary with no sequences at all, and a file with no records. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32426935815, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "vcf-to-interval-list",
+      "status": "golden-pending",
+      "title": "A VCF turned into a Picard interval list",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VcfToIntervalList"
+      ],
+      "why": "THE MERGER IS A STREAM AND NEVER SORTS, so an input whose records are out of order comes out out of order and two overlapping records separated by a third do not merge. ABUTTING INTERVALS MERGE, combineAbuttingIntervals being true, while intervals one base apart do not. AN UNNAMED RECORD IS interval-<n> AND THE COUNTER ONLY COUNTS UNNAMED ONES, so it is not the record's position in the file, AND THE COUNTER RUNS AFTER THE FILTERING, so dropping a filtered record renumbers every unnamed interval after it. THE MERGED NAME IS A LinkedHashSet JOINED WITH A PIPE, so a name shared by two merged records appears once. INCLUDE_FILTERED CHANGES WHICH INTERVALS MERGE, not merely which are present: a filtered record between two others is the bridge that joins them. A FILTER OF PASS IS NOT A FILTER. THE END IS getAttributeAsInt(END, vc.getEnd()). EVERY INTERVAL IS BUILT WITH negative=false, so the strand column is always +. AND THE HEADER IS new SAMFileHeader(getSequenceDictionary()), WHICH IS NULL WHEN THE FILE DECLARES NO CONTIGS, so the codec fails on the null dictionary rather than the tool refusing anything.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VcfToIntervalListDump",
+          "golden": null,
+          "why": "Six runs over one file of eighteen records covering each behaviour: named and unnamed records, a deletion overlapping the record inside it, an abutting pair and a pair one base apart, an UNNAMED filtered record before an unnamed one so that including it renumbers everything after, a filtered record bridging two others, a PASS filter, a symbolic ALT with END, two records sharing a name, an unnamed one merged with a named one, and a contig change. The runs are the defaults, INCLUDE_FILTERED, an unsorted file, a file with no records, a header with no contigs, and USE_FIRST last because VARIANT_ID_METHOD is static."
+        }
+      ]
     }
   ],
   "probes": []
