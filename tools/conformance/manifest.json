@@ -4882,7 +4882,7 @@
     },
     {
       "id": "vcf-format-converter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "A vcf rewritten in the format its name asks for",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -4895,8 +4895,8 @@
       "cases": [
         {
           "dump": "VcfFormatConverterDump",
-          "golden": null,
-          "why": "Nine runs over one two-sample file of four records, whose header lines are deliberately out of the writer's order and whose records carry a phased genotype, a no-call, two alternates and a symbolic allele: an indexed vcf to a vcf, the same file with no index with the requirement on and off, a file with no contig lines with the index on and off, a file with no records, block compressed output recorded as the text it decompresses to, binary output recorded as a digest and a length, and the round trip back from it."
+          "golden": "crates/gatk-tools/tests/data/vcf_format_converter.txt.gz",
+          "why": "Nine runs over one two-sample file of four records, whose header lines are deliberately out of the writer's order and whose records carry a phased genotype, a no-call, two alternates and a symbolic allele: an indexed vcf to a vcf, the same file with no index with the requirement on and off, a file with no contig lines with the index on and off, a file with no records, block compressed output recorded as the text it decompresses to, binary output recorded as a digest and a length, and the round trip back from it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32462370522, and byte for byte what this laptop produced."
         }
       ]
     }
