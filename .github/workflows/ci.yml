@@ -336,12 +336,8 @@ jobs:
             suites: "split-vcfs sort-vcf merge-vcfs fix-vcf-header filter-vcf"
           - group: oracle-backed
             index: "41/41"
-            slug: "picard-update-vcf-dictionary-vcf-to-interval-list-picard-gather-vcfs"
-            suites: "picard-update-vcf-dictionary vcf-to-interval-list picard-gather-vcfs"
-          - group: golden-pending
-            index: "1/1"
-            slug: "vcf-format-converter"
-            suites: "vcf-format-converter"
+            slug: "picard-update-vcf-dictionary-vcf-to-interval-list-picard-gather-vcfs-vcf-format-converter"
+            suites: "picard-update-vcf-dictionary vcf-to-interval-list picard-gather-vcfs vcf-format-converter"
     steps:
       - uses: actions/checkout@v4
 
