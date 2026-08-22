@@ -89,6 +89,7 @@ pub mod sam_output;
 pub mod select_variants;
 pub mod set_nm_md_and_uq_tags;
 pub mod shift_fasta;
+pub mod site_depth_to_baf;
 pub mod sort_vcf;
 pub mod split_intervals;
 pub mod split_n_cigar_reads;
