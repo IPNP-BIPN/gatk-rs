@@ -5221,6 +5221,26 @@
           "why": "Twelve runs over mitochondrial VCFs: three unfiltered low sites and then four, four with one already filtered, the same file marked PASS rather than dot, an allowance of zero, a moved threshold, fractions exactly at the threshold, an AF that is a dot and a missing entry inside a multi-valued AF, a multiallelic record with one low alternate, a genotype with no AF at all, and a record with no AS_FilterStatus to merge into. The GATKCommandLine header line is stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32587675591, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "merge-mutect2-mc3",
+      "status": "golden-pending",
+      "title": "Mutect2 calls merged into the MC3 call set",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MergeMutect2CallsWithMC3"
+      ],
+      "why": "EACH CONCORDANCE STATE WRITES A DIFFERENT RECORD and one writes nothing at all, a FILTERED_TRUE_NEGATIVE being skipped outright so an eval-only filtered call disappears without a trace. A FALSE POSITIVE IS REBUILT FROM SCRATCH, so every INFO field, the ID, the QUAL and the FILTER column of the M2 record are dropped and only CENTERS=M2 survives. A TRUE POSITIVE AND A FILTERED FALSE NEGATIVE KEEP THE MC3 RECORD WHOLE and only add to it, so MC3's annotations are authoritative and M2's are discarded. CENTERS IS APPENDED TO, not replaced, but only by the three states that add it: a FALSE NEGATIVE is emitted unchanged except for its genotype and never learns that M2 looked at it. THE GENOTYPE'S PLOIDY IS THE NUMBER OF ALLELES AT THE SITE, so a multiallelic false positive comes out 0/1/2. AN M2 GENOTYPE WITHOUT AD LEAVES THE OUTPUT GENOTYPE WITHOUT ONE rather than throwing or writing zeroes. THE GENOTYPE'S ALLELES COME FROM getTruthIfPresentElseEval. THE ALLELE DEPTHS COME FROM M2 WHEN M2 IS THERE and from MC3's NREF and NALT otherwise, each defaulting to zero. THE OUTPUT CARRIES ONE SAMPLE, named by the EVAL header's tumor_sample line, and an eval header without that line is a NullPointerException rather than a message. THE HEADER IS THE TRUTH'S metadata plus the standard GT and AD format lines, the tool's own lines and M2_FILTERS, so the eval header's INFO lines never reach the output. AND M2_FILTERS IS WRITTEN ONLY FOR A FILTERED FALSE NEGATIVE.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MergeMutect2WithMC3Dump",
+          "golden": null,
+          "why": "Four runs: one pair of VCFs reaching all five concordance states with the variations that matter inside each, including an MC3-only record with neither NREF nor NALT, an M2 genotype with no AD, a multiallelic M2 record that contains the MC3 alternate and one that does not, and an eval header that never names the tumour sample. The GATKCommandLine and source header lines are stripped."
+        }
+      ]
     }
   ],
   "probes": []
