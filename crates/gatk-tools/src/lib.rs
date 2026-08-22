@@ -41,6 +41,7 @@ pub mod count_reads;
 pub mod count_variants;
 pub mod counting_walkers;
 pub mod denoise_read_counts;
+pub mod downsample_by_duplicate_set;
 pub mod dump_tabix_index;
 pub mod evaluate_info_field_concordance;
 pub mod fasta_alternate_reference_maker;
