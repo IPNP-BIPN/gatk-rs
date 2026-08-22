@@ -5244,7 +5244,7 @@
     },
     {
       "id": "downsample-by-duplicate-set",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Whole molecules dropped rather than reads",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5257,8 +5257,8 @@
       "cases": [
         {
           "dump": "DownsampleByDuplicateSetDump",
-          "golden": null,
-          "why": "Eleven runs over UMI-grouped BAMs: four fractions over ten two-read molecules, the same ten with a three-read molecule in front and again with one at the end, a file of a single read, each of the two minimums, a molecule number that goes backwards, and an unmapped read inside a molecule. The deflater factory is pinned and recorded, every BAM travels as text, and the @PG lines are stripped."
+          "golden": "crates/gatk-tools/tests/data/downsample_by_duplicate_set.txt.gz",
+          "why": "Eleven runs over UMI-grouped BAMs: four fractions over ten two-read molecules, the same ten with a three-read molecule in front and again with one at the end, a file of a single read, each of the two minimums, a molecule number that goes backwards, and an unmapped read inside a molecule. The deflater factory is pinned and recorded, every BAM travels as text, and the @PG lines are stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32591882957, and byte for byte what this laptop produced."
         }
       ]
     }
