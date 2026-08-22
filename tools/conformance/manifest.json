@@ -16,7 +16,8 @@
   },
   "default_java_props": [
     "-Duser.language=en",
-    "-Duser.country=US"
+    "-Duser.country=US",
+    "-Dsamjdk.use_libdeflate=false"
   ],
   "suites": [
     {
