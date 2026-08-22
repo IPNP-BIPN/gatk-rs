@@ -21,6 +21,10 @@ Ported from GATK `4.6.2.0`, commit `76edc75c26504da94bbaee66584e107e76ee15de`, w
 All three ports in this program use those exact pins, so they are mutually coherent by
 construction.
 
+GATK 4.7.0.0 (htsjdk 5.0.0, Picard 3.5.0) was released on 2026-08-18, and the target deliberately
+stays at 4.6.2.0: 216 suites are oracle-backed against it, and the three ports move together or
+not at all. The delta, and the order the move has to happen in, are recorded in ROADMAP.md.
+
 ## Origin
 
 This grows out of [broadinstitute/gatk#9384](https://github.com/broadinstitute/gatk/pull/9384)
