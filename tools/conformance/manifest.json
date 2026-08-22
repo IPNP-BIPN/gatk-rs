@@ -5161,6 +5161,26 @@
           "why": "Ten runs over one fifteen-row depth file at six loci: three clean hets at one, a single sample at another, a shallow sample and a far-from-het sample at a third, three whose fractions are far apart at a fourth, three whose median is 0.6 at a fifth and three whose spread fails the deviation limit at a sixth. The runs move the het probability up and down, the depth floor up, the deviation limit up, take the two low-floor runs where the median adjustment and the deviation drop are both visible, then give a ref that is not a base, a sites file that runs out early, and one that names a locus the depths do not. The evidence files carry no dictionary, so every run is handed one. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32526412822, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "multi-feature-walker",
+      "status": "golden-pending",
+      "title": "Several locus-sorted feature files merged",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ExampleMultiFeatureWalker"
+      ],
+      "why": "THE MERGE IS A PriorityQueue, WHICH IS A BINARY HEAP AND NOT STABLE: three files each holding the same interval come out in the order 1, 3, 2. THE INPUTS ARE ITERATED AS A Set, FeatureManager.getAllInputs(), so even the insertion order is not the command line's. THE COMPARISON IS CONTIG INDEX, THEN START, THEN END, and the index comes from the dictionary, so the dictionary's order is the file order and the shorter of two features sharing a start comes first. A CONTIG ABSENT FROM THE DICTIONARY HAS INDEX -1 AND SORTS BEFORE EVERY NAMED CONTIG, so a file holding chr1 then chr2 under a dictionary naming chr1 and chr3 is reported as 'inputs are not sorted at chr2:101': the file is sorted, the dictionary is incomplete, and the diagnostic says neither. THAT PATH NEEDS AN INPUT THAT ALSO HOLDS A NAMED CONTIG, since with no overlap the run is refused earlier as IncompatibleSequenceDictionaries. THE SORT CHECK IS PER INPUT AND FIRES LATE, next() comparing the replacement drawn from the same input against the entry just returned, AND IT IS UNREACHABLE THROUGH AN INDEXED FILE because an unsorted file cannot be indexed at all. THE MOST COMPREHENSIVE DICTIONARY WINS and the smaller must be a subset in the same relative order, a missing contig and a reordered one each being a UserException naming both sources. AND NO DICTIONARY AT ALL IS REFUSED, since a .rd.txt header carries sample names and a null dictionary.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MultiFeatureWalkerDump",
+          "golden": null,
+          "why": "Ten runs over one-, two- and three-file sets of DepthEvidence: alternating loci, two records that are the same interval, three that are, the same start with different ends, three contigs in dictionary order, a contig the dictionary does not name at all, one it names beside one it does not, an unsorted file offered indexed and again unindexed, no dictionary, and two dictionaries that disagree, once by a missing contig and once by their order. The tool prints every feature it is handed, so the merge order is the output."
+        }
+      ]
     }
   ],
   "probes": []
