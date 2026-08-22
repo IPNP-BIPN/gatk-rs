@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 131 | 42.1% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 132 | 42.4% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 167 | 53.7% |
 | **total** | **311** | |
@@ -143,7 +143,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | not measured |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |
-| `MergeMutect2CallsWithMC3` | unclassified | golden-pending | merge-mutect2-mc3 | 1 | not measured |
+| `MergeMutect2CallsWithMC3` | unclassified | oracle-backed | merge-mutect2-mc3 | 1 | not measured |
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
