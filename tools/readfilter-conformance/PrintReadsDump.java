@@ -52,6 +52,7 @@
 
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMProgramRecord;
+import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SamReader;
 import htsjdk.samtools.SamReaderFactory;
 import htsjdk.samtools.ValidationStringency;
@@ -148,5 +149,24 @@ public class PrintReadsDump {
 
     static String base64(final Path path) throws Exception {
         return Base64.getEncoder().encodeToString(Files.readAllBytes(path));
+    }
+
+    /**
+     * One record as a SAM line, terminated by exactly one newline whatever htsjdk does.
+     *
+     * `SAMRecord.getSAMString()` returned a line ENDING IN A NEWLINE up to htsjdk 4.2.0 and returns
+     * one WITHOUT it from 5.0.0, where `getSAMString` was rerouted to a new
+     * `SAMTextWriter.writeAlignmentNoNewline`. The 5.0.0 release notes announce the change to
+     * `SAMRecord.toString()` and say nothing about this one, so a dump that concatenates records
+     * silently produces one long line instead of many, and a dump that escapes a single record
+     * silently loses its trailing `\n`.
+     *
+     * That is a property of the measuring instrument, not of the tool being measured, so it is
+     * removed rather than recorded: every dump asks for its line here and gets the same text under
+     * either htsjdk.
+     */
+    static String samLine(final SAMRecord record) {
+        final String line = record.getSAMString();
+        return line.endsWith("\n") ? line : line + "\n";
     }
 }

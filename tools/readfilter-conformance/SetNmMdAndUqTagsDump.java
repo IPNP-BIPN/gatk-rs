@@ -207,7 +207,7 @@ public class SetNmMdAndUqTagsDump {
                 .validationStringency(htsjdk.samtools.ValidationStringency.SILENT)
                 .open(new File(bam.toString()))) {
             for (final SAMRecord record : reader) {
-                text.append(record.getSAMString());
+                text.append(PrintReadsDump.samLine(record));
             }
         } catch (final Exception e) {
             text.append("error: ").append(e);
