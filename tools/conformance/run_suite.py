@@ -9,6 +9,12 @@ in CI is a real difference in the environment rather than a difference in how it
     python3 tools/conformance/run_suite.py --probe rnaseq-overlap-order
     python3 tools/conformance/run_suite.py --list
 
+`--oracle-image` runs a suite against another image than the manifest's. It exists for one job:
+surveying a candidate reference version before anything is migrated to it, by running the goldens
+we already have against the newer oracle and reading off which ones move. A suite that fails under
+an overridden image is not a regression, it is a measurement, so the override is printed on every
+run and refuses to be silent.
+
 The oracle image must exist; build it with
 
     docker build --platform linux/amd64 -t picard-rs-oracle:3.4.0 tools/oracle
@@ -221,9 +227,22 @@ def main(argv):
     )
     ap.add_argument("--probe")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument(
+        "--oracle-image",
+        help="run against this image instead of the manifest's. For surveying a candidate "
+        "reference version: a failure here is a measurement, not a regression.",
+    )
     args = ap.parse_args(argv)
 
     manifest = comparator.load_manifest(args.manifest)
+    if args.oracle_image:
+        print(
+            f"!! oracle overridden: {manifest['oracle']['image']} -> {args.oracle_image}.\n"
+            f"!! Differences below are measurements of that image, not regressions, and nothing\n"
+            f"!! produced under an overridden oracle may be committed as a golden.",
+            flush=True,
+        )
+        manifest["oracle"] = dict(manifest["oracle"], image=args.oracle_image)
 
     if args.list:
         for suite in manifest["suites"]:
