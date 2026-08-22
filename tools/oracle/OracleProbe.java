@@ -17,6 +17,13 @@
  *     fixes the argument parser to Barclay rather than Picard's legacy syntax. An image whose
  *     wrapper cannot run would still be able to produce goldens through the jar directly, under a
  *     different parser, and nothing downstream would notice.
+ *   - libdeflate. From htsjdk 5.0.0 the plain `new DeflaterFactory()` is no longer the JDK
+ *     deflater: `makeDeflater` returns a `LibdeflateDeflater` whenever `Defaults.USE_LIBDEFLATE`
+ *     is true and the native library loads, and that default is true. So the pin every dump
+ *     already carries, `setDefaultDeflaterFactory(new DeflaterFactory())`, would go on compiling
+ *     and go on looking like a pin while producing a third flavour of bytes. The property is read
+ *     into a `static final` at class load, so it can only be set on the command line, which is
+ *     where the manifest now sets it: `-Dsamjdk.use_libdeflate=false`.
  *
  * Exits 2 on violation, so the Docker build itself cannot complete in a bad environment.
  */
@@ -95,6 +102,21 @@ public class OracleProbe {
                     + ". It degrades silently, which is why this is checked.");
         }
 
+        // libdeflate, which does not exist before htsjdk 5.0.0 and defaults to ON from 5.0.0.
+        // Read reflectively so one probe covers both: absent is the 4.2.0 answer and is fine,
+        // present and true is a violation, because it silently replaces the deflater the goldens
+        // were taken with.
+        String libdeflate = "absent";
+        try {
+            final Object value = Class.forName("htsjdk.samtools.Defaults")
+                    .getField("USE_LIBDEFLATE").get(null);
+            libdeflate = String.valueOf(value);
+        } catch (final NoSuchFieldException | ClassNotFoundException expectedBefore5) {
+            libdeflate = "absent";
+        } catch (final Throwable t) {
+            failures.add("htsjdk.samtools.Defaults.USE_LIBDEFLATE could not be read: " + t);
+        }
+
         // The vector PairHMM: available or not, and which resolution FASTEST_AVAILABLE would take.
         // Recorded rather than required, because a machine without it is a valid oracle as long as
         // the goldens say so; what is not valid is not knowing.
@@ -141,6 +163,13 @@ public class OracleProbe {
             failures.add("usingIntelDeflater is false. The oracle pins the JDK deflater, but a"
                     + " GKL that cannot load means that pin is untested.");
         }
+        if ("true".equals(libdeflate)) {
+            failures.add("htsjdk.samtools.Defaults.USE_LIBDEFLATE is true. From htsjdk 5.0.0 that"
+                    + " makes `new DeflaterFactory()` return a LibdeflateDeflater, so every dump's"
+                    + " deflater pin would compile, look like a pin, and produce libdeflate bytes."
+                    + " Pass -Dsamjdk.use_libdeflate=false; the property is read at class load and"
+                    + " cannot be set from inside the run.");
+        }
         for (final String flag : REQUIRED_CPU_FLAGS) {
             if (!cpuFlags.isEmpty() && !cpuFlags.contains(flag)) {
                 failures.add("CPU flag '" + flag + "' is absent");
@@ -159,6 +188,7 @@ public class OracleProbe {
         json.append("  \"default_locale\": \"").append(locale).append("\",\n");
         json.append("  \"decimal_sample\": \"").append(decimalSample).append("\",\n");
         json.append("  \"using_intel_deflater\": ").append(gklPresent).append(",\n");
+        json.append("  \"use_libdeflate\": \"").append(libdeflate).append("\",\n");
         json.append("  \"gatk_wrapper\": ").append(wrapperPresent).append(",\n");
         json.append("  \"pairhmm_vector\": \"").append(pairHmmVector.replace("\"", "'")).append("\",\n");
         json.append("  \"pairhmm_resolution\": \"").append(pairHmmResolution).append("\",\n");
