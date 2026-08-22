@@ -348,12 +348,8 @@ jobs:
             suites: "reference-block-concordance calculate-average-combined-annotations print-file-diagnostics compare-references check-reference-compatibility"
           - group: oracle-backed
             index: "44/44"
-            slug: "condense-depth-evidence"
-            suites: "condense-depth-evidence"
-          - group: golden-pending
-            index: "1/1"
-            slug: "site-depth-to-baf"
-            suites: "site-depth-to-baf"
+            slug: "condense-depth-evidence-site-depth-to-baf"
+            suites: "condense-depth-evidence site-depth-to-baf"
     steps:
       - uses: actions/checkout@v4
 

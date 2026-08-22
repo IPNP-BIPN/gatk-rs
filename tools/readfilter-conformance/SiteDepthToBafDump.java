@@ -18,7 +18,8 @@
  *   - A LOCUS WITH TWO OR MORE IS ADJUSTED BY ITS OWN MEDIAN, every value moved by `0.5 - median`,
  *     so the numbers written are not the fractions measured;
  *   - AND THAT WHOLE LOCUS IS DROPPED WHEN THE STANDARD DEVIATION EXCEEDS --max-std, which is the
- *     POPULATION deviation of the surviving values;
+ *     SAMPLE deviation of the surviving values: `MathUtils.RunningAverage.stddev()` is Welford's
+ *     accumulation divided by `n - 1`, not by `n`;
  *   - THE MEDIAN OF AN EVEN COUNT IS THE MEAN OF THE TWO MIDDLE VALUES;
  *   - THE VALUE IS WRITTEN THROUGH `DecimalFormat("#.00")`, so 0.5 comes out `.50` with no leading
  *     zero and a half-way value rounds the way that formatter rounds;

@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 127 | 40.8% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 128 | 41.2% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 171 | 55.0% |
 | **total** | **311** | |
@@ -157,7 +157,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-output, select-variants-samples, select-variants-subset | 5 | not measured |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
-| `SiteDepthtoBAF` | sv-caller | golden-pending | site-depth-to-baf | 1 | not measured |
+| `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | not measured |
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | not measured |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | not measured |
