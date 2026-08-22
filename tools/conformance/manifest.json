@@ -5181,6 +5181,26 @@
           "why": "Ten runs over one-, two- and three-file sets of DepthEvidence: alternating loci, two records that are the same interval, three that are, the same start with different ends, three contigs in dictionary order, a contig the dictionary does not name at all, one it names beside one it does not, an unsorted file offered indexed and again unindexed, no dictionary, and two dictionaries that disagree, once by a missing contig and once by their order. The tool prints every feature it is handed, so the merge order is the output. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32573124567, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "numt-filter",
+      "status": "golden-pending",
+      "title": "Mitochondrial calls filtered by a Poisson depth cutoff",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "NuMTFilterTool"
+      ],
+      "why": "THE TOOL DOES NOTHING AT ITS DEFAULTS: the median autosomal coverage defaults to zero and the cutoff is only computed when both it and the copy count are above zero, so the cutoff stays 0 and no alternate is ever below it. THE CUTOFF IS A POISSON QUANTILE, PoissonDistribution(coverage * copies / 2).inverseCumulativeProbability(0.99). THE FILTER IS APPLIED WHEN NO ALTERNATE ESCAPES IT and an EMPTY list of decisions escapes nothing, so a record with no alternate allele is filtered. THE AS_FilterStatus ATTRIBUTE IS WRITTEN WHENEVER ANY alternate is filtered, so a multiallelic record can carry the attribute without the site filter, AND WRITING IT THROWS WHEN THE RECORD HAS NO AS_FilterStatus TO MERGE INTO, since an absent attribute decodes to an empty list and getMergedASFilterString validates the lengths, so an ordinary VCF makes the tool throw. THE DEPTH COMPARED IS THE MAXIMUM ACROSS SAMPLES, not the sum. A GENOTYPE WITHOUT AD IS SKIPPED, leaving an empty list whose maximum is taken as zero. AN EXISTING ALLELE FILTER IS UNIONED THROUGH A LinkedHashSet, so a repeat is dropped and the SITE placeholder is replaced rather than added to. AND THE HEADER GAINS THE FILTER LINE whether or not anything is filtered.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "NuMTFilterDump",
+          "golden": null,
+          "why": "Twenty-one cutoffs over seven coverages and three copy counts, then seven runs over mitochondrial VCFs: at the defaults, at a coverage that splits the shallow alternates from the deep ones, at zero copies, at a coverage that swallows everything, on records with no AS_FilterStatus both while nothing is filtered and once something is, and on a record with no alternate allele at all. The GATKCommandLine header line is stripped, since it holds the temporary directory and the reference's own version."
+        }
+      ]
     }
   ],
   "probes": []
