@@ -40,7 +40,15 @@ public class OracleProbe {
 
     private static final String EXPECTED_ARCH = "amd64";
     private static final String EXPECTED_JAVA_MAJOR = "17";
-    private static final String EXPECTED_GATK_VERSION = "4.6.2.0";
+    /**
+     * The version this image is meant to be. Taken from the environment the Dockerfile sets rather
+     * than compiled in, so one probe serves the 4.6.2.0 oracle and the 4.7.0.0 one that has to be
+     * built beside it for the move, and neither can be built against the wrong jar without saying
+     * so.
+     */
+    private static final String EXPECTED_GATK_VERSION =
+            System.getenv("ORACLE_GATK_VERSION") == null
+                    ? "4.6.2.0" : System.getenv("ORACLE_GATK_VERSION");
 
     /**
      * htsjdk-rs decision 0011: FormatUtil reaches NumberFormat.getNumberInstance(), which takes the
@@ -182,6 +190,8 @@ public class OracleProbe {
         json.append("  \"java_version\": \"").append(javaVersion).append("\",\n");
         json.append("  \"java_vendor\": \"").append(javaVendor).append("\",\n");
         json.append("  \"gatk_version\": \"").append(gatkVersion).append("\",\n");
+        json.append("  \"gatk_version_expected\": \"").append(EXPECTED_GATK_VERSION)
+            .append("\",\n");
         json.append("  \"picard_classes_present\": ").append(!"unknown".equals(picardVersion))
             .append(",\n");
         json.append("  \"jar_implementation_version\": \"").append(picardVersion).append("\",\n");
