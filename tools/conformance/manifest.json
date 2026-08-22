@@ -5184,7 +5184,7 @@
     },
     {
       "id": "numt-filter",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mitochondrial calls filtered by a Poisson depth cutoff",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5197,8 +5197,8 @@
       "cases": [
         {
           "dump": "NuMTFilterDump",
-          "golden": null,
-          "why": "Twenty-one cutoffs over seven coverages and three copy counts, then seven runs over mitochondrial VCFs: at the defaults, at a coverage that splits the shallow alternates from the deep ones, at zero copies, at a coverage that swallows everything, on records with no AS_FilterStatus both while nothing is filtered and once something is, and on a record with no alternate allele at all. The GATKCommandLine header line is stripped, since it holds the temporary directory and the reference's own version."
+          "golden": "crates/gatk-tools/tests/data/numt_filter.txt.gz",
+          "why": "Twenty-one cutoffs over seven coverages and three copy counts, then seven runs over mitochondrial VCFs: at the defaults, at a coverage that splits the shallow alternates from the deep ones, at zero copies, at a coverage that swallows everything, on records with no AS_FilterStatus both while nothing is filtered and once something is, and on a record with no alternate allele at all. The GATKCommandLine header line is stripped, since it holds the temporary directory and the reference's own version. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32577524109, and byte for byte what this laptop produced."
         }
       ]
     }

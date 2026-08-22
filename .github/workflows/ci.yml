@@ -348,12 +348,8 @@ jobs:
             suites: "reference-block-concordance calculate-average-combined-annotations print-file-diagnostics compare-references check-reference-compatibility"
           - group: oracle-backed
             index: "44/44"
-            slug: "condense-depth-evidence-site-depth-to-baf-multi-feature-walker"
-            suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker"
-          - group: golden-pending
-            index: "1/1"
-            slug: "numt-filter"
-            suites: "numt-filter"
+            slug: "condense-depth-evidence-site-depth-to-baf-multi-feature-walker-numt-filter"
+            suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker numt-filter"
     steps:
       - uses: actions/checkout@v4
 
