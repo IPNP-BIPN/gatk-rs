@@ -66,6 +66,7 @@ pub mod locus_walker;
 pub mod make_sites_only_vcf;
 pub mod merge_vcfs;
 pub mod methylation_type_caller;
+pub mod mt_low_heteroplasmy;
 pub mod multi_pass;
 pub mod mutect_gathers;
 pub mod numt_filter;
