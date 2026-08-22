@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 129 | 41.5% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 130 | 41.8% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 169 | 54.3% |
 | **total** | **311** | |
@@ -144,7 +144,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
-| `NuMTFilterTool` | unclassified | golden-pending | numt-filter | 1 | not measured |
+| `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |

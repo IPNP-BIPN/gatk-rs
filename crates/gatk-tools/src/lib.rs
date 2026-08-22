@@ -68,6 +68,7 @@ pub mod merge_vcfs;
 pub mod methylation_type_caller;
 pub mod multi_pass;
 pub mod mutect_gathers;
+pub mod numt_filter;
 pub mod picard_gather_vcfs;
 pub mod picard_update_vcf_dictionary;
 pub mod pileup;
