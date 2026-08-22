@@ -348,12 +348,8 @@ jobs:
             suites: "reference-block-concordance calculate-average-combined-annotations print-file-diagnostics compare-references check-reference-compatibility"
           - group: oracle-backed
             index: "44/44"
-            slug: "condense-depth-evidence-site-depth-to-baf-multi-feature-walker-numt-filter"
-            suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker numt-filter"
-          - group: golden-pending
-            index: "1/1"
-            slug: "mt-low-heteroplasmy"
-            suites: "mt-low-heteroplasmy"
+            slug: "condense-depth-evidence-site-depth-to-baf-multi-feature-walker-numt-filter-mt-low-heteroplasmy"
+            suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker numt-filter mt-low-heteroplasmy"
     steps:
       - uses: actions/checkout@v4
 
