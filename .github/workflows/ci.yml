@@ -350,6 +350,10 @@ jobs:
             index: "44/44"
             slug: "condense-depth-evidence-site-depth-to-baf-multi-feature-walker-numt-filter-mt-low-heteroplasmy"
             suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker numt-filter mt-low-heteroplasmy"
+          - group: golden-pending
+            index: "1/1"
+            slug: "merge-mutect2-mc3"
+            suites: "merge-mutect2-mc3"
     steps:
       - uses: actions/checkout@v4
 
