@@ -1225,6 +1225,52 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 
 ---
 
+## Milestone C: the runnable command line
+
+**128 of the 311 tools are oracle-backed and none of them can be run from a command line.** There
+is no binary in this repository, and none in htsjdk-rs. picard-rs has two, and their own headers
+say what they are: benchmark harnesses, not "the Barclay command line the program commits to".
+
+That is a deliberate exclusion, not an oversight. G1.8 says the unified CLI dispatcher stays out
+of scope, because what a conformance suite needs is the tool's logic and not its front door. The
+measurement was always the point, and the measurement never needed a binary.
+
+It needs one now, and the reason is not comfort. `docs/STATUS.md`, about argument coverage:
+
+> `not measured` means the array has never been run against a port binary, which is still true of
+> most tools here.
+
+The t-wise covering arrays run against the reference and answer nothing about the port, because
+there is nothing to run them against. Two tools of the 44 with a suite are measured on both sides,
+and both read 0%. Milestone V.5 cannot move past that, and neither can the per-tool validation
+reports, whose argument-coverage column is the same number.
+
+So "128 tools ported" today means "128 tools whose measured behaviour matches the reference on the
+cases the dumps exercise". It does not mean any of them runs, and it does not mean any of them
+agrees with the reference across its argument surface. This milestone is what turns the first
+sentence into the second.
+
+- [ ] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
+      shape the bit-identity claim is defined against
+- [ ] **C.2 per-tool argument declarations** on the ported Barclay value model. The hard half is
+      done: `Definition`, `ClassDecl`, `Parser` and the jopt-simple grammar under them, measured
+      over 368 rows and 41 command lines. What no tool has is its own arguments
+- [ ] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
+      is handed a whole file already in memory and `write` returns a `String`, which is right for a
+      suite comparing whole outputs against a golden and not enough to run
+- [ ] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. It is a
+      rendering of the same annotations, with its own ordering and wrapping, so it is
+      byte-comparable like anything else
+- [ ] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
+      and what unblocks V.5
+
+The first tool end to end is small, because the logic and the parser both exist and only the glue
+is missing. The remaining 127 are mechanical but not free, and the honest way to size them is to
+do one, measure it, and multiply. Then the rest by archetype, since tools of one archetype share
+both their argument shape and their plumbing.
+
+---
+
 ## The reference has moved on, and this one deliberately has not
 
 GATK [4.7.0.0](https://github.com/broadinstitute/gatk/releases/tag/4.7.0.0) was released on
@@ -1265,6 +1311,10 @@ assumed to still hold.
    `java.lang.Math`, whose remaining divergent functions can only be made exact by transcribing
    GPL2 source, so that target is unreachable by construction (htsjdk-rs decision 0023).
 5. Then the **callers** (G3), then the **hard problems** (X).
+5b. **Milestone C**, the runnable command line, is off the critical path for byte identity and on
+   it for *evidence*: without a port binary the covering arrays measure one side of the comparison
+   only. One tool end to end, early, is worth more than the same work later, because it is what
+   sizes the remaining 127.
 6. **CRAM** and **GKL-exact deflate** proceed in parallel, being self-contained in htsjdk-rs.
 7. **GPU** (Milestone GPU) is off the critical path by construction: it accelerates paths that are
    already byte-identical, and a kernel that cannot match the CPU bytes is not merged.
