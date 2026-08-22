@@ -5204,7 +5204,7 @@
     },
     {
       "id": "mt-low-heteroplasmy",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Low-heteroplasmy calls filtered, but only in bulk",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5217,8 +5217,8 @@
       "cases": [
         {
           "dump": "MTLowHeteroplasmyDump",
-          "golden": null,
-          "why": "Twelve runs over mitochondrial VCFs: three unfiltered low sites and then four, four with one already filtered, the same file marked PASS rather than dot, an allowance of zero, a moved threshold, fractions exactly at the threshold, an AF that is a dot and a missing entry inside a multi-valued AF, a multiallelic record with one low alternate, a genotype with no AF at all, and a record with no AS_FilterStatus to merge into. The GATKCommandLine header line is stripped."
+          "golden": "crates/gatk-tools/tests/data/mt_low_heteroplasmy.txt.gz",
+          "why": "Twelve runs over mitochondrial VCFs: three unfiltered low sites and then four, four with one already filtered, the same file marked PASS rather than dot, an allowance of zero, a moved threshold, fractions exactly at the threshold, an AF that is a dot and a missing entry inside a multi-valued AF, a multiallelic record with one low alternate, a genotype with no AF at all, and a record with no AS_FilterStatus to merge into. The GATKCommandLine header line is stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32587675591, and byte for byte what this laptop produced."
         }
       ]
     }
