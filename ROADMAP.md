@@ -1220,6 +1220,36 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
       state)
 - [ ] per-tool validation reports (inputs, records, byte-equal file count, argument coverage, t
       level, fuzzer branch coverage, quarantined fields)
+- [ ] the reference version moves to GATK 4.7.0.0, htsjdk 5.0.0 and Picard 3.5.0, once G2 and P
+      are closed (see below)
+
+---
+
+## The reference has moved on, and this one deliberately has not
+
+GATK [4.7.0.0](https://github.com/broadinstitute/gatk/releases/tag/4.7.0.0) was released on
+2026-08-18. It pins **htsjdk 5.0.0**, **Picard 3.5.0**, GKL 0.9.1 and commons-beanutils 1.11.0.
+
+**The target stays at 4.6.2.0 until G2 and P are closed.** 216 suites are oracle-backed against
+4.6.2.0, and moving the target does not adjust them, it re-opens them: every golden has to be
+re-measured on a new oracle and either survives the bump or is replaced with the difference
+explained. The three ports are also coherent only because they name one set of pins, and htsjdk
+4.2.0 to 5.0.0 is a major bump, so htsjdk-rs would have to land first. Finishing against a frozen
+target and moving once is cheaper than chasing a moving one.
+
+What will be waiting, in short. The full delta, per pull request, is in the tracking issue.
+
+| Where | What changes |
+|---|---|
+| GATK 4.7.0.0 | one new tool, `ConvertCountsToDepthFile`, so the inventory's 311 becomes 312; behaviour changes in `SVConcordance`, `SVStratify`, `SVAnnotate`, `PrintSVEvidence`, `CollectSVEvidence`, `HaplotypeCaller`, `GenotypeGVCFs` and `Funcotator`, all still open; `--output-cram-version`, defaulting to 3.1 |
+| htsjdk 5.0.0 | `jlibdeflate` becomes the default DEFLATE engine, so every BGZF byte depends on a pinning that must be re-verified; CRAM 3.1 write support with a trial-compression codec choice; `SAMRecord.toString()` returns the full SAM line; three fixed bugs that this port reproduced faithfully and would now have to stop reproducing |
+| Picard 3.5.0 | `MarkDuplicates` physical location moves from `short` to `int`, changing optical-duplicate counts; `FilterVcf` plumbs `CREATE_INDEX`; fixes in `RevertSam`, `CollectRnaSeqMetrics`, `MergeBamAlignment` and `CrosscheckFingerprints` |
+
+The deflater line is the one to watch. The dumps already pin the factory and print
+`deflater\t<class>` into every golden, which is the guard put there after a Picard call silently
+replaced the factory and the goldens after it were GKL bytes. It is what makes this bump
+survivable at all, and on the move it must be re-verified against the new default rather than
+assumed to still hold.
 
 ---
 
