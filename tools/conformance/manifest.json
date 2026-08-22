@@ -5201,6 +5201,26 @@
           "why": "Twenty-one cutoffs over seven coverages and three copy counts, then seven runs over mitochondrial VCFs: at the defaults, at a coverage that splits the shallow alternates from the deep ones, at zero copies, at a coverage that swallows everything, on records with no AS_FilterStatus both while nothing is filtered and once something is, and on a record with no alternate allele at all. The GATKCommandLine header line is stripped, since it holds the temporary directory and the reference's own version. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32577524109, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "mt-low-heteroplasmy",
+      "status": "golden-pending",
+      "title": "Low-heteroplasmy calls filtered, but only in bulk",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "MTLowHeteroplasmyFilterTool"
+      ],
+      "why": "THE FILTER IS ALL OR NOTHING ACROSS THE WHOLE FILE: the first pass counts the UNFILTERED low-heteroplasmy sites and the second filters every low allele only if that count exceeded --max-allowed-low-hets, so a file with three comes out untouched and a file with four comes out with all four filtered, and one record's fate is decided by the others. THE COUNT IS OF SITES, NOT OF ALLELES. A SITE THAT IS ALREADY FILTERED DOES NOT COUNT, so adding a filter upstream can keep the whole file from being filtered here, AND PASS IS NOT FILTERED EITHER since htsjdk asks whether the filter set is non-empty. THE THRESHOLD IS STRICT, so a fraction of exactly 0.1 is not low at the default, AND --low-het-threshold DOES NOTHING: the field is declared private final with a constant initialiser, so javac folds every read into the literal and whatever Barclay writes is never looked at, which a run at 0.6 over fractions of 0.05 and 0.5 proves by filtering only the 0.05 ones. The control is maxAllowedLowHets, declared without final in the same class, which works. THE FIRST PASS READS EVERY GENOTYPE WITHOUT A PRECONDITION while the second reads only those that have an allele fraction. AF=. IS AN ABSENT ATTRIBUTE RATHER THAN A MISSING VALUE and takes the null default, so the first pass throws a NullPointerException on it exactly as it does for a genotype with no AF field; the Double.MAX_VALUE substitution is for a missing entry WITHIN a multi-valued array, AF=0.05,. , whose second alternate is never low. THE SECOND PASS TAKES THE MAXIMUM ACROSS SAMPLES per alternate allele. AND WRITING THE AS_FilterStatus ATTRIBUTE THROWS when the record has none to merge into, exactly as NuMTFilterTool does.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MTLowHeteroplasmyDump",
+          "golden": null,
+          "why": "Twelve runs over mitochondrial VCFs: three unfiltered low sites and then four, four with one already filtered, the same file marked PASS rather than dot, an allowance of zero, a moved threshold, fractions exactly at the threshold, an AF that is a dot and a missing entry inside a multi-valued AF, a multiallelic record with one low alternate, a genotype with no AF at all, and a record with no AS_FilterStatus to merge into. The GATKCommandLine header line is stripped."
+        }
+      ]
     }
   ],
   "probes": []
