@@ -140,7 +140,7 @@ public class AddCommentsToBamDump {
                 .open(new File(bam.toString()))) {
             text.append(reader.getFileHeader().getSAMString());
             for (final SAMRecord record : reader) {
-                text.append(record.getSAMString());
+                text.append(PrintReadsDump.samLine(record));
             }
         } catch (final Exception e) {
             text.append("error: ").append(e);
