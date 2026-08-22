@@ -5241,6 +5241,26 @@
           "why": "Four runs: one pair of VCFs reaching all five concordance states with the variations that matter inside each, including an MC3-only record with neither NREF nor NALT, an M2 genotype with no AD, a multiallelic M2 record that contains the MC3 alternate and one that does not, and an eval header that never names the tumour sample. The GATKCommandLine and source header lines are stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32589620270, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "downsample-by-duplicate-set",
+      "status": "golden-pending",
+      "title": "Whole molecules dropped rather than reads",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "DownsampleByDuplicateSet"
+      ],
+      "why": "THE LAST DUPLICATE SET OF THE FILE ESCAPES EVERY REJECTION RULE: processLastReadSet calls apply directly and never asks rejectSet, so a trailing set that is too small, or odd, or short on one strand is offered to the tool anyway. A run at --min-reads 4 over ten two-read molecules writes exactly one molecule, the last. A SET WITH AN ODD NUMBER OF READS IS REJECTED AT THE DEFAULTS, size() % 2 == 1 being one of the three rules. A REJECTED SET DOES NOT CONSUME A RANDOM DRAW, the rejection happening before apply, so putting a rejectable molecule at the FRONT of a file leaves every later molecule with the decision it had before: the odd-set-in-front run keeps exactly the molecules keep-half keeps. THE SEED IS FIXED AT 142, so a run is reproducible but the outcome depends entirely on the order the sets arrive in, and the draw is nextDouble() < fractionToKeep, so 1.0 keeps everything and 0.0 nothing while both still draw. THE SETS ARE CUT ON THE MOLECULE NUMBER OF THE MI TAG, the part before the slash, so 0/A and 0/B are ONE set and the suffix only feeds the per-strand minimum. A MOLECULE NUMBER THAT GOES BACKWARDS IS A UserException naming the tag. AND THE WALKER'S READ FILTERS RUN FIRST, so an unmapped read never reaches a set and can change a set's parity in the keeping direction.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "DownsampleByDuplicateSetDump",
+          "golden": null,
+          "why": "Eleven runs over UMI-grouped BAMs: four fractions over ten two-read molecules, the same ten with a three-read molecule in front and again with one at the end, a file of a single read, each of the two minimums, a molecule number that goes backwards, and an unmapped read inside a molecule. The deflater factory is pinned and recorded, every BAM travels as text, and the @PG lines are stripped."
+        }
+      ]
     }
   ],
   "probes": []
