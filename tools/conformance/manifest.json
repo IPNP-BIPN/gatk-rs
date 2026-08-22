@@ -5224,7 +5224,7 @@
     },
     {
       "id": "merge-mutect2-mc3",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2 calls merged into the MC3 call set",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5237,8 +5237,8 @@
       "cases": [
         {
           "dump": "MergeMutect2WithMC3Dump",
-          "golden": null,
-          "why": "Four runs: one pair of VCFs reaching all five concordance states with the variations that matter inside each, including an MC3-only record with neither NREF nor NALT, an M2 genotype with no AD, a multiallelic M2 record that contains the MC3 alternate and one that does not, and an eval header that never names the tumour sample. The GATKCommandLine and source header lines are stripped."
+          "golden": "crates/gatk-tools/tests/data/merge_mutect2_mc3.txt.gz",
+          "why": "Four runs: one pair of VCFs reaching all five concordance states with the variations that matter inside each, including an MC3-only record with neither NREF nor NALT, an M2 genotype with no AD, a multiallelic M2 record that contains the MC3 alternate and one that does not, and an eval header that never names the tumour sample. The GATKCommandLine and source header lines are stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32589620270, and byte for byte what this laptop produced."
         }
       ]
     }
