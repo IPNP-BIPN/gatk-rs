@@ -62,6 +62,7 @@ pub mod locus_iterator;
 pub mod locus_shards;
 pub mod mann_whitney;
 pub mod math_utils;
+pub mod multi_feature_walker;
 pub mod mutect_engine;
 pub mod mutect_filter_list;
 pub mod mutect_hard_filters;
