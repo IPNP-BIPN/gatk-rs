@@ -6,9 +6,16 @@
 # workflow produces once every other job has reported. Remove that rule and this file stops being
 # a queue and becomes a rubber stamp.
 #
-# Majors are left alone. A major is a decision: it can change an API, a default, or the bytes a
-# golden pins, and the conformance suite passing tells you the bytes held, not that the change was
-# the one you wanted. Everything below a major is what the suite is good at judging.
+# What is left for a human is a bump cargo itself calls incompatible, which is not the same set as
+# `version-update:semver-major`. Under cargo, 0.x.y is breaking on x, so `md-5` 0.10 to 0.11 and
+# `noodles-bam` 0.92 to 0.93 are incompatible releases that Dependabot reports as MINOR. The first
+# version of this file trusted `update-type` and queued `rapidgzip-core` 0.1.0 to 0.3.1 on that
+# basis. It passed, but it passed by luck rather than by policy, so the version pair is compared
+# here instead.
+#
+# A grouped pull request carries no single version pair, and there `update-type` is all there is.
+# That is the one place this file still reasons the way Dependabot labels rather than the way
+# cargo resolves.
 #
 # pull_request_target runs this file as it stands on main and never checks out the branch under
 # test, so the write token here is never handed to code from the pull request.
@@ -31,15 +38,46 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Queue everything but a major
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - id: policy
+        name: Decide whether a green suite is enough to judge this
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          PREVIOUS: ${{ steps.metadata.outputs.previous-version }}
+          NEW: ${{ steps.metadata.outputs.new-version }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+
+          def leading(version):
+              """The component cargo treats as the major one: the first non-zero, and where it sat.
+
+              1.2.3 is led by 1 at index 0, 0.10.6 by 10 at index 1, 0.0.4 by 4 at index 2. Two
+              versions are compatible when that pair is unchanged, which is why every 0.0.x bump
+              counts as breaking and why 0.10 to 0.11 does too.
+              """
+              parts = version.split("+")[0].split("-")[0].split(".")
+              for index, part in enumerate(parts):
+                  if part.isdigit() and int(part):
+                      return index, int(part)
+              return len(parts), 0
+
+
+          previous, new = os.environ["PREVIOUS"], os.environ["NEW"]
+          if previous and new:
+              queue = leading(previous) == leading(new)
+              why = f"{previous} to {new}"
+          else:
+              queue = os.environ["UPDATE_TYPE"] != "version-update:semver-major"
+              why = f"grouped, {os.environ['UPDATE_TYPE'] or 'no update type'}"
+          print(f"{why}: {'queued behind CI' if queue else 'left for a human'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"queue={'true' if queue else 'false'}\n")
+          PY
+
+      - name: Queue it
+        if: steps.policy.outputs.queue == 'true'
         run: gh pr merge --auto --merge --delete-branch "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Say why a major was left alone
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
-        env:
-          NAMES: ${{ steps.metadata.outputs.dependency-names }}
-        run: echo "$NAMES is a major bump, left for a human"
