@@ -5361,6 +5361,26 @@
           "why": "Five runs over hand-written Funcotated VCFs: twenty-two variants against ExAC covering every rule of the four filters and their joined value, six against gnomAD covering the present-dataset rule, one gnomAD frequency that does not parse and therefore stands alone because it takes the run down, one run under hg38 whose keys no longer match, and one VCF with no FUNCOTATION header line at all. Each run is reported by its whole input and its whole output. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32638908432, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "pathseq-build-reference-taxonomy",
+      "status": "golden-pending",
+      "title": "the NCBI taxonomy trimmed to a reference",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PathSeqBuildReferenceTaxonomy"
+      ],
+      "why": "THE MAP THE TOOL WRITES IS KEYED BY THE WHOLE CONTIG NAME, NOT BY THE ACCESSION, whatever the parameter is called: addReferenceAccessionToTaxon is handed the record's name, so an entry looks up as 'ref|NC_BACT.1|' rather than as 'NC_BACT.1', and the accession is only ever the key the catalog is searched with. A REFERENCE NAME IS READ FOR taxid| FIRST AND ref| SECOND, the scan stopping at the first taxid, and a name carrying neither falls back to the FIRST WORD of the first bar-delimited token. A TAXON ID THAT IS NOT AN INTEGER IS A UserException wherever it is read. THE TWO CATALOG FORMATS ARE JUST TWO COLUMN PAIRS, taxon 0 and accession 2 for RefSeq, taxon 6 and accession 1 for GenBank, and the line is split with a LIMIT so everything past the last column needed stays in one field. A LINE WITH TOO FEW COLUMNS IS REFUSED WITH A MESSAGE THAT SAYS GenBank WHATEVER THE FORMAT. AN EMPTY LINE ENDS THE CATALOG SILENTLY, so everything after a blank line is invisible and its accessions are merely reported as not found. ONLY 'scientific name' ROWS OF names.dmp COUNT, and a taxon named there but absent from the reference is still added to the map. nodes.dmp gives every node its rank and parent, leaves the root's parent unset, and names a node it has never seen tax_<id>. A NODE MISSING A NAME, A PARENT OR A RANK IS DROPPED, and so is one unreachable from the root. THE TREE IS THEN TRIMMED TO THE TAXA THAT HOLD CONTIGS AND THEIR ANCESTORS, and a node's length is the TOTAL of every contig that landed on it. --min-non-virus-contig-length DROPS SHORT CONTIGS FROM THE MAP BUT NOT FROM THE TREE, whose lengths still count them, and never drops one whose path contains the virus node 10239. AND NEITHER CATALOG AT ALL IS A UserException before anything is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PathSeqBuildReferenceTaxonomyDump",
+          "golden": null,
+          "why": "Nine runs over one taxonomy of seven nodes and one reference of six contigs named in every form the parser knows: both catalogs, both with a minimum contig length of five hundred, each catalog alone, neither, a catalog truncated by a blank line, a catalog line with too few columns, a reference name whose taxon id is not a number, and a reference whose contigs are in no catalog. The Kryo database is read back and reported as its tree, node by node with parent, rank, name and total length, and as its contig-to-taxon map. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
