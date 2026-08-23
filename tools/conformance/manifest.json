@@ -5281,6 +5281,26 @@
           "why": "Nine runs over DepthEvidence files: two files naming different samples over the same bins, the same two subset to one sample, to a sample neither knows and reordered, two files naming the SAME sample at one bin, two files whose bins are disjoint, three files whose sample names are not in alphabetical order, an output whose extension implies another SV feature type, and one whose extension implies no feature type at all. Every run is handed a dictionary, since a .rd.txt header carries sample names and a null dictionary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32631951385, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "print-read-counts",
+      "status": "golden-pending",
+      "title": "depth evidence rewritten as one counts file per sample",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintReadCounts"
+      ],
+      "why": "ONE OUTPUT FILE PER SAMPLE, named by RAW CONCATENATION of outputPrefix, the sample name and '.counts.tsv', so a prefix that does not end in a separator glues onto the sample name. AN .rd.txt HEADER CARRIES SAMPLE NAMES BUT A NULL DICTIONARY, so the run needs --sequence-dictionary and refuses without one, with a message that misspells the argument: 'Supply one with --sequence-dictonary.'. THE OUTPUT IS ONE-BASED WHERE THE INPUT IS ZERO-BASED, the codec adding one to the start on read and the tool writing getStart() rather than re-encoding, so a bin written 0 100 comes back 1 100. THE OUTPUT HEADER IS BUILT, NOT COPIED: a fresh SAMFileHeader over the dictionary plus one read group whose ID is always GATKCopyNumber and whose SM is the sample, then the column line CONTIG START END COUNT, so a .counts.tsv input loses its @PG, its @CO and its read group's own ID, and the dictionary used is its own rather than the one --sequence-dictionary names. A .counts.tsv NAMES ITS SAMPLE THROUGH ITS READ GROUPS, and that refusal happens while the feature reader parses the header, so it reaches the caller WRAPPED TWICE, a GATKException 'Error initializing feature reader for path' over a TribbleException.MalformedFeatureFile 'Unable to parse header with error'. A READ GROUP WITH NO SM NEVER PRODUCES readSampleName's 'does not contain a sample name': the distinct list holds one null, which passes the emptiness test, and the refusal comes later from Utils.nonEmpty as 'The string is null', so that message is unreachable from a header that has read groups at all. --output-file-list WRITES <sample> TAB <filename> WITH THE SAME CONCATENATED NAME. A DUPLICATED COLUMN NAME IN AN .rd.txt HEADER IS NOT REFUSED: two writers open the same path, the list names it twice, and one file survives carrying the second writer's counts. A RECORD WITH FEWER COUNTS THAN THE HEADER HAS SAMPLES IS AN ArrayIndexOutOfBoundsException rather than a UserException, and one with more counts silently drops the extra. WHAT THAT CRASH LEAVES BEHIND IS HALF A HEADER, SAMTextHeaderCodec flushing as it encodes while the tool's own column line dies in the BufferedWriter. -L SUBSETS THE RECORDS BUT NOT THE FILES. AND ANY OTHER FEATURE TYPE IS REFUSED BY FeatureWalker BEFORE THE TOOL RUNS.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PrintReadCountsDump",
+          "golden": null,
+          "why": "Thirteen runs: two samples over three bins, the same input with no dictionary, a prefix with no trailing separator, a single sample, the same column name twice, a record with fewer counts than samples and one with more, an interval that keeps one contig, a counts file round trip whose header carries an @RG of another ID plus @PG and @CO, a counts file with two disagreeing read groups, one with a read group naming no sample, one whose column header precedes its SAM header, and a BAF evidence file. Every output file is printed whole, so the built header, the one-based coordinates and the half-written header a crash leaves behind are all in the golden. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
