@@ -5381,6 +5381,26 @@
           "why": "Nine runs over one taxonomy of seven nodes and one reference of six contigs named in every form the parser knows: both catalogs, both with a minimum contig length of five hundred, each catalog alone, neither, a catalog truncated by a blank line, a catalog line with too few columns, a reference name whose taxon id is not a number, and a reference whose contigs are in no catalog. The Kryo database is read back and reported as its tree, node by node with parent, rank, name and total length, and as its contig-to-taxon map. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32641778950, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "pathseq-build-kmers",
+      "status": "golden-pending",
+      "title": "a host reference turned into a k-mer set",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PathSeqBuildKmers"
+      ],
+      "why": "A K-MER IS TWO BITS PER BASE, A=0 C=1 G=2 T=3, the first base in the HIGH bits, and the long is the whole of it. THE SET IS CANONICAL: a k-mer whose middle base is G or T is replaced by its reverse complement, which is why the size must be odd, and AN EVEN SIZE IS REFUSED BY canonical() ITSELF rather than by the argument parser, with 'Kmer length must be odd to canonicalize.'. MASKING IS AN AND WITH A LONG BUILT FROM THE MASKED POSITIONS, counted from the START of the k-mer, and it HAPPENS AFTER CANONICALISATION, so which bases a mask clears depends on which strand won. A MASK INDEX OUTSIDE THE K-MER IS REFUSED with the index it was given. ANY BASE THAT IS NOT ACGT RESTARTS THE COUNT, the valid-base counter being set to -1 and then incremented, so an N costs a whole window, while LOWER CASE COUNTS. --kmer-spacing IS APPLIED BY REWINDING THE VALID-BASE COUNTER to kSize minus the spacing. THE SET HOLDS EACH DISTINCT LONG ONCE. A K LONGER THAN EVERY CONTIG PRODUCES NOTHING AND IS THEN REFUSED BY THE SET ITSELF, 'Number of elements must be greater than 0', so no empty set is ever written. AND A BLOOM FILTER ANSWERS THE SAME QUESTIONS with a theoretical false positive probability far below the one asked for, 6.179020492442123E-13 for a request of 0.01 over twenty k-mers.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PathSeqBuildKmersDump",
+          "golden": null,
+          "why": "Ten runs over two short contigs, one plain and one carrying an N and a lower-case run: k of five with no mask, with the middle base masked, with the first and last masked, at spacings of three and five, k of seven, a Bloom filter, an even k, a mask index outside the k-mer, and a k longer than every contig. Each set is reported whole, every k-mer as the long it is stored as and the bases that long spells, in order. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
