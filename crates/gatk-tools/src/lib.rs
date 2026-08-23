@@ -82,6 +82,7 @@ pub mod print_distant_mates;
 pub mod print_file_diagnostics;
 pub mod print_reads;
 pub mod print_reads_header;
+pub mod print_sv_evidence;
 pub mod read_anonymizer;
 pub mod read_walker;
 pub mod reference_block_concordance;
