@@ -5401,6 +5401,26 @@
           "why": "Ten runs over two short contigs, one plain and one carrying an N and a lower-case run: k of five with no mask, with the middle base masked, with the first and last masked, at spacings of three and five, k of seven, a Bloom filter, an even k, a mask index outside the k-mer, and a k longer than every contig. Each set is reported whole, every k-mer as the long it is stored as and the bases that long spells, in order. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32642616657, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "gtf-to-bed",
+      "status": "golden-pending",
+      "title": "a Gencode GTF reduced to one row per gene or transcript",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GtfToBed"
+      ],
+      "why": "THE OUTPUT IS NOT ZERO-BASED: the start written is the GTF's own start, so what is called a BED file is one-based and every coordinate is off by one against every other BED. A GENE'S INTERVAL IS WIDENED BY ITS TRANSCRIPTS, the start taken down and the end taken up, so a gene row can be wider than the gene line the file carried. --sort-by-transcript DOES NOT SORT, IT SELECTS which of the two kinds of row is written; the order is the same either way, and it is the dictionary's CONTIG INDEX, then the START, then the KEY, so two features at one position are separated by their gene or transcript id as a STRING. A gene row is four columns and so is a transcript row, the transcript's fourth being the gene name and the transcript id joined with a COMMA rather than a fifth column. --use-basic-transcript KEEPS ONLY TRANSCRIPTS CARRYING A tag WHOSE VALUE IS basic, and it processes such a transcript ONCE PER MATCHING TAG. AND A TRANSCRIPT IT DROPS NEVER WIDENS ITS GENE, so the GENE rows change with the flag too: a gene whose only wide transcript is not basic comes back to the interval its own line declared. THE DICTIONARY IS REQUIRED, its absence a UserException naming the argument, and a contig the dictionary does not know is refused by the comparator with 'could not get sequence for', which is an IllegalArgumentException rather than a UserException.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GtfToBedDump",
+          "golden": null,
+          "why": "Six runs over one GTF of four genes on two contigs: gene rows, transcript rows, each again with --use-basic-transcript, a run with no dictionary and a run whose dictionary is missing a contig. The first gene's transcript reaches past it at both ends, two genes start at the same position so their order is settled by their ids, and one transcript carries the basic tag twice. Each run is reported by its whole output. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
