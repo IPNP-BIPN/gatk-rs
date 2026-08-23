@@ -5341,6 +5341,26 @@
           "why": "Five runs over a BAM of four read blocks against a forty-base motif repeated: one sample where every branch is reachable, the same reads under two samples where the returns stop the loop, a depth cap low enough to be reached, a median mapping quality low enough to let the low-quality block through, and a base quality one below the default. Each run is reported by every file of its tar.gz, whole, the alt histogram with its columns sorted because their order is an identity hash order and is not reproducible. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32637463498, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "filter-funcotations",
+      "status": "golden-pending",
+      "title": "a Funcotated VCF marked with the rules that match it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FilterFuncotations"
+      ],
+      "why": "A FILTER MATCHES ONLY WHEN EVERY ONE OF ITS RULES DOES, the rules being reduced with logicalAnd and a filter with no rules reducing to false. THE CLINSIG VALUE IS A HashSet OF THE MATCHING NAMES JOINED WITH A COMMA, so its order is the set's own rather than the order the filters were registered in, and the two autosomal recessive filters share one name and contribute one entry between them. A VARIANT THAT MATCHES NOTHING GETS CLINSIG=NONE AND THE FILTER NOT_CLINSIG, one that matches anything is passed. CLINVAR'S SIGNIFICANCE TEST IS AN EXACT STRING MATCH against three values, so a value carrying a qualifier does not match. AN ExAC SUB-POPULATION WITH AN ALLELE NUMBER OF ZERO IS A MAF OF ZERO rather than a division, so a variant never seen in ExAC PASSES the frequency rule, AND SO IS ONE WHOSE COUNTS DO NOT PARSE, the NumberFormatException being caught and turned into zero, and so is one whose allele count has no allele number beside it. ONLY SUB-POPULATIONS WHOSE ALLELE COUNT KEY IS PRESENT ARE CONSIDERED. THE GNOMAD PATH IS NOT THE SAME CODE: a dataset counts as present when it has no FILTER funcotation or when its FILTER says PASS, when neither dataset is present the rule fails whatever the frequencies say, AND A GNOMAD FREQUENCY THAT DOES NOT PARSE IS NOT CAUGHT, unlike ExAC's, so it takes the whole run down. THE LMM FILTER READS ITS FLAG WITH Boolean.valueOf, case-insensitive on 'true' and false for everything else including 'yes' and '1'. THE HOMVAR RULE ASKS THE VARIANT for its hom-var count and fires only for ATP7B and MUTYH. THE HETVAR RULE IS A SECOND PASS: a gene needs MORE THAN ONE het variant before any of them is compound het. AND EVERY KEY THE TOOL LOOKS FOR CARRIES THE GENCODE VERSION OF --ref-version, which is 19 for b37 and hg19 and 27 for hg38, so the same funcotations stop matching under another reference.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FilterFuncotationsDump",
+          "golden": null,
+          "why": "Five runs over hand-written Funcotated VCFs: twenty-two variants against ExAC covering every rule of the four filters and their joined value, six against gnomAD covering the present-dataset rule, one gnomAD frequency that does not parse and therefore stands alone because it takes the run down, one run under hg38 whose keys no longer match, and one VCF with no FUNCOTATION header line at all. Each run is reported by its whole input and its whole output. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
