@@ -61,6 +61,7 @@ pub mod gather_vcfs;
 pub mod get_normal_artifact_data;
 pub mod get_pileup_summaries;
 pub mod get_sample_name;
+pub mod gtf_to_bed;
 pub mod index_feature_file;
 pub mod interval_walker;
 pub mod left_align_and_trim_variants;
