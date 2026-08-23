@@ -1,0 +1,68 @@
+# Dependabot, for the two ecosystems this repository actually resolves: crates.io through
+# Cargo.lock, and the actions .github/workflows/ci.yml names.
+#
+# Both run weekly and grouped, so a quiet week is one pull request per ecosystem rather than one
+# per dependency. Minor and patch updates travel together; a major arrives on its own, because a
+# major is a decision and deserves a diff with nothing else hiding in it.
+#
+# Two things deliberately have no entry here.
+#
+# tools/oracle/Dockerfile is not managed. That container IS the oracle: it holds the reference's
+# own toolchain, and every golden under tools/conformance/ was produced inside it. Bumping it
+# would not be an upgrade, it would invalidate the comparison the whole suite rests on. It moves
+# when the reference version moves, and never otherwise.
+#
+# htsjdk-rs is pinned by revision in Cargo.toml and is ignored below, for the reason the comment
+# there gives: the pin is what keeps the layer underneath from changing under a byte-identity
+# claim. It moves when a port here needs a symbol that landed upstream, which is a port's
+# decision and not a schedule's.
+#
+# The Rust toolchain is out of reach either way: rust-toolchain.toml is not an ecosystem
+# Dependabot reads, and the workflow hands dtolnay/rust-toolchain@master a version written out as
+# a string. Nothing compares the two but a comment, which is a gap this file cannot close.
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      # noodles parses the .fai and the .bai, so a bump of it can move bytes a golden pins. It
+      # gets its own pull request rather than a line inside somebody else's.
+      noodles:
+        patterns:
+          - "noodles-*"
+      cargo:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "noodles-*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Pinned by revision on purpose: see the header.
+      - dependency-name: htsjdk-bam
+      - dependency-name: htsjdk-bgzf
+      - dependency-name: htsjdk-metrics
+      - dependency-name: htsjdk-tribble
+      - dependency-name: htsjdk-vcf
+      - dependency-name: jmath
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
