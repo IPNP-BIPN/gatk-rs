@@ -5364,7 +5364,7 @@
     },
     {
       "id": "pathseq-build-reference-taxonomy",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the NCBI taxonomy trimmed to a reference",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5377,8 +5377,8 @@
       "cases": [
         {
           "dump": "PathSeqBuildReferenceTaxonomyDump",
-          "golden": null,
-          "why": "Nine runs over one taxonomy of seven nodes and one reference of six contigs named in every form the parser knows: both catalogs, both with a minimum contig length of five hundred, each catalog alone, neither, a catalog truncated by a blank line, a catalog line with too few columns, a reference name whose taxon id is not a number, and a reference whose contigs are in no catalog. The Kryo database is read back and reported as its tree, node by node with parent, rank, name and total length, and as its contig-to-taxon map. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/pathseq_taxonomy.txt.gz",
+          "why": "Nine runs over one taxonomy of seven nodes and one reference of six contigs named in every form the parser knows: both catalogs, both with a minimum contig length of five hundred, each catalog alone, neither, a catalog truncated by a blank line, a catalog line with too few columns, a reference name whose taxon id is not a number, and a reference whose contigs are in no catalog. The Kryo database is read back and reported as its tree, node by node with parent, rank, name and total length, and as its contig-to-taxon map. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32641778950, and byte for byte what this laptop produced."
         }
       ]
     }

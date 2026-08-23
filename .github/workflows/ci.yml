@@ -356,12 +356,8 @@ jobs:
             suites: "merge-mutect2-mc3 downsample-by-duplicate-set print-sv-evidence print-read-counts split-cram"
           - group: oracle-backed
             index: "46/46"
-            slug: "collect-f1r2-counts-filter-funcotations"
-            suites: "collect-f1r2-counts filter-funcotations"
-          - group: golden-pending
-            index: "1/1"
-            slug: "pathseq-build-reference-taxonomy"
-            suites: "pathseq-build-reference-taxonomy"
+            slug: "collect-f1r2-counts-filter-funcotations-pathseq-build-reference-taxonomy"
+            suites: "collect-f1r2-counts filter-funcotations pathseq-build-reference-taxonomy"
     steps:
       - uses: actions/checkout@v4
 
