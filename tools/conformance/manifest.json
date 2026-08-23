@@ -5384,7 +5384,7 @@
     },
     {
       "id": "pathseq-build-kmers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a host reference turned into a k-mer set",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5397,8 +5397,8 @@
       "cases": [
         {
           "dump": "PathSeqBuildKmersDump",
-          "golden": null,
-          "why": "Ten runs over two short contigs, one plain and one carrying an N and a lower-case run: k of five with no mask, with the middle base masked, with the first and last masked, at spacings of three and five, k of seven, a Bloom filter, an even k, a mask index outside the k-mer, and a k longer than every contig. Each set is reported whole, every k-mer as the long it is stored as and the bases that long spells, in order. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/pathseq_kmers.txt.gz",
+          "why": "Ten runs over two short contigs, one plain and one carrying an N and a lower-case run: k of five with no mask, with the middle base masked, with the first and last masked, at spacings of three and five, k of seven, a Bloom filter, an even k, a mask index outside the k-mer, and a k longer than every contig. Each set is reported whole, every k-mer as the long it is stored as and the bases that long spells, in order. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32642616657, and byte for byte what this laptop produced."
         }
       ]
     }
