@@ -5344,7 +5344,7 @@
     },
     {
       "id": "filter-funcotations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a Funcotated VCF marked with the rules that match it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5357,8 +5357,8 @@
       "cases": [
         {
           "dump": "FilterFuncotationsDump",
-          "golden": null,
-          "why": "Five runs over hand-written Funcotated VCFs: twenty-two variants against ExAC covering every rule of the four filters and their joined value, six against gnomAD covering the present-dataset rule, one gnomAD frequency that does not parse and therefore stands alone because it takes the run down, one run under hg38 whose keys no longer match, and one VCF with no FUNCOTATION header line at all. Each run is reported by its whole input and its whole output. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/filter_funcotations.txt.gz",
+          "why": "Five runs over hand-written Funcotated VCFs: twenty-two variants against ExAC covering every rule of the four filters and their joined value, six against gnomAD covering the present-dataset rule, one gnomAD frequency that does not parse and therefore stands alone because it takes the run down, one run under hg38 whose keys no longer match, and one VCF with no FUNCOTATION header line at all. Each run is reported by its whole input and its whole output. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32638908432, and byte for byte what this laptop produced."
         }
       ]
     }
