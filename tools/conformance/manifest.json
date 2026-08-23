@@ -5424,7 +5424,7 @@
     },
     {
       "id": "compose-str-table-file",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a reference scanned for short tandem repeats",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5437,8 +5437,8 @@
       "cases": [
         {
           "dump": "ComposeSTRTableFileDump",
-          "golden": null,
-          "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/compose_str_table.txt.gz",
+          "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32665939992, and byte for byte what this laptop produced."
         }
       ]
     }
