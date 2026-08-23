@@ -5301,6 +5301,26 @@
           "why": "Thirteen runs: two samples over three bins, the same input with no dictionary, a prefix with no trailing separator, a single sample, the same column name twice, a record with fewer counts than samples and one with more, an interval that keeps one contig, a counts file round trip whose header carries an @RG of another ID plus @PG and @CO, a counts file with two disagreeing read groups, one with a read group naming no sample, one whose column header precedes its SAM header, and a BAF evidence file. Every output file is printed whole, so the built header, the one-based coordinates and the half-written header a crash leaves behind are all in the golden. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32635137166, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "split-cram",
+      "status": "golden-pending",
+      "title": "a CRAM cut into shards at container boundaries",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SplitCRAM"
+      ],
+      "why": "THE CUT IS AT A CONTAINER BOUNDARY AND THE THRESHOLD IS A MINIMUM, NOT A MAXIMUM: the inner loop tests records < shardRecords BEFORE reading a container and adds its whole record count after, so a shard overshoots by up to one container. The test being strict, a threshold exactly the size of a container still gives one container per shard, and one above it gives two. EVERY SHARD IS A WHOLE CRAM, the CRAM header, a SAM header container and an EOF container written around each group, so a shard reads on its own and every shard repeats the input's header. THE OUTPUT NAME IS String.format ON A TEMPLATE with a counter that starts at zero. A TEMPLATE WITH NO %d IS REFUSED IN onStartup by an IllegalArgumentException rather than a UserException, against the pattern %[0-9]*d, so %04d passes and %-4d does not. --shard-max-output-count DOES NOT LIMIT ANYTHING ABOVE ONE: the counter it is compared with is declared inside the outer loop, reset to zero for every shard and therefore always one when tested, so only the value 1 ever stops the run and 2 and 3 leave all five shards standing. AND AN EMPTY CRAM PRODUCES NO SHARD AT ALL.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SplitCRAMDump",
+          "golden": null,
+          "why": "Eleven runs over one CRAM of four contigs plus unmapped reads, written three reads to a slice and one slice to a container so that it holds five containers of three: a threshold of one, one exactly the size of a container, one above it, one no shard reaches, the maximum output count at one, two and three, a padded template, a template whose width carries a flag, a template with no formatter at all, and an empty CRAM. Each shard is reported by the record count of every container it holds and by the read names it gives back when read, so both where the cut fell and that the shard is a whole CRAM are in the golden. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
