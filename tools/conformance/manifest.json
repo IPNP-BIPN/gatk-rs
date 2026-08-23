@@ -5321,6 +5321,26 @@
           "why": "Eleven runs over one CRAM of four contigs plus unmapped reads, written three reads to a slice and one slice to a container so that it holds five containers of three: a threshold of one, one exactly the size of a container, one above it, one no shard reaches, the maximum output count at one, two and three, a padded template, a template whose width carries a flag, a template with no formatter at all, and an empty CRAM. Each shard is reported by the record count of every container it holds and by the read names it gives back when read, so both where the cut fell and that the shard is a whole CRAM are in the golden. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32635845266, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "collect-f1r2-counts",
+      "status": "golden-pending",
+      "title": "the F1R2 counts the orientation-bias filter is trained on",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CollectF1R2Counts"
+      ],
+      "why": "A SITE GOES TO ONE OF THREE PLACES: a reference site increments a depth histogram, an alt site with exactly one alt read increments a depth-one histogram keyed by context, alt base and orientation, and any other alt site becomes a row of the alt table. THE ALT BASE IS maxElementIndex OVER THE BASE COUNTS WITH THE REFERENCE SET TO -1, so a tie between two alt bases goes to the lower base index, and THE ALT TABLE'S DEPTH COLUMN IS refCount + altCount RATHER THAN THE PILEUP'S DEPTH, so that tied site reports four over a pileup of six and the second alt base counts nowhere. ORIENTATION IS isReverseStrand() != isFirstOfPair(), which for an UNPAIRED read makes a forward read F2R1 and a reverse read F1R2. THE BASE QUALITY TEST IS STRICT: a base at exactly --f1r2-min-bq is excluded from the pileup, so a lone alt base at that quality leaves a reference site behind and one below it turns the same site into a depth-one alt. THE SITE IS SKIPPED WHOLE when its median mapping quality is below --f1r2-median-mq, when more than a hundredth of the pileup is indel, or when the three-base context runs off the reference or holds an N. AND WHEN IT IS SKIPPED FOR ONE SAMPLE IT IS SKIPPED FOR EVERY SAMPLE AFTER IT: the loop over the split pileup RETURNS rather than continuing, and so do the reference-site and one-alt-read branches, so at any site only the samples up to the first one that returns are counted, in the order the split map hands them over, which is a HashMap order over the sample names and not the header's. Over alpha and bravo it is bravo first, and every one of alpha's alt sites is lost because bravo is reference at each of them. DEPTH IS CAPPED AT --f1r2-max-depth before it is counted. EVERY ONE OF THE 64 CONTEXTS IS PRESENT WHETHER OR NOT IT WAS SEEN. THE OUTPUT IS A TAR.GZ of one alt table, one reference histogram and one alt histogram per sample. AND THE ORDER OF THE REFERENCE HISTOGRAMS IS A HashMap ORDER OVER THE 64 CONTEXT STRINGS, which is reproducible, while the alt histograms are keyed by a pair holding an ENUM whose hashCode is an identity hash, so their order is not reproducible at all and the golden carries that file with its columns sorted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CollectF1R2CountsDump",
+          "golden": null,
+          "why": "Five runs over a BAM of four read blocks against a forty-base motif repeated: one sample where every branch is reachable, the same reads under two samples where the returns stop the loop, a depth cap low enough to be reached, a median mapping quality low enough to let the low-quality block through, and a base quality one below the default. Each run is reported by every file of its tar.gz, whole, the alt histogram with its columns sorted because their order is an identity hash order and is not reproducible. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
