@@ -33,6 +33,7 @@ pub mod combine_segment_breakpoints;
 pub mod compare_base_qualities;
 pub mod compare_interval_lists;
 pub mod compare_references;
+pub mod compose_str_table;
 pub mod concordance;
 pub mod condense_depth_evidence;
 pub mod convert_headerless_shard;
