@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 138 | 44.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 139 | 44.7% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 160 | 51.4% |
 | **total** | **311** | |
@@ -150,7 +150,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
-| `PathSeqBuildReferenceTaxonomy` | metagenomics | golden-pending | pathseq-build-reference-taxonomy | 1 | not measured |
+| `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy | 1 | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |
