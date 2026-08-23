@@ -5304,7 +5304,7 @@
     },
     {
       "id": "split-cram",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a CRAM cut into shards at container boundaries",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5317,8 +5317,8 @@
       "cases": [
         {
           "dump": "SplitCRAMDump",
-          "golden": null,
-          "why": "Eleven runs over one CRAM of four contigs plus unmapped reads, written three reads to a slice and one slice to a container so that it holds five containers of three: a threshold of one, one exactly the size of a container, one above it, one no shard reaches, the maximum output count at one, two and three, a padded template, a template whose width carries a flag, a template with no formatter at all, and an empty CRAM. Each shard is reported by the record count of every container it holds and by the read names it gives back when read, so both where the cut fell and that the shard is a whole CRAM are in the golden. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/split_cram.txt.gz",
+          "why": "Eleven runs over one CRAM of four contigs plus unmapped reads, written three reads to a slice and one slice to a container so that it holds five containers of three: a threshold of one, one exactly the size of a container, one above it, one no shard reaches, the maximum output count at one, two and three, a padded template, a template whose width carries a flag, a template with no formatter at all, and an empty CRAM. Each shard is reported by the record count of every container it holds and by the read names it gives back when read, so both where the cut fell and that the shard is a whole CRAM are in the golden. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32635845266, and byte for byte what this laptop produced."
         }
       ]
     }
