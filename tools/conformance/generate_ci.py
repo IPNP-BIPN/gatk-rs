@@ -206,6 +206,60 @@ def repin(rendered, current):
     )
 
 
+GATE = "ci"
+
+# A job id: two spaces, a name, a colon, nothing else on the line. Job keys sit at four spaces, so
+# this cannot match one of them.
+JOB_ID = re.compile(r"^  (?P<id>[a-z][\w-]*):$", re.M)
+
+
+def gate_job(rendered):
+    """Append the one check that stands for the whole run.
+
+    The oracle matrix names a check per suite, so a required-checks list written by hand would go
+    stale the moment a suite is added, and a branch rule built on it would be guarding a set of
+    jobs that no longer exists. This job needs every other one and is generated alongside them,
+    which is what keeps the list honest with nobody maintaining it.
+    """
+    body = rendered.split("\njobs:\n", 1)[1]
+    ids = [match.group("id") for match in JOB_ID.finditer(body) if match.group("id") != GATE]
+    needs = "\n".join(f"      - {job}" for job in ids)
+    return rendered.rstrip("\n") + f"""
+
+  {GATE}:
+    name: CI complete
+    # The single context main's ruleset requires, and the single context an automatic merge waits
+    # on. It runs whatever the jobs above did, because a gate that is skipped when something fails
+    # reports nothing and blocks nothing.
+    needs:
+{needs}
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job above succeeded
+        # A skipped job is not a failure. A cancelled one is: a cancelled run has proved nothing,
+        # and `success` on an empty result is how a green tick comes to mean less than it looks.
+        env:
+          RESULTS: ${{{{ toJSON(needs) }}}}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          bad = sorted(
+              name for name, job in results.items()
+              if job["result"] not in ("success", "skipped")
+          )
+          for name in bad:
+              print(f"{{name}}: {{results[name]['result']}}")
+          print(f"{{len(results) - len(bad)}}/{{len(results)}} jobs green")
+          sys.exit(1 if bad else 0)
+          PY
+"""
+
+
 def render(manifest):
     template = TEMPLATE.read_text()
     if MARKER not in template:
@@ -225,7 +279,7 @@ def main(argv):
 
     manifest = comparator.load_manifest()
     current = WORKFLOW.read_text() if WORKFLOW.exists() else ""
-    rendered = repin(render(manifest), current)
+    rendered = gate_job(repin(render(manifest), current))
 
     if args.check:
         if current != rendered:
