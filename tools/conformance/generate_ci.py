@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -179,6 +180,32 @@ def oracle_jobs(manifest):
     return "\n".join(out)
 
 
+# `uses: owner/action@ref`, over the two shapes the workflow writes: a step that is only a `uses`,
+# and one that names itself first.
+USES = re.compile(r"(?P<lead>uses: )(?P<action>[\w.-]+/[\w./-]+)@(?P<ref>\S+)")
+
+
+def repin(rendered, current):
+    """Take every action ref from the committed workflow rather than from the template.
+
+    The generator owns the job matrix. It does not own which version of `actions/checkout` runs,
+    because `.github/workflows/` is the only place Dependabot can write, and a ref hard-coded here
+    would make every grouped actions bump fail this file's own `--check`.
+
+    An action pinned to two different refs in the committed file is left alone, so that
+    disagreement reaches the guard as a diff instead of being quietly resolved to one of them.
+    """
+    seen = {}
+    for match in USES.finditer(current):
+        seen.setdefault(match.group("action"), set()).add(match.group("ref"))
+    pins = {action: refs.pop() for action, refs in seen.items() if len(refs) == 1}
+    return USES.sub(
+        lambda m: m.group("lead") + m.group("action") + "@"
+        + pins.get(m.group("action"), m.group("ref")),
+        rendered,
+    )
+
+
 def render(manifest):
     template = TEMPLATE.read_text()
     if MARKER not in template:
@@ -197,10 +224,10 @@ def main(argv):
     args = ap.parse_args(argv)
 
     manifest = comparator.load_manifest()
-    rendered = render(manifest)
+    current = WORKFLOW.read_text() if WORKFLOW.exists() else ""
+    rendered = repin(render(manifest), current)
 
     if args.check:
-        current = WORKFLOW.read_text() if WORKFLOW.exists() else ""
         if current != rendered:
             print("ci.yml is stale: regenerate with tools/conformance/generate_ci.py")
             import difflib
