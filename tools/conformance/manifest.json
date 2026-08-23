@@ -5284,7 +5284,7 @@
     },
     {
       "id": "print-read-counts",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "depth evidence rewritten as one counts file per sample",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5297,8 +5297,8 @@
       "cases": [
         {
           "dump": "PrintReadCountsDump",
-          "golden": null,
-          "why": "Thirteen runs: two samples over three bins, the same input with no dictionary, a prefix with no trailing separator, a single sample, the same column name twice, a record with fewer counts than samples and one with more, an interval that keeps one contig, a counts file round trip whose header carries an @RG of another ID plus @PG and @CO, a counts file with two disagreeing read groups, one with a read group naming no sample, one whose column header precedes its SAM header, and a BAF evidence file. Every output file is printed whole, so the built header, the one-based coordinates and the half-written header a crash leaves behind are all in the golden. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/print_read_counts.txt.gz",
+          "why": "Thirteen runs: two samples over three bins, the same input with no dictionary, a prefix with no trailing separator, a single sample, the same column name twice, a record with fewer counts than samples and one with more, an interval that keeps one contig, a counts file round trip whose header carries an @RG of another ID plus @PG and @CO, a counts file with two disagreeing read groups, one with a read group naming no sample, one whose column header precedes its SAM header, and a BAF evidence file. Every output file is printed whole, so the built header, the one-based coordinates and the half-written header a crash leaves behind are all in the golden. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32635137166, and byte for byte what this laptop produced."
         }
       ]
     }

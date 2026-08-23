@@ -352,12 +352,8 @@ jobs:
             suites: "condense-depth-evidence site-depth-to-baf multi-feature-walker numt-filter mt-low-heteroplasmy"
           - group: oracle-backed
             index: "45/45"
-            slug: "merge-mutect2-mc3-downsample-by-duplicate-set-print-sv-evidence"
-            suites: "merge-mutect2-mc3 downsample-by-duplicate-set print-sv-evidence"
-          - group: golden-pending
-            index: "1/1"
-            slug: "print-read-counts"
-            suites: "print-read-counts"
+            slug: "merge-mutect2-mc3-downsample-by-duplicate-set-print-sv-evidence-print-read-counts"
+            suites: "merge-mutect2-mc3 downsample-by-duplicate-set print-sv-evidence print-read-counts"
     steps:
       - uses: actions/checkout@v4
 
