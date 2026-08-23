@@ -158,8 +158,11 @@ public class CollectF1R2CountsDump {
      * Four blocks of reads, each thirty bases long and every one unpaired.
      *
      * The first block is where the counting happens: three forward and three reverse reads per
-     * sample, with alt bases planted at four offsets. The second spans the N. The third carries a
-     * mapping quality the default median test refuses. The fourth carries a deletion.
+     * sample, with alt bases planted at five offsets. The second spans the N. The third carries a
+     * mapping quality the default median test refuses. The fourth carries a deletion, and its
+     * cigar consumes exactly the thirty bases the read holds: a cigar that does not is dropped
+     * whole by WellformedReadFilter's read-length rule long before the collector sees it, and the
+     * block would then measure nothing at all.
      */
     static void writeBam(final Path bam, final List<String> samples, final boolean index)
             throws Exception {
@@ -202,7 +205,7 @@ public class CollectF1R2CountsDump {
             final byte[] quals = new byte[READ_LENGTH];
             Arrays.fill(quals, (byte) 40);
             for (int offset = 0; offset < READ_LENGTH; offset++) {
-                final int locus = start + offset + (deletion && offset >= 10 ? 2 : 0);
+                final int locus = start + offset + (deletion && offset >= 12 ? 2 : 0);
                 char base = refBase(locus);
                 // The first block carries the plants; every other block is pure reference.
                 if (start == 41) {
@@ -238,7 +241,7 @@ public class CollectF1R2CountsDump {
             }
             record.setReadString(bases.toString());
             record.setBaseQualities(quals);
-            record.setCigarString(deletion ? "10M2D18M" : READ_LENGTH + "M");
+            record.setCigarString(deletion ? "12M2D18M" : READ_LENGTH + "M");
             records.add(record);
         }
         return records;
