@@ -80,6 +80,7 @@ pub mod preprocess_intervals;
 pub mod print_bgzf_block_information;
 pub mod print_distant_mates;
 pub mod print_file_diagnostics;
+pub mod print_read_counts;
 pub mod print_reads;
 pub mod print_reads_header;
 pub mod print_sv_evidence;
