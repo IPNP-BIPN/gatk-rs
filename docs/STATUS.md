@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 133 | 42.8% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 134 | 43.1% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 165 | 53.1% |
 | **total** | **311** | |
@@ -156,7 +156,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
-| `PrintSVEvidence` | unclassified | golden-pending | print-sv-evidence | 1 | not measured |
+| `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |

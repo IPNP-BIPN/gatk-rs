@@ -5264,7 +5264,7 @@
     },
     {
       "id": "print-sv-evidence",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "SV evidence files merged into one",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5277,8 +5277,8 @@
       "cases": [
         {
           "dump": "PrintSVEvidenceDump",
-          "golden": null,
-          "why": "Nine runs over DepthEvidence files: two files naming different samples over the same bins, the same two subset to one sample, to a sample neither knows and reordered, two files naming the SAME sample at one bin, two files whose bins are disjoint, three files whose sample names are not in alphabetical order, an output whose extension implies another SV feature type, and one whose extension implies no feature type at all. Every run is handed a dictionary, since a .rd.txt header carries sample names and a null dictionary."
+          "golden": "crates/gatk-tools/tests/data/print_sv_evidence.txt.gz",
+          "why": "Nine runs over DepthEvidence files: two files naming different samples over the same bins, the same two subset to one sample, to a sample neither knows and reordered, two files naming the SAME sample at one bin, two files whose bins are disjoint, three files whose sample names are not in alphabetical order, an output whose extension implies another SV feature type, and one whose extension implies no feature type at all. Every run is handed a dictionary, since a .rd.txt header carries sample names and a null dictionary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32631951385, and byte for byte what this laptop produced."
         }
       ]
     }
