@@ -5404,7 +5404,7 @@
     },
     {
       "id": "gtf-to-bed",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a Gencode GTF reduced to one row per gene or transcript",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5417,8 +5417,8 @@
       "cases": [
         {
           "dump": "GtfToBedDump",
-          "golden": null,
-          "why": "Six runs over one GTF of four genes on two contigs: gene rows, transcript rows, each again with --use-basic-transcript, a run with no dictionary and a run whose dictionary is missing a contig. The first gene's transcript reaches past it at both ends, two genes start at the same position so their order is settled by their ids, and one transcript carries the basic tag twice. Each run is reported by its whole output. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+          "golden": "crates/gatk-tools/tests/data/gtf_to_bed.txt.gz",
+          "why": "Six runs over one GTF of four genes on two contigs: gene rows, transcript rows, each again with --use-basic-transcript, a run with no dictionary and a run whose dictionary is missing a contig. The first gene's transcript reaches past it at both ends, two genes start at the same position so their order is settled by their ids, and one transcript carries the basic tag twice. Each run is reported by its whole output. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32645294319, and byte for byte what this laptop produced."
         }
       ]
     }
