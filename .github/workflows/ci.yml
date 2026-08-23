@@ -11,7 +11,7 @@ jobs:
     name: Repository invariants
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: LICENSE and README state the same licence
         # gatk-rs is Apache 2.0 because GATK is Apache 2.0; htsjdk-rs and picard-rs are MIT.
@@ -38,7 +38,7 @@ jobs:
     name: Test on real x86-64
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -90,7 +90,7 @@ jobs:
     name: "Determinism: the same suites in a different environment"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -144,13 +144,13 @@ jobs:
     name: Build the pinned oracle image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Record the host CPU
         run: grep -m1 'model name' /proc/cpuinfo; grep -m1 'vendor_id' /proc/cpuinfo
 
       - id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/oracle-image.tar
           key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
@@ -363,9 +363,9 @@ jobs:
             slug: "compose-str-table-file"
             suites: "compose-str-table-file"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         with:
           path: /tmp/oracle-image.tar
           key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
@@ -387,7 +387,7 @@ jobs:
         # come from here for the same reason. Both land in tools/conformance/pending/, and
         # committing the file is what makes the claim.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: candidate-goldens-${{ matrix.slug }}
           path: tools/conformance/pending/
@@ -398,7 +398,7 @@ jobs:
     name: Inventory is internally consistent
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the generated inventory against itself
         # The inventory is generated, so the risk is not that it is wrong by hand but that it
@@ -458,7 +458,7 @@ jobs:
     name: The status dashboard matches its sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: docs/STATUS.md is generated, not written
         # It is generated from the inventory and the vendored port summaries under
@@ -471,7 +471,7 @@ jobs:
     name: Covering arrays cover what they claim
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: The arrays are verified, not asserted
         # --verify enumerates every t-way tuple of the domain and checks the array covers it, so a
