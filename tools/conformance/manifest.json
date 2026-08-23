@@ -5261,6 +5261,26 @@
           "why": "Eleven runs over UMI-grouped BAMs: four fractions over ten two-read molecules, the same ten with a three-read molecule in front and again with one at the end, a file of a single read, each of the two minimums, a molecule number that goes backwards, and an unmapped read inside a molecule. The deflater factory is pinned and recorded, every BAM travels as text, and the @PG lines are stripped. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32591882957, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "print-sv-evidence",
+      "status": "golden-pending",
+      "title": "SV evidence files merged into one",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "PrintSVEvidence"
+      ],
+      "why": "THE OUTPUT'S SAMPLE LIST IS THE UNION OF THE INPUTS' HEADERS, accumulated into a TreeSet and therefore ALPHABETICAL rather than in file order: files naming zulu, alpha and mike produce the columns alpha, mike, zulu. EVERY RECORD IS REWRITTEN AGAINST THAT LIST, extractSamples filling a column a file does not have with MISSING_DATA, which is -1. THE MERGE ONLY FILLS MISSING COLUMNS: two files that both report a sample at one bin are a UserException naming the sample by ONE-BASED index and the bin by its ONE-BASED interval, 'Multiple sources for count of sample#1 at chr1:1-100', while the file itself writes that bin as 0 100. So merging is only ever a widening. --sample-names SUBSETS AND REORDERS THE COLUMNS, and a name no file knows becomes a column of -1 rather than a refusal. AN EMPTY SAMPLE LIST FROM EVERY HEADER TURNS SAMPLE FILTERING OFF ENTIRELY rather than dropping everything. THE OUTPUT TYPE IS DECIDED BY THE OUTPUT PATH'S EXTENSION and an input whose codec produces another type is refused by name. AN EXTENSION THAT NAMES NO FEATURE TYPE AT ALL NEVER REACHES THE TOOL'S OWN CHECK, FeatureOutputCodecFinder failing first, so the 'requires an SVFeature subtype' message is unreachable from an extension with no codec. AND THE HEADER LINE OF THE OUTPUT IS REWRITTEN from the sample list, so the columns of the output are the columns of no input.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "PrintSVEvidenceDump",
+          "golden": null,
+          "why": "Nine runs over DepthEvidence files: two files naming different samples over the same bins, the same two subset to one sample, to a sample neither knows and reordered, two files naming the SAME sample at one bin, two files whose bins are disjoint, three files whose sample names are not in alphabetical order, an output whose extension implies another SV feature type, and one whose extension implies no feature type at all. Every run is handed a dictionary, since a .rd.txt header carries sample names and a null dictionary."
+        }
+      ]
     }
   ],
   "probes": []
