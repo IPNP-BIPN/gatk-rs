@@ -5421,6 +5421,26 @@
           "why": "Six runs over one GTF of four genes on two contigs: gene rows, transcript rows, each again with --use-basic-transcript, a run with no dictionary and a run whose dictionary is missing a contig. The first gene's transcript reaches past it at both ends, two genes start at the same position so their order is settled by their ids, and one transcript carries the basic tag twice. Each run is reported by its whole output. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32645294319, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "compose-str-table-file",
+      "status": "golden-pending",
+      "title": "a reference scanned for short tandem repeats",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ComposeSTRTableFile"
+      ],
+      "why": "EVERY POSITION IS TRIED AS THE START OF A REPEAT UNIT and the scan JUMPS TO THE END of a site it finds, so no position is looked at twice, BUT THE SITES STILL OVERLAP because the search reaches BACKWARDS: a homopolymer ending at 9 and a dinucleotide repeat beginning at 9 are both reported. THE BEST PERIOD IS THE ONE WITH THE MOST REPEATS, ties going to the SHORTER period, and the repeat count is an INTEGER DIVISION of the span by the period. PERIOD ONE IS SPECIAL-CASED and is the only period tried when the base is not ACGT, in which case NOTHING is emitted, which is why an N leaves a gap. THE MASK IS A PER-CONTIG COUNTER PER PERIOD AND REPEAT, INITIALISED TO THE CONTIG'S INDEX rather than to zero, so the first site of the second contig carries mask 1. DECIMATION IS A BIT TEST between that mask and the table's entry, so it keeps one site in every 2^n rather than a fraction, and under the default table the second contig's homopolymer is the one that goes. --max-repeat CAPS THE INDEX THE MASK COUNTER IS KEPT UNDER, not the repeat reported, so lowering it makes distinct sites share a counter, CHANGES THE MASKS and therefore changes which sites decimation removes. --max-period CAPS THE SEARCH, so a region whose true period is longer breaks into one site per base when period one with a single repeat is all that is left. -L RESTRICTS WHERE THE SCAN STARTS BUT NOT HOW FAR A SITE REACHES, so a site can begin before the interval and end after it. AND THE SUMMARY COUNTS BOTH WHAT WAS EMITTED AND WHAT WAS DECIMATED.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ComposeSTRTableFileDump",
+          "golden": null,
+          "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. Golden pending: to be produced by the pinned oracle container on an x86-64 CI runner."
+        }
+      ]
     }
   ],
   "probes": []
