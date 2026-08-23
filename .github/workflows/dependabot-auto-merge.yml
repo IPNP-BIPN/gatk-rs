@@ -1,0 +1,45 @@
+# Dependabot's pull requests, queued behind CI rather than merged by hand.
+#
+# `--auto` does NOT mean "merge when the checks pass" on its own. It means "merge as soon as
+# nothing blocks", and on an unprotected branch nothing does, so it would merge immediately. What
+# makes it wait is the ruleset on main requiring the `CI complete` context, which the generated
+# workflow produces once every other job has reported. Remove that rule and this file stops being
+# a queue and becomes a rubber stamp.
+#
+# Majors are left alone. A major is a decision: it can change an API, a default, or the bytes a
+# golden pins, and the conformance suite passing tells you the bytes held, not that the change was
+# the one you wanted. Everything below a major is what the suite is good at judging.
+#
+# pull_request_target runs this file as it stands on main and never checks out the branch under
+# test, so the write token here is never handed to code from the pull request.
+name: Dependabot auto-merge
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  queue:
+    name: Queue the bump behind CI
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Queue everything but a major
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --merge --delete-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Say why a major was left alone
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        env:
+          NAMES: ${{ steps.metadata.outputs.dependency-names }}
+        run: echo "$NAMES is a major bump, left for a human"

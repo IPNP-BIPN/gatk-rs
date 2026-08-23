@@ -515,3 +515,42 @@ jobs:
             echo "pairwise sizing changed; update docs/what-pairwise-coverage-costs.md"
             exit 1
           }
+
+  ci:
+    name: CI complete
+    # The single context main's ruleset requires, and the single context an automatic merge waits
+    # on. It runs whatever the jobs above did, because a gate that is skipped when something fails
+    # reports nothing and blocks nothing.
+    needs:
+      - guard
+      - test
+      - determinism
+      - oracle-image
+      - oracle
+      - inventory
+      - dashboard
+      - coverage
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job above succeeded
+        # A skipped job is not a failure. A cancelled one is: a cancelled run has proved nothing,
+        # and `success` on an empty result is how a green tick comes to mean less than it looks.
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          bad = sorted(
+              name for name, job in results.items()
+              if job["result"] not in ("success", "skipped")
+          )
+          for name in bad:
+              print(f"{name}: {results[name]['result']}")
+          print(f"{len(results) - len(bad)}/{len(results)} jobs green")
+          sys.exit(1 if bad else 0)
+          PY
