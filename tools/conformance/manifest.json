@@ -5621,6 +5621,26 @@
           "why": "Eighteen records over two contigs, run nine ways: the two algorithms, --enable-cnv under each, a depth overlap threshold nothing reaches and one everything reaches, a raised sample overlap, a widened PESR breakend window, and --omit-members. The whole input VCF and the ploidy table are reported beside the outputs. The fixture needed four things the tool requires and does not default: a ploidy table, a real reference, an ECN on every genotype, and a dictionary length that matches the FASTA to the base. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33018774946, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "grouped-sv-cluster",
+      "status": "golden-pending",
+      "title": "one stratum per record, one threshold set per stratum",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GroupedSVCluster"
+      ],
+      "why": "EACH STRATUM CLUSTERS WITH ITS OWN THRESHOLDS: two large deletions that would cluster under a half-overlap threshold stay apart under their stratum's 0.99, while two small ones cluster, in the same run and from the same engine. A RECORD MATCHING TWO STRATA IS REFUSED OUTRIGHT here, and the message differs from SVStratify's: this tool says the groups must be mutually exclusive rather than offering a flag, because allowing it would proliferate variants, and the groups are listed in java.util.HashMap order over their names. AN UNMATCHED RECORD IS NOT CLUSTERED AT ALL: it is written straight out carrying its own id as its only member and `default` as its stratum. THE TWO CONFIGURATIONS MUST NAME THE SAME GROUPS, checked twice, once by count and once by name, with two different messages. AN EMPTY STRATIFICATION CONFIGURATION IS REFUSED before either engine is built. AND THE COLUMN-COUNT MESSAGE PRINTS THE SAME NUMBER TWICE here as well: `Expected 6 columns but found 6`, a second copy of the same mistake the stratification parser makes.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GroupedSVClusterDump",
+          "golden": null,
+          "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
