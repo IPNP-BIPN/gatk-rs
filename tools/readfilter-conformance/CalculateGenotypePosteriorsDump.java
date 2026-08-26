@@ -151,6 +151,15 @@ public class CalculateGenotypePosteriorsDump {
         // The same panel without an index.
         run(dir, "unindexed-panel", input, List.of("--supporting", unindexed.toString()));
 
+        // A panel carrying AC but no MLEAC at all, which is what makes the preference observable
+        // from the outside.
+        final Path acOnly = write(dir, "ac-only.vcf", PANEL.replace(";MLEAC=20", "")
+                .replace(";MLEAC=10,30", "").replace(";MLEAC=40", "")
+                .replace(";MLEAC=10,20", "").replace(";MLEAC=5", "")
+                .replace("##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"MLE allele count\">\n", ""));
+        new IndexFeatureFile().instanceMain(new String[] {"-I", acOnly.toString()});
+        run(dir, "panel-ac-only", input, List.of("--supporting", acOnly.toString()));
+
         // A VCF with no genotype columns.
         final Path sites = write(dir, "sites.vcf", String.join("\n",
                 "##fileformat=VCFv4.2",
@@ -177,7 +186,11 @@ public class CalculateGenotypePosteriorsDump {
 
     static void run(final Path dir, final String label, final Path input, final List<String> extra)
             throws Exception {
-        final Path out = dir.resolve(label + ".vcf");
+        // NOT `label + ".vcf"`: the run labelled `panel` would then write to `panel.vcf`, which is
+        // the supporting panel itself. createVCFWriter opens the output in onTraversalStart, so
+        // the tool truncates its own input before reading it, and every later run reads the
+        // truncated file. The first version of this dump did exactly that.
+        final Path out = dir.resolve("out-" + label + ".vcf");
         final List<String> argv = new ArrayList<>(List.of(
                 "-V", input.toString(), "-O", out.toString()));
         argv.addAll(extra);
