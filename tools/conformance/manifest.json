@@ -5481,6 +5481,26 @@
           "why": "Six reads under a four-flow order and one under a flow order whose cycle is one, run five ways: the default, --replace-quality-mode, a clamped maximal quality, a raised minimal error rate, and both at once. The reads cover hmers of length one, two and five, a leading zero flow, a read ending inside an hmer, and per-base qualities that differ. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands, the floor and the whole enumeration without a flow matrix of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32950328239, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "gene-expression-evaluation",
+      "status": "golden-pending",
+      "title": "rna-seq fragments counted against gff3 features",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GeneExpressionEvaluation"
+      ],
+      "why": "A SINGLE-END BAM CANNOT BE PROCESSED AT ALL: inGoodPair calls mateIsUnmapped() before it asks anything else, and that throws IllegalStateException on an unpaired read, so what stands in for a single read is a paired read that is not PROPERLY paired. PROPORTIONAL COUNTS THE BASES A READ DOES NOT COVER, summedUnNormalizedWeights taking an extra 1.0 - totalCoveredBases/basesOnReference before normalising, so a read half of which is intergenic gives its gene less than a whole count where EQUAL gives it one. EQUAL SPLITS BY FEATURE COUNT AND IGNORES OVERLAP LENGTH, so a read clipping one gene by ten bases and covering another gives each a half. A GOOD PAIR IS COUNTED ONCE, FROM READ ONE, over the union of both mates' alignment blocks, and A PAIR WITHOUT ITS MATE QUALITY IS A GATKException rather than a skipped read. --multi-map-method EQUAL SILENTLY DROPS THE MAPPING QUALITY FILTER TO ZERO in onTraversalStart, so it changes which reads are counted and not only how they are weighted. NH DECIDES MULTI-MAPPING AND ITS ABSENCE MEANS ONE. AN UNSTRANDED FEATURE EMITS ONE ROW, NOT TWO, and every read over it is called SENSE because isSense rewrites Strand.NONE as POSITIVE. THE COUNT COLUMN IS NAMED AFTER THE SAMPLE, so the table's header depends on the read group. UNSPLICED MODE REPLACES THE ALIGNMENT BLOCKS WITH ONE INTERVAL, so a spliced read's intron counts as covered. AND GROUPING BY A TYPE THAT CARRIES NO LABEL IS A UserException naming the first feature it reaches rather than an empty table.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GeneExpressionEvaluationDump",
+          "golden": null,
+          "why": "Ten reads over four genes, two of them overlapping, one on the reverse strand and one unstranded, run eight ways plus three refusals: the default, EQUAL overlap, EQUAL multi-map, unspliced, two other read-strand conventions, labelling by ID, and grouping by exon; then a pair with no MQ tag, a single-end read, and the label refusal. Every read's flags, tags and cigar are reported beside the tables, and so is the whole gff3, so the port counts from the features rather than from a gff3 parser of its own."
+        }
+      ]
     }
   ],
   "probes": []
