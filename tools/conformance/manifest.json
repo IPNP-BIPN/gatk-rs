@@ -5484,7 +5484,7 @@
     },
     {
       "id": "gene-expression-evaluation",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "rna-seq fragments counted against gff3 features",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5497,8 +5497,8 @@
       "cases": [
         {
           "dump": "GeneExpressionEvaluationDump",
-          "golden": null,
-          "why": "Ten reads over four genes, two of them overlapping, one on the reverse strand and one unstranded, run eight ways plus three refusals: the default, EQUAL overlap, EQUAL multi-map, unspliced, two other read-strand conventions, labelling by ID, and grouping by exon; then a pair with no MQ tag, a single-end read, and the label refusal. Every read's flags, tags and cigar are reported beside the tables, and so is the whole gff3, so the port counts from the features rather than from a gff3 parser of its own."
+          "golden": "crates/gatk-tools/tests/data/gene_expression_evaluation.txt.gz",
+          "why": "Ten reads over four genes, two of them overlapping, one on the reverse strand and one unstranded, run eight ways plus three refusals: the default, EQUAL overlap, EQUAL multi-map, unspliced, two other read-strand conventions, labelling by ID, and grouping by exon; then a pair with no MQ tag, a single-end read, and the label refusal. Every read's flags, tags and cigar are reported beside the tables, and so is the whole gff3, so the port counts from the features rather than from a gff3 parser of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32954069692, and byte for byte what this laptop produced."
         }
       ]
     }
