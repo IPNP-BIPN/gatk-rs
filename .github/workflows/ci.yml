@@ -368,12 +368,8 @@ jobs:
             suites: "sv-stratify add-flow-snv-quality calculate-genotype-posteriors family-priors sv-cluster"
           - group: oracle-backed
             index: "49/49"
-            slug: "grouped-sv-cluster"
-            suites: "grouped-sv-cluster"
-          - group: golden-pending
-            index: "1/1"
-            slug: "sv-concordance"
-            suites: "sv-concordance"
+            slug: "grouped-sv-cluster-sv-concordance"
+            suites: "grouped-sv-cluster sv-concordance"
     steps:
       - uses: actions/checkout@v7
 

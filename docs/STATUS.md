@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 151 | 48.6% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 152 | 48.9% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 147 | 47.3% |
 | **total** | **311** | |
@@ -176,7 +176,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | not measured |
-| `SVConcordance` | sv-caller | golden-pending | sv-concordance | 1 | not measured |
+| `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-output, select-variants-samples, select-variants-subset | 5 | not measured |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
