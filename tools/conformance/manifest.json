@@ -5521,6 +5521,26 @@
           "why": "Eighteen runs against a hand-written one-entry tar.gz and six spellings of its sha256, through the tool's own testing override so the bucket is never reached: an explicit destination, a missing one, the default one, four checksum spellings that all have to match, a wrong checksum, an empty checksum file, an existing destination with and without --overwrite-output-file, extraction, and six argument refusals. The four bucket paths and the constants they are built from are reported beside the runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32959158621, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "sv-stratify",
+      "status": "golden-pending",
+      "title": "structural variants sorted into strata",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SVStratify"
+      ],
+      "why": "THE STRATA ARE HELD IN A java.util.HashMap, so the order a record's matches come back in, the order the refusal message lists them, and the order the split-output files are created are all HashMap iteration order over the stratum NAMES rather than the configuration's order. MIN IS INCLUSIVE AND MAX IS EXCLUSIVE. A RECORD WITH NO LENGTH MATCHES ONLY A STRATUM WITH NEITHER BOUND, which is how BND and INS records reach a stratum at all. `-1` IS THE ONLY NEGATIVE THAT MEANS NULL, the null set being {\"-1\", \"\", \"NULL\", \"NA\"}, so -2 parses as a number and is then refused as a negative bound. AN INSERTION IGNORES BOTH THE OVERLAP FRACTION AND --stratify-num-breakpoint-overlaps and requires exactly ONE end in a track. A BREAKPOINT COUNTS ONCE PER END, NOT ONCE PER TRACK. THE OVERLAP FRACTION IS MEASURED AGAINST THE MERGED UNION OF EVERY NAMED TRACK and compared with >=. BND AND CTX CANNOT CARRY A SIZE. THE COLUMN-COUNT MESSAGE PRINTS THE SAME NUMBER TWICE, both halves of it reading columns.columnCount(), so an extra column is reported as \"Expected 6 columns but found 6\". WITHOUT --split-output EVERY STRATUM WRITES TO THE SAME FILE, so a record matching two strata under --allow-multiple-matches appears TWICE with two different STRAT values. AND THE RESERVED NAME default IS REFUSED IN THE CONFIG.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SVStratifyDump",
+          "golden": null,
+          "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
