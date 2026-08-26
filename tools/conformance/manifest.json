@@ -5661,6 +5661,26 @@
           "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33023371845, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "sv-annotate",
+      "status": "golden-pending",
+      "title": "what a structural variant is predicted to do to a gene",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SVAnnotate"
+      ],
+      "why": "SPANNING AND OVERLAPPING ARE DIFFERENT QUESTIONS, and the duplication rule is built entirely out of the difference: a duplication CONTAINING the transcript is COPY_GAIN, one containing a whole coding exon with neither breakpoint in one is INTRAGENIC_EXON_DUP, one with a single breakpoint in a coding exon is PARTIAL_EXON_DUP, and one with a breakpoint in EACH coding exon is LOF. ONE BREAKPOINT IN CODING SEQUENCE WITH ONE IN A UTR IS ALSO LOF, which is the only place the UTR count is read at all. THE TRANSCRIPTION START SITE IS THE TRANSCRIPT'S END ON THE MINUS STRAND: the same deletion is LOF at BETA's 21000 and only UTR at its 20100. A BREAKEND USES THE DELETION RULE AND THEN DOWNGRADES ITS LOF to BREAKEND_EXONIC, and a breakend produces TWO segments, so one record can carry two different consequences for the same gene. A MULTIALLELIC CNV IS ANNOTATED AS A DUPLICATION AND THEN RECLASSIFIED, six of the answers becoming MSV_EXON_OVERLAP and the rest kept as they are. A TRANSLOCATION IS LOF WITHOUT LOOKING AT ANYTHING. THE PROMOTER IS INFERRED rather than read, as the window upstream of the start site, and a promoter is ALSO intergenic. TWO ARGUMENTS ARE ACCEPTED AND THEN CRASH: --promoter-window-length 0 passes its own minValue and builds an interval ending one base before it starts, and a breakend carrying the conventional SVLEN of -1 is judged to be under --max-breakend-as-cnv-length and given the same empty interval. AND --non-coding-bed REFUSES THE HEADER ITS OWN DOCUMENTATION ASKS FOR: the argument says \"BED file (with header)\" and a header row fails to parse `start` as a number.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SVAnnotateDump",
+          "golden": null,
+          "why": "Two genes on opposite strands with the same five-exon shape, three non-coding elements, and twenty-six variants over one contig covering every protein-coding consequence the tool can emit, run seven ways and refused five: the default, a promoter window of zero, a wide one, breakends read as deletions and duplications, the GTF alone, the BED alone, neither, a BED with a header, a complex variant with no intervals, one with no type, a translocation with no second contig, and a breakend with no length. Both reference files and the whole input VCF are reported beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
