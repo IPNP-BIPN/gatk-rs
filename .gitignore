@@ -9,3 +9,10 @@ tools/conformance/pending/
 
 # The editor workspace file, which is one developer's layout and not the repository's.
 *.code-workspace
+
+# unlazy: the completion ledger, its approvals and the stop hook's per-session state. The ledger
+# is a working artefact of one session, not a repository fact; what it proves lands in the commit
+# history instead.
+.unlazy/
+.unlazy-hook-state.json
+.claude/settings.local.json
