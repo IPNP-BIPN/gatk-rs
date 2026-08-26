@@ -5464,7 +5464,7 @@
     },
     {
       "id": "add-flow-base-quality",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "flow indel probabilities turned into a base quality",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5477,8 +5477,8 @@
       "cases": [
         {
           "dump": "AddFlowBaseQualityDump",
-          "golden": null,
-          "why": "Six reads under a four-flow order and one under a flow order whose cycle is one, run five ways: the default, --replace-quality-mode, a clamped maximal quality, a raised minimal error rate, and both at once. The reads cover hmers of length one, two and five, a leading zero flow, a read ending inside an hmer, and per-base qualities that differ. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands, the floor and the whole enumeration without a flow matrix of its own."
+          "golden": "crates/gatk-tools/tests/data/add_flow_base_quality.txt.gz",
+          "why": "Six reads under a four-flow order and one under a flow order whose cycle is one, run five ways: the default, --replace-quality-mode, a clamped maximal quality, a raised minimal error rate, and both at once. The reads cover hmers of length one, two and five, a leading zero flow, a read ending inside an hmer, and per-base qualities that differ. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands, the floor and the whole enumeration without a flow matrix of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32950328239, and byte for byte what this laptop produced."
         }
       ]
     }
