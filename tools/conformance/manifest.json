@@ -5504,7 +5504,7 @@
     },
     {
       "id": "funcotator-data-source-downloader",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a data source copied, checked and unpacked",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5517,8 +5517,8 @@
       "cases": [
         {
           "dump": "FuncotatorDataSourceDownloaderDump",
-          "golden": null,
-          "why": "Eighteen runs against a hand-written one-entry tar.gz and six spellings of its sha256, through the tool's own testing override so the bucket is never reached: an explicit destination, a missing one, the default one, four checksum spellings that all have to match, a wrong checksum, an empty checksum file, an existing destination with and without --overwrite-output-file, extraction, and six argument refusals. The four bucket paths and the constants they are built from are reported beside the runs."
+          "golden": "crates/gatk-tools/tests/data/funcotator_data_source_downloader.txt.gz",
+          "why": "Eighteen runs against a hand-written one-entry tar.gz and six spellings of its sha256, through the tool's own testing override so the bucket is never reached: an explicit destination, a missing one, the default one, four checksum spellings that all have to match, a wrong checksum, an empty checksum file, an existing destination with and without --overwrite-output-file, extraction, and six argument refusals. The four bucket paths and the constants they are built from are reported beside the runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32959158621, and byte for byte what this laptop produced."
         }
       ]
     }
