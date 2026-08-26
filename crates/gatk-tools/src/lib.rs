@@ -117,6 +117,7 @@ pub mod split_n_cigar_reads;
 pub mod split_reads;
 pub mod split_vcfs;
 pub mod sv_cluster;
+pub mod sv_concordance;
 pub mod sv_stratify;
 pub mod tag_germline_events;
 pub mod transfer_read_tags;

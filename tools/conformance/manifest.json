@@ -5644,7 +5644,7 @@
     },
     {
       "id": "sv-concordance",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which truth variant an eval variant is judged to be",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5657,8 +5657,8 @@
       "cases": [
         {
           "dump": "SVConcordanceDump",
-          "golden": null,
-          "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/sv_concordance.txt.gz",
+          "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33023371845, and byte for byte what this laptop produced."
         }
       ]
     }
