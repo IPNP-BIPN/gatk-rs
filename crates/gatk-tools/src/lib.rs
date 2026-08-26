@@ -61,6 +61,7 @@ pub mod gather_bam_files;
 pub mod gather_bqsr_reports;
 pub mod gather_tranches;
 pub mod gather_vcfs;
+pub mod gene_expression_evaluation;
 pub mod get_normal_artifact_data;
 pub mod get_pileup_summaries;
 pub mod get_sample_name;
