@@ -5624,7 +5624,7 @@
     },
     {
       "id": "grouped-sv-cluster",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "one stratum per record, one threshold set per stratum",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5637,8 +5637,8 @@
       "cases": [
         {
           "dump": "GroupedSVClusterDump",
-          "golden": null,
-          "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/grouped_sv_cluster.txt.gz",
+          "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33021085864, and byte for byte what this laptop produced."
         }
       ]
     }
