@@ -364,12 +364,8 @@ jobs:
             suites: "compose-str-table-file cram-issue-8768-detector add-flow-base-quality gene-expression-evaluation funcotator-data-source-downloader"
           - group: oracle-backed
             index: "48/48"
-            slug: "sv-stratify-add-flow-snv-quality"
-            suites: "sv-stratify add-flow-snv-quality"
-          - group: golden-pending
-            index: "1/1"
-            slug: "calculate-genotype-posteriors"
-            suites: "calculate-genotype-posteriors"
+            slug: "sv-stratify-add-flow-snv-quality-calculate-genotype-posteriors"
+            suites: "sv-stratify add-flow-snv-quality calculate-genotype-posteriors"
     steps:
       - uses: actions/checkout@v7
 

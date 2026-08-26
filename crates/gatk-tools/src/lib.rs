@@ -21,6 +21,7 @@ pub mod base_recalibrator;
 pub mod build_bam_index;
 pub mod calculate_average_combined_annotations;
 pub mod calculate_contamination;
+pub mod calculate_genotype_posteriors;
 pub mod calculate_mixing_fractions;
 pub mod call_copy_ratio_segments;
 pub mod callable_loci;
