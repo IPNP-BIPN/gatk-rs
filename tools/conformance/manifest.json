@@ -5541,6 +5541,26 @@
           "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32981957600, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "add-flow-snv-quality",
+      "status": "golden-pending",
+      "title": "a probability for every base that was not called",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AddFlowSNVQuality"
+      ],
+      "why": "THE COMPUTED BASE QUALITY IS DISCARDED: after the hmer loop fills baseProbs, the last loop overwrites EVERY entry with 1 - snvqProbs[calledIndex][ofs], which is itself 1 - sum of the alternate probabilities, and the reference's own comment on that line reads \"at this point, bq becomes trivial (?)\". THE PHRED CONVERSION ROUNDS where AddFlowBaseQuality TRUNCATES the same expression. THE SIDE WALK IS BOUNDED BY THE SLICE, which is the bound the sibling lacks, so a flow order whose cycle is ONE gets past the enumeration here; it then dies in the normalisation instead, because only the first base of the order is considered and a read carrying any other leaves calledIndex at -1, which indexes the array. The guard above it tests calledBase < 0, which an ASCII base never is, so it never fires. THE SNVQ MODE IS A CHOICE OF FOUR FORMULAE over the same two probabilities, Geometric being the default. THE ALT PROBABILITIES ARE KEYED BY BASE, NOT BY FLOW, so two side flows carrying the same base overwrite each other and the last wins. EVERY MIDDLE BASE OF AN HMER TAKES THE MINIMUM RATE, and the called base's own slot takes max(0, 1 - altP). --max-phred-score MOVES BOTH THE CLAMP AND THE FLOOR, and at 10 it is the FLOOR that decides: every base comes out at 5 rather than at the clamp. THE OUTPUT ATTRIBUTES ARE NAMED FOR THE FLOW ORDER, lower-cased and prefixed with q. AND --output-quality-attribute LEAVES QUAL ALONE.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AddFlowSNVQualityDump",
+          "golden": null,
+          "why": "Six flow-based reads under a four-flow order, run seven ways, plus one read under a flow order whose cycle is one: the default Geometric mode, the three other snvq modes, two maximum phred scores, and the base quality written to a tag. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands and the whole enumeration without a flow matrix of its own."
+        }
+      ]
     }
   ],
   "probes": []
