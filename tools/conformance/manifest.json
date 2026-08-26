@@ -5581,6 +5581,26 @@
           "why": "Six sites over three samples, run eleven ways and refused four: no panel, a panel, assumed reference samples with and without the panel, AC instead of MLEAC, a panel carrying no MLEAC, external counts only, discovered counts off, flat priors for indels, changed pseudocounts, and population priors skipped; then an unindexed panel, a VCF with no genotypes and the two malformed MLEAC headers. Outputs are written to out-<label>.vcf rather than <label>.vcf: the first version of this dump wrote the `panel` run's output to panel.vcf, which is the supporting panel, and the tool truncated its own input before reading it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33009487187, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "family-priors",
+      "status": "golden-pending",
+      "title": "a trio's genotypes recomputed together",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalculateGenotypePosteriors"
+      ],
+      "why": "FAMILY PRIORS ONLY APPLY TO BIALLELIC SITES, apply testing variant.isBiallelic() before the family engine is called at all, so a triallelic site keeps its likelihoods whatever the pedigree says. THE NON-VIOLATION COEFFICIENT IS NOT ONE: it is 1 - 10*deNovoPrior - deNovoPrior^2, so every consistent combination is scaled DOWN by ten times the de novo prior. AT THE DEFAULT DE NOVO PRIOR A MENDELIAN VIOLATION IS OVERTURNED RATHER THAN REPORTED: two hom-ref parents and a hom-var child all become het, and raising --de-novo-prior to 0.001 leaves the violation standing instead. A TRIO NEEDS ALL THREE MEMBERS IN THE VCF, setTrios keeping a family only when exactly three of its members are present and one of them has both parents among them, so a pedigree naming only two is the same as no pedigree. AN UNCALLED PARENT BECOMES A UNIFORM THIRD and the trio is still processed as a parent/child pair, but AN UNCALLED CHILD STOPS THE WHOLE TRIO. THE JOINT TAGS ARE ONLY COMPUTED WHEN ALL THREE ARE CALLED and are -1 otherwise, and a sample in no trio carries them as missing. THE JOINT LIKELIHOOD IS TAKEN AT THE POSTERIOR'S ARGMAX rather than at its own, so JL reports the likelihood of the configuration the prior chose. AND THE POSTERIORS OVERWRITE PP, which the population half then reads back in preference to the PL, so the two halves compose in one direction only.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FamilyPriorsDump",
+          "golden": null,
+          "why": "Six sites over a trio and one unrelated sample, run seven ways: family priors alone, two other de novo priors, both halves together, family priors skipped by argument, no pedigree at all, and a pedigree with no complete trio in the VCF. The whole input and both pedigrees are reported beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
