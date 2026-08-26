@@ -5461,6 +5461,26 @@
           "why": "Nine runs over four CRAMs written three reads to a container: the default report, the TSV, --verbose, a threshold under and over the measured bad rate, --echo-to-stdout, a CRAM no container of which opens at position 1, a two-slice container the tool calls foreign, and a CRAM holding nothing but its EOF container. Every container's metadata and its base and mismatch counts are reported beside the reports, so the port reproduces the report from what the analyzer had in hand rather than from CRAM bytes. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32947717580, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "add-flow-base-quality",
+      "status": "golden-pending",
+      "title": "flow indel probabilities turned into a base quality",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AddFlowBaseQuality"
+      ],
+      "why": "THE MIDDLE BASES OF AN HMER ARE NEVER COMPUTED: generateBaseErrorProbability writes the first base and the last base of each hmer and advances the cursor past the rest, so a five-base run keeps three error probabilities of exactly ZERO, and convertErrorProbToPhred turns a zero into the MAXIMAL quality rather than the minimal one. THE FIRST BASE OF THE READ IS OVERRIDDEN with the hmer's own key probability rather than the computed one, AND SO IS THE LAST BASE, by a second override that fires whenever the write cursor has reached the end of the array. AN HMER OF LENGTH ONE LEAVES ITS SECOND PROBABILITY AT ZERO and walks BOTH sides, which is the only case where the enumeration goes in two directions. THE SLICE WINDOW IS THE FLOW ORDER'S CYCLE, computed by calcFlowOrderLength as the distance to the SECOND occurrence of the order's first base, and A SLICE IS INVALID WHEN IT HOLDS flowOrderLength - 1 CONSECUTIVE ZEROS. A flow order whose first base repeats immediately gives a cycle of ONE, a slice of a single flow, and an ArrayIndexOutOfBoundsException from generateSidedHmerBaseErrorProbability, which is measured rather than avoided. THE ERROR RATE FLOOR IS APPLIED TO EVERY BAND INCLUDING THE IMPOSSIBLE ONES, a key of 0 having no shorter neighbour and a key at maxHmer no longer one. THE PHRED CONVERSION TRUNCATES rather than rounds and clamps to --maximal-quality-score. AND --replace-quality-mode MOVES THE OLD QUALITIES TO OQ and overwrites QUAL, where the default writes XQ and leaves QUAL alone.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AddFlowBaseQualityDump",
+          "golden": null,
+          "why": "Six reads under a four-flow order and one under a flow order whose cycle is one, run five ways: the default, --replace-quality-mode, a clamped maximal quality, a raised minimal error rate, and both at once. The reads cover hmers of length one, two and five, a leading zero flow, a read ending inside an hmer, and per-base qualities that differ. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands, the floor and the whole enumeration without a flow matrix of its own."
+        }
+      ]
     }
   ],
   "probes": []
