@@ -5441,6 +5441,26 @@
           "why": "Five runs over two contigs carrying a homopolymer, a dinucleotide repeat, a trinucleotide repeat, an N, a second homopolymer, a four-base repeat and a tail: the default decimation table, no decimation at all, a maximum period of two, a maximum repeat of three, and an interval that starts and ends inside repeats. Each run is reported by its whole sites table and its whole summary. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32665939992, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "cram-issue-8768-detector",
+      "status": "golden-pending",
+      "title": "the containers issue 8768 would have corrupted",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CRAMIssue8768Detector"
+      ],
+      "why": "THE SUSPECT IS THE CONTAINER AFTER THE ONE THAT STARTS AT POSITION 1, not that container itself: the test reads the PREVIOUS container's alignment start, so a contig whose first container opens at 1 gets exactly one bad container, the second, whatever its own start is. THE FIRST CONTAINER OF A REFERENCE CONTEXT IS NEVER BAD, by two separate branches. THE PRINTED \"Mismatch Rate/Count\" COUNT IS THE TOTAL BASE COUNT, not the mismatch count: analyzeContainerBaseMismatches returns Tuple<>(totalBases, misMatches/totalBases) and the caller stores .a into a field named misMatchCount, so the number beside the rate is its denominator. A BAD CONTIG IS KEYED BY REFERENCE ID, NOT BY NAME, the key being ReferenceContext.toString(), and only the TSV ever resolves a contig name. ONLY FOUR GOOD CONTAINERS PER CONTIG ARE REPORTED unless --verbose, and the counter is set to 1 by the new-context branch rather than 0, so the fifth container of a contig is the first dropped. MULTI-REF AND UNMAPPED CONTAINERS ARE COUNTED BUT NEVER RECORDED, so the ordinals in the report skip. AN EMPTY CRAM DIVIDES BY ZERO and the average reads NaN. THE THRESHOLD LINE IS PRINTED ONLY WHEN EXCEEDED, with the measured rate in %f and the threshold in %1.2f. AND A FOREIGN CRAM STOPS THE ANALYSIS DEAD: isForeignCRAM returns from inside the container loop, so there is no report body, no average and a return code of 0 as though nothing were wrong.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CRAMIssue8768DetectorDump",
+          "golden": null,
+          "why": "Nine runs over four CRAMs written three reads to a container: the default report, the TSV, --verbose, a threshold under and over the measured bad rate, --echo-to-stdout, a CRAM no container of which opens at position 1, a two-slice container the tool calls foreign, and a CRAM holding nothing but its EOF container. Every container's metadata and its base and mismatch counts are reported beside the reports, so the port reproduces the report from what the analyzer had in hand rather than from CRAM bytes."
+        }
+      ]
     }
   ],
   "probes": []
