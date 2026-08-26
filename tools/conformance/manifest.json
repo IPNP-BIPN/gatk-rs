@@ -5561,6 +5561,26 @@
           "why": "Six flow-based reads under a four-flow order, run seven ways, plus one read under a flow order whose cycle is one: the default Geometric mode, the three other snvq modes, two maximum phred scores, and the base quality written to a tag. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands and the whole enumeration without a flow matrix of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33006186675, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "calculate-genotype-posteriors",
+      "status": "golden-pending",
+      "title": "likelihoods turned into posteriors under a dirichlet prior",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalculateGenotypePosteriors"
+      ],
+      "why": "A SITE MISSING FROM EVERY PANEL FALLS BACK TO FLAT PRIORS unless something supplies counts: useFlatPriors is true when the resources are empty AND the input samples are not used AND --num-reference-samples-if-no-call is zero, and then the PP comes out equal to the PL and PG is all zeros. THE INPUT SAMPLES ARE ONLY USED FOR A MISSING SITE IF THERE ARE TEN OF THEM, or if reference samples were assumed, so a three-sample callset reaches the flat-prior fallback. THE PANEL IS READ THROUGH MLEAC FIRST AND AC SECOND, and the two disagree here on purpose: the run reading MLEAC comes out with a FLAT prior at every site while the run reading AC does not, which is measured rather than explained. --num-reference-samples-if-no-call ENTERS AS CHROMOSOMES, twice the number of samples given, and only when the resources are empty. THE SNP PRIOR IS CHOSEN BY ALLELE LENGTH rather than by the site's type, so one site can mix the SNP and indel pseudocounts, and THE NON-REF ALLELE TAKES THE LARGER OF THE TWO plus every count belonging to an allele the input did not carry. GENOTYPES ARE RECALLED FROM THE POSTERIORS, so a GT can change and the GQ is recomputed from the PP. A HOM-REF BLOCK IS LEFT ALONE, keeping its AC, AF and AN and gaining no PG. A SUPPORTING PANEL MUST BE INDEXED, because it is queried by interval. AND THE TWO MLEAC HEADER CHECKS ARE SEPARATE, one for the count type and one for the field type, as is the refusal of a VCF with no genotypes at all.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CalculateGenotypePosteriorsDump",
+          "golden": null,
+          "why": "Six sites over three samples, run ten ways and refused four: no panel, a panel, assumed reference samples with and without the panel, AC instead of MLEAC, external counts only, discovered counts off, flat priors for indels, changed pseudocounts, and population priors skipped; then an unindexed panel, a VCF with no genotypes and the two malformed MLEAC headers. The whole input and the whole panel are reported beside the outputs, and each output is compared as its whole body plus the FORMAT and INFO header lines the tool added."
+        }
+      ]
     }
   ],
   "probes": []
