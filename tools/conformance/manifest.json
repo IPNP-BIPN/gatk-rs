@@ -5501,6 +5501,26 @@
           "why": "Ten reads over four genes, two of them overlapping, one on the reverse strand and one unstranded, run eight ways plus three refusals: the default, EQUAL overlap, EQUAL multi-map, unspliced, two other read-strand conventions, labelling by ID, and grouping by exon; then a pair with no MQ tag, a single-end read, and the label refusal. Every read's flags, tags and cigar are reported beside the tables, and so is the whole gff3, so the port counts from the features rather than from a gff3 parser of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32954069692, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "funcotator-data-source-downloader",
+      "status": "golden-pending",
+      "title": "a data source copied, checked and unpacked",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FuncotatorDataSourceDownloader"
+      ],
+      "why": "THE DESTINATION WITH NO -O IS THE WORKING DIRECTORY, not the source's directory: getOutputLocation falls back to dataSourcesPath.getFileName(), a RELATIVE path, so the copy lands wherever the process happens to be running. THE COPIER DOES NOT CREATE THE DIRECTORY IT IS POINTED AT, so a destination whose parent is missing is a refusal rather than a mkdir. THE CHECKSUM FILE IS CLEANED BEFORE COMPARISON: trimmed, lower-cased, then truncated at the first SPACE and then at the first TAB, in that order and on the already truncated string. ONLY THE FIRST LINE IS READ, and a file with no lines is a UserException naming the path as a URI. THE COMPUTED CHECKSUM IS UPPER-CASE HEX and the comparison lower-cases both sides, but the failure message prints them AS THEY ARE, so it reads as an upper-case sum against a lower-case one. A MISMATCH LEAVES THE FILE ON DISK, because validation happens after the copy rather than during it. THE COPY REFUSES AN EXISTING DESTINATION unless --overwrite-output-file, and that refusal is a CouldNotCreateOutputFile from the copier rather than from the tool. --extract-after-download UNPACKS INTO THE DESTINATION'S PARENT. THE TWO TESTING ARGUMENTS ARE ALL-OR-NOTHING, and the onStartup checks run in a fixed order, so the sha256 path alone is reported as a missing data source rather than as a missing pair. AND THE BUCKET PATHS ARE BUILT FROM A VERSION STRING THAT ENCODES THE REFERENCE, the same major, minor and date with 38 or 19 in the middle.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FuncotatorDataSourceDownloaderDump",
+          "golden": null,
+          "why": "Eighteen runs against a hand-written one-entry tar.gz and six spellings of its sha256, through the tool's own testing override so the bucket is never reached: an explicit destination, a missing one, the default one, four checksum spellings that all have to match, a wrong checksum, an empty checksum file, an existing destination with and without --overwrite-output-file, extraction, and six argument refusals. The four bucket paths and the constants they are built from are reported beside the runs."
+        }
+      ]
     }
   ],
   "probes": []
