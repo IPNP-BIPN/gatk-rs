@@ -5641,6 +5641,26 @@
           "why": "Seven records over three strata, run two ways and refused five: the two algorithms, a clustering table with a row too few, one whose row is renamed, an empty stratification table, two strata a single record matches, and a clustering table with an extra column. Both configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33021085864, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "sv-concordance",
+      "status": "golden-pending",
+      "title": "which truth variant an eval variant is judged to be",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SVConcordance"
+      ],
+      "why": "EACH EVAL RECORD TAKES ONE TRUTH RECORD rather than a cluster, the closest by total breakend distance, and THE TIEBREAKER IS THE CLOSEST SINGLE BREAKEND: two truth records at the same total distance are separated by the smaller of their two ends. THE CNV OVERRIDE IS ASYMMETRIC: its comment says CNV/DEL matching is not allowed, and `(aType == CNV || bType != CNV) && aType != bType` only refuses it when the CNV is the EVAL record, so an eval DEL against a truth CNV falls through to the base linkage and matches. AN UNMATCHED EVAL RECORD IS STILL WRITTEN, as a false positive with its truth allele counts set to nothing. A MULTIALLELIC CNV IS SCORED ON COPY STATE INSTEAD and gets no genotype concordance at all. CONCORDANCE IS COMPUTED ON THE COMMON SAMPLES ONLY. A TRUTH RECORD CARRYING AC/AF/AN HAS THEM COPIED, and one without has them RECOUNTED FROM THE EVAL RECORD'S ALT ALLELES over the truth genotypes. --do-not-sort CHANGES NOTHING FOR AN IN-ORDER INPUT, because the buffer it removes sorts by position and the records complete in the order they were added, so the flag is a memory setting rather than a behaviour. AND THE SEQUENCE DICTIONARY IS REQUIRED FROM THE ARGUMENT rather than from either VCF, because the VCFs' own dictionaries are sometimes out of order.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SVConcordanceDump",
+          "golden": null,
+          "why": "Nine eval records against nine truth records over one contig, with one eval-only and one truth-only sample so the common set is smaller than either, run three ways and refused twice: the default, --do-not-sort, a reciprocal overlap of 0.999 that breaks exactly one match, a run with no --sequence-dictionary, and an eval VCF out of position order. Both input VCFs are reported beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
