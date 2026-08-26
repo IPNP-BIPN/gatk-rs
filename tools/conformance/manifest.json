@@ -5604,7 +5604,7 @@
     },
     {
       "id": "sv-cluster",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which structural variants are judged the same event",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5617,8 +5617,8 @@
       "cases": [
         {
           "dump": "SVClusterDump",
-          "golden": null,
-          "why": "Eighteen records over two contigs, run nine ways: the two algorithms, --enable-cnv under each, a depth overlap threshold nothing reaches and one everything reaches, a raised sample overlap, a widened PESR breakend window, and --omit-members. The whole input VCF and the ploidy table are reported beside the outputs. The fixture needed four things the tool requires and does not default: a ploidy table, a real reference, an ECN on every genotype, and a dictionary length that matches the FASTA to the base."
+          "golden": "crates/gatk-tools/tests/data/sv_cluster.txt.gz",
+          "why": "Eighteen records over two contigs, run nine ways: the two algorithms, --enable-cnv under each, a depth overlap threshold nothing reaches and one everything reaches, a raised sample overlap, a widened PESR breakend window, and --omit-members. The whole input VCF and the ploidy table are reported beside the outputs. The fixture needed four things the tool requires and does not default: a ploidy table, a real reference, an ECN on every genotype, and a dictionary length that matches the FASTA to the base. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33018774946, and byte for byte what this laptop produced."
         }
       ]
     }

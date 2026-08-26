@@ -70,6 +70,10 @@ pub enum SvType {
     Dup,
     Ins,
     Inv,
+    /// A copy number variant, which stands in for both a deletion and a duplication when two
+    /// simple CNVs are compared. SVStratify never names it in a configuration; the clustering
+    /// linkage does.
+    Cnv,
     Cpx,
     Bnd,
     Ctx,
@@ -82,6 +86,7 @@ impl SvType {
             "DUP" => SvType::Dup,
             "INS" => SvType::Ins,
             "INV" => SvType::Inv,
+            "CNV" => SvType::Cnv,
             "CPX" => SvType::Cpx,
             "BND" => SvType::Bnd,
             "CTX" => SvType::Ctx,
