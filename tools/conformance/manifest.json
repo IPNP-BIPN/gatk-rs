@@ -5601,6 +5601,26 @@
           "why": "Six sites over a trio and one unrelated sample, run seven ways: family priors alone, two other de novo priors, both halves together, family priors skipped by argument, no pedigree at all, and a pedigree with no complete trio in the VCF. The whole input and both pedigrees are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33011583005, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "sv-cluster",
+      "status": "golden-pending",
+      "title": "which structural variants are judged the same event",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SVCluster"
+      ],
+      "why": "THE PARAMETER SET IS CHOSEN BY THE PAIR, NOT BY THE USER: two depth-only records take the depth thresholds, two PESR records the PESR ones and one of each the MIXED ones, so a single run applies three different thresholds to different pairs of the same file. SINGLE LINKAGE AND MAX CLIQUE DISAGREE ON A CHAIN, and the chain here is made by the type rule rather than by coordinates: a deletion and a duplication at the same locus do NOT cluster with each other, but both cluster with a CNV between them, so single linkage returns one group of three and max clique returns two overlapping pairs that both contain the CNV. --enable-cnv is only observable under max clique, because under single linkage the CNV already chains the two together. RECIPROCAL OVERLAP AND SIZE SIMILARITY ARE SEPARATE TESTS and both must pass: two deletions sharing a start and differing twentyfold in length overlap and still do not cluster. ONLY BND AND INV REQUIRE MATCHING STRANDS. SAMPLE OVERLAP IS TESTED LAST and is zero by default, so two records sharing no carrier cluster until --depth-sample-overlap is raised. AND --omit-members REMOVES THE ONLY FIELD THAT SHOWS THE CLUSTERING, which is what makes it the run that proves the others were reading something real.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SVClusterDump",
+          "golden": null,
+          "why": "Eighteen records over two contigs, run nine ways: the two algorithms, --enable-cnv under each, a depth overlap threshold nothing reaches and one everything reaches, a raised sample overlap, a widened PESR breakend window, and --omit-members. The whole input VCF and the ploidy table are reported beside the outputs. The fixture needed four things the tool requires and does not default: a ploidy table, a real reference, an ECN on every genotype, and a dictionary length that matches the FASTA to the base."
+        }
+      ]
     }
   ],
   "probes": []
