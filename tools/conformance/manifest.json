@@ -5564,7 +5564,7 @@
     },
     {
       "id": "calculate-genotype-posteriors",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "likelihoods turned into posteriors under a dirichlet prior",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5577,8 +5577,8 @@
       "cases": [
         {
           "dump": "CalculateGenotypePosteriorsDump",
-          "golden": null,
-          "why": "Six sites over three samples, run eleven ways and refused four: no panel, a panel, assumed reference samples with and without the panel, AC instead of MLEAC, a panel carrying no MLEAC, external counts only, discovered counts off, flat priors for indels, changed pseudocounts, and population priors skipped; then an unindexed panel, a VCF with no genotypes and the two malformed MLEAC headers. Outputs are written to out-<label>.vcf rather than <label>.vcf: the first version of this dump wrote the `panel` run's output to panel.vcf, which is the supporting panel, and the tool truncated its own input before reading it."
+          "golden": "crates/gatk-tools/tests/data/calculate_genotype_posteriors.txt.gz",
+          "why": "Six sites over three samples, run eleven ways and refused four: no panel, a panel, assumed reference samples with and without the panel, AC instead of MLEAC, a panel carrying no MLEAC, external counts only, discovered counts off, flat priors for indels, changed pseudocounts, and population priors skipped; then an unindexed panel, a VCF with no genotypes and the two malformed MLEAC headers. Outputs are written to out-<label>.vcf rather than <label>.vcf: the first version of this dump wrote the `panel` run's output to panel.vcf, which is the supporting panel, and the tool truncated its own input before reading it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33009487187, and byte for byte what this laptop produced."
         }
       ]
     }
