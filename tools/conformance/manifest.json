@@ -5544,7 +5544,7 @@
     },
     {
       "id": "add-flow-snv-quality",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a probability for every base that was not called",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5557,8 +5557,8 @@
       "cases": [
         {
           "dump": "AddFlowSNVQualityDump",
-          "golden": null,
-          "why": "Six flow-based reads under a four-flow order, run seven ways, plus one read under a flow order whose cycle is one: the default Geometric mode, the three other snvq modes, two maximum phred scores, and the base quality written to a tag. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands and the whole enumeration without a flow matrix of its own."
+          "golden": "crates/gatk-tools/tests/data/add_flow_snv_quality.txt.gz",
+          "why": "Six flow-based reads under a four-flow order, run seven ways, plus one read under a flow order whose cycle is one: the default Geometric mode, the three other snvq modes, two maximum phred scores, and the base quality written to a tag. Every read's flow key and the three raw probabilities the tool bands are reported beside the outputs, so the port computes the bands and the whole enumeration without a flow matrix of its own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33006186675, and byte for byte what this laptop produced."
         }
       ]
     }

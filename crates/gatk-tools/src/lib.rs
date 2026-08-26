@@ -7,6 +7,7 @@
 
 pub mod add_comments_to_bam;
 pub mod add_flow_base_quality;
+pub mod add_flow_snv_quality;
 pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
 pub mod annotate_intervals;
