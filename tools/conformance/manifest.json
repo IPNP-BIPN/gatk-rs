@@ -5584,7 +5584,7 @@
     },
     {
       "id": "family-priors",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a trio's genotypes recomputed together",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5597,8 +5597,8 @@
       "cases": [
         {
           "dump": "FamilyPriorsDump",
-          "golden": null,
-          "why": "Six sites over a trio and one unrelated sample, run seven ways: family priors alone, two other de novo priors, both halves together, family priors skipped by argument, no pedigree at all, and a pedigree with no complete trio in the VCF. The whole input and both pedigrees are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/family_priors.txt.gz",
+          "why": "Six sites over a trio and one unrelated sample, run seven ways: family priors alone, two other de novo priors, both halves together, family priors skipped by argument, no pedigree at all, and a pedigree with no complete trio in the VCF. The whole input and both pedigrees are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33011583005, and byte for byte what this laptop produced."
         }
       ]
     }

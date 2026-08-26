@@ -50,6 +50,7 @@ pub mod denoise_read_counts;
 pub mod downsample_by_duplicate_set;
 pub mod dump_tabix_index;
 pub mod evaluate_info_field_concordance;
+pub mod family_priors;
 pub mod fasta_alternate_reference_maker;
 pub mod fasta_reference_maker;
 pub mod filter_funcotations;
