@@ -5524,7 +5524,7 @@
     },
     {
       "id": "sv-stratify",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "structural variants sorted into strata",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5537,8 +5537,8 @@
       "cases": [
         {
           "dump": "SVStratifyDump",
-          "golden": null,
-          "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/sv_stratify.txt.gz",
+          "why": "Seven structural variants over two reference tracks and six strata, run nine ways and refused eleven: the default, two overlap fractions, two required breakpoints, multiple matches allowed and refused, split output both ways, and every configuration and argument refusal the engine has. The tracks, the configuration tables and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 32981957600, and byte for byte what this laptop produced."
         }
       ]
     }
