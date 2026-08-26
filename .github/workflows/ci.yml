@@ -360,12 +360,8 @@ jobs:
             suites: "collect-f1r2-counts filter-funcotations pathseq-build-reference-taxonomy pathseq-build-kmers gtf-to-bed"
           - group: oracle-backed
             index: "47/47"
-            slug: "compose-str-table-file"
-            suites: "compose-str-table-file"
-          - group: golden-pending
-            index: "1/1"
-            slug: "cram-issue-8768-detector"
-            suites: "cram-issue-8768-detector"
+            slug: "compose-str-table-file-cram-issue-8768-detector"
+            suites: "compose-str-table-file cram-issue-8768-detector"
     steps:
       - uses: actions/checkout@v7
 

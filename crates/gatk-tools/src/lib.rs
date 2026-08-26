@@ -42,6 +42,7 @@ pub mod count_false_positives;
 pub mod count_reads;
 pub mod count_variants;
 pub mod counting_walkers;
+pub mod cram_issue_8768;
 pub mod denoise_read_counts;
 pub mod downsample_by_duplicate_set;
 pub mod dump_tabix_index;
