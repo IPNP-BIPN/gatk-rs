@@ -7,9 +7,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 179 | 57.6% |
-| golden-pending | 0 | 0.0% |
+| golden-pending | 1 | 0.3% |
 | unchecked | 12 | 3.9% |
-| not started | 120 | 38.6% |
+| not started | 119 | 38.3% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -85,7 +85,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 </details>
 
-## gatk-origin tools (131 of 190 started)
+## gatk-origin tools (132 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
@@ -177,6 +177,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MergeMutect2CallsWithMC3` | unclassified | oracle-backed | merge-mutect2-mc3 | 1 | not measured |
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
+| `ModelSegments` | cnv-segmentation | golden-pending | model-segments | 1 | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | not measured |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy | 1 | not measured |
@@ -221,9 +222,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | not measured |
 
-<details><summary>59 not started</summary>
+<details><summary>58 not started</summary>
 
-`AlleleFrequencyQC`, `ApplyBQSRSpark`, `ApplyVQSR`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaMemIndexImageCreator`, `BwaSpark`, `CalcMetadataSpark`, `CalculateContamination`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `CreateHadoopBamSplittingIndex`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `Funcotator`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `LocalAssembler`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `ModelSegments`, `Mutect2`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`AlleleFrequencyQC`, `ApplyBQSRSpark`, `ApplyVQSR`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaMemIndexImageCreator`, `BwaSpark`, `CalcMetadataSpark`, `CalculateContamination`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `CreateHadoopBamSplittingIndex`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `Funcotator`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `LocalAssembler`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `Mutect2`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 
