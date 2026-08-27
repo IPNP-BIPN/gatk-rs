@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 163 | 52.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 164 | 52.7% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 135 | 43.4% |
 | **total** | **311** | |
@@ -180,7 +180,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
-| `ReblockGVCF` | unclassified | golden-pending | reblock-gvcf | 1 | not measured |
+| `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | not measured |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |

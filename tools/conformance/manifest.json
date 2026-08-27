@@ -5904,7 +5904,7 @@
     },
     {
       "id": "reblock-gvcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how a GVCF's reference blocks are coarsened",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5917,8 +5917,8 @@
       "cases": [
         {
           "dump": "ReblockGVCFDump",
-          "golden": null,
-          "why": "Eight records over one contig, three adjacent blocks in one band, a confident variant, a weak one between two blocks and a GQ0 block, run ten ways and refused once: the default, one band edge and six, the reference-quality threshold, dropping low qualities with and without it, keeping all alternates, flooring the blocks, keeping an INFO annotation, removing a FORMAT one, and asking to keep a FORMAT key as an INFO one."
+          "golden": "crates/gatk-tools/tests/data/reblock_gvcf.txt.gz",
+          "why": "Eight records over one contig, three adjacent blocks in one band, a confident variant, a weak one between two blocks and a GQ0 block, run ten ways and refused once: the default, one band edge and six, the reference-quality threshold, dropping low qualities with and without it, keeping all alternates, flooring the blocks, keeping an INFO annotation, removing a FORMAT one, and asking to keep a FORMAT key as an INFO one. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33047494830, and byte for byte what this laptop produced."
         }
       ]
     }
