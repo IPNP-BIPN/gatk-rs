@@ -5824,7 +5824,7 @@
     },
     {
       "id": "series-stats",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the accumulator the ground-truth tools keep their numbers in",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5837,8 +5837,8 @@
       "cases": [
         {
           "dump": "SeriesStatsDump",
-          "golden": null,
-          "why": "Nine series through every statistic the class reports, eight percentiles each, their bins in map order, their digests, and four CSV files. Every number is printed to ten decimal places. This is a suite for a PRIMITIVE rather than for a tool: `SeriesStats` is what both ground-truth tools keep their numbers in, and neither of them can be ported without it."
+          "golden": "crates/gatk-tools/tests/data/series_stats.txt.gz",
+          "why": "Nine series through every statistic the class reports, eight percentiles each, their bins in map order, their digests, and four CSV files. Every number is printed to ten decimal places. This is a suite for a PRIMITIVE rather than for a tool: `SeriesStats` is what both ground-truth tools keep their numbers in, and neither of them can be ported without it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33042957764, and byte for byte what this laptop produced."
         }
       ]
     }
