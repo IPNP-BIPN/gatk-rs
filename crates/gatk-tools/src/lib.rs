@@ -96,6 +96,7 @@ pub mod learn_read_orientation_model;
 pub mod left_align_and_trim_variants;
 pub mod left_align_indels;
 pub mod locus_walker;
+pub mod main_dispatch;
 pub mod make_sites_only_vcf;
 pub mod merge_mutect2_mc3;
 pub mod merge_vcfs;
