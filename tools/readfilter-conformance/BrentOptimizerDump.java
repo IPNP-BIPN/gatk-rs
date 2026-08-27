@@ -7,15 +7,19 @@
  *
  * Seven behaviours this is built to catch.
  *
- *   - IT RETURNS THE POINT IT LAST EVALUATED, not an exactly converged one, so the answer carries
- *     the tolerances in its digits;
+ *   - IT RETURNS THE BEST POINT IT EVALUATED, not an exactly converged one, so the answer carries
+ *     the tolerances in its digits and a symmetric function comes back a hair off centre: a
+ *     printed `-0.00000000000000` is a small NEGATIVE number rounded, not a negative zero;
  *   - A FUNCTION THAT IS EXACTLY A PARABOLA IS SOLVED IN ONE STEP by the interpolation, so the
  *     tolerances do not reach it at all: every setting returns the vertex exactly. The tolerances
  *     are only visible on a function the interpolation cannot fit;
- *   - THE INITIAL GUESS MOVES THE ANSWER for a function with more than one maximum, because the
- *     search is local;
+ *   - THE SEARCH IS LOCAL TO ITS INTERVAL RATHER THAN TO ITS GUESS: a function with two maxima
+ *     answers with the SAME one from a guess near either of them, because the first golden step is
+ *     long enough to leave whichever peak the guess was near, and it is bracketing the interval
+ *     around one peak that separates them;
  *   - A GUESS AT AN INTERVAL END is still accepted, and the search runs one-sided from it;
- *   - MAXIMISING IS MINIMISING THE NEGATIVE, so a symmetric function gives a symmetric answer;
+ *   - MAXIMISING IS MINIMISING THE NEGATIVE, which the optimiser does internally, so the value
+ *     that comes back is the function's own;
  *   - THE EVALUATION BUDGET IS A REFUSAL, not a silent stop: exceeding it throws;
  *   - AND A GUESS OUTSIDE THE INTERVAL IS REFUSED before anything is evaluated.
  *
@@ -69,17 +73,26 @@ public class BrentOptimizerDump {
         max("parabola-guess-at-min", parabola, 0.0, 10.0, 0.0, 0.001, 0.001, 1000);
         max("parabola-guess-at-max", parabola, 0.0, 10.0, 10.0, 0.001, 0.001, 1000);
 
-        // The settings the panel of normals uses, on a function shaped like its likelihood. This
-        // one the interpolation cannot fit, so the tolerances decide where it stops.
-        final DoubleUnaryOperator panelLike = s -> -Math.abs(Math.log(s) - Math.log(7.0)) - s / 50.0;
-        max("panel-settings", panelLike, 0.01, 100.0, 1.0, 0.01, 0.1, 100);
-        max("panel-tight", panelLike, 0.01, 100.0, 1.0, 1e-12, 1e-12, 1000);
-        max("panel-loose", panelLike, 0.01, 100.0, 1.0, 0.5, 0.5, 1000);
+        // A peak the interpolation cannot fit, so the tolerances decide where it stops. It is
+        // piecewise LINEAR rather than logarithmic on purpose: Math.log and Math.exp are not
+        // transcribable between a JVM and a libm under decision 0014, and a golden built on one
+        // would be pinning the platform's transcendentals rather than the optimiser.
+        final DoubleUnaryOperator kinked = s -> -Math.abs(s - 7.0) - s / 50.0;
+        max("kinked-settings", kinked, 0.01, 100.0, 1.0, 0.01, 0.1, 100);
+        max("kinked-tight", kinked, 0.01, 100.0, 1.0, 1e-12, 1e-12, 1000);
+        max("kinked-loose", kinked, 0.01, 100.0, 1.0, 0.5, 0.5, 1000);
 
-        // Two maxima, where the guess decides which one is found.
-        final DoubleUnaryOperator twoPeaks = x -> Math.sin(x);
+        // Two maxima, where the guess decides which one is found. A quartic rather than a sine,
+        // for the same reason as above: it peaks at 4 and at 16, both at zero.
+        final DoubleUnaryOperator twoPeaks =
+                x -> -(x - 4.0) * (x - 4.0) * (x - 16.0) * (x - 16.0);
         max("two-peaks-low-guess", twoPeaks, 0.0, 20.0, 1.0, 0.001, 0.001, 1000);
         max("two-peaks-high-guess", twoPeaks, 0.0, 20.0, 14.0, 0.001, 0.001, 1000);
+        // The same function bracketed around each peak in turn, which is what actually separates
+        // them: over the whole interval the first golden step is long enough to leave whichever
+        // peak the guess was near.
+        max("two-peaks-low-interval", twoPeaks, 0.0, 10.0, 1.0, 0.001, 0.001, 1000);
+        max("two-peaks-high-interval", twoPeaks, 10.0, 20.0, 14.0, 0.001, 0.001, 1000);
 
         // A symmetric function, whose answer is symmetric too.
         max("symmetric", x -> -x * x, -5.0, 5.0, 2.0, 0.001, 0.001, 1000);
