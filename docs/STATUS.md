@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 178 | 57.2% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 179 | 57.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 120 | 38.6% |
 | **total** | **311** | |
@@ -160,7 +160,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | not measured |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | not measured |
-| `GnarlyGenotyper` | assembly-caller | golden-pending | gnarly-genotyper | 1 | not measured |
+| `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | not measured |
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | not measured |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
