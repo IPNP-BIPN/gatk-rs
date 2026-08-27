@@ -5924,7 +5924,7 @@
     },
     {
       "id": "combine-gvcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how several single-sample GVCFs become one",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5937,8 +5937,8 @@
       "cases": [
         {
           "dump": "CombineGVCFsDump",
-          "golden": null,
-          "why": "Three single-sample GVCFs whose block edges deliberately fall inside each other's, one of them stopping early and two of them carrying a variant where the others have a block, run eight ways and refused once: three samples, two, base-pair resolution, two grids, both band arguments together, called genotypes, one sample alone, and the same file given twice. Every input GVCF is reported whole beside the outputs, and each is indexed in the dump because the walker queries them by interval."
+          "golden": "crates/gatk-tools/tests/data/combine_gvcfs.txt.gz",
+          "why": "Three single-sample GVCFs whose block edges deliberately fall inside each other's, one of them stopping early and two of them carrying a variant where the others have a block, run eight ways and refused once: three samples, two, base-pair resolution, two grids, both band arguments together, called genotypes, one sample alone, and the same file given twice. Every input GVCF is reported whole beside the outputs, and each is indexed in the dump because the walker queries them by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33050568322, and byte for byte what this laptop produced."
         }
       ]
     }
