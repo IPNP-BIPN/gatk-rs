@@ -5944,7 +5944,7 @@
     },
     {
       "id": "variant-eval",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how a call set is counted against a comparison one",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5957,8 +5957,8 @@
       "cases": [
         {
           "dump": "VariantEvalDump",
-          "golden": null,
-          "why": "Seven eval records covering two transitions, two transversions, an insertion, a deletion and a multiallelic site, a comparison file matching three of them, run twelve ways and refused twice: with and without the comparison, the same file as dbSNP, four modules on their own, the standard stratifiers off, a stratifier on, a named subset, two unknown names and --list. Both input VCFs are reported whole and indexed in the dump, because the walker queries them by interval."
+          "golden": "crates/gatk-tools/tests/data/variant_eval.txt.gz",
+          "why": "Seven eval records covering two transitions, two transversions, an insertion, a deletion and a multiallelic site, a comparison file matching three of them, run twelve ways and refused twice: with and without the comparison, the same file as dbSNP, four modules on their own, the standard stratifiers off, a stratifier on, a named subset, two unknown names and --list. Both input VCFs are reported whole and indexed in the dump, because the walker queries them by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33064822968, and byte for byte what this laptop produced."
         }
       ]
     }
