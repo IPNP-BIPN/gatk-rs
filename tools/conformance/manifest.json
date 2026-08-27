@@ -6221,6 +6221,26 @@
           "why": "Nine runs over one BAM of five reads: the defaults, a different set of percentiles, the zero-call flows excluded, the mean-call columns, two score thresholds, the soft-clipped bases scored, no CSV output, and a BAM whose reads are not flow-based."
         }
       ]
+    },
+    {
+      "id": "gnarly-genotyper",
+      "status": "golden-pending",
+      "title": "the engine's own rules, asked directly rather than through GenomicsDB",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GnarlyGenotyper"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GnarlyGenotyperDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
