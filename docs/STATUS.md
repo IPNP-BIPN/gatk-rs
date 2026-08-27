@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 180 | 57.9% |
-| golden-pending | 2 | 0.6% |
+| oracle-backed | 181 | 58.2% |
+| golden-pending | 1 | 0.3% |
 | unchecked | 12 | 3.9% |
 | not started | 117 | 37.6% |
 | **total** | **311** | |
@@ -149,7 +149,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | not measured |
 | `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | not measured |
 | `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | not measured |
-| `Funcotator` | variant-walker | golden-pending | funcotator | 1 | not measured |
+| `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | not measured |
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | not measured |
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
