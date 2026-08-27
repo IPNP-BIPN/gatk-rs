@@ -136,5 +136,6 @@ pub mod validate_basic_somatic_short_mutations;
 pub mod validate_variants;
 pub mod variant_filtration;
 pub mod variants_to_table;
+pub mod vcf_comparator;
 pub mod vcf_format_converter;
 pub mod vcf_to_interval_list;
