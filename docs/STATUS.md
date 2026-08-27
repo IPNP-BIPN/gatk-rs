@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 157 | 50.5% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 158 | 50.8% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 141 | 45.3% |
 | **total** | **311** | |
@@ -125,7 +125,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
 | `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
-| `CreateSomaticPanelOfNormals` | variant-transform | golden-pending | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
+| `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |

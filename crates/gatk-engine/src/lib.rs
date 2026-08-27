@@ -24,6 +24,7 @@ pub mod base_utils;
 pub mod basic_somatic_short_mutation_validator;
 pub mod beta_binomial;
 pub mod bqsr_transformer;
+pub mod brent_optimizer;
 pub mod cigar_builder;
 pub mod cigar_utils;
 pub mod clipping;

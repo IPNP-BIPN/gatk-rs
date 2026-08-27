@@ -372,12 +372,8 @@ jobs:
             suites: "grouped-sv-cluster sv-concordance sv-annotate joint-germline-cnv-segmentation collect-sv-evidence"
           - group: oracle-backed
             index: "50/50"
-            slug: "filter-alignment-artifacts-learn-read-orientation-model"
-            suites: "filter-alignment-artifacts learn-read-orientation-model"
-          - group: golden-pending
-            index: "1/1"
-            slug: "brent-optimizer-create-somatic-panel-of-normals"
-            suites: "brent-optimizer create-somatic-panel-of-normals"
+            slug: "filter-alignment-artifacts-learn-read-orientation-model-brent-optimizer-create-somatic-panel-of-normals"
+            suites: "filter-alignment-artifacts learn-read-orientation-model brent-optimizer create-somatic-panel-of-normals"
     steps:
       - uses: actions/checkout@v7
 
