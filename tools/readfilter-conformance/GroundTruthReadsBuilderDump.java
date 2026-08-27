@@ -26,6 +26,8 @@
  *     so a read clipped only at its front is kept whatever the argument says;
  *   - --min-haplotype-score-delta DROPS A READ WHOSE TWO HAPLOTYPES ARE TOO FAR APART, which is
  *     every read away from both ancestral differences;
+ *   - --output-flow-length FIXES THE LENGTH OF THE TWO HAPLOTYPE KEYS IN BOTH DIRECTIONS, padding
+ *     a short one and TRUNCATING a long one, and it does not touch the read's own key at all;
  *   - AND THE CSV IS QUOTED: the flow keys hold commas of their own, so a reader that splits on
  *     the comma alone reads the columns out of step.
  *
