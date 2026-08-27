@@ -6244,21 +6244,21 @@
     },
     {
       "id": "model-segments",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the genotyping and the segmentation, which is all the multi-sample mode does",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "ModelSegments"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The allele-fraction signal dominates the copy-ratio one at the default penalty: a fixture whose copy ratios step at 40000 and whose allele fractions step at 30000 and 80000 is cut at 30000 and 80000 alone, and the copy-ratio step appears only when the penalty is lowered. The cap on segments per chromosome keeps the LAST break rather than the first, and a floor on the total allele count that leaves no het at all segments exactly as the copy-ratio-only run does.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "ModelSegmentsDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/model_segments.txt.gz",
+          "why": "Eleven cases: two samples, the copy ratios alone, a penalty of a thousand and one of a hundredth, the cap on segments, one window size named once and twice, a lowered homozygous threshold, a floor on the total allele count above every site, and two samples whose copy-ratio intervals disagree."
         }
       ]
     }
