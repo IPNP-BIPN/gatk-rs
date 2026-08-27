@@ -6141,6 +6141,26 @@
           "why": "Ten runs over one reference of sixty repeat blocks: the estimation forced and not, two table shapes, two hyper-parameters, the parallel path, both arguments with a minimum, and an STR table composed for another reference."
         }
       ]
+    },
+    {
+      "id": "analyze-saturation-mutagenesis",
+      "status": "golden-pending",
+      "title": "reads over an ORF, counted by what each one turned out to be",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AnalyzeSaturationMutagenesis"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "AnalyzeSaturationMutagenesisDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
