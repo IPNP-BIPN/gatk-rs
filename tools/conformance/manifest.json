@@ -6224,21 +6224,21 @@
     },
     {
       "id": "gnarly-genotyper",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the engine's own rules, asked directly rather than through GenomicsDB",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "GnarlyGenotyper"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The engine is asked directly rather than through the tool, which is what unblocks the measurement: a hand-written combined GVCF never gets past the tool's reader, but finalizeGenotype is public. The quality floor is the confidence argument LESS ten times the logarithm of the site prior, so it is 60 for a SNP and 69.03 for an indel and not the 30 the argument names.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "GnarlyGenotyperDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/gnarly_genotyper.txt.gz",
+          "why": "Fourteen cases: a SNP above and under its floor, that floor with and without --keep-all-sites, a quality between the two floors as a SNP and as an indel, a mixed site, a spanning deletion, the allele-specific quality list, no quality key at all, the annotations stripped and kept, more alternates than the cap, and two shapes of raw MQ."
         }
       ]
     }
