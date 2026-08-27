@@ -6201,6 +6201,26 @@
           "why": "Ten runs over one BAM of six reads, two ancestral references and a pair of translation tables: the defaults, a mapping-quality floor, the soft-clip filter off, a sequence added at each end, two flow lengths, both score filters, a cap on the output, and a translation that collapses a read."
         }
       ]
+    },
+    {
+      "id": "ground-truth-scorer",
+      "status": "golden-pending",
+      "title": "every read scored against the reference it aligns to, and the report that summarises them",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GroundTruthScorerDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
