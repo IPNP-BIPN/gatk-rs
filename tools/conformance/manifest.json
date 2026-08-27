@@ -5804,7 +5804,7 @@
     },
     {
       "id": "ramped-haplotype-caller",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the shape of a ramp state file, and the orderings it compares under",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5817,8 +5817,8 @@
       "cases": [
         {
           "dump": "RampedHaplotypeCallerDump",
-          "golden": null,
-          "why": "One ramp file written through a subclass that exposes the off ramp's protected methods, reported as its entry names in write order and two of its entries whole; then three haplotypes and three reads through both comparators, five verification calls, and the derived names and paths. The caller itself is not run: this tool is HaplotypeCaller with a different engine, and the engine is milestone G3's. What is measured is the ramp format and the orderings, which are the tool's own."
+          "golden": "crates/gatk-tools/tests/data/ramped_haplotype_caller.txt.gz",
+          "why": "One ramp file written through a subclass that exposes the off ramp's protected methods, reported as its entry names in write order and two of its entries whole; then three haplotypes and three reads through both comparators, five verification calls, and the derived names and paths. The caller itself is not run: this tool is HaplotypeCaller with a different engine, and the engine is milestone G3's. What is measured is the ramp format and the orderings, which are the tool's own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33041444608, and byte for byte what this laptop produced."
         }
       ]
     }
