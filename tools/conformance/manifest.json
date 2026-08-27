@@ -5878,7 +5878,7 @@
         {
           "dump": "VCFComparatorDump",
           "golden": null,
-          "why": "One expected VCF of three sites and eight actuals, each a single change away from it, run twenty-two ways: identical, an extra variant called confidently and the same one at genotype quality zero, a QUAL difference alone and under three arguments, two kinds of filter difference, an extra allele and a missing one under two arguments each, an INFO difference under three, a dbSNP id, positions-only, warn-on-errors, and the two input shapes the tool refuses. Every input VCF is reported whole beside the results."
+          "why": "One expected VCF of three sites and eight actuals, each a single change away from it, run twenty-two ways: identical, an extra variant called confidently and the same one at genotype quality zero, a QUAL difference alone and under three arguments, two kinds of filter difference, an extra allele and a missing one under two arguments each, an INFO difference under three, a dbSNP id, positions-only, warn-on-errors, and the two input shapes the tool refuses. Every input VCF is reported whole beside the results. The extra variant is INSERTED into the record list rather than appended, because the driving iterator refuses a VCF whose records are not in position order."
         }
       ]
     }

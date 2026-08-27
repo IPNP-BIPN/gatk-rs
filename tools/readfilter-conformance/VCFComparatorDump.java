@@ -113,13 +113,16 @@ public class VCFComparatorDump {
         // A variant only in actual, whose genotypes are confidently called. The unmatched-variant
         // complaint is guarded on a genotype quality of ZERO, so this one passes.
         final List<String> extraSite = baseline();
-        extraSite.add(site(3000, ".", "T", "A", "300.00", "PASS", "AC=1;DP=40", "0/1:70",
+        // INSERTED before the site at 4000, not appended: the driving iterator refuses a VCF whose
+        // records are not in position order.
+        extraSite.add(2, site(3000, ".", "T", "A", "300.00", "PASS", "AC=1;DP=40", "0/1:70",
                 "0/0:70"));
         run(dir, "extra-variant", expectedPath, writeActual(dir, "extra", extraSite), List.of());
         // The same variant with a genotype quality of zero, which is what the complaint is looking
         // for.
         final List<String> extraGq0 = baseline();
-        extraGq0.add(site(3000, ".", "T", "A", "300.00", "PASS", "AC=1;DP=40", "0/1:0", "0/0:0"));
+        extraGq0.add(2, site(3000, ".", "T", "A", "300.00", "PASS", "AC=1;DP=40", "0/1:0",
+                "0/0:0"));
         final Path extraGq0Path = writeActual(dir, "extra-gq0", extraGq0);
         run(dir, "extra-variant-gq0", expectedPath, extraGq0Path, List.of());
         run(dir, "extra-variant-gq0-ignored", expectedPath, extraGq0Path,
