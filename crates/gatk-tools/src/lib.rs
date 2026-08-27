@@ -54,6 +54,7 @@ pub mod depth_of_coverage;
 pub mod downsample_by_duplicate_set;
 pub mod dump_tabix_index;
 pub mod evaluate_info_field_concordance;
+pub mod extract_variant_annotations;
 pub mod family_priors;
 pub mod fasta_alternate_reference_maker;
 pub mod fasta_reference_maker;
