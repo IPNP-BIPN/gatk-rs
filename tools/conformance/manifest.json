@@ -6101,6 +6101,26 @@
           "why": "Ten runs over one BAM of seven reads: the defaults, two surround settings, the duplicate read in, three score bounds, a copied attribute, an interval, and the mode that reports every base."
         }
       ]
+    },
+    {
+      "id": "flow-pairhmm-align-reads-to-haplotypes",
+      "status": "golden-pending",
+      "title": "every read scored against every haplotype, and what the concise format makes of it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FlowPairHMMAlignReadsToHaplotypes"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FlowPairHMMAlignReadsToHaplotypesDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
