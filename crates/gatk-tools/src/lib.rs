@@ -72,6 +72,7 @@ pub mod fix_vcf_header;
 pub mod flow_feature_mapper;
 pub mod flow_pairhmm_align_reads_to_haplotypes;
 pub mod funcotate_segments;
+pub mod funcotator;
 pub mod funcotator_data_source_downloader;
 pub mod gather_bam_files;
 pub mod gather_bqsr_reports;
