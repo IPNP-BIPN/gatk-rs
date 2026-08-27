@@ -50,6 +50,7 @@ pub mod count_reads;
 pub mod count_variants;
 pub mod counting_walkers;
 pub mod cram_issue_8768;
+pub mod create_read_count_panel_of_normals;
 pub mod create_somatic_panel_of_normals;
 pub mod denoise_read_counts;
 pub mod depth_of_coverage;
