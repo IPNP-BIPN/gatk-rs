@@ -5961,6 +5961,26 @@
           "why": "Seven eval records covering two transitions, two transversions, an insertion, a deletion and a multiallelic site, a comparison file matching three of them, run twelve ways and refused twice: with and without the comparison, the same file as dbSNP, four modules on their own, the standard stratifiers off, a stratifier on, a named subset, two unknown names and --list. Both input VCFs are reported whole and indexed in the dump, because the walker queries them by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33064822968, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "genotype-gvcfs",
+      "status": "golden-pending",
+      "title": "how a GVCF becomes a genotyped VCF",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GenotypeGVCFs"
+      ],
+      "why": "A REFERENCE BLOCK IS NEVER WRITTEN by default: the output is a VCF and not a GVCF. <NON_REF> IS REMOVED FROM THE ALTERNATES of every site that survives, and an ALTERNATE NO SAMPLE CARRIES IS DROPPED with it, so a site the GVCF wrote as `C,G,<NON_REF>` comes out as `C`. THE GENOTYPES ARE CALLED FROM THE LIKELIHOODS RATHER THAN COPIED, and the call can DISAGREE with the one the GVCF carried: the site whose likelihoods are `3,0,900` is written `0/1` in the input and called `0/0` here, because the calling prior moves a three-point margin. THE CALLING THRESHOLD DOES NOT DECIDE EMISSION: what is written is decided by the CALL, so that site is dropped at a threshold of 2 as surely as at 50, and only --include-non-variant-sites brings it back. THAT ARGUMENT EXPANDS A REFERENCE BLOCK INTO ONE RECORD PER BASE rather than writing the block, so a five-base block becomes five records. --sample-ploidy CHANGES NOTHING when the likelihood arrays are diploid, which is the control that says the ploidy is read off the data. AND THE SITE ANNOTATIONS ARE COMPUTED FROM THE CALLED GENOTYPES, so AC, AN and AF describe the output rather than the input.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GenotypeGVCFsDump",
+          "golden": null,
+          "why": "A five-base reference block and five variants covering a confident heterozygote, a confident homozygote, a site whose best likelihood is the reference, a marginal site three points from one, and a site with an alternate no sample carries, run six ways: the default, all sites, two calling thresholds either side of the marginal site's quality, the raw annotations kept, and a ploidy of one. The block is five bases because --include-non-variant-sites expands it one record per base."
+        }
+      ]
     }
   ],
   "probes": []
