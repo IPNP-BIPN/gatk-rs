@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 152 | 48.9% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 153 | 49.2% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 146 | 46.9% |
 | **total** | **311** | |
@@ -175,7 +175,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
-| `SVAnnotate` | sv-caller | golden-pending | sv-annotate | 1 | not measured |
+| `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | not measured |
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | not measured |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |

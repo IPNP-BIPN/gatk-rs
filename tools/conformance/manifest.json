@@ -5664,7 +5664,7 @@
     },
     {
       "id": "sv-annotate",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what a structural variant is predicted to do to a gene",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5677,8 +5677,8 @@
       "cases": [
         {
           "dump": "SVAnnotateDump",
-          "golden": null,
-          "why": "Two genes on opposite strands with the same five-exon shape, three non-coding elements, and twenty-six variants over one contig covering every protein-coding consequence the tool can emit, run seven ways and refused five: the default, a promoter window of zero, a wide one, breakends read as deletions and duplications, the GTF alone, the BED alone, neither, a BED with a header, a complex variant with no intervals, one with no type, a translocation with no second contig, and a breakend with no length. Both reference files and the whole input VCF are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/sv_annotate.txt.gz",
+          "why": "Two genes on opposite strands with the same five-exon shape, three non-coding elements, and twenty-six variants over one contig covering every protein-coding consequence the tool can emit, run seven ways and refused five: the default, a promoter window of zero, a wide one, breakends read as deletions and duplications, the GTF alone, the BED alone, neither, a BED with a header, a complex variant with no intervals, one with no type, a translocation with no second contig, and a breakend with no length. Both reference files and the whole input VCF are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33025240830, and byte for byte what this laptop produced."
         }
       ]
     }
