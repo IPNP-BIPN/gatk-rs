@@ -386,6 +386,10 @@ jobs:
             index: "53/53"
             slug: "extract-variant-annotations-variant-recalibrator-haplotype-based-variant-recaller"
             suites: "extract-variant-annotations variant-recalibrator haplotype-based-variant-recaller"
+          - group: golden-pending
+            index: "1/1"
+            slug: "flow-feature-mapper"
+            suites: "flow-feature-mapper"
     steps:
       - uses: actions/checkout@v7
 
