@@ -6181,6 +6181,26 @@
           "why": "Eleven runs over nine read-count files: the defaults, no filtering at all, each of the four filters on its own against that baseline, the zeros left alone, two eigensample counts, a panel of one sample, and an input whose intervals do not match."
         }
       ]
+    },
+    {
+      "id": "ground-truth-reads-builder",
+      "status": "golden-pending",
+      "title": "every read scored against the haplotype its two ancestral references give it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GroundTruthReadsBuilder"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "GroundTruthReadsBuilderDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
