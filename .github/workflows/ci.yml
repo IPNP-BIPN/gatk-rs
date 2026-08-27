@@ -396,8 +396,8 @@ jobs:
             suites: "gnarly-genotyper model-segments"
           - group: golden-pending
             index: "1/1"
-            slug: "local-assembler-funcotator"
-            suites: "local-assembler funcotator"
+            slug: "local-assembler-funcotator-main-dispatch"
+            suites: "local-assembler funcotator main-dispatch"
     steps:
       - uses: actions/checkout@v7
 

@@ -6301,6 +6301,26 @@
           "why": "PENDING: written once the measurement is read."
         }
       ]
+    },
+    {
+      "id": "main-dispatch",
+      "status": "golden-pending",
+      "title": "the dispatcher's refusals: the deprecation notice and the suggestion search",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MainDispatchDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
