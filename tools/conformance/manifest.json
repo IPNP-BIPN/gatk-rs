@@ -5884,7 +5884,7 @@
     },
     {
       "id": "variant-annotator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how one VCF is annotated from another",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5897,8 +5897,8 @@
       "cases": [
         {
           "dump": "VariantAnnotatorDump",
-          "golden": null,
-          "why": "Four input sites and a resource covering three of them, one with a different alternate, each resource record carrying both a per-allele field and a scalar one, run eleven ways: one expression, a scalar one with and without allele concordance, two expressions, the same file under two tags, ID/ALT/FILTER together, allele concordance over the per-allele field, an unknown field, an unknown tag, a comparison file, and no resource at all. The resource is indexed in the dump, because it is queried by interval."
+          "golden": "crates/gatk-tools/tests/data/variant_annotator.txt.gz",
+          "why": "Four input sites and a resource covering three of them, one with a different alternate, each resource record carrying both a per-allele field and a scalar one, run eleven ways: one expression, a scalar one with and without allele concordance, two expressions, the same file under two tags, ID/ALT/FILTER together, allele concordance over the per-allele field, an unknown field, an unknown tag, a comparison file, and no resource at all. The resource is indexed in the dump, because it is queried by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33046588972, and byte for byte what this laptop produced."
         }
       ]
     }
