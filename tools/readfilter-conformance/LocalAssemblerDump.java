@@ -39,7 +39,7 @@
  * Output:
  *
  *     sam\t<label>=<that bam as sam, without its header, escaped>
- *     gfa\t<label>=<the whole gfa, escaped>
+ *     gfa\t<label>=<the whole gfa, its `O` lines sorted, escaped>
  *     fasta\t<label>=<the whole fasta, escaped>
  *     none\t<label>=<what was not written>
  *     error\t<label>\t<exception class>:<message>
@@ -61,6 +61,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class LocalAssemblerDump {
@@ -220,11 +221,44 @@ public class LocalAssemblerDump {
             final String kind = file.toString().endsWith(".gfa") ? "gfa" : "fasta";
             if (Files.exists(file)) {
                 System.out.printf("%s\t%s=%s%n", kind, label,
-                        ReferenceQueryDump.escape(masked(Files.readString(file), dir)));
+                        ReferenceQueryDump.escape(masked(
+                                kind.equals("gfa") ? sortedPaths(Files.readString(file))
+                                        : Files.readString(file), dir)));
             } else {
                 System.out.printf("none\t%s=no %s%n", label, kind);
             }
         }
+    }
+
+    /**
+     * The GFA with its `O` lines sorted.
+     *
+     * The tool emits one path line per contig and their ORDER is not reproducible: it falls out of
+     * a hash of the contigs, so two disjoint contigs come out in one order on one machine and the
+     * other on another. Sorting them is what makes the case comparable at all; the segment lines
+     * and their sequences, which is what the assembly actually says, are left where they are.
+     */
+    static String sortedPaths(final String gfa) {
+        final List<String> lines = new ArrayList<>(Arrays.asList(gfa.split("\n", -1)));
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).startsWith("O\t")) {
+                if (first < 0) {
+                    first = i;
+                }
+                last = i;
+            }
+        }
+        if (first < 0) {
+            return gfa;
+        }
+        final List<String> paths = new ArrayList<>(lines.subList(first, last + 1));
+        Collections.sort(paths);
+        for (int i = 0; i < paths.size(); i++) {
+            lines.set(first + i, paths.get(i));
+        }
+        return String.join("\n", lines);
     }
 
     static void writeReads(final Path bam, final List<Read> reads) {
