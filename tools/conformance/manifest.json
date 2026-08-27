@@ -6204,21 +6204,21 @@
     },
     {
       "id": "ground-truth-scorer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "every read scored against the reference it aligns to, and the report that summarises them",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "GroundTruthScorer"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The flow-based scoring is not what this measures: the report's shape is. --omit-zeros-from-report is not optional in practice, the four-level table being allocated as 61 x 101 x 202 x 4 and written out in full; and --exclude-zero-flows empties a row rather than dropping it, so every one of its statistics comes out NaN.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "GroundTruthScorerDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/ground_truth_scorer.txt.gz",
+          "why": "Nine runs over one BAM of five reads: the defaults, a different set of percentiles, the zero-call flows excluded, the mean-call columns, two score thresholds, the soft-clipped bases scored, no CSV output, and a BAM whose reads are not flow-based."
         }
       ]
     }
