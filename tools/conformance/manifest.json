@@ -6144,21 +6144,21 @@
     },
     {
       "id": "analyze-saturation-mutagenesis",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "reads over an ORF, counted by what each one turned out to be",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "AnalyzeSaturationMutagenesis"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The read census is a tree of percentages whose denominators change from level to level, and the counters behind it are static fields that nothing resets: two invocations in one JVM add up, which is why every configuration runs in a JVM of its own and one pair does not. The trimming also reads the fragment length, so a properly-paired read with no TLEN is trimmed away to nothing however good its bases are.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "AnalyzeSaturationMutagenesisDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/analyze_saturation_mutagenesis.txt.gz",
+          "why": "Ten configurations over one BAM of seventeen reads, plus a pair of runs that share a JVM: the defaults, a lower observation threshold, a wider flank, a higher mapping-quality floor, a longer minimum length, unpaired mode, the disjoint pairs combined, a two-interval ORF, and the two refusals."
         }
       ]
     }
