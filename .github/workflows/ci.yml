@@ -370,6 +370,10 @@ jobs:
             index: "49/49"
             slug: "grouped-sv-cluster-sv-concordance"
             suites: "grouped-sv-cluster sv-concordance"
+          - group: golden-pending
+            index: "1/1"
+            slug: "sv-annotate"
+            suites: "sv-annotate"
     steps:
       - uses: actions/checkout@v7
 
