@@ -5701,6 +5701,26 @@
           "why": "Three single-sample gCNV VCFs over chr1, chrX and chrY with a pedigree naming a male, a female and an unknown sex, run six ways and refused twice: the three samples together, a quality threshold above every call, then the male alone at the default padding, at zero, at 1.0 and at a sample overlap of 1.0, then an autosomal reference copy number of 1 and a pedigree missing a sample. The pedigree and all three input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33026720715, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "collect-sv-evidence",
+      "status": "golden-pending",
+      "title": "what one BAM contributes to structural-variant calling",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CollectSVEvidence"
+      ],
+      "why": "A DISCORDANT PAIR IS WRITTEN ONCE, BY ONE OF ITS TWO READS: the one whose contig index is smaller, or whose start is smaller, and at an EQUAL start the FIRST of the two seen, recognised by name within the locus, so two DIFFERENT pairs at one position are still two records. THE STRAND FIELD HOLDS `!isReverseStrand` AND THE CODEC PRINTS `+` FOR TRUE, so the two negations cancel and the output shows each read's own strand. A READ IS SPLIT ONLY IF EXACTLY ONE END IS SOFT-CLIPPED, so one clipped at both ends is not counted at all, and WHICH END DECIDES BOTH THE DIRECTION AND THE POSITION: a leading match gives a RIGHT position past the alignment and a leading clip a LEFT position at the start. THE MATCH LENGTH SUMS EVERY REFERENCE-CONSUMING OPERATOR, so a deletion inside the alignment moves the right-hand position out by its own length. SPLIT POSITIONS ARE COUNTED, so two reads clipped at one place print a count of two, while the same position reached from the two directions stays two records. THE SITE DEPTH READS ONLY BIALLELIC SNPS AT NEW LOCI, so a repeated position, a triallelic site and an indel are all walked past. --site-depth-min-mapq FILTERS A WHOLE READ AND --site-depth-min-baseq A SINGLE BASE, and the two have different defaults, 30 and 20, while --depth-evidence-min-mapq defaults to 0, so the same read can be counted for depth and not for site depth. AN INTERVAL NO READ REACHES IS STILL WRITTEN, with a count of zero. A READ THAT IS NOT PAIRED AT ALL CRASHES THE DISCORDANT WRITER, because it reports isProperlyPaired() as false and is then asked for a mate it does not have. AND EACH OF THE FOUR OUTPUTS REFUSES A FILE NAME IT COULD NOT READ BACK, with its own message naming its own three extensions.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CollectSVEvidenceDump",
+          "golden": null,
+          "why": "One coordinate-sorted BAM of twenty-two reads over two contigs, a VCF of six candidate site-depth loci of which three qualify, and three depth intervals of which one is reached by nothing, run five ways and refused seven: all four outputs at once, a raised mapping-quality floor, a lowered base-quality floor, the discordant and split writers each on their own, then no output at all, an unpaired read, a wrong file name for each of the four writers, and an empty intervals file. The reads are reported as a line each, and both reference files whole, beside the outputs."
+        }
+      ]
     }
   ],
   "probes": []
