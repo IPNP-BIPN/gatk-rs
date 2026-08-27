@@ -5921,6 +5921,26 @@
           "why": "Eight records over one contig, three adjacent blocks in one band, a confident variant, a weak one between two blocks and a GQ0 block, run ten ways and refused once: the default, one band edge and six, the reference-quality threshold, dropping low qualities with and without it, keeping all alternates, flooring the blocks, keeping an INFO annotation, removing a FORMAT one, and asking to keep a FORMAT key as an INFO one. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33047494830, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "combine-gvcfs",
+      "status": "golden-pending",
+      "title": "how several single-sample GVCFs become one",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CombineGVCFs"
+      ],
+      "why": "EVERY SAMPLE'S BOUNDARIES CUT EVERY OTHER SAMPLE'S BLOCKS, so the output's records are the UNION of every input's edges rather than any one input's: a block no input broke at 1100 or 1151 is broken at both, because another sample has an edge there. A VARIANT IN ONE SAMPLE CUTS THE OTHERS' BLOCKS at its own position, and the samples with no variant there have their likelihoods EXPANDED to the merged allele set rather than left as they were. EACH SAMPLE KEEPS ITS OWN QUALITY on every record, so the output is one genotype per sample rather than a summary. A SAMPLE THAT ENDS EARLY KEEPS ITS COLUMN AND LOSES ITS FIELDS: it is written `./.` with nothing after it, rather than padded with reference or dropped. NO GENOTYPE IS CALLED by default: every sample is `./.` on every record, and --call-genotypes is what turns them into 0/0 and 0/1. --convert-to-base-pair-resolution BREAKS EVERY BLOCK INTO SINGLE BASES and --break-bands-at-multiples-of BREAKS THEM AT A GRID whatever the data says; THE TWO ARE NOT MUTUALLY EXCLUSIVE, and given together base-pair resolution wins and the grid is ignored, which is measured by the run producing byte for byte what base-pair resolution produced alone. AND THE SAME FILE TWICE IS REFUSED, by the feature-input check rather than by anything about samples.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CombineGVCFsDump",
+          "golden": null,
+          "why": "Three single-sample GVCFs whose block edges deliberately fall inside each other's, one of them stopping early and two of them carrying a variant where the others have a block, run eight ways and refused once: three samples, two, base-pair resolution, two grids, both band arguments together, called genotypes, one sample alone, and the same file given twice. Every input GVCF is reported whole beside the outputs, and each is indexed in the dump because the walker queries them by interval."
+        }
+      ]
     }
   ],
   "probes": []
