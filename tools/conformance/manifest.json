@@ -6024,21 +6024,21 @@
     },
     {
       "id": "extract-variant-annotations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which variants a scalable-VQSR extraction keeps, and what it writes for them",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "ExtractVariantAnnotations"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "One prefix produces up to three files and none is a subset of another, so the suite reads both HDF5 matrices back as well as the sites-only VCF. Two facts came out of the fixture rather than the code: the default matching strategy is START_POSITION, and only the minimal representation reconciles a padded allele.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "ExtractVariantAnnotationsDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/extract_variant_annotations.txt.gz",
+          "why": "Nineteen runs over one input: each mode and both, two labels, a tag whose value is not `true`, the reserved label, the reservoir under four seeds, both filter arguments, all three matching strategies, an allele-specific annotation, the alleles omitted, and a run that keeps nothing."
         }
       ]
     }
