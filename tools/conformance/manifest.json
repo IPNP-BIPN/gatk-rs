@@ -6121,6 +6121,26 @@
           "why": "Twelve runs over one BAM of five reads and three haplotype FASTAs: the reference first and last, two haplotypes equally far from one read, both engines, no reference haplotype, a reference the FASTA does not name, and an engine the tool does not have."
         }
       ]
+    },
+    {
+      "id": "calibrate-dragstr-model",
+      "status": "golden-pending",
+      "title": "the DRAGstr parameter table estimated from the reads over a reference's repeats",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalibrateDragstrModel"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CalibrateDragstrModelDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
