@@ -6161,6 +6161,26 @@
           "why": "Ten configurations over one BAM of seventeen reads, plus a pair of runs that share a JVM: the defaults, a lower observation threshold, a wider flank, a higher mapping-quality floor, a longer minimum length, unpaired mode, the disjoint pairs combined, a two-interval ORF, and the two refusals."
         }
       ]
+    },
+    {
+      "id": "create-read-count-panel-of-normals",
+      "status": "golden-pending",
+      "title": "which intervals and which samples reach the panel",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateReadCountPanelOfNormals"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CreateReadCountPanelOfNormalsDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
