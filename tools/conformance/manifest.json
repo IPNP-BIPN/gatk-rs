@@ -5861,6 +5861,26 @@
           "why": "Five reads over three read groups of two samples, an interval that runs five bases past them on each side, run eight ways and refused three: the default, base counts, a raised minimum base quality, a lowered maximum, each of the four omissions, then both interval arguments together and a base quality above and below the byte range. Every file each run wrote is reported whole, and the set of suffixes is reported as its own line. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33044261822, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "vcf-comparator",
+      "status": "golden-pending",
+      "title": "what counts as two VCFs disagreeing",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VCFComparator"
+      ],
+      "why": "THE EXPECTED FILE IS IDENTIFIED BY ITS TAG rather than by its order: both inputs are tagged and exactly one of them must be `expected`, so two untagged files are refused with a different message from one file. A VARIANT PRESENT ON ONE SIDE ALONE IS ONLY A COMPLAINT WHEN A GENOTYPE HAS QUALITY ZERO: the same extra variant called confidently passes in silence. EVERY OTHER DIFFERENCE IS REPORTED WITH ITS POSITION WRAPPED AROUND THE MESSAGE rather than inside it, so the text reads `At position chr1:1000 ...`. THE QUAL COMPARISON IS A TOLERANCE whose default is 0.001 and whose message names both the difference and the tolerance. DIFFERENT FILTERS AND UNAPPLIED FILTERS ARE TWO DIFFERENT COMPLAINTS. AN INFO DIFFERENCE NAMES THE ATTRIBUTE, and --ignore-attribute takes one key at a time, so ignoring the wrong key changes nothing. AND THE ALLELE CHECK IS GUARDED BY THE REVERSED COMPARISON: in front of it stands `actualHasNewAlleles(expected, actual)`, with its arguments the other way round, which asks whether EXPECTED has an allele actual lacks. An allele ADDED to actual is therefore never checked at all and passes in silence, while an allele MISSING from actual is refused; --allow-extra-alleles exists for the direction that is unreachable and does not silence the direction that is. An extra allele also changes `AC`, so without --ignore-attribute the attribute complaint is reached first and hides the whole question. --positions-only IS MUTUALLY EXCLUSIVE WITH THE TOLERANCES IT SUBSUMES, refused by the argument parser before a record is read, and --warn-on-errors turns every complaint into a warning and lets the run succeed.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VCFComparatorDump",
+          "golden": null,
+          "why": "One expected VCF of three sites and eight actuals, each a single change away from it, run twenty-two ways: identical, an extra variant called confidently and the same one at genotype quality zero, a QUAL difference alone and under three arguments, two kinds of filter difference, an extra allele and a missing one under two arguments each, an INFO difference under three, a dbSNP id, positions-only, warn-on-errors, and the two input shapes the tool refuses. Every input VCF is reported whole beside the results."
+        }
+      ]
     }
   ],
   "probes": []
