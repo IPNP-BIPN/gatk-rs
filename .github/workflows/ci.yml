@@ -380,12 +380,8 @@ jobs:
             suites: "series-stats depth-of-coverage vcf-comparator variant-annotator reblock-gvcf"
           - group: oracle-backed
             index: "52/52"
-            slug: "combine-gvcfs-variant-eval"
-            suites: "combine-gvcfs variant-eval"
-          - group: golden-pending
-            index: "1/1"
-            slug: "genotype-gvcfs"
-            suites: "genotype-gvcfs"
+            slug: "combine-gvcfs-variant-eval-genotype-gvcfs"
+            suites: "combine-gvcfs variant-eval genotype-gvcfs"
     steps:
       - uses: actions/checkout@v7
 

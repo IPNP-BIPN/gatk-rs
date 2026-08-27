@@ -5964,7 +5964,7 @@
     },
     {
       "id": "genotype-gvcfs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how a GVCF becomes a genotyped VCF",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5977,8 +5977,8 @@
       "cases": [
         {
           "dump": "GenotypeGVCFsDump",
-          "golden": null,
-          "why": "A five-base reference block and five variants covering a confident heterozygote, a confident homozygote, a site whose best likelihood is the reference, a marginal site three points from one, and a site with an alternate no sample carries, run six ways: the default, all sites, two calling thresholds either side of the marginal site's quality, the raw annotations kept, and a ploidy of one. The block is five bases because --include-non-variant-sites expands it one record per base."
+          "golden": "crates/gatk-tools/tests/data/genotype_gvcfs.txt.gz",
+          "why": "A five-base reference block and five variants covering a confident heterozygote, a confident homozygote, a site whose best likelihood is the reference, a marginal site three points from one, and a site with an alternate no sample carries, run six ways: the default, all sites, two calling thresholds either side of the marginal site's quality, the raw annotations kept, and a ploidy of one. The block is five bases because --include-non-variant-sites expands it one record per base. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33066147023, and byte for byte what this laptop produced."
         }
       ]
     }
