@@ -6081,6 +6081,26 @@
           "why": "Four runs over one fixture of nine reads, seven haplotype records in three groups and four alleles: the whole reference, one interval, an interval with no allele in it, and a mapping-quality filter."
         }
       ]
+    },
+    {
+      "id": "flow-feature-mapper",
+      "status": "golden-pending",
+      "title": "which bases of a read become features, and what each feature's record carries",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FlowFeatureMapper"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FlowFeatureMapperDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
