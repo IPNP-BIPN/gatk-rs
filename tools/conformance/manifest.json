@@ -6004,21 +6004,21 @@
     },
     {
       "id": "funcotate-segments",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how a segment file is annotated from a folder of data sources",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "FuncotateSegments"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The folder's shape is as much of the tool as the annotation is, and three claims read off the code were wrong about it: a manifest version outside the range is refused rather than skipped, a reference version with no directory is refused, and a missing manifest is not refused at all.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "FuncotateSegmentsDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/funcotate_segments.txt.gz",
+          "why": "Ten runs over one segment file: the good folder, a version outside the range, no manifest, a reference version with no directory, that folder answered for the version it has, a config missing a required key, and a segment under the 150-base minimum."
         }
       ]
     }
