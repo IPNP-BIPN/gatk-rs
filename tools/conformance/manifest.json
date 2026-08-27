@@ -5881,6 +5881,26 @@
           "why": "One expected VCF of three sites and eight actuals, each a single change away from it, run twenty-two ways: identical, an extra variant called confidently and the same one at genotype quality zero, a QUAL difference alone and under three arguments, two kinds of filter difference, an extra allele and a missing one under two arguments each, an INFO difference under three, a dbSNP id, positions-only, warn-on-errors, and the two input shapes the tool refuses. Every input VCF is reported whole beside the results. The extra variant is INSERTED into the record list rather than appended, because the driving iterator refuses a VCF whose records are not in position order. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33045739945, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "variant-annotator",
+      "status": "golden-pending",
+      "title": "how one VCF is annotated from another",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VariantAnnotator"
+      ],
+      "why": "THE RESOURCE IS NAMED BY ITS TAG and the annotation's key is `<tag>.<field>`, so the SAME FILE UNDER TWO TAGS IS TWO ANNOTATIONS. AN EXPRESSION MAY NAME `ID`, `ALT` OR `FILTER` as well as an INFO field. A RECORD WITH NO RESOURCE AT ITS POSITION IS LEFT ALONE rather than annotated with nothing. A PER-ALLELE FIELD CANNOT CROSS TO A DIFFERENT ALTERNATE: `AC` is Number=A, and at the site where the resource's alternate differs from the input's it is withheld whatever the arguments say, while the SCALAR `NOTE` crosses freely and so do `ID`, `ALT` and `FILTER`. --resource-allele-concordance IS WHAT WITHHOLDS THE SCALAR ONE, and it changes nothing about the per-allele one, which was already withheld. --comp ADDS A BARE FLAG under the tag alone rather than a key and a value, and it is subject to the same allele test. AN EXPRESSION NAMING A FIELD THE RESOURCE DOES NOT CARRY ADDS NOTHING AND IS NOT REFUSED, while an expression whose TAG names no resource IS refused, with `The requested expression 'nothere.AC' is invalid, could not find vcf input file`: an unknown field is silent and an unknown file is not. AND THE OUTPUT KEEPS EVERY ANNOTATION THE INPUT ALREADY CARRIED, which the `NOTE=kept` on the first site is there to show.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VariantAnnotatorDump",
+          "golden": null,
+          "why": "Four input sites and a resource covering three of them, one with a different alternate, each resource record carrying both a per-allele field and a scalar one, run eleven ways: one expression, a scalar one with and without allele concordance, two expressions, the same file under two tags, ID/ALT/FILTER together, allele concordance over the per-allele field, an unknown field, an unknown tag, a comparison file, and no resource at all. The resource is indexed in the dump, because it is queried by interval."
+        }
+      ]
     }
   ],
   "probes": []
