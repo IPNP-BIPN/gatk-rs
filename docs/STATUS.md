@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 175 | 56.3% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 176 | 56.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 123 | 39.5% |
 | **total** | **311** | |
@@ -94,7 +94,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | not measured |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
-| `AnalyzeSaturationMutagenesis` | locus-walker | golden-pending | analyze-saturation-mutagenesis | 1 | not measured |
+| `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | not measured |
 | `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | not measured |
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | not measured |
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |

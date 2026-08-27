@@ -10,6 +10,7 @@ pub mod add_flow_base_quality;
 pub mod add_flow_snv_quality;
 pub mod add_original_alignment_tags;
 pub mod analyze_covariates;
+pub mod analyze_saturation_mutagenesis;
 pub mod annotate_intervals;
 pub mod annotate_vcf_with_bam_depth;
 pub mod annotate_vcf_with_expected_allele_fraction;
