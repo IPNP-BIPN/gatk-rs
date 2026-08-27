@@ -6084,21 +6084,21 @@
     },
     {
       "id": "flow-feature-mapper",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which bases of a read become features, and what each feature's record carries",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "FlowFeatureMapper"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The flow matrix's score is not what this measures: it is which bases become records at all and what takes a record away again. Two claims read off the code were wrong: two mismatches two apart both survive the default surround because the base between them matches, and an interval selects READS rather than features, so a read starting inside it contributes every feature it carries including those past the interval's end.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "FlowFeatureMapperDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/flow_feature_mapper.txt.gz",
+          "why": "Ten runs over one BAM of seven reads: the defaults, two surround settings, the duplicate read in, three score bounds, a copied attribute, an interval, and the mode that reports every base."
         }
       ]
     }
