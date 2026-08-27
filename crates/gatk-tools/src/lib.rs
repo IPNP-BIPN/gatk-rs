@@ -82,6 +82,7 @@ pub mod genotype_gvcfs;
 pub mod get_normal_artifact_data;
 pub mod get_pileup_summaries;
 pub mod get_sample_name;
+pub mod gnarly_genotyper;
 pub mod ground_truth_reads_builder;
 pub mod ground_truth_scorer;
 pub mod grouped_sv_cluster;
