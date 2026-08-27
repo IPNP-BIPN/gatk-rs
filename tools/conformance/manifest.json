@@ -5721,6 +5721,26 @@
           "why": "One coordinate-sorted BAM of twenty-two reads over two contigs, a VCF of six candidate site-depth loci of which three qualify, and three depth intervals of which one is reached by nothing, run five ways and refused seven: all four outputs at once, a raised mapping-quality floor, a lowered base-quality floor, the discordant and split writers each on their own, then no output at all, an unpaired read, a wrong file name for each of the four writers, and an empty intervals file. The reads are reported as a line each, bases and base qualities included so the site depths can be recomputed from the golden rather than from the dump's source, and both reference files whole, beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33028127949, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "filter-alignment-artifacts",
+      "status": "golden-pending",
+      "title": "which reads support a variant, and which realignments are the same one",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "why": "A READ SUPPORTS A SNP BY ITS BASES, compared from the offset the reference coordinate maps to, and a variant position that falls inside a DELETION never supports a SNP. AN INDEL IS MATCHED BY CIGAR OPERATOR INSTEAD, because indel representation is not unique: a deletion by a D or an S, an insertion by an I or an S. THE WALK COMPARES A RUNNING SUM OF ELEMENT LENGTHS against the variant's offset, so at a tolerance of 0 the sum has to land on it EXACTLY: a leading 6M steps from 0 straight over an offset of 5 and the read supports nothing. AN INSERTION IS THEREFORE NEVER SUPPORTED BY AN I AT TOLERANCE 0, whatever the cigar, because the read index for the variant position lands PAST the inserted bases and the sum is short of it by the insertion's own length; only a soft clip supports an insertion exactly. AND THE TOLERANCE LOOP STOPS ADVANCING THE SUM once an element is within tolerance, so a wide enough tolerance freezes it at 0 and scans the whole cigar for a supporting operator however far away it really is: the same read that supports nothing at 0 supports the deletion at 5. ON THE JOINT SIDE, one unitig makes every alignment its own joint alignment and no unitigs make none; TWO UNITIGS JOIN ONLY ON THE SAME STRAND and only within half the maximum fragment length on each side; the BEST-SCORING alignment of each unitig is the one kept; a locus only some of the unitigs reach is dropped; AND THE RESULT COMES OUT OF A HashSet OF LISTS whose elements define no equals, so its order is identity-hash order and is not reproducible, which is why the report sorts it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FilterAlignmentArtifactsDump",
+          "golden": null,
+          "why": "Fifteen read-and-variant pairs through `supportsVariant` and thirteen sets of constructed alignments through `findJointAlignments`, both of them public and both decidable without an aligner. The realignment itself is not measured here: it is BWA's, and the assembly that produces the unitigs is the Mutect2 assembler's. What is measured is the two rules the tool owns."
+        }
+      ]
     }
   ],
   "probes": []
