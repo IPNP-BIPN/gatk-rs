@@ -7,9 +7,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | state | tools | share |
 |---|---:|---:|
 | oracle-backed | 156 | 50.2% |
-| golden-pending | 0 | 0.0% |
+| golden-pending | 1 | 0.3% |
 | unchecked | 12 | 3.9% |
-| not started | 143 | 46.0% |
+| not started | 142 | 45.7% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -85,7 +85,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 </details>
 
-## gatk-origin tools (108 of 190 started)
+## gatk-origin tools (109 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
@@ -153,6 +153,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file | 1 | not measured |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |
+| `LearnReadOrientationModel` | assembly-caller | golden-pending | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | not measured |
@@ -198,9 +199,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | not measured |
 
-<details><summary>82 not started</summary>
+<details><summary>81 not started</summary>
 
-`AlleleFrequencyQC`, `AnalyzeSaturationMutagenesis`, `ApplyBQSRSpark`, `ApplyVQSR`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaMemIndexImageCreator`, `BwaSpark`, `CalcMetadataSpark`, `CalculateContamination`, `CalibrateDragstrModel`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CombineGVCFs`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `CreateHadoopBamSplittingIndex`, `CreateReadCountPanelOfNormals`, `CreateSomaticPanelOfNormals`, `DepthOfCoverage`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `ExtractVariantAnnotations`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `FlowFeatureMapper`, `FlowPairHMMAlignReadsToHaplotypes`, `FuncotateSegments`, `Funcotator`, `GenomicsDBImport`, `GenotypeGVCFs`, `GermlineCNVCaller`, `GnarlyGenotyper`, `GroundTruthReadsBuilder`, `GroundTruthScorer`, `HaplotypeBasedVariantRecaller`, `HaplotypeCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `LearnReadOrientationModel`, `LocalAssembler`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `ModelSegments`, `Mutect2`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `RampedHaplotypeCaller`, `ReadsPipelineSpark`, `ReblockGVCF`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariantDiscoverer`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`, `VCFComparator`, `VariantAnnotator`, `VariantEval`, `VariantRecalibrator`
+`AlleleFrequencyQC`, `AnalyzeSaturationMutagenesis`, `ApplyBQSRSpark`, `ApplyVQSR`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaMemIndexImageCreator`, `BwaSpark`, `CalcMetadataSpark`, `CalculateContamination`, `CalibrateDragstrModel`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CombineGVCFs`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `CreateHadoopBamSplittingIndex`, `CreateReadCountPanelOfNormals`, `CreateSomaticPanelOfNormals`, `DepthOfCoverage`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `ExtractVariantAnnotations`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `FlowFeatureMapper`, `FlowPairHMMAlignReadsToHaplotypes`, `FuncotateSegments`, `Funcotator`, `GenomicsDBImport`, `GenotypeGVCFs`, `GermlineCNVCaller`, `GnarlyGenotyper`, `GroundTruthReadsBuilder`, `GroundTruthScorer`, `HaplotypeBasedVariantRecaller`, `HaplotypeCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `LocalAssembler`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `ModelSegments`, `Mutect2`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `RampedHaplotypeCaller`, `ReadsPipelineSpark`, `ReblockGVCF`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariantDiscoverer`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`, `VCFComparator`, `VariantAnnotator`, `VariantEval`, `VariantRecalibrator`
 
 </details>
 

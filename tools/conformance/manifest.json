@@ -5741,6 +5741,26 @@
           "why": "Fifteen read-and-variant pairs through `supportsVariant` and thirteen sets of constructed alignments through `findJointAlignments`, both of them public and both decidable without an aligner. The realignment itself is not measured here: it is BWA's, and the assembly that produces the unitigs is the Mutect2 assembler's. What is measured is the two rules the tool owns. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33029059438, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "learn-read-orientation-model",
+      "status": "golden-pending",
+      "title": "which of twelve states a site is in",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "LearnReadOrientationModel"
+      ],
+      "why": "THE FLAT PRIOR IS NOT FLAT OVER TWELVE STATES: the two artefact states whose alternate base IS the reference base are given zero and the remaining ten share the mass at a tenth each, so the prior depends on the reference base and no state ever gets a twelfth. A REF-TO-REF ARTEFACT IS IMPOSSIBLE and takes zero responsibility however the counts fall, AND SO IS ANY ARTEFACT STATE WHOSE BASE IS NOT THE OBSERVED ALTERNATE, so at most TWO of the eight artefact states can be non-zero for one site: F1R2 and F2R1 of the observed base. WHICH OF THE TWO TAKES THE MASS IS DECIDED BY THE F1R2 COUNT ALONE: the same five alternate reads out of fifty give 0.97 to F1R2_C when all five are F1R2 and the same 0.97 to F2R1_C when none of them are, and give neither of them anything when they are split evenly. `givenNotHomRef` ZEROES HOM_REF AFTER the posteriors are computed, so what is left is RENORMALISED rather than rescaled: the two artefact states go from 0.117 each to 0.484 each. A STATE WITH A ZERO PRIOR STAYS AT ZERO, which is what makes the flat prior's zeros stick through every iteration, and a prior concentrated on ONE state returns that state at 1.0 whatever the counts say. DEPTH AND ALTERNATE DEPTH MOVE THE ANSWER SEPARATELY: the same tenth alternate fraction at ten times the depth goes from 0.97 to 0.99999979. AND TWO OF THE CONSTRUCTOR'S THREE REFUSALS ARE NOT ITS OWN: a context of the wrong length and a non-canonical kmer are validated, but an EMPTY alt design matrix passes both and then builds a matrix with zero rows, which Apache Commons refuses with `0 is smaller than, or equal to, the minimum (0)`.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "LearnReadOrientationModelDump",
+          "golden": null,
+          "why": "Four flat priors, fourteen responsibility vectors and three refusals, all through the two public statics the EM is built from and the engine's own constructor. The EM loop itself is not measured here: it needs a counts file, which is CollectF1R2Counts's output and has its own suite. Every number is printed to ten decimal places, so a change of one part in a million shows."
+        }
+      ]
     }
   ],
   "probes": []
