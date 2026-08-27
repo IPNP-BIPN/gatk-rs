@@ -6044,21 +6044,21 @@
     },
     {
       "id": "variant-recalibrator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the tranches a truth sensitivity target cuts out of a scored callset",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "VariantRecalibrator"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The tranche arithmetic is the half of VQSR's training step that does not depend on the model, so it is measured against the scores the model produced. The file is sorted by CALLS AT TRUTH SITES and not by the target sensitivity, which the four-target run makes visible: given 100, 99.9, 99 and 90 it comes out 90, 99.9, 99, 100, and one filter name then reads VQSRTrancheSNP99.90to99.00, a band that runs backwards.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "VariantRecalibratorDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/variant_recalibrator.txt.gz",
+          "why": "Thirteen runs over a callset of three hundred variants: four targets, the same four out of order, one target, a target of zero first and last, both filter arguments, the VQSLOD tranche file and an unreachable threshold in it, one annotation instead of two, and the three refusals."
         }
       ]
     }
