@@ -127,6 +127,7 @@ pub mod split_intervals;
 pub mod split_n_cigar_reads;
 pub mod split_reads;
 pub mod split_vcfs;
+pub mod structural_variant_discoverer;
 pub mod sv_annotate;
 pub mod sv_cluster;
 pub mod sv_concordance;

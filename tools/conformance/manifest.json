@@ -5984,7 +5984,7 @@
     },
     {
       "id": "structural-variant-discoverer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how split alignments become a structural variant",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5997,8 +5997,8 @@
       "cases": [
         {
           "dump": "StructuralVariantDiscovererDump",
-          "golden": null,
-          "why": "Six assembled contigs over one reference contig: two pieces with a gap, two with a strand flip, one piece alone, two that overlap, a secondary alignment and an unmapped record, run twice: queryname-sorted and coordinate-sorted. The reads are reported as a line each. The BAM is written UNSORTED and htsjdk puts it in queryname order, because the fixture is written in the order the behaviours read best rather than alphabetically."
+          "golden": "crates/gatk-tools/tests/data/structural_variant_discoverer.txt.gz",
+          "why": "Six assembled contigs over one reference contig: two pieces with a gap, two with a strand flip, one piece alone, two that overlap, a secondary alignment and an unmapped record, run twice: queryname-sorted and coordinate-sorted. The reads are reported as a line each. The BAM is written UNSORTED and htsjdk puts it in queryname order, because the fixture is written in the order the behaviours read best rather than alphabetically. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33067307177, and byte for byte what this laptop produced."
         }
       ]
     }
