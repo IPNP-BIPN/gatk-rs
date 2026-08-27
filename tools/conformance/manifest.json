@@ -5841,6 +5841,26 @@
           "why": "Nine series through every statistic the class reports, eight percentiles each, their bins in map order, their digests, and four CSV files. Every number is printed to ten decimal places. This is a suite for a PRIMITIVE rather than for a tool: `SeriesStats` is what both ground-truth tools keep their numbers in, and neither of them can be ported without it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33042957764, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "depth-of-coverage",
+      "status": "golden-pending",
+      "title": "how deep the reads lie over a reference",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "DepthOfCoverage"
+      ],
+      "why": "THE PER-LOCUS TABLE IS EVERY BASE OF EVERY INTERVAL, including the five before the reads and the five after, so its length is the intervals' and not the reads'. THE PARTITION IS THE SAMPLE, so the two read groups of sampleA are ONE column of depth two rather than two columns of one. --min-base-quality FILTERS A BASE RATHER THAN A READ, so raising it to 10 takes sampleB from 3 to 2 at every locus its low-quality read covered and changes nothing anywhere else, and --max-base-quality DOES THE SAME FROM ABOVE, which is a ceiling no other coverage tool has. --print-base-counts ADDS A PER-BASE BREAKDOWN in a fixed `A: C: G: T: N:` order, each pair followed by a space, so every row ends with one. EACH `omit` ARGUMENT REMOVES ITS OWN FILE and leaves the others, so which files a run writes is a function of the arguments alone: --omit-locus-table removes the two cumulative tables, --omit-depth-output-at-each-base removes the base file itself, --omit-per-sample-statistics removes the two summaries and --omit-interval-statistics the two interval tables. THE SUMMARY CARRIES A `Total` ROW WHOSE QUANTILES ARE `N/A`, because a quantile over the partitions is not a quantile over anything the tool measured. --omit-interval-statistics AND --calculate-coverage-over-genes ARE MUTUALLY EXCLUSIVE and the refusal names both. AND A QUALITY OUTSIDE 0..127 IS REFUSED BY THE ARGUMENT ITSELF with two DIFFERENT exceptions: 200 fails constructing a Byte and -1 fails the declared range.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "DepthOfCoverageDump",
+          "golden": null,
+          "why": "Five reads over three read groups of two samples, an interval that runs five bases past them on each side, run eight ways and refused three: the default, base counts, a raised minimum base quality, a lowered maximum, each of the four omissions, then both interval arguments together and a base quality above and below the byte range. Every file each run wrote is reported whole, and the set of suffixes is reported as its own line."
+        }
+      ]
     }
   ],
   "probes": []
