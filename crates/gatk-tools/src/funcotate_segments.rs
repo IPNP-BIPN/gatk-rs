@@ -7,9 +7,10 @@
 //!
 //! Reading a GTF, reading a reference and the annotation itself are not ported.
 //!
-//! Ported from `DataSourceUtils`, `FuncotatorArgumentDefinitions.DataSourceType`,
-//! `AnnotatedIntervalToSegmentVariantContextConverter` and `FuncotatorUtils` in GATK 4.6.2.0
-//! (BSD 3-clause).
+//! Ported from `org.broadinstitute.hellbender.tools.funcotator.dataSources.DataSourceUtils`,
+//! `org.broadinstitute.hellbender.tools.funcotator.FuncotatorArgumentDefinitions.DataSourceType`,
+//! `org.broadinstitute.hellbender.tools.funcotator.AnnotatedIntervalToSegmentVariantContextConverter`
+//! and `org.broadinstitute.hellbender.tools.funcotator.FuncotatorUtils` in GATK 4.6.2.0.
 
 use std::collections::BTreeMap;
 
@@ -97,7 +98,9 @@ pub fn parse_manifest_version(line: &str) -> Option<ManifestVersion> {
 
 /// The greedy `(\d+)` at the front, and what follows it.
 fn leading_digits(text: &str) -> Option<(i32, &str)> {
-    let end = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
+    let end = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
     if end == 0 {
         return None;
     }
@@ -255,6 +258,12 @@ pub const UNIVERSAL_KEYS: [&str; 6] = [
     "type",
 ];
 
+/// What `UserException.BadInput` puts in front of its own message.
+///
+/// It is the EXCEPTION rather than the message that adds it, so the two refusals thrown as plain
+/// `UserException` carry no prefix while these do.
+pub const BAD_INPUT_PREFIX: &str = "Bad input: ";
+
 /// What reading one config file can go wrong with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
@@ -268,10 +277,12 @@ impl ConfigError {
     pub fn message(&self) -> String {
         match self {
             ConfigError::MissingKey { path, key } => format!(
-                "Config file for datasource ({path}) does not contain required key: \"{key}\""
+                "{BAD_INPUT_PREFIX}Config file for datasource ({path}) does not contain \
+                 required key: \"{key}\""
             ),
             ConfigError::UnknownType { path, value } => format!(
-                "ERROR in config file: {path} - Invalid value in \"type\" field: {value}"
+                "{BAD_INPUT_PREFIX}ERROR in config file: {path} - Invalid value in \"type\" \
+                 field: {value}"
             ),
         }
     }
@@ -353,7 +364,8 @@ impl ResolveError {
             ResolveError::Version(message) => message.clone(),
             ResolveError::Config(error) => error.message(),
             ResolveError::DuplicateName { name, path } => format!(
-                "ERROR: contains more than one dataset of name: {name} - one is: {path}"
+                "{BAD_INPUT_PREFIX}ERROR: contains more than one dataset of name: {name} - one \
+                 is: {path}"
             ),
             ResolveError::NoSources { reference } => {
                 format!("ERROR: Could not find any data sources for given reference: {reference}")
@@ -368,10 +380,7 @@ impl ResolveError {
 /// The order of the two sanity checks at the end is the order of the messages: an empty result is
 /// reported as a missing reference version, and only a NON-EMPTY result without a GENCODE source
 /// is reported as a missing GENCODE source.
-pub fn resolve(
-    folder: &SourceFolder,
-    reference: &str,
-) -> Result<Vec<SourceConfig>, ResolveError> {
+pub fn resolve(folder: &SourceFolder, reference: &str) -> Result<Vec<SourceConfig>, ResolveError> {
     if !acceptable(folder.manifest.as_ref()) {
         return Err(ResolveError::Version(version_refusal(
             folder.manifest.as_ref(),
