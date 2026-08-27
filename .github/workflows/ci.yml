@@ -384,12 +384,8 @@ jobs:
             suites: "combine-gvcfs variant-eval genotype-gvcfs structural-variant-discoverer funcotate-segments"
           - group: oracle-backed
             index: "53/53"
-            slug: "extract-variant-annotations-variant-recalibrator"
-            suites: "extract-variant-annotations variant-recalibrator"
-          - group: golden-pending
-            index: "1/1"
-            slug: "haplotype-based-variant-recaller"
-            suites: "haplotype-based-variant-recaller"
+            slug: "extract-variant-annotations-variant-recalibrator-haplotype-based-variant-recaller"
+            suites: "extract-variant-annotations variant-recalibrator haplotype-based-variant-recaller"
     steps:
       - uses: actions/checkout@v7
 
