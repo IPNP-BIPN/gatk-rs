@@ -6041,6 +6041,26 @@
           "why": "Nineteen runs over one input: each mode and both, two labels, a tag whose value is not `true`, the reserved label, the reservoir under four seeds, both filter arguments, all three matching strategies, an allele-specific annotation, the alleles omitted, and a run that keeps nothing."
         }
       ]
+    },
+    {
+      "id": "variant-recalibrator",
+      "status": "golden-pending",
+      "title": "the tranches a truth sensitivity target cuts out of a scored callset",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VariantRecalibratorDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
