@@ -6304,21 +6304,21 @@
     },
     {
       "id": "main-dispatch",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the dispatcher's refusals: the deprecation notice and the suggestion search",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "Main"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The suggestion distance is not the plain Levenshtein one: dropping a character from the command costs FOUR and adding one costs ONE, so a command two characters too long is over the floor of seven at eight while one two characters too short is under it at two. The suggestions are printed with eight spaces before each and no separator after, so two of them run together on one line, and when every tool scores zero the suggestion is suppressed rather than every tool being listed.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "MainDispatchDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/main_dispatch.txt.gz",
+          "why": "Twenty cases over a fixed catalogue of five classes, so what is pinned is the search and not the reference's own class path: the six deprecation notices, prefixes and substrings of several lengths, one character too many and too few and one substituted, two too many and two too few, a name far from everything, the empty name, a prefix that beats a neighbour, a substring that ties two tools, a one-tool catalogue, and a name that resolves."
         }
       ]
     }
