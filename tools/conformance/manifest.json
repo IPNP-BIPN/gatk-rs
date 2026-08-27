@@ -5821,6 +5821,26 @@
           "why": "One ramp file written through a subclass that exposes the off ramp's protected methods, reported as its entry names in write order and two of its entries whole; then three haplotypes and three reads through both comparators, five verification calls, and the derived names and paths. The caller itself is not run: this tool is HaplotypeCaller with a different engine, and the engine is milestone G3's. What is measured is the ramp format and the orderings, which are the tool's own. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33041444608, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "series-stats",
+      "status": "golden-pending",
+      "title": "the accumulator the ground-truth tools keep their numbers in",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "why": "A PERCENTILE IS AN OBSERVED VALUE, never an interpolation: the walk returns a BIN KEY, so the median of the even-sized set {1,2,8,9} is 8 rather than 5. THE PERCENTILE INDEX IS TRUNCATED, `(int)(count * p / 100)`, which is why it is the THIRD smallest of four rather than the second. A SINGLE VALUE SHORT-CIRCUITS to the LAST added rather than to the only bin. AN EMPTY SERIES REPORTS NaN for min, max, mean, median and deviation, and zero for the counts. THE STANDARD DEVIATION DIVIDES BY THE COUNT rather than by the count less one, so it is the population deviation. THE BINS ARE A TreeMap OVER Double, so -0.0 SORTS BEFORE 0.0 and the two are SEPARATE BINS, which makes `getUniq` three for {0.0, -0.0, 1.0}; a NaN sorts after everything, and poisons min, max, mean and the deviation while leaving the median a real value. THE CSV IS WRITTEN AS INTEGERS ONLY WHEN EVERY VALUE ARRIVED THROUGH `add(int)`, which is a property of the ADD PATH and not of the values: two whole numbers added as doubles are written `1.000000`, and one double among two integers switches the whole file. AND THE DIGEST OF AN EMPTY SERIES CLAIMS min=0, max=0, median=0, because an empty series counts as integer-keyed and `(int)Double.NaN` is zero in Java.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "SeriesStatsDump",
+          "golden": null,
+          "why": "Nine series through every statistic the class reports, eight percentiles each, their bins in map order, their digests, and four CSV files. Every number is printed to ten decimal places. This is a suite for a PRIMITIVE rather than for a tool: `SeriesStats` is what both ground-truth tools keep their numbers in, and neither of them can be ported without it."
+        }
+      ]
     }
   ],
   "probes": []
