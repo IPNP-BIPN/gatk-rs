@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 164 | 52.7% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 165 | 53.1% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 134 | 43.1% |
 | **total** | **311** | |
@@ -112,7 +112,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | not measured |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | not measured |
-| `CombineGVCFs` | assembly-caller | golden-pending | combine-gvcfs | 1 | not measured |
+| `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | not measured |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | not measured |
