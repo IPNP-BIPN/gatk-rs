@@ -5764,7 +5764,7 @@
     },
     {
       "id": "brent-optimizer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "where the univariate maximiser stops",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5777,14 +5777,14 @@
       "cases": [
         {
           "dump": "BrentOptimizerDump",
-          "golden": null,
-          "why": "Seventeen calls of `OptimizationUtils.max`, the public entry point the panel of normals fits its beta shape through, over four functions and every combination of tolerance, guess, interval and budget that changes the answer. Every function is PIECEWISE POLYNOMIAL: `Math.log` and `Math.sin` are not transcribable between a JVM and a libm under decision 0004, and a golden built on one would pin the platform's transcendentals rather than the optimiser. Every point and value is printed to fourteen decimal places. This is a suite for an ENGINE primitive rather than for a tool: it is here because the panel's BETA field cannot be reproduced without it."
+          "golden": "crates/gatk-engine/tests/data/brent_optimizer.txt.gz",
+          "why": "Seventeen calls of `OptimizationUtils.max`, the public entry point the panel of normals fits its beta shape through, over four functions and every combination of tolerance, guess, interval and budget that changes the answer. Every function is PIECEWISE POLYNOMIAL: `Math.log` and `Math.sin` are not transcribable between a JVM and a libm under decision 0004, and a golden built on one would pin the platform's transcendentals rather than the optimiser. Every point and value is printed to fourteen decimal places. This is a suite for an ENGINE primitive rather than for a tool: it is here because the panel's BETA field cannot be reproduced without it. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33035486743, and byte for byte what this laptop produced."
         }
       ]
     },
     {
       "id": "create-somatic-panel-of-normals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which sites recur across normals often enough to be artefacts",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5797,8 +5797,8 @@
       "cases": [
         {
           "dump": "CreateSomaticPanelOfNormalsDump",
-          "golden": null,
-          "why": "Nine sites over three normal samples, plus the same sites over four, and a germline resource covering three of them, run seven ways: the default, the resource, a germline probability of 1.0 and of 0.0001, a minimum of one sample and of three, and the fourth sample. The resource is indexed in the dump, because it is queried by interval and is refused without an index."
+          "golden": "crates/gatk-tools/tests/data/create_somatic_panel_of_normals.txt.gz",
+          "why": "Nine sites over three normal samples, plus the same sites over four, and a germline resource covering three of them, run seven ways: the default, the resource, a germline probability of 1.0 and of 0.0001, a minimum of one sample and of three, and the fourth sample. The resource is indexed in the dump, because it is queried by interval and is refused without an index. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33035486743, and byte for byte what this laptop produced."
         }
       ]
     }
