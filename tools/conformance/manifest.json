@@ -5724,7 +5724,7 @@
     },
     {
       "id": "filter-alignment-artifacts",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which reads support a variant, and which realignments are the same one",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5737,8 +5737,8 @@
       "cases": [
         {
           "dump": "FilterAlignmentArtifactsDump",
-          "golden": null,
-          "why": "Fifteen read-and-variant pairs through `supportsVariant` and thirteen sets of constructed alignments through `findJointAlignments`, both of them public and both decidable without an aligner. The realignment itself is not measured here: it is BWA's, and the assembly that produces the unitigs is the Mutect2 assembler's. What is measured is the two rules the tool owns."
+          "golden": "crates/gatk-tools/tests/data/filter_alignment_artifacts.txt.gz",
+          "why": "Fifteen read-and-variant pairs through `supportsVariant` and thirteen sets of constructed alignments through `findJointAlignments`, both of them public and both decidable without an aligner. The realignment itself is not measured here: it is BWA's, and the assembly that produces the unitigs is the Mutect2 assembler's. What is measured is the two rules the tool owns. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33029059438, and byte for byte what this laptop produced."
         }
       ]
     }

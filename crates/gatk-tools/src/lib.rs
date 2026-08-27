@@ -54,6 +54,7 @@ pub mod evaluate_info_field_concordance;
 pub mod family_priors;
 pub mod fasta_alternate_reference_maker;
 pub mod fasta_reference_maker;
+pub mod filter_alignment_artifacts;
 pub mod filter_funcotations;
 pub mod filter_intervals;
 pub mod filter_mutect_calls;
