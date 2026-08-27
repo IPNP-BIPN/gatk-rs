@@ -378,6 +378,10 @@ jobs:
             index: "51/51"
             slug: "series-stats-depth-of-coverage-vcf-comparator"
             suites: "series-stats depth-of-coverage vcf-comparator"
+          - group: golden-pending
+            index: "1/1"
+            slug: "variant-annotator"
+            suites: "variant-annotator"
     steps:
       - uses: actions/checkout@v7
 
