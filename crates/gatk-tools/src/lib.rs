@@ -65,6 +65,7 @@ pub mod filter_variant_tranches;
 pub mod filter_vcf;
 pub mod fix_misencoded_base_quality_reads;
 pub mod fix_vcf_header;
+pub mod funcotate_segments;
 pub mod funcotator_data_source_downloader;
 pub mod gather_bam_files;
 pub mod gather_bqsr_reports;
