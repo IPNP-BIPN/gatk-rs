@@ -372,12 +372,8 @@ jobs:
             suites: "grouped-sv-cluster sv-concordance sv-annotate joint-germline-cnv-segmentation collect-sv-evidence"
           - group: oracle-backed
             index: "50/50"
-            slug: "filter-alignment-artifacts"
-            suites: "filter-alignment-artifacts"
-          - group: golden-pending
-            index: "1/1"
-            slug: "learn-read-orientation-model"
-            suites: "learn-read-orientation-model"
+            slug: "filter-alignment-artifacts-learn-read-orientation-model"
+            suites: "filter-alignment-artifacts learn-read-orientation-model"
     steps:
       - uses: actions/checkout@v7
 
