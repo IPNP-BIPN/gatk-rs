@@ -5761,6 +5761,46 @@
           "why": "Four flat priors, fourteen responsibility vectors and three refusals, all through the two public statics the EM is built from and the engine's own constructor. The EM loop itself is not measured here: it needs a counts file, which is CollectF1R2Counts's output and has its own suite. Every number is printed to ten decimal places, so a change of one part in a million shows. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33029944133, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "brent-optimizer",
+      "status": "golden-pending",
+      "title": "where the univariate maximiser stops",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateSomaticPanelOfNormals"
+      ],
+      "why": "A FUNCTION THAT IS EXACTLY A PARABOLA IS SOLVED IN ONE STEP by the parabolic interpolation, so the tolerances never reach it: the same vertex comes back at 1e-12 and at 0.1, from a guess on either side of it, from a guess sitting on it and from a guess at either end of the interval. THE TOLERANCES ARE ONLY VISIBLE ON A FUNCTION THE INTERPOLATION CANNOT FIT, and there they are not cosmetic: the same function peaking at 7 is answered 6.925 at the panel's own settings, 7.000 at 1e-12 and 15.444 at 0.5, which is not a maximum at all. THE SEARCH IS LOCAL, so a function with several maxima returns whichever one the guess is nearest: sine over nought to twenty answers 7.854 from a guess of 1 and 14.141 from a guess of 14. IT RETURNS THE POINT IT LAST EVALUATED, so a symmetric function answers with a NEGATIVE zero. AND THREE THINGS ARE REFUSED RATHER THAN CLAMPED: an evaluation budget too small to converge, a guess outside the interval, and an interval whose ends are the wrong way round, each with its own Apache Commons exception.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "BrentOptimizerDump",
+          "golden": null,
+          "why": "Fifteen calls of `OptimizationUtils.max`, the public entry point the panel of normals fits its beta shape through, over four functions and every combination of tolerance, guess and budget that changes the answer. Every point and value is printed to fourteen decimal places. This is a suite for an ENGINE primitive rather than for a tool: it is here because the panel's BETA field cannot be reproduced without it."
+        }
+      ]
+    },
+    {
+      "id": "create-somatic-panel-of-normals",
+      "status": "golden-pending",
+      "title": "which sites recur across normals often enough to be artefacts",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateSomaticPanelOfNormals"
+      ],
+      "why": "A SITE WITH NO ALTERNATE ALLELE IS SKIPPED, and so is one whose only alternate is the spanning deletion. THE GERMLINE TEST IS SKIPPED ENTIRELY FOR A MULTIALLELIC SITE: every genotype counts whatever its counts say, which the source marks as a TODO rather than a rule, and the fixture shows a half-fraction multiallelic site surviving a germline frequency that removes the biallelic one beside it. WITH NO GERMLINE RESOURCE EVERY ALTERNATE COUNTS, because a frequency of zero is below the negligible threshold and the germline probability is returned as exactly zero: NO THRESHOLD CAN DROP A SITE THE RESOURCE DOES NOT MENTION, which is why --max-germline-probability 0.0001 changes nothing beyond what the resource itself removed. A HIGH GERMLINE FREQUENCY REMOVES A HET-LOOKING GENOTYPE AND LEAVES A LOW-FRACTION ONE at the same frequency, which is the whole point of the resource: the site at a tenth alternate fraction survives an AF of 0.4 and the one at a half does not. --min-sample-count IS COMPARED AGAINST THE SURVIVORS. FRACTION IS OVER ALL SAMPLES IN THE HEADER rather than over the survivors, so adding a fourth sample that carries nothing takes it from 0.667 to 0.500 without moving the BETA. A GENOTYPE WITHOUT AD COUNTS FOR THE SITE AND CONTRIBUTES NOTHING TO THE FIT. AND THE BETA IS FITTED BY A BRENT SEARCH over a scale, so its digits carry the optimiser's tolerances: see the `brent-optimizer` suite.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "CreateSomaticPanelOfNormalsDump",
+          "golden": null,
+          "why": "Nine sites over three normal samples, plus the same sites over four, and a germline resource covering three of them, run seven ways: the default, the resource, a germline probability of 1.0 and of 0.0001, a minimum of one sample and of three, and the fourth sample. The resource is indexed in the dump, because it is queried by interval and is refused without an index."
+        }
+      ]
     }
   ],
   "probes": []
