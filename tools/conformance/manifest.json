@@ -5744,7 +5744,7 @@
     },
     {
       "id": "learn-read-orientation-model",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which of twelve states a site is in",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5757,8 +5757,8 @@
       "cases": [
         {
           "dump": "LearnReadOrientationModelDump",
-          "golden": null,
-          "why": "Four flat priors, fourteen responsibility vectors and three refusals, all through the two public statics the EM is built from and the engine's own constructor. The EM loop itself is not measured here: it needs a counts file, which is CollectF1R2Counts's output and has its own suite. Every number is printed to ten decimal places, so a change of one part in a million shows."
+          "golden": "crates/gatk-tools/tests/data/learn_read_orientation_model.txt.gz",
+          "why": "Four flat priors, fourteen responsibility vectors and three refusals, all through the two public statics the EM is built from and the engine's own constructor. The EM loop itself is not measured here: it needs a counts file, which is CollectF1R2Counts's output and has its own suite. Every number is printed to ten decimal places, so a change of one part in a million shows. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33029944133, and byte for byte what this laptop produced."
         }
       ]
     }
