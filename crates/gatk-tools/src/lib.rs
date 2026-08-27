@@ -32,6 +32,7 @@ pub mod clip_reads;
 pub mod collect_allelic_counts;
 pub mod collect_f1r2_counts;
 pub mod collect_read_counts;
+pub mod collect_sv_evidence;
 pub mod combine_segment_breakpoints;
 pub mod compare_base_qualities;
 pub mod compare_interval_lists;
