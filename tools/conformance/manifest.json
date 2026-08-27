@@ -6104,21 +6104,21 @@
     },
     {
       "id": "flow-pairhmm-align-reads-to-haplotypes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "every read scored against every haplotype, and what the concise format makes of it",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "FlowPairHMMAlignReadsToHaplotypes"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The concise format's reference score is assigned inside the branch that raises the best score, so it is only recorded while the reference is the best haplotype so far. The same haplotypes with the reference first report a real difference and with the reference last report Infinity: the column depends on the order of the FASTA and not only on its contents.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "FlowPairHMMAlignReadsToHaplotypesDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/flow_pairhmm_align_reads_to_haplotypes.txt.gz",
+          "why": "Twelve runs over one BAM of five reads and three haplotype FASTAs: the reference first and last, two haplotypes equally far from one read, both engines, no reference haplotype, a reference the FASTA does not name, and an engine the tool does not have."
         }
       ]
     }

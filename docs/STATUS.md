@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 173 | 55.6% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 174 | 55.9% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 125 | 40.2% |
 | **total** | **311** | |
@@ -144,7 +144,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | not measured |
 | `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | not measured |
-| `FlowPairHMMAlignReadsToHaplotypes` | flow-based | golden-pending | flow-pairhmm-align-reads-to-haplotypes | 1 | not measured |
+| `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | not measured |
 | `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | not measured |
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | not measured |
