@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 160 | 51.4% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 161 | 51.8% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 138 | 44.4% |
 | **total** | **311** | |
@@ -127,7 +127,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
-| `DepthOfCoverage` | locus-walker | golden-pending | depth-of-coverage | 1 | not measured |
+| `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |

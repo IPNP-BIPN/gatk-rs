@@ -49,6 +49,7 @@ pub mod counting_walkers;
 pub mod cram_issue_8768;
 pub mod create_somatic_panel_of_normals;
 pub mod denoise_read_counts;
+pub mod depth_of_coverage;
 pub mod downsample_by_duplicate_set;
 pub mod dump_tabix_index;
 pub mod evaluate_info_field_concordance;

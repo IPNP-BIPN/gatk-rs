@@ -5844,7 +5844,7 @@
     },
     {
       "id": "depth-of-coverage",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how deep the reads lie over a reference",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -5857,8 +5857,8 @@
       "cases": [
         {
           "dump": "DepthOfCoverageDump",
-          "golden": null,
-          "why": "Five reads over three read groups of two samples, an interval that runs five bases past them on each side, run eight ways and refused three: the default, base counts, a raised minimum base quality, a lowered maximum, each of the four omissions, then both interval arguments together and a base quality above and below the byte range. Every file each run wrote is reported whole, and the set of suffixes is reported as its own line."
+          "golden": "crates/gatk-tools/tests/data/depth_of_coverage.txt.gz",
+          "why": "Five reads over three read groups of two samples, an interval that runs five bases past them on each side, run eight ways and refused three: the default, base counts, a raised minimum base quality, a lowered maximum, each of the four omissions, then both interval arguments together and a base quality above and below the byte range. Every file each run wrote is reported whole, and the set of suffixes is reported as its own line. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33044261822, and byte for byte what this laptop produced."
         }
       ]
     }
