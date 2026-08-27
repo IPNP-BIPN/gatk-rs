@@ -83,6 +83,7 @@ pub mod get_normal_artifact_data;
 pub mod get_pileup_summaries;
 pub mod get_sample_name;
 pub mod ground_truth_reads_builder;
+pub mod ground_truth_scorer;
 pub mod grouped_sv_cluster;
 pub mod gtf_to_bed;
 pub mod haplotype_based_variant_recaller;
