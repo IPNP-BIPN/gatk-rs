@@ -20,10 +20,11 @@
  *     out haploid for a male and the site still reports AN=4;
  *   - THE GENOTYPE IS PADDED TO ITS PLOIDY with reference alleles, and a single no-call allele is
  *     a special case that becomes a no-call of the full ploidy instead;
- *   - DEFRAGMENTATION PADS BY A FRACTION OF THE EVENT, not by a fixed distance, so how far it
- *     reaches grows with what it has already joined: at 0 nothing joins, at the default 0.25 both
- *     the short pair and the long pair join across the same hundred-base gap, and at 1.0 the
- *     joined event keeps growing until everything from 20000 to 91000 is one record;
+ *   - DEFRAGMENTATION PADS BY A FRACTION OF EACH RECORD'S OWN LENGTH and compares against every
+ *     MEMBER of a joined run rather than against the run's span, so the run reaches only as far as
+ *     its longest member: at 0 nothing joins, at the default 0.25 both the short pair and the long
+ *     pair join across the same hundred-base gap while 90000 stays out, and at 1.0 everything from
+ *     20000 to 91000 is one record because the twenty-thousand-base members reach that far alone;
  *   - --min-sample-set-fraction-overlap IS ABOUT THE DEFRAGMENTER, which only ever sees one
  *     sample, so a value of 1.0 changes nothing: it is measured as the control that says so;
  *   - A MULTI-SAMPLE INPUT SKIPS DEFRAGMENTATION ENTIRELY, being assumed pre-clustered;

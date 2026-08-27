@@ -73,6 +73,7 @@ pub mod grouped_sv_cluster;
 pub mod gtf_to_bed;
 pub mod index_feature_file;
 pub mod interval_walker;
+pub mod joint_germline_cnv_segmentation;
 pub mod left_align_and_trim_variants;
 pub mod left_align_indels;
 pub mod locus_walker;
