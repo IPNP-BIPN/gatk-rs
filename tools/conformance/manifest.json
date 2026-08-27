@@ -5901,6 +5901,26 @@
           "why": "Four input sites and a resource covering three of them, one with a different alternate, each resource record carrying both a per-allele field and a scalar one, run eleven ways: one expression, a scalar one with and without allele concordance, two expressions, the same file under two tags, ID/ALT/FILTER together, allele concordance over the per-allele field, an unknown field, an unknown tag, a comparison file, and no resource at all. The resource is indexed in the dump, because it is queried by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33046588972, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "reblock-gvcf",
+      "status": "golden-pending",
+      "title": "how a GVCF's reference blocks are coarsened",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ReblockGVCF"
+      ],
+      "why": "ADJACENT REFERENCE BLOCKS IN THE SAME GQ BAND ARE MERGED and the merged block carries the LOWEST genotype quality of the blocks that made it: three blocks at 25, 35 and 80 become one block at 25 under the default bands. --gvcf-gq-bands DEFINES THE EDGES, and a SINGLE bound of 60 puts 0 and 25 in the same band, so the GQ0 block at the end merges with the one before it. --drop-low-quals AND --rgq-threshold TOUCH DIFFERENT RECORDS: the first removes a GQ0 reference BLOCK and leaves a weak variant alone, the second demotes the weak VARIANT and leaves the block. A DEMOTED VARIANT BECOMES A ONE-BASE BLOCK OF ITS OWN at GQ0 and does NOT merge with the blocks either side of it, though they are in the same band. --floor-blocks WRITES THE BAND'S LOWER BOUND rather than the observed quality AND DROPS MIN_DP AND PL with it, so the block keeps GT, DP and GQ alone. THE TWO ANNOTATION ARGUMENTS ARE NOT SYMMETRIC: --format-annotations-to-remove takes a FORMAT key and --annotations-to-keep an INFO one, and asking the latter for a FORMAT key is REFUSED rather than ignored, with `SPARE is not in header of input GVCF but was requested to be kept`. THE TOOL ADDS ANNOTATIONS OF ITS OWN, RAW_GT_COUNT and RAW_MQandDP, to every surviving variant. AND --keep-all-alts CHANGES NOTHING for a variant already biallelic with <NON_REF>, which is what makes it the control that says the default was trimming nothing here.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ReblockGVCFDump",
+          "golden": null,
+          "why": "Eight records over one contig, three adjacent blocks in one band, a confident variant, a weak one between two blocks and a GQ0 block, run ten ways and refused once: the default, one band edge and six, the reference-quality threshold, dropping low qualities with and without it, keeping all alternates, flooring the blocks, keeping an INFO annotation, removing a FORMAT one, and asking to keep a FORMAT key as an INFO one."
+        }
+      ]
     }
   ],
   "probes": []
