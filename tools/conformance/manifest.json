@@ -5801,6 +5801,26 @@
           "why": "Nine sites over three normal samples, plus the same sites over four, and a germline resource covering three of them, run seven ways: the default, the resource, a germline probability of 1.0 and of 0.0001, a minimum of one sample and of three, and the fourth sample. The resource is indexed in the dump, because it is queried by interval and is refused without an index. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33035486743, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "ramped-haplotype-caller",
+      "status": "golden-pending",
+      "title": "the shape of a ramp state file, and the orderings it compares under",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "why": "A ZIP ENTRY IS NAMED `<contig>-<start>-<end>/<name>` when it belongs to a region and by its bare name when it does not, so the region prefix is a directory made out of coordinates. `info.json` IS WRITTEN LAST, after every region entry, and with a two-space indent that JSON.org COMPACTS FOR A SINGLE-KEY OBJECT: `assembly.region.count` and `assembly.region.name` come back as `\"assembly\": {\"region\": {` on one line, because the outer object has one key. AN INFO KEY IS A DOTTED PATH and every missing level of it is created as an object. THE HAPLOTYPE TABLE IS A CSV WITH A FIXED HEADER whose reference column is 1 or 0 and whose score is `Double.toString`. A REFERENCE HAPLOTYPE SORTS LAST, because the comparator subtracts the reference flags and a true is one. THE HAPLOTYPE COMPARATOR COMPARES THE SCORE BY SIGN rather than by difference, so two scores 1e-10 apart are still ordered rather than collapsing to zero. THE READ COMPARATOR STARTS FROM THE STRAND, so a reverse read at position 1000 sorts after a forward read at 5000. THE VERIFICATION REFUSES A SIZE MISMATCH BEFORE COMPARING ANYTHING and otherwise names the index it failed on. AND THE BAM INDEX PATH IS BUILT BY `String.replace`, which replaces EVERY `.bam` in the path: `/x/run.bam.d/reads.bam` becomes `/x/run.bai.d/reads.bai`, and a path with no `.bam` at all comes back unchanged.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "RampedHaplotypeCallerDump",
+          "golden": null,
+          "why": "One ramp file written through a subclass that exposes the off ramp's protected methods, reported as its entry names in write order and two of its entries whole; then three haplotypes and three reads through both comparators, five verification calls, and the derived names and paths. The caller itself is not run: this tool is HaplotypeCaller with a different engine, and the engine is milestone G3's. What is measured is the ramp format and the orderings, which are the tool's own."
+        }
+      ]
     }
   ],
   "probes": []
