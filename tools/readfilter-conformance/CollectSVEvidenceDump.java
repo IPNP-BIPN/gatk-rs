@@ -206,10 +206,22 @@ public class CollectSVEvidenceDump {
         return records;
     }
 
-    /** The reads as text, so the golden says what was fed in. */
+    /**
+     * The reads as text, so the golden says what was fed in.
+     *
+     * The BASES and the BASE QUALITIES are reported too: without them the site-depth counts cannot
+     * be recomputed from the golden, only from the source of this file.
+     */
     static String describe(final List<SAMRecord> records) {
         final StringBuilder text = new StringBuilder();
         for (final SAMRecord record : records) {
+            final StringBuilder qualities = new StringBuilder();
+            for (final byte quality : record.getBaseQualities()) {
+                if (qualities.length() > 0) {
+                    qualities.append(',');
+                }
+                qualities.append(quality);
+            }
             text.append(record.getReadName()).append('\t')
                     .append(record.getFlags()).append('\t')
                     .append(record.getReferenceName()).append('\t')
@@ -219,6 +231,9 @@ public class CollectSVEvidenceDump {
                     .append(record.getReadPairedFlag() ? record.getMateReferenceName() : ".")
                     .append('\t')
                     .append(record.getReadPairedFlag() ? record.getMateAlignmentStart() : 0)
+                    .append('\t')
+                    .append(record.getReadString()).append('\t')
+                    .append(qualities)
                     .append('\n');
         }
         return text.toString();

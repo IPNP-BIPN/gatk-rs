@@ -5718,7 +5718,7 @@
         {
           "dump": "CollectSVEvidenceDump",
           "golden": null,
-          "why": "One coordinate-sorted BAM of twenty-two reads over two contigs, a VCF of six candidate site-depth loci of which three qualify, and three depth intervals of which one is reached by nothing, run five ways and refused seven: all four outputs at once, a raised mapping-quality floor, a lowered base-quality floor, the discordant and split writers each on their own, then no output at all, an unpaired read, a wrong file name for each of the four writers, and an empty intervals file. The reads are reported as a line each, and both reference files whole, beside the outputs."
+          "why": "One coordinate-sorted BAM of twenty-two reads over two contigs, a VCF of six candidate site-depth loci of which three qualify, and three depth intervals of which one is reached by nothing, run five ways and refused seven: all four outputs at once, a raised mapping-quality floor, a lowered base-quality floor, the discordant and split writers each on their own, then no output at all, an unpaired read, a wrong file name for each of the four writers, and an empty intervals file. The reads are reported as a line each, bases and base qualities included so the site depths can be recomputed from the golden rather than from the dump's source, and both reference files whole, beside the outputs."
         }
       ]
     }
