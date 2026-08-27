@@ -6241,6 +6241,26 @@
           "why": "Fourteen cases: a SNP above and under its floor, that floor with and without --keep-all-sites, a quality between the two floors as a SNP and as an indel, a mixed site, a spanning deletion, the allele-specific quality list, no quality key at all, the annotations stripped and kept, more alternates than the cap, and two shapes of raw MQ."
         }
       ]
+    },
+    {
+      "id": "model-segments",
+      "status": "golden-pending",
+      "title": "the genotyping and the segmentation, which is all the multi-sample mode does",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "ModelSegments"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "ModelSegmentsDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
