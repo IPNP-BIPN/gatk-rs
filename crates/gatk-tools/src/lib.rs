@@ -143,6 +143,7 @@ pub mod validate_variants;
 pub mod variant_annotator;
 pub mod variant_eval;
 pub mod variant_filtration;
+pub mod variant_recalibrator;
 pub mod variants_to_table;
 pub mod vcf_comparator;
 pub mod vcf_format_converter;
