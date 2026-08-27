@@ -6281,6 +6281,26 @@
           "why": "PENDING: written once the measurement is read."
         }
       ]
+    },
+    {
+      "id": "funcotator",
+      "status": "golden-pending",
+      "title": "a VCF annotated from the same folder of data sources FuncotateSegments uses",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Funcotator"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FuncotatorDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
