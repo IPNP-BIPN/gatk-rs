@@ -6064,21 +6064,21 @@
     },
     {
       "id": "haplotype-based-variant-recaller",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "every allele of a VCF scored against every read a haplotype spans",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "HaplotypeBasedVariantRecaller"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The PairHMM's arithmetic is not what this measures: it is everything around it, the haplotype group chosen by a fitness score, the line built per read, the sort and the ways a line is dropped. Two things came out of the fixture rather than the code: the alleles written are the HAPLOTYPES' and not the VCF's, and a variant inside a read's deletion is not dropped but reported from the wrong base, the cigar walk letting the offset go negative.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "HaplotypeBasedVariantRecallerDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/haplotype_based_variant_recaller.txt.gz",
+          "why": "Four runs over one fixture of nine reads, seven haplotype records in three groups and four alleles: the whole reference, one interval, an interval with no allele in it, and a mapping-quality filter."
         }
       ]
     }
