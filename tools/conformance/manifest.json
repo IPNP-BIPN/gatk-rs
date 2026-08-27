@@ -6184,21 +6184,21 @@
     },
     {
       "id": "ground-truth-reads-builder",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "every read scored against the haplotype its two ancestral references give it",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "GroundTruthReadsBuilder"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The flow-based scoring engine is not what this measures: the translation from the aligned contig to the two ancestral ones is, along with which reads survive it. A read whose translated span collapses is skipped and counted rather than refused, and the soft-clip filter looks at the clip at the END of the read, so a read clipped only at its front is kept whatever the argument says.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "GroundTruthReadsBuilderDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/ground_truth_reads_builder.txt.gz",
+          "why": "Ten runs over one BAM of six reads, two ancestral references and a pair of translation tables: the defaults, a mapping-quality floor, the soft-clip filter off, a sequence added at each end, two flow lengths, both score filters, a cap on the output, and a translation that collapses a read."
         }
       ]
     }
