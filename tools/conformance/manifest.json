@@ -6001,6 +6001,26 @@
           "why": "Six assembled contigs over one reference contig: two pieces with a gap, two with a strand flip, one piece alone, two that overlap, a secondary alignment and an unmapped record, run twice: queryname-sorted and coordinate-sorted. The reads are reported as a line each. The BAM is written UNSORTED and htsjdk puts it in queryname order, because the fixture is written in the order the behaviours read best rather than alphabetically. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33067307177, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "funcotate-segments",
+      "status": "golden-pending",
+      "title": "how a segment file is annotated from a folder of data sources",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "FuncotateSegments"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "FuncotateSegmentsDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
