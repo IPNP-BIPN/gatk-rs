@@ -5684,21 +5684,21 @@
     },
     {
       "id": "joint-germline-cnv-segmentation",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "how single-sample gCNV calls become one joint call set",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "JointGermlineCNVSegmentation"
       ],
-      "why": "FOUR SEPARATE REASONS DROP A SINGLE-SAMPLE CALL before anything else runs: a hom-ref genotype, a no-call with no CN at all, a QS below --minimum-qs-score, and a \"null call\", which is a no-call whose CN is exactly 0. THE QUALITY TEST IS STRICTLY LESS THAN, so a call exactly at the threshold survives. PLOIDY ON AN AUTOSOME IS AN ARGUMENT AND ON AN ALLOSOME IS THE PEDIGREE'S SEX: chrX is 2 for a female and 1 for a male, chrY is 0 for a female and 1 for a male, and an UNKNOWN sex is 1 on BOTH, so it is not given the female answer on either. The site's AN is the sum, so a chrX site reports AN=4 over three samples and a chrY site AN=2, the female contributing nothing. AN ECN ALREADY ON THE INPUT GENOTYPE DOES NOT REACH THE OUTPUT: the ploidy is derived again for every sample when the site is written, so a genotype carrying ECN=7 still comes out haploid for a male. A GENOTYPE WITH MORE ALLELES THAN ITS PLOIDY IS REFUSED, which is what --autosomal-ref-copy-number 1 does to an ordinary diploid input. A SINGLE NO-CALL ALLELE IS A SPECIAL CASE and becomes a no-call of the full ploidy rather than being padded with reference alleles. DEFRAGMENTATION PADS BY A FRACTION OF THE EVENT, so how far it reaches grows with what it has already joined: at 0 nothing joins, at the default both pairs join across the same hundred-base gap, and at 1.0 everything from 20000 to 91000 becomes one record. AND MORE THAN ONE SAMPLE SKIPS DEFRAGMENTATION ENTIRELY, the input being assumed pre-clustered, which is why the padding runs need a single VCF to show anything at all.",
+      "why": "FOUR SEPARATE REASONS DROP A SINGLE-SAMPLE CALL before anything else runs: a hom-ref genotype, a no-call with no CN at all, a QS below --minimum-qs-score, and a \"null call\", which is a no-call whose CN is exactly 0. THE QUALITY TEST IS STRICTLY LESS THAN, so a call exactly at the threshold survives. PLOIDY ON AN AUTOSOME IS AN ARGUMENT AND ON AN ALLOSOME IS THE PEDIGREE'S SEX: chrX is 2 for a female and 1 for a male, chrY is 0 for a female and 1 for a male, and an UNKNOWN sex is 1 on BOTH, so it is not given the female answer on either. The site's AN is the sum, so a chrX site reports AN=4 over three samples and a chrY site AN=2, the female contributing nothing. AN ECN ALREADY ON THE INPUT GENOTYPE DOES NOT REACH THE OUTPUT: the ploidy is derived again for every sample when the site is written, so a genotype carrying ECN=7 still comes out haploid for a male. A GENOTYPE WITH MORE ALLELES THAN ITS PLOIDY IS REFUSED, which is what --autosomal-ref-copy-number 1 does to an ordinary diploid input. A SINGLE NO-CALL ALLELE IS A SPECIAL CASE and becomes a no-call of the full ploidy rather than being padded with reference alleles. DEFRAGMENTATION PADS BY A FRACTION OF EACH RECORD'S OWN LENGTH AND COMPARES AGAINST EVERY MEMBER of a run rather than against the run's span, so a joined run reaches only as far as its longest member does: at 0 nothing joins, at the default both pairs join across the same hundred-base gap and 90000 still stays out, and at 1.0 everything from 20000 to 91000 becomes one record because the twenty-thousand-base members reach that far on their own. AND MORE THAN ONE SAMPLE SKIPS DEFRAGMENTATION ENTIRELY, the input being assumed pre-clustered, which is why the padding runs need a single VCF to show anything at all.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "JointGermlineCNVSegmentationDump",
-          "golden": null,
-          "why": "Three single-sample gCNV VCFs over chr1, chrX and chrY with a pedigree naming a male, a female and an unknown sex, run six ways and refused twice: the three samples together, a quality threshold above every call, then the male alone at the default padding, at zero, at 1.0 and at a sample overlap of 1.0, then an autosomal reference copy number of 1 and a pedigree missing a sample. The pedigree and all three input VCFs are reported beside the outputs."
+          "golden": "crates/gatk-tools/tests/data/joint_germline_cnv_segmentation.txt.gz",
+          "why": "Three single-sample gCNV VCFs over chr1, chrX and chrY with a pedigree naming a male, a female and an unknown sex, run six ways and refused twice: the three samples together, a quality threshold above every call, then the male alone at the default padding, at zero, at 1.0 and at a sample overlap of 1.0, then an autosomal reference copy number of 1 and a pedigree missing a sample. The pedigree and all three input VCFs are reported beside the outputs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33026720715, and byte for byte what this laptop produced."
         }
       ]
     }
