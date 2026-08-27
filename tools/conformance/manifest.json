@@ -6261,6 +6261,26 @@
           "why": "Eleven cases: two samples, the copy ratios alone, a penalty of a thousand and one of a hundredth, the cap on segments, one window size named once and twice, a lowered homozygous threshold, a floor on the total allele count above every site, and two samples whose copy-ratio intervals disagree."
         }
       ]
+    },
+    {
+      "id": "local-assembler",
+      "status": "golden-pending",
+      "title": "the graph the reads over one interval produce",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "LocalAssembler"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "LocalAssemblerDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
