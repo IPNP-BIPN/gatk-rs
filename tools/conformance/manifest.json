@@ -6061,6 +6061,26 @@
           "why": "Thirteen runs over a callset of three hundred variants: four targets, the same four out of order, one target, a target of zero first and last, both filter arguments, the VQSLOD tranche file and an unreachable threshold in it, one annotation instead of two, and the three refusals."
         }
       ]
+    },
+    {
+      "id": "haplotype-based-variant-recaller",
+      "status": "golden-pending",
+      "title": "every allele of a VCF scored against every read a haplotype spans",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeBasedVariantRecaller"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "HaplotypeBasedVariantRecallerDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
