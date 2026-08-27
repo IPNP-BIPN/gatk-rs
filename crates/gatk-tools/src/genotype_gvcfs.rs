@@ -88,9 +88,9 @@ fn log10_prior(a: usize, b: usize, heterozygosity: f64) -> f64 {
         (1.0 - heterozygosity - heterozygosity * heterozygosity / 2.0).log10()
     } else if a == 0 || b == 0 {
         heterozygosity.log10()
-    } else if a == b {
-        (heterozygosity * heterozygosity / 2.0).log10()
     } else {
+        // Every genotype carrying two alternates takes the same prior, whether they are the same
+        // alternate twice or two different ones.
         (heterozygosity * heterozygosity / 2.0).log10()
     }
 }
