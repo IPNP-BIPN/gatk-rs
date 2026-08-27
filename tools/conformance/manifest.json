@@ -5941,6 +5941,26 @@
           "why": "Three single-sample GVCFs whose block edges deliberately fall inside each other's, one of them stopping early and two of them carrying a variant where the others have a block, run eight ways and refused once: three samples, two, base-pair resolution, two grids, both band arguments together, called genotypes, one sample alone, and the same file given twice. Every input GVCF is reported whole beside the outputs, and each is indexed in the dump because the walker queries them by interval. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33050568322, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "variant-eval",
+      "status": "golden-pending",
+      "title": "how a call set is counted against a comparison one",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "VariantEval"
+      ],
+      "why": "THE REPORT IS ONE TABLE PER MODULE, and the default set is nine of them. THE STANDARD STRATIFIERS APPLY UNLESS TURNED OFF, so every table carries an `all` row and a row per novelty even when none were asked for, and --do-not-use-all-standard-stratifications collapses the three into one. NOVELTY IS DECIDED BY THE dbSNP TRACK AND NOT BY --comp: the same file given as `--comp` leaves all seven sites novel and given as `--dbsnp` splits them three known and four novel, which is the whole of the difference between the two arguments here. A STRATIFIER MULTIPLIES THE ROWS rather than adding a column: `VariantType` takes one table of three rows to eighteen. `CountVariants` COUNTS BY TYPE and `TiTvVariantEvaluator` BY SUBSTITUTION, so the same seven records are summarised under two different questions. A MULTIALLELIC SITE COUNTS ONCE AS A SNP in CountVariants rather than once per alternate. --select-expression ADDS A NAMED SUBSET as another stratum, doubling the rows. AN UNKNOWN MODULE AND AN UNKNOWN STRATIFIER ARE REFUSED WITH THE SAME WORDING, `Module <name> could not be found`, so the two namespaces share one message. AND --list ENDS THE PROCESS: it prints the module names and exits the JVM, which the golden records by carrying the marker written before it and not the one written after.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "VariantEvalDump",
+          "golden": null,
+          "why": "Seven eval records covering two transitions, two transversions, an insertion, a deletion and a multiallelic site, a comparison file matching three of them, run twelve ways and refused twice: with and without the comparison, the same file as dbSNP, four modules on their own, the standard stratifiers off, a stratifier on, a named subset, two unknown names and --list. Both input VCFs are reported whole and indexed in the dump, because the walker queries them by interval."
+        }
+      ]
     }
   ],
   "probes": []
