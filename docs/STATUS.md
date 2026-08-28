@@ -107,7 +107,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | not measured |
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | not measured |
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |
-| `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr | 1 | not measured |
+| `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations | 2 | not measured |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
@@ -167,7 +167,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | not measured |
-| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs | 1 | not measured |
+| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations | 2 | not measured |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
@@ -179,7 +179,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | not measured |
-| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file | 1 | not measured |
+| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations | 2 | not measured |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
@@ -215,7 +215,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | not measured |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |
-| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-output, select-variants-samples, select-variants-subset | 5 | not measured |
+| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations | 6 | not measured |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |

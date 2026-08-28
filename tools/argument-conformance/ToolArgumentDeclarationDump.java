@@ -66,7 +66,11 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.SelectVariants());
         declarations("IndexFeatureFile",
                 new org.broadinstitute.hellbender.tools.IndexFeatureFile());
-        declarations("GatherVcfs",
+        // `GatherVcfs` is Picard's tool of that name, which GATK dispatches to; the GATK one is
+        // GatherVcfsCloud, and the two declare different arguments. Naming it wrongly here made
+        // the generator's cross-check report a `--COMMENT` the parser did not declare, which is
+        // Picard's argument and not this tool's.
+        declarations("GatherVcfsCloud",
                 new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
 
         // A read walker: its own input, and the arguments it inherits.
