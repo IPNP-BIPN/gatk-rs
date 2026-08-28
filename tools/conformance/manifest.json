@@ -6526,7 +6526,7 @@
     },
     {
       "id": "tool-argument-value-classes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the four value classes a tool declares and the port cannot yet convert",
       "harness": "tools/argument-conformance",
       "tools": [],
@@ -6537,7 +6537,7 @@
       "cases": [
         {
           "dump": "ToolArgumentValueClassDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/tool_argument_value_classes.txt.gz",
           "why": "Twenty-two command lines over one target carrying a field of each class: a path, a URI, a relative path, one that names nothing and an empty one; the same strings through a File; a tag on the taggable class, on the one that is not, and by short name; an empty and a filled collection; a FeatureInput tagged and not; and a Float on both sides of what Float.valueOf accepts, primitive and boxed."
         }
       ]

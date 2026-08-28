@@ -175,12 +175,28 @@ pub enum ValueClass {
         simple_name: &'static str,
         constants: &'static [&'static str],
     },
+    /// A `Float`, whose grammar is `Float.valueOf`'s and not `str::parse`'s, and whose refusal
+    /// names `Float` where a double's names `Double`.
+    Float,
+    /// A class built from a `String` by a constructor that accepts every string.
+    ///
+    /// `File`, `GATKPath` and `FeatureInput` are all of this shape: a bad path is not a bad value,
+    /// so no message exists for one. What separates them is the name their refusals would carry
+    /// and whether they implement `TaggedArgument`, which is what decides whether a tag on the
+    /// argument is a tag or an error.
+    Constructed {
+        simple_name: &'static str,
+        taggable: bool,
+    },
 }
 
 impl ValueClass {
     /// `Number.class.isAssignableFrom(getUnderlyingFieldClass())`.
     fn is_number(&self) -> bool {
-        matches!(self, ValueClass::Integer | ValueClass::Double)
+        matches!(
+            self,
+            ValueClass::Integer | ValueClass::Double | ValueClass::Float
+        )
     }
 
     /// `getUnderlyingFieldClass().getSimpleName()`, which appears in two messages: the failure of
@@ -193,6 +209,8 @@ impl ValueClass {
             ValueClass::Boolean => "Boolean",
             ValueClass::Tagged => "TaggedPath",
             ValueClass::Enum { simple_name, .. } => simple_name,
+            ValueClass::Float => "Float",
+            ValueClass::Constructed { simple_name, .. } => simple_name,
         }
     }
 
@@ -217,6 +235,26 @@ impl ValueClass {
                     &format!("Failure constructing 'Double' from the string '{text}'."),
                 )
             }),
+            ValueClass::Float => java_float(text)
+                .map(|value| Value::Double(f64::from(value)))
+                .ok_or_else(|| {
+                    Error::bad_argument_value_with_message(
+                        argument_name,
+                        text,
+                        &format!("Failure constructing 'Float' from the string '{text}'."),
+                    )
+                }),
+            ValueClass::Constructed { taggable, .. } => {
+                if *taggable {
+                    Ok(Value::Tagged {
+                        value: text.to_string(),
+                        tag: None,
+                        attributes: Vec::new(),
+                    })
+                } else {
+                    Ok(Value::Str(text.to_string()))
+                }
+            }
             ValueClass::Text => Ok(Value::Str(text.to_string())),
             ValueClass::Tagged => Ok(Value::Tagged {
                 value: text.to_string(),
@@ -380,6 +418,82 @@ fn rint(value: f64) -> f64 {
     } else {
         rounded
     }
+}
+
+/// `Float.valueOf`, whose grammar is `FloatingDecimal.readJavaFormatString`'s.
+///
+/// It is not `str::parse`, and the two disagree in both directions. Java takes a trailing type
+/// suffix (`1.5f`, `1.5d`), a hexadecimal literal with a binary exponent (`0x1p3` is eight),
+/// leading and trailing whitespace and a leading plus; it spells its infinity and its not-a-number
+/// with capitals, refusing `inf` and `nan` where Rust accepts both. All ten of those spellings are
+/// in the `tool-argument-value-classes` golden.
+///
+/// A value out of a float's range is an infinity rather than a refusal, which is `Float.valueOf`'s
+/// own rounding and not this function's.
+pub fn java_float(text: &str) -> Option<f32> {
+    // `readJavaFormatString` trims the string before looking at it, which is why a value with a
+    // leading space parses and one with an underscore does not.
+    let trimmed = text.trim_matches(|c: char| c.is_ascii_whitespace());
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (sign, body) = match trimmed.as_bytes()[0] {
+        b'-' => (-1.0f32, &trimmed[1..]),
+        b'+' => (1.0f32, &trimmed[1..]),
+        _ => (1.0f32, trimmed),
+    };
+    if body == "NaN" {
+        return Some(f32::NAN);
+    }
+    if body == "Infinity" {
+        return Some(sign * f32::INFINITY);
+    }
+    // The trailing type suffix is part of the grammar and is dropped before the digits are read.
+    let body = match body.as_bytes().last() {
+        Some(b'f' | b'F' | b'd' | b'D') if !body.eq_ignore_ascii_case("infinity") => {
+            &body[..body.len() - 1]
+        }
+        _ => body,
+    };
+    if body.is_empty() {
+        return None;
+    }
+    let lower = body.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("0x") {
+        return java_hexadecimal_float(rest).map(|value| sign * value);
+    }
+    // What is left is a decimal literal, which Rust reads the same way EXCEPT that it also
+    // accepts `inf` and `nan`: both are refused above by their spelling, and neither can reach
+    // here, since a body of `inf` has no digit and `str::parse` is only asked for one that does.
+    if !body.bytes().any(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    body.parse::<f32>().ok().map(|value| sign * value)
+}
+
+/// The hexadecimal half of the grammar: `0x<hex>[.<hex>]p<decimal exponent>`.
+///
+/// The binary exponent is REQUIRED, which is what separates `0x1p3` from `0x1`.
+fn java_hexadecimal_float(text: &str) -> Option<f32> {
+    let (digits, exponent) = text.split_once('p')?;
+    let exponent: i32 = exponent.parse().ok()?;
+    let (whole, fraction) = match digits.split_once('.') {
+        Some((whole, fraction)) => (whole, fraction),
+        None => (digits, ""),
+    };
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let mut value = 0.0f64;
+    for digit in whole.bytes() {
+        value = value * 16.0 + f64::from((digit as char).to_digit(16)?);
+    }
+    let mut scale = 1.0f64 / 16.0;
+    for digit in fraction.bytes() {
+        value += f64::from((digit as char).to_digit(16)?) * scale;
+        scale /= 16.0;
+    }
+    Some((value * 2.0f64.powi(exponent)) as f32)
 }
 
 /// `NamedArgumentDefinition`: one `@Argument` field, its rules, and its current value.

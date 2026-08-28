@@ -107,6 +107,10 @@ pub fn run(args: &[String]) -> Outcome {
             // surface converts: a parser missing a third of its arguments would refuse a command
             // line the reference accepts, which is a worse answer than refusing to parse at all.
             if let Some(error) = parse_failure(&name, main_entry::tool_arguments(args)) {
+                // `mainEntry` prints the PROGRAM's usage before the message on this path, and the
+                // port does not: rendering a tool's usage needs the per-argument documentation to
+                // reach the renderer, which is the other half of Milestone C. What is written is
+                // the decorated message the reference writes under that usage, and the status.
                 stderr.push_str(&main_entry::user_exception_report(&error));
                 return Outcome {
                     stdout,
@@ -151,12 +155,22 @@ pub fn run(args: &[String]) -> Outcome {
 
 /// Whether this port can hand a tool's command line to the ported Barclay parser at all.
 ///
-/// A tool is parseable when every argument it declares converts to a definition. None of the seven
-/// tools whose declarations are carried is, today: each of them declares a `GATKPath`, and the
-/// conversion a `GATKPath` goes through is not measured. See [`definitions::UNCONVERTIBLE_CLASSES`].
+/// Two conditions, and the second is the one that still bites. Every argument the tool declares
+/// has to convert to a definition, which since the value classes were measured is true of all
+/// seven. And no argument a PLUGIN DESCRIPTOR controls may be required: the reference trims the
+/// arguments of unselected plugins before the required check runs, and that trim is the
+/// descriptor's own and is not ported. A parser without it asks for an argument the reference
+/// never asks for, which is a worse answer than declining to parse.
+///
+/// A walker therefore stays unparseable and a tool that is no walker does not. See gatk-rs#987.
 pub fn parseable(tool: &str) -> bool {
     gatk_tools::tool_declarations::declarations(tool)
-        .map(|list| definitions::missing(list).is_empty())
+        .map(|list| {
+            definitions::missing(list).is_empty()
+                && !list
+                    .iter()
+                    .any(|declaration| declaration.controlled_by.is_some() && declaration.required)
+        })
         .unwrap_or(false)
 }
 
