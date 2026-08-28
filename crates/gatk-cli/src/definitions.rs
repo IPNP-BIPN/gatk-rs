@@ -5,27 +5,23 @@
 //! it, its type, its bounds and its documentation. [`gatk_barclay::Definition`] is what the ported
 //! parser consumes. This module is the map between them, and it is deliberately partial.
 //!
-//! # Which types convert, and which do not
+//! # Which types convert
 //!
-//! `ValueClass` carries the classes whose CONVERSION is measured: an integer, a double, a string,
-//! a boolean, an enum and a taggable path. The declarations name four more, and each of them
-//! converts through a constructor or a `valueOf` whose refusal names the class:
+//! Every class the seven tools declare converts, the four that used to be missing having been
+//! measured in the `tool-argument-value-classes` golden: `Float` through Java's own grammar rather
+//! than `str::parse`, and `File`, `GATKPath` and `FeatureInput` through a constructor that accepts
+//! every string, which is why a bad path is not a bad value. What separates the last three is the
+//! name a refusal would carry and whether a tag on the argument is a tag or an error.
 //!
-//!  * `Float`, whose message would say `Float` where a double's says `Double`;
-//!  * `File` and `GATKPath`, which are two different classes with two different messages, one of
-//!    them taggable and the other not;
-//!  * `FeatureInput`, which is taggable and carries a feature name.
-//!
-//! None of those four is measured, so none of them is converted here: a definition this module
-//! declines to build is an argument the port cannot yet parse, which is a smaller claim than a
-//! definition built on a guessed message. [`unconvertible`] names them, and the test beside this
-//! file counts them against the declarations rather than against a number written down here.
+//! [`UNCONVERTIBLE_CLASSES`] is therefore empty. It stays as a named place for the next class the
+//! declarations grow, and the test beside this file asserts the emptiness against the declarations
+//! rather than against a number written down here.
 
 use gatk_barclay::{Annotation, Definition, Value, ValueClass};
 use gatk_tools::tool_declarations::{enum_type, Declaration};
 
-/// The classes the declarations name and this module does not convert.
-pub const UNCONVERTIBLE_CLASSES: [&str; 4] = ["FeatureInput", "File", "Float", "GATKPath"];
+/// The classes the declarations name and this module does not convert, which is none of them.
+pub const UNCONVERTIBLE_CLASSES: [&str; 0] = [];
 
 /// Whether an argument's type is one of those.
 pub fn unconvertible(declaration: &Declaration) -> bool {
@@ -39,6 +35,22 @@ pub fn value_class(type_name: &str) -> Option<ValueClass> {
         "Double" => Some(ValueClass::Double),
         "String" => Some(ValueClass::Text),
         "Boolean" => Some(ValueClass::Boolean),
+        // The three classes built from a string. `GATKPath` and `FeatureInput` implement
+        // `TaggedArgument` and `File` does not, which is the difference the same command line
+        // turns into a tag on one and a refusal on the other.
+        "GATKPath" => Some(ValueClass::Constructed {
+            simple_name: "GATKPath",
+            taggable: true,
+        }),
+        "FeatureInput" => Some(ValueClass::Constructed {
+            simple_name: "FeatureInput",
+            taggable: true,
+        }),
+        "File" => Some(ValueClass::Constructed {
+            simple_name: "File",
+            taggable: false,
+        }),
+        "Float" => Some(ValueClass::Float),
         name => enum_type(name).map(|type_| ValueClass::Enum {
             simple_name: type_.name,
             constants: type_.constants,
@@ -74,7 +86,12 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
             _ => Value::Null,
         },
         ValueClass::Enum { .. } => Value::Enum(default.to_string()),
-        ValueClass::Text | ValueClass::Tagged => Value::Str(default.to_string()),
+        ValueClass::Float => gatk_barclay::java_float(default)
+            .map(|value| Value::Double(f64::from(value)))
+            .unwrap_or(Value::Null),
+        ValueClass::Text | ValueClass::Tagged | ValueClass::Constructed { .. } => {
+            Value::Str(default.to_string())
+        }
     }
 }
 
