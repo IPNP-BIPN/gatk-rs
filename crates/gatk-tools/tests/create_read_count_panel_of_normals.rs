@@ -14,7 +14,8 @@
 //!  * **the two zero filters not being symmetric, each seeing what the one before left**;
 //!  * **the extreme-median filter cutting from both ends**;
 //!  * **a percentile of zero skipping the step rather than filtering nothing**;
-//!  * **the eigensample count being capped at the surviving samples**;
+//!  * **the eigensample count being capped at the surviving samples, the file carrying the cap
+//!    and not the rank**;
 //!  * **a panel of one sample having none and refusing its singular values**;
 //!  * **and an input whose intervals do not match being refused by name.**
 
@@ -58,6 +59,15 @@ fn number(text: &str, label: &str, name: &str) -> usize {
 }
 
 /// The intervals one panel kept, as `start-end`.
+/// A boolean field of the panel, as the dump printed it with `%b`.
+fn flag(text: &str, label: &str, field: &str) -> bool {
+    let prefix = format!("panel\t{label}\t{field}=");
+    text.lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("the golden carries panel/{label}/{field}"))
+        == "true"
+}
+
 fn panel_intervals(text: &str, label: &str) -> Vec<String> {
     field(text, label, "panel-intervals")
         .split(',')
@@ -330,7 +340,9 @@ fn the_two_zero_filters_are_not_symmetric() {
     assert!(refusal(&text, "zeros-in-interval-only").contains(NO_NON_ZERO_SINGULAR_VALUES_MESSAGE));
     // Where the sample filter leaves every interval and writes its panel.
     assert_eq!(panel_intervals(&text, "zeros-in-sample-only").len(), 40);
-    assert_eq!(number(&text, "zeros-in-sample-only", "eigensamples"), 7);
+    // What the panel FILE says of its basis is that it is not empty: the count itself is the
+    // decomposition's rank, which moved between machines and is out of the golden.
+    assert!(flag(&text, "zeros-in-sample-only", "eigensamples-positive"));
 }
 
 /// Applied twice, so a percentile of twenty takes a sample from each end.
@@ -354,11 +366,17 @@ fn the_extreme_median_filter_cuts_from_both_ends() {
     );
     assert_eq!(result.panel_samples().len(), 7, "two of nine");
     let text = golden();
-    assert_eq!(number(&text, "extreme-sample-only", "eigensamples"), 7);
+    // The port's own count of surviving samples is seven, and the file agrees on the CAP rather
+    // than on a count: the rank the file would have reported is not a fact about this fixture.
+    assert_eq!(
+        number(&text, "extreme-sample-only", "eigensamples-at-most"),
+        9
+    );
+    assert!(flag(&text, "extreme-sample-only", "eigensamples-positive"));
     // A percentile of zero skips the step entirely rather than filtering nothing.
     let skipped = preprocess(&matrix, &none);
     assert_eq!(skipped.panel_samples().len(), 9);
-    assert_eq!(number(&text, "no-filtering", "eigensamples"), 9);
+    assert_eq!(number(&text, "no-filtering", "eigensamples-at-most"), 9);
 }
 
 /// The requested count is capped at the samples that survived, not at the samples given.
@@ -375,30 +393,31 @@ fn the_eigensample_count_is_capped_at_the_samples_that_survived() {
     assert_eq!(number_of_eigensamples(100, 8), 8);
     assert_eq!(number_of_eigensamples(2, 8), 2);
     assert_eq!(number_of_eigensamples(20, 1), 1);
-    // Where the request binds, the file's count is the request and the port reaches it.
-    assert_eq!(number(&text, "two-eigensamples", "eigensamples"), 2);
+    // Where the request binds, the port reaches the request, and the file says only that the
+    // basis is not empty.
+    assert!(flag(&text, "two-eigensamples", "eigensamples-positive"));
     let matrix = fixture();
     let surviving = preprocess(&matrix, &Arguments::default())
         .panel_samples()
         .len();
     assert_eq!(number_of_eigensamples(2, surviving), 2);
-    // Where it does not, the file reports the solver's rank, which is at most the cap and here is
-    // under it: the port's seven surviving samples against the file's own count.
+    // Where it does not, the file reports no count at all. The number it used to report was the
+    // solver's RANK, which answered six, seven and eight on three machines, so what is left of it
+    // in the golden is the cap and the fact that the basis is not empty. See
+    // `docs/a-rank-is-not-a-byte.md`.
     assert_eq!(surviving, 8);
     for label in ["default", "hundred-eigensamples"] {
-        let reported = number(&text, label, "eigensamples");
-        assert!(
-            reported <= surviving,
-            "{label}: {reported} over {surviving}"
-        );
-        assert_eq!(reported, 7, "{label}");
+        assert_eq!(number(&text, label, "eigensamples-at-most"), 9, "{label}");
+        assert!(number_of_eigensamples(100, surviving) <= 9, "{label}");
+        assert!(flag(&text, label, "eigensamples-positive"), "{label}");
     }
-    // The singular values are as many as the count the file reports, whichever way it was
-    // decided, which is what says the two are the same number read twice.
+    // The singular values are as many as the rank, so the file says of them what it says of the
+    // basis: that there are some. The two answers move together, which is what says they are one
+    // number read twice.
     for label in ["default", "two-eigensamples", "hundred-eigensamples"] {
         assert_eq!(
-            number(&text, label, "singular-values"),
-            number(&text, label, "eigensamples"),
+            flag(&text, label, "singular-values-available"),
+            flag(&text, label, "eigensamples-positive"),
             "{label}"
         );
     }
@@ -409,7 +428,8 @@ fn the_eigensample_count_is_capped_at_the_samples_that_survived() {
 fn a_panel_of_one_sample_has_no_eigensamples() {
     let text = golden();
     assert_eq!(number(&text, "one-sample", "samples"), 1);
-    assert_eq!(number(&text, "one-sample", "eigensamples"), 0);
+    assert_eq!(number(&text, "one-sample", "eigensamples-at-most"), 1);
+    assert!(!flag(&text, "one-sample", "eigensamples-positive"));
     // A panel of one sample still keeps intervals: the filters are not skipped for it.
     assert!(!panel_intervals(&text, "one-sample").is_empty());
     // The refusal is an UnsupportedOperationException, so it is a state the reader will not

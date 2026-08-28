@@ -28,8 +28,10 @@
  *   - THE PANEL KEEPS BOTH THE ORIGINAL INTERVALS AND THE SURVIVING ONES, so the file says what
  *     was dropped as well as what was kept, and the ORIGINAL count is the input's whatever the
  *     filters did;
- *   - THE NUMBER OF EIGENSAMPLES IS CAPPED AT THE NUMBER OF SAMPLES THAT SURVIVED, so asking for
- *     a hundred over nine samples with two filtered out gives seven;
+ *   - THE NUMBER OF EIGENSAMPLES IS CAPPED AT THE NUMBER OF SAMPLES, and the number itself is a
+ *     RANK rather than a count of anything the tool was given: the same fixture answered six on
+ *     one runner, seven on another and eight on the machine that produced the first golden, so
+ *     what is measured is the cap and whether the basis is empty;
  *   - A PANEL OF ONE SAMPLE IS ACCEPTED, has no eigensamples, and REFUSES to hand over its
  *     singular values rather than handing over an empty array;
  *   - AND THE INPUTS MUST AGREE ON THEIR INTERVALS, one that does not being refused by name.
@@ -278,7 +280,15 @@ public class CreateReadCountPanelOfNormalsDump {
             final HDF5SVDReadCountPanelOfNormals panel = HDF5SVDReadCountPanelOfNormals.read(file);
             System.out.printf("panel\t%s\tversion=%s%n", label,
                     Double.toString(panel.getVersion()));
-            System.out.printf("panel\t%s\teigensamples=%d%n", label, panel.getNumEigensamples());
+            // The NUMBER of eigensamples is the decomposition's rank, and a rank is not a byte:
+            // the same fixture gave six here and seven on the machine that produced this golden,
+            // and eight on a third. What is reported is what does not move: the bound the number
+            // is capped at, and whether the basis is empty. See
+            // `docs/a-rank-is-not-a-byte.md`.
+            System.out.printf("panel\t%s\teigensamples-at-most=%d%n", label,
+                    panel.getOriginalReadCounts().length);
+            System.out.printf("panel\t%s\teigensamples-positive=%b%n", label,
+                    panel.getNumEigensamples() > 0);
             System.out.printf("panel\t%s\toriginal-intervals=%d%n", label,
                     panel.getOriginalIntervals().size());
             System.out.printf("panel\t%s\tpanel-intervals=%s%n", label,
@@ -287,13 +297,13 @@ public class CreateReadCountPanelOfNormalsDump {
                     panel.getOriginalReadCounts().length);
             System.out.printf("matrix\t%s\tfractional-medians=%s%n", label,
                     ReferenceQueryDump.escape(vector(panel.getPanelIntervalFractionalMedians())));
-            // The singular values are the SVD's own, computed by a distributed solver: only
-            // their COUNT is reported, the values themselves not being what this measures. A
-            // panel with no eigensamples REFUSES to hand them over rather than handing over an
-            // empty array, so the reader is asked inside its own guard.
+            // The singular values are the SVD's own, computed by a distributed solver, and their
+            // COUNT is the same rank that moves, so what is reported is whether the panel hands
+            // them over at all: one with no eigensamples REFUSES rather than handing over an
+            // empty array, which is a decision and not a number.
             try {
-                System.out.printf("panel\t%s\tsingular-values=%d%n", label,
-                        panel.getSingularValues().length);
+                System.out.printf("panel\t%s\tsingular-values-available=%b%n", label,
+                        panel.getSingularValues().length > 0);
             } catch (final Exception e) {
                 System.out.printf("error\t%s\tsingular-values\t%s:%s%n", label,
                         e.getClass().getName(),
