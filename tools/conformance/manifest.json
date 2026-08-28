@@ -6432,7 +6432,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6447,7 +6447,7 @@
       "compare": {
         "mode": "lines"
       },
-      "why": "The parser is measured mechanism by mechanism; what no suite holds is what any ONE tool declares. A read walker declares a handful of arguments of its own and ends up with dozens, the rest inherited from the collections its superclasses hold, in an order that is the parser's and not the source's. That flattened namespace is what Milestone C's per-tool declarations have to reproduce, and a variant walker having no `--input` at all is the cheapest proof that it cannot be guessed from the archetype.",
+      "why": "The parser is measured mechanism by mechanism; what no suite holds is what any ONE tool declares. A read walker declares a handful of arguments of its own and ends up with dozens, the rest inherited from the collections its superclasses hold, in an order that is the parser's and not the source's. That flattened namespace is what Milestone C's per-tool declarations have to reproduce, and a variant walker having no `--input` at all is the cheapest proof that it cannot be guessed from the archetype. The declarations now carry the type, the primitiveness, the three visibility flags, the bounds, the mutex targets, the controlling plugin and the documentation, which is what a parser and a usage text can be BUILT from rather than only counted against.",
       "cases": [
         {
           "dump": "ToolArgumentDeclarationDump",
