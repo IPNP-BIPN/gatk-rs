@@ -6523,6 +6523,24 @@
           "why": "One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
         }
       ]
+    },
+    {
+      "id": "tool-argument-value-classes",
+      "status": "golden-pending",
+      "title": "the four value classes a tool declares and the port cannot yet convert",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "Every one of the seven ported tools declares a GATKPath, so no command line reaches the ported parser until these four conversions are measured. What a class accepts is what its String constructor accepts, which is why a File refuses nothing and a Float refuses what Float.valueOf refuses, naming Float where a Double's message names Double.",
+      "cases": [
+        {
+          "dump": "ToolArgumentValueClassDump",
+          "golden": null,
+          "why": "Twenty-two command lines over one target carrying a field of each class: a path, a URI, a relative path, one that names nothing and an empty one; the same strings through a File; a tag on the taggable class, on the one that is not, and by short name; an empty and a filled collection; a FeatureInput tagged and not; and a Float on both sides of what Float.valueOf accepts, primitive and boxed."
+        }
+      ]
     }
   ],
   "probes": []
