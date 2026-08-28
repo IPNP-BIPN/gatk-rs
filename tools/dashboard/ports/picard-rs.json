@@ -421,6 +421,174 @@
         "LiftOverHaplotypeMap"
       ],
       "cases": 1
+    },
+    {
+      "id": "positiondownsample",
+      "status": "oracle-backed",
+      "tools": [
+        "PositionBasedDownsampleSam"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "duplicatemetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectDuplicateMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "verifyidintensity",
+      "status": "oracle-backed",
+      "tools": [
+        "CreateVerifyIDIntensityContaminationMetricsFile"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "bafregress",
+      "status": "oracle-backed",
+      "tools": [
+        "CreateBafRegressMetricsFile"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "wgsmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectWgsMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "rawwgsmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectRawWgsMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "umiprevalence",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectUmiPrevalenceMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "artifacttooxog",
+      "status": "oracle-backed",
+      "tools": [
+        "ConvertSequencingArtifactToOxoG"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "clustercrosscheck",
+      "status": "oracle-backed",
+      "tools": [
+        "ClusterCrosscheckMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "extractfingerprint",
+      "status": "oracle-backed",
+      "tools": [
+        "ExtractFingerprint"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "identifycontaminant",
+      "status": "oracle-backed",
+      "tools": [
+        "IdentifyContaminant"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "mergepedintovcf",
+      "status": "oracle-backed",
+      "tools": [
+        "MergePedIntoVcf"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "accumulatevcm",
+      "status": "oracle-backed",
+      "tools": [
+        "AccumulateVariantCallingMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "variantcallingmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectVariantCallingMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "nonzerowgs",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectWgsMetricsWithNonZeroCoverage"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "oxog",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectOxoGMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "artifactmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectSequencingArtifactMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "hsmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectHsMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "pcrmetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectTargetedPcrMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "libcomplexity",
+      "status": "oracle-backed",
+      "tools": [
+        "EstimateLibraryComplexity"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "genotypeconcordance",
+      "status": "golden-pending",
+      "tools": [
+        "GenotypeConcordance"
+      ],
+      "cases": 1
     }
   ],
   "source": "/Users/benjamin/Picard/tools/conformance/manifest.json",
