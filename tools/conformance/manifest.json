@@ -6477,6 +6477,26 @@
           "why": "Three tools' whole usage text, its line count, and whether -h and --help agree."
         }
       ]
+    },
+    {
+      "id": "bwa-index-image",
+      "status": "golden-pending",
+      "title": "the BWA index image a reference produces, and where it lands",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The image is NOT byte-comparable: building one reference twice in a single process gives two files of the same length whose differing bytes are in-process POINTERS. The golden therefore holds the size, the landing name, the refusal and the fact of that instability, and says why the bytes are not a claim.",
+      "cases": [
+        {
+          "dump": "BwaMemIndexImageCreatorDump",
+          "golden": null,
+          "why": "Ten cases: one reference indexed twice, the same bases in lower case, a longer sequence, two contigs, a renamed contig, a run of Ns, a reference of one base, the default output name, and a fasta that is not there. Every case is built twice, and the golden records that no two builds agree."
+        }
+      ]
     }
   ],
   "probes": []
