@@ -6381,6 +6381,26 @@
           "why": "Fourteen cases: four granularities including the default and one above the record count, the default output name, the .bai companion, a queryname-sorted file with and without it, an empty BAM on both paths, a granularity of zero and of minus one, and a file that is not a BAM."
         }
       ]
+    },
+    {
+      "id": "allele-frequency-qc",
+      "status": "golden-pending",
+      "title": "the chi-squared statistic over the allele frequency bins, and the p-value it gives",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "AlleleFrequencyQC"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The statistic is not Pearson's: the expected count in the denominator is replaced by a constant variance, SQUARED, so raising --allowed-variance from a hundredth to a tenth divides the statistic by a hundred rather than by ten. The comparison set has to be given TWICE, once as --comp and once as a second eval track, or every bin holds a single row and the sum is nought whatever the data says. The bin ladder is fixed at sixty-one, so the degrees of freedom are sixty in every run and a bin no variant reached contributes a term of nought.",
+      "cases": [
+        {
+          "dump": "AlleleFrequencyQCDump",
+          "golden": null,
+          "why": "Nine cases: het calls against the comparison frequencies, one bin called homozygous, two other variances, a threshold above the p-value, a filtered variant, a comparison site the call set has nothing at, a file with one variant in it, and a VCF with no alias header."
+        }
+      ]
     }
   ],
   "probes": []
