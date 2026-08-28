@@ -3273,7 +3273,9 @@
       "status": "oracle-backed",
       "title": "The tranches file, whose two optional columns are not optional",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "ApplyVQSR"
+      ],
       "why": "ApplyVQSR's first slice, and the file both VQSR tools pass between them: TruthSensitivityTranche.readTranches and the FILTER header lines onTraversalStart makes of the tranches that survive --truth-sensitivity-filter-level, measured with an input VCF holding no record so the header is the whole output. THE TWO OPTIONAL COLUMNS ARE NOT OPTIONAL: numKnown is read with getOptionalInteger(..., -1) and the Tranche constructor then refuses numKnown < 0, so a header that does not name the column is a GATKException 'Invalid tranche <filterName> - no. variants is < 0 : known -1 novel 9' rather than a default, while accessibleTruthSites and callsAtTruthSites default to -1 and are never checked. THE HEADER NAMES THE COLUMNS AND THERE MUST BE ELEVEN OF THEM, the bindings being built header-to-value, so the order is free while a header of another length is refused before any row and a row of another length against the header's. THE SAME READER WORDS ITS TWO REFUSALS DIFFERENTLY: the missing-key path builds a MalformedFile with no file at all and reads 'Unknown file is malformed', while the two length checks name the file. THE FILTER IDs ARE THE filterName COLUMN rather than anything synthesized, and THE LAST TRANCHE NEVER BECOMES A FILTER: the lines run to size - 1, so the tranche kept whole has no line, the first tranche after the reversal is described with the NEXT tranche's minVQSLod, and it gets a SECOND line with a + appended to its own name, appearing twice in one header under two IDs. model and filterName are read with a bare bindings.get and handed to Mode.valueOf unchecked, so a header not naming the model column is a NullPointerException 'Name is null', while numNovel is a long field parsed with Integer.valueOf, so a count past the range of an int cannot be read back at all. A LEVEL ABOVE EVERY TRANCHE IS A UserException rather than an empty filter set, and the mutual exclusion of --truth-sensitivity-filter-level and --lod-score-cutoff is checked AFTER the file is read, so a broken file wins over the mutex. With no level at all there is one filter line, LOW_VQSLOD, described with the default cutoff 0.0.",
       "compare": {
         "mode": "lines"
@@ -3308,7 +3310,9 @@
       "status": "oracle-backed",
       "title": "ApplyVQSR's per-record filtering, where the last tranche means PASS",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "ApplyVQSR"
+      ],
       "why": "ApplyVQSR's per-record half, measured on an input VCF of eight records against a recal VCF and the three-tranche file of the apply-vqsr-tranches suite. THE TRANCHES ARE WALKED BACKWARDS AND THE LAST ONE MEANS PASS: the loop takes the first tranche whose minVQSLod the record reaches and answers PASS only when that tranche is the last of the reversed list, so the bands are exactly the intervals the FILTER header lines describe, a LOD equal to a minVQSLod belongs to the tranche below it, and anything under every tranche gets the FIRST tranche's name with a + appended. THE RECAL RECORD MUST AGREE ON BOTH ENDS, BY TWO DIFFERENT MECHANISMS: the query is getValues(recal, vc.getStart()), which keeps only records STARTING at the input record's start, and getMatchingRecalVC then takes the first of those whose END matches, so a recal record at the same start with another length is skipped and one with no partner at all is a refusal. EVERY NEGATIVE VQSLOD IS WRITTEN IN SCIENTIFIC NOTATION: the value is reparsed as a double and handed to htsjdk's formatVCFDouble, whose branch is on the SIGNED value, so -3.0 comes out -3.000e+00 while 5.0 comes out 5.00 and 0.0 comes out 0.00. A RECAL RECORD WITH NO CULPRIT WRITES culprit=. , the attribute being copied with getAttribute and no default. A RECORD OF THE WRONG CLASS OR ONE ALREADY FILTERED IS EMITTED UNTOUCHED, and --exclude-filtered NEVER DROPS IT: the exclusion is inside the branch that recalibrates, so an already-filtered record survives a run that drops every record the tool itself filtered. --ignore-all-filters and --ignore-filter each bring it back into the recalibration. AND THE THREE REFUSALS ARE WRAPPED: what apply throws is a UserException, and the walker rethrows it as a GATKException whose message is the locus and the whole VariantContext, so the tool's own wording survives only in the cause.",
       "compare": {
         "mode": "lines"
@@ -3342,7 +3346,9 @@
       "status": "oracle-backed",
       "title": "ApplyVQSR's allele-specific mode, where a spanning deletion counts as a SNP",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "ApplyVQSR"
+      ],
       "why": "ApplyVQSR's -AS path: every alternate allele scored against a recal record of its own and written into three comma-separated lists. THE PER-ALLELE CLASS TEST IS A LENGTH COMPARISON rather than a type, SNP mode keeping an allele whose length equals the reference's, so A SPANNING DELETION COUNTS AS A SNP, as the reference's own comment says. AN ALLELE OF THE OTHER MODE IS NOT SKIPPED BUT PADDED with NA for its filter and its culprit and NaN for its LOD, and so is the spanning deletion, WITHOUT BEING LOOKED UP: the lists always carry one entry per alternate allele, and chr1:300 comes out AS_FilterStatus=NA,VQSRTrancheSNP90.00to99.00 in SNP mode. A MIXED SITE IS LEFT UNFILTERED UNTIL BOTH MODES HAVE RUN, generateFilterStringFromAlleles returning the unfiltered value when neither bothModesWereRun nor onlyOneModeNeeded holds, so chr1:200's FILTER is . while its AS_FilterStatus already names a tranche. EVERY RECORD IS EVALUATED IN AS MODE, evaluateThisVariant being useASannotations || checkVariationClass, so a pure indel is annotated by a SNP-mode run rather than passed through untouched. THERE IS NO SITE-LEVEL VQSLOD OR CULPRIT AT ALL in this mode, only the three lists, each LOD formatted with %.4f rather than through the writer's double format, while the two training labels are still written at the site. AND AN ALLELE WITH NO RECAL RECORD IS A REFUSAL OF ITS OWN, worded for -AS, which the walker rethrows as a GATKException naming the locus.",
       "compare": {
         "mode": "lines"
@@ -3370,7 +3376,9 @@
       "status": "oracle-backed",
       "title": "ApplyVQSR run twice, where the leniency regex loses a digit",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "ApplyVQSR"
+      ],
       "why": "ApplyVQSR run twice over the same records, which is how a mixed site is filtered at all: the second run reads the first run's own FILTER lines back out of the header and then compares the two modes' filter names. THE PREVIOUS RUN IS DETECTED BY THREE MAGIC NUMBERS: a FILTER ID of at least 12 characters whose first 11 are VQSRTranche ignoring case and whose 12th is S or I, with the interval taken as substring(14) or substring(16), the lengths of VQSRTrancheSNP and VQSRTrancheINDEL. THE PREFIX TEST IS CASE-INSENSITIVE AND THE MODE TEST IS NOT, so a header line named vqsrtranchesnp90.00to99.00 passes the first and fails the second and the run behaves as though no SNP mode had ever been applied. A NAME WHOSE INTERVAL SPLITS INTO TWO PIECES THAT ARE NOT NUMBERS IS A UserException thrown before any record, worded 'Poorly formatted tranche filter name does not contain two sensitivity interval end points.' THE SITE FILTER OF THE SECOND RUN IS THE MOST LENIENT OF BOTH MODES, and most lenient means the smallest lower limit pulled out of the filter NAME by the regex VQSRTranche\\\\S+(\\\\d+\\\\.\\\\d+)to(\\\\d+\\\\.\\\\d+). THAT REGEX IS GREEDY AND LOSES A DIGIT: \\\\S+ eats as much as it can, so VQSRTrancheINDEL90.00to99.00 has a lower limit of 0.00 rather than 90.00 while VQSRTrancheSNP5.00to90.00 keeps its 5.00, and the second run therefore filters the site with the LESS lenient of the two names. The golden runs the same pair twice, once with names the loss does not reorder and once with names it does. A MIXED SITE IS FILTERED ONLY ONCE BOTH MODES HAVE RUN, the same record coming out . after the first run and carrying a filter after the second, and its AS_FilterStatus is the first run's entry beside the second's.",
       "compare": {
         "mode": "lines"
