@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 206 | 66.2% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 207 | 66.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
 | not started | 104 | 33.4% |
 | **total** | **311** | |
@@ -110,7 +110,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations | 2 | not measured |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
-| `BwaMemIndexImageCreator` | reference-utility | golden-pending | bwa-index-image | 1 | not measured |
+| `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
 | `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | not measured |
