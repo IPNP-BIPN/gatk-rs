@@ -6284,21 +6284,21 @@
     },
     {
       "id": "funcotator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "a VCF annotated from the same folder of data sources FuncotateSegments uses",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "Funcotator"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The GENCODE source is FuncotateSegments' fixture reused whole, which is what unblocked the measurement: the locatable XSV that segments read straight through has to be indexed for Funcotator, so the folder holds GENCODE alone. Every alternate gets its own bracketed funcotation joined by a comma, and the codon change writes the changed bases in upper case and the rest in lower.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "FuncotatorDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/funcotator.txt.gz",
+          "why": "Eight cases: a five-record VCF annotated, a default annotation added, one overridden, the filtered records removed, the canonical transcripts and all of them, the MAF output, and a reference version with no directory."
         }
       ]
     },
