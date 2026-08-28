@@ -6409,6 +6409,26 @@
           "why": "Nine cases: het calls against the comparison frequencies, one bin called homozygous, two other variances, a threshold above the p-value, a filtered variant, a comparison site the call set has nothing at, a file with one variant in it, and a VCF with no alias header."
         }
       ]
+    },
+    {
+      "id": "calculate-contamination",
+      "status": "golden-pending",
+      "title": "the coverage filter, the table the genotyping is done from, and the two files",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CalculateContamination"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The two ratio arguments are accepted and ignored: both fields are `private final double` initialised from a constant expression, which makes their one read a compile-time constant, so a low ratio of ten that would drop every site changes nothing. The filter itself still cuts at three times the mean, which the golden shows by keeping the same six homozygous-alternate sites at a lower depth and watching the answer move. And a matched normal decides WHICH sites are homozygous while the tumour's own counts are read there: 0.915 against 0.044 on the same tumour table.",
+      "cases": [
+        {
+          "dump": "CalculateContaminationDump",
+          "golden": null,
+          "why": "Eleven cases: a plain run, one asking for the segmentation, a table with sites under the minimum coverage, a deep hom-alt tail the ceiling cuts and the same tail at a depth it keeps, four ratio settings including one that would drop every site, a matched normal whose hom-alt sites sit elsewhere, one with no hom-alt site at all, and a matched normal with the segmentation."
+        }
+      ]
     }
   ],
   "probes": []
