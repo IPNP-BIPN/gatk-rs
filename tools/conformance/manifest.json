@@ -6432,7 +6432,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6443,12 +6443,12 @@
       "compare": {
         "mode": "lines"
       },
-      "why": "The parser is measured mechanism by mechanism; what no suite holds is what any ONE tool declares. A read walker declares a handful of arguments of its own and ends up with dozens, the rest inherited from the collections its superclasses hold, in an order that is the parser's and not the source's. That flattened namespace is what Milestone C's per-tool declarations have to reproduce, and a variant walker having no `--input` at all is the cheapest proof that it cannot be guessed from the archetype.",
+      "why": "The parser is measured mechanism by mechanism; what no suite holds is what any ONE tool declares. A read walker declares a handful of arguments of its own and ends up with dozens, the rest inherited from the collections its superclasses hold, in an order that is the parser's and not the source's. That flattened namespace is what Milestone C's per-tool declarations have to reproduce, and a variant walker having no `--input` at all is the cheapest proof that it cannot be guessed from the archetype. The golden here is the PREVIOUS one: four more tools have been added to the dump, so the file this suite regenerates no longer matches it. It stays declared and committed only so the Rust comparison and the declarations generator keep working; the follow-up PR replaces it with the candidate this run produces.",
       "cases": [
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Three tools' full declaration lists, and fourteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, and a print tool with and without its output."
+          "why": "Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
         }
       ]
     }

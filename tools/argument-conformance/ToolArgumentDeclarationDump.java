@@ -57,6 +57,17 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.CountVariants());
         declarations("PrintReads",
                 new org.broadinstitute.hellbender.tools.PrintReads());
+        // Four more archetypes, so the list is not three walkers of two kinds: a read walker that
+        // writes a recalibrated file, a variant walker with a large argument surface of its own, a
+        // tool that is no walker at all, and one that takes a list of files rather than one.
+        declarations("ApplyBQSR",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.ApplyBQSR());
+        declarations("SelectVariants",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.SelectVariants());
+        declarations("IndexFeatureFile",
+                new org.broadinstitute.hellbender.tools.IndexFeatureFile());
+        declarations("GatherVcfs",
+                new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
@@ -78,6 +89,11 @@ public class ToolArgumentDeclarationDump {
 
         // The output argument a print tool requires on top of its input.
         parse("PrintReads", "input-only", new String[]{"-I", "/dev/null"});
+        // A tool that is no walker takes a positional-looking input and nothing else required.
+        parse("IndexFeatureFile", "no-arguments", new String[]{});
+        parse("IndexFeatureFile", "input-only", new String[]{"-I", "/dev/null"});
+        parse("IndexFeatureFile", "an-interval", new String[]{"-I", "/dev/null", "-L", "chr1"});
+
         parse("PrintReads", "input-and-output",
                 new String[]{"-I", "/dev/null", "-O", "/dev/null"});
         // The output is a scalar where the input is a collection, so naming it twice is refused.
@@ -134,6 +150,7 @@ public class ToolArgumentDeclarationDump {
         final Object target = switch (tool) {
             case "CountReads" -> new org.broadinstitute.hellbender.tools.CountReads();
             case "CountVariants" -> new org.broadinstitute.hellbender.tools.walkers.CountVariants();
+            case "IndexFeatureFile" -> new org.broadinstitute.hellbender.tools.IndexFeatureFile();
             default -> new org.broadinstitute.hellbender.tools.PrintReads();
         };
         String result;
