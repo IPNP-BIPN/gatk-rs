@@ -21,6 +21,7 @@ pub mod apply_vqsr;
 pub mod ase_read_counter;
 pub mod base_recalibrator;
 pub mod build_bam_index;
+pub mod bwa_mem_index_image_creator;
 pub mod calculate_average_combined_annotations;
 pub mod calculate_contamination;
 pub mod calculate_genotype_posteriors;
