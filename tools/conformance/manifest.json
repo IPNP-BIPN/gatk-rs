@@ -6164,13 +6164,13 @@
     },
     {
       "id": "create-read-count-panel-of-normals",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "which intervals and which samples reach the panel",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CreateReadCountPanelOfNormals"
       ],
-      "why": "The singular value decomposition is a distributed solver's and is not measured: only the count of its values is. What is measured is everything that decides which intervals and which samples reach it, and the harsher of the two interval filters turned out to be the zeros one, which leaves two intervals where the median filter leaves most of them.",
+      "why": "PENDING a fresh candidate: the fixture has been rebuilt so its samples' median coverages are separated by fourteen per cent or more. The committed golden is the old fixture's and is left in place only so the Rust comparison keeps building; it is replaced by the follow-up PR.",
       "compare": {
         "mode": "lines"
       },
@@ -6178,7 +6178,7 @@
         {
           "dump": "CreateReadCountPanelOfNormalsDump",
           "golden": "crates/gatk-tools/tests/data/create_read_count_panel_of_normals.txt.gz",
-          "why": "Eleven runs over nine read-count files: the defaults, no filtering at all, each of the four filters on its own against that baseline, the zeros left alone, two eigensample counts, a panel of one sample, and an input whose intervals do not match."
+          "why": "Eleven runs over nine read-count files: the defaults, no filtering at all, each of the four filters on its own against that baseline, the zeros left alone, two eigensample counts, a panel of one sample, and an input whose intervals do not match. PENDING: re-measured against the rebuilt fixture."
         }
       ]
     },
