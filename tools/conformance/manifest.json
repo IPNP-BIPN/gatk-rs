@@ -6432,7 +6432,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6447,7 +6447,7 @@
       "cases": [
         {
           "dump": "ToolArgumentDeclarationDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
           "why": "Three tools' full declaration lists, and fourteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, and a print tool with and without its output."
         }
       ]
