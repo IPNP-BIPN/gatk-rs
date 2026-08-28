@@ -244,6 +244,7 @@ dependencies = [
 name = "gatk-cli"
 version = "0.1.0"
 dependencies = [
+ "gatk-barclay",
  "gatk-corpus",
  "gatk-tools",
 ]

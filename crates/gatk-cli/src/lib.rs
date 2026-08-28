@@ -22,6 +22,8 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
+pub mod definitions;
+
 use gatk_tools::main_entry::{self, Failure, Route, Stream};
 
 /// The reference's own pins, which `printVersionInfo` reads off the jar's manifest.
@@ -100,38 +102,76 @@ pub fn run(args: &[String]) -> Outcome {
                 status: main_entry::exit_status(Failure::User),
             }
         }
-        Route::Tool { name } => match runner(&name) {
-            None => {
-                stderr.push_str(&main_entry::user_exception_report(&not_ported(&name)));
-                Outcome {
+        Route::Tool { name } => {
+            // The parse comes before the run, and it only happens for a tool whose whole argument
+            // surface converts: a parser missing a third of its arguments would refuse a command
+            // line the reference accepts, which is a worse answer than refusing to parse at all.
+            if let Some(error) = parse_failure(&name, main_entry::tool_arguments(args)) {
+                stderr.push_str(&main_entry::user_exception_report(&error));
+                return Outcome {
                     stdout,
                     stderr,
-                    status: main_entry::exit_status(Failure::User),
-                }
+                    status: main_entry::exit_status(Failure::CommandLine),
+                };
             }
-            Some(runner) => match runner(main_entry::tool_arguments(args)) {
-                Ok(result) => {
-                    if let Some(printed) = main_entry::tool_returned(result.as_deref()) {
-                        stdout.push_str(&printed);
-                        stdout.push('\n');
-                    }
+            match runner(&name) {
+                None => {
+                    stderr.push_str(&main_entry::user_exception_report(&not_ported(&name)));
                     Outcome {
                         stdout,
                         stderr,
-                        status: 0,
+                        status: main_entry::exit_status(Failure::User),
                     }
                 }
-                Err((failure, message)) => {
-                    stderr.push_str(&main_entry::user_exception_report(&message));
-                    Outcome {
-                        stdout,
-                        stderr,
-                        status: main_entry::exit_status(failure),
+                Some(runner) => match runner(main_entry::tool_arguments(args)) {
+                    Ok(result) => {
+                        if let Some(printed) = main_entry::tool_returned(result.as_deref()) {
+                            stdout.push_str(&printed);
+                            stdout.push('\n');
+                        }
+                        Outcome {
+                            stdout,
+                            stderr,
+                            status: 0,
+                        }
                     }
-                }
-            },
-        },
+                    Err((failure, message)) => {
+                        stderr.push_str(&main_entry::user_exception_report(&message));
+                        Outcome {
+                            stdout,
+                            stderr,
+                            status: main_entry::exit_status(failure),
+                        }
+                    }
+                },
+            }
+        }
     }
+}
+
+/// Whether this port can hand a tool's command line to the ported Barclay parser at all.
+///
+/// A tool is parseable when every argument it declares converts to a definition. None of the seven
+/// tools whose declarations are carried is, today: each of them declares a `GATKPath`, and the
+/// conversion a `GATKPath` goes through is not measured. See [`definitions::UNCONVERTIBLE_CLASSES`].
+pub fn parseable(tool: &str) -> bool {
+    gatk_tools::tool_declarations::declarations(tool)
+        .map(|list| definitions::missing(list).is_empty())
+        .unwrap_or(false)
+}
+
+/// The refusal the ported parser makes of a command line, if the tool is parseable at all.
+pub fn parse_failure(tool: &str, args: &[String]) -> Option<String> {
+    if !parseable(tool) {
+        return None;
+    }
+    let list = gatk_tools::tool_declarations::declarations(tool)?;
+    let mut parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    parser
+        .parse_arguments(&borrowed)
+        .err()
+        .map(|error| error.message)
 }
 
 /// The tools this port can run, which is none of them yet.
