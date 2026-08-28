@@ -11,7 +11,10 @@
 //!
 //!  * **the counts being the reference's, and the two readings staying side by side**;
 //!  * **a read walker and a variant walker not mirroring each other**;
-//!  * **and the parse decisions the golden holds following from the declarations.**
+//!  * **the parse decisions the golden holds following from the declarations**;
+//!  * **the type being the UNDERLYING field's, which for a collection is its element class**;
+//!  * **and the four other declarations a parser and a usage text are built from: the visibility
+//!    flags, the bounds, the controlling plugin and the documentation.**
 
 use gatk_corpus as corpus;
 use gatk_tools::tool_declarations::{
@@ -140,6 +143,94 @@ fn the_two_archetypes_do_not_mirror_each_other() {
         .find(|row| row.starts_with("an-interval\t"))
         .expect("the refusal");
     assert!(refused.contains("not a recognized option"), "{refused}");
+}
+
+/// The type is the underlying field's, which for a collection is its element class.
+#[test]
+fn the_type_is_the_underlying_fields() {
+    let text = golden();
+    // Every declaration in the module says what the golden's own line says.
+    for (tool, list) in TOOLS {
+        for row in field(&text, "def", tool) {
+            let (index, body) = row.split_once('\t').expect("an index and a body");
+            let fields: Vec<&str> = body.split('|').collect();
+            let index: usize = index.parse().expect("a number");
+            let declaration = &list[index];
+            assert_eq!(declaration.long_name, fields[0], "{tool}");
+            assert_eq!(declaration.type_name, fields[5], "{tool}");
+            assert_eq!(declaration.primitive, fields[6] == "primitive", "{tool}");
+            assert_eq!(declaration.flag, fields[7] == "flag", "{tool}");
+            assert_eq!(declaration.hidden, fields[8] == "hidden", "{tool}");
+            assert_eq!(declaration.advanced, fields[9] == "advanced", "{tool}");
+            assert_eq!(declaration.common, fields[10] == "common", "{tool}");
+            assert_eq!(
+                declaration.controlled_by.is_none(),
+                fields[18] == "none",
+                "{tool}"
+            );
+        }
+    }
+    // `--input` is a `List<GATKPath>`, so it is a collection whose ELEMENT is the path: the
+    // conversion a value goes through is the element's, and the collection is only how many.
+    let input = find(COUNTREADS, "input").expect("input");
+    assert!(input.collection);
+    assert_eq!(input.type_name, "GATKPath");
+    // A flag is a boolean that takes no value, and it is the one place primitiveness shows.
+    let flag = find(COUNTREADS, "create-output-bam-index").expect("the index flag");
+    assert!(flag.flag);
+    assert_eq!(flag.type_name, "Boolean");
+    // An enum argument reports the enum, which is what the parser converts the string with.
+    assert_eq!(
+        find(COUNTREADS, "interval-set-rule")
+            .expect("the set rule")
+            .type_name,
+        "IntervalSetRule"
+    );
+}
+
+/// The rest of what a parser and a usage text are built from.
+#[test]
+fn the_declarations_carry_what_a_parser_and_a_usage_need() {
+    let text = golden();
+    // The documentation is the annotation's own string, and it is what the usage wraps.
+    let doc = |tool: &str, index: usize| {
+        field(&text, "doc", tool)
+            .into_iter()
+            .find(|row| row.starts_with(&format!("{index}\t")))
+            .map(|row| row.split_once('\t').expect("an index").1.to_string())
+            .unwrap_or_else(|| panic!("doc/{tool}/{index}"))
+    };
+    for (tool, list) in TOOLS {
+        for (index, declaration) in list.iter().enumerate() {
+            assert_eq!(declaration.doc, doc(tool, index), "{tool}");
+        }
+    }
+    // A bound is four doubles and not two: an undeclared range is the infinities, and the
+    // recommended one is declared BESIDE the hard one.
+    let plain = find(COUNTREADS, "output").expect("output");
+    assert_eq!(plain.min_value, f64::NEG_INFINITY);
+    assert_eq!(plain.max_recommended_value, f64::INFINITY);
+    // The read-filter SELECTOR is not itself controlled by the descriptor: it is the common
+    // argument that names filters, and it belongs to the tool's own namespace.
+    let selector = find(COUNTREADS, "read-filter").expect("the read filter argument");
+    assert!(selector.controlled_by.is_none());
+    assert!(selector.common);
+    assert!(selector.collection);
+    // What the descriptor controls is the arguments the individual FILTERS declare, and they are
+    // in the parser whether or not anybody selected the filter that owns them. Two of them read
+    // as required, which is the descriptor's business and not a command line's: nothing on a
+    // plain `CountReads` line supplies them and the parse succeeds anyway.
+    let controlled = find(COUNTREADS, "read-filter-expression").expect("a filter's argument");
+    assert_eq!(
+        controlled.controlled_by,
+        Some("GATKReadFilterPluginDescriptor")
+    );
+    assert!(controlled.required);
+    assert!(!controlled.common);
+    // And a tool that is no walker has no plugin-controlled argument at all.
+    assert!(INDEXFEATUREFILE
+        .iter()
+        .all(|declaration| declaration.controlled_by.is_none()));
 }
 
 /// The parse decisions follow from the declarations: a collection may be repeated, a scalar not.

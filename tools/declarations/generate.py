@@ -35,7 +35,10 @@ HEADER = '''//! The argument declarations of the tools Milestone C can run, as t
 //! nothing about the plugin descriptors or the standard collections, and is short by half.
 
 /// One named argument, as the parser reports it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// `Eq` is deliberately absent: the two ranges are doubles, and an undeclared one is an infinity
+/// rather than a missing value, so equality here is the doubles' own.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Declaration {
     /// The `--long-name`, without its dashes.
     pub long_name: &'static str,
@@ -47,9 +50,55 @@ pub struct Declaration {
     pub collection: bool,
     /// The value a constructed instance holds, as the parser renders it.
     pub default: Option<&'static str>,
+    /// The UNDERLYING field's class, which for a collection is its element class: `--input` is a
+    /// `List<GATKPath>` and reports `GATKPath`, so the conversion is the element's.
+    pub type_name: &'static str,
+    /// Whether the field is a primitive, which is a separate question from the class: the class
+    /// is boxed either way, and only the null check asks this one.
+    pub primitive: bool,
+    /// Whether the argument takes no value.
+    pub flag: bool,
+    /// Whether the usage text leaves it out altogether.
+    pub hidden: bool,
+    /// Whether it belongs under the usage's advanced section.
+    pub advanced: bool,
+    /// Whether it is one of the arguments every tool inherits rather than one of its own.
+    pub common: bool,
+    /// How many values a collection accepts, which is `0` and `i32::MAX` unless declared.
+    pub min_elements: i32,
+    pub max_elements: i32,
+    /// The hard range, as doubles, infinite when undeclared.
+    pub min_value: f64,
+    pub max_value: f64,
+    /// The recommended range, which is declared BESIDE the hard one and not instead of it.
+    pub min_recommended_value: f64,
+    pub max_recommended_value: f64,
+    /// The arguments this one may not be given with.
+    pub mutex: &'static [&'static str],
+    /// The plugin descriptor that controls this argument, if it is not the tool's own.
+    pub controlled_by: Option<&'static str>,
+    /// The `@Argument` annotation's documentation string, which is what the usage text wraps.
+    pub doc: &'static str,
 }
 
 '''
+
+
+def literal(text):
+    """A Rust string literal for a golden's own escaping, unescaped back to its bytes."""
+    body = text.replace("\\t", "\t").replace("\\n", "\n")
+    escaped = (body.replace("\\", "\\\\").replace('"', '\\"')
+               .replace("\t", "\\t").replace("\n", "\\n"))
+    return f'"{escaped}"'
+
+
+def rust_double(text):
+    """`String.valueOf(Double)` renders the infinities as words, and Rust names them differently."""
+    return {
+        "Infinity": "f64::INFINITY",
+        "-Infinity": "f64::NEG_INFINITY",
+        "null": "f64::NAN",
+    }.get(text, text)
 
 
 def rows(text, kind, tool):
@@ -132,13 +181,24 @@ def main():
         constant = tool.upper()
         parsed = []
         entries = []
+        docs = {}
+        for row in rows(text, "doc", tool):
+            index, body = row.split("\t", 1)
+            docs[index] = body
         for row in rows(text, "def", tool):
-            _, body = row.split("\t", 1)
-            long_name, aliases, required, collection, default = body.split("|", 4)
+            index, body = row.split("\t", 1)
+            fields = body.split("|")
+            if len(fields) != 19:
+                sys.exit(f"{tool}: a def line has {len(fields)} fields and not 19")
+            (long_name, aliases, required, collection, default, type_name, primitive, flag,
+             hidden, advanced, common, min_elements, max_elements, min_value, max_value,
+             min_recommended, max_recommended, mutex, plugin) = fields
             alias_list = ", ".join(f'"{a}"' for a in aliases.split(",") if a)
             default_literal = (
-                "None" if default == "null" else 'Some("%s")' % default.replace('"', '\\"')
+                "None" if default == "null" else 'Some(%s)' % literal(default)
             )
+            mutex_list = "" if mutex == "none" else ", ".join(
+                f'"{name}"' for name in mutex.split(","))
             parsed.append({
                 "long_name": long_name,
                 "required": required == "required",
@@ -151,6 +211,21 @@ def main():
                 f"        required: {'true' if required == 'required' else 'false'},\n"
                 f"        collection: {'true' if collection == 'collection' else 'false'},\n"
                 f"        default: {default_literal},\n"
+                f'        type_name: "{type_name}",\n'
+                f"        primitive: {'true' if primitive == 'primitive' else 'false'},\n"
+                f"        flag: {'true' if flag == 'flag' else 'false'},\n"
+                f"        hidden: {'true' if hidden == 'hidden' else 'false'},\n"
+                f"        advanced: {'true' if advanced == 'advanced' else 'false'},\n"
+                f"        common: {'true' if common == 'common' else 'false'},\n"
+                f"        min_elements: {min_elements},\n"
+                f"        max_elements: {max_elements},\n"
+                f"        min_value: {rust_double(min_value)},\n"
+                f"        max_value: {rust_double(max_value)},\n"
+                f"        min_recommended_value: {rust_double(min_recommended)},\n"
+                f"        max_recommended_value: {rust_double(max_recommended)},\n"
+                f"        mutex: &[{mutex_list}],\n"
+                f"        controlled_by: {'None' if plugin == 'none' else 'Some(\"%s\")' % plugin},\n"
+                f"        doc: {literal(docs.get(index, ''))},\n"
                 "    },"
             )
         documented = cross_check(tool, parsed)
