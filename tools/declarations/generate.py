@@ -107,7 +107,10 @@ def cross_check(tool, entries):
         sys.exit(
             f"{tool}: --{name} defaults to {ours!r} in the parser and {written!r} in the usage text"
         )
-    if len(documented) >= len(entries):
+    # The usage text never prints MORE than the parser declares. It prints fewer for a walker,
+    # whose plugin descriptors and standard collections it leaves out, and exactly as many for a
+    # tool that has neither: IndexFeatureFile is 14 of 14.
+    if len(documented) > len(entries):
         sys.exit(f"{tool}: the usage text prints {len(documented)} of {len(entries)} declarations")
     return len(documented)
 
