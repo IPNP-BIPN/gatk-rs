@@ -6455,6 +6455,28 @@
           "why": "Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
         }
       ]
+    },
+    {
+      "id": "usage-text",
+      "status": "golden-pending",
+      "title": "the usage text Barclay renders, which is a rendering and not prose",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "CountReads",
+        "IndexFeatureFile",
+        "GatherVcfsCloud"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The usage is generated from the same annotations the argument definitions come from, so it has an ordering, a grouping, a wrapping and a set of colour codes, and it is byte-comparable like anything else. Three tools of three shapes: a read walker whose usage carries the plugin arguments, and two tools that are no walkers and carry none.",
+      "cases": [
+        {
+          "dump": "UsageTextDump",
+          "golden": null,
+          "why": "Three tools' whole usage text, its line count, and whether -h and --help agree."
+        }
+      ]
     }
   ],
   "probes": []
