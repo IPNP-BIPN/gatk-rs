@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 181 | 58.2% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 182 | 58.5% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 12 | 3.9% |
 | not started | 117 | 37.6% |
 | **total** | **311** | |
@@ -172,7 +172,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
-| `LocalAssembler` | locus-walker | golden-pending | local-assembler | 1 | not measured |
+| `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | not measured |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | not measured |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |

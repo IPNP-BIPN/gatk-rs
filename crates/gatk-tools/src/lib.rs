@@ -95,6 +95,7 @@ pub mod joint_germline_cnv_segmentation;
 pub mod learn_read_orientation_model;
 pub mod left_align_and_trim_variants;
 pub mod left_align_indels;
+pub mod local_assembler;
 pub mod locus_walker;
 pub mod main_dispatch;
 pub mod make_sites_only_vcf;
