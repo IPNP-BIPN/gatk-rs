@@ -6164,13 +6164,13 @@
     },
     {
       "id": "create-read-count-panel-of-normals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which intervals and which samples reach the panel",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CreateReadCountPanelOfNormals"
       ],
-      "why": "PENDING a fresh candidate: the fixture has been rebuilt so its samples' median coverages are separated by fourteen per cent or more. The committed golden is the old fixture's and is left in place only so the Rust comparison keeps building; it is replaced by the follow-up PR.",
+      "why": "The samples vary in SHAPE and not in depth, because the first thing the tool does is divide depth out again: a fixture that varied only the depth left the nine samples' median coverages agreeing to five decimal places, and which one the extreme-median filter called the maximum flipped once on CI. The medians are now separated by fourteen per cent or more, except for the one pair that is deliberately identical, which sits mid-ranking where no percentile filter reaches for it.",
       "compare": {
         "mode": "lines"
       },
@@ -6178,7 +6178,7 @@
         {
           "dump": "CreateReadCountPanelOfNormalsDump",
           "golden": "crates/gatk-tools/tests/data/create_read_count_panel_of_normals.txt.gz",
-          "why": "Eleven runs over nine read-count files: the defaults, no filtering at all, each of the four filters on its own against that baseline, the zeros left alone, two eigensample counts, a panel of one sample, and an input whose intervals do not match. PENDING: re-measured against the rebuilt fixture."
+          "why": "Eleven cases: the defaults, no filtering at all, each of the four filters alone, imputation off, two eigensamples and a hundred, a panel of one sample, and inputs whose intervals disagree."
         }
       ]
     },
