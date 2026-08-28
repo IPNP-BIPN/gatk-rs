@@ -6,19 +6,20 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 207 | 66.6% |
-| golden-pending | 0 | 0.0% |
+| oracle-backed | 227 | 73.0% |
+| golden-pending | 1 | 0.3% |
 | unchecked | 0 | 0.0% |
-| not started | 104 | 33.4% |
+| not started | 83 | 26.7% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
 
-## picard-origin tools (68 of 121 started)
+## picard-origin tools (89 of 121 started)
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
 | `AccumulateQualityYieldMetrics` | reporting-walker | oracle-backed | accumulatequalityyield | 1 | not measured |
+| `AccumulateVariantCallingMetrics` | reporting-walker | oracle-backed | accumulatevcm | 1 | not measured |
 | `AddCommentsToBam` | record-transform | oracle-backed | add-comments-to-bam | 1 | not measured |
 | `AddOATag` | record-transform | oracle-backed | addoatag, addoatag-bam | 2 | t=2, 0/9 rows (0%) |
 | `AddOrReplaceReadGroups` | record-transform | oracle-backed | addreplacerg | 1 | not measured |
@@ -29,20 +30,36 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CheckDuplicateMarking` | unclassified | oracle-backed | checkdupmarking | 1 | not measured |
 | `CheckTerminatorBlock` | reporting-walker | oracle-backed | check-terminator-block | 1 | not measured |
 | `CleanSam` | record-transform | oracle-backed | cleansam | 1 | not measured |
+| `ClusterCrosscheckMetrics` | reporting-walker | oracle-backed | clustercrosscheck | 1 | not measured |
 | `CollectAlignmentSummaryMetrics` | reporting-walker | oracle-backed | metrics, rejections | 5 | t=2, 0/16 rows (0%) |
 | `CollectBaseDistributionByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
+| `CollectDuplicateMetrics` | record-transform | oracle-backed | duplicatemetrics | 1 | not measured |
 | `CollectGcBiasMetrics` | reporting-walker | oracle-backed | gcbias | 1 | not measured |
+| `CollectHsMetrics` | reporting-walker | oracle-backed | hsmetrics | 1 | not measured |
 | `CollectInsertSizeMetrics` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `CollectJumpingLibraryMetrics` | reporting-walker | oracle-backed | jumpinglibrary | 1 | not measured |
+| `CollectOxoGMetrics` | reporting-walker | oracle-backed | oxog | 1 | not measured |
 | `CollectQualityYieldMetrics` | reporting-walker | oracle-backed | metrics, rejections | 5 | not measured |
 | `CollectQualityYieldMetricsFlow` | unclassified | oracle-backed | qualityyieldflow | 1 | not measured |
 | `CollectQualityYieldMetricsSNVQ` | reporting-walker | oracle-backed | snvq | 1 | not measured |
+| `CollectRawWgsMetrics` | reporting-walker | oracle-backed | rawwgsmetrics | 1 | not measured |
 | `CollectRnaSeqMetrics` | reporting-walker | oracle-backed | rnaseq | 1 | not measured |
+| `CollectSequencingArtifactMetrics` | reporting-walker | oracle-backed | artifactmetrics | 1 | not measured |
+| `CollectTargetedPcrMetrics` | reporting-walker | oracle-backed | pcrmetrics | 1 | not measured |
+| `CollectUmiPrevalenceMetrics` | reporting-walker | oracle-backed | umiprevalence | 1 | not measured |
+| `CollectVariantCallingMetrics` | reporting-walker | oracle-backed | variantcallingmetrics | 1 | not measured |
+| `CollectWgsMetrics` | reporting-walker | oracle-backed | wgsmetrics | 1 | not measured |
+| `CollectWgsMetricsWithNonZeroCoverage` | reporting-walker | oracle-backed | nonzerowgs | 1 | not measured |
 | `CompareMetrics` | reporting-walker | oracle-backed | comparemetrics | 1 | not measured |
 | `CompareSAMs` | reporting-walker | oracle-backed | comparesams | 4 | not measured |
 | `ConvertHaplotypeDatabaseToVcf` | unclassified | oracle-backed | haplotypedbtovcf | 1 | not measured |
+| `ConvertSequencingArtifactToOxoG` | reporting-walker | oracle-backed | artifacttooxog | 1 | not measured |
+| `CreateBafRegressMetricsFile` | array-utility | oracle-backed | bafregress | 1 | not measured |
 | `CreateSequenceDictionary` | reference-utility | oracle-backed | createdict | 1 | not measured |
+| `CreateVerifyIDIntensityContaminationMetricsFile` | array-utility | oracle-backed | verifyidintensity | 1 | not measured |
 | `DownsampleSam` | record-transform | oracle-backed | downsamplesam | 1 | not measured |
+| `EstimateLibraryComplexity` | reporting-walker | oracle-backed | libcomplexity | 1 | not measured |
+| `ExtractFingerprint` | unclassified | oracle-backed | extractfingerprint | 1 | not measured |
 | `ExtractSequences` | reference-utility | oracle-backed | extractsequences | 1 | not measured |
 | `FastqToSam` | record-transform | oracle-backed | fastqtosam | 1 | not measured |
 | `FilterSamReads` | record-transform | oracle-backed | filtersamreads | 1 | not measured |
@@ -51,6 +68,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FixVcfHeader` | variant-transform | oracle-backed | fix-vcf-header | 1 | not measured |
 | `GatherBamFiles` | record-transform | oracle-backed | gather-bam-files | 1 | not measured |
 | `GatherVcfs` | variant-transform | oracle-backed | picard-gather-vcfs | 1 | not measured |
+| `GenotypeConcordance` | variant-walker | golden-pending | genotypeconcordance | 1 | not measured |
+| `IdentifyContaminant` | unclassified | oracle-backed | identifycontaminant | 1 | not measured |
 | `IntervalListToBed` | interval-utility | oracle-backed | intervallisttobed | 1 | not measured |
 | `IntervalListTools` | interval-utility | oracle-backed | intervallisttools, intervallisttoolspadbreak | 4 | not measured |
 | `LiftOverHaplotypeMap` | unclassified | oracle-backed | liftoverhaplotypemap | 1 | not measured |
@@ -59,10 +78,12 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `MakeVcfSampleNameMap` | unclassified | oracle-backed | vcfsamplenamemap | 1 | not measured |
 | `MeanQualityByCycle` | reporting-walker | oracle-backed | metrics | 4 | not measured |
 | `MergeBamAlignment` | record-transform | oracle-backed | mergebamalignment, mergebamalignment-full | 2 | not measured |
+| `MergePedIntoVcf` | array-utility | oracle-backed | mergepedintovcf | 1 | not measured |
 | `MergeSamFiles` | record-transform | oracle-backed | merge | 1 | not measured |
 | `MergeVcfs` | variant-transform | oracle-backed | merge-vcfs | 1 | not measured |
 | `NonNFastaSize` | reference-utility | oracle-backed | nonnfastasize | 1 | not measured |
 | `NormalizeFasta` | reference-utility | oracle-backed | normalizefasta | 1 | not measured |
+| `PositionBasedDownsampleSam` | record-transform | oracle-backed | positiondownsample | 1 | not measured |
 | `QualityScoreDistribution` | reporting-walker | oracle-backed | qualityscoredistribution | 1 | not measured |
 | `RenameSampleInVcf` | variant-transform | oracle-backed | rename-sample-in-vcf | 1 | not measured |
 | `ReorderSam` | record-transform | oracle-backed | reordersam | 1 | not measured |
@@ -87,9 +108,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VcfToIntervalList` | variant-transform | oracle-backed | vcf-to-interval-list | 1 | not measured |
 | `ViewSam` | reporting-walker | oracle-backed | viewsam | 1 | not measured |
 
-<details><summary>53 not started</summary>
+<details><summary>32 not started</summary>
 
-`AccumulateVariantCallingMetrics`, `BaitDesigner`, `BamToBfq`, `BpmToNormalizationManifestCsv`, `CalculateFingerprintMetrics`, `CheckFingerprint`, `CheckIlluminaDirectory`, `ClusterCrosscheckMetrics`, `CollectArraysVariantCallingMetrics`, `CollectDuplicateMetrics`, `CollectHiSeqXPfFailMetrics`, `CollectHsMetrics`, `CollectIlluminaBasecallingMetrics`, `CollectIlluminaLaneMetrics`, `CollectIndependentReplicateMetrics`, `CollectMultipleMetrics`, `CollectOxoGMetrics`, `CollectRawWgsMetrics`, `CollectRrbsMetrics`, `CollectSamErrorMetrics`, `CollectSequencingArtifactMetrics`, `CollectTargetedPcrMetrics`, `CollectUmiPrevalenceMetrics`, `CollectVariantCallingMetrics`, `CollectWgsMetrics`, `CollectWgsMetricsWithNonZeroCoverage`, `CombineGenotypingArrayVcfs`, `CompareGtcFiles`, `ConvertSequencingArtifactToOxoG`, `CreateBafRegressMetricsFile`, `CreateExtendedIlluminaManifest`, `CreateVerifyIDIntensityContaminationMetricsFile`, `CrosscheckFingerprints`, `CrosscheckReadGroupFingerprints`, `EstimateLibraryComplexity`, `ExtractFingerprint`, `ExtractIlluminaBarcodes`, `FifoBuffer`, `FindMendelianViolations`, `GenotypeConcordance`, `GtcToVcf`, `IdentifyContaminant`, `IlluminaBasecallsToFastq`, `IlluminaBasecallsToSam`, `LiftoverVcf`, `MarkDuplicates`, `MarkDuplicatesWithMateCigar`, `MarkIlluminaAdapters`, `MergePedIntoVcf`, `PositionBasedDownsampleSam`, `SimpleMarkDuplicatesWithMateCigar`, `UmiAwareMarkDuplicatesWithMateCigar`, `VcfToAdpc`
+`BaitDesigner`, `BamToBfq`, `BpmToNormalizationManifestCsv`, `CalculateFingerprintMetrics`, `CheckFingerprint`, `CheckIlluminaDirectory`, `CollectArraysVariantCallingMetrics`, `CollectHiSeqXPfFailMetrics`, `CollectIlluminaBasecallingMetrics`, `CollectIlluminaLaneMetrics`, `CollectIndependentReplicateMetrics`, `CollectMultipleMetrics`, `CollectRrbsMetrics`, `CollectSamErrorMetrics`, `CombineGenotypingArrayVcfs`, `CompareGtcFiles`, `CreateExtendedIlluminaManifest`, `CrosscheckFingerprints`, `CrosscheckReadGroupFingerprints`, `ExtractIlluminaBarcodes`, `FifoBuffer`, `FindMendelianViolations`, `GtcToVcf`, `IlluminaBasecallsToFastq`, `IlluminaBasecallsToSam`, `LiftoverVcf`, `MarkDuplicates`, `MarkDuplicatesWithMateCigar`, `MarkIlluminaAdapters`, `SimpleMarkDuplicatesWithMateCigar`, `UmiAwareMarkDuplicatesWithMateCigar`, `VcfToAdpc`
 
 </details>
 
