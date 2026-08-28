@@ -22,6 +22,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 GOLDEN = REPO / "crates/gatk-tools/tests/data/tool_declarations.txt.gz"
+ENUMS = REPO / "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz"
 OUT = REPO / "crates/gatk-tools/src/tool_declarations.rs"
 INVENTORY = REPO / "tools/inventory/generated/inventory.json"
 
@@ -79,6 +80,18 @@ pub struct Declaration {
     pub controlled_by: Option<&'static str>,
     /// The `@Argument` annotation's documentation string, which is what the usage text wraps.
     pub doc: &'static str,
+}
+
+/// One enum type an argument's value is converted with.
+///
+/// The constants are in DECLARATION order, which is what `values()` returns and what the message a
+/// bad value produces lists. `docs` is empty unless the enum implements Barclay's `ClpEnum`, in
+/// which case it is the documentation the usage text prints beside each constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnumType {
+    pub name: &'static str,
+    pub constants: &'static [&'static str],
+    pub docs: &'static [(&'static str, &'static str)],
 }
 
 '''
@@ -164,6 +177,45 @@ def cross_check(tool, entries):
     return len(documented)
 
 
+def enum_table():
+    """The enum types, from the `tool-argument-enums` golden.
+
+    A declaration says an argument's type is `IntervalSetRule`. Converting a value needs to know
+    what one is, and the message a bad value produces lists every constant, so the table is by
+    type rather than by tool: the same type is named by several tools and is one type.
+    """
+    if not ENUMS.exists():
+        sys.exit(f"no golden at {ENUMS}")
+    text = gzip.open(ENUMS, "rt").read()
+    docs = {}
+    for line in text.split("\n"):
+        if line.startswith("clp\t"):
+            _, name, body = line.split("\t", 2)
+            constant, doc = body.split("=", 1)
+            docs.setdefault(name, []).append((constant, doc))
+    entries = []
+    for line in text.split("\n"):
+        if not line.startswith("enum\t"):
+            continue
+        _, name, constants = line.split("\t", 2)
+        listed = ", ".join(f'"{constant}"' for constant in constants.split(","))
+        written = ", ".join(
+            f"({literal(constant)}, {literal(doc)})" for constant, doc in docs.get(name, []))
+        entries.append(
+            "    EnumType {\n"
+            f'        name: "{name}",\n'
+            f"        constants: &[{listed}],\n"
+            f"        docs: &[{written}],\n"
+            "    },")
+    return (
+        "/// The enum types the ported tools name, by type and not by tool.\n"
+        "pub const ENUM_TYPES: &[EnumType] = &[\n" + "\n".join(entries) + "\n];\n\n"
+        "/// The type a declaration's `type_name` names, if it is an enum.\n"
+        "pub fn enum_type(name: &str) -> Option<&'static EnumType> {\n"
+        "    ENUM_TYPES.iter().find(|type_| type_.name == name)\n}\n"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
@@ -235,6 +287,7 @@ def main():
             f"/// {len(entries)} named arguments, of which the usage text prints {documented}.\n"
             f"pub const {constant}: &[Declaration] = &[\n" + "\n".join(entries) + "\n];\n"
         )
+    out.append(enum_table())
     arms = "\n".join(f'        "{tool}" => Some({tool.upper()}),' for tool in tools)
     out.append(
         "/// The declarations of one tool, by the name `gatk <Tool>` resolves.\n"

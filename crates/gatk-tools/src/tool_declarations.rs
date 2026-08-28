@@ -54,6 +54,18 @@ pub struct Declaration {
     pub doc: &'static str,
 }
 
+/// One enum type an argument's value is converted with.
+///
+/// The constants are in DECLARATION order, which is what `values()` returns and what the message a
+/// bad value produces lists. `docs` is empty unless the enum implements Barclay's `ClpEnum`, in
+/// which case it is the documentation the usage text prints beside each constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnumType {
+    pub name: &'static str,
+    pub constants: &'static [&'static str],
+    pub docs: &'static [(&'static str, &'static str)],
+}
+
 /// `CountReads`'s namespace, in the parser's own order.
 ///
 /// 70 named arguments, of which the usage text prints 42.
@@ -9885,6 +9897,76 @@ pub const GATHERVCFSCLOUD: &[Declaration] = &[
         doc: "A configuration file to use with the GATK.",
     },
 ];
+
+/// The enum types the ported tools name, by type and not by tool.
+pub const ENUM_TYPES: &[EnumType] = &[
+    EnumType {
+        name: "GatherType",
+        constants: &["BLOCK", "CONVENTIONAL", "AUTOMATIC"],
+        docs: &[],
+    },
+    EnumType {
+        name: "IntervalMergingRule",
+        constants: &["ALL", "OVERLAPPING_ONLY"],
+        docs: &[],
+    },
+    EnumType {
+        name: "IntervalSetRule",
+        constants: &["UNION", "INTERSECTION"],
+        docs: &[],
+    },
+    EnumType {
+        name: "LogLevel",
+        constants: &["ERROR", "WARNING", "INFO", "DEBUG"],
+        docs: &[],
+    },
+    EnumType {
+        name: "Mode",
+        constants: &["STARTS_IN", "ENDS_IN", "OVERLAPS", "CONTAINED", "ANYWHERE"],
+        docs: &[
+            ("STARTS_IN", "starts within any of the given intervals"),
+            ("ENDS_IN", "ends within any of the given intervals"),
+            ("OVERLAPS", "overlaps any of the given intervals"),
+            (
+                "CONTAINED",
+                "contained completely within a contiguous block of intervals without overlap",
+            ),
+            ("ANYWHERE", "no filtering"),
+        ],
+    },
+    EnumType {
+        name: "NumberAlleleRestriction",
+        constants: &["ALL", "BIALLELIC", "MULTIALLELIC"],
+        docs: &[],
+    },
+    EnumType {
+        name: "Operator",
+        constants: &[
+            "LESS",
+            "LESS_OR_EQUAL",
+            "GREATER",
+            "GREATER_OR_EQUAL",
+            "EQUAL",
+            "NOT_EQUAL",
+        ],
+        docs: &[],
+    },
+    EnumType {
+        name: "Type",
+        constants: &["NO_VARIATION", "SNP", "MNP", "INDEL", "SYMBOLIC", "MIXED"],
+        docs: &[],
+    },
+    EnumType {
+        name: "ValidationStringency",
+        constants: &["STRICT", "LENIENT", "SILENT"],
+        docs: &[],
+    },
+];
+
+/// The type a declaration's `type_name` names, if it is an enum.
+pub fn enum_type(name: &str) -> Option<&'static EnumType> {
+    ENUM_TYPES.iter().find(|type_| type_.name == name)
+}
 
 /// The declarations of one tool, by the name `gatk <Tool>` resolves.
 pub fn declarations(tool: &str) -> Option<&'static [Declaration]> {
