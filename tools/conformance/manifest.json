@@ -6412,7 +6412,7 @@
     },
     {
       "id": "calculate-contamination",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the coverage filter, the table the genotyping is done from, and the two files",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6425,7 +6425,7 @@
       "cases": [
         {
           "dump": "CalculateContaminationDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/calculate_contamination_tool.txt.gz",
           "why": "Eleven cases: a plain run, one asking for the segmentation, a table with sites under the minimum coverage, a deep hom-alt tail the ceiling cuts and the same tail at a depth it keeps, four ratio settings including one that would drop every site, a matched normal whose hom-alt sites sit elsewhere, one with no hom-alt site at all, and a matched normal with the segmentation."
         }
       ]

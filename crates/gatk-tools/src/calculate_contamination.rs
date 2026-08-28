@@ -13,6 +13,13 @@
 //! Both thresholds are strict: a site exactly at the low threshold is dropped, and so is one
 //! exactly at the high threshold.
 //!
+//! # The two ratio arguments do nothing
+//!
+//! `--low-coverage-ratio-threshold` and `--high-coverage-ratio-threshold` are accepted and ignored
+//! by the reference: their fields are constant variables under JLS 4.12.4, so the one read of each
+//! is a compile-time constant and the parsed value is never looked at. [`run_from_command_line`]
+//! reproduces that; [`run`] is the function a caller with its own thresholds wants.
+//!
 //! # Which model genotypes and which model segments are two questions
 //!
 //! With a matched normal the NORMAL's model genotypes the tumour, while the segmentation table, if
@@ -90,6 +97,33 @@ pub fn filter_sites_by_coverage(
             count > low && count < high
         })
         .collect()
+}
+
+/// `doWork` as the COMMAND LINE reaches it: the two ratio arguments are accepted and IGNORED.
+///
+/// `--low-coverage-ratio-threshold` and `--high-coverage-ratio-threshold` are declared, parsed and
+/// written into their fields, and then never read. Both are `private final double` initialised
+/// from a constant expression, which makes them constant variables under JLS 4.12.4 and their one
+/// read inside `filterSitesByCoverage` a compile-time constant. A probe reading the fields back
+/// after the parse shows the value that was asked for, and the answer does not move: a low ratio
+/// of ten, which would drop every site in the table, changes nothing.
+///
+/// The port reproduces the reference, so this entry point takes the two ratios and drops them.
+/// [`run`] is what a caller with its own thresholds wants, and no command line reaches it.
+pub fn run_from_command_line(
+    sites: &[PileupSummary],
+    matched: Option<&[PileupSummary]>,
+    segmentation: bool,
+    _low_coverage_ratio_threshold: f64,
+    _high_coverage_ratio_threshold: f64,
+) -> Output {
+    run(
+        sites,
+        matched,
+        segmentation,
+        DEFAULT_LOW_COVERAGE_RATIO_THRESHOLD,
+        DEFAULT_HIGH_COVERAGE_RATIO_THRESHOLD,
+    )
 }
 
 /// `doWork`, on tables already read.
