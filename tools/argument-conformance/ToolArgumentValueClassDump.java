@@ -21,6 +21,11 @@
  *   - A `Float` REFUSES WHAT `Float.valueOf` REFUSES, and its message names `Float` where a
  *     double's names `Double`;
  *   - A `Float` ACCEPTS WHAT `Double` ACCEPTS in exponent form, and rounds to the nearer float;
+ *   - AND `Float.valueOf` IS NOT A NAIVE PARSE: it takes a trailing `f` or `d`, a hexadecimal
+ *     literal, leading and trailing whitespace and a leading plus, and it spells its infinity and
+ *     its not-a-number with capitals, refusing `inf` and `nan`. An underscore is refused too.
+ *     Every one of those is a spelling a port would otherwise guess at, and Rust's own `parse`
+ *     disagrees with Java on six of them;
  *   - THE DEFAULT RENDERING IS `String.valueOf(field)`, so an initialised File renders as its path
  *     and an uninitialised one as `null`;
  *   - AND A COLLECTION OF ANY OF THEM RENDERS AS `null` WHEN EMPTY, which is what makes it
@@ -181,6 +186,22 @@ public class ToolArgumentValueClassDump {
         run("a-fraction-that-is-not-a-number", "--fraction", "abc");
         run("a-fraction-that-is-a-word", "--fraction", "NaN");
         run("a-fraction-out-of-a-floats-range", "--fraction", "1e40");
+        // `Float.valueOf` is not `str::parse`: Java's grammar takes a trailing type suffix and a
+        // hex literal, and spells its infinity and its not-a-number with capitals. Every one of
+        // these is a spelling a port would otherwise have to guess at.
+        run("a-fraction-with-a-float-suffix", "--fraction", "1.5f");
+        run("a-fraction-with-a-double-suffix", "--fraction", "1.5d");
+        run("a-fraction-in-hexadecimal", "--fraction", "0x1p3");
+        run("a-fraction-spelled-inf", "--fraction", "inf");
+        run("a-fraction-spelled-infinity", "--fraction", "Infinity");
+        run("a-fraction-spelled-negative-infinity", "--fraction", "-Infinity");
+        run("a-fraction-spelled-nan-in-lower-case", "--fraction", "nan");
+        run("a-fraction-with-a-leading-space", "--fraction", " 1.5");
+        run("a-fraction-with-a-trailing-space", "--fraction", "1.5 ");
+        run("a-fraction-with-an-underscore", "--fraction", "1_000");
+        run("a-fraction-with-a-leading-plus", "--fraction", "+1.5");
+        run("a-fraction-that-rounds-to-a-float", "--fraction", "0.1000000000000000055511151231257827");
+
         run("a-primitive-fraction", "--primitive-fraction", "0.25");
         run("a-primitive-fraction-that-is-not-a-number", "--primitive-fraction", "abc");
     }
