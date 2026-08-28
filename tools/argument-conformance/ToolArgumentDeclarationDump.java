@@ -31,10 +31,28 @@
  *     it;
  *   - AND A MISSING REQUIRED ARGUMENT IS REFUSED THE SAME WAY, before the tool runs at all.
  *
+ * Five more, added when the declarations had to carry enough to BUILD a parser rather than only to
+ * count one.
+ *
+ *   - THE TYPE IS THE UNDERLYING FIELD'S, which for a collection is its ELEMENT class: `--input`
+ *     is a `List<GATKPath>` and reports `GATKPath`, so the conversion a value goes through is the
+ *     element's and the collection is only how many of them there may be;
+ *   - PRIMITIVE IS A SEPARATE QUESTION FROM THE CLASS, the class being boxed either way, and it is
+ *     the one the null check asks;
+ *   - HIDDEN, ADVANCED AND COMMON ARE THREE DIFFERENT FLAGS, and they are what decides which
+ *     section of the usage an argument is printed in, or whether it is printed at all;
+ *   - A BOUNDED RANGE IS FOUR NULLABLE DOUBLES and not a pair, the recommended range being
+ *     declared beside the hard one rather than instead of it;
+ *   - AND THE DOCUMENTATION IS PART OF THE DECLARATION: it is the annotation's own string, which
+ *     is what the usage text wraps, so it belongs to the argument and not to the renderer.
+ *
  * Output:
  *
  *     count\t<tool>\t<how many named arguments it declares>
- *     def\t<tool>\t<index>\t<longName>|<shortName>|<required>|<collection>|<default>
+ *     def\t<tool>\t<index>\t<longName>|<aliases>|<required>|<collection>|<default>|<type>|
+ *         <primitive>|<flag>|<hidden>|<advanced>|<common>|<minElements>|<maxElements>|
+ *         <minValue>|<maxValue>|<minRecommended>|<maxRecommended>|<mutex>|<plugin>
+ *     doc\t<tool>\t<index>\t<the documentation string, escaped>
  *     parse\t<tool>\t<case>\tok|E:<exception class>:<message>
  *
  * Usage: ToolArgumentDeclarationDump
@@ -131,12 +149,39 @@ public class ToolArgumentDeclarationDump {
         for (int i = 0; i < definitions.size(); i++) {
             final NamedArgumentDefinition definition = definitions.get(i);
             final List<String> shorts = new ArrayList<>(definition.getArgumentAliases());
-            System.out.printf("def\t%s\t%d\t%s|%s|%s|%s|%s%n", tool, i,
+            // The class the parser converts a value to is the UNDERLYING field's, which for a
+            // collection is its element class and not the collection's own.
+            final String type = definition.getUnderlyingFieldClass().getSimpleName();
+            final boolean primitive = definition.getUnderlyingField().getType().isPrimitive();
+            final List<String> mutex = new ArrayList<>(definition.getMutexTargetList());
+            java.util.Collections.sort(mutex);
+            final Object plugin = definition.getDescriptorForControllingPlugin();
+            System.out.printf(
+                    "def\t%s\t%d\t%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s%n",
+                    tool, i,
                     definition.getLongName(),
                     String.join(",", shorts),
                     definition.isOptional() ? "optional" : "required",
                     definition.isCollection() ? "collection" : "scalar",
-                    escape(String.valueOf(definition.getDefaultValueAsString())));
+                    escape(String.valueOf(definition.getDefaultValueAsString())),
+                    type,
+                    primitive ? "primitive" : "boxed",
+                    definition.isFlag() ? "flag" : "valued",
+                    definition.isHidden() ? "hidden" : "printed",
+                    definition.isAdvanced() ? "advanced" : "plain",
+                    definition.isCommon() ? "common" : "own",
+                    definition.getMinElements(),
+                    definition.getMaxElements(),
+                    String.valueOf(definition.getMinValue()),
+                    String.valueOf(definition.getMaxValue()),
+                    String.valueOf(definition.getMinRecommendedValue()),
+                    String.valueOf(definition.getMaxRecommendedValue()),
+                    mutex.isEmpty() ? "none" : String.join(",", mutex),
+                    plugin == null ? "none" : plugin.getClass().getSimpleName());
+            // The documentation is a line of its own: it is prose, and prose carries the pipe the
+            // line above uses as its separator.
+            System.out.printf("doc\t%s\t%d\t%s%n", tool, i,
+                    escape(String.valueOf(definition.getDocString())));
             if (!seen.contains(definition.getLongName())) {
                 System.out.printf("only-on-the-tool\t%s\t%s%n", tool,
                         definition.getLongName());
