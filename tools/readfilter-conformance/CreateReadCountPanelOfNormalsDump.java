@@ -10,21 +10,26 @@
  *
  *   - THE TOOL IS A SPARK ONE, so it needs a master even with nothing to distribute, and it
  *     needs a JVM that exports `sun.nio.ch` to it;
- *   - THE COUNTS BECOME FRACTIONAL COVERAGE FIRST, each sample divided by its own total, so a
- *     sample sequenced twice as deeply as another contributes the same and is not an outlier;
+ *   - THE COUNTS BECOME FRACTIONAL COVERAGE FIRST, each sample divided by its own total, so the
+ *     sample that is exactly twice another has exactly that other's median coverage and is not an
+ *     outlier;
  *   - AN INTERVAL WHOSE MEDIAN FRACTIONAL COVERAGE IS UNDER THE PERCENTILE IS DROPPED, which is
  *     what takes out the two intervals every sample reads near zero;
  *   - AN INTERVAL WITH TOO MANY ZEROS ACROSS THE SAMPLES IS DROPPED TOO, and that filter is much
- *     the harsher of the two: on this panel it leaves two intervals where the median filter
+ *     the harsher of the two: on this panel it leaves so few intervals that the decomposition
+ *     finds no non-zero singular value at all and the run is REFUSED, where the median filter
  *     leaves most of them;
  *   - A SAMPLE WITH TOO MANY ZEROS IS DROPPED, which is what takes out the nearly-empty one;
  *   - A SAMPLE WHOSE MEDIAN IS EXTREME IS DROPPED FROM BOTH ENDS, the percentile being applied
- *     twice, so a percentile of twenty takes two samples of nine;
+ *     twice, so a percentile of twenty takes two samples of nine. The medians are separated by
+ *     fourteen per cent or more for exactly this reason: a fixture that varied only the depth put
+ *     the top two within two parts in a hundred thousand of each other, and which one the filter
+ *     called the maximum flipped on CI;
  *   - THE PANEL KEEPS BOTH THE ORIGINAL INTERVALS AND THE SURVIVING ONES, so the file says what
  *     was dropped as well as what was kept, and the ORIGINAL count is the input's whatever the
  *     filters did;
  *   - THE NUMBER OF EIGENSAMPLES IS CAPPED AT THE NUMBER OF SAMPLES THAT SURVIVED, so asking for
- *     a hundred over nine samples with one filtered out gives eight;
+ *     a hundred over nine samples with two filtered out gives seven;
  *   - A PANEL OF ONE SAMPLE IS ACCEPTED, has no eigensamples, and REFUSES to hand over its
  *     singular values rather than handing over an empty array;
  *   - AND THE INPUTS MUST AGREE ON THEIR INTERVALS, one that does not being refused by name.
@@ -35,7 +40,7 @@
  *     panel\t<label>\t<field>=<value>
  *     matrix\t<label>\t<name>=<one value per line, escaped>
  *     none\t<label>=<what was not written>
- *     error\t<label>\t<the tool's own message>
+ *     error\t<label>\t<the tool's own message, its leading wall clock removed>
  *     error\t<label>\t<field>\t<exception class>:<message>
  *
  * Usage: CreateReadCountPanelOfNormalsDump
@@ -82,26 +87,35 @@ public class CreateReadCountPanelOfNormalsDump {
     }
 
     /**
+     * A captured line with its leading wall clock removed.
+     *
+     * The message this dump keeps is whichever log line named the exception, and log4j opens every
+     * line with `HH:mm:ss.SSS`. That is a clock, not a behaviour, and no byte comparison should be
+     * asked to reproduce it.
+     */
+    static String withoutTheClock(final String line) {
+        return line.replaceFirst("^\\d\\d:\\d\\d:\\d\\d\\.\\d\\d\\d ", "");
+    }
+
+    /**
      * The panel's samples.
      *
-     * Six ordinary ones, one sequenced twice as deeply, one that is nearly all zeros, and one
-     * whose median is far above the rest.
+     * Six of a shape of their own, one that is exactly twice another, one nearly all zeros, and
+     * one whose coverage is piled into its first quarter.
+     *
+     * The per-sample shape is what matters. The first version of this fixture varied only the
+     * DEPTH, and fractional coverage divides depth out again: the nine samples' median coverages
+     * then agreed to five decimal places, and which of them the extreme-median filter called the
+     * maximum could flip on a reordering. It did, once, on CI. Here the medians are separated by
+     * fourteen per cent or more, except for the one pair that is deliberately identical.
      */
     static int[] sampleCounts(final int sample) {
         final int[] values = new int[INTERVALS];
         for (int i = 0; i < INTERVALS; i++) {
-            // A repeating profile so the intervals differ from one another, plus a per-sample
-            // offset so the samples differ too.
-            final int base = 100 + (i * 7) % 23 + (sample * 3) % 11;
-            switch (sample) {
-                case 6 -> values[i] = base * 2;              // twice as deep
-                case 7 -> values[i] = i < 4 ? base : 0;      // nearly all zeros
-                case 8 -> values[i] = base * 20;             // an extreme median
-                default -> values[i] = base;
-            }
+            values[i] = shape(sample, i) * (sample == 6 ? 2 : 1);
             // The first two intervals are near zero in every sample, so their median is low.
             if (i < 2) {
-                values[i] = sample == 7 ? 0 : 1;
+                values[i] = sample == 7 ? 0 : (sample == 6 ? 2 : 1);
             }
             // One interval is zero in three samples, which is over the interval percentage.
             if (i == 20 && sample < 3) {
@@ -109,6 +123,25 @@ public class CreateReadCountPanelOfNormalsDump {
             }
         }
         return values;
+    }
+
+    /**
+     * One sample's profile before the shared clamps.
+     *
+     * Sample 6 borrows sample 3's, so that doubling it leaves its fractional coverage EXACTLY
+     * equal: that is the pair the coverage normalisation has to make indistinguishable, and it
+     * sits in the middle of the ranking where no percentile filter reaches for it.
+     */
+    static int shape(final int sample, final int i) {
+        final int base = 100 + (i * 7) % 23;
+        if (sample == 7) {
+            return i < 4 ? base : 0;        // nearly all zeros
+        }
+        if (sample == 8) {
+            return i < 10 ? base * 40 : base;   // piled into the first quarter
+        }
+        final int weight = 1 + (sample == 6 ? 3 : sample);
+        return i < 20 ? base * weight : base;
     }
 
     public static void main(final String[] args) throws Exception {
@@ -233,7 +266,7 @@ public class CreateReadCountPanelOfNormalsDump {
                 }
             }
             System.out.printf("error\t%s\t%s%n", label,
-                    ReferenceQueryDump.escape(masked(message, dir)));
+                    ReferenceQueryDump.escape(masked(withoutTheClock(message), dir)));
             return;
         }
         if (!Files.exists(out)) {
