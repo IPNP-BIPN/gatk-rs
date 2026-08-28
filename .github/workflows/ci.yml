@@ -396,12 +396,8 @@ jobs:
             suites: "gnarly-genotyper model-segments local-assembler funcotator main-dispatch"
           - group: oracle-backed
             index: "56/56"
-            slug: "main-catalogue-main-entry-splitting-index-allele-frequency-qc"
-            suites: "main-catalogue main-entry splitting-index allele-frequency-qc"
-          - group: golden-pending
-            index: "1/1"
-            slug: "calculate-contamination"
-            suites: "calculate-contamination"
+            slug: "main-catalogue-main-entry-splitting-index-allele-frequency-qc-calculate-contamination"
+            suites: "main-catalogue main-entry splitting-index allele-frequency-qc calculate-contamination"
     steps:
       - uses: actions/checkout@v7
 
