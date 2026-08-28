@@ -6324,21 +6324,21 @@
     },
     {
       "id": "main-catalogue",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the set of tool names `gatk <Tool>` resolves, discovered the way Main discovers it",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "Main"
       ],
-      "why": "PENDING: written once the measurement is read.",
+      "why": "The catalogue holds 331 classes where the CLI reports 311 tools, so twenty names resolve that no inventory of the documentation names. A deprecated tool is NOT in it at all: CNNScoreVariants has been taken out of the code, so its name falls through to the search, and the deprecation registry answering before the search is the only reason its notice is ever seen. The suggestion names are emitted SORTED because the reference walks its class set in hash order, which no byte comparison should be asked to reproduce.",
       "compare": {
         "mode": "lines"
       },
       "cases": [
         {
           "dump": "MainCatalogueDump",
-          "golden": null,
-          "why": "PENDING: written once the measurement is read."
+          "golden": "crates/gatk-tools/tests/data/main_catalogue.txt.gz",
+          "why": "The whole catalogue, sorted, plus ten queries over it: four near misses, two prefixes, a substring, a name far from everything, a deprecated name and a Picard tool."
         }
       ]
     }
