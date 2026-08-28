@@ -99,6 +99,7 @@ pub mod local_assembler;
 pub mod locus_walker;
 pub mod main_catalogue;
 pub mod main_dispatch;
+pub mod main_entry;
 pub mod make_sites_only_vcf;
 pub mod merge_mutect2_mc3;
 pub mod merge_vcfs;
