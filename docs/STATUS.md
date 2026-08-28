@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 201 | 64.6% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 202 | 65.0% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
 | not started | 109 | 35.0% |
 | **total** | **311** | |
@@ -136,7 +136,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
 | `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
-| `CreateReadCountPanelOfNormals` | cnv-segmentation | golden-pending | create-read-count-panel-of-normals | 1 | not measured |
+| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | not measured |
