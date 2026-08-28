@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 203 | 65.3% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 204 | 65.6% |
+| golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
 | not started | 107 | 34.4% |
 | **total** | **311** | |
@@ -101,7 +101,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | not measured |
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | not measured |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
-| `AlleleFrequencyQC` | unclassified | golden-pending | allele-frequency-qc | 1 | not measured |
+| `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
 | `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | not measured |
 | `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | not measured |
