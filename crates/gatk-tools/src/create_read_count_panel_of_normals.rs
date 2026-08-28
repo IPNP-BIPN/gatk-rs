@@ -411,6 +411,15 @@ pub fn number_of_eigensamples(requested: usize, surviving_samples: usize) -> usi
 /// The refusal a panel with no eigensamples gives when asked for its singular values.
 pub const NO_SINGULAR_VALUES_MESSAGE: &str = "No singular values were available.";
 
+/// `HDF5SVDReadCountPanelOfNormals.create`, where the decomposition found nothing to keep.
+///
+/// A panel of more than one sample must yield at least one singular value over the solver's own
+/// epsilon. Filtering hard enough to leave a handful of intervals is what reaches this, and the
+/// message suggests the opposite of the filter that caused it.
+pub const NO_NON_ZERO_SINGULAR_VALUES_MESSAGE: &str =
+    "No non-zero singular values were found.  It may be necessary to use stricter parameters for \
+filtering.  For example, use a larger value of minimum-interval-median-percentile.";
+
 /// The refusal an input whose intervals do not match the others' produces.
 pub fn mismatched_intervals_message(path: &str) -> String {
     format!("Intervals for read-counts file {path} do not match those in other read-counts files.")
