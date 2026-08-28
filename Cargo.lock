@@ -241,6 +241,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gatk-cli"
+version = "0.1.0"
+dependencies = [
+ "gatk-corpus",
+ "gatk-tools",
+]
+
+[[package]]
 name = "gatk-corpus"
 version = "0.1.0"
 dependencies = [
