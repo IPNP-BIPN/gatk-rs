@@ -6497,6 +6497,32 @@
           "why": "Ten cases: one reference indexed twice, the same bases in lower case, a longer sequence, two contigs, a renamed contig, a run of Ns, a reference of one base, the default output name, and a fasta that is not there. Every case is built twice, and the golden records that no two builds agree."
         }
       ]
+    },
+    {
+      "id": "tool-argument-enums",
+      "status": "golden-pending",
+      "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "CountReads",
+        "CountVariants",
+        "PrintReads",
+        "ApplyBQSR",
+        "SelectVariants",
+        "IndexFeatureFile",
+        "GatherVcfsCloud"
+      ],
+      "compare": {
+        "mode": "keyed"
+      },
+      "why": "The declarations golden says an argument's type is IntervalSetRule and cannot say what one is. A parser needs the constants twice: to convert a value at all, and to write the message a bad one produces, which lists every constant in declaration order.",
+      "cases": [
+        {
+          "dump": "ToolArgumentEnumDump",
+          "golden": null,
+          "why": "One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
+        }
+      ]
     }
   ],
   "probes": []
