@@ -6384,7 +6384,7 @@
     },
     {
       "id": "allele-frequency-qc",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the chi-squared statistic over the allele frequency bins, and the p-value it gives",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6397,7 +6397,7 @@
       "cases": [
         {
           "dump": "AlleleFrequencyQCDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/allele_frequency_qc.txt.gz",
           "why": "Nine cases: het calls against the comparison frequencies, one bin called homozygous, two other variances, a threshold above the p-value, a filtered variant, a comparison site the call set has nothing at, a file with one variant in it, and a VCF with no alias header."
         }
       ]
