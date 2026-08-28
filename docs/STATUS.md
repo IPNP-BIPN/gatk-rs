@@ -6,8 +6,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 227 | 73.0% |
-| golden-pending | 1 | 0.3% |
+| oracle-backed | 226 | 72.7% |
+| golden-pending | 2 | 0.6% |
 | unchecked | 0 | 0.0% |
 | not started | 83 | 26.7% |
 | **total** | **311** | |
@@ -162,7 +162,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers, tool-argument-declarations, tool-argument-enums, usage-text | 5 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, tool-argument-declarations, tool-argument-enums | 3 | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
-| `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
+| `CreateReadCountPanelOfNormals` | cnv-segmentation | golden-pending | create-read-count-panel-of-normals | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | not measured |
