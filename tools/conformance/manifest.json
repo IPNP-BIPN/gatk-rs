@@ -6341,6 +6341,26 @@
           "why": "The whole catalogue, sorted, plus ten queries over it: four near misses, two prefixes, a substring, a name far from everything, a deprecated name and a Picard tool."
         }
       ]
+    },
+    {
+      "id": "main-entry",
+      "status": "golden-pending",
+      "title": "which stream each entry path writes to, what it returns, and the exit status an exception carries",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "`mainEntry` ends in System.exit, so the mapping from an exception to a status is measured as the pair it is: the five constants read off the class, and the exception each path throws. What that pins is that a name which does not resolve exits 2 while a name which does but is given nothing exits 1, and that a Picard tool's non-zero return exits 4 through a wrapper the GATK side never sees.",
+      "cases": [
+        {
+          "dump": "MainEntryDump",
+          "golden": null,
+          "why": "Thirteen cases: no arguments, `-h`, `--help`, a tool followed by `-h`, three spellings of the version, an unknown name, a deprecated one, a GATK tool and a Picard tool each given nothing, the two handlers on their own, and the version printed to a stream that is not System.out."
+        }
+      ]
     }
   ],
   "probes": []
