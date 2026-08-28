@@ -231,7 +231,7 @@
     },
     {
       "id": "rejections",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "tools": [
         "CollectQualityYieldMetrics",
         "CollectAlignmentSummaryMetrics"
@@ -240,7 +240,7 @@
     },
     {
       "id": "qualityscoredistribution",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "QualityScoreDistribution"
       ],
@@ -248,7 +248,7 @@
     },
     {
       "id": "gcbias",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "CollectGcBiasMetrics"
       ],
@@ -256,7 +256,7 @@
     },
     {
       "id": "accumulatequalityyield",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "AccumulateQualityYieldMetrics"
       ],
@@ -264,7 +264,7 @@
     },
     {
       "id": "bedtointervallist",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "BedToIntervalList"
       ],
@@ -272,7 +272,7 @@
     },
     {
       "id": "intervallisttobed",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "IntervalListToBed"
       ],
@@ -280,7 +280,7 @@
     },
     {
       "id": "intervallisttools",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "IntervalListTools"
       ],
@@ -296,7 +296,7 @@
     },
     {
       "id": "liftoverintervallist",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "LiftOverIntervalList"
       ],
@@ -304,7 +304,7 @@
     },
     {
       "id": "extractsequences",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "ExtractSequences"
       ],
@@ -312,7 +312,7 @@
     },
     {
       "id": "scatterintervalsbyns",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "ScatterIntervalsByNs"
       ],
@@ -320,7 +320,7 @@
     },
     {
       "id": "nonnfastasize",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "NonNFastaSize"
       ],
@@ -328,7 +328,7 @@
     },
     {
       "id": "normalizefasta",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "NormalizeFasta"
       ],
@@ -336,7 +336,7 @@
     },
     {
       "id": "samtofastqwithtags",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "SamToFastqWithTags"
       ],
@@ -344,7 +344,7 @@
     },
     {
       "id": "mergebamalignment",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "MergeBamAlignment"
       ],
@@ -352,9 +352,73 @@
     },
     {
       "id": "mergebamalignment-full",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [
         "MergeBamAlignment"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "jumpinglibrary",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectJumpingLibraryMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "comparemetrics",
+      "status": "oracle-backed",
+      "tools": [
+        "CompareMetrics"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "sortgff",
+      "status": "oracle-backed",
+      "tools": [
+        "SortGff"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "checkdupmarking",
+      "status": "oracle-backed",
+      "tools": [
+        "CheckDuplicateMarking"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "qualityyieldflow",
+      "status": "oracle-backed",
+      "tools": [
+        "CollectQualityYieldMetricsFlow"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "vcfsamplenamemap",
+      "status": "oracle-backed",
+      "tools": [
+        "MakeVcfSampleNameMap"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "haplotypedbtovcf",
+      "status": "oracle-backed",
+      "tools": [
+        "ConvertHaplotypeDatabaseToVcf"
+      ],
+      "cases": 1
+    },
+    {
+      "id": "liftoverhaplotypemap",
+      "status": "oracle-backed",
+      "tools": [
+        "LiftOverHaplotypeMap"
       ],
       "cases": 1
     }

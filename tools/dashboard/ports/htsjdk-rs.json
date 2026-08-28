@@ -1,6 +1,24 @@
 {
   "suites": [
     {
+      "id": "tribble-bed",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "tribble-interval-list",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "tribble-vcf-candecode",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "bgzf",
       "status": "oracle-backed",
       "tools": [],
@@ -25,6 +43,18 @@
       "cases": 1
     },
     {
+      "id": "bam-header-version",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "fasta-reference-writer",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "bam-reheader",
       "status": "oracle-backed",
       "tools": [],
@@ -32,6 +62,12 @@
     },
     {
       "id": "bam-gather",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "bam-tag-read",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
@@ -115,6 +151,18 @@
       "cases": 1
     },
     {
+      "id": "vcf-read",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-index-on-the-fly",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "vcf-genotype-likelihoods",
       "status": "oracle-backed",
       "tools": [],
@@ -128,6 +176,12 @@
     },
     {
       "id": "vcf-genotype-type",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "vcf-attribute-type",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
@@ -153,6 +207,222 @@
     {
       "id": "format",
       "status": "unchecked",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "percentile",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "fastmath-exp",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "gamma-erf-normal",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "saddle-point",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "binomial-inverse",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "variant-comparator",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "smart-merge-headers",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "tribble-index",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "tribble-index-write",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-varint",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-bit-stream",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-core-codecs",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-huffman",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-external-codecs",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-golomb",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-encoding-factory",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-compression-header",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-record-flags",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-slice-blocks",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-record-read",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-record-write",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-crai",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-negotiation",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-file-read",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-container",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-block",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-rans",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-rans-order1",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-preservation-map",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-substitution-matrix",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-encoding-map",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-tag-encoding-map",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-slice-header",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-read-features",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-record-cigar",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "cram-restore-bases",
+      "status": "oracle-backed",
       "tools": [],
       "cases": 1
     }
