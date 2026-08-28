@@ -6480,7 +6480,7 @@
     },
     {
       "id": "bwa-index-image",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the BWA index image a reference produces, and where it lands",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6493,7 +6493,7 @@
       "cases": [
         {
           "dump": "BwaMemIndexImageCreatorDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/bwa_index_image.txt.gz",
           "why": "Ten cases: one reference indexed twice, the same bases in lower case, a longer sequence, two contigs, a renamed contig, a run of Ns, a reference of one base, the default output name, and a fasta that is not there. Every case is built twice, and the golden records that no two builds agree."
         }
       ]
