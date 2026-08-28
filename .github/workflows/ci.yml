@@ -392,12 +392,12 @@ jobs:
             suites: "calibrate-dragstr-model analyze-saturation-mutagenesis create-read-count-panel-of-normals ground-truth-reads-builder ground-truth-scorer"
           - group: oracle-backed
             index: "55/55"
-            slug: "gnarly-genotyper-model-segments-funcotator"
-            suites: "gnarly-genotyper model-segments funcotator"
+            slug: "gnarly-genotyper-model-segments-funcotator-main-dispatch"
+            suites: "gnarly-genotyper model-segments funcotator main-dispatch"
           - group: golden-pending
             index: "1/1"
-            slug: "local-assembler-main-dispatch"
-            suites: "local-assembler main-dispatch"
+            slug: "local-assembler"
+            suites: "local-assembler"
     steps:
       - uses: actions/checkout@v7
 
