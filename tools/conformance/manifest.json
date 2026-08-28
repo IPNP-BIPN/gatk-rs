@@ -6429,6 +6429,28 @@
           "why": "Eleven cases: a plain run, one asking for the segmentation, a table with sites under the minimum coverage, a deep hom-alt tail the ceiling cuts and the same tail at a depth it keeps, four ratio settings including one that would drop every site, a matched normal whose hom-alt sites sit elsewhere, one with no hom-alt site at all, and a matched normal with the segmentation."
         }
       ]
+    },
+    {
+      "id": "tool-argument-declarations",
+      "status": "golden-pending",
+      "title": "what one tool declares, and therefore which command lines it accepts",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "CountReads",
+        "CountVariants",
+        "PrintReads"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The parser is measured mechanism by mechanism; what no suite holds is what any ONE tool declares. A read walker declares a handful of arguments of its own and ends up with dozens, the rest inherited from the collections its superclasses hold, in an order that is the parser's and not the source's. That flattened namespace is what Milestone C's per-tool declarations have to reproduce, and a variant walker having no `--input` at all is the cheapest proof that it cannot be guessed from the archetype.",
+      "cases": [
+        {
+          "dump": "ToolArgumentDeclarationDump",
+          "golden": null,
+          "why": "Three tools' full declaration lists, and fourteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, and a print tool with and without its output."
+        }
+      ]
     }
   ],
   "probes": []

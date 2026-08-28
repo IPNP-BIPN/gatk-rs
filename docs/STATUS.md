@@ -137,8 +137,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
-| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
-| `CountVariants` | variant-walker | oracle-backed | count-variants | 1 | not measured |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers, tool-argument-declarations | 3 | not measured |
+| `CountVariants` | variant-walker | oracle-backed | count-variants, tool-argument-declarations | 2 | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
@@ -202,7 +202,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
-| `PrintReads` | record-transform | oracle-backed | printreads | 1 | not measured |
+| `PrintReads` | record-transform | oracle-backed | printreads, tool-argument-declarations | 2 | not measured |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
