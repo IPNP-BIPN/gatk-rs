@@ -6344,7 +6344,7 @@
     },
     {
       "id": "main-entry",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which stream each entry path writes to, what it returns, and the exit status an exception carries",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6357,7 +6357,7 @@
       "cases": [
         {
           "dump": "MainEntryDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/main_entry.txt.gz",
           "why": "Thirteen cases: no arguments, `-h`, `--help`, a tool followed by `-h`, three spellings of the version, an unknown name, a deprecated one, a GATK tool and a Picard tool each given nothing, the two handlers on their own, and the version printed to a stream that is not System.out."
         }
       ]
