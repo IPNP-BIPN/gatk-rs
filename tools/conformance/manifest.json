@@ -6364,7 +6364,7 @@
     },
     {
       "id": "splitting-index",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the .sbi of a BAM, and the naming, granularity and refusals around htsjdk's writer",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6377,7 +6377,7 @@
       "cases": [
         {
           "dump": "CreateHadoopBamSplittingIndexDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/splitting_index.txt.gz",
           "why": "Fourteen cases: four granularities including the default and one above the record count, the default output name, the .bai companion, a queryname-sorted file with and without it, an empty BAM on both paths, a granularity of zero and of minus one, and a file that is not a BAM."
         }
       ]
