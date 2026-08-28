@@ -15,7 +15,8 @@
 
 use gatk_corpus as corpus;
 use gatk_tools::tool_declarations::{
-    declarations, Declaration, COUNTREADS, COUNTVARIANTS, PRINTREADS,
+    declarations, Declaration, APPLYBQSR, COUNTREADS, COUNTVARIANTS, GATHERVCFSCLOUD,
+    INDEXFEATUREFILE, PRINTREADS, SELECTVARIANTS,
 };
 
 fn golden() -> String {
@@ -37,15 +38,22 @@ fn find<'a>(list: &'a [Declaration], name: &str) -> Option<&'a Declaration> {
     list.iter().find(|d| d.long_name == name)
 }
 
+/// The seven tools the golden and the module both carry.
+const TOOLS: [(&str, &[Declaration]); 7] = [
+    ("CountReads", COUNTREADS),
+    ("CountVariants", COUNTVARIANTS),
+    ("PrintReads", PRINTREADS),
+    ("ApplyBQSR", APPLYBQSR),
+    ("SelectVariants", SELECTVARIANTS),
+    ("IndexFeatureFile", INDEXFEATUREFILE),
+    ("GatherVcfsCloud", GATHERVCFSCLOUD),
+];
+
 /// The counts the golden holds are the ones the module carries.
 #[test]
 fn the_counts_are_the_reference_ones() {
     let text = golden();
-    for (tool, list) in [
-        ("CountReads", COUNTREADS),
-        ("CountVariants", COUNTVARIANTS),
-        ("PrintReads", PRINTREADS),
-    ] {
+    for (tool, list) in TOOLS {
         let counts = field(&text, "count", tool);
         let row = counts.first().unwrap_or_else(|| panic!("{tool}"));
         let tool_count: usize = row
@@ -66,7 +74,8 @@ fn the_counts_are_the_reference_ones() {
             .expect("a number")
             .parse()
             .expect("a number");
-        assert!(instance_count < tool_count, "{tool}");
+        // A walker's instance-built list is shorter; a non-walker's is the same list.
+        assert!(instance_count <= tool_count, "{tool}");
         assert_eq!(
             field(&text, "only-on-the-tool", tool).len(),
             tool_count - instance_count
@@ -74,9 +83,30 @@ fn the_counts_are_the_reference_ones() {
     }
     assert!(declarations("CountReads").is_some());
     assert!(declarations("NoSuchTool").is_none());
+    // The gap is the WALKER surface: every walker gains exactly thirty-two, and the two tools that
+    // are no walkers gain nothing at all.
+    for (tool, list) in TOOLS {
+        let row = field(&text, "count", tool).remove(0);
+        let instance: usize = row
+            .split_once("instance=")
+            .expect("a count")
+            .1
+            .split(' ')
+            .next()
+            .expect("a number")
+            .parse()
+            .expect("a number");
+        let gap = list.len() - instance;
+        let expected = if matches!(tool, "IndexFeatureFile" | "GatherVcfsCloud") {
+            0
+        } else {
+            32
+        };
+        assert_eq!(gap, expected, "{tool}");
+    }
 }
 
-/// A read walker and a variant walker do not mirror each other.
+/// A read walker and a variant walker do not mirror each other, and neither is a non-walker.
 #[test]
 fn the_two_archetypes_do_not_mirror_each_other() {
     let text = golden();
@@ -100,6 +130,16 @@ fn the_two_archetypes_do_not_mirror_each_other() {
         .find(|row| row.starts_with("an-input\t"))
         .expect("the acceptance");
     assert!(accepted.ends_with("ok"), "{accepted}");
+    // A tool that is no walker has neither: fourteen arguments, an input among them, and no
+    // interval argument at all.
+    assert_eq!(INDEXFEATUREFILE.len(), 14);
+    assert!(find(INDEXFEATUREFILE, "input").expect("input").required);
+    assert!(find(INDEXFEATUREFILE, "intervals").is_none());
+    let refused = field(&text, "parse", "IndexFeatureFile")
+        .into_iter()
+        .find(|row| row.starts_with("an-interval\t"))
+        .expect("the refusal");
+    assert!(refused.contains("not a recognized option"), "{refused}");
 }
 
 /// The parse decisions follow from the declarations: a collection may be repeated, a scalar not.
