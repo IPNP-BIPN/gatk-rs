@@ -6321,6 +6321,26 @@
           "why": "Twenty cases over a fixed catalogue of five classes, so what is pinned is the search and not the reference's own class path: the six deprecation notices, prefixes and substrings of several lengths, one character too many and too few and one substituted, two too many and two too few, a name far from everything, the empty name, a prefix that beats a neighbour, a substring that ties two tools, a one-tool catalogue, and a name that resolves."
         }
       ]
+    },
+    {
+      "id": "main-catalogue",
+      "status": "golden-pending",
+      "title": "the set of tool names `gatk <Tool>` resolves, discovered the way Main discovers it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "why": "PENDING: written once the measurement is read.",
+      "compare": {
+        "mode": "lines"
+      },
+      "cases": [
+        {
+          "dump": "MainCatalogueDump",
+          "golden": null,
+          "why": "PENDING: written once the measurement is read."
+        }
+      ]
     }
   ],
   "probes": []
