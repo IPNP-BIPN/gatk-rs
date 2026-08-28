@@ -8,8 +8,13 @@
  *
  * Nine behaviours this is built to catch.
  *
- *   - THE NAMESPACE IS FLAT AND INHERITED: a read walker declares four arguments of its own and
- *     ends up with dozens, the rest coming from the collections its superclasses hold;
+ *   - THE NAMESPACE IS FLAT AND INHERITED: a read walker declares a handful of arguments of its
+ *     own and ends up with dozens, the rest coming from the collections its superclasses hold;
+ *   - AND WHICH PARSER IS ASKED DECIDES HOW MANY THERE ARE: a parser built straight from the
+ *     instance sees 38 where the one the tool hands out sees 70, the gap being the plugin
+ *     descriptors' four read-filter arguments and the standard collections the tool adds when it
+ *     builds its own. Every one of the 38 is in the 70, so the instance list is a subset and not
+ *     a different reading;
  *   - THE ORDER IS THE PARSER'S OWN, subclass first, and it is what the usage prints in;
  *   - A REQUIRED ARGUMENT IS REQUIRED BY ITS DECLARATION AND NOT BY THE TOOL, and the two
  *     archetypes do not mirror each other: a read walker REQUIRES `--input` and has no `--variant`
@@ -80,11 +85,29 @@ public class ToolArgumentDeclarationDump {
             "-I", "/dev/null", "-O", "/dev/null", "-O", "/dev/null"});
     }
 
-    /** Every named argument the tool declares, in the parser's own order. */
+    /**
+     * Every named argument the tool declares, in the parser's own order, and how many a parser
+     * built straight from the instance would have seen instead.
+     *
+     * The two are not the same list. A parser constructed from the instance knows nothing about
+     * the plugin descriptors or the standard argument collections the tool adds when it builds its
+     * own, so it sees 38 arguments where the tool's parser sees 70. The four read-filter arguments
+     * are the visible half of that gap; the rest are the common and advanced ones the usage text
+     * does not print either.
+     */
     static void declarations(final String tool, final Object target) {
-        final List<NamedArgumentDefinition> definitions =
+        final List<NamedArgumentDefinition> instance =
                 new CommandLineArgumentParser(target).getNamedArgumentDefinitions();
-        System.out.printf("count\t%s\t%d%n", tool, definitions.size());
+        final List<NamedArgumentDefinition> definitions =
+                ((CommandLineArgumentParser) ((org.broadinstitute.hellbender.cmdline
+                        .CommandLineProgram) target).getCommandLineParser())
+                        .getNamedArgumentDefinitions();
+        System.out.printf("count\t%s\tinstance=%d tool=%d%n", tool, instance.size(),
+                definitions.size());
+        final List<String> seen = new ArrayList<>();
+        for (final NamedArgumentDefinition definition : instance) {
+            seen.add(definition.getLongName());
+        }
         for (int i = 0; i < definitions.size(); i++) {
             final NamedArgumentDefinition definition = definitions.get(i);
             final List<String> shorts = new ArrayList<>(definition.getArgumentAliases());
@@ -94,6 +117,10 @@ public class ToolArgumentDeclarationDump {
                     definition.isOptional() ? "optional" : "required",
                     definition.isCollection() ? "collection" : "scalar",
                     escape(String.valueOf(definition.getDefaultValueAsString())));
+            if (!seen.contains(definition.getLongName())) {
+                System.out.printf("only-on-the-tool\t%s\t%s%n", tool,
+                        definition.getLongName());
+            }
         }
     }
 
@@ -112,8 +139,8 @@ public class ToolArgumentDeclarationDump {
         String result;
         try {
             final PrintStream sink = new PrintStream(new ByteArrayOutputStream());
-            result = new CommandLineArgumentParser(target).parseArguments(sink, argv)
-                    ? "ok" : "not-parsed";
+            result = ((org.broadinstitute.hellbender.cmdline.CommandLineProgram) target)
+                    .getCommandLineParser().parseArguments(sink, argv) ? "ok" : "not-parsed";
         } catch (final Exception | AssertionError e) {
             result = "E:" + e.getClass().getName() + ":" + e.getMessage();
         }
