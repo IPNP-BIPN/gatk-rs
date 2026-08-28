@@ -14,11 +14,14 @@
  *     CONSTANT variance, squared, so the same difference costs the same wherever it happens;
  *   - THE VARIANCE IS SQUARED AND DIVIDES THE WHOLE SUM, so raising --allowed-variance from a
  *     hundredth to a tenth divides the statistic by a HUNDRED and not by ten;
- *   - A BIN WITH FEWER THAN TWO ENTRIES CONTRIBUTES NOTHING, so an allele frequency the comparison
- *     set has and the call set has not is silently dropped from the sum while still counting
- *     towards the degrees of freedom;
- *   - THE DEGREES OF FREEDOM ARE THE BIN COUNT LESS ONE, counted over the bins that survived the
- *     `called` filter;
+ *   - THE BIN LADDER IS FIXED AND NOT THE DATA'S: the logarithmic scale emits SIXTY-ONE bins
+ *     whatever the file holds, each with one row per eval track, so the degrees of freedom are
+ *     sixty in every run here and a bin no variant reached contributes a term of nought;
+ *   - WHICH MAKES THE `fewer than two entries` GUARD UNREACHABLE ON THIS PATH: every bin has
+ *     exactly the two rows, so the guard is carried in the port and never fires against the
+ *     reference;
+ *   - A COMPARISON SITE THE CALL SET HAS NOTHING AT STILL CONTRIBUTES, its bin holding the
+ *     comparison frequency against a nought, which moves the statistic by that square alone;
  *   - THE P-VALUE IS THE UPPER TAIL, so a perfect match is one and a large statistic is nought;
  *   - THE ROWS ARE FILTERED TO `called` BEFORE THE GROUPING, so the filtered variants' own rows
  *     never reach the statistic;
@@ -28,7 +31,9 @@
  *     written to a temporary file and deleted;
  *   - THE METRICS ARE WRITTEN BEFORE THE PLOT IS ATTEMPTED, so a run whose R script fails has
  *     already answered, which is why this dump reads the file rather than the exit status;
- *   - AND A SINGLE SURVIVING BIN LEAVES ZERO DEGREES OF FREEDOM, which the distribution refuses.
+ *   - AND A FILE WITH ONE VARIANT IN IT IS NOT A DEGENERATE CASE: the ladder is the same
+ *     sixty-one bins, the two tracks agree in the one bin they reach, and the statistic is nought
+ *     against a p-value of one.
  *
  * Output:
  *
@@ -145,12 +150,13 @@ public class AlleleFrequencyQCDump {
                 "comp-with-an-extra-bin");
         run(dir, "a-bin-with-one-entry", fasta, diverging, lonely, List.of());
 
-        // One bin alone, which leaves no degrees of freedom.
+        // A single variant, whose bin is the only one either track reaches. The ladder is still
+        // sixty-one bins wide, so the statistic is nought rather than undefined.
         final Path oneComp = VariantEvalDump.writeIndexed(dir, "one-comp.vcf",
                 compVcf(List.of(site(1000, "0.5"))), "comp-one-bin");
         final Path oneEval = VariantEvalDump.writeIndexed(dir, "one-eval.vcf",
                 evalVcf(List.of(called(1000, "0/1")), true), "eval-one-bin");
-        run(dir, "one-bin", fasta, oneEval, oneComp, List.of());
+        run(dir, "one-variant", fasta, oneEval, oneComp, List.of());
 
         // A VCF with no alias header at all.
         final Path noAlias = VariantEvalDump.writeIndexed(dir, "no-alias.vcf",
