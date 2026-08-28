@@ -6172,13 +6172,13 @@
     },
     {
       "id": "create-read-count-panel-of-normals",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "which intervals and which samples reach the panel",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CreateReadCountPanelOfNormals"
       ],
-      "why": "The samples vary in SHAPE and not in depth, because the first thing the tool does is divide depth out again: a fixture that varied only the depth left the nine samples' median coverages agreeing to five decimal places, and which one the extreme-median filter called the maximum flipped once on CI. The medians are now separated by fourteen per cent or more, except for the one pair that is deliberately identical, which sits mid-ranking where no percentile filter reaches for it.",
+      "why": "The samples vary in SHAPE and not in depth, because the first thing the tool does is divide depth out again: a fixture that varied only the depth left the nine samples' median coverages agreeing to five decimal places, and which one the extreme-median filter called the maximum flipped once on CI. The medians are now separated by fourteen per cent or more, except for the one pair that is deliberately identical, which sits mid-ranking where no percentile filter reaches for it. The NUMBER of eigensamples is not in the golden: it is the decomposition's rank, and the same fixture answered six, seven and eight on three machines. What is carried is the cap the rank is taken under and whether the basis is empty. See docs/a-rank-is-not-a-byte.md.",
       "compare": {
         "mode": "lines"
       },
