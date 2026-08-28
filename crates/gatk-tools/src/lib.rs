@@ -156,6 +156,7 @@ pub mod tool_declarations;
 pub mod transfer_read_tags;
 pub mod unmark_duplicates;
 pub mod update_vcf_sequence_dictionary;
+pub mod usage_text;
 pub mod validate_basic_somatic_short_mutations;
 pub mod validate_variants;
 pub mod variant_annotator;
