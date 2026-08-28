@@ -12,13 +12,16 @@ golden stays `[~]`.
 
 ---
 
-## Where we are (measured 2026-07-30)
+## Where we are (measured 2026-08-28)
 
 | Repo | Scope | State |
 |---|---|---|
-| **htsjdk-rs** | the I/O and math foundation | substantially built; CRAM, GKL-exact deflate, full VCF and the jmath conformance corpus remain |
-| **picard-rs** | 121 tools | ~50 tools have a first slice, ~43 with an oracle-backed conformance suite; many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 190 tools | 6 crates, **58 conformance suites, all oracle-backed**; 3 tools byte-identical, and the annotation archetype opened with 53 of 54 annotations measured. **No performance number exists yet for any of it** — see Milestone S |
+| **htsjdk-rs** | the I/O and math foundation | 71 conformance suites, 70 oracle-backed; the one exception is `format`, whose 41,678 formatted doubles have a harness and a Rust test but have never been regenerated against the oracle in CI. CRAM, GKL-exact deflate and full VCF remain |
+| **picard-rs** | 121 tools | 68 tools carry a suite, 66 oracle-backed and 2 waiting on a candidate; 83 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
+| **gatk-rs** | 190 tools | 6 crates, **279 conformance suites over 154 tools, 278 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. **No performance number exists yet for any of it**: see Milestone S |
+
+Across the three repositories that is **414 oracle-backed suites**, and the generated dashboard
+([docs/STATUS.md](docs/STATUS.md)) puts 203 of the 311 tools in an oracle-backed state, 65.3%.
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (190 GATK-origin,
 121 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 151 GATK + 121 Picard.

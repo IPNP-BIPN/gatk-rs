@@ -22,7 +22,8 @@ All three ports in this program use those exact pins, so they are mutually coher
 construction.
 
 GATK 4.7.0.0 (htsjdk 5.0.0, Picard 3.5.0) was released on 2026-08-18, and the target deliberately
-stays at 4.6.2.0: 216 suites are oracle-backed against it, and the three ports move together or
+stays at 4.6.2.0: 414 conformance suites are oracle-backed against it across the three
+repositories (278 here, 66 in picard-rs, 70 in htsjdk-rs), and the three ports move together or
 not at all. The delta, and the order the move has to happen in, are recorded in ROADMAP.md.
 
 ## Origin
