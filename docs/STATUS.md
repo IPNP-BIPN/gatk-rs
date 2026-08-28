@@ -137,7 +137,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
-| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers, tool-argument-declarations | 3 | not measured |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers, tool-argument-declarations, usage-text | 4 | not measured |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, tool-argument-declarations | 2 | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
@@ -167,7 +167,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | not measured |
-| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations | 2 | not measured |
+| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, usage-text | 3 | not measured |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
@@ -179,7 +179,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | not measured |
-| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations | 2 | not measured |
+| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, usage-text | 3 | not measured |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
