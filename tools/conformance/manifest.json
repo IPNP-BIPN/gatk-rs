@@ -6361,6 +6361,26 @@
           "why": "Thirteen cases: no arguments, `-h`, `--help`, a tool followed by `-h`, three spellings of the version, an unknown name, a deprecated one, a GATK tool and a Picard tool each given nothing, the two handlers on their own, and the version printed to a stream that is not System.out."
         }
       ]
+    },
+    {
+      "id": "splitting-index",
+      "status": "golden-pending",
+      "title": "the .sbi of a BAM, and the naming, granularity and refusals around htsjdk's writer",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CreateHadoopBamSplittingIndex"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The granularity counts RECORDS and not bytes, and the last field of the index is the offset the next record would have been written at, taken from the last record's chunk end rather than from the file's length. An empty BAM has no last record to ask, so that field falls back to the file length, and the two answers are different numbers.",
+      "cases": [
+        {
+          "dump": "CreateHadoopBamSplittingIndexDump",
+          "golden": null,
+          "why": "Fourteen cases: four granularities including the default and one above the record count, the default output name, the .bai companion, a queryname-sorted file with and without it, an empty BAM on both paths, a granularity of zero and of minus one, and a file that is not a BAM."
+        }
+      ]
     }
   ],
   "probes": []
