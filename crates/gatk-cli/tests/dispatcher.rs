@@ -189,6 +189,68 @@ fn the_handlers_are_the_reference_ones() {
     );
 }
 
+/// The first tool a command line reaches: the parse is the reference's, decision for decision.
+#[test]
+fn a_tool_that_is_no_walker_parses() {
+    let declarations = corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../gatk-tools/tests/data/tool_declarations.txt.gz"),
+    );
+    let outcome = |case: &str| {
+        let prefix = format!("parse\tIndexFeatureFile\t{case}\t");
+        declarations
+            .lines()
+            .find(|line| line.starts_with(&prefix))
+            .map(|line| unescape(&line[prefix.len()..]))
+            .unwrap_or_else(|| panic!("parse/{case}"))
+    };
+    // The golden's own three command lines, through the binary rather than through the parser.
+    assert!(outcome("no-arguments").contains("Argument input was missing"));
+    let refused = gatk_cli::run(&args(&["IndexFeatureFile"]));
+    assert!(
+        refused
+            .stderr
+            .contains("Argument input was missing: Argument 'input' is required"),
+        "{}",
+        refused.stderr
+    );
+    // A parse that fails is a CommandLineException, which is status one and not two.
+    assert_eq!(
+        refused.status,
+        main_entry::exit_status(Failure::CommandLine)
+    );
+    // `mainEntry` prints the tool's own usage above that message and the port does not: rendering
+    // a tool's usage needs the per-argument documentation to reach the renderer, which is the
+    // other half of Milestone C. The message and the status are the reference's; the usage is the
+    // gap, and this asserts which of the two it is.
+    assert!(!refused.stderr.contains("USAGE: IndexFeatureFile"));
+    // A command line the reference accepts is accepted, and the port then refuses it for its own
+    // reason, which is that it cannot RUN the tool.
+    assert!(outcome("input-only").ends_with("ok"));
+    let accepted = gatk_cli::run(&args(&["IndexFeatureFile", "-I", "/dev/null"]));
+    assert!(!accepted.stderr.contains("Argument input was missing"));
+    assert!(accepted.stderr.contains("this port does not carry yet"));
+    assert_eq!(accepted.status, main_entry::exit_status(Failure::User));
+    // And an argument the tool does not declare is refused by the parser, as the golden says.
+    assert!(outcome("an-interval").contains("not a recognized option"));
+    let unknown = gatk_cli::run(&args(&[
+        "IndexFeatureFile",
+        "-I",
+        "/dev/null",
+        "-L",
+        "chr1",
+    ]));
+    assert!(
+        unknown.stderr.contains("is not a recognized option"),
+        "{}",
+        unknown.stderr
+    );
+    assert_eq!(
+        unknown.status,
+        main_entry::exit_status(Failure::CommandLine)
+    );
+}
+
 /// A tool this port cannot run yet refuses in its own words, and says so.
 #[test]
 fn a_tool_this_port_cannot_run_refuses_in_its_own_words() {

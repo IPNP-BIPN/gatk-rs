@@ -1,17 +1,17 @@
 //! Conformance for the declaration-to-definition map against GATK 4.6.2.0.
 //!
 //! The declarations are the reference's own parser reporting itself, and the definitions are what
-//! the ported parser consumes. This suite checks the map between them, and it checks the SIZE of
-//! the gap: four classes the reference names have no measured conversion, and every argument of
-//! those classes is a definition this port declines to build.
+//! the ported parser consumes. This suite checks the map between them, and it checks what is left
+//! of the gap: every class converts now, and what still stops a walker is the plugin trim.
 //!
 //! # What this suite is for
 //!
 //!  * **a definition carrying what the declaration carries**;
 //!  * **the default rendering surviving the round trip**;
 //!  * **an enum reaching its constants**;
-//!  * **and the gap being named rather than papered over: no tool parses yet, and the reason is
-//!    one class each of them declares.**
+//!  * **every declared class converting, so the gap is counted at zero rather than described**;
+//!  * **and the one gap that is left being named: a walker's plugin-controlled arguments read as
+//!    required, and the trim that removes them is the descriptor's.**
 
 use gatk_barclay::{Parser, ValueClass};
 use gatk_cli::definitions::{
@@ -58,7 +58,7 @@ fn a_definition_carries_the_declaration() {
     assert_eq!(flag.default_value_as_string(), "false");
 }
 
-/// The gap is four classes, and it is counted against the declarations rather than written down.
+/// Every class converts, and what is left is the plugin trim.
 #[test]
 fn the_gap_is_named_and_counted() {
     for tool in [
@@ -75,34 +75,26 @@ fn the_gap_is_named_and_counted() {
         let skipped = missing(list);
         assert_eq!(built.len() + skipped.len(), list.len(), "{tool}");
         // Every skipped argument is skipped for its class and for no other reason.
-        for name in &skipped {
-            let declaration = find(list, name);
-            assert!(unconvertible(declaration), "{tool}/{name}");
-        }
-        // And every one of them is one of the four classes, which is what makes the gap a list of
-        // measurements to take rather than an open question.
-        for declaration in list.iter().filter(|d| unconvertible(d)) {
-            assert!(
-                UNCONVERTIBLE_CLASSES.contains(&declaration.type_name),
-                "{tool}"
-            );
-            assert!(definition(declaration).is_none(), "{tool}");
-        }
-        // No tool is parseable yet, and the reason is the same for all seven: each declares a
-        // path, and the conversion a path goes through is not measured.
-        assert!(!gatk_cli::parseable(tool), "{tool}");
-        assert!(skipped.iter().any(|name| {
-            let declaration = find(list, name);
-            declaration.type_name == "GATKPath"
-        }));
+        // Nothing is skipped any more, and it is counted against the declarations rather than
+        // written down: every class the seven tools name has a measured conversion.
+        assert!(skipped.is_empty(), "{tool}: {skipped:?}");
+        assert!(!list.iter().any(unconvertible), "{tool}");
+        assert!(UNCONVERTIBLE_CLASSES.is_empty());
+        // What decides parseability now is the plugin trim. A walker's descriptor owns arguments
+        // that read as required, and the reference removes them before the required check because
+        // no filter selected them; the port has no descriptor, so it declines to parse rather
+        // than asking for an argument the reference never asks for.
+        let controlled = list
+            .iter()
+            .any(|declaration| declaration.controlled_by.is_some() && declaration.required);
+        assert_eq!(gatk_cli::parseable(tool), !controlled, "{tool}");
     }
-    // The smallest tool is the clearest: fourteen arguments, of which three are paths and one is
-    // a `File`, which is a different class with a different message and not the same gap twice.
+    // The smallest tool is the clearest: fourteen arguments, every one of them convertible, and no
+    // plugin descriptor at all, so it is the first tool this port can hand a command line to.
     assert_eq!(INDEXFEATUREFILE.len(), 14);
-    assert_eq!(
-        missing(INDEXFEATUREFILE),
-        ["input", "output", "tmp-dir", "arguments_file"]
-    );
+    assert!(missing(INDEXFEATUREFILE).is_empty());
+    assert!(gatk_cli::parseable("IndexFeatureFile"));
+    assert!(!gatk_cli::parseable("CountReads"));
 }
 
 /// The definitions that ARE built parse a command line the way the reference's parser does.
@@ -116,7 +108,12 @@ fn the_definitions_that_are_built_parse() {
     // never asks for.
     let mut parser = Parser::new(definitions(COUNTREADS));
     let untrimmed = parser
-        .parse_arguments(&["--interval-set-rule", "INTERSECTION"])
+        .parse_arguments(&[
+            "--input",
+            "/dev/null",
+            "--interval-set-rule",
+            "INTERSECTION",
+        ])
         .expect_err("the plugin arguments are still required");
     let named = COUNTREADS
         .iter()
@@ -126,7 +123,7 @@ fn the_definitions_that_are_built_parse() {
     assert!(named.required, "{}", untrimmed.message);
     let mut parser = Parser::new(definitions(COUNTREADS));
     let refusal = parser
-        .parse_arguments(&["--interval-set-rule", "union"])
+        .parse_arguments(&["--input", "/dev/null", "--interval-set-rule", "union"])
         .expect_err("the refusal");
     assert!(
         refusal.message.contains("'union' is not a valid value"),
