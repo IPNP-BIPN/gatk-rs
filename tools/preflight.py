@@ -82,6 +82,12 @@ def main():
     step("docs/STATUS.md is generated, not written",
          ["python3", "tools/dashboard/generate.py", "--check"])
 
+    # The declarations are generated from the golden and cross-checked against the inventory on the
+    # way through, so this step is two gates in one: the module is what the generator writes, and
+    # the two readings of the reference still agree.
+    step("the tool declarations are generated, not written",
+         ["python3", "tools/declarations/generate.py", "--check"])
+
     # The suites, last, because they are the slowest and need the oracle image.
     suites = [s for s in arguments.suites.split(",") if s]
     if suites:

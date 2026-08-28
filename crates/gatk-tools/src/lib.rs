@@ -152,6 +152,7 @@ pub mod sv_cluster;
 pub mod sv_concordance;
 pub mod sv_stratify;
 pub mod tag_germline_events;
+pub mod tool_declarations;
 pub mod transfer_read_tags;
 pub mod unmark_duplicates;
 pub mod update_vcf_sequence_dictionary;
