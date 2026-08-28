@@ -98,7 +98,11 @@ fn the_image_is_never_byte_stable() {
     }
     // The golden holds no bytes at all for this tool.
     assert!(!text.contains("\nimage\t"));
-    assert!(!IMAGE_BYTES_ARE_REPRODUCIBLE);
+    // And the port says so where a caller would look.
+    assert_eq!(
+        IMAGE_BYTES_ARE_REPRODUCIBLE,
+        field(&text, "stable", "plain").as_deref() == Some("true")
+    );
 }
 
 /// The refusal names the file and the reason the native side gave.
