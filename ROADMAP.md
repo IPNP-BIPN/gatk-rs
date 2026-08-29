@@ -12,16 +12,16 @@ golden stays `[~]`.
 
 ---
 
-## Where we are (measured 2026-08-28)
+## Where we are (measured 2026-08-29)
 
 | Repo | Scope | State |
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 71 conformance suites, 70 oracle-backed; the one exception is `format`, whose 41,678 formatted doubles have a harness and a Rust test but have never been regenerated against the oracle in CI. CRAM, GKL-exact deflate and full VCF remain |
-| **picard-rs** | 121 tools | 68 tools carry a suite, 66 oracle-backed and 2 waiting on a candidate; 83 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 190 tools | 6 crates, **279 conformance suites over 154 tools, 278 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. **No performance number exists yet for any of it**: see Milestone S |
+| **picard-rs** | 121 tools | 77 tools carry a suite, all 77 oracle-backed; 92 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
+| **gatk-rs** | 190 tools | 7 crates, **285 conformance suites over 157 tools, all 285 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, whose binary reaches the parser for a tool that is no walker. **No performance number exists yet for any of it**: see Milestone S |
 
-Across the three repositories that is **414 oracle-backed suites**, and the generated dashboard
-([docs/STATUS.md](docs/STATUS.md)) puts 203 of the 311 tools in an oracle-backed state, 65.3%.
+Across the three repositories that is **432 oracle-backed suites**, and the generated dashboard
+([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%.
 
 Totals from the generated inventory (`tools/inventory`): **311 tools** (190 GATK-origin,
 121 Picard-origin), **39 Spark**, ~13,130 arguments. Non-Spark: 151 GATK + 121 Picard.
@@ -1230,8 +1230,9 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 
 ## Milestone C: the runnable command line
 
-**128 of the 311 tools are oracle-backed and none of them can be run from a command line.** There
-is no binary in this repository, and none in htsjdk-rs. picard-rs has two, and their own headers
+**227 of the 311 tools are oracle-backed and one of them can be run from a command line.** The
+binary is `gatk-rs`, in the `gatk-cli` crate; before it there was none in this repository, and
+there is still none in htsjdk-rs. picard-rs has two, and their own headers
 say what they are: benchmark harnesses, not "the Barclay command line the program commits to".
 
 That is a deliberate exclusion, not an oversight. G1.8 says the unified CLI dispatcher stays out
@@ -1253,17 +1254,27 @@ cases the dumps exercise". It does not mean any of them runs, and it does not me
 agrees with the reference across its argument surface. This milestone is what turns the first
 sentence into the second.
 
-- [ ] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
-      shape the bit-identity claim is defined against
-- [ ] **C.2 per-tool argument declarations** on the ported Barclay value model. The hard half is
-      done: `Definition`, `ClassDecl`, `Parser` and the jopt-simple grammar under them, measured
-      over 368 rows and 41 command lines. What no tool has is its own arguments
+- [~] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
+      shape the bit-identity claim is defined against. The crate is `gatk-cli` and the binary is
+      `gatk-rs`, deliberately not `gatk`. Routing, the five exit statuses, the version, the
+      refusals and the two handlers are compared against the `main-entry` golden; a command line
+      reaches the parser for a tool that is no walker. What is left is the main usage listing,
+      which needs every tool's one-line summary, and the plugin trim (#987) that a walker's
+      required-looking descriptor arguments wait on
+- [x] **C.2 per-tool argument declarations** on the ported Barclay value model, for the seven
+      tools the golden carries. The declarations are generated from `tool-argument-declarations`,
+      which now measures the type, the primitiveness, the three visibility flags, the bounds, the
+      mutex targets, the controlling plugin and the documentation; the enum constants are a second
+      golden of their own, and the four classes the reference builds from a string (`GATKPath`,
+      `File`, `Float`, `FeatureInput`) a third. Every class a declaration names converts
 - [ ] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
       is handed a whole file already in memory and `write` returns a `String`, which is right for a
       suite comparing whole outputs against a golden and not enough to run
-- [ ] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. It is a
-      rendering of the same annotations, with its own ordering and wrapping, so it is
-      byte-comparable like anything else
+- [~] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
+      was ported first and the data followed: a tool's whole usage is now COMPOSED from its
+      declarations and compared against the golden as one string, and `gatk-rs IndexFeatureFile -h`
+      answers with those bytes. What is left is a walker's, whose conditional blocks are one per
+      read filter the descriptor discovered
 - [ ] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
       and what unblocks V.5
 
