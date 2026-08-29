@@ -75,8 +75,9 @@ fn the_gap_is_named_and_counted() {
         let skipped = missing(list);
         assert_eq!(built.len() + skipped.len(), list.len(), "{tool}");
         // Every skipped argument is skipped for its class and for no other reason.
-        // Nothing is skipped any more, and it is counted against the declarations rather than
-        // written down: every class the seven tools name has a measured conversion.
+        // Nothing is skipped for the seven the golden started with: every class they name has a
+        // measured conversion. The two tools added later are checked below, one of them naming a
+        // class that is not measured yet.
         assert!(skipped.is_empty(), "{tool}: {skipped:?}");
         assert!(!list.iter().any(unconvertible), "{tool}");
         assert!(UNCONVERTIBLE_CLASSES.is_empty());
@@ -89,6 +90,23 @@ fn the_gap_is_named_and_counted() {
             .any(|declaration| declaration.controlled_by.is_some() && declaration.required);
         assert_eq!(gatk_cli::parseable(tool), !controlled, "{tool}");
     }
+    // A class the seven did not name: `CreateHadoopBamSplittingIndex` declares a `Long`, whose
+    // conversion is not measured, so it is the first tool to be unparseable for the CLASS reason
+    // again rather than for the plugin one. The gap is named here rather than left as a tool that
+    // quietly does not work.
+    let spark = declarations("CreateHadoopBamSplittingIndex").expect("its declarations");
+    assert_eq!(missing(spark), ["splitting-index-granularity"]);
+    assert_eq!(find(spark, "splitting-index-granularity").type_name, "Long");
+    assert!(!gatk_cli::parseable("CreateHadoopBamSplittingIndex"));
+    assert!(!spark
+        .iter()
+        .any(|declaration| declaration.controlled_by.is_some() && declaration.required));
+    // Where the other new tool declares nothing exotic and does parse.
+    assert!(gatk_cli::parseable("PrintBGZFBlockInformation"));
+    assert!(
+        missing(declarations("PrintBGZFBlockInformation").expect("its declarations")).is_empty()
+    );
+
     // The smallest tool is the clearest: fourteen arguments, every one of them convertible, and no
     // plugin descriptor at all, so it is the first tool this port can hand a command line to.
     assert_eq!(INDEXFEATUREFILE.len(), 14);
