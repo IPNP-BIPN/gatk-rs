@@ -18,6 +18,15 @@
       "matched": 5,
       "t": 2,
       "share": 0.833
+    },
+    "PrintBGZFBlockInformation": {
+      "rows": 4,
+      "accepted": 2,
+      "rejected": 2,
+      "distinct_outputs": 2,
+      "matched": 4,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
