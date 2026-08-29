@@ -6623,7 +6623,7 @@
     },
     {
       "id": "read-walker-refusals",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "needs_fixtures": true,
       "title": "what a read walker does with a file that is not a BAM",
       "harness": "tools/argument-conformance",
@@ -6637,8 +6637,8 @@
       "cases": [
         {
           "dump": "ReadWalkerRefusalDump",
-          "golden": null,
-          "why": "Eight inputs: the BAM that works, a plain VCF, a block-compressed one, a BED, an empty file, a text file, a directory and a path that does not exist. Each with the exception class, whether it is a UserException, and the message."
+          "golden": "crates/gatk-tools/tests/data/read_walker_refusals.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Eleven inputs and three kinds of refusal, plus the two that are not refused at all."
         }
       ]
     }

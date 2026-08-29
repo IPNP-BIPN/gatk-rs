@@ -404,12 +404,8 @@ jobs:
             suites: "tool-argument-declarations usage-text bwa-index-image tool-argument-enums tool-argument-value-classes"
           - group: oracle-backed
             index: "58/58"
-            slug: "plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing"
-            suites: "plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
-          - group: golden-pending
-            index: "1/1"
-            slug: "read-walker-refusals"
-            suites: "read-walker-refusals"
+            slug: "plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals"
+            suites: "plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals"
     steps:
       - uses: actions/checkout@v7
 
