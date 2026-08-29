@@ -6599,6 +6599,27 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Four mutex arguments, all of them a read filter's, over two of the four tools: the target's long name, the target definition's FIELD name, and the sentence the usage renders from the second."
         }
       ]
+    },
+    {
+      "id": "count-reads-plumbing",
+      "status": "golden-pending",
+      "needs_fixtures": true,
+      "title": "what CountReads returns and what it writes, which is the layer between the count and a command line",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "CountReads"
+      ],
+      "compare": {
+        "mode": "keyed"
+      },
+      "why": "`count-reads-and-bases` measures the number. What decides whether a port can RUN the tool is the layer around it: the value handleResult prints, the bytes -O receives (the number with no trailing newline, written with print rather than println), and the refusal a missing input earns before any of it.",
+      "cases": [
+        {
+          "dump": "CountReadsPlumbingDump",
+          "golden": null,
+          "why": "Nine command lines over the shared fixture BAM: the whole file with and without an output, an interval that holds reads and one that does not, a second read filter and the defaults disabled, a mapping quality filter that keeps nothing, an input that does not exist and no input at all."
+        }
+      ]
     }
   ],
   "probes": []
