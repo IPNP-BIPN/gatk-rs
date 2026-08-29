@@ -6561,6 +6561,26 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. 62 rows: 28 controlled arguments with their owning filter class, 12 of them required, then the six answers of isDependentArgumentAllowed with and without tool defaults and ten command lines through the trim."
         }
       ]
+    },
+    {
+      "id": "read-filter-catalogue",
+      "status": "golden-pending",
+      "title": "the read filter library, and which of them each tool takes as defaults",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "GATKReadFilterPluginDescriptor"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "A tool's DEFAULT read filters count as selected, so their arguments are accepted with no --read-filter on the command line, and the list is per tool rather than per descriptor. It is also what --disable-read-filter prints as its possible values and --read-filter prints the whole catalogue, so a walker's usage cannot be composed without both sets. Neither is derivable: the declarations record an argument's type as String and carry no possible values, and a filter with no arguments is in the catalogue and in no ownership row.",
+      "cases": [
+        {
+          "dump": "ReadFilterCatalogueDump",
+          "golden": null,
+          "why": "The catalogue once, then the nine tools whose declarations this port carries: the descriptor's display name or none for a tool that is no walker, the tool's defaults, and the possible values of the two arguments that print them."
+        }
+      ]
     }
   ],
   "probes": []
