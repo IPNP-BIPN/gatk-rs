@@ -225,12 +225,17 @@ fn a_tool_that_is_no_walker_parses() {
     assert!(refused
         .stderr
         .starts_with("USAGE: IndexFeatureFile [arguments]"));
-    // A command line the reference accepts is accepted, and the port then refuses it for its own
-    // reason, which is that it cannot RUN the tool.
+    // A command line the reference accepts is accepted, and the tool then RUNS: `/dev/null` is a
+    // file the parser is happy with and no codec claims, so the refusal that comes back is the
+    // tool's own and not the parser's.
     assert!(outcome("input-only").ends_with("ok"));
     let accepted = gatk_cli::run(&args(&["IndexFeatureFile", "-I", "/dev/null"]));
     assert!(!accepted.stderr.contains("Argument input was missing"));
-    assert!(accepted.stderr.contains("this port does not carry yet"));
+    assert!(
+        accepted.stderr.contains("because no suitable codecs found"),
+        "{}",
+        accepted.stderr
+    );
     assert_eq!(accepted.status, main_entry::exit_status(Failure::User));
     // And an argument the tool does not declare is refused by the parser, as the golden says.
     assert!(outcome("an-interval").contains("not a recognized option"));
