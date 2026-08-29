@@ -130,6 +130,33 @@ fn the_default_output_is_appended_to_the_whole_name() {
     assert_eq!(default_output("reads.vcf.gz"), "reads.vcf.gz.tbi");
 }
 
+/// The port's own refusal is not one of the reference's, and says so.
+#[test]
+fn the_tabix_branch_refuses_in_the_ports_own_words() {
+    let text = golden();
+    // The reference writes a tabix index for this input, and the golden holds those bytes.
+    assert!(!bytes(&text, "index", "compressed").is_empty());
+    // The branch is chosen by the NAME, so the plain fixture's text under the compressed
+    // fixture's name reaches it without this test having to decompress anything.
+    let ours = build(
+        &input(&text, "plain"),
+        &source("compressed"),
+        name("compressed"),
+    )
+    .expect_err("the port has no tabix writer");
+    // No Java class, because the reference makes no such refusal: naming one of its exceptions
+    // here would be a claim about the reference rather than about this port.
+    assert_eq!(ours.java_class(), "");
+    assert!(ours.message().contains("this port does not write yet"));
+    // And it is NOT the refusal the reference makes for a mismatched extension, which is what a
+    // covering array run against the binary caught: the two used to be the same variant, so a row
+    // where the reference writes an index and the port cannot read as agreement.
+    let theirs = Refusal::WrongIndexExtension {
+        path: format!("<dir>/{}", name("compressed")),
+    };
+    assert_ne!(ours.message(), theirs.message());
+}
+
 #[test]
 fn a_block_compressed_input_refuses_an_output_that_is_not_a_tbi() {
     let text = golden();
