@@ -92,9 +92,9 @@
       "source": "none"
     }
   ],
-  "rows": 6,
-  "tuples_total": 6,
-  "tuples_covered": 6,
+  "rows": 8,
+  "tuples_total": 8,
+  "tuples_covered": 8,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -162,6 +162,28 @@
       },
       "arguments": [
         "--input=/work/fixtures/reads.vcf.gz",
+        "--output=/work/out/index.tbi"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--input": "fixture[3]",
+        "--output": "fixture[0]"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bam",
+        "--output=/work/out/index.idx"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--input": "fixture[3]",
+        "--output": "fixture[1]"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bam",
         "--output=/work/out/index.tbi"
       ]
     }

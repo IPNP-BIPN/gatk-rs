@@ -16,13 +16,17 @@
     "",
     "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
     "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
-    "that reproduces a report."
+    "that reproduces a report.",
+    "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
+    "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
+    "refusals are rows rather than exclusions."
   ],
   "values": {
     "--input": [
       "/work/fixtures/reads.vcf",
       "/work/fixtures/regions.bed",
-      "/work/fixtures/reads.vcf.gz"
+      "/work/fixtures/reads.vcf.gz",
+      "/work/fixtures/reads.bam"
     ],
     "--output": [
       "/work/out/index.idx",
@@ -34,6 +38,10 @@
     "--bgzf-file": [
       "/work/fixtures/reads.vcf.gz",
       "/work/fixtures/reads.vcf"
+    ],
+    "--intervals": [
+      "chr1:1-1000",
+      "chr1:50000-60000"
     ]
   },
   "constraints": [],
