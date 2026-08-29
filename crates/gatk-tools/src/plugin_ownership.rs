@@ -226,3 +226,26 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         _ => None,
     }
 }
+
+/// The FIELD name a mutex target is printed by, which is not the name it is declared by.
+///
+/// A mutex target has two names. `getMutexTargetList()` and the annotation's own `mutex()` both
+/// hold the LONG name, which is what the declarations golden carries; the usage prints the target
+/// definition's FIELD name. The two differ for every mutex a read filter declares, and the
+/// sentence a usage carries is built from the second:
+///
+/// ```text
+/// Cannot be used in conjunction with argument(s) maxAmbiguousBaseFraction
+/// ```
+///
+/// Measured in the `mutex-target-names` golden. An argument the golden does not name keeps its
+/// long name, which is what the reference prints where the field is named after the argument.
+pub fn mutex_field_name(long_name: &str) -> Option<&'static str> {
+    match long_name {
+        "ambig-filter-frac" => Some("maxAmbiguousBaseFraction"),
+        "ambig-filter-bases" => Some("maxAmbiguousBases"),
+        "max-soft-clipped-ratio" => Some("maximumSoftClippedRatio"),
+        "max-soft-clipped-leading-trailing-ratio" => Some("maximumLeadingTrailingSoftClippedRatio"),
+        _ => None,
+    }
+}

@@ -206,30 +206,20 @@ pub fn parseable(tool: &str) -> bool {
 
 /// Whether a tool's usage can be laid out from its declarations alone.
 ///
-/// A walker's is nearly there. The conditional blocks are composed now, one per read filter that
-/// declares an argument in the ownership table's order, and the two arguments the descriptor
-/// answers for print the catalogue and the tool's own defaults from the `read-filter-catalogue`
-/// golden. What is left is one sentence: `Cannot be used in conjunction with argument(s) ...`
-/// names the other argument by its FIELD name, and the declarations golden measured
-/// `getMutexTargetList()`, which is the resolved long name. Four of the twenty-eight controlled
-/// arguments carry that sentence, and until the field names are measured a walker's usage would
-/// differ from the reference's in four lines. The test beside this file states exactly that, so
-/// the gap is a measured number rather than a claim.
+/// It can, for every declared tool. A walker's conditional blocks are one per read filter that
+/// declares an argument, in the ownership table's order; the two arguments the descriptor answers
+/// for print the catalogue and the tool's own defaults; and the mutex sentence names the target
+/// definition's FIELD, which `mutex-target-names` measured. `CountReads`'s two hundred and
+/// ninety-seven lines are the reference's, and the test beside this file compares them as one
+/// string rather than counting how many agree.
 pub fn usage_composable(tool: &str) -> bool {
     parseable(tool)
-        && gatk_tools::tool_declarations::declarations(tool)
-            .map(|list| {
-                !list
-                    .iter()
-                    .any(|declaration| declaration.controlled_by.is_some())
-            })
-            .unwrap_or(false)
 }
 
-/// A tool's usage as this port composes it, whether or not it agrees with the reference yet.
+/// A tool's usage as this port composes it, whatever the dispatcher does with it.
 ///
-/// [`tool_usage`] is what the dispatcher answers `-h` with and is gated; this is the composition
-/// itself, so a test can say how far off a walker's is.
+/// [`tool_usage`] is what the dispatcher answers `-h` with and is gated on [`parseable`]; this is
+/// the composition itself, which a test compares against the golden for every declared tool.
 pub fn composed_usage(tool: &str) -> Option<String> {
     let list = gatk_tools::tool_declarations::declarations(tool)?;
     let summary = gatk_tools::tool_declarations::summary(tool)?;

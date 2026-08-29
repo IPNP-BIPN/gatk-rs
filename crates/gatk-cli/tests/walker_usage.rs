@@ -1,9 +1,9 @@
 //! Conformance for a walker's composed usage against GATK 4.6.2.0.
 //!
 //! `usage-text` measures the whole text `CountReads -h` prints, conditional blocks and all. The
-//! port composes it from the declarations, the ownership table (`plugin-argument-ownership`) and
-//! the catalogue and defaults (`read-filter-catalogue`), and this suite says how close that is:
-//! two hundred and ninety-three of the two hundred and ninety-seven lines, exactly.
+//! port composes it from the declarations, the ownership table (`plugin-argument-ownership`), the
+//! catalogue and defaults (`read-filter-catalogue`) and the mutex field names
+//! (`mutex-target-names`), and it is the reference's text byte for byte.
 //!
 //! # What this suite is for
 //!
@@ -12,8 +12,8 @@
 //!  * **the two arguments the descriptor answers for: `--read-filter` prints the whole catalogue
 //!    and `--disable-read-filter` prints the TOOL'S OWN defaults**;
 //!  * **the wrapping, which drops a line that would hold nothing but the indent**;
-//!  * **and the one gap, counted rather than described: four lines whose mutex sentence names the
-//!    other argument by its FIELD name, which no golden carries yet.**
+//!  * **and the mutex sentence, which names the target definition's FIELD rather than the long
+//!    name the declarations carry.**
 
 use gatk_corpus as corpus;
 
@@ -51,48 +51,43 @@ fn golden(tool: &str) -> String {
         .unwrap_or_else(|| panic!("{tool}"))
 }
 
-/// The four lines the port cannot write yet, and why.
+/// A walker's usage, byte for byte.
 ///
-/// `Cannot be used in conjunction with argument(s) maxAmbiguousBaseFraction` names the FIELD the
-/// annotation named, and the declarations golden measured `getMutexTargetList()`, which is the
-/// long name that field resolves to. Four of the twenty-eight controlled arguments carry the
-/// sentence, and each contributes one line.
-const UNMEASURED_MUTEX_FIELDS: [&str; 4] = [
-    "maxAmbiguousBaseFraction",
-    "maxAmbiguousBases",
-    "maximumSoftClippedRatio",
-    "maximumLeadingTrailingSoftClippedRatio",
-];
-
-/// A walker's usage, line for line, with the gap counted.
+/// It was four lines short until the mutex field names were measured: the sentence names the
+/// target definition's FIELD, and both the declarations golden and the annotation hold the long
+/// name it resolves to. With `mutex-target-names` frozen the composition is the reference's.
 #[test]
-fn a_walkers_usage_is_the_goldens_but_for_the_mutex_fields() {
-    let expected = golden("CountReads");
-    let produced = gatk_cli::composed_usage("CountReads").expect("the composition");
-    let expected_lines: Vec<&str> = expected.lines().collect();
-    let produced_lines: Vec<&str> = produced.lines().collect();
-    assert_eq!(expected_lines.len(), 297);
-    assert_eq!(produced_lines.len(), expected_lines.len());
-
-    let mut differing = 0;
-    for (index, (left, right)) in expected_lines.iter().zip(&produced_lines).enumerate() {
-        if left == right {
-            continue;
-        }
-        differing += 1;
-        // Every difference is the same difference: the reference names a field, the port names the
-        // long name that field resolves to.
-        let field = UNMEASURED_MUTEX_FIELDS
-            .iter()
-            .find(|field| left.contains(**field))
-            .unwrap_or_else(|| panic!("line {index}: {left:?} vs {right:?}"));
-        assert!(left.contains(*field), "line {index}");
-        assert!(!right.contains(*field), "line {index}");
-        assert!(right.contains("argument(s) "), "line {index}: {right:?}");
+fn a_walkers_usage_is_the_goldens() {
+    for tool in [
+        "CountReads",
+        "PrintBGZFBlockInformation",
+        "IndexFeatureFile",
+        "GatherVcfsCloud",
+    ] {
+        let expected = golden(tool);
+        let produced = gatk_cli::composed_usage(tool).unwrap_or_else(|| panic!("{tool}"));
+        assert_eq!(produced, expected, "{tool}");
+        // Which is what the dispatcher answers `-h` with now, for a walker as for the rest.
+        assert_eq!(
+            gatk_cli::tool_usage(tool).as_deref(),
+            Some(expected.as_str()),
+            "{tool}"
+        );
     }
-    assert_eq!(differing, UNMEASURED_MUTEX_FIELDS.len());
-    // Which is why the dispatcher does not answer `-h` with it.
-    assert!(gatk_cli::tool_usage("CountReads").is_none());
+    // The one that carries the sentence, so the field name is asserted and not merely reached.
+    let usage = gatk_cli::composed_usage("CountReads").expect("the composition");
+    assert!(usage.contains("argument(s) maxAmbiguousBaseFraction"));
+    assert!(!usage.contains("argument(s) ambig-filter-frac"));
+    assert_eq!(
+        gatk_tools::plugin_ownership::mutex_field_name("ambig-filter-frac"),
+        Some("maxAmbiguousBaseFraction")
+    );
+    // An argument whose field is named after it keeps its long name, which is why the sentence
+    // looked right everywhere it had been compared before.
+    assert_eq!(
+        gatk_tools::plugin_ownership::mutex_field_name("intervals"),
+        None
+    );
 }
 
 /// The blocks themselves: their heading, their order, and what is under each.

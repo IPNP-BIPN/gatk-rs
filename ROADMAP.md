@@ -1266,8 +1266,9 @@ sentence into the second.
       tool's command line reaches the parser, a walker's included, because the plugin trim now
       runs over the ownership table measured in `plugin-argument-ownership` and removes the twelve
       required-looking descriptor arguments before the required check. What is left is the main
-      usage listing, which needs every tool's one-line summary, and the per-tool DEFAULT filter
-      lists, without which a default filter's own argument is refused where the reference takes it
+      usage listing, which needs every tool's one-line summary. The per-tool DEFAULT filter lists
+      are measured now, so a default filter's own argument is accepted where the reference accepts
+      it
 - [x] **C.2 per-tool argument declarations** on the ported Barclay value model, for the seven
       tools the golden carries. The declarations are generated from `tool-argument-declarations`,
       which now measures the type, the primitiveness, the three visibility flags, the bounds, the
@@ -1277,12 +1278,14 @@ sentence into the second.
 - [ ] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
       is handed a whole file already in memory and `write` returns a `String`, which is right for a
       suite comparing whole outputs against a golden and not enough to run
-- [~] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
-      was ported first and the data followed: a tool's whole usage is now COMPOSED from its
-      declarations and compared against the golden as one string, and `gatk-rs IndexFeatureFile -h`
-      answers with those bytes. What is left is a walker's, whose conditional blocks are one per
-      read filter the descriptor discovered: the ownership table says which arguments go in which
-      block, and neither the blocks' wording nor their order is measured yet
+- [x] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
+      was ported first and the data followed: a tool's whole usage is COMPOSED from its
+      declarations and compared against the golden as one string, a walker's included. Its
+      conditional blocks are one per read filter that declares an argument, ordered by the
+      ownership table (`plugin-argument-ownership`); `--read-filter` and `--disable-read-filter`
+      print the catalogue and the tool's own defaults (`read-filter-catalogue`); and the mutex
+      sentence names the target definition's FIELD (`mutex-target-names`). `gatk-rs CountReads -h`
+      answers with the reference's two hundred and ninety-seven lines
 - [ ] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
       and what unblocks V.5
 

@@ -404,12 +404,8 @@ jobs:
             suites: "tool-argument-declarations usage-text bwa-index-image tool-argument-enums tool-argument-value-classes"
           - group: oracle-backed
             index: "58/58"
-            slug: "plugin-argument-ownership-read-filter-catalogue"
-            suites: "plugin-argument-ownership read-filter-catalogue"
-          - group: golden-pending
-            index: "1/1"
-            slug: "mutex-target-names"
-            suites: "mutex-target-names"
+            slug: "plugin-argument-ownership-read-filter-catalogue-mutex-target-names"
+            suites: "plugin-argument-ownership read-filter-catalogue mutex-target-names"
     steps:
       - uses: actions/checkout@v7
 

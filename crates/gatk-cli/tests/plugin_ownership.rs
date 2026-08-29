@@ -234,9 +234,9 @@ fn a_tool_default_counts_as_selected() {
         .is_ok());
 }
 
-/// A walker parses now, and its usage still is not composed.
+/// A walker parses now, and its usage is composed too.
 #[test]
-fn a_walker_parses_and_its_usage_does_not() {
+fn a_walker_parses_and_so_does_its_usage() {
     assert!(gatk_cli::parseable("CountReads"));
     assert!(gatk_cli::parseable("PrintReads"));
     assert!(gatk_cli::parseable("IndexFeatureFile"));
@@ -249,10 +249,11 @@ fn a_walker_parses_and_its_usage_does_not() {
         ),
         None
     );
-    // The usage is a stricter question: a walker's carries a conditional block per read filter,
-    // and neither the blocks nor their order is measured.
-    assert!(!gatk_cli::usage_composable("CountReads"));
+    // And the usage, whose conditional blocks the same table orders. `walker_usage.rs` compares it
+    // against the golden; what is asserted here is that the two questions have one answer now.
+    assert!(gatk_cli::usage_composable("CountReads"));
     assert!(gatk_cli::usage_composable("IndexFeatureFile"));
-    assert!(gatk_cli::tool_usage("CountReads").is_none());
+    let usage = gatk_cli::tool_usage("CountReads").expect("a walker's usage");
+    assert!(usage.contains("Conditional Arguments for readFilter:"));
     assert!(gatk_cli::tool_usage("IndexFeatureFile").is_some());
 }

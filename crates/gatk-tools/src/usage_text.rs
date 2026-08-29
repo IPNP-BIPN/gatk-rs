@@ -252,7 +252,11 @@ pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option
         .map(|name| {
             let other = all.iter().find(|other| other.long_name == *name);
             let short = other.and_then(short_name).unwrap_or("");
-            (*name, short)
+            // The sentence names the target's FIELD, which is the long name only where the field
+            // is named after the argument. The four that are not are a read filter's, and they are
+            // measured in `mutex-target-names`.
+            let printed = crate::plugin_ownership::mutex_field_name(name).unwrap_or(name);
+            (printed, short)
         })
         .collect();
     Entry {
