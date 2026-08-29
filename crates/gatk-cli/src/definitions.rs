@@ -51,6 +51,7 @@ pub fn value_class(type_name: &str) -> Option<ValueClass> {
             taggable: false,
         }),
         "Float" => Some(ValueClass::Float),
+        "Long" => Some(ValueClass::Long),
         name => enum_type(name).map(|type_| ValueClass::Enum {
             simple_name: type_.name,
             constants: type_.constants,
@@ -88,6 +89,9 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
         ValueClass::Enum { .. } => Value::Enum(default.to_string()),
         ValueClass::Float => gatk_barclay::java_float(default)
             .map(|value| Value::Double(f64::from(value)))
+            .unwrap_or(Value::Null),
+        ValueClass::Long => gatk_barclay::java_long(default)
+            .map(Value::Int64)
             .unwrap_or(Value::Null),
         ValueClass::Text | ValueClass::Tagged | ValueClass::Constructed { .. } => {
             Value::Str(default.to_string())

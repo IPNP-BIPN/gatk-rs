@@ -80,6 +80,9 @@ pub enum Value {
     Null,
     Str(String),
     Int(i32),
+    /// A `Long`, which is a different field from an `Int` because its rendering is its own: a
+    /// value past an int's range renders as itself rather than wrapping.
+    Int64(i64),
     Double(f64),
     Bool(bool),
     /// An enum constant, by name. `Enum.valueOf` is case-**sensitive**, which the golden shows.
@@ -107,6 +110,7 @@ impl Value {
             Value::Null => "null".to_string(),
             Value::Str(text) => text.clone(),
             Value::Int(number) => number.to_string(),
+            Value::Int64(number) => number.to_string(),
             Value::Double(number) => java_double_to_string(*number),
             Value::Bool(flag) => flag.to_string(),
             Value::Enum(name) => name.clone(),
@@ -125,6 +129,9 @@ impl Value {
     fn as_number(&self) -> Option<f64> {
         match self {
             Value::Int(number) => Some(f64::from(*number)),
+            // A long widens to a double the way `Number.doubleValue()` widens it, which loses
+            // precision past 2^53 exactly as the reference does.
+            Value::Int64(number) => Some(*number as f64),
             Value::Double(number) => Some(*number),
             _ => None,
         }
@@ -178,6 +185,10 @@ pub enum ValueClass {
     /// A `Float`, whose grammar is `Float.valueOf`'s and not `str::parse`'s, and whose refusal
     /// names `Float` where a double's names `Double`.
     Float,
+    /// A `Long`, which is neither an `Integer` with a wider range nor a `Float` with a narrower
+    /// grammar: `Long.valueOf` refuses a leading space where `Float.valueOf` trims one, and
+    /// refuses a hexadecimal literal where the float takes `0x1p3`.
+    Long,
     /// A class built from a `String` by a constructor that accepts every string.
     ///
     /// `File`, `GATKPath` and `FeatureInput` are all of this shape: a bad path is not a bad value,
@@ -195,7 +206,7 @@ impl ValueClass {
     fn is_number(&self) -> bool {
         matches!(
             self,
-            ValueClass::Integer | ValueClass::Double | ValueClass::Float
+            ValueClass::Integer | ValueClass::Double | ValueClass::Float | ValueClass::Long
         )
     }
 
@@ -210,6 +221,7 @@ impl ValueClass {
             ValueClass::Tagged => "TaggedPath",
             ValueClass::Enum { simple_name, .. } => simple_name,
             ValueClass::Float => "Float",
+            ValueClass::Long => "Long",
             ValueClass::Constructed { simple_name, .. } => simple_name,
         }
     }
@@ -233,6 +245,13 @@ impl ValueClass {
                     argument_name,
                     text,
                     &format!("Failure constructing 'Double' from the string '{text}'."),
+                )
+            }),
+            ValueClass::Long => java_long(text).map(Value::Int64).ok_or_else(|| {
+                Error::bad_argument_value_with_message(
+                    argument_name,
+                    text,
+                    &format!("Failure constructing 'Long' from the string '{text}'."),
                 )
             }),
             ValueClass::Float => java_float(text)
@@ -418,6 +437,37 @@ fn rint(value: f64) -> f64 {
     } else {
         rounded
     }
+}
+
+/// `Long.valueOf`, which is NOT `Float.valueOf` with a narrower grammar.
+///
+/// It refuses a leading space where the float trims one, refuses a hexadecimal literal where the
+/// float takes `0x1p3`, and takes a leading plus like the float does. A value past a long's range
+/// is a refusal and not a saturation, which is the other half of what separates it from the float.
+pub fn java_long(text: &str) -> Option<i64> {
+    if text.is_empty() {
+        return None;
+    }
+    let (sign, digits) = match text.as_bytes()[0] {
+        b'-' => (-1i128, &text[1..]),
+        b'+' => (1i128, &text[1..]),
+        _ => (1i128, text),
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut value: i128 = 0;
+    for byte in digits.bytes() {
+        value = value * 10 + i128::from(byte - b'0');
+        if value > i128::from(u64::MAX) {
+            return None;
+        }
+    }
+    let signed = sign * value;
+    if signed > i128::from(i64::MAX) || signed < i128::from(i64::MIN) {
+        return None;
+    }
+    Some(signed as i64)
 }
 
 /// `Float.valueOf`, whose grammar is `FloatingDecimal.readJavaFormatString`'s.
