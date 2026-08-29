@@ -14,7 +14,10 @@ path = "src/main.rs"
 
 [dependencies]
 gatk-barclay = { path = "../gatk-barclay" }
+gatk-engine = { path = "../gatk-engine" }
+gatk-readfilter = { path = "../gatk-readfilter" }
 gatk-tools = { path = "../gatk-tools" }
+htsjdk-bam.workspace = true
 # The file plumbing under a runner: a block-compressed input is decompressed before the port's own
 # function is handed its text.
 htsjdk-bgzf.workspace = true
