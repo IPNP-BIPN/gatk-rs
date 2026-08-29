@@ -362,3 +362,33 @@ fn the_sections_and_the_header() {
     );
     assert_eq!(DESCRIPTION_COLUMN_WIDTH, 90);
 }
+
+/// The whole usage of a tool that is no walker, composed from its declarations.
+///
+/// Every other test here takes the golden apart and hands the pieces back. This one starts from
+/// the declarations alone: the documentation, the type, the default, the flags and the enum
+/// constants, all of them measured, and asks the port to write the file the reference wrote.
+#[test]
+fn a_tools_usage_is_composed_from_its_declarations() {
+    use gatk_tools::tool_declarations::INDEXFEATUREFILE;
+    use gatk_tools::usage_text::sections;
+
+    let text = golden();
+    let expected = usage(&text, "IndexFeatureFile").join("\n");
+    let (required, optional, advanced) = sections(INDEXFEATUREFILE);
+    // Every one of the fourteen declarations is printed, none being hidden or plugin-controlled.
+    assert_eq!(
+        required.len() + optional.len() + advanced.len(),
+        INDEXFEATUREFILE.len()
+    );
+    let written = render(
+        "IndexFeatureFile",
+        "Creates an index for a feature file, e.g. VCF or BED file.",
+        "4.6.2.0",
+        &required,
+        &optional,
+        &advanced,
+        &[],
+    );
+    assert_eq!(written, expected);
+}

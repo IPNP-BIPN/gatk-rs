@@ -10,6 +10,8 @@
 //! Ported from `org.broadinstitute.barclay.argparser.CommandLineArgumentParser` (Barclay 5.0.0).
 
 /// `CommandLineArgumentParser.ARGUMENT_COLUMN_WIDTH`: where an argument's description starts.
+use crate::tool_declarations::Declaration;
+
 pub const ARGUMENT_COLUMN_WIDTH: usize = 30;
 /// `CommandLineArgumentParser.DESCRIPTION_COLUMN_WIDTH`: how wide that description may be.
 pub const DESCRIPTION_COLUMN_WIDTH: usize = 90;
@@ -34,6 +36,70 @@ pub struct Entry {
     /// The documentation and the trailer sentences, already joined: this module wraps it and does
     /// not compose it.
     pub description: String,
+}
+
+/// The description column of one entry, composed the way `getArgumentDescription` composes it.
+///
+/// The order is fixed and every piece carries its own trailing space, which is why the rendered
+/// text has two spaces after the documentation and one after everything else:
+///
+///  1. the documentation, followed by TWO spaces, and only if there is any;
+///  2. for a collection, how many times it may be given, which is a different sentence for a
+///     required one than for an optional one;
+///  3. either `Default value: <rendering>. ` or `Required. `, never both;
+///  4. the possible values, which exist for a boolean and for an enum and for nothing else;
+///  5. and the mutually exclusive arguments, introduced by a sentence with no leading space of its
+///     own, so the piece before it supplies one.
+pub fn description(
+    doc: &str,
+    collection: bool,
+    optional: bool,
+    default: &str,
+    possible_values: Option<&str>,
+    mutex: &[(&str, &str)],
+) -> String {
+    let mut text = String::new();
+    if !doc.is_empty() {
+        text.push_str(doc);
+        text.push_str("  ");
+    }
+    if collection {
+        text.push_str(if optional {
+            "This argument may be specified 0 or more times. "
+        } else {
+            "This argument must be specified at least once. "
+        });
+    }
+    if optional {
+        text.push_str(&format!("Default value: {default}. "));
+    } else {
+        text.push_str("Required. ");
+    }
+    if let Some(values) = possible_values {
+        text.push_str(values);
+    }
+    if !mutex.is_empty() {
+        text.push_str(" Cannot be used in conjunction with argument(s)");
+        for (field, short) in mutex {
+            text.push(' ');
+            text.push_str(field);
+            if !short.is_empty() {
+                text.push_str(&format!(" ({short})"));
+            }
+        }
+    }
+    text
+}
+
+/// `getOptionsAsDisplayString`, which answers for a boolean and for an enum and for nothing else.
+///
+/// The suffix carries its own trailing space, so a description that ends in the possible values
+/// ends in a space like every other.
+pub fn possible_values(type_name: &str, constants: Option<&[&str]>) -> Option<String> {
+    if type_name == "Boolean" {
+        return Some("Possible values: {true, false} ".to_string());
+    }
+    constants.map(|constants| format!("Possible values: {{{}}} ", constants.join(", ")))
 }
 
 /// The `--long,-short <Type>` column of one entry.
@@ -110,6 +176,79 @@ pub fn header(tool: &str, summary: &str, version: &str) -> Vec<String> {
     lines.push(String::new());
     lines.push(String::new());
     lines
+}
+
+/// One declaration as the usage prints it.
+///
+/// The type name is the underlying field's, which is what the name column carries; the possible
+/// values exist for a boolean and for an enum; and the mutex sentence names the other argument by
+/// its FIELD name rather than by its long name, which is why the whole list is passed in.
+pub fn entry_for(declaration: &Declaration, all: &[Declaration]) -> Entry {
+    let constants =
+        crate::tool_declarations::enum_type(declaration.type_name).map(|type_| type_.constants);
+    let mutex: Vec<(&str, &str)> = declaration
+        .mutex
+        .iter()
+        .map(|name| {
+            let other = all.iter().find(|other| other.long_name == *name);
+            let short = other.and_then(short_name).unwrap_or("");
+            (*name, short)
+        })
+        .collect();
+    Entry {
+        long_name: declaration.long_name.to_string(),
+        short_names: short_name(declaration)
+            .map(str::to_string)
+            .into_iter()
+            .collect(),
+        type_name: declaration.type_name.to_string(),
+        description: description(
+            declaration.doc,
+            declaration.collection,
+            !declaration.required,
+            declaration.default.unwrap_or("null"),
+            possible_values(declaration.type_name, constants).as_deref(),
+            &mutex,
+        ),
+    }
+}
+
+/// The short name the name column prints, which is the alias that is not the long name.
+///
+/// `getArgumentUsage` prints it only when it differs from the long name, so an argument whose two
+/// aliases are the same word prints one.
+pub fn short_name(declaration: &Declaration) -> Option<&'static str> {
+    match declaration.aliases {
+        [short, long] if *long == declaration.long_name && *short != declaration.long_name => {
+            Some(short)
+        }
+        _ => None,
+    }
+}
+
+/// The three sections a tool's own arguments fall into.
+///
+/// A hidden argument is printed in none of them, an advanced one in its own, and everything else
+/// in required or optional by its own declaration. An argument a plugin descriptor controls is in
+/// none of the three either: it belongs to a conditional block.
+pub fn sections(list: &[Declaration]) -> (Vec<Entry>, Vec<Entry>, Vec<Entry>) {
+    let mut required = Vec::new();
+    let mut optional = Vec::new();
+    let mut advanced = Vec::new();
+    for declaration in list {
+        if declaration.hidden || declaration.controlled_by.is_some() {
+            continue;
+        }
+        let entry = entry_for(declaration, list);
+        if declaration.advanced {
+            advanced.push(entry);
+        } else if declaration.required {
+            required.push(entry);
+        } else {
+            optional.push(entry);
+        }
+    }
+    (required, optional, advanced)
 }
 
 /// One plugin descriptor's conditional arguments: the arguments a tool only accepts once a plugin

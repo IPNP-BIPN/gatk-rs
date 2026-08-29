@@ -219,11 +219,12 @@ fn a_tool_that_is_no_walker_parses() {
         refused.status,
         main_entry::exit_status(Failure::CommandLine)
     );
-    // `mainEntry` prints the tool's own usage above that message and the port does not: rendering
-    // a tool's usage needs the per-argument documentation to reach the renderer, which is the
-    // other half of Milestone C. The message and the status are the reference's; the usage is the
-    // gap, and this asserts which of the two it is.
-    assert!(!refused.stderr.contains("USAGE: IndexFeatureFile"));
+    // `mainEntry` prints the tool's own usage above that message, and so does the port: the usage
+    // is composed from the same declarations the parser is built from, and it is compared against
+    // the usage golden below.
+    assert!(refused
+        .stderr
+        .starts_with("USAGE: IndexFeatureFile [arguments]"));
     // A command line the reference accepts is accepted, and the port then refuses it for its own
     // reason, which is that it cannot RUN the tool.
     assert!(outcome("input-only").ends_with("ok"));
@@ -249,6 +250,39 @@ fn a_tool_that_is_no_walker_parses() {
         unknown.status,
         main_entry::exit_status(Failure::CommandLine)
     );
+}
+
+/// A tool asked for its own help answers with its usage, byte for byte.
+#[test]
+fn a_tool_asked_for_help_answers_with_its_usage() {
+    let text = golden();
+    let usage_golden = corpus::read_golden(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../gatk-tools/tests/data/usage_text.txt.gz"),
+    );
+    let prefix = "usage\tIndexFeatureFile\t";
+    let expected = usage_golden
+        .lines()
+        .find(|line| line.starts_with(prefix))
+        .map(|line| unescape(&line[prefix.len()..]))
+        .expect("the tool's usage");
+    for flag in ["-h", "--help"] {
+        let written = gatk_cli::run(&args(&["IndexFeatureFile", flag]));
+        // The tool's usage goes to STDERR and the run is a success, which is what the golden's
+        // `help-after-a-tool` shape says of the tool it measured.
+        assert_eq!(written.stderr, expected, "{flag}");
+        assert!(written.stdout.is_empty(), "{flag}");
+        assert_eq!(written.status, 0, "{flag}");
+    }
+    let (out, err) = shape(&text, "help-after-a-tool");
+    assert_eq!(out.0, 0);
+    assert!(err.1.starts_with("USAGE: CountReads [arguments]"));
+    // The tool the golden measured is a walker, whose usage carries the conditional blocks one
+    // per read filter the descriptor discovered. The port has no descriptor, so it lays out no
+    // usage for it and the dispatcher falls through to its own refusal.
+    assert_eq!(gatk_cli::tool_usage("CountReads"), None);
+    let walker = gatk_cli::run(&args(&["CountReads", "-h"]));
+    assert!(walker.stderr.contains("this port does not carry yet"));
 }
 
 /// A tool this port cannot run yet refuses in its own words, and says so.

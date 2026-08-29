@@ -9898,6 +9898,24 @@ pub const GATHERVCFSCLOUD: &[Declaration] = &[
     },
 ];
 
+/// The one-line summary the usage header prints, from the inventory.
+pub fn summary(tool: &str) -> Option<&'static str> {
+    match tool {
+        "CountReads" => Some("Count reads in a SAM/BAM/CRAM file"),
+        "CountVariants" => {
+            Some("Counts variant records in a VCF file, regardless of filter status.")
+        }
+        "PrintReads" => Some("Print reads in the SAM/BAM/CRAM file"),
+        "ApplyBQSR" => Some("Apply base quality score recalibration"),
+        "SelectVariants" => Some("Select a subset of variants from a VCF file"),
+        "IndexFeatureFile" => Some("Creates an index for a feature file, e.g. VCF or BED file."),
+        "GatherVcfsCloud" => {
+            Some("Gathers multiple VCF files from a scatter operation into a single VCF file")
+        }
+        _ => None,
+    }
+}
+
 /// The enum types the ported tools name, by type and not by tool.
 pub const ENUM_TYPES: &[EnumType] = &[
     EnumType {
