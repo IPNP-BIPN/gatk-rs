@@ -469,8 +469,13 @@ copy, which is a worse position than reading the source rather than a better one
 ## Milestone G3: the variant callers (individually multi-month)
 
 - [ ] `HaplotypeCaller`, `Mutect2` and relatives: assembly graph, genotyping
-- [ ] **PairHMM** targeting the pure-Java `LoglessPairHMM` semantics. The implementation must be
-      pinned in the oracle contract, since `FASTEST_AVAILABLE` resolves per host
+- [x] **PairHMM** targeting the pure-Java `LoglessPairHMM` semantics. The implementation is pinned
+      in the oracle contract, since `FASTEST_AVAILABLE` resolves per host: the `pair-hmm` golden
+      records which of the three loaded on the runner, and the two vectorised ones did not. All
+      twelve of its likelihoods come back bit for bit from
+      `crates/gatk-engine/src/pair_hmm.rs`, compared as raw bits rather than as decimals. The
+      initial condition's logarithm has to be COMPUTED and not transcribed: a written-down decimal
+      is a different double and moves the seventh digit of every answer
 
 ---
 
