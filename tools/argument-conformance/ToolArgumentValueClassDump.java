@@ -82,6 +82,12 @@ public class ToolArgumentValueClassDump {
 
         @Argument(fullName = "feature", doc = "a FeatureInput", optional = true)
         public FeatureInput<VariantContext> feature;
+
+        @Argument(fullName = "count", shortName = "C", doc = "a Long", optional = true)
+        public Long count;
+
+        @Argument(fullName = "primitive-count", doc = "a long", optional = true)
+        public long primitiveCount = 7L;
     }
 
     static void emit(final String kind, final String... parts) {
@@ -121,6 +127,8 @@ public class ToolArgumentValueClassDump {
         emit("field", label, "fraction", String.valueOf(target.fraction));
         emit("field", label, "primitive-fraction", String.valueOf(target.primitiveFraction));
         emit("field", label, "feature", String.valueOf(target.feature));
+        emit("field", label, "count", String.valueOf(target.count));
+        emit("field", label, "primitive-count", String.valueOf(target.primitiveCount));
         if (target.path != null) {
             emit("tag", label, "path", String.valueOf(target.path.getTag()),
                     attributes(target.path.getTagAttributes()));
@@ -201,6 +209,18 @@ public class ToolArgumentValueClassDump {
         run("a-fraction-with-an-underscore", "--fraction", "1_000");
         run("a-fraction-with-a-leading-plus", "--fraction", "+1.5");
         run("a-fraction-that-rounds-to-a-float", "--fraction", "0.1000000000000000055511151231257827");
+
+        // The `Long`, which one of the ported tools declares and no golden had measured: its
+        // range is not an int's, and its refusal names `Long` where an integer's names `Integer`.
+        run("a-count", "--count", "42");
+        run("a-count-at-a-longs-limit", "--count", "9223372036854775807");
+        run("a-count-past-an-ints-limit", "--count", "2147483648");
+        run("a-count-past-a-longs-limit", "--count", "9223372036854775808");
+        run("a-count-that-is-not-a-number", "--count", "abc");
+        run("a-count-with-a-plus", "--count", "+42");
+        run("a-count-with-a-space", "--count", " 42");
+        run("a-count-in-hexadecimal", "--count", "0x2a");
+        run("a-primitive-count", "--primitive-count", "42");
 
         run("a-primitive-fraction", "--primitive-fraction", "0.25");
         run("a-primitive-fraction-that-is-not-a-number", "--primitive-fraction", "abc");

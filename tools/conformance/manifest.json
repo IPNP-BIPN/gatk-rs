@@ -6526,7 +6526,7 @@
     },
     {
       "id": "tool-argument-value-classes",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the four value classes a tool declares and the port cannot yet convert",
       "harness": "tools/argument-conformance",
       "tools": [],
