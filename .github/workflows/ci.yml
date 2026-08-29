@@ -400,12 +400,8 @@ jobs:
             suites: "main-catalogue main-entry splitting-index allele-frequency-qc calculate-contamination"
           - group: oracle-backed
             index: "57/57"
-            slug: "bwa-index-image-tool-argument-enums-tool-argument-value-classes"
-            suites: "bwa-index-image tool-argument-enums tool-argument-value-classes"
-          - group: golden-pending
-            index: "1/1"
-            slug: "tool-argument-declarations-usage-text"
-            suites: "tool-argument-declarations usage-text"
+            slug: "tool-argument-declarations-usage-text-bwa-index-image-tool-argument-enums-tool-argument-value-classes"
+            suites: "tool-argument-declarations usage-text bwa-index-image tool-argument-enums tool-argument-value-classes"
     steps:
       - uses: actions/checkout@v7
 
