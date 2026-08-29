@@ -6581,6 +6581,24 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. The catalogue of 56 filters, then the nine declared tools: five walkers whose descriptor is `readFilter` and whose defaults are `WellformedReadFilter`, and four with no descriptor at all."
         }
       ]
+    },
+    {
+      "id": "mutex-target-names",
+      "status": "golden-pending",
+      "title": "the long name and the field name of a mutex target, which are not the same string",
+      "harness": "tools/argument-conformance",
+      "tools": [],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "`tool-argument-declarations` measured `getMutexTargetList()`, which is the long name a mutex target resolves to. The usage prints the FIELD name the annotation was written with, so `--ambig-filter-bases` reports `ambig-filter-frac` in one and `maxAmbiguousBaseFraction` in the other. Only one of the two was measured, which is why a walker's composed usage differs from the `usage-text` golden in exactly four lines.",
+      "cases": [
+        {
+          "dump": "MutexTargetsDump",
+          "golden": null,
+          "why": "Every argument with a mutex, over four tools of three shapes, with its target's two names side by side and the sentence the usage renders from them."
+        }
+      ]
     }
   ],
   "probes": []
