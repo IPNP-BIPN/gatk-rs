@@ -48,7 +48,13 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
         )
     })?;
     let output = argument(parser, "output");
-    let refused = |refusal: Refusal| (Failure::User, refusal.message());
+    // Every refusal the port makes here is a UserException in the reference, EXCEPT the one the
+    // reference does not make: a tabix index this port cannot write is the port's own gap, and it
+    // is reported as one rather than as a status the reference would have exited with.
+    let refused = |refusal: Refusal| match refusal {
+        Refusal::TabixIsNotWritten { .. } => (Failure::Other, refusal.message()),
+        _ => (Failure::User, refusal.message()),
+    };
     // The reference reads the file to find a codec for it, so a file that is not there is refused
     // before anything else is asked of it.
     let bytes = std::fs::read(&input).map_err(|_| {

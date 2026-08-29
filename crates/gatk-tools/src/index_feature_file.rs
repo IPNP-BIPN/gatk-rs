@@ -68,6 +68,15 @@ pub enum Refusal {
     WrongIndexExtension { path: String },
     /// The features are not in order, which Tribble raises and the tool wraps.
     CouldNotIndexFile { path: String, detail: String },
+    /// THE PORT'S OWN refusal, which the reference never makes: a block-compressed input needs a
+    /// tabix index, and this port has no writer for one.
+    ///
+    /// It is a separate variant because the alternative was borrowing
+    /// [`Refusal::WrongIndexExtension`], and that put the reference's words on the port's gap: a
+    /// covering array run against the binary reported the two as the same answer, and the row
+    /// where the reference writes a tabix index and the port cannot read as a refusal the
+    /// reference agrees with. A gap has to say it is one.
+    TabixIsNotWritten { path: String },
 }
 
 impl Refusal {
@@ -85,6 +94,9 @@ impl Refusal {
             Refusal::CouldNotIndexFile { .. } => {
                 "org.broadinstitute.hellbender.exceptions.UserException$CouldNotIndexFile"
             }
+            // No Java class: the reference does not make this refusal, and naming one of its
+            // exceptions here would be a claim about the reference.
+            Refusal::TabixIsNotWritten { .. } => "",
         }
     }
 
@@ -102,6 +114,10 @@ impl Refusal {
             Refusal::CouldNotIndexFile { path, detail } => {
                 format!("Error while trying to create index for {path}. Error was: {detail}")
             }
+            Refusal::TabixIsNotWritten { path } => format!(
+                "{path} needs a tabix index, which this port does not write yet. This message is \
+                 the port's own and not GATK's."
+            ),
         }
     }
 }
@@ -248,8 +264,9 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
     let (index_type, properties, contigs, interval_contigs) = match index_kind(file_name) {
         IndexKind::Tabix => {
             // The caller is expected to have taken the tabix branch itself: this port has no
-            // writer for it, and the golden records those bytes for a later brick.
-            return Err(Refusal::WrongIndexExtension {
+            // writer for it, and the golden records those bytes for a later brick. The refusal is
+            // the PORT'S own, so that nothing downstream can read it as the reference's.
+            return Err(Refusal::TabixIsNotWritten {
                 path: source.path.clone(),
             });
         }
