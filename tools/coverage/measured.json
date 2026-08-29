@@ -11,13 +11,13 @@
   ],
   "tools": {
     "IndexFeatureFile": {
-      "rows": 6,
+      "rows": 8,
       "accepted": 5,
-      "rejected": 1,
+      "rejected": 3,
       "distinct_outputs": 5,
-      "matched": 5,
+      "matched": 7,
       "t": 2,
-      "share": 0.833
+      "share": 0.875
     },
     "PrintBGZFBlockInformation": {
       "rows": 4,
@@ -27,6 +27,15 @@
       "matched": 4,
       "t": 2,
       "share": 1.0
+    },
+    "CountReads": {
+      "rows": 18,
+      "accepted": 3,
+      "rejected": 15,
+      "distinct_outputs": 1,
+      "matched": 4,
+      "t": 2,
+      "share": 0.222
     }
   }
 }
