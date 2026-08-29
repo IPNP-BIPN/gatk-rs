@@ -6541,6 +6541,26 @@
           "why": "Twenty-two command lines over one target carrying a field of each class: a path, a URI, a relative path, one that names nothing and an empty one; the same strings through a File; a tag on the taggable class, on the one that is not, and by short name; an empty and a filled collection; a FeatureInput tagged and not; and a Float on both sides of what Float.valueOf accepts, primitive and boxed."
         }
       ]
+    },
+    {
+      "id": "plugin-argument-ownership",
+      "status": "golden-pending",
+      "title": "which read filter owns which controlled argument, and which of them are required",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "GATKReadFilterPluginDescriptor"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The plugin trim drops a controlled argument whose plugin nobody selected, which is why a required argument of an unselected read filter does not fire on a plain command line. `barclay-plugin-descriptors` measured that rule; the table it runs over is a property of GATK's filter library and cannot be derived from the declarations golden, which records the descriptor and not the class that contributed the argument.",
+      "cases": [
+        {
+          "dump": "PluginArgumentOwnershipDump",
+          "golden": null,
+          "why": "The ownership table itself, one row per controlled argument with its owner, its short name and whether it is required; then whether a tool default counts as selected, and ten command lines over the trim: a required argument of nobody, of a filter that was named, of one named without it, a default filter's argument with the defaults disabled one at a time, and a second required argument to show the first is not a special case."
+        }
+      ]
     }
   ],
   "probes": []
