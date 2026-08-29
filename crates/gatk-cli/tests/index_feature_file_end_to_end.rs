@@ -111,6 +111,66 @@ fn an_explicit_output_is_used_as_given() {
     assert!(written.stdout.ends_with("elsewhere.idx\n"));
 }
 
+/// The second tool the port runs prints its report rather than writing a file.
+#[test]
+fn a_report_is_returned_where_a_file_is_not_named() {
+    let dir = scratch("bgzf");
+    // A tiny BGZF file: an empty block and the terminator, which is what an empty gzip member
+    // and the reference's own terminator look like on disk.
+    let terminator: [u8; 28] = [
+        0x1f, 0x8b, 0x08, 0x04, 0, 0, 0, 0, 0, 0xff, 0x06, 0x00, 0x42, 0x43, 0x02, 0x00, 0x1b,
+        0x00, 0x03, 0x00, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let file = dir.join("empty.bgzf");
+    std::fs::write(&file, terminator).expect("the fixture");
+    let written = gatk_cli::run(&args(&[
+        "PrintBGZFBlockInformation",
+        "--bgzf-file",
+        &file.to_string_lossy(),
+    ]));
+    assert_eq!(written.status, 0, "{}", written.stderr);
+    // `handleResult` prints what the tool returned, and what this tool returns with no `--output`
+    // is the report itself.
+    assert!(
+        written
+            .stdout
+            .starts_with("Tool returned:\nBGZF block information for file: empty.bgzf"),
+        "{}",
+        written.stdout
+    );
+    // With an output it writes the file instead and returns nothing.
+    let report = dir.join("report.txt");
+    let written = gatk_cli::run(&args(&[
+        "PrintBGZFBlockInformation",
+        "--bgzf-file",
+        &file.to_string_lossy(),
+        "--output",
+        &report.to_string_lossy(),
+    ]));
+    assert_eq!(written.status, 0, "{}", written.stderr);
+    assert!(written.stdout.is_empty(), "{}", written.stdout);
+    let text = std::fs::read_to_string(&report).expect("the report");
+    assert!(
+        text.starts_with("BGZF block information for file: empty.bgzf"),
+        "{text}"
+    );
+    // And a file that is not block compressed is refused by the framing check rather than by a
+    // codec search: sixteen bytes of text have a header the reader can read and cannot believe.
+    let plain = dir.join("plain.txt");
+    std::fs::write(&plain, b"not a bgzf file\n").expect("the fixture");
+    let refused = gatk_cli::run(&args(&[
+        "PrintBGZFBlockInformation",
+        "--bgzf-file",
+        &plain.to_string_lossy(),
+    ]));
+    assert_eq!(refused.status, main_entry::exit_status(Failure::User));
+    assert!(
+        refused.stderr.contains("Incorrect header size for file"),
+        "{}",
+        refused.stderr
+    );
+}
+
 /// A refusal reaches the dispatcher as the reference's own status and message.
 #[test]
 fn a_refusal_reaches_the_dispatcher() {

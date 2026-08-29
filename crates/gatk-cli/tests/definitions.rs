@@ -90,14 +90,13 @@ fn the_gap_is_named_and_counted() {
             .any(|declaration| declaration.controlled_by.is_some() && declaration.required);
         assert_eq!(gatk_cli::parseable(tool), !controlled, "{tool}");
     }
-    // A class the seven did not name: `CreateHadoopBamSplittingIndex` declares a `Long`, whose
-    // conversion is not measured, so it is the first tool to be unparseable for the CLASS reason
-    // again rather than for the plugin one. The gap is named here rather than left as a tool that
-    // quietly does not work.
+    // A class the seven did not name: `CreateHadoopBamSplittingIndex` declares a `Long`, which
+    // was the last class in the nine tools' declarations without a measured conversion. It has
+    // one now, so nothing is skipped and the tool parses.
     let spark = declarations("CreateHadoopBamSplittingIndex").expect("its declarations");
-    assert_eq!(missing(spark), ["splitting-index-granularity"]);
     assert_eq!(find(spark, "splitting-index-granularity").type_name, "Long");
-    assert!(!gatk_cli::parseable("CreateHadoopBamSplittingIndex"));
+    assert!(missing(spark).is_empty());
+    assert!(gatk_cli::parseable("CreateHadoopBamSplittingIndex"));
     assert!(!spark
         .iter()
         .any(|declaration| declaration.controlled_by.is_some() && declaration.required));
