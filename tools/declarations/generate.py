@@ -177,6 +177,26 @@ def cross_check(tool, entries):
     return len(documented)
 
 
+def summary_table(tools):
+    """The one-line summary the usage header prints, taken from the inventory.
+
+    It is the only piece of a tool's usage that is not in the declarations golden: the header's
+    second paragraph is the tool's own `oneLineSummary`, which the inventory carries because it
+    reads the reference's machine-readable documentation.
+    """
+    inventory = json.loads(INVENTORY.read_text())
+    by_name = {tool["name"]: tool for tool in inventory["tools"]}
+    arms = []
+    for tool in tools:
+        summary = by_name[tool]["summary"]
+        arms.append(f'        "{tool}" => Some({literal(summary)}),')
+    return (
+        "/// The one-line summary the usage header prints, from the inventory.\n"
+        "pub fn summary(tool: &str) -> Option<&'static str> {\n"
+        "    match tool {\n" + "\n".join(arms) + "\n        _ => None,\n    }\n}\n"
+    )
+
+
 def enum_table():
     """The enum types, from the `tool-argument-enums` golden.
 
@@ -287,6 +307,7 @@ def main():
             f"/// {len(entries)} named arguments, of which the usage text prints {documented}.\n"
             f"pub const {constant}: &[Declaration] = &[\n" + "\n".join(entries) + "\n];\n"
         )
+    out.append(summary_table(tools))
     out.append(enum_table())
     arms = "\n".join(f'        "{tool}" => Some({tool.upper()}),' for tool in tools)
     out.append(
