@@ -159,7 +159,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
-| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, tool-argument-declarations, tool-argument-enums, usage-text | 6 | not measured |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, tool-argument-declarations, tool-argument-enums, usage-text | 6 | t=2, 4/18 rows (22%), **1 distinct output** |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, tool-argument-declarations, tool-argument-enums | 3 | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
@@ -201,7 +201,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | not measured |
-| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 5/6 rows (83%) |
+| `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 7/8 rows (88%) |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
