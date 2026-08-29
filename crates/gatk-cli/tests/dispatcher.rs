@@ -290,24 +290,38 @@ fn a_tool_asked_for_help_answers_with_its_usage() {
     assert!(walker.stderr.contains("this port does not carry yet"));
 }
 
-/// A tool this port cannot run yet refuses in its own words, and says so.
+/// A walker with no arguments is now refused by the PARSER, in the reference's own words.
 #[test]
-fn a_tool_this_port_cannot_run_refuses_in_its_own_words() {
+fn a_walker_with_no_arguments_is_refused_by_the_parser() {
     let text = golden();
     let written = gatk_cli::run(&args(&["CountReads"]));
-    // The reference gets past the dispatch here and is refused by the PARSER, which is status one
-    // and a CommandLineException. This port has no declarations to parse against yet, so it stops
-    // one step earlier, and its refusal carries neither that status nor that message.
+    // The reference gets past the dispatch here and is refused by the parser, which is status one
+    // and a CommandLineException. The port reaches the same refusal now that the plugin trim runs
+    // over the measured ownership table: the twelve required plugin-controlled arguments leave the
+    // list before the required check, so the first argument still missing is the tool's own.
     let reference = field(&text, "error", "gatk-tool-no-arguments");
     assert!(reference.contains("Argument input was missing"));
-    assert!(!written.stderr.contains("Argument input was missing"));
-    assert_ne!(
+    assert!(
+        written.stderr.contains("Argument input was missing"),
+        "{}",
+        written.stderr
+    );
+    assert_eq!(
         written.status,
         main_entry::exit_status(Failure::CommandLine)
     );
-    assert!(written.stderr.contains("this port does not carry yet"));
-    // What IS the reference's is the step before: the name resolved, so the dispatcher did not
-    // refuse it the way it refuses a name that does not.
+    // What it is not is the port's own refusal, and it is not the dispatcher's either: the name
+    // resolved, so it was never a name that does not.
+    assert!(!written.stderr.contains("this port does not carry yet"));
     assert!(!written.stderr.contains("is not a valid command"));
+    // Running it is still the gap, and the message that says so is reached by a command line the
+    // parser accepts rather than by one it refuses.
     assert!(gatk_cli::runner("CountReads").is_none());
+    let accepted = gatk_cli::run(&args(&["CountReads", "--input", "/dev/null"]));
+    assert!(
+        accepted.stderr.contains("this port does not carry yet"),
+        "{}",
+        accepted.stderr
+    );
+    assert_eq!(accepted.status, main_entry::exit_status(Failure::User));
 }

@@ -117,6 +117,7 @@ pub mod pathseq_taxonomy;
 pub mod picard_gather_vcfs;
 pub mod picard_update_vcf_dictionary;
 pub mod pileup;
+pub mod plugin_ownership;
 pub mod post_process_reads_for_rsem;
 pub mod preprocess_intervals;
 pub mod print_bgzf_block_information;

@@ -1,8 +1,9 @@
 //! Conformance for the declaration-to-definition map against GATK 4.6.2.0.
 //!
 //! The declarations are the reference's own parser reporting itself, and the definitions are what
-//! the ported parser consumes. This suite checks the map between them, and it checks what is left
-//! of the gap: every class converts now, and what still stops a walker is the plugin trim.
+//! the ported parser consumes. This suite checks the map between them, and it checks that the map
+//! is now total: every class converts, and every controlled argument carries the filter that
+//! declared it, so a walker's command line reaches the parser.
 //!
 //! # What this suite is for
 //!
@@ -10,8 +11,8 @@
 //!  * **the default rendering surviving the round trip**;
 //!  * **an enum reaching its constants**;
 //!  * **every declared class converting, so the gap is counted at zero rather than described**;
-//!  * **and the one gap that is left being named: a walker's plugin-controlled arguments read as
-//!    required, and the trim that removes them is the descriptor's.**
+//!  * **and a controlled argument carrying its owner, which is what the trim runs over.** The trim
+//!    itself is `plugin_ownership.rs`'s suite.
 
 use gatk_barclay::{Parser, ValueClass};
 use gatk_cli::definitions::{
@@ -58,7 +59,7 @@ fn a_definition_carries_the_declaration() {
     assert_eq!(flag.default_value_as_string(), "false");
 }
 
-/// Every class converts, and what is left is the plugin trim.
+/// Every class converts, and every controlled argument reaches the trim with its owner.
 #[test]
 fn the_gap_is_named_and_counted() {
     for tool in [
@@ -81,14 +82,21 @@ fn the_gap_is_named_and_counted() {
         assert!(skipped.is_empty(), "{tool}: {skipped:?}");
         assert!(!list.iter().any(unconvertible), "{tool}");
         assert!(UNCONVERTIBLE_CLASSES.is_empty());
-        // What decides parseability now is the plugin trim. A walker's descriptor owns arguments
-        // that read as required, and the reference removes them before the required check because
-        // no filter selected them; the port has no descriptor, so it declines to parse rather
-        // than asking for an argument the reference never asks for.
-        let controlled = list
-            .iter()
-            .any(|declaration| declaration.controlled_by.is_some() && declaration.required);
-        assert_eq!(gatk_cli::parseable(tool), !controlled, "{tool}");
+        // Every tool parses now. A walker's descriptor owns arguments that read as required, and
+        // the trim removes them before the required check because no filter selected them; the
+        // port runs that trim over the measured ownership table, so the twelve required
+        // controlled arguments no longer stop a command line.
+        assert!(gatk_cli::parseable(tool), "{tool}");
+        for declaration in list.iter().filter(|d| d.controlled_by.is_some()) {
+            assert!(
+                definition(declaration)
+                    .expect("a definition")
+                    .controlled_by
+                    .is_some(),
+                "{tool}: {}",
+                declaration.long_name
+            );
+        }
     }
     // A class the seven did not name: `CreateHadoopBamSplittingIndex` declares a `Long`, which
     // was the last class in the nine tools' declarations without a measured conversion. It has
@@ -99,7 +107,7 @@ fn the_gap_is_named_and_counted() {
     assert!(gatk_cli::parseable("CreateHadoopBamSplittingIndex"));
     assert!(!spark
         .iter()
-        .any(|declaration| declaration.controlled_by.is_some() && declaration.required));
+        .any(|declaration| declaration.controlled_by.is_some()));
     // Where the other new tool declares nothing exotic and does parse.
     assert!(gatk_cli::parseable("PrintBGZFBlockInformation"));
     assert!(
@@ -111,33 +119,27 @@ fn the_gap_is_named_and_counted() {
     assert_eq!(INDEXFEATUREFILE.len(), 14);
     assert!(missing(INDEXFEATUREFILE).is_empty());
     assert!(gatk_cli::parseable("IndexFeatureFile"));
-    assert!(!gatk_cli::parseable("CountReads"));
+    assert!(!INDEXFEATUREFILE
+        .iter()
+        .any(|declaration| declaration.controlled_by.is_some()));
 }
 
 /// The definitions that ARE built parse a command line the way the reference's parser does.
 #[test]
 fn the_definitions_that_are_built_parse() {
-    // A parser over the convertible half of CountReads answers about those arguments. It does not
-    // accept a command line, and the reason is worth stating: the plugin-controlled arguments the
-    // read-filter descriptor owns read as REQUIRED in the declarations, and the reference trims
-    // them before the required check runs because no filter selected them. That trim is the
-    // descriptor's, and it is not wired here, so the parser asks for an argument the reference
-    // never asks for.
+    // A parser over CountReads' definitions accepts the command line the reference accepts. The
+    // twelve plugin-controlled arguments that read as REQUIRED in the declarations are removed by
+    // the trim before the required check, because no filter selected them, and the trim now knows
+    // which filter declared each of them.
     let mut parser = Parser::new(definitions(COUNTREADS));
-    let untrimmed = parser
+    parser
         .parse_arguments(&[
             "--input",
             "/dev/null",
             "--interval-set-rule",
             "INTERSECTION",
         ])
-        .expect_err("the plugin arguments are still required");
-    let named = COUNTREADS
-        .iter()
-        .find(|declaration| untrimmed.message.contains(declaration.long_name))
-        .expect("the refusal names an argument");
-    assert!(named.controlled_by.is_some(), "{}", untrimmed.message);
-    assert!(named.required, "{}", untrimmed.message);
+        .expect("the plugin arguments are trimmed");
     let mut parser = Parser::new(definitions(COUNTREADS));
     let refusal = parser
         .parse_arguments(&["--input", "/dev/null", "--interval-set-rule", "union"])
@@ -154,8 +156,8 @@ fn the_definitions_that_are_built_parse() {
         "{}",
         refusal.message
     );
-    // The port refuses to hand a whole command line to that parser, because a third of the tool's
-    // arguments are missing from it: `parse_failure` says nothing rather than something wrong.
+    // And a whole command line through the dispatcher's own parser is accepted: `parse_failure`
+    // says nothing because there is nothing to refuse.
     assert_eq!(
         gatk_cli::parse_failure(
             "CountReads",
