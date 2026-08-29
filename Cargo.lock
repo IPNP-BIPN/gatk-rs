@@ -247,6 +247,7 @@ dependencies = [
  "gatk-barclay",
  "gatk-corpus",
  "gatk-tools",
+ "htsjdk-bgzf",
 ]
 
 [[package]]
