@@ -459,7 +459,7 @@ jobs:
       - name: Run the array against both sides
         run: |
           python3 tools/coverage/measure.py --tool IndexFeatureFile \
-            --port target/release/gatk-rs
+            --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
         # Same rule as a golden: the number in the tree has to be the number CI re-derives, or the
@@ -469,11 +469,15 @@ jobs:
         run: git --no-pager diff --stat tools/coverage/measured.json
 
       - name: Publish what the run measured
+        # The corpus goes with the number, and not as decoration: a share of 5/6 says a row
+        # diverged and says nothing about which, and the corpus is where that is read.
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: candidate-coverage
-          path: tools/coverage/measured.json
+          path: |
+            tools/coverage/measured.json
+            /tmp/coverage-corpus/
           if-no-files-found: ignore
 
   inventory:
