@@ -220,7 +220,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |
-| `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | not measured |
+| `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 4/4 rows (100%) |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
