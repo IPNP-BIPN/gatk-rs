@@ -142,3 +142,87 @@ pub fn owner(long_name: &str) -> Option<&'static str> {
 pub fn ownership(long_name: &str) -> Option<&'static Ownership> {
     OWNERSHIP.iter().find(|entry| entry.long_name == long_name)
 }
+
+/// Every read filter the descriptor discovers, which is what `--read-filter` lists.
+///
+/// It is the filter LIBRARY and not the ownership table: fifty-six filters here, and only
+/// eighteen of them declare an argument. A name outside this list is what
+/// `validateAndResolvePlugins` refuses, with GATK's own wording rather than Barclay's.
+///
+/// Measured in the `read-filter-catalogue` golden, in its order, which is sorted.
+pub const CATALOGUE: [&str; 56] = [
+    "AlignmentAgreesWithHeaderReadFilter",
+    "AllowAllReadsReadFilter",
+    "AmbiguousBaseReadFilter",
+    "CigarContainsNoNOperator",
+    "ExcessiveEndClippedReadFilter",
+    "FirstOfPairReadFilter",
+    "FlowBasedTPAttributeSymetricReadFilter",
+    "FlowBasedTPAttributeValidReadFilter",
+    "FragmentLengthReadFilter",
+    "GoodCigarReadFilter",
+    "HasReadGroupReadFilter",
+    "HmerQualitySymetricReadFilter",
+    "IntervalOverlapReadFilter",
+    "JexlExpressionReadTagValueFilter",
+    "LibraryReadFilter",
+    "MappedReadFilter",
+    "MappingQualityAvailableReadFilter",
+    "MappingQualityNotZeroReadFilter",
+    "MappingQualityReadFilter",
+    "MatchingBasesAndQualsReadFilter",
+    "MateDifferentStrandReadFilter",
+    "MateDistantReadFilter",
+    "MateOnSameContigOrNoMappedMateReadFilter",
+    "MateUnmappedAndUnmappedReadFilter",
+    "MetricsReadFilter",
+    "NonChimericOriginalAlignmentReadFilter",
+    "NonZeroFragmentLengthReadFilter",
+    "NonZeroReferenceLengthAlignmentReadFilter",
+    "NotDuplicateReadFilter",
+    "NotOpticalDuplicateReadFilter",
+    "NotProperlyPairedReadFilter",
+    "NotSecondaryAlignmentReadFilter",
+    "NotSupplementaryAlignmentReadFilter",
+    "OverclippedReadFilter",
+    "PairedReadFilter",
+    "PassesVendorQualityCheckReadFilter",
+    "PlatformReadFilter",
+    "PlatformUnitReadFilter",
+    "PrimaryLineReadFilter",
+    "ProperlyPairedReadFilter",
+    "ReadGroupBlackListReadFilter",
+    "ReadGroupHasFlowOrderReadFilter",
+    "ReadGroupReadFilter",
+    "ReadLengthEqualsCigarLengthReadFilter",
+    "ReadLengthReadFilter",
+    "ReadNameReadFilter",
+    "ReadStrandFilter",
+    "ReadTagValueFilter",
+    "SampleReadFilter",
+    "SecondOfPairReadFilter",
+    "SeqIsStoredReadFilter",
+    "SoftClippedReadFilter",
+    "ValidAlignmentEndReadFilter",
+    "ValidAlignmentStartReadFilter",
+    "WellformedFlowBasedReadFilter",
+    "WellformedReadFilter",
+];
+
+/// The descriptor's display name, which is the heading a walker's conditional block carries.
+pub const DESCRIPTOR: &str = "readFilter";
+
+/// The filters a tool hands its descriptor as defaults, which count as SELECTED.
+///
+/// The list is per tool and is what `--disable-read-filter` lists as its possible values. All five
+/// of the declared walkers take `ReadWalker`'s single filter, and the four tools that are no
+/// walkers build no descriptor at all, which is `None` here and not an empty list: a tool with no
+/// descriptor has no `--read-filter` to answer for.
+pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
+    match tool {
+        "CountReads" | "CountVariants" | "PrintReads" | "ApplyBQSR" | "SelectVariants" => {
+            Some(&["WellformedReadFilter"])
+        }
+        _ => None,
+    }
+}

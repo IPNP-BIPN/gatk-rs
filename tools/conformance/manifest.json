@@ -6564,7 +6564,7 @@
     },
     {
       "id": "read-filter-catalogue",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the read filter library, and which of them each tool takes as defaults",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6577,8 +6577,8 @@
       "cases": [
         {
           "dump": "ReadFilterCatalogueDump",
-          "golden": null,
-          "why": "The catalogue once, then the nine tools whose declarations this port carries: the descriptor's display name or none for a tool that is no walker, the tool's defaults, and the possible values of the two arguments that print them."
+          "golden": "crates/gatk-tools/tests/data/read_filter_catalogue.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. The catalogue of 56 filters, then the nine declared tools: five walkers whose descriptor is `readFilter` and whose defaults are `WellformedReadFilter`, and four with no descriptor at all."
         }
       ]
     }

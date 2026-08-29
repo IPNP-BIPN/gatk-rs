@@ -132,7 +132,13 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
             line = token.to_string();
         }
     }
-    lines.push(line);
+    // A description that ends in a space whose break fell at the very end leaves nothing to put on
+    // the last line, and the reference emits no line rather than an indent with nothing after it.
+    // That is why `--platform-filter-name`'s entry ends `Required.` with no trailing space in the
+    // usage golden while `--library`'s, which did not wrap there, ends `Required. ` with one.
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
     lines
 }
 
@@ -218,8 +224,28 @@ pub fn header(tool: &str, summary: &str, version: &str, maturity: Maturity) -> V
 /// values exist for a boolean and for an enum; and the mutex sentence names the other argument by
 /// its FIELD name rather than by its long name, which is why the whole list is passed in.
 pub fn entry_for(declaration: &Declaration, all: &[Declaration]) -> Entry {
-    let constants =
-        crate::tool_declarations::enum_type(declaration.type_name).map(|type_| type_.constants);
+    entry_for_in(declaration, all, None)
+}
+
+/// The same, for a tool whose plugin descriptor answers for two of its arguments.
+///
+/// `--read-filter` and `--disable-read-filter` are `String`s with no enum behind them, and their
+/// possible values come from the descriptor: the whole catalogue for the first and the TOOL'S OWN
+/// DEFAULTS for the second. Both are measured in the `read-filter-catalogue` golden, and a tool
+/// that builds no descriptor has neither argument to print.
+pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option<&str>) -> Entry {
+    let descriptor_values: Option<&[&str]> = tool.and_then(|tool| {
+        crate::plugin_ownership::default_filters(tool).and_then(|defaults| {
+            match declaration.long_name {
+                "read-filter" => Some(&crate::plugin_ownership::CATALOGUE[..]),
+                "disable-read-filter" => Some(defaults),
+                _ => None,
+            }
+        })
+    });
+    let constants = descriptor_values.or_else(|| {
+        crate::tool_declarations::enum_type(declaration.type_name).map(|type_| type_.constants)
+    });
     let mutex: Vec<(&str, &str)> = declaration
         .mutex
         .iter()
@@ -266,6 +292,14 @@ pub fn short_name(declaration: &Declaration) -> Option<&'static str> {
 /// in required or optional by its own declaration. An argument a plugin descriptor controls is in
 /// none of the three either: it belongs to a conditional block.
 pub fn sections(list: &[Declaration]) -> (Vec<Entry>, Vec<Entry>, Vec<Entry>) {
+    sections_for(None, list)
+}
+
+/// The same, for a named tool, whose descriptor answers for two of its arguments.
+pub fn sections_for(
+    tool: Option<&str>,
+    list: &[Declaration],
+) -> (Vec<Entry>, Vec<Entry>, Vec<Entry>) {
     let mut required = Vec::new();
     let mut optional = Vec::new();
     let mut advanced = Vec::new();
@@ -273,7 +307,7 @@ pub fn sections(list: &[Declaration]) -> (Vec<Entry>, Vec<Entry>, Vec<Entry>) {
         if declaration.hidden || declaration.controlled_by.is_some() {
             continue;
         }
-        let entry = entry_for(declaration, list);
+        let entry = entry_for_in(declaration, list, tool);
         if declaration.advanced {
             advanced.push(entry);
         } else if declaration.required {
@@ -293,6 +327,38 @@ pub struct Conditional {
     pub descriptor: String,
     /// One group per plugin, in the order the reference prints them, each with its arguments.
     pub groups: Vec<(String, Vec<Entry>)>,
+}
+
+/// The conditional blocks a tool's controlled arguments fall into, one group per plugin.
+///
+/// The groups are in the ownership table's order, which is the golden's: by the owner's class name
+/// and then by the argument's long name. A plugin that declares no argument has no group, which is
+/// why fifty-six filters make twenty-two blocks.
+pub fn conditionals(list: &[Declaration]) -> Vec<Conditional> {
+    let mut groups: Vec<(String, Vec<Entry>)> = Vec::new();
+    for entry in crate::plugin_ownership::OWNERSHIP.iter() {
+        let Some(declaration) = list
+            .iter()
+            .find(|declaration| declaration.long_name == entry.long_name)
+        else {
+            continue;
+        };
+        if declaration.hidden {
+            continue;
+        }
+        let rendered = entry_for(declaration, list);
+        match groups.iter_mut().find(|(owner, _)| owner == entry.owner) {
+            Some((_, entries)) => entries.push(rendered),
+            None => groups.push((entry.owner.to_string(), vec![rendered])),
+        }
+    }
+    if groups.is_empty() {
+        return Vec::new();
+    }
+    vec![Conditional {
+        descriptor: crate::plugin_ownership::DESCRIPTOR.to_string(),
+        groups,
+    }]
 }
 
 /// `Valid only if "<plugin>" is specified:`, the line each group opens on.
