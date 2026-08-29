@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 71 conformance suites, 70 oracle-backed; the one exception is `format`, whose 41,678 formatted doubles have a harness and a Rust test but have never been regenerated against the oracle in CI. CRAM, GKL-exact deflate and full VCF remain |
 | **picard-rs** | 121 tools | 77 tools carry a suite, all 77 oracle-backed; 92 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 190 tools | 7 crates, **285 conformance suites over 157 tools, all 285 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, whose binary hands every declared tool's command line to the parser, a walker's included. **No performance number exists yet for any of it**: see Milestone S |
+| **gatk-rs** | 190 tools | 7 crates, **285 conformance suites over 157 tools, all 285 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, whose binary hands every declared tool's command line to the parser, a walker's included, and runs three tools end to end. **No performance number exists yet for any of it**: see Milestone S |
 
 Across the three repositories that is **432 oracle-backed suites**, and the generated dashboard
 ([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%.
@@ -1275,9 +1275,13 @@ sentence into the second.
       mutex targets, the controlling plugin and the documentation; the enum constants are a second
       golden of their own, and the four classes the reference builds from a string (`GATKPath`,
       `File`, `Float`, `FeatureInput`) a third. Every class a declaration names converts
-- [ ] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
+- [~] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
       is handed a whole file already in memory and `write` returns a `String`, which is right for a
-      suite comparing whole outputs against a golden and not enough to run
+      suite comparing whole outputs against a golden and not enough to run. Three tools have that
+      layer now: `IndexFeatureFile`, `PrintBGZFBlockInformation` and `CountReads`, the last of them
+      a read WALKER, so a BAM is opened, an interval query runs, the read filters a command line
+      names are applied and the count reaches both `-O` and the return value
+      (`count-reads-plumbing`)
 - [x] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
       was ported first and the data followed: a tool's whole usage is COMPOSED from its
       declarations and compared against the golden as one string, a walker's included. Its

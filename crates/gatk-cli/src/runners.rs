@@ -9,11 +9,16 @@
 //! bytes, and a `std::fs::read` in the middle of the ported function would put the filesystem
 //! inside the thing being compared.
 //!
-//! Ported from `org.broadinstitute.hellbender.tools.IndexFeatureFile`.
+//! Ported from `org.broadinstitute.hellbender.tools.IndexFeatureFile`,
+//! `org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation` and
+//! `org.broadinstitute.hellbender.tools.CountReads`.
 
 use gatk_barclay::{Parser, Value};
+use gatk_engine::reads::ReadsDataSource;
 use gatk_tools::index_feature_file::{self, Refusal, Source};
 use gatk_tools::main_entry::Failure;
+use htsjdk_bam::header::SamHeader;
+use htsjdk_bam::record::BamRecord;
 
 /// What a runner answers: what the tool returned, or the failure and its message.
 pub type Outcome = Result<Option<String>, (Failure, String)>;
@@ -143,4 +148,181 @@ fn modified_millis(path: &str) -> i64 {
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|since| since.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// The values of a collection argument, as the parser left them.
+pub fn arguments(parser: &Parser, long_name: &str) -> Vec<String> {
+    parser
+        .definitions()
+        .iter()
+        .find(|definition| definition.long_name() == long_name)
+        .map(|definition| match &definition.value {
+            Value::List(values) => values
+                .iter()
+                .map(|value| match value {
+                    Value::Tagged { value, .. } => value.clone(),
+                    other => other.to_java_string(),
+                })
+                .collect(),
+            _ => Vec::new(),
+        })
+        .unwrap_or_default()
+}
+
+/// A scalar argument's value as text, whatever class it holds.
+///
+/// [`argument`] answers for the two classes a path arrives in; a number arrives as an `Int`, and
+/// reading it through that function would silently answer `None` and leave a default in place. The
+/// `count-reads-plumbing` golden is what caught it: `--minimum-mapping-quality 70` counted eight
+/// reads instead of none.
+pub fn scalar(parser: &Parser, long_name: &str) -> Option<String> {
+    parser
+        .definitions()
+        .iter()
+        .find(|definition| definition.long_name() == long_name)
+        .and_then(|definition| match &definition.value {
+            Value::Null => None,
+            Value::Tagged { value, .. } => Some(value.clone()),
+            other => Some(other.to_java_string()),
+        })
+}
+
+/// Whether a flag argument was set, which is a boolean whose default is false.
+pub fn flag(parser: &Parser, long_name: &str) -> bool {
+    matches!(
+        parser
+            .definitions()
+            .iter()
+            .find(|definition| definition.long_name() == long_name)
+            .map(|definition| &definition.value),
+        Some(Value::Bool(true))
+    )
+}
+
+/// The conjunction a command line's read filters make, over records the walker hands it.
+pub type Filter<'a> = Box<dyn Fn(&BamRecord) -> bool + 'a>;
+
+/// The read filter a command line asks for, which is a conjunction and not a choice.
+///
+/// `--read-filter` ADDS to the tool's defaults; `--disable-tool-default-read-filters` is what
+/// replaces them. Both are in the `count-reads-plumbing` golden, one case each, and the filter
+/// order follows the reference's: the defaults first, then the named ones in the order they were
+/// named.
+///
+/// A filter this port does not carry is refused rather than ignored, because ignoring one would
+/// count reads the reference filtered out and answer with a number that looks right.
+fn read_filter<'a>(
+    parser: &'a Parser,
+    tool: &str,
+    header: &'a SamHeader,
+) -> Result<Filter<'a>, (Failure, String)> {
+    let mut names: Vec<String> = Vec::new();
+    if !flag(parser, "disable-tool-default-read-filters") {
+        names.extend(
+            gatk_tools::plugin_ownership::default_filters(tool)
+                .unwrap_or(&[])
+                .iter()
+                .map(|name| (*name).to_string()),
+        );
+    }
+    names.extend(arguments(parser, "read-filter"));
+
+    let mut plain: Vec<gatk_readfilter::ReadFilter> = Vec::new();
+    let mut wellformed = false;
+    let mut parameterized: Vec<gatk_readfilter::Parameterized> = Vec::new();
+    for name in &names {
+        if name == "WellformedReadFilter" {
+            wellformed = true;
+        } else if let Some(filter) = gatk_readfilter::by_name(name) {
+            plain.push(filter);
+        } else if name == "MappingQualityReadFilter" {
+            let minimum = scalar(parser, "minimum-mapping-quality")
+                .and_then(|text| text.parse::<i32>().ok())
+                .unwrap_or(10);
+            let maximum =
+                scalar(parser, "maximum-mapping-quality").and_then(|text| text.parse::<i32>().ok());
+            parameterized.push(gatk_readfilter::Parameterized::MappingQuality {
+                min: minimum,
+                max: maximum,
+            });
+        } else {
+            return Err((
+                Failure::Other,
+                format!(
+                    "{name} is a GATK read filter that this port does not carry yet. This message is the port's own and not GATK's."
+                ),
+            ));
+        }
+    }
+    Ok(Box::new(move |read: &BamRecord| {
+        if wellformed && !gatk_readfilter::with_header::wellformed(read, header) {
+            return false;
+        }
+        if !plain.iter().all(|filter| filter(read)) {
+            return false;
+        }
+        parameterized
+            .iter()
+            .all(|filter| filter.decide(read).unwrap_or(false))
+    }))
+}
+
+/// `CountReads.doWork`, with the input read and the output written.
+///
+/// Three things the `count-reads-plumbing` golden pins and this reproduces: the tool RETURNS the
+/// count, so `handleResult` prints a number; `-O` receives that number and nothing else, with no
+/// trailing newline, because the reference writes it with `print`; and `-O` does not suppress the
+/// return, so the file is written AND the value comes back.
+pub fn count_reads(parser: &Parser) -> Outcome {
+    // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
+    // BAM and merges their headers. This port reads one, which is what every case of the golden
+    // hands it, and refuses the rest rather than silently counting the first.
+    let inputs = arguments(parser, "input");
+    if inputs.len() > 1 {
+        return Err((
+            Failure::Other,
+            "More than one --input is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.".to_string(),
+        ));
+    }
+    let input = inputs.into_iter().next().ok_or_else(|| {
+        (
+            Failure::CommandLine,
+            "Argument input was missing: Argument 'input' is required".to_string(),
+        )
+    })?;
+    let path = std::path::Path::new(&input);
+    if !path.exists() {
+        // htsjdk's own wording, which is what the golden recorded: the refusal is the reader's
+        // rather than the tool's, and it names the file as a URI.
+        return Err((
+            Failure::User,
+            format!("Cannot read non-existent file: file://{input}"),
+        ));
+    }
+    let index = path.with_extension("bam.bai");
+    let source = if index.exists() {
+        ReadsDataSource::open(path, &index)
+    } else {
+        ReadsDataSource::open_unindexed(path)
+    }
+    .map_err(|error| (Failure::User, format!("{error:?}")))?;
+
+    let header = source.header().clone();
+    let mut intervals = Vec::new();
+    for query in arguments(parser, "intervals") {
+        let interval = gatk_engine::interval::parse_interval(&query, &header)
+            .map_err(|error| (Failure::User, format!("{error:?}")))?;
+        intervals.push(interval);
+    }
+    let filter = read_filter(parser, "CountReads", &header)?;
+    let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
+        .map_err(|error| (Failure::User, format!("{error:?}")))?;
+
+    if let Some(output) = argument(parser, "output") {
+        // `print`, not `println`: the file is the number's digits and nothing else.
+        std::fs::write(&output, gatk_tools::count_reads::output(count))
+            .map_err(|error| (Failure::Other, format!("{output}: {error}")))?;
+    }
+    // The tool returns the count itself, which is what `handleResult` prints.
+    Ok(Some(count.to_string()))
 }

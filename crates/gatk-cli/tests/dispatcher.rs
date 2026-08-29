@@ -320,14 +320,15 @@ fn a_walker_with_no_arguments_is_refused_by_the_parser() {
     // resolved, so it was never a name that does not.
     assert!(!written.stderr.contains("this port does not carry yet"));
     assert!(!written.stderr.contains("is not a valid command"));
-    // Running it is still the gap, and the message that says so is reached by a command line the
-    // parser accepts rather than by one it refuses.
-    assert!(gatk_cli::runner("CountReads").is_none());
+    // And the tool RUNS now, so a command line the parser accepts reaches the file plumbing: a
+    // path that is not a BAM is refused by the reader rather than by the port's own gap message.
+    // `count_reads_plumbing.rs` is where the counts and the written file are compared.
+    assert!(gatk_cli::runner("CountReads").is_some());
     let accepted = gatk_cli::run(&args(&["CountReads", "--input", "/dev/null"]));
     assert!(
-        accepted.stderr.contains("this port does not carry yet"),
+        !accepted.stderr.contains("this port does not carry yet"),
         "{}",
         accepted.stderr
     );
-    assert_eq!(accepted.status, main_entry::exit_status(Failure::User));
+    assert_ne!(accepted.status, 0);
 }

@@ -6602,7 +6602,7 @@
     },
     {
       "id": "count-reads-plumbing",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "needs_fixtures": true,
       "title": "what CountReads returns and what it writes, which is the layer between the count and a command line",
       "harness": "tools/argument-conformance",
@@ -6616,8 +6616,8 @@
       "cases": [
         {
           "dump": "CountReadsPlumbingDump",
-          "golden": null,
-          "why": "Nine command lines over the shared fixture BAM: the whole file with and without an output, an interval that holds reads and one that does not, a second read filter and the defaults disabled, a mapping quality filter that keeps nothing, an input that does not exist and no input at all."
+          "golden": "crates/gatk-tools/tests/data/count_reads_plumbing.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Nine command lines: the value the tool returns, the bytes the output file holds, and the two refusals."
         }
       ]
     }

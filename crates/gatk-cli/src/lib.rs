@@ -259,13 +259,14 @@ pub fn parse_failure(tool: &str, args: &[String]) -> Option<String> {
         .map(|error| error.message)
 }
 
-/// The tools this port can run, which is one of them.
+/// The tools this port can run, which is three of them.
 ///
 /// A name that resolves and has no runner is not a name that does not resolve: the reference would
 /// have run it, and saying so is the honest answer. What it is NOT is a refusal the reference
 /// makes, which is why [`not_ported`] says whose refusal it is.
 pub fn runner(name: &str) -> Option<Runner> {
     match name {
+        "CountReads" => Some(run_count_reads),
         "IndexFeatureFile" => Some(run_index_feature_file),
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
         _ => None,
@@ -273,6 +274,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_count_reads(args: &[String]) -> Result<Option<String>, (Failure, String)> {
+    runners::count_reads(&parsed("CountReads", args)?)
+}
+
 fn run_index_feature_file(args: &[String]) -> Result<Option<String>, (Failure, String)> {
     runners::index_feature_file(&parsed("IndexFeatureFile", args)?)
 }
