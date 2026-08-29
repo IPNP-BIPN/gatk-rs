@@ -1,0 +1,45 @@
+{
+  "$comment": [
+    "The values this repository is willing to pass for arguments the inventory cannot give a",
+    "domain to, plus the arguments it refuses to vary and why.",
+    "",
+    "Paths point inside the oracle container, where MakeFixtures.java writes the corpus. They are",
+    "not committed files: the corpus is rebuilt from the program on every run, which keeps it",
+    "deterministic and keeps binary fixtures out of the tree.",
+    "",
+    "Adding a value here widens a covering array. Adding an exclusion narrows it, and the reason",
+    "is required, because an exclusion is the one thing in this file that can hide a difference.",
+    "",
+    "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
+    "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
+    "kept and both sides are compared on the refusal rather than on an output."
+  ],
+  "values": {
+    "--input": [
+      "/work/fixtures/reads.vcf",
+      "/work/fixtures/regions.bed",
+      "/work/fixtures/reads.vcf.gz"
+    ],
+    "--output": [
+      "/work/out/index.idx",
+      "/work/out/index.tbi"
+    ],
+    "--tmp-dir": [
+      "/work/tmp"
+    ]
+  },
+  "constraints": [],
+  "exclude": {
+    "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
+    "--version": "prints the version and returns, same reason",
+    "--showHidden": "changes the usage text only",
+    "--QUIET": "suppresses the log on stderr, and what is compared is stdout and the output file",
+    "--verbosity": "log level on stderr, same reason",
+    "--use-jdk-deflater": "chooses a deflater for files this tool does not write compressed",
+    "--use-jdk-inflater": "chooses an inflater, and the input is read the same way either way",
+    "--gcs-max-retries": "reaches nothing without a cloud path in the row",
+    "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
+    "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
+    "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead"
+  }
+}

@@ -434,6 +434,48 @@ jobs:
           if-no-files-found: ignore
 
 
+  argument-coverage:
+    name: The covering array, against the port binary
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: Build the port binary
+        # linux/amd64, which is what the container runs. The port is executed INSIDE the container
+        # rather than on the host, and the reason is the output: a Tribble index records the file
+        # it was built from by path and by last-modified time, so a port run at a different mount
+        # point produces a different index for a reason that is not the port's.
+        run: cargo build --release -p gatk-cli
+
+      - name: Run the array against both sides
+        run: |
+          python3 tools/coverage/measure.py --tool IndexFeatureFile \
+            --port target/release/gatk-rs
+
+      - name: The committed measurement is the one this run produces
+        # Same rule as a golden: the number in the tree has to be the number CI re-derives, or the
+        # dashboard is printing a claim nothing checks. A first run publishes the file as an
+        # artefact and this step reports the diff rather than failing, which is how the first
+        # measurement gets into the tree at all.
+        run: git --no-pager diff --stat tools/coverage/measured.json
+
+      - name: Publish what the run measured
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-coverage
+          path: tools/coverage/measured.json
+          if-no-files-found: ignore
+
   inventory:
     name: Inventory is internally consistent
     runs-on: ubuntu-latest
@@ -567,6 +609,7 @@ jobs:
       - determinism
       - oracle-image
       - oracle
+      - argument-coverage
       - inventory
       - dashboard
       - coverage
