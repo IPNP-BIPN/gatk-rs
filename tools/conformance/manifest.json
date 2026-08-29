@@ -6620,6 +6620,27 @@
           "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Nine command lines: the value the tool returns, the bytes the output file holds, and the two refusals."
         }
       ]
+    },
+    {
+      "id": "read-walker-refusals",
+      "status": "golden-pending",
+      "needs_fixtures": true,
+      "title": "what a read walker does with a file that is not a BAM",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "CountReads"
+      ],
+      "compare": {
+        "mode": "keyed"
+      },
+      "why": "CountReads' covering array reproduces four of eighteen rows, and eleven of the fifteen it does not are one shape: a file the corpus carries for another tool handed to a read walker. The reference refuses those, and the refusal is neither the port's message nor the port's status: htsjdk reads a VCF as a SAM stream, finds no sequence dictionary and throws an IllegalArgumentException, which `Main` reports as a non-user failure.",
+      "cases": [
+        {
+          "dump": "ReadWalkerRefusalDump",
+          "golden": null,
+          "why": "Eight inputs: the BAM that works, a plain VCF, a block-compressed one, a BED, an empty file, a text file, a directory and a path that does not exist. Each with the exception class, whether it is a UserException, and the message."
+        }
+      ]
     }
   ],
   "probes": []
