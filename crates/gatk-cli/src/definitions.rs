@@ -17,7 +17,8 @@
 //! declarations grow, and the test beside this file asserts the emptiness against the declarations
 //! rather than against a number written down here.
 
-use gatk_barclay::{Annotation, Definition, Value, ValueClass};
+use gatk_barclay::{Annotation, Definition, PluginControl, Value, ValueClass};
+use gatk_tools::plugin_ownership;
 use gatk_tools::tool_declarations::{enum_type, Declaration};
 
 /// The classes the declarations name and this module does not convert, which is none of them.
@@ -124,14 +125,27 @@ pub fn definition(declaration: &Declaration) -> Option<Definition> {
         suppress_file_expansion: false,
     };
     let initial = initial_value(declaration, &class);
-    Some(Definition::new(
+    let mut built = Definition::new(
         annotation,
         declaration.long_name,
         class,
         declaration.collection,
         declaration.primitive,
         initial,
-    ))
+    );
+    // An argument a descriptor controls carries the filter that declared it, which the trim needs
+    // and the declarations do not have: they record the descriptor. The table comes from the
+    // `plugin-argument-ownership` golden, and an argument the golden does not name is left as the
+    // tool's own rather than guessed at.
+    if declaration.controlled_by.is_some() {
+        if let Some(owner) = plugin_ownership::owner(declaration.long_name) {
+            built.controlled_by = Some(PluginControl {
+                predecessor: owner,
+                selector: plugin_ownership::SELECTOR,
+            });
+        }
+    }
+    Some(built)
 }
 
 /// Every definition a tool's declarations produce, in the parser's own order.

@@ -13,8 +13,11 @@
 //!  * **the main usage listing** is three hundred and seventy-three lines of tool names and their
 //!    one-line summaries, and the summaries are not in any golden: what is reproduced here is the
 //!    stream it goes to, the status that follows it, and its first line;
-//!  * **a tool's own arguments** need a Barclay definition each, and the declarations golden
-//!    carries names rather than types, so no command line can be handed to the parser yet.
+//!  * **a WALKER's own usage** carries a conditional block per read filter the plugin descriptor
+//!    discovered, and neither the blocks nor their order is measured, so [`tool_usage`] answers
+//!    for a tool with no controlled argument and nothing for the rest. Its command line does
+//!    reach the parser: the plugin trim runs over the ownership table measured in
+//!    `plugin-argument-ownership`.
 //!
 //! Both are deliberate boundaries rather than omissions, and the test beside this file states
 //! them as such: it compares what the port claims against the golden, and says nothing about the
@@ -110,7 +113,8 @@ pub fn run(args: &[String]) -> Outcome {
             // A tool asked for its own help answers with its usage and returns nothing, which is
             // a success: `-h` after a tool name is the tool's argument and not the dispatcher's.
             let tool_args = main_entry::tool_arguments(args);
-            if tool_args.iter().any(|arg| arg == "-h" || arg == "--help") {
+            let help = tool_args.iter().any(|arg| arg == "-h" || arg == "--help");
+            if help {
                 if let Some(usage) = tool_usage(&name) {
                     stderr.push_str(&usage);
                     return Outcome {
@@ -119,8 +123,11 @@ pub fn run(args: &[String]) -> Outcome {
                         status: 0,
                     };
                 }
+                // A tool whose usage this port cannot lay out is not refused for asking: the
+                // reference answers `-h` with the usage and a zero status, and a parse refusal
+                // about an unrecognised `-h` would be a message the reference never writes.
             }
-            if let Some(error) = parse_failure(&name, tool_args) {
+            if let Some(error) = (!help).then(|| parse_failure(&name, tool_args)).flatten() {
                 // `mainEntry` prints the PROGRAM's usage before the message on this path, which
                 // the port now does for a tool whose usage it can lay out.
                 if let Some(usage) = tool_usage(&name) {
@@ -170,32 +177,54 @@ pub fn run(args: &[String]) -> Outcome {
 
 /// Whether this port can hand a tool's command line to the ported Barclay parser at all.
 ///
-/// Two conditions, and the second is the one that still bites. Every argument the tool declares
-/// has to convert to a definition, which since the value classes were measured is true of all
-/// seven. And no argument a PLUGIN DESCRIPTOR controls may be required: the reference trims the
-/// arguments of unselected plugins before the required check runs, and that trim is the
-/// descriptor's own and is not ported. A parser without it asks for an argument the reference
-/// never asks for, which is a worse answer than declining to parse.
+/// Two conditions. Every argument the tool declares has to convert to a definition, which since
+/// the value classes were measured is true of all of them. And every argument a PLUGIN DESCRIPTOR
+/// controls has to be one the ownership table names, because the trim that removes an unselected
+/// plugin's arguments before the required check needs to know which plugin declared each one. The
+/// table is measured in `plugin-argument-ownership`, and it covers all twenty-eight of the read
+/// filter arguments the declared tools carry, so a walker is now parseable.
 ///
-/// A walker therefore stays unparseable and a tool that is no walker does not. See gatk-rs#987.
+/// What is still missing is narrower than the tool: a tool hands its descriptor a list of DEFAULT
+/// filters, whose arguments are allowed with no `--read-filter` on the command line, and the port
+/// has no per-tool list to hand [`gatk_barclay::Parser::with_default_plugins`]. It refuses a
+/// command line that sets a default filter's own argument without naming the filter, which the
+/// reference accepts. None of the default filters of the tools declared here carries an argument,
+/// so no command line of theirs is affected. See gatk-rs#987.
 pub fn parseable(tool: &str) -> bool {
     gatk_tools::tool_declarations::declarations(tool)
         .map(|list| {
             definitions::missing(list).is_empty()
-                && !list
+                && list
                     .iter()
-                    .any(|declaration| declaration.controlled_by.is_some() && declaration.required)
+                    .filter(|declaration| declaration.controlled_by.is_some())
+                    .all(|declaration| {
+                        gatk_tools::plugin_ownership::owner(declaration.long_name).is_some()
+                    })
         })
         .unwrap_or(false)
 }
 
-/// A tool's own usage, for a tool whose whole argument surface the port can lay out.
+/// Whether a tool's usage can be laid out from its declarations alone.
 ///
-/// The condition is the plugin one again: a walker's usage carries conditional blocks, one per
-/// read filter the descriptor discovered, and the port has no descriptor to ask. A tool that is no
-/// walker has no such block, and its usage is composed from its declarations alone.
+/// A walker's usage carries a conditional block per read filter the descriptor discovered, with
+/// each filter's own arguments under its name, and neither the blocks nor their order is measured.
+/// So the usage is composed for a tool that has no controlled argument at all, which is a stricter
+/// condition than [`parseable`] and deliberately so: a usage missing a third of its sections is a
+/// worse answer than none.
+pub fn usage_composable(tool: &str) -> bool {
+    parseable(tool)
+        && gatk_tools::tool_declarations::declarations(tool)
+            .map(|list| {
+                !list
+                    .iter()
+                    .any(|declaration| declaration.controlled_by.is_some())
+            })
+            .unwrap_or(false)
+}
+
+/// A tool's own usage, for a tool whose whole argument surface the port can lay out.
 pub fn tool_usage(tool: &str) -> Option<String> {
-    if !parseable(tool) {
+    if !usage_composable(tool) {
         return None;
     }
     let list = gatk_tools::tool_declarations::declarations(tool)?;

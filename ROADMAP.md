@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 71 conformance suites, 70 oracle-backed; the one exception is `format`, whose 41,678 formatted doubles have a harness and a Rust test but have never been regenerated against the oracle in CI. CRAM, GKL-exact deflate and full VCF remain |
 | **picard-rs** | 121 tools | 77 tools carry a suite, all 77 oracle-backed; 92 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 2 tools |
-| **gatk-rs** | 190 tools | 7 crates, **285 conformance suites over 157 tools, all 285 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, whose binary reaches the parser for a tool that is no walker. **No performance number exists yet for any of it**: see Milestone S |
+| **gatk-rs** | 190 tools | 7 crates, **285 conformance suites over 157 tools, all 285 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, whose binary hands every declared tool's command line to the parser, a walker's included. **No performance number exists yet for any of it**: see Milestone S |
 
 Across the three repositories that is **432 oracle-backed suites**, and the generated dashboard
 ([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%.
@@ -1262,10 +1262,12 @@ sentence into the second.
 - [~] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
       shape the bit-identity claim is defined against. The crate is `gatk-cli` and the binary is
       `gatk-rs`, deliberately not `gatk`. Routing, the five exit statuses, the version, the
-      refusals and the two handlers are compared against the `main-entry` golden; a command line
-      reaches the parser for a tool that is no walker. What is left is the main usage listing,
-      which needs every tool's one-line summary, and the plugin trim (#987) that a walker's
-      required-looking descriptor arguments wait on
+      refusals and the two handlers are compared against the `main-entry` golden; every declared
+      tool's command line reaches the parser, a walker's included, because the plugin trim now
+      runs over the ownership table measured in `plugin-argument-ownership` and removes the twelve
+      required-looking descriptor arguments before the required check. What is left is the main
+      usage listing, which needs every tool's one-line summary, and the per-tool DEFAULT filter
+      lists, without which a default filter's own argument is refused where the reference takes it
 - [x] **C.2 per-tool argument declarations** on the ported Barclay value model, for the seven
       tools the golden carries. The declarations are generated from `tool-argument-declarations`,
       which now measures the type, the primitiveness, the three visibility flags, the bounds, the
@@ -1279,7 +1281,8 @@ sentence into the second.
       was ported first and the data followed: a tool's whole usage is now COMPOSED from its
       declarations and compared against the golden as one string, and `gatk-rs IndexFeatureFile -h`
       answers with those bytes. What is left is a walker's, whose conditional blocks are one per
-      read filter the descriptor discovered
+      read filter the descriptor discovered: the ownership table says which arguments go in which
+      block, and neither the blocks' wording nor their order is measured yet
 - [ ] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
       and what unblocks V.5
 

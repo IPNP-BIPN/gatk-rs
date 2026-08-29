@@ -1249,6 +1249,8 @@ pub struct Parser {
     append_to_collections: bool,
     /// The descriptor's own `validateAndResolvePlugins`, if the caller has one.
     plugin_resolution: Option<PluginResolution>,
+    /// The plugins the tool handed the descriptor as defaults, which count as selected.
+    default_plugins: Vec<String>,
     /// `argumentsFilesLoadedAlready`.
     ///
     /// Parser state rather than per-call state, because the recursion is the same parser calling
@@ -1266,6 +1268,7 @@ impl Parser {
             definitions,
             append_to_collections: false,
             plugin_resolution: None,
+            default_plugins: Vec::new(),
             arguments_files_loaded_already: Vec::new(),
         }
     }
@@ -1274,6 +1277,19 @@ impl Parser {
     /// before the required check.
     pub fn with_plugin_resolution(mut self, resolution: PluginResolution) -> Self {
         self.plugin_resolution = Some(resolution);
+        self
+    }
+
+    /// The plugin instances the tool handed the descriptor, whose arguments are allowed with no
+    /// `--read-filter` on the command line.
+    ///
+    /// `GATKReadFilterPluginDescriptor` is constructed with the tool's `getDefaultReadFilters()`,
+    /// and `isDependentArgumentAllowed` answers for a default the same way it answers for a filter
+    /// the command line named. That is why a plain walker command line accepts a default filter's
+    /// argument and refuses everybody else's, and it is measured either way in the
+    /// `plugin-argument-ownership` golden.
+    pub fn with_default_plugins(mut self, names: Vec<String>) -> Self {
+        self.default_plugins = names;
         self
     }
 
@@ -1575,6 +1591,15 @@ impl Parser {
 
     /// `isDependentArgumentAllowed`: did the command line name this plugin?
     fn is_dependent_argument_allowed(&self, control: &PluginControl) -> bool {
+        // A default counts as named: the descriptor was constructed with the tool's own filters,
+        // and it does not distinguish those from the ones the command line asked for.
+        if self
+            .default_plugins
+            .iter()
+            .any(|name| name == control.predecessor)
+        {
+            return true;
+        }
         match self.value_of(control.selector) {
             Some(Value::List(values)) => values
                 .iter()

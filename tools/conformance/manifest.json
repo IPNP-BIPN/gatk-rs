@@ -6544,7 +6544,7 @@
     },
     {
       "id": "plugin-argument-ownership",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which read filter owns which controlled argument, and which of them are required",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6557,8 +6557,8 @@
       "cases": [
         {
           "dump": "PluginArgumentOwnershipDump",
-          "golden": null,
-          "why": "The ownership table itself, one row per controlled argument with its owner, its short name and whether it is required; then whether a tool default counts as selected, and ten command lines over the trim: a required argument of nobody, of a filter that was named, of one named without it, a default filter's argument with the defaults disabled one at a time, and a second required argument to show the first is not a special case."
+          "golden": "crates/gatk-tools/tests/data/plugin_argument_ownership.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. 62 rows: 28 controlled arguments with their owning filter class, 12 of them required, then the six answers of isDependentArgumentAllowed with and without tool defaults and ten command lines through the trim."
         }
       ]
     }
