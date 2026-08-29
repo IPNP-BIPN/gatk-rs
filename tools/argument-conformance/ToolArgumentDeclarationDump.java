@@ -90,6 +90,17 @@ public class ToolArgumentDeclarationDump {
         // Picard's argument and not this tool's.
         declarations("GatherVcfsCloud",
                 new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
+        // Two more tools that are no walkers, chosen because the port can RUN them: each takes a
+        // file and answers, so a declaration for one of them is a command line the binary can be
+        // handed end to end rather than only parsed.
+        //
+        // `CheckTerminatorBlock` and `BuildBamIndex` would have been two more and are not here:
+        // they are PICARD's tools, which GATK dispatches to, so their declarations come from
+        // Picard's own parser and belong in picard-rs's measurement rather than this one.
+        declarations("PrintBGZFBlockInformation",
+                new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
+        declarations("CreateHadoopBamSplittingIndex",
+                new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
