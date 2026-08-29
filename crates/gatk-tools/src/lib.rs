@@ -130,6 +130,7 @@ pub mod print_sv_evidence;
 pub mod ramped_haplotype_caller;
 pub mod read_anonymizer;
 pub mod read_walker;
+pub mod read_walker_refusal;
 pub mod reblock_gvcf;
 pub mod reference_block_concordance;
 pub mod reference_walker;

@@ -291,12 +291,34 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         )
     })?;
     let path = std::path::Path::new(&input);
-    if !path.exists() {
-        // htsjdk's own wording, which is what the golden recorded: the refusal is the reader's
-        // rather than the tool's, and it names the file as a URI.
+    // What a walker makes of the file is the READER's answer and not the tool's, and it is three
+    // different answers with two different statuses: `read-walker-refusals` measured them.
+    let bytes = std::fs::read(path).ok();
+    let compressed = bytes
+        .as_deref()
+        .map(gatk_tools::read_walker_refusal::is_block_compressed)
+        .unwrap_or(false);
+    let decompressed = match (&bytes, compressed) {
+        (None, _) => None,
+        (Some(bytes), false) => Some(bytes.clone()),
+        (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
+    };
+    let intervals_given = !arguments(parser, "intervals").is_empty();
+    if let Some(refusal) = gatk_tools::read_walker_refusal::refusal(
+        &input,
+        path.exists(),
+        path.is_dir(),
+        decompressed.as_deref(),
+        compressed,
+        intervals_given,
+    ) {
         return Err((
-            Failure::User,
-            format!("Cannot read non-existent file: file://{input}"),
+            if refusal.is_user() {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            refusal.message(),
         ));
     }
     let index = path.with_extension("bam.bai");
