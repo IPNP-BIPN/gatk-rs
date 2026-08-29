@@ -1,0 +1,23 @@
+{
+  "$comment": [
+    "Produced by tools/coverage/measure.py from run_array.py's own summary, in the pinned",
+    "container on real x86-64. `share` is the fraction of the array's rows on which the port",
+    "answered exactly as the reference did, refusals included.",
+    "",
+    "It is not a byte-identity claim over the argument surface: an array covers PAIRS of argument",
+    "values, and `distinct_outputs` says how many of those pairs the corpus can actually observe.",
+    "A tool whose accepted rows all produce one output has an array that covers its arguments",
+    "without testing them."
+  ],
+  "tools": {
+    "IndexFeatureFile": {
+      "rows": 6,
+      "accepted": 5,
+      "rejected": 1,
+      "distinct_outputs": 5,
+      "matched": 5,
+      "t": 2,
+      "share": 0.833
+    }
+  }
+}

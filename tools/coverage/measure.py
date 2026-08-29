@@ -54,15 +54,24 @@ def main(argv):
     parser.add_argument("--tool", action="append", required=True)
     parser.add_argument("--port", required=True, help="the linux/amd64 port binary")
     parser.add_argument("--t", type=int, default=2)
+    parser.add_argument(
+        "--corpus-dir",
+        help="where to write each tool's row-by-row corpus, which is what a divergence is read from",
+    )
     options = parser.parse_args(argv)
 
     tools = {}
     for tool in options.tool:
+        command = [
+            sys.executable, str(RUNNER), "--tool", tool,
+            "--t", str(options.t), "--port", options.port,
+        ]
+        if options.corpus_dir:
+            corpus = Path(options.corpus_dir)
+            corpus.mkdir(parents=True, exist_ok=True)
+            command += ["--corpus", str(corpus / f"{tool}.t{options.t}.txt")]
         result = subprocess.run(
-            [
-                sys.executable, str(RUNNER), "--tool", tool,
-                "--t", str(options.t), "--port", options.port,
-            ],
+            command,
             capture_output=True,
             text=True,
         )
