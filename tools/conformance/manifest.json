@@ -6584,7 +6584,7 @@
     },
     {
       "id": "mutex-target-names",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the long name and the field name of a mutex target, which are not the same string",
       "harness": "tools/argument-conformance",
       "tools": [],
@@ -6595,8 +6595,8 @@
       "cases": [
         {
           "dump": "MutexTargetsDump",
-          "golden": null,
-          "why": "Every argument with a mutex, over four tools of three shapes, with its target's two names side by side and the sentence the usage renders from them."
+          "golden": "crates/gatk-tools/tests/data/mutex_target_names.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Four mutex arguments, all of them a read filter's, over two of the four tools: the target's long name, the target definition's FIELD name, and the sentence the usage renders from the second."
         }
       ]
     }

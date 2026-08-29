@@ -282,12 +282,18 @@ fn a_tool_asked_for_help_answers_with_its_usage() {
     let (out, err) = shape(&text, "help-after-a-tool");
     assert_eq!(out.0, 0);
     assert!(err.1.starts_with("USAGE: CountReads [arguments]"));
-    // The tool the golden measured is a walker, whose usage carries the conditional blocks one
-    // per read filter the descriptor discovered. The port has no descriptor, so it lays out no
-    // usage for it and the dispatcher falls through to its own refusal.
-    assert_eq!(gatk_cli::tool_usage("CountReads"), None);
+    // The tool the golden measured is a walker, whose usage carries a conditional block per read
+    // filter that declares an argument. The port lays those out now, so `-h` after a walker's name
+    // answers with the text and not with the port's own refusal.
     let walker = gatk_cli::run(&args(&["CountReads", "-h"]));
-    assert!(walker.stderr.contains("this port does not carry yet"));
+    assert_eq!(walker.status, 0);
+    assert!(walker.stdout.is_empty());
+    assert_eq!(
+        Some(walker.stderr.as_str()),
+        gatk_cli::tool_usage("CountReads").as_deref()
+    );
+    assert!(walker.stderr.starts_with("USAGE: CountReads [arguments]"));
+    assert!(!walker.stderr.contains("this port does not carry yet"));
 }
 
 /// A walker with no arguments is now refused by the PARSER, in the reference's own words.
