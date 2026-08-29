@@ -164,8 +164,11 @@ fn a_report_is_returned_where_a_file_is_not_named() {
         &plain.to_string_lossy(),
     ]));
     assert_eq!(refused.status, main_entry::exit_status(Failure::User));
+    // The reference asks whether the file is block compressed BEFORE it walks it, so the refusal
+    // is about what the file is and not about how its first bytes frame. A covering array run
+    // against the binary is what found the port answering the other one.
     assert!(
-        refused.stderr.contains("Incorrect header size for file"),
+        refused.stderr.contains("File is not a valid BGZF file"),
         "{}",
         refused.stderr
     );

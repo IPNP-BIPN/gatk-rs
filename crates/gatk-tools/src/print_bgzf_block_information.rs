@@ -147,6 +147,22 @@ pub fn blocks(file: &[u8], path: &str) -> Result<Vec<Block>, Refusal> {
 /// `doWork()`: the whole report, given the file's own name as the first line quotes it.
 pub fn report(file: &[u8], file_name: &str, path: &str) -> (String, Option<Refusal>) {
     let mut text = format!("BGZF block information for file: {file_name}\n\n");
+    // `doWork` asks `BlockCompressedInputStream.isValidFile` BEFORE it walks anything, so a file
+    // that is not block compressed is refused for what it is rather than for how its first bytes
+    // frame: a long plain file has enough bytes for a header and frames as a premature end, which
+    // is the refusal the walk earns and not the one the tool gives.
+    //
+    // The check was in this module and nothing called it: the suite asked it directly and the
+    // walk did not, so the two disagreed the moment a caller ran the tool rather than the suite.
+    // A covering array run against the binary is what found that.
+    if !is_block_compressed(file) {
+        return (
+            text,
+            Some(Refusal::NotBlockCompressed {
+                path: path.to_string(),
+            }),
+        );
+    }
     let (found, refusal) = match blocks(file, path) {
         Ok(found) => (found, None),
         // The refusal comes after the blocks already printed, and those stay on disk.
