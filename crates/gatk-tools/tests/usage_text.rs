@@ -18,8 +18,8 @@
 use gatk_corpus as corpus;
 use gatk_tools::usage_text::{
     conditional_predicate, entry_lines, header, name_column, render, wrap, Conditional, Entry,
-    ADVANCED_TITLE, ARGUMENT_COLUMN_WIDTH, CONDITIONAL_TITLE_PREFIX, DESCRIPTION_COLUMN_WIDTH,
-    OPTIONAL_TITLE, REQUIRED_TITLE,
+    Maturity, ADVANCED_TITLE, ARGUMENT_COLUMN_WIDTH, CONDITIONAL_TITLE_PREFIX,
+    DESCRIPTION_COLUMN_WIDTH, OPTIONAL_TITLE, REQUIRED_TITLE,
 };
 
 fn golden() -> String {
@@ -232,6 +232,7 @@ fn the_port_renders_the_whole_text() {
             tool,
             &summary,
             &version,
+            gatk_tools::tool_declarations::maturity(tool),
             &section(REQUIRED_TITLE),
             &section(OPTIONAL_TITLE),
             &section(ADVANCED_TITLE),
@@ -312,7 +313,10 @@ fn the_sections_and_the_header() {
     let (head, sections, conditional) = parse(&lines);
     assert_eq!(head[0], "USAGE: CountReads [arguments]");
     assert_eq!(head[3], "Version:4.6.2.0");
-    assert_eq!(header("CountReads", &head[2], "4.6.2.0"), head);
+    assert_eq!(
+        header("CountReads", &head[2], "4.6.2.0", Maturity::Released),
+        head
+    );
     // A tool whose one-line summary is not one line keeps its own line breaks.
     let (other, _, _) = parse(&usage(&text, "GatherVcfsCloud"));
     let version_at = other
@@ -324,7 +328,8 @@ fn the_sections_and_the_header() {
         header(
             "GatherVcfsCloud",
             &other[2..version_at].join("\n"),
-            "4.6.2.0"
+            "4.6.2.0",
+            Maturity::Released
         ),
         other
     );
@@ -383,12 +388,46 @@ fn a_tools_usage_is_composed_from_its_declarations() {
     );
     let written = render(
         "IndexFeatureFile",
-        "Creates an index for a feature file, e.g. VCF or BED file.",
+        gatk_tools::tool_declarations::summary("IndexFeatureFile").expect("a summary"),
         "4.6.2.0",
+        gatk_tools::tool_declarations::maturity("IndexFeatureFile"),
         &required,
         &optional,
         &advanced,
         &[],
     );
     assert_eq!(written, expected);
+}
+
+/// The two tools the port can run answer with their whole usage too.
+#[test]
+fn the_runnable_tools_usages_are_composed_the_same_way() {
+    use gatk_tools::tool_declarations::{declarations, maturity, summary};
+    use gatk_tools::usage_text::{sections, Maturity};
+
+    let text = golden();
+    for tool in ["PrintBGZFBlockInformation", "CreateHadoopBamSplittingIndex"] {
+        let list = declarations(tool).unwrap_or_else(|| panic!("{tool}"));
+        let (required, optional, advanced) = sections(list);
+        // Neither declares a plugin-controlled argument, so every declaration is printed.
+        assert_eq!(
+            required.len() + optional.len() + advanced.len(),
+            list.len(),
+            "{tool}"
+        );
+        // Both of them print a banner above their usage line, which is what a released tool does
+        // not do: the header of an experimental or a beta tool does not start with `USAGE:`.
+        assert_ne!(maturity(tool), Maturity::Released, "{tool}");
+        let written = render(
+            tool,
+            summary(tool).unwrap_or_else(|| panic!("{tool}")),
+            "4.6.2.0",
+            maturity(tool),
+            &required,
+            &optional,
+            &advanced,
+            &[],
+        );
+        assert_eq!(written, usage(&text, tool).join("\n"), "{tool}");
+    }
 }
