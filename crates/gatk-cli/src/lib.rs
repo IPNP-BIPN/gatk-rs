@@ -23,6 +23,7 @@
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
 pub mod definitions;
+pub mod runners;
 
 use gatk_tools::main_entry::{self, Failure, Route, Stream};
 
@@ -225,13 +226,28 @@ pub fn parse_failure(tool: &str, args: &[String]) -> Option<String> {
         .map(|error| error.message)
 }
 
-/// The tools this port can run, which is none of them yet.
+/// The tools this port can run, which is one of them.
 ///
 /// A name that resolves and has no runner is not a name that does not resolve: the reference would
 /// have run it, and saying so is the honest answer. What it is NOT is a refusal the reference
 /// makes, which is why [`not_ported`] says whose refusal it is.
-pub fn runner(_name: &str) -> Option<Runner> {
-    None
+pub fn runner(name: &str) -> Option<Runner> {
+    match name {
+        "IndexFeatureFile" => Some(run_index_feature_file),
+        _ => None,
+    }
+}
+
+/// The one runner, which needs the parsed command line rather than the raw one.
+fn run_index_feature_file(args: &[String]) -> Result<Option<String>, (Failure, String)> {
+    let list = gatk_tools::tool_declarations::declarations("IndexFeatureFile")
+        .expect("the declarations of a tool with a runner");
+    let mut parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    parser
+        .parse_arguments(&borrowed)
+        .map_err(|error| (Failure::CommandLine, error.message))?;
+    runners::index_feature_file(&parser)
 }
 
 /// The port's own refusal, which the reference has no equivalent of.
