@@ -1,0 +1,147 @@
+{
+  "tool": "PrintBGZFBlockInformation",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 14,
+  "arguments_in_array": 2,
+  "arguments_excluded": 12,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "File",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "Integer",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--tmp-dir",
+      "type": "GATKPath",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/tmp",
+      "source": "fixture"
+    },
+    {
+      "argument": "--use-jdk-deflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses a deflater for files this tool does not write compressed",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "Boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 4,
+  "tuples_total": 4,
+  "tuples_covered": 4,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--bgzf-file": "fixture[0]",
+        "--output": "fixture[0]"
+      },
+      "arguments": [
+        "--bgzf-file=/work/fixtures/reads.vcf.gz",
+        "--output=/work/out/index.idx"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--bgzf-file": "fixture[0]",
+        "--output": "fixture[1]"
+      },
+      "arguments": [
+        "--bgzf-file=/work/fixtures/reads.vcf.gz",
+        "--output=/work/out/index.tbi"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--bgzf-file": "fixture[1]",
+        "--output": "fixture[0]"
+      },
+      "arguments": [
+        "--bgzf-file=/work/fixtures/reads.vcf",
+        "--output=/work/out/index.idx"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--bgzf-file": "fixture[1]",
+        "--output": "fixture[1]"
+      },
+      "arguments": [
+        "--bgzf-file=/work/fixtures/reads.vcf",
+        "--output=/work/out/index.tbi"
+      ]
+    }
+  ]
+}

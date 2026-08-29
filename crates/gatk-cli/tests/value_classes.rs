@@ -10,7 +10,7 @@
 //!  * **`Float.valueOf`'s grammar, which is not `str::parse`'s in either direction**;
 //!  * **and the default rendering, which is what decides optionality.**
 
-use gatk_barclay::{java_float, Annotation, Definition, Parser, Value, ValueClass};
+use gatk_barclay::{java_float, java_long, Annotation, Definition, Parser, Value, ValueClass};
 use gatk_corpus as corpus;
 
 fn golden() -> String {
@@ -208,6 +208,50 @@ fn the_float_grammar_is_javas() {
         .parse_arguments(&["--fraction", "abc"])
         .expect_err("the refusal");
     assert!(error.message.contains("'Float'"), "{}", error.message);
+}
+
+/// A `Long` is neither an `Integer` with a wider range nor a `Float` with a narrower grammar.
+#[test]
+fn the_long_grammar_is_its_own() {
+    let text = golden();
+    // The range: an int cannot hold this and a long can, and one past a long is refused.
+    assert_eq!(outcome(&text, "a-count-past-an-ints-limit"), "ok");
+    assert_eq!(java_long("2147483648"), Some(2147483648));
+    assert_eq!(
+        field(&text, "a-count-at-a-longs-limit", "count"),
+        i64::MAX.to_string()
+    );
+    assert_eq!(java_long("9223372036854775807"), Some(i64::MAX));
+    let past = outcome(&text, "a-count-past-a-longs-limit");
+    assert!(
+        past.contains("Failure constructing 'Long' from the string '9223372036854775808'."),
+        "{past}"
+    );
+    assert_eq!(java_long("9223372036854775808"), None);
+    // The grammar: a leading plus is taken, and a leading space and a hexadecimal literal are not,
+    // which is where it parts company with the float.
+    assert_eq!(outcome(&text, "a-count-with-a-plus"), "ok");
+    assert_eq!(java_long("+42"), Some(42));
+    for (case, spelling) in [
+        ("a-count-with-a-space", " 42"),
+        ("a-count-in-hexadecimal", "0x2a"),
+        ("a-count-that-is-not-a-number", "abc"),
+    ] {
+        assert!(
+            outcome(&text, case).contains("Failure constructing 'Long'"),
+            "{case}"
+        );
+        assert_eq!(java_long(spelling), None, "{spelling}");
+    }
+    // The float takes both of the first two, which is what makes them two grammars.
+    assert_eq!(java_float(" 1.5"), Some(1.5));
+    assert_eq!(java_float("0x1p3"), Some(8.0));
+    // And a refusal names the class it failed to build, which is how the two are told apart.
+    let mut parser = Parser::new(vec![definition("count", "C", ValueClass::Long)]);
+    let error = parser
+        .parse_arguments(&["--count", "abc"])
+        .expect_err("the refusal");
+    assert!(error.message.contains("'Long'"), "{}", error.message);
 }
 
 /// The default rendering is `String.valueOf(field)`, which is what decides optionality.

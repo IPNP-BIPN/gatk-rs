@@ -77,6 +77,50 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
     Ok(Some(name))
 }
 
+/// `PrintBGZFBlockInformation.doWork`, with the file read and the report written.
+///
+/// The tool prints to standard output when it is given no `--output`, which is the one place a
+/// runner's answer is not a file: what it returns is the report itself, and `handleResult` prints
+/// what a tool returns.
+pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
+    let input = argument(parser, "bgzf-file").ok_or_else(|| {
+        (
+            Failure::CommandLine,
+            "Argument bgzf-file was missing: Argument 'bgzf-file' is required".to_string(),
+        )
+    })?;
+    let bytes = std::fs::read(&input).map_err(|_| {
+        (
+            Failure::User,
+            gatk_tools::print_bgzf_block_information::Refusal::DoesNotExist {
+                path: input.clone(),
+            }
+            .message(),
+        )
+    })?;
+    let name = std::path::Path::new(&input)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| input.clone());
+    let (report, refusal) = gatk_tools::print_bgzf_block_information::report(&bytes, &name, &input);
+    match argument(parser, "output") {
+        Some(path) => std::fs::write(&path, report)
+            .map_err(|error| (Failure::Other, format!("could not write {path}: {error}")))?,
+        // With no output the report goes to standard output, which the dispatcher prints as the
+        // tool's own return value.
+        None => {
+            if let Some(refusal) = refusal {
+                return Err((Failure::User, refusal.message()));
+            }
+            return Ok(Some(report));
+        }
+    }
+    match refusal {
+        Some(refusal) => Err((Failure::User, refusal.message())),
+        None => Ok(None),
+    }
+}
+
 /// The file's text, decompressed when the name says it is block compressed.
 fn decode(bytes: &[u8], path: &str) -> Result<String, Refusal> {
     let raw = if path.ends_with(".gz") {
