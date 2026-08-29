@@ -163,7 +163,8 @@ jobs:
 
       - name: Run the array against both sides
         run: |
-          python3 tools/coverage/measure.py --tool IndexFeatureFile \
+          python3 tools/coverage/measure.py \
+            --tool IndexFeatureFile --tool PrintBGZFBlockInformation \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

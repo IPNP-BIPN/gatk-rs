@@ -12,7 +12,11 @@
     "",
     "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
     "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
-    "kept and both sides are compared on the refusal rather than on an output."
+    "kept and both sides are compared on the refusal rather than on an output.",
+    "",
+    "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
+    "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
+    "that reproduces a report."
   ],
   "values": {
     "--input": [
@@ -26,6 +30,10 @@
     ],
     "--tmp-dir": [
       "/work/tmp"
+    ],
+    "--bgzf-file": [
+      "/work/fixtures/reads.vcf.gz",
+      "/work/fixtures/reads.vcf"
     ]
   },
   "constraints": [],
