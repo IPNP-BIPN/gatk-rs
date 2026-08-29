@@ -205,6 +205,7 @@ pub fn tool_usage(tool: &str) -> Option<String> {
         tool,
         summary,
         TOOLKIT_VERSION,
+        gatk_tools::tool_declarations::maturity(tool),
         &required,
         &optional,
         &advanced,

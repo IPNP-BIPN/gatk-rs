@@ -165,12 +165,46 @@ pub fn entry_lines(entry: &Entry) -> Vec<String> {
     lines
 }
 
-/// The header: the usage line, the summary, and the version the jar was built from.
+/// The banner an experimental or a beta tool prints ABOVE its usage line.
 ///
-/// The summary is the tool's own `oneLineSummary` and it is NOT wrapped: a long one is printed as
-/// the annotation wrote it, over as many lines as it already had.
-pub fn header(tool: &str, summary: &str, version: &str) -> Vec<String> {
-    let mut lines = vec![format!("USAGE: {tool} [arguments]"), String::new()];
+/// Two blank lines, the banner, and a blank line, and only then the `USAGE:` line, so the header
+/// of such a tool does not start where a reader would expect. The two strings are the reference's
+/// own.
+pub const EXPERIMENTAL_BANNER: &str = "**EXPERIMENTAL FEATURE - USE AT YOUR OWN RISK**";
+pub const BETA_BANNER: &str = "**BETA FEATURE - WORK IN PROGRESS**";
+
+/// Which banner a tool prints, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Maturity {
+    Released,
+    Beta,
+    Experimental,
+}
+
+impl Maturity {
+    pub fn banner(self) -> Option<&'static str> {
+        match self {
+            Maturity::Released => None,
+            Maturity::Beta => Some(BETA_BANNER),
+            Maturity::Experimental => Some(EXPERIMENTAL_BANNER),
+        }
+    }
+}
+
+/// The header: the banner if there is one, the usage line, the summary, and the version.
+///
+/// The summary is the tool's own `summary` annotation and it is NOT wrapped: a long one is
+/// printed as the annotation wrote it, over as many lines as it already had.
+pub fn header(tool: &str, summary: &str, version: &str, maturity: Maturity) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(banner) = maturity.banner() {
+        lines.push(String::new());
+        lines.push(String::new());
+        lines.push(banner.to_string());
+        lines.push(String::new());
+    }
+    lines.push(format!("USAGE: {tool} [arguments]"));
+    lines.push(String::new());
     lines.extend(summary.split('\n').map(str::to_string));
     lines.push(format!("Version:{version}"));
     lines.push(String::new());
@@ -272,16 +306,18 @@ pub fn conditional_predicate(plugin: &str) -> String {
 /// parser reports its definitions in. A blank line follows the title and each entry, and a second
 /// one closes the section. A conditional group is tighter: its predicate line is followed at once
 /// by its first entry.
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     tool: &str,
     summary: &str,
     version: &str,
+    maturity: Maturity,
     required: &[Entry],
     optional: &[Entry],
     advanced: &[Entry],
     conditional: &[Conditional],
 ) -> String {
-    let mut lines = header(tool, summary, version);
+    let mut lines = header(tool, summary, version, maturity);
     for (title, entries) in [
         (REQUIRED_TITLE, required),
         (OPTIONAL_TITLE, optional),

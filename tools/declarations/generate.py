@@ -23,6 +23,7 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 GOLDEN = REPO / "crates/gatk-tools/tests/data/tool_declarations.txt.gz"
 ENUMS = REPO / "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz"
+USAGE_GOLDEN = REPO / "crates/gatk-tools/tests/data/usage_text.txt.gz"
 OUT = REPO / "crates/gatk-tools/src/tool_declarations.rs"
 INVENTORY = REPO / "tools/inventory/generated/inventory.json"
 
@@ -34,6 +35,8 @@ HEADER = '''//! The argument declarations of the tools Milestone C can run, as t
 //!
 //! The list is the parser the TOOL hands out, not one built from an instance: the second knows
 //! nothing about the plugin descriptors or the standard collections, and is short by half.
+
+pub use crate::usage_text::Maturity;
 
 /// One named argument, as the parser reports it.
 ///
@@ -178,23 +181,88 @@ def cross_check(tool, entries):
 
 
 def summary_table(tools):
-    """The one-line summary the usage header prints, taken from the inventory.
+    """The one-line summary the usage header prints.
 
-    It is the only piece of a tool's usage that is not in the declarations golden: the header's
-    second paragraph is the tool's own `oneLineSummary`, which the inventory carries because it
-    reads the reference's machine-readable documentation.
+    It is the only piece of a tool's usage that is not in the declarations golden. Two readings
+    carry it and neither carries all of it: the USAGE golden holds the header the reference
+    printed, which is the authority, and the inventory holds the `oneLineSummary` it read from the
+    reference's machine-readable documentation, which covers only the DOCUMENTED tools.
+    `PrintBGZFBlockInformation` is undocumented and has no inventory summary at all, so the usage
+    golden is read first and the inventory is the fallback.
+
+    The two are NOT the same string and are not cross-checked against each other: the header
+    prints the annotation's `summary` and the inventory carries its `oneLineSummary`, which for
+    `CountReads` are "Count and print to standard output ... the total number of reads in a
+    SAM/BAM/CRAM file" and "Count reads in a SAM/BAM/CRAM file". Comparing them would be comparing
+    two different fields.
     """
     inventory = json.loads(INVENTORY.read_text())
     by_name = {tool["name"]: tool for tool in inventory["tools"]}
+    from_usage = usage_summaries()
     arms = []
     for tool in tools:
-        summary = by_name[tool]["summary"]
+        summary = from_usage.get(tool) or by_name.get(tool, {}).get("summary")
+        if summary is None:
+            sys.exit(f"{tool}: neither the usage golden nor the inventory carries a summary")
         arms.append(f'        "{tool}" => Some({literal(summary)}),')
+    banners = usage_banners()
+    maturities = "\n".join(
+        f'        "{tool}" => Maturity::{banners.get(tool, "Released")},' for tool in tools)
     return (
-        "/// The one-line summary the usage header prints, from the inventory.\n"
+        "/// The summary the usage header prints, from the usage golden and the inventory.\n"
         "pub fn summary(tool: &str) -> Option<&'static str> {\n"
-        "    match tool {\n" + "\n".join(arms) + "\n        _ => None,\n    }\n}\n"
+        "    match tool {\n" + "\n".join(arms) + "\n        _ => None,\n    }\n}\n\n"
+        "/// Whether a tool prints a banner above its usage line, and which.\n"
+        "pub fn maturity(tool: &str) -> Maturity {\n"
+        "    match tool {\n" + maturities + "\n        _ => Maturity::Released,\n    }\n}\n"
     )
+
+
+def usage_banners():
+    """Which banner each tool's usage printed, read off the same golden as the summary."""
+    if not USAGE_GOLDEN.exists():
+        return {}
+    text = gzip.open(USAGE_GOLDEN, "rt").read()
+    banners = {}
+    for line in text.split("\n"):
+        if not line.startswith("usage\t"):
+            continue
+        _, tool, body = line.split("\t", 2)
+        head = body.replace("\\n", "\n").split("\n")
+        if any("EXPERIMENTAL FEATURE" in entry for entry in head[:4]):
+            banners[tool] = "Experimental"
+        elif any("BETA FEATURE" in entry for entry in head[:4]):
+            banners[tool] = "Beta"
+    return banners
+
+
+def usage_summaries():
+    """The summary each tool's usage header printed, from the `usage-text` golden.
+
+    The header is `USAGE: <tool> [arguments]`, a blank line, the summary, and then `Version:`, so
+    the summary is what sits between the two. A tool whose usage is not in that golden is absent
+    from the map rather than guessed at.
+    """
+    if not USAGE_GOLDEN.exists():
+        return {}
+    text = gzip.open(USAGE_GOLDEN, "rt").read()
+    summaries = {}
+    for line in text.split("\n"):
+        if not line.startswith("usage\t"):
+            continue
+        _, tool, body = line.split("\t", 2)
+        lines = body.replace("\\t", "\t").replace("\\n", "\n").split("\n")
+        # An experimental or beta tool prints a BANNER above its usage line, so the header does
+        # not start where a reader would expect: the summary is what sits between the `USAGE:`
+        # line's blank line and `Version:`, wherever that pair happens to be.
+        start = next(i for i, entry in enumerate(lines) if entry.startswith("USAGE:"))
+        collected = []
+        for entry in lines[start + 2:]:
+            if entry.startswith("Version:"):
+                break
+            collected.append(entry)
+        summaries[tool] = "\n".join(collected)
+    return summaries
 
 
 def enum_table():
