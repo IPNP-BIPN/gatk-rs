@@ -6432,7 +6432,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6458,7 +6458,7 @@
     },
     {
       "id": "usage-text",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the usage text Barclay renders, which is a rendering and not prose",
       "harness": "tools/argument-conformance",
       "tools": [

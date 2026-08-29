@@ -47,6 +47,13 @@ public class UsageTextDump {
         usage("CountReads", new org.broadinstitute.hellbender.tools.CountReads());
         usage("IndexFeatureFile", new org.broadinstitute.hellbender.tools.IndexFeatureFile());
         usage("GatherVcfsCloud", new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
+        // The two the port can run, whose usage the dispatcher answers `-h` with. The other two
+        // of that shape, CheckTerminatorBlock and BuildBamIndex, are Picard's and are measured
+        // there.
+        usage("PrintBGZFBlockInformation",
+                new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
+        usage("CreateHadoopBamSplittingIndex",
+                new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */
