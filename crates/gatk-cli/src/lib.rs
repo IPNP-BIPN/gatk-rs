@@ -106,11 +106,25 @@ pub fn run(args: &[String]) -> Outcome {
             // The parse comes before the run, and it only happens for a tool whose whole argument
             // surface converts: a parser missing a third of its arguments would refuse a command
             // line the reference accepts, which is a worse answer than refusing to parse at all.
-            if let Some(error) = parse_failure(&name, main_entry::tool_arguments(args)) {
-                // `mainEntry` prints the PROGRAM's usage before the message on this path, and the
-                // port does not: rendering a tool's usage needs the per-argument documentation to
-                // reach the renderer, which is the other half of Milestone C. What is written is
-                // the decorated message the reference writes under that usage, and the status.
+            // A tool asked for its own help answers with its usage and returns nothing, which is
+            // a success: `-h` after a tool name is the tool's argument and not the dispatcher's.
+            let tool_args = main_entry::tool_arguments(args);
+            if tool_args.iter().any(|arg| arg == "-h" || arg == "--help") {
+                if let Some(usage) = tool_usage(&name) {
+                    stderr.push_str(&usage);
+                    return Outcome {
+                        stdout,
+                        stderr,
+                        status: 0,
+                    };
+                }
+            }
+            if let Some(error) = parse_failure(&name, tool_args) {
+                // `mainEntry` prints the PROGRAM's usage before the message on this path, which
+                // the port now does for a tool whose usage it can lay out.
+                if let Some(usage) = tool_usage(&name) {
+                    stderr.push_str(&usage);
+                }
                 stderr.push_str(&main_entry::user_exception_report(&error));
                 return Outcome {
                     stdout,
@@ -172,6 +186,29 @@ pub fn parseable(tool: &str) -> bool {
                     .any(|declaration| declaration.controlled_by.is_some() && declaration.required)
         })
         .unwrap_or(false)
+}
+
+/// A tool's own usage, for a tool whose whole argument surface the port can lay out.
+///
+/// The condition is the plugin one again: a walker's usage carries conditional blocks, one per
+/// read filter the descriptor discovered, and the port has no descriptor to ask. A tool that is no
+/// walker has no such block, and its usage is composed from its declarations alone.
+pub fn tool_usage(tool: &str) -> Option<String> {
+    if !parseable(tool) {
+        return None;
+    }
+    let list = gatk_tools::tool_declarations::declarations(tool)?;
+    let summary = gatk_tools::tool_declarations::summary(tool)?;
+    let (required, optional, advanced) = gatk_tools::usage_text::sections(list);
+    Some(gatk_tools::usage_text::render(
+        tool,
+        summary,
+        TOOLKIT_VERSION,
+        &required,
+        &optional,
+        &advanced,
+        &[],
+    ))
 }
 
 /// The refusal the ported parser makes of a command line, if the tool is parseable at all.
