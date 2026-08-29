@@ -206,11 +206,15 @@ pub fn parseable(tool: &str) -> bool {
 
 /// Whether a tool's usage can be laid out from its declarations alone.
 ///
-/// A walker's usage carries a conditional block per read filter the descriptor discovered, with
-/// each filter's own arguments under its name, and neither the blocks nor their order is measured.
-/// So the usage is composed for a tool that has no controlled argument at all, which is a stricter
-/// condition than [`parseable`] and deliberately so: a usage missing a third of its sections is a
-/// worse answer than none.
+/// A walker's is nearly there. The conditional blocks are composed now, one per read filter that
+/// declares an argument in the ownership table's order, and the two arguments the descriptor
+/// answers for print the catalogue and the tool's own defaults from the `read-filter-catalogue`
+/// golden. What is left is one sentence: `Cannot be used in conjunction with argument(s) ...`
+/// names the other argument by its FIELD name, and the declarations golden measured
+/// `getMutexTargetList()`, which is the resolved long name. Four of the twenty-eight controlled
+/// arguments carry that sentence, and until the field names are measured a walker's usage would
+/// differ from the reference's in four lines. The test beside this file states exactly that, so
+/// the gap is a measured number rather than a claim.
 pub fn usage_composable(tool: &str) -> bool {
     parseable(tool)
         && gatk_tools::tool_declarations::declarations(tool)
@@ -222,14 +226,15 @@ pub fn usage_composable(tool: &str) -> bool {
             .unwrap_or(false)
 }
 
-/// A tool's own usage, for a tool whose whole argument surface the port can lay out.
-pub fn tool_usage(tool: &str) -> Option<String> {
-    if !usage_composable(tool) {
-        return None;
-    }
+/// A tool's usage as this port composes it, whether or not it agrees with the reference yet.
+///
+/// [`tool_usage`] is what the dispatcher answers `-h` with and is gated; this is the composition
+/// itself, so a test can say how far off a walker's is.
+pub fn composed_usage(tool: &str) -> Option<String> {
     let list = gatk_tools::tool_declarations::declarations(tool)?;
     let summary = gatk_tools::tool_declarations::summary(tool)?;
-    let (required, optional, advanced) = gatk_tools::usage_text::sections(list);
+    let (required, optional, advanced) = gatk_tools::usage_text::sections_for(Some(tool), list);
+    let conditional = gatk_tools::usage_text::conditionals(list);
     Some(gatk_tools::usage_text::render(
         tool,
         summary,
@@ -238,8 +243,16 @@ pub fn tool_usage(tool: &str) -> Option<String> {
         &required,
         &optional,
         &advanced,
-        &[],
+        &conditional,
     ))
+}
+
+/// A tool's own usage, for a tool whose whole argument surface the port can lay out.
+pub fn tool_usage(tool: &str) -> Option<String> {
+    if !usage_composable(tool) {
+        return None;
+    }
+    composed_usage(tool)
 }
 
 /// The refusal the ported parser makes of a command line, if the tool is parseable at all.
@@ -248,7 +261,7 @@ pub fn parse_failure(tool: &str, args: &[String]) -> Option<String> {
         return None;
     }
     let list = gatk_tools::tool_declarations::declarations(tool)?;
-    let mut parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    let mut parser = parser_for(tool, list);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     parser
         .parse_arguments(&borrowed)
@@ -282,12 +295,30 @@ fn run_print_bgzf_block_information(args: &[String]) -> Result<Option<String>, (
 fn parsed(tool: &str, args: &[String]) -> Result<gatk_barclay::Parser, (Failure, String)> {
     let list = gatk_tools::tool_declarations::declarations(tool)
         .expect("the declarations of a tool with a runner");
-    let mut parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    let mut parser = parser_for(tool, list);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     parser
         .parse_arguments(&borrowed)
         .map_err(|error| (Failure::CommandLine, error.message))?;
     Ok(parser)
+}
+
+/// The tool's parser, with the filters its descriptor was handed as defaults.
+///
+/// The defaults are what closes the last gap the trim had: a default counts as selected, so a
+/// default filter's own arguments are accepted with no `--read-filter` on the command line, and
+/// the list is the tool's rather than the descriptor's.
+fn parser_for(
+    tool: &str,
+    list: &'static [gatk_tools::tool_declarations::Declaration],
+) -> gatk_barclay::Parser {
+    let parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    match gatk_tools::plugin_ownership::default_filters(tool) {
+        None => parser,
+        Some(defaults) => {
+            parser.with_default_plugins(defaults.iter().map(|name| (*name).to_string()).collect())
+        }
+    }
 }
 
 /// The port's own refusal, which the reference has no equivalent of.
