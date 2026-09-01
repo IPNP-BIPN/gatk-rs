@@ -267,7 +267,7 @@ def report(tool, domain, excluded, rows, t, total_tuples, missing, numeric_polic
 
 
 def summarize_all(inventory_path, t, fixtures, numeric_policy, limit=None, excluded_by_hand=None,
-                  declared_constraints=()):
+                  declared_constraints=(), per_tool_fixtures=None):
     """Size the whole coverage programme: rows per tool, and the total across the inventory.
 
     This is the number the plan needs and did not have. A tool's row count is how many oracle runs
@@ -280,7 +280,10 @@ def summarize_all(inventory_path, t, fixtures, numeric_policy, limit=None, exclu
     rows_total = args_in = args_out = 0
     per_tool = []
     for tool in inventory["tools"][:limit]:
-        domain, excluded = domains.build(tool, fixtures, numeric_policy, excluded_by_hand)
+        # A tool that declares its own fixture values gets them here, so sizing the programme
+        # counts the array a tool will actually run rather than the one its shared paths imply.
+        own = domains.for_tool(fixtures, per_tool_fixtures or {}, tool["name"])
+        domain, excluded = domains.build(tool, own, numeric_policy, excluded_by_hand)
         params = sorted(domain)
         if len(params) < t:
             per_tool.append(
@@ -338,7 +341,7 @@ def main(argv):
         ap.error("pass --tool <name> or --all")
 
     raw_fixtures = json.load(open(args.fixtures)) if args.fixtures else {}
-    fixtures, hand_excluded = domains.load_fixtures(raw_fixtures)
+    fixtures, hand_excluded, per_tool_fixtures = domains.load_fixtures(raw_fixtures)
     declared_constraints = (
         raw_fixtures.get("constraints", []) if isinstance(raw_fixtures, dict) else []
     )
@@ -347,6 +350,7 @@ def main(argv):
         summary = summarize_all(
             args.inventory, args.t, fixtures, args.numeric_policy,
             excluded_by_hand=hand_excluded, declared_constraints=declared_constraints,
+            per_tool_fixtures=per_tool_fixtures,
         )
         print(
             f"t={summary['t']} policy={summary['numeric_policy']} "
@@ -371,6 +375,7 @@ def main(argv):
         return 0
 
     tool = load_tool(args.tool, args.inventory)
+    fixtures = domains.for_tool(fixtures, per_tool_fixtures, tool["name"])
     domain, excluded = domains.build(tool, fixtures, args.numeric_policy, hand_excluded)
     params = sorted(domain)
 
