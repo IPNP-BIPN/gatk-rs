@@ -21,6 +21,14 @@
     "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
     "refusals are rows rather than exclusions."
   ],
+  "$per_tool": [
+    "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
+    "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
+    "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
+    "lives here because the generator does.",
+    "",
+    "See tools/coverage/README.md."
+  ],
   "values": {
     "--input": [
       "/work/fixtures/reads.vcf",

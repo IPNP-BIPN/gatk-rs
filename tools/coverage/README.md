@@ -39,6 +39,25 @@ Fixtures belong to the repository that runs the array, not to the inventory: `ga
 which BAMs `picard-rs` keeps. Every argument left without one is reported by name, so the gap is
 visible rather than silent.
 
+`--INPUT` is one argument name over tools that do not read the same kind of file, so a single
+shared list is wrong for some of them: giving `BedToIntervalList` a BAM produces an array whose
+every row the reference refuses for the same reason, which measures the fixture and not the tool.
+A tool may therefore declare its own values, which **replace** the shared ones for that tool only:
+
+```json
+{
+  "values": { "--INPUT": ["/work/fixtures/small.bam"] },
+  "per_tool": {
+    "BedToIntervalList": { "--INPUT": ["/work/fixtures/targets.bed"] }
+  }
+}
+```
+
+The override is per tool rather than per type because a type is not enough either: two tools
+taking a `File` can want a BED and an interval list. It replaces the list rather than extending it,
+because the reason to declare one is that the shared value is wrong here, not that it is
+incomplete.
+
 ## The rule this code exists to enforce
 
 A covering array over invented values proves nothing, and fails silently, because the array still

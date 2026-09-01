@@ -148,10 +148,39 @@ def domain_of(arg, fixtures, numeric_policy="strict", excluded_by_hand=None):
 
 
 def load_fixtures(raw):
-    """Accept either {"values": {...}, "exclude": {...}} or a bare argument-to-values mapping."""
-    if isinstance(raw, dict) and ("values" in raw or "exclude" in raw):
-        return raw.get("values", {}), raw.get("exclude", {})
-    return raw or {}, {}
+    """Accept either {"values": ..., "exclude": ..., "per_tool": ...} or a bare mapping.
+
+    Returns `(values, exclude, per_tool)`. `values` is what every tool sees for an argument name;
+    `per_tool` maps a tool name to the values that *replace* them for that tool.
+
+    Why the third: `--INPUT` is one name over tools that do not read the same kind of file at all.
+    A shared list of BAMs gives `BedToIntervalList` an array whose every row the reference refuses
+    for the same reason, which measures the fixture rather than the tool. The override is per tool
+    and not per type because a type is not enough either: two tools taking a `File` can want a BED
+    and an interval list.
+    """
+    if isinstance(raw, dict) and ("values" in raw or "exclude" in raw or "per_tool" in raw):
+        per_tool = {
+            name: entry
+            for name, entry in (raw.get("per_tool") or {}).items()
+            if not name.startswith("$")
+        }
+        return raw.get("values", {}), raw.get("exclude", {}), per_tool
+    return raw or {}, {}, {}
+
+
+def for_tool(values, per_tool, name):
+    """The fixture values a named tool sees: the shared ones, with its own overriding.
+
+    An override replaces an argument's whole list rather than extending it, because the point of
+    declaring one is that the shared value is *wrong* for this tool, not that it is incomplete.
+    """
+    own = per_tool.get(name)
+    if not own:
+        return values
+    merged = dict(values)
+    merged.update({key: entry for key, entry in own.items() if not key.startswith("$")})
+    return merged
 
 
 def build(tool, fixtures, numeric_policy="strict", excluded_by_hand=None):
