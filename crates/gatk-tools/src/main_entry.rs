@@ -63,6 +63,92 @@ pub enum Failure {
     Other,
 }
 
+/// Which of the two handlers `mainEntry` gives a throwable to.
+///
+/// `handleUserException` catches `CommandLineException` and `UserException`; everything else,
+/// `OutOfMemoryError` included, falls to `handleNonUserException`. The two write different things,
+/// so the answer is not a detail of the status.
+pub fn is_user_exception(failure: Failure) -> bool {
+    matches!(failure, Failure::CommandLine | Failure::User)
+}
+
+/// What a run threw: which handler it reaches, the class the reference would name, and the message.
+///
+/// The class is carried because `handleNonUserException` PRINTS it. `handleUserException` does not,
+/// so a user exception's class is here for the same reason its status is: it is what the reference
+/// threw, and a port that only kept the message could not tell the two handlers apart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Thrown {
+    pub failure: Failure,
+    /// The exception's BINARY name, which is what `Throwable.toString` prints: a nested class
+    /// carries a `$` where its source spells a dot.
+    pub exception: &'static str,
+    /// `getLocalizedMessage`, which is `None` where the reference's is null. An empty message is
+    /// not the same thing and is `Some("")`.
+    pub message: Option<String>,
+}
+
+/// `CommandLineException`, which is a parse that failed. Barclay's, not GATK's: `Main` imports it
+/// from `org.broadinstitute.barclay.argparser`, and it is no `UserException`.
+pub const COMMANDLINE_EXCEPTION: &str = "org.broadinstitute.barclay.argparser.CommandLineException";
+/// `UserException`, which is everything the user could have written differently.
+pub const USER_EXCEPTION: &str = "org.broadinstitute.hellbender.exceptions.UserException";
+/// A capability the reference has and this port does not, which is no exception of the reference's
+/// at all. The name is deliberately not a Java one: `::` cannot appear in a binary class name, so
+/// a reader and a diff both see at once that this line is the port's and not GATK's.
+pub const PORT_LIMITATION: &str = "gatk_rs::PortLimitation";
+/// The port's own plumbing failing where no golden says what the reference does, which is a third
+/// thing again: not a refusal, and not a feature that was never carried.
+pub const PORT_FAILURE: &str = "gatk_rs::PortFailure";
+
+impl Thrown {
+    /// A `CommandLineException`: the usage, then the decorated message, then status one.
+    pub fn command_line(message: impl Into<String>) -> Self {
+        Self {
+            failure: Failure::CommandLine,
+            exception: COMMANDLINE_EXCEPTION,
+            message: Some(message.into()),
+        }
+    }
+
+    /// A `UserException`: the decorated message, then status two.
+    pub fn user(message: impl Into<String>) -> Self {
+        Self {
+            failure: Failure::User,
+            exception: USER_EXCEPTION,
+            message: Some(message.into()),
+        }
+    }
+
+    /// Anything else, which is a bug rather than a refusal: the class, the message, status three.
+    pub fn non_user(exception: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            failure: Failure::Other,
+            exception,
+            message: Some(message.into()),
+        }
+    }
+
+    /// Whether `handleUserException` is the handler this reaches.
+    pub fn is_user(&self) -> bool {
+        is_user_exception(self.failure)
+    }
+
+    /// The status `mainEntry` exits with.
+    pub fn status(&self) -> i32 {
+        exit_status(self.failure)
+    }
+
+    /// What the handler writes to stderr, which is not the same text for the two of them.
+    pub fn report(&self) -> String {
+        if self.is_user() {
+            user_exception_report(self.message.as_deref().unwrap_or_default())
+        } else {
+            non_user_exception_report(self.exception, self.message.as_deref())
+        }
+    }
+}
+
 /// `mainEntry`'s catch blocks, in the order they are written.
 pub fn exit_status(failure: Failure) -> i32 {
     match failure {
@@ -135,6 +221,23 @@ pub fn user_exception_report(message: &str) -> String {
          trace.\n",
         decorated_exception_message(USER_ERROR_PREFIX, message)
     )
+}
+
+/// `handleNonUserException`, whose whole body is `printStackTrace`.
+///
+/// The first line is `Throwable.toString()`: the class's binary name and, where there is one, `: `
+/// and the message. There is no banner, no `A USER ERROR has occurred:` prefix and no notice about
+/// a system property, which is what separates this path from the other one and what a port with a
+/// single banner gets wrong on every non-user refusal (`main-non-user`).
+///
+/// The frames under that line are the reference's own stack and this port has no equivalent to
+/// print. That is a boundary rather than an omission: the suite records the first line, which is
+/// what a row-by-row comparison reads, and that everything after it was a frame.
+pub fn non_user_exception_report(exception: &str, message: Option<&str>) -> String {
+    match message {
+        Some(message) => format!("{exception}: {message}\n"),
+        None => format!("{exception}\n"),
+    }
 }
 
 /// `printVersionInfo`, which is split across two streams.

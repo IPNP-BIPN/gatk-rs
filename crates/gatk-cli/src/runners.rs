@@ -16,12 +16,17 @@
 use gatk_barclay::{Parser, Value};
 use gatk_engine::reads::ReadsDataSource;
 use gatk_tools::index_feature_file::{self, Refusal, Source};
-use gatk_tools::main_entry::Failure;
+use gatk_tools::main_entry::{Thrown, PORT_FAILURE, PORT_LIMITATION};
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
-/// What a runner answers: what the tool returned, or the failure and its message.
-pub type Outcome = Result<Option<String>, (Failure, String)>;
+/// What a runner answers: what the tool returned, or what it threw.
+///
+/// A [`Thrown`] rather than a message, because the two handlers `mainEntry` calls write different
+/// things: `handleUserException` decorates the message with a banner, and `handleNonUserException`
+/// prints the exception's own CLASS in front of it. A runner that only reported a message left the
+/// dispatcher with one banner to print for both (`main-non-user`).
+pub type Outcome = Result<Option<String>, Thrown>;
 
 /// The value of one named argument, as the parser left it.
 ///
@@ -47,18 +52,15 @@ pub fn argument(parser: &Parser, long_name: &str) -> Option<String> {
 /// is status two.
 pub fn index_feature_file(parser: &Parser) -> Outcome {
     let input = argument(parser, "input").ok_or_else(|| {
-        (
-            Failure::CommandLine,
-            "Argument input was missing: Argument 'input' is required".to_string(),
-        )
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
     let output = argument(parser, "output");
     // Every refusal the port makes here is a UserException in the reference, EXCEPT the one the
     // reference does not make: a tabix index this port cannot write is the port's own gap, and it
     // is reported as one rather than as a status the reference would have exited with.
     let refused = |refusal: Refusal| match refusal {
-        Refusal::TabixIsNotWritten { .. } => (Failure::Other, refusal.message()),
-        _ => (Failure::User, refusal.message()),
+        Refusal::TabixIsNotWritten { .. } => Thrown::non_user(PORT_LIMITATION, refusal.message()),
+        _ => Thrown::user(refusal.message()),
     };
     // The reference reads the file to find a codec for it, so a file that is not there is refused
     // before anything else is asked of it.
@@ -77,8 +79,9 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
     let mut source = Source::new(&input);
     source.timestamp = modified_millis(&input);
     let index = index_feature_file::build(&text, &source, &input).map_err(refused)?;
-    std::fs::write(&name, index)
-        .map_err(|error| (Failure::Other, format!("could not write {name}: {error}")))?;
+    std::fs::write(&name, index).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
+    })?;
     Ok(Some(name))
 }
 
@@ -89,14 +92,10 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
 /// what a tool returns.
 pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
     let input = argument(parser, "bgzf-file").ok_or_else(|| {
-        (
-            Failure::CommandLine,
-            "Argument bgzf-file was missing: Argument 'bgzf-file' is required".to_string(),
-        )
+        Thrown::command_line("Argument bgzf-file was missing: Argument 'bgzf-file' is required")
     })?;
     let bytes = std::fs::read(&input).map_err(|_| {
-        (
-            Failure::User,
+        Thrown::user(
             gatk_tools::print_bgzf_block_information::Refusal::DoesNotExist {
                 path: input.clone(),
             }
@@ -109,19 +108,20 @@ pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
         .unwrap_or_else(|| input.clone());
     let (report, refusal) = gatk_tools::print_bgzf_block_information::report(&bytes, &name, &input);
     match argument(parser, "output") {
-        Some(path) => std::fs::write(&path, report)
-            .map_err(|error| (Failure::Other, format!("could not write {path}: {error}")))?,
+        Some(path) => std::fs::write(&path, report).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+        })?,
         // With no output the report goes to standard output, which the dispatcher prints as the
         // tool's own return value.
         None => {
             if let Some(refusal) = refusal {
-                return Err((Failure::User, refusal.message()));
+                return Err(Thrown::user(refusal.message()));
             }
             return Ok(Some(report));
         }
     }
     match refusal {
-        Some(refusal) => Err((Failure::User, refusal.message())),
+        Some(refusal) => Err(Thrown::user(refusal.message())),
         None => Ok(None),
     }
 }
@@ -215,7 +215,7 @@ fn read_filter<'a>(
     parser: &'a Parser,
     tool: &str,
     header: &'a SamHeader,
-) -> Result<Filter<'a>, (Failure, String)> {
+) -> Result<Filter<'a>, Thrown> {
     let mut names: Vec<String> = Vec::new();
     if !flag(parser, "disable-tool-default-read-filters") {
         names.extend(
@@ -246,8 +246,8 @@ fn read_filter<'a>(
                 max: maximum,
             });
         } else {
-            return Err((
-                Failure::Other,
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
                 format!(
                     "{name} is a GATK read filter that this port does not carry yet. This message is the port's own and not GATK's."
                 ),
@@ -279,16 +279,13 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     // hands it, and refuses the rest rather than silently counting the first.
     let inputs = arguments(parser, "input");
     if inputs.len() > 1 {
-        return Err((
-            Failure::Other,
-            "More than one --input is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.".to_string(),
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "More than one --input is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
         ));
     }
     let input = inputs.into_iter().next().ok_or_else(|| {
-        (
-            Failure::CommandLine,
-            "Argument input was missing: Argument 'input' is required".to_string(),
-        )
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
     let path = std::path::Path::new(&input);
     // What a walker makes of the file is the READER's answer and not the tool's, and it is three
@@ -312,14 +309,14 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         compressed,
         intervals_given,
     ) {
-        return Err((
-            if refusal.is_user() {
-                Failure::User
-            } else {
-                Failure::Other
-            },
-            refusal.message(),
-        ));
+        // The refusal names the exception the reference throws, and the non-user handler PRINTS
+        // that class: a walker refusing an interval over a stream with no dictionary answers
+        // `java.lang.IllegalArgumentException: ...` and not a banner (#1020).
+        return Err(if refusal.is_user() {
+            Thrown::user(refusal.message())
+        } else {
+            Thrown::non_user(refusal.exception(), refusal.message())
+        });
     }
     let index = path.with_extension("bam.bai");
     let source = if index.exists() {
@@ -327,23 +324,23 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     } else {
         ReadsDataSource::open_unindexed(path)
     }
-    .map_err(|error| (Failure::User, format!("{error:?}")))?;
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let header = source.header().clone();
     let mut intervals = Vec::new();
     for query in arguments(parser, "intervals") {
         let interval = gatk_engine::interval::parse_interval(&query, &header)
-            .map_err(|error| (Failure::User, format!("{error:?}")))?;
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
         intervals.push(interval);
     }
     let filter = read_filter(parser, "CountReads", &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
-        .map_err(|error| (Failure::User, format!("{error:?}")))?;
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     if let Some(output) = argument(parser, "output") {
         // `print`, not `println`: the file is the number's digits and nothing else.
         std::fs::write(&output, gatk_tools::count_reads::output(count))
-            .map_err(|error| (Failure::Other, format!("{output}: {error}")))?;
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     }
     // The tool returns the count itself, which is what `handleResult` prints.
     Ok(Some(count.to_string()))
