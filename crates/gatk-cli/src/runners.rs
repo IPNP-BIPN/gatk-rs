@@ -1165,7 +1165,12 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     } else {
         bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
     };
-    let named_index = read_index(parser, 1, is_binary, true)?;
+    let named_index = read_index(
+        parser,
+        1,
+        is_binary,
+        gatk_tools::read_walker_refusal::is_block_compressed(&bytes),
+    )?;
     let index = if is_binary {
         named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
     } else {
@@ -1215,7 +1220,8 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         gatk_tools::print_reads::print_reads_with(&source, &options, &filter, level, deflater)
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    std::fs::write(&output, bam).map_err(|error| {
+    let written = bam;
+    std::fs::write(&output, &written).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
     if let Some(bai) = bai {
@@ -1227,6 +1233,14 @@ pub fn print_reads(parser: &Parser) -> Outcome {
                 format!("could not write {}: {error}", companion.display()),
             )
         })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
+        // and the file is the thirty-two hex characters and nothing else.
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&written)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
     }
     // The tool returns nothing, so `handleResult` prints nothing.
     Ok(None)
