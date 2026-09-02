@@ -17,7 +17,9 @@
 //!    the missing contigs;
 //!  * **and the human-order check needing chr1, chr2 and chr10 by name AND by length.**
 //!
-//! While the suite is `golden-pending` the dump is named by `SEQUENCE_DICTIONARY_DUMP`.
+//! The golden is committed and re-derived by the `sequence-dictionary-validation` suite on every
+//! run; the dump can still be overridden with an environment variable while a harness change is
+//! being checked.
 
 use gatk_tools::sequence_dictionary::{compare, validate};
 use htsjdk_bam::header::SequenceRecord;
@@ -94,18 +96,17 @@ fn field(dump: &str, kind: &str, key: &str) -> String {
 
 #[test]
 fn every_pair_compares_as_the_reference_compares_it() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `SEQUENCE_DICTIONARY_DUMP` still overrides it, which is how a harness change is checked
+    // before CI sees it.
     let dump = match std::env::var("SEQUENCE_DICTIONARY_DUMP") {
         Ok(path) => {
             std::fs::read_to_string(path).expect("the dump named by SEQUENCE_DICTIONARY_DUMP")
         }
-        Err(_) => {
-            println!(
-                "skipped: the sequence-dictionary-validation golden is still pending. Run the \
-                 suite and point SEQUENCE_DICTIONARY_DUMP at \
-                 tools/conformance/pending/sequence-dictionary-validation.SequenceDictionaryValidationDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/sequence_dictionary_validation.txt.gz"),
+        ),
     };
 
     let mut compared = 0;

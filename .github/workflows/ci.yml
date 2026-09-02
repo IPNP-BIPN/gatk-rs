@@ -410,24 +410,20 @@ jobs:
             suites: "gnarly-genotyper model-segments local-assembler funcotator main-dispatch"
           - group: oracle-backed
             index: "56/59"
-            slug: "main-catalogue-gatk-config-main-usage-main-non-user-main-entry"
-            suites: "main-catalogue gatk-config main-usage main-non-user main-entry"
+            slug: "main-catalogue-gatk-config-main-usage-sequence-dictionary-validation-main-non-user"
+            suites: "main-catalogue gatk-config main-usage sequence-dictionary-validation main-non-user"
           - group: oracle-backed
             index: "57/59"
-            slug: "splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations-usage-text"
-            suites: "splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations usage-text"
+            slug: "main-entry-splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations"
+            suites: "main-entry splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations"
           - group: oracle-backed
             index: "58/59"
-            slug: "bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue"
-            suites: "bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership read-filter-catalogue"
+            slug: "usage-text-bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership"
+            suites: "usage-text bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership"
           - group: oracle-backed
             index: "59/59"
-            slug: "mutex-target-names-count-reads-plumbing-read-walker-refusals"
-            suites: "mutex-target-names count-reads-plumbing read-walker-refusals"
-          - group: golden-pending
-            index: "1/1"
-            slug: "sequence-dictionary-validation"
-            suites: "sequence-dictionary-validation"
+            slug: "read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals"
+            suites: "read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals"
     steps:
       - uses: actions/checkout@v7
 
