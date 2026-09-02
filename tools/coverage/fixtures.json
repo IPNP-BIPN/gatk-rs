@@ -40,6 +40,13 @@
     "takes part in the validation and outranks the reads' in the best-available chain, so the",
     "second value is a refusal and the first is not.",
     "",
+    "`GatherVcfsCloud` holds `--create-output-variant-index` at FALSE, and the reason is the",
+    "measurement rather than the port. A Tribble index records the last-modified time of the file",
+    "it indexes, and here that file is the tool's own OUTPUT: the two sides write their own copy at",
+    "their own moment, so the two indexes differ in eight bytes of clock and the row measures when",
+    "the run happened. The port builds the index byte for byte otherwise -- checked against the",
+    "reference's own on one input -- and every other tool indexes a file both sides were GIVEN.",
+    "",
     "`--read-index` takes two paths that both exist, because what the argument decides is not",
     "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
     "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
@@ -163,6 +170,19 @@
     ]
   },
   "per_tool": {
+    "GatherVcfsCloud": {
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--input": [
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/gathered.vcf",
+        "/work/out/gathered.vcf.gz"
+      ]
+    },
     "PrintReads": {
       "--input": [
         "/work/fixtures/reads.bam",

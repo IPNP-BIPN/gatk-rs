@@ -21,6 +21,9 @@ htsjdk-bam.workspace = true
 # The file plumbing under a runner: a block-compressed input is decompressed before the port's own
 # function is handed its text.
 htsjdk-bgzf.workspace = true
+# The index a VCF WRITER builds on the fly, which is not the one IndexFeatureFile builds from the
+# same file: the dictionary is properties and the file's own stats are left at zero.
+htsjdk-tribble.workspace = true
 
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }

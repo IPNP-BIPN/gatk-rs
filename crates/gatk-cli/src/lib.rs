@@ -274,6 +274,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountVariants" => Some(run_count_variants),
         "CreateHadoopBamSplittingIndex" => Some(run_create_hadoop_bam_splitting_index),
         "PrintReads" => Some(run_print_reads),
+        "GatherVcfsCloud" => Some(run_gather_vcfs_cloud),
         "IndexFeatureFile" => Some(run_index_feature_file),
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
         _ => None,
@@ -281,6 +282,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_vcfs_cloud(&parsed("GatherVcfsCloud", args)?)
+}
+
 fn run_print_reads(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_reads(&parsed("PrintReads", args)?)
 }
