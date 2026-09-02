@@ -54,6 +54,11 @@
 //! deflate to 43 and to 49 (#1032). [`build_tabix`] therefore takes both as arguments and assumes
 //! neither.
 
+// `VCFCodec.decodeLoc` and `BEDCodec.decodeLoc` are the codec's rather than this tool's, and two
+// tools reach them now, so they live in [`crate::feature_codec`]. They are re-exported here
+// because a caller that indexes a file names this module, not the codec.
+pub use crate::feature_codec::{codec_for, features, Codec};
+
 use htsjdk_bgzf::read::BgzfReader;
 use htsjdk_bgzf::{vfp, Deflater};
 use htsjdk_tribble::index::{IntervalChrIndex, TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
@@ -76,13 +81,6 @@ pub enum IndexKind {
     Linear,
     /// `IndexType.TABIX`, whose bytes this port does not write.
     Tabix,
-}
-
-/// The codecs this port knows, which is what decides whether a file can be indexed at all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Codec {
-    Vcf,
-    Bed,
 }
 
 /// What the run refuses.
@@ -194,82 +192,6 @@ pub fn default_output(file_name: &str) -> String {
         IndexKind::Tabix => format!("{file_name}.tbi"),
         _ => format!("{file_name}.idx"),
     }
-}
-
-/// `FeatureManager.getCodecForFile`, for the two formats this port reads.
-pub fn codec_for(file_name: &str) -> Option<Codec> {
-    let stripped = file_name
-        .strip_suffix(".gz")
-        .or_else(|| file_name.strip_suffix(".bgz"))
-        .unwrap_or(file_name);
-    if stripped.ends_with(".vcf") {
-        Some(Codec::Vcf)
-    } else if stripped.ends_with(".bed") {
-        Some(Codec::Bed)
-    } else {
-        None
-    }
-}
-
-/// Every feature of the file with the byte offset its line starts at, which is what the creators
-/// index against.
-pub fn features(text: &str, codec: Codec) -> Vec<(Feature, i64)> {
-    let mut found = Vec::new();
-    let mut offset: i64 = 0;
-    for line in text.split_inclusive('\n') {
-        let start_of_line = offset;
-        offset += line.len() as i64;
-        let trimmed = line.trim_end_matches(['\n', '\r']);
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("track") {
-            continue;
-        }
-        let columns: Vec<&str> = trimmed.split('\t').collect();
-        let feature = match codec {
-            Codec::Vcf => {
-                if columns.len() < 8 {
-                    continue;
-                }
-                let start: i32 = match columns[1].parse() {
-                    Ok(start) => start,
-                    Err(_) => continue,
-                };
-                // `VariantContext.getEnd()`: the reference allele's span, or END when it is given.
-                let end = end_attribute(columns[7]).unwrap_or(start + columns[3].len() as i32 - 1);
-                Feature {
-                    contig: columns[0].to_string(),
-                    start,
-                    end,
-                }
-            }
-            Codec::Bed => {
-                if columns.len() < 3 {
-                    continue;
-                }
-                let start: i32 = match columns[1].parse() {
-                    Ok(start) => start,
-                    Err(_) => continue,
-                };
-                let end: i32 = match columns[2].parse() {
-                    Ok(end) => end,
-                    Err(_) => continue,
-                };
-                // BEDCodec turns a half-open zero-based interval into a closed one-based one.
-                Feature {
-                    contig: columns[0].to_string(),
-                    start: start + 1,
-                    end,
-                }
-            }
-        };
-        found.push((feature, start_of_line));
-    }
-    found
-}
-
-fn end_attribute(info: &str) -> Option<i32> {
-    info.split(';')
-        .find_map(|field| field.strip_prefix("END="))
-        .and_then(|value| value.parse().ok())
 }
 
 /// Where each block of a BGZF stream begins, on both sides of the decompression.

@@ -1280,11 +1280,15 @@ sentence into the second.
       `File`, `Float`, `FeatureInput`) a third. Every class a declaration names converts
 - [~] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
       is handed a whole file already in memory and `write` returns a `String`, which is right for a
-      suite comparing whole outputs against a golden and not enough to run. Three tools have that
-      layer now: `IndexFeatureFile`, `PrintBGZFBlockInformation` and `CountReads`, the last of them
-      a read WALKER, so a BAM is opened, an interval query runs, the read filters a command line
-      names are applied and the count reaches both `-O` and the return value
-      (`count-reads-plumbing`)
+      suite comparing whole outputs against a golden and not enough to run. Four tools have that
+      layer now: `IndexFeatureFile`, which writes a Tribble index for a plain input and a **tabix**
+      one for a block compressed input at the level and through the deflater `GATKConfig` chose;
+      `PrintBGZFBlockInformation`; `CountReads`, a read WALKER, so a BAM is opened, an interval
+      query runs against the index htsjdk's own search finds, the read filters a command line names
+      are applied and the count reaches both `-O` and the return value (`count-reads-plumbing`);
+      and `CountVariants`, a variant WALKER, whose `-L` resolves against the sequence dictionary the
+      VCF's own header declares and is refused before any record is read when no index sits beside
+      the file (`count-variants`)
 - [x] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
       was ported first and the data followed: a tool's whole usage is COMPOSED from its
       declarations and compared against the golden as one string, a walker's included. Its
