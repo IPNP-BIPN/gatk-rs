@@ -1268,7 +1268,13 @@ pub fn print_reads(parser: &Parser) -> Outcome {
 /// `finalizeIndex` appends its statistics -- so the dictionary is `DICT:` properties and the flag
 /// that used to carry it is zero. And nothing ever stats the file being written, so its size, its
 /// timestamp and its md5 are left at zero where `IndexFeatureFile` fills them in.
-fn on_the_fly_index(text: &str, dictionary: &[(String, i32)], path: &str) -> Vec<u8> {
+fn on_the_fly_index(
+    text: &str,
+    dictionary: &[(String, i32)],
+    path: &str,
+    size: i64,
+    timestamp: i64,
+) -> Vec<u8> {
     use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
     use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
 
@@ -1316,8 +1322,11 @@ fn on_the_fly_index(text: &str, dictionary: &[(String, i32)], path: &str) -> Vec
         index_type,
         version: VERSION,
         indexed_path: format!("file://{path}"),
-        indexed_file_size: 0,
-        indexed_file_timestamp: 0,
+        // `close()` writes the index with `writeBasedOnFeaturePath`, which STATS the file it has
+        // just finished: the size and the timestamp are the written file's. The md5 is not
+        // computed and stays empty.
+        indexed_file_size: size,
+        indexed_file_timestamp: timestamp,
         indexed_file_md5: String::new(),
         // Zero, not the dictionary flag: from version 3 the dictionary is properties.
         flags: 0,
@@ -1546,7 +1555,13 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
                     .map_err(|refusal| Thrown::user(refusal.message()))?
             }
             // A writer's `.idx` is not the one `IndexFeatureFile` builds from the same file.
-            _ => on_the_fly_index(&text, &dictionary_lengths, &output),
+            _ => on_the_fly_index(
+                &text,
+                &dictionary_lengths,
+                &output,
+                bytes.len() as i64,
+                modified_millis(&output),
+            ),
         };
         let name = index_feature_file::default_output(&output);
         std::fs::write(&name, index).map_err(|error| {
