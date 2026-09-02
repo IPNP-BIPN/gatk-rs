@@ -274,6 +274,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "gkl-deflate"
+version = "0.1.0"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -282,7 +287,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 [[package]]
 name = "htsjdk-bam"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 dependencies = [
  "htsjdk-bgzf",
  "jmath",
@@ -292,9 +297,10 @@ dependencies = [
 [[package]]
 name = "htsjdk-bgzf"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 dependencies = [
  "flate2",
+ "gkl-deflate",
  "libz-sys",
  "md-5",
 ]
@@ -302,21 +308,22 @@ dependencies = [
 [[package]]
 name = "htsjdk-metrics"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 
 [[package]]
 name = "htsjdk-tribble"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 dependencies = [
  "flate2",
  "htsjdk-bam",
+ "htsjdk-bgzf",
 ]
 
 [[package]]
 name = "htsjdk-vcf"
 version = "0.1.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 dependencies = [
  "htsjdk-tribble",
  "jmath",
@@ -344,7 +351,7 @@ dependencies = [
 [[package]]
 name = "jmath"
 version = "0.0.0"
-source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=bef0b550cb7bbd6c326dac822c2158eacd382838#bef0b550cb7bbd6c326dac822c2158eacd382838"
+source = "git+https://github.com/IPNP-BIPN/htsjdk-rs?rev=0ee944ca694f95b3a066cd3cfc11e35466bf27fc#0ee944ca694f95b3a066cd3cfc11e35466bf27fc"
 
 [[package]]
 name = "lexical-core"
