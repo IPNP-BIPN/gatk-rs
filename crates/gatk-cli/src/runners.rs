@@ -55,12 +55,14 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
     let output = argument(parser, "output");
-    // Every refusal the port makes here is a UserException in the reference, EXCEPT the one the
-    // reference does not make: a tabix index this port cannot write is the port's own gap, and it
-    // is reported as one rather than as a status the reference would have exited with.
-    let refused = |refusal: Refusal| match refusal {
-        Refusal::TabixIsNotWritten { .. } => Thrown::non_user(PORT_LIMITATION, refusal.message()),
-        _ => Thrown::user(refusal.message()),
+    // Almost every refusal here is a `UserException`, which is status two; the one that is not
+    // names its own class and takes the other handler.
+    let refused = |refusal: Refusal| {
+        if refusal.is_user() {
+            Thrown::user(refusal.message())
+        } else {
+            Thrown::non_user(refusal.java_class(), refusal.message())
+        }
     };
     // The reference reads the file to find a codec for it, so a file that is not there is refused
     // before anything else is asked of it.
@@ -78,7 +80,22 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
     // the reference's bytes has to supply the real one, which is what this does.
     let mut source = Source::new(&input);
     source.timestamp = modified_millis(&input);
-    let index = index_feature_file::build(&text, &source, &input).map_err(refused)?;
+    // A block compressed input gets a tabix index, whose positions are the pointers a BGZF reader
+    // reports rather than offsets into the text, so it is handed the FILE and not what is in it.
+    let index = match index_feature_file::index_kind(&input) {
+        index_feature_file::IndexKind::Tabix => {
+            // A `.tbi` is a BGZF file, and GATK replaces htsjdk's static deflater factory: the
+            // reference's bytes are Intel's GKL unless `--use-jdk-deflater` says otherwise, which
+            // is the argument the tool declares for exactly this.
+            let deflater = if flag(parser, "use-jdk-deflater") {
+                htsjdk_bgzf::Deflater::Jdk
+            } else {
+                htsjdk_bgzf::Deflater::Gkl
+            };
+            index_feature_file::build_tabix(&bytes, &source, &input, deflater).map_err(refused)?
+        }
+        _ => index_feature_file::build(&text, &source, &input).map_err(refused)?,
+    };
     std::fs::write(&name, index).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
     })?;

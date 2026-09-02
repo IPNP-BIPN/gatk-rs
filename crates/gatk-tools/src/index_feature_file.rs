@@ -23,16 +23,34 @@
 //! [`Source::timestamp`] by default: a caller that wants the reference's own bytes has to supply
 //! the real mtime.
 //!
-//! # Tabix is measured but not built here
+//! # Tabix is a different index in a different space
 //!
-//! A block compressed input takes the tabix branch, which needs a tabix writer htsjdk-rs does not
-//! have yet. [`index_kind`] answers [`IndexKind::Tabix`] for those, [`default_output`] names the
-//! `.tbi`, and the refusal that guards its extension is ported; the bytes are not.
+//! A block compressed input takes the tabix branch, and it is not the same index with a different
+//! header: it is the BAM's binning scheme, written by [`htsjdk_tribble::tabix`], and its positions
+//! are BGZF VIRTUAL offsets rather than byte offsets into the text. [`build_tabix`] is therefore
+//! handed the file's own bytes, decompresses them once, and maps each feature's offset in the text
+//! back to the pointer a reader would report for it.
+//!
+//! That mapping is `BlockCompressedInputStream.getFilePointer`'s rule, which is not the obvious
+//! one: a pointer never dangles past the end of a block, so an offset sitting exactly at a block
+//! boundary is the NEXT block's address with offset zero. The file's end is the same rule reached
+//! at the terminator block.
+//!
+//! # The `.tbi` is a BGZF file, so the deflater decides its bytes
+//!
+//! `TabixIndex.write` block compresses through `BlockCompressedOutputStream`, whose deflater is a
+//! STATIC factory GATK replaces: the reference's `.tbi` is Intel's GKL and not the JDK's zlib
+//! unless `--use-jdk-deflater` says otherwise. The golden's own block settles it -- 104 bytes,
+//! which `java.util.zip` gives at no level and GKL gives at five -- so [`build_tabix`] takes the
+//! deflater as an argument rather than assuming either.
 
+use htsjdk_bgzf::read::BgzfReader;
+use htsjdk_bgzf::{vfp, Deflater};
 use htsjdk_tribble::index::{IntervalChrIndex, TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
 use htsjdk_tribble::index_write::{
     BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature, LinearIndexCreator,
 };
+use htsjdk_tribble::tabix::{FeatureRef, TabixFormat, TabixIndexCreator};
 
 /// `OPTIMAL_GVCF_INDEX_BIN_SIZE`.
 pub const OPTIMAL_GVCF_INDEX_BIN_SIZE: i32 = 128_000;
@@ -68,19 +86,13 @@ pub enum Refusal {
     WrongIndexExtension { path: String },
     /// The features are not in order, which Tribble raises and the tool wraps.
     CouldNotIndexFile { path: String, detail: String },
-    /// THE PORT'S OWN refusal, which the reference never makes: a block-compressed input needs a
-    /// tabix index, and this port has no writer for one.
-    ///
-    /// It is a separate variant because the alternative was borrowing
-    /// [`Refusal::WrongIndexExtension`], and that put the reference's words on the port's gap: a
-    /// covering array run against the binary reported the two as the same answer, and the row
-    /// where the reference writes a tabix index and the port cannot read as a refusal the
-    /// reference agrees with. A gap has to say it is one.
-    TabixIsNotWritten { path: String },
+    /// The bytes handed to [`build_tabix`] are not a BGZF stream, which a name ending `.gz` had
+    /// promised they were.
+    NotBlockCompressed { path: String, detail: String },
 }
 
 impl Refusal {
-    pub fn java_class(&self) -> &str {
+    pub fn java_class(&self) -> &'static str {
         match self {
             Refusal::CouldNotReadInputFile { .. } => {
                 "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile"
@@ -94,10 +106,17 @@ impl Refusal {
             Refusal::CouldNotIndexFile { .. } => {
                 "org.broadinstitute.hellbender.exceptions.UserException$CouldNotIndexFile"
             }
-            // No Java class: the reference does not make this refusal, and naming one of its
-            // exceptions here would be a claim about the reference.
-            Refusal::TabixIsNotWritten { .. } => "",
+            // htsjdk's own words for a stream whose first block is not one: GATK does not wrap it.
+            Refusal::NotBlockCompressed { .. } => "htsjdk.samtools.SAMFormatException",
         }
+    }
+
+    /// Whether `handleUserException` is the handler this reaches, which decides the status.
+    ///
+    /// All but one are a `UserException`. `SAMFormatException` is not, so a stream that promised
+    /// to be block compressed and was not exits three rather than two.
+    pub fn is_user(&self) -> bool {
+        !matches!(self, Refusal::NotBlockCompressed { .. })
     }
 
     pub fn message(&self) -> String {
@@ -114,10 +133,9 @@ impl Refusal {
             Refusal::CouldNotIndexFile { path, detail } => {
                 format!("Error while trying to create index for {path}. Error was: {detail}")
             }
-            Refusal::TabixIsNotWritten { path } => format!(
-                "{path} needs a tabix index, which this port does not write yet. This message is \
-                 the port's own and not GATK's."
-            ),
+            Refusal::NotBlockCompressed { path, detail } => {
+                format!("{path} is not a block compressed file: {detail}")
+            }
         }
     }
 }
@@ -244,6 +262,134 @@ fn end_attribute(info: &str) -> Option<i32> {
         .and_then(|value| value.parse().ok())
 }
 
+/// Where each block of a BGZF stream begins, on both sides of the decompression.
+///
+/// `(block address in the file, offset of the block's first byte in the decompressed text)`, plus
+/// the address one past the last data block, which is where the terminator sits.
+struct BlockMap {
+    blocks: Vec<(u64, usize)>,
+    text_length: usize,
+    end_address: u64,
+}
+
+impl BlockMap {
+    /// `BlockCompressedInputStream.getFilePointer` for an offset into the decompressed text.
+    ///
+    /// The rule is not "the block holding this byte, and the offset within it": a pointer never
+    /// dangles past the end of a block, so an offset sitting exactly on a boundary belongs to the
+    /// NEXT block at offset zero. The end of the text is that same rule reached at the terminator.
+    fn virtual_offset(&self, offset: usize) -> i64 {
+        if offset >= self.text_length {
+            return vfp::make_file_pointer(self.end_address, 0).unwrap_or(0) as i64;
+        }
+        // The last block whose text begins at or before this offset, which is the one holding it.
+        let (address, start) = self
+            .blocks
+            .iter()
+            .rev()
+            .find(|(_, start)| *start <= offset)
+            .copied()
+            .expect("a block for every offset of the text");
+        vfp::make_file_pointer(address, (offset - start) as u32).unwrap_or(0) as i64
+    }
+}
+
+/// Decompress the stream and record where each block began on both sides of it.
+fn block_map(compressed: &[u8], path: &str) -> Result<(String, BlockMap), Refusal> {
+    let refused = |detail: String| Refusal::NotBlockCompressed {
+        path: path.to_string(),
+        detail,
+    };
+    let mut reader = BgzfReader::new(compressed);
+    let mut text = Vec::new();
+    let mut blocks = Vec::new();
+    let mut end_address = 0u64;
+    loop {
+        let block = reader
+            .next_block()
+            .map_err(|error| refused(format!("{error:?}")))?;
+        let Some(block) = block else { break };
+        end_address = block.block_address + block.block_compressed_size as u64;
+        // A terminator block carries no data, and it is where the file's end pointer lands rather
+        // than a block any offset falls inside.
+        if !block.data.is_empty() {
+            blocks.push((block.block_address, text.len()));
+            text.extend_from_slice(&block.data);
+        }
+    }
+    if blocks.is_empty() && text.is_empty() && compressed.is_empty() {
+        return Err(refused("the file is empty".to_string()));
+    }
+    let text_length = text.len();
+    let text = String::from_utf8(text).map_err(|error| refused(format!("{error}")))?;
+    Ok((
+        text,
+        BlockMap {
+            blocks,
+            text_length,
+            end_address,
+        },
+    ))
+}
+
+/// `IndexFactory.createTabixIndex`, then `index.write(path)`: the `.tbi` a block compressed input
+/// gets where a plain one gets a `.idx`.
+///
+/// The bytes are the FILE's, not its text, because a tabix index's positions are the pointers a
+/// BGZF reader would report and those cannot be recovered from the decompressed bytes alone.
+pub fn build_tabix(
+    compressed: &[u8],
+    source: &Source,
+    file_name: &str,
+    deflater: Deflater,
+) -> Result<Vec<u8>, Refusal> {
+    let codec = codec_for(file_name).ok_or_else(|| Refusal::NoSuitableCodecs {
+        path: source.path.clone(),
+    })?;
+    let (text, map) = block_map(compressed, &source.path)?;
+    let found = features(&text, codec);
+    let ordered: Vec<Feature> = found.iter().map(|(feature, _)| feature.clone()).collect();
+    // The same check the Tribble branch makes, in the same words: `createIndex` runs it before the
+    // creator sees anything, whichever creator it is.
+    htsjdk_tribble::index_write::check_ordering(&ordered, &source.path).map_err(|error| {
+        Refusal::CouldNotIndexFile {
+            path: source.path.clone(),
+            detail: wrapped(&error),
+        }
+    })?;
+
+    let mut creator = TabixIndexCreator::new(match codec {
+        Codec::Vcf => TabixFormat::VCF,
+        Codec::Bed => TabixFormat::BED,
+    });
+    for (feature, offset) in &found {
+        // `featToString`, which is what the reference's own refusal quotes.
+        let description = format!("{}:{}-{}", feature.contig, feature.start, feature.end);
+        let entry = FeatureRef {
+            contig: &feature.contig,
+            start: feature.start,
+            end: feature.end,
+            description: &description,
+            // No sequence dictionary: `IndexFeatureFile` passes one only when `--sequence-dictionary`
+            // is given, and it decides an allocation rather than any byte.
+            sequence_length: 0,
+        };
+        creator
+            .add_feature(entry, map.virtual_offset(*offset as usize))
+            .map_err(|error| Refusal::CouldNotIndexFile {
+                path: source.path.clone(),
+                detail: format!("{}: {}", error.java_class(), error.message()),
+            })?;
+    }
+    let index = creator
+        .finish(map.virtual_offset(map.text_length))
+        .map_err(|error| Refusal::CouldNotIndexFile {
+            path: source.path.clone(),
+            detail: format!("{}: {}", error.java_class(), error.message()),
+        })?;
+    Ok(index.write_with(deflater))
+}
+
 /// `IndexFactory.createIndex` for the two branches that write a `.idx`, then `index.write(path)`.
 pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Refusal> {
     let codec = codec_for(file_name).ok_or_else(|| Refusal::NoSuitableCodecs {
@@ -263,11 +409,14 @@ pub fn build(text: &str, source: &Source, file_name: &str) -> Result<Vec<u8>, Re
     let file_size = text.len() as i64;
     let (index_type, properties, contigs, interval_contigs) = match index_kind(file_name) {
         IndexKind::Tabix => {
-            // The caller is expected to have taken the tabix branch itself: this port has no
-            // writer for it, and the golden records those bytes for a later brick. The refusal is
-            // the PORT'S own, so that nothing downstream can read it as the reference's.
-            return Err(Refusal::TabixIsNotWritten {
+            // A tabix index is not a Tribble index with a different header, and it is not built
+            // from text: its positions are virtual offsets into the file that was handed in.
+            // [`build_tabix`] takes those bytes; this function only ever sees the text.
+            return Err(Refusal::CouldNotIndexFile {
                 path: source.path.clone(),
+                detail: "a block compressed input takes build_tabix, which is handed the file's \
+                         own bytes. This message is the port's own and not GATK's."
+                    .to_string(),
             });
         }
         IndexKind::Linear => {
