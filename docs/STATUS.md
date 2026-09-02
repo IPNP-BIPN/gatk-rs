@@ -189,7 +189,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | not measured |
-| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | not measured |
+| `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 10/10 rows (100%) |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
