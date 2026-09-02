@@ -17,7 +17,9 @@
 //!  * **and a default of `null` being omitted where an EMPTY default is printed with a trailing
 //!    space.**
 //!
-//! While the suite is `golden-pending` the dump is named by `EXPANDED_COMMAND_LINE_DUMP`.
+//! The golden is committed and re-derived by the `expanded-command-line` suite on every run;
+//! the dump can still be overridden with an environment variable while a harness change is being
+//! checked.
 
 use gatk_cli::command_line::expanded;
 
@@ -96,18 +98,17 @@ fn field(dump: &str, kind: &str, tool: &str, label: &str) -> Option<String> {
 
 #[test]
 fn every_command_line_expands_as_the_reference_expands_it() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `EXPANDED_COMMAND_LINE_DUMP` still overrides it, which is how a harness change is
+    // checked before CI sees it.
     let dump = match std::env::var("EXPANDED_COMMAND_LINE_DUMP") {
         Ok(path) => {
             std::fs::read_to_string(path).expect("the dump named by EXPANDED_COMMAND_LINE_DUMP")
         }
-        Err(_) => {
-            println!(
-                "skipped: the expanded-command-line golden is still pending. Run the suite and \
-                 point EXPANDED_COMMAND_LINE_DUMP at \
-                 tools/conformance/pending/expanded-command-line.ExpandedCommandLineDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/expanded_command_line.txt.gz"),
+        ),
     };
 
     for (tool, label, argv) in CASES {
