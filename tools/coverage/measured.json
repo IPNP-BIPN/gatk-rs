@@ -54,6 +54,15 @@
       "matched": 9,
       "t": 2,
       "share": 1.0
+    },
+    "PrintReads": {
+      "rows": 19,
+      "accepted": 9,
+      "rejected": 10,
+      "distinct_outputs": 9,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
