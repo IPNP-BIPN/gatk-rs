@@ -1260,6 +1260,75 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// The `.idx` a VCF WRITER builds, which is not the one `IndexFeatureFile` builds from the file.
+///
+/// `IndexingVariantContextWriter` hands the creator the position BEFORE each record, absolute in
+/// the output stream so the header is counted, and closes it with the whole file's length. Then
+/// `setIndexSequenceDictionary` puts the dictionary in the creator's own property map, before
+/// `finalizeIndex` appends its statistics -- so the dictionary is `DICT:` properties and the flag
+/// that used to carry it is zero. And nothing ever stats the file being written, so its size, its
+/// timestamp and its md5 are left at zero where `IndexFeatureFile` fills them in.
+fn on_the_fly_index(text: &str, dictionary: &[(String, i32)], path: &str) -> Vec<u8> {
+    use htsjdk_tribble::index::{TribbleIndex, INTERVAL_TREE, LINEAR, VERSION};
+    use htsjdk_tribble::index_write::{BalanceApproach, BuiltIndex, DynamicIndexCreator, Feature};
+
+    let mut creator = DynamicIndexCreator::new(BalanceApproach::ForSeekTime);
+    let mut at: i64 = 0;
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches('\n');
+        if !body.starts_with('#') {
+            let columns: Vec<&str> = body.split('\t').collect();
+            if columns.len() >= 8 {
+                if let Ok(start) = columns[1].parse::<i32>() {
+                    let end = columns[7]
+                        .split(';')
+                        .filter_map(|field| field.split_once('='))
+                        .find(|(key, _)| *key == "END")
+                        .and_then(|(_, value)| value.parse::<i32>().ok())
+                        .unwrap_or(start + columns[3].len() as i32 - 1);
+                    creator.add_feature(
+                        &Feature {
+                            contig: columns[0].to_string(),
+                            start,
+                            end,
+                        },
+                        at,
+                    );
+                }
+            }
+        }
+        at += line.len() as i64;
+    }
+
+    let mut properties: Vec<(String, String)> = dictionary
+        .iter()
+        .map(|(name, length)| (format!("DICT:{name}"), length.to_string()))
+        .collect();
+    properties.extend(creator.properties());
+
+    let (index_type, contigs, interval_contigs) = match creator.finalize(text.len() as i64) {
+        Ok(BuiltIndex::Linear(contigs)) => (LINEAR, contigs, Vec::new()),
+        Ok(BuiltIndex::IntervalTree(intervals)) => (INTERVAL_TREE, Vec::new(), intervals),
+        Err(_) => (LINEAR, Vec::new(), Vec::new()),
+    };
+
+    TribbleIndex {
+        index_type,
+        version: VERSION,
+        indexed_path: format!("file://{path}"),
+        indexed_file_size: 0,
+        indexed_file_timestamp: 0,
+        indexed_file_md5: String::new(),
+        // Zero, not the dictionary flag: from version 3 the dictionary is properties.
+        flags: 0,
+        properties,
+        contigs,
+        interval_contigs,
+    }
+    .write()
+    .unwrap_or_default()
+}
+
 /// One input VCF, read as far as the gather looks at it.
 ///
 /// The gather compares dictionaries, sample lists and record positions, and copies lines: nothing
@@ -1395,6 +1464,24 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
         ));
     }
 
+    // The dictionary with its LENGTHS, which the writer's index carries as properties where the
+    // gather only needed the names.
+    let dictionary_lengths: Vec<(String, i32)> = lines[0]
+        .0
+        .iter()
+        .filter_map(|line| line.strip_prefix("##contig=<"))
+        .filter_map(|body| {
+            let body = body.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect();
+
     // The header is the FIRST shard's, whole, and then every record the gather selected.
     let mut text = String::new();
     for line in &lines[0].0 {
@@ -1426,6 +1513,8 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
         text.push('\n');
     }
 
+    // The bytes on disk, which for a plain output are the text itself and for a `.gz` are that
+    // text block compressed.
     let bytes = if output_is_block_compressed {
         let (level, deflater) = output_compression(parser);
         let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
@@ -1435,7 +1524,7 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
             .into_inner()
             .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?
     } else {
-        text.into_bytes()
+        text.clone().into_bytes()
     };
     std::fs::write(&output, &bytes).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
@@ -1454,10 +1543,11 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
             index_feature_file::IndexKind::Tabix => {
                 let (level, deflater) = output_compression(parser);
                 index_feature_file::build_tabix(&bytes, &source, &output, deflater, level)
+                    .map_err(|refusal| Thrown::user(refusal.message()))?
             }
-            _ => index_feature_file::build(&String::from_utf8_lossy(&bytes), &source, &output),
-        }
-        .map_err(|refusal| Thrown::user(refusal.message()))?;
+            // A writer's `.idx` is not the one `IndexFeatureFile` builds from the same file.
+            _ => on_the_fly_index(&text, &dictionary_lengths, &output),
+        };
         let name = index_feature_file::default_output(&output);
         std::fs::write(&name, index).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))

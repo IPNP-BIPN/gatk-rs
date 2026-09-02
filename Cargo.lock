@@ -232,6 +232,7 @@ dependencies = [
  "gatk-tools",
  "htsjdk-bam",
  "htsjdk-bgzf",
+ "htsjdk-tribble",
 ]
 
 [[package]]
