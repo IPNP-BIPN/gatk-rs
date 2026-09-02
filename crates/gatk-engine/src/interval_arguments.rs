@@ -108,6 +108,14 @@ impl IntervalArgumentError {
 
     pub fn message(&self) -> String {
         match self {
+            // `GenomeLocParser.parseGenomeLoc`'s own wording, which the `count-variants` golden
+            // carries and a covering-array row over CountReads carries again. Only the unknown
+            // contig is measured; the other two readings keep a rendering of their own rather
+            // than borrowing a message no golden has shown them producing.
+            IntervalArgumentError::Parse(ParseError::UnknownContig(query)) => format!(
+                "Badly formed genome unclippedLoc: Query interval \"{query}\" is not valid for \
+                 this input."
+            ),
             IntervalArgumentError::Parse(error) => format!("{error:?}"),
             IntervalArgumentError::EmptyIntersection { include, rule } => format!(
                 "Argument -L, --interval-set-rule has a bad value: {},{}. The specified intervals \

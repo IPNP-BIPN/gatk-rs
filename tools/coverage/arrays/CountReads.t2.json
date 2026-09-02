@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 42,
-  "arguments_in_array": 28,
-  "arguments_excluded": 14,
+  "arguments_in_array": 29,
+  "arguments_excluded": 13,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -64,13 +64,6 @@
       "source": "none"
     },
     {
-      "argument": "--sequence-dictionary",
-      "type": "GATKPath",
-      "reason": "GATKPath needs a fixture; declare one in the repository's fixtures file",
-      "held_at": null,
-      "source": "none"
-    },
-    {
       "argument": "--showHidden",
       "type": "boolean",
       "reason": "excluded by the repository: changes the usage text only",
@@ -107,8 +100,8 @@
     }
   ],
   "rows": 23,
-  "tuples_total": 1733,
-  "tuples_covered": 1733,
+  "tuples_total": 1853,
+  "tuples_covered": 1853,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -142,6 +135,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -172,6 +166,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -205,6 +200,7 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[1]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]"
       },
@@ -235,6 +231,7 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=60.0",
+        "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2"
       ]
@@ -268,8 +265,9 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "SILENT",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]"
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -298,8 +296,9 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=SILENT",
         "--seconds-between-progress-updates=60.0",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2"
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp"
       ]
     },
     {
@@ -331,8 +330,9 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "SILENT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[0]"
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -361,8 +361,9 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=SILENT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp"
+        "--sequence-dictionary=/work/fixtures/other.dict",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp2"
       ]
     },
     {
@@ -394,8 +395,9 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--sites-only-vcf-output": "false",
-        "--tmp-dir": "fixture[0]"
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[1]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -424,8 +426,9 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=60.0",
-        "--sites-only-vcf-output=false",
-        "--tmp-dir=/work/tmp"
+        "--sequence-dictionary=/work/fixtures/other.dict",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp2"
       ]
     },
     {
@@ -457,8 +460,9 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]"
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -487,8 +491,9 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2"
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp"
       ]
     },
     {
@@ -520,7 +525,8 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "false",
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
       "arguments": [
@@ -550,7 +556,8 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=false",
+        "--sequence-dictionary=/work/fixtures/other.dict",
+        "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
     },
@@ -583,7 +590,8 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--sites-only-vcf-output": "true",
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]"
       },
       "arguments": [
@@ -613,7 +621,8 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=60.0",
-        "--sites-only-vcf-output=true",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2"
       ]
     },
@@ -646,7 +655,8 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[1]",
-        "--sites-only-vcf-output": "true",
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]"
       },
       "arguments": [
@@ -676,7 +686,8 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=60.0",
-        "--sites-only-vcf-output=true",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2"
       ]
     },
@@ -709,7 +720,8 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "false",
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
       "arguments": [
@@ -739,7 +751,8 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=false",
+        "--sequence-dictionary=/work/fixtures/other.dict",
+        "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
     },
@@ -772,6 +785,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -802,6 +816,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -835,6 +850,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "SILENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -865,6 +881,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=SILENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -898,6 +915,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -928,6 +946,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -961,6 +980,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -991,6 +1011,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1024,6 +1045,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "SILENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1054,6 +1076,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=SILENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1087,6 +1110,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1117,6 +1141,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1150,8 +1175,9 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[1]"
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "false",
+        "--tmp-dir": "fixture[0]"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1180,8 +1206,9 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp2"
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=false",
+        "--tmp-dir=/work/tmp"
       ]
     },
     {
@@ -1213,6 +1240,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "SILENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1243,6 +1271,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=SILENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1276,6 +1305,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1306,6 +1336,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=LENIENT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1339,6 +1370,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1369,6 +1401,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1402,6 +1435,7 @@
         "--read-filter": "fixture[1]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1432,6 +1466,7 @@
         "--read-filter=MappedReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1465,6 +1500,7 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[1]",
+        "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
@@ -1495,6 +1531,7 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=60.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
@@ -1528,7 +1565,8 @@
         "--read-filter": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sites-only-vcf-output": "false",
+        "--sequence-dictionary": "fixture[1]",
+        "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]"
       },
       "arguments": [
@@ -1558,7 +1596,8 @@
         "--read-filter=GoodCigarReadFilter",
         "--read-validation-stringency=STRICT",
         "--seconds-between-progress-updates=10.0",
-        "--sites-only-vcf-output=false",
+        "--sequence-dictionary=/work/fixtures/other.dict",
+        "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp"
       ]
     }

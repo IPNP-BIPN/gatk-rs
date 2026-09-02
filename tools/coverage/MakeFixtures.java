@@ -103,6 +103,13 @@ public class MakeFixtures {
                         indexed, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("indexed.vcf.idx"));
+        // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
+        // own contig and one that shares nothing with it, so the argument has a row that is
+        // accepted and a row that is refused.
+        Files.writeString(dir.resolve("matching.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("other.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chrOther\tLN:1000\n", StandardCharsets.UTF_8);
         System.out.println("wrote " + dir);
     }
 }
