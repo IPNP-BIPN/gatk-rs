@@ -465,6 +465,30 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     };
 
     let header = vcf_dictionary(&text);
+
+    // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
+    // a variant walker still opens the reads when a command line names any: the pair goes through
+    // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
+    // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
+    // VCF share no contig is therefore refused whatever the intervals say (#1038).
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        for reads in arguments(parser, "input") {
+            gatk_tools::sequence_dictionary::validate(
+                "reads",
+                &reads_dictionary(&reads)?,
+                "features",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+
     let mut intervals = Vec::new();
     for query in arguments(parser, "intervals") {
         let interval = gatk_engine::interval::parse_interval(&query, &header)
@@ -503,6 +527,29 @@ pub fn count_variants(parser: &Parser) -> Outcome {
         })?;
     // The tool returns the count, which `handleResult` prints.
     Ok(Some(count.to_string()))
+}
+
+/// The sequence dictionary a reads input carries, which for a file that is not a BAM is EMPTY.
+///
+/// `ReadsPathDataSource` opens whatever it is given and asks for the header before it reads a
+/// record, so a VCF or a BED handed to `--input` is a stream with no `@SQ` line rather than a
+/// refusal: the dictionary comes back empty and the comparison against the features' dictionary
+/// finds no common contigs. The refusal a read WALKER makes for the same file is a later one, and
+/// it is the record parse rather than the header that makes it (`read-walker-refusals`).
+fn reads_dictionary(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+    let bytes = std::fs::read(path)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+    let decompressed = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
+    } else {
+        bytes
+    };
+    if !decompressed.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC) {
+        return Ok(Vec::new());
+    }
+    let source = ReadsDataSource::open_unindexed(std::path::Path::new(path))
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    Ok(source.header().sequences.clone())
 }
 
 /// One decoded locus, which is all the traversal looks at.

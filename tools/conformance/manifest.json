@@ -6391,6 +6391,26 @@
       ]
     },
     {
+      "id": "sequence-dictionary-validation",
+      "status": "golden-pending",
+      "title": "whether two sequence dictionaries may be used together, and what the refusal says",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountVariants"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "Four rows of CountVariants' covering array disagreed on this and nothing else: they pass a BAM to --input alongside a VCF to --variant, and GATKTool validates the two dictionaries against each other BEFORE the traversal, where the port counted (#1038). The outcome is one of eight named cases and the rules behind them are not guessable: a length of ZERO is equivalent to any length; reversing the common contigs is a SUPERSET without the ordering check and OUT_OF_ORDER with it, so an argument decides whether the same pair is accepted; the same relative order at different absolute positions is DIFFERENT_INDICES, a case of its own; a common subset is accepted unless a superset was required, and the refusal then names the MISSING contigs; and the human-order check needs chr1, chr2 and chr10 by name AND by length, firing on whichever dictionary is lexicographic.",
+      "cases": [
+        {
+          "dump": "SequenceDictionaryValidationDump",
+          "golden": null,
+          "why": "Fourteen pairs, each compared under both settings of the ordering flag and validated under all four combinations of the two flags."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",

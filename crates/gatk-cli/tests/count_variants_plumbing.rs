@@ -16,7 +16,9 @@
 //!  * **`-L` selecting by the record's whole SPAN**, so an interval reaches a record whose
 //!    position it does not hold, and a record over two intervals is counted once;
 //!  * **`-L` against an input with no index being refused before any record is read**;
-//!  * **and an unwritable `-O` carrying the path and nothing else.**
+//!  * **an unwritable `-O` carrying the path and nothing else**;
+//!  * **and the reads' dictionary being checked against the features' before the traversal**, so a
+//!    BAM that shares no contig with the VCF is refused rather than counted.
 
 use gatk_corpus as corpus;
 use gatk_tools::main_entry::{self, Failure};
@@ -271,5 +273,118 @@ fn the_refusals_are_the_reference_ones() {
         recorded.contains("is not valid for this input"),
         "{recorded}"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A BAM with a header and no records, on the contigs named.
+fn empty_bam(path: &std::path::Path, contigs: &[(&str, i32)]) {
+    use htsjdk_bam::header::{SamHeader, SequenceRecord};
+    use htsjdk_bam::writer::BamWriter;
+
+    let mut header = SamHeader::default();
+    for (name, length) in contigs {
+        header.sequences.push(SequenceRecord::new(name, *length));
+    }
+    let writer = BamWriter::new(Vec::new(), &header).expect("a writer");
+    std::fs::write(path, writer.finish().expect("the bam")).expect("the fixture");
+}
+
+/// `GATKTool` compares the reads' dictionary with the features' before any record is read.
+///
+/// The rule is `SequenceDictionaryUtils.validateDictionaries`, measured in
+/// `sequence-dictionary-validation`; what this asserts is that the walker reaches it, that the
+/// refusal is a `UserException` and that `--disable-sequence-dictionary-validation` turns it off.
+/// It is the whole of what four rows of this tool's covering array used to disagree on (#1038).
+#[test]
+fn a_bam_that_shares_no_contig_with_the_vcf_is_refused_before_the_traversal() {
+    let text = golden();
+    let dir = scratch("dictionaries");
+    let input = fixture(&text, &dir, "plain", true);
+
+    let bam = dir.join("elsewhere.bam");
+    empty_bam(&bam, &[("chrOther", 1000)]);
+    let argv = args(&[
+        "CountVariants",
+        "--variant",
+        &input.to_string_lossy(),
+        "--input",
+        &bam.to_string_lossy(),
+    ]);
+
+    let run = gatk_cli::run(&argv);
+    assert_eq!(
+        run.status,
+        main_entry::exit_status(Failure::User),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stderr.contains(
+            "Input files reads and features have incompatible contigs: No overlapping contigs found."
+        ),
+        "{}",
+        run.stderr
+    );
+    // Both contig lists are named, which is what makes the refusal actionable.
+    assert!(
+        run.stderr.contains("reads contigs = [chrOther]"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("features contigs = [chr1, chr2]"),
+        "{}",
+        run.stderr
+    );
+
+    // A BAM that DOES share a contig is not refused, so the check is about the dictionaries and
+    // not about `--input` being given at all. The length has to agree as well as the name: the
+    // fixture's header declares `##contig=<ID=chr1,length=1000>`, and a BAM saying anything else
+    // for chr1 is UNEQUAL_COMMON_CONTIGS rather than a subset.
+    let shared = dir.join("shared.bam");
+    empty_bam(&shared, &[("chr1", 1000)]);
+    let mut argv = args(&["CountVariants", "--variant", &input.to_string_lossy()]);
+    argv.push("--input".to_string());
+    argv.push(shared.to_string_lossy().to_string());
+    let run = gatk_cli::run(&argv);
+    assert_eq!(run.status, 0, "{}", run.stderr);
+
+    // A reads input that is not a BAM at all has an EMPTY dictionary rather than a refusal: the
+    // header is asked for before any record is read, so a VCF handed to `--input` shares no contig
+    // with anything. That is four rows of the covering array, and the refusal a read walker makes
+    // for the same file is a later one.
+    let not_a_bam = dir.join("not-a-bam.vcf");
+    std::fs::write(&not_a_bam, "##fileformat=VCFv4.2\n#CHROM\tPOS\n").expect("the fixture");
+    let run = gatk_cli::run(&args(&[
+        "CountVariants",
+        "--variant",
+        &input.to_string_lossy(),
+        "--input",
+        &not_a_bam.to_string_lossy(),
+    ]));
+    assert_eq!(
+        run.status,
+        main_entry::exit_status(Failure::User),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stderr.contains("No overlapping contigs found."),
+        "{}",
+        run.stderr
+    );
+    assert!(run.stderr.contains("reads contigs = []"), "{}", run.stderr);
+
+    // And the argument that turns the check off turns it off.
+    let mut argv = args(&[
+        "CountVariants",
+        "--variant",
+        &input.to_string_lossy(),
+        "--input",
+        &bam.to_string_lossy(),
+    ]);
+    argv.push("--disable-sequence-dictionary-validation".to_string());
+    let run = gatk_cli::run(&argv);
+    assert_eq!(run.status, 0, "{}", run.stderr);
     let _ = std::fs::remove_dir_all(&dir);
 }
