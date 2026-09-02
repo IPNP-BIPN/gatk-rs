@@ -6392,7 +6392,7 @@
     },
     {
       "id": "sequence-dictionary-validation",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "whether two sequence dictionaries may be used together, and what the refusal says",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6405,7 +6405,7 @@
       "cases": [
         {
           "dump": "SequenceDictionaryValidationDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/sequence_dictionary_validation.txt.gz",
           "why": "Fourteen pairs, each compared under both settings of the ordering flag and validated under all four combinations of the two flags."
         }
       ]
