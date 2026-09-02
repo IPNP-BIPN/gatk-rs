@@ -480,13 +480,18 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
     };
     let intervals_given = !arguments(parser, "intervals").is_empty();
+    // `-L` against a stream with no dictionary is `IllegalArgumentException: Dictionary cannot
+    // have size zero`, and the dictionary it asks for is the BEST AVAILABLE one. A
+    // `--sequence-dictionary` supplies one, so the refusal does not fire and the run reaches the
+    // checks after it.
+    let has_master = argument(parser, "sequence-dictionary").is_some();
     if let Some(refusal) = gatk_tools::read_walker_refusal::refusal(
         &input,
         path.exists(),
         path.is_dir(),
         decompressed.as_deref(),
         compressed,
-        intervals_given,
+        intervals_given && !has_master,
     ) {
         // The refusal names the exception the reference throws, and the non-user handler PRINTS
         // that class: a walker refusing an interval over a stream with no dictionary answers
@@ -656,6 +661,11 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     // `##contig` lines gives a real one.
     let master = master_dictionary(parser)?;
     if let Some(master) = &master {
+        // The master block runs before the reference/reads/features loop, and inside it the READS
+        // come before the features: a command line naming both gets the reads' refusal first.
+        for reads in arguments(parser, "input") {
+            validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
+        }
         validate_against_master(master, "features", &header.sequences)?;
     }
     let best = if header.sequences.is_empty() {
