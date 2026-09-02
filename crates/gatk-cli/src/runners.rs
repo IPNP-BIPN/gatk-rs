@@ -318,11 +318,13 @@ pub fn count_reads(parser: &Parser) -> Outcome {
             Thrown::non_user(refusal.exception(), refusal.message())
         });
     }
-    let index = path.with_extension("bam.bai");
-    let source = if index.exists() {
-        ReadsDataSource::open(path, &index)
-    } else {
-        ReadsDataSource::open_unindexed(path)
+    // The index is the one htsjdk's own search finds, not the one a single `with_extension` call
+    // guesses. `reads.bam.bai` was the only name asked for here, and htsjdk writes `reads.bai` at
+    // least as often and looks for it FIRST, so an interval query over a file indexed the other
+    // way found no index and answered zero rather than refusing (#1020).
+    let source = match htsjdk_bam::sam_files::find_index(path) {
+        Some(index) => ReadsDataSource::open(path, &index),
+        None => ReadsDataSource::open_unindexed(path),
     }
     .map_err(|error| Thrown::user(format!("{error:?}")))?;
 

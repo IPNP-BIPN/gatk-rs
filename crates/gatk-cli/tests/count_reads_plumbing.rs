@@ -52,7 +52,7 @@ fn scratch(case: &str) -> std::path::PathBuf {
 ///
 /// Rebuilt here rather than read from disk. The bytes of the file are the writer's business and
 /// are compared in htsjdk-rs; what this suite needs is the reads the golden's cases were run over.
-fn fixture(dir: &std::path::Path) -> std::path::PathBuf {
+fn fixture_named(dir: &std::path::Path, index_name: &str) -> std::path::PathBuf {
     use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
     use htsjdk_bam::header::{ReadGroup, SamHeader, SequenceRecord};
     use htsjdk_bam::record::BamRecord;
@@ -100,8 +100,13 @@ fn fixture(dir: &std::path::Path) -> std::path::PathBuf {
     let (bam, bai) = writer.finish_with_index().expect("the fixture");
     let path = dir.join("reads.bam");
     std::fs::write(&path, bam).expect("the fixture");
-    std::fs::write(dir.join("reads.bam.bai"), bai).expect("the index");
+    std::fs::write(dir.join(index_name), bai).expect("the index");
     path
+}
+
+/// The fixture with the index named the way this suite's cases were run: `reads.bam.bai`.
+fn fixture(dir: &std::path::Path) -> std::path::PathBuf {
+    fixture_named(dir, "reads.bam.bai")
 }
 
 /// Every case the golden ran, through the dispatcher.
@@ -234,4 +239,45 @@ fn the_refusals_are_the_reference_ones() {
         "{}",
         run.stderr
     );
+}
+
+/// The index htsjdk writes when it replaces the extension, which is the name it looks for FIRST.
+///
+/// `reads.bam.bai` was the only name this runner asked for, so a BAM indexed as `reads.bai` opened
+/// UNINDEXED and an interval query over it counted nothing: a wrong answer with a zero status,
+/// which is worse than a refusal. The search is htsjdk's now (`htsjdk_bam::sam_files::find_index`,
+/// measured in htsjdk-rs's `samfiles` suite), so both names answer the same number (#1020).
+#[test]
+fn an_index_named_by_replacing_the_extension_is_found() {
+    let expected = {
+        let dir = scratch("index-appended");
+        let bam = fixture_named(&dir, "reads.bam.bai");
+        let run = gatk_cli::run(&args(&[
+            "CountReads",
+            "--input",
+            &bam.to_string_lossy(),
+            "-L",
+            "chr1:1-1000",
+        ]));
+        assert_eq!(run.status, 0, "{}", run.stderr);
+        run.stdout
+    };
+    // The interval has to hold something, or the two names would agree on zero for the wrong
+    // reason: an unindexed read of the whole file also answers a number.
+    assert!(
+        expected.contains("Tool returned:\n2"),
+        "the interval counts two reads: {expected}"
+    );
+
+    let dir = scratch("index-replaced");
+    let bam = fixture_named(&dir, "reads.bai");
+    let run = gatk_cli::run(&args(&[
+        "CountReads",
+        "--input",
+        &bam.to_string_lossy(),
+        "-L",
+        "chr1:1-1000",
+    ]));
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert_eq!(run.stdout, expected);
 }
