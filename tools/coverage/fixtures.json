@@ -66,6 +66,10 @@
   "$per_tool": [
     "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
     "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
+    "",
+    "It takes TWO names for the same reason every other argument here does: one value is covered by",
+    "being present or absent, and the second is what lets a row notice that the tool writes where it",
+    "was told to.",
     "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
     "lives here because the generator does.",
     "",
@@ -150,7 +154,8 @@
   "per_tool": {
     "CountVariants": {
       "--output": [
-        "/work/out/count.txt"
+        "/work/out/count.txt",
+        "/work/out/count2.txt"
       ]
     }
   },
