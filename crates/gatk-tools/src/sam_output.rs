@@ -104,7 +104,31 @@ pub fn write_records(
     records: &[BamRecord],
     create_index: bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
-    let writer = BamWriter::new(Vec::new(), header).map_err(|e| ReadsError::Io(e.to_string()))?;
+    write_records_with(
+        header,
+        records,
+        create_index,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same, with the BGZF compression named.
+///
+/// htsjdk writes with the JDK deflater at level five and GATK does not: `GATKConfig` sets
+/// `samjdk.compression_level` to TWO and GATK replaces the static factory with Intel's GKL, so a
+/// tool run from a command line writes different bytes from the same records
+/// (`gatk-config`, #1032). The suites here call the first form because a dump reaches the tool
+/// through `instanceMain` and never installs the config; a runner calls this one.
+pub fn write_records_with(
+    header: &SamHeader,
+    records: &[BamRecord],
+    create_index: bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    let writer = BamWriter::with_compression(Vec::new(), header, level, deflater)
+        .map_err(|e| ReadsError::Io(e.to_string()))?;
     let mut writer = if create_index {
         writer.with_index()
     } else {

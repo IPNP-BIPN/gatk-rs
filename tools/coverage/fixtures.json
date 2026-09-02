@@ -163,6 +163,16 @@
     ]
   },
   "per_tool": {
+    "PrintReads": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/out.bam",
+        "/work/out/other.bam"
+      ]
+    },
     "CreateHadoopBamSplittingIndex": {
       "--input": [
         "/work/fixtures/reads.bam",
