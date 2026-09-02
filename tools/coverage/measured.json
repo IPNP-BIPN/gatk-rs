@@ -33,9 +33,9 @@
       "accepted": 3,
       "rejected": 15,
       "distinct_outputs": 1,
-      "matched": 4,
+      "matched": 18,
       "t": 2,
-      "share": 0.222
+      "share": 1.0
     }
   }
 }
