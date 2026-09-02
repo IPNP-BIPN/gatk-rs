@@ -6453,7 +6453,7 @@
     },
     {
       "id": "expanded-command-line",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the command line a tool records in every file it writes",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6466,7 +6466,7 @@
       "cases": [
         {
           "dump": "ExpandedCommandLineDump",
-          "golden": null,
+          "golden": "crates/gatk-cli/tests/data/expanded_command_line.txt.gz",
           "why": "Seven command lines over PrintReads covering each rule, and one over each of the other four declared tools so the opening name and the defaults behind it are measured rather than assumed to follow one pattern."
         }
       ]
