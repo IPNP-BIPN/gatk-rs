@@ -46,7 +46,30 @@ pub fn print_reads(
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    print_reads_with(
+        source,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same, with the BGZF compression named: see [`crate::sam_output::write_records_with`].
+pub fn print_reads_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
     let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     let header = header_for_sam_writer(source.header(), options);
-    crate::sam_output::write_records(&header, &records, options.create_output_bam_index)
+    crate::sam_output::write_records_with(
+        &header,
+        &records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
 }

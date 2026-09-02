@@ -1111,3 +1111,151 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
     // The tool returns nothing, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// The BGZF compression a tool run writes at: GATK's deflater and GATK's level.
+///
+/// `--use-jdk-deflater` chooses the first and `GATKConfig`'s `samjdk.compression_level` the
+/// second, and neither is htsjdk's own default. Every file a tool writes block compressed depends
+/// on both (#1032).
+fn output_compression(parser: &Parser) -> (u32, htsjdk_bgzf::Deflater) {
+    let level = gatk_tools::gatk_config::compression_level(
+        std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
+            .ok()
+            .as_deref(),
+    );
+    let deflater = if flag(parser, "use-jdk-deflater") {
+        htsjdk_bgzf::Deflater::Jdk
+    } else {
+        htsjdk_bgzf::Deflater::Gkl
+    };
+    (level, deflater)
+}
+
+/// `PrintReads.doWork`: the reads that survive the traversal, written back out.
+///
+/// It is `CountReads` with a writer at the end, and the writer is where the arguments this tool
+/// has and that one does not finally reach something: `--create-output-bam-index` decides whether
+/// a `.bai` is written beside the BAM, and `--add-output-sam-program-record` whether an `@PG` line
+/// is added at all. The `CL` that line carries is the expanded command line, which is why this
+/// tool needed [`crate::command_line::expanded`] before it could have a runner.
+pub fn print_reads(parser: &Parser) -> Outcome {
+    let resolved_filters = resolve_read_filters(parser, "PrintReads")?;
+
+    let inputs = arguments(parser, "input");
+    if inputs.len() > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "More than one --input is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let input = inputs.into_iter().next().ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let path = std::path::Path::new(&input);
+
+    let bytes = std::fs::read(path)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    let is_binary = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
+            .unwrap_or(false)
+    } else {
+        bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+    };
+    let named_index = read_index(
+        parser,
+        1,
+        is_binary,
+        gatk_tools::read_walker_refusal::is_block_compressed(&bytes),
+    )?;
+    let index = if is_binary {
+        named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
+    } else {
+        None
+    };
+    let source = match &index {
+        // An index that is not a BAI is refused by its MAGIC, and the message names the file
+        // rather than the path: `AbstractBAMFileIndex` throws `Unknown BAM index file type` with
+        // `getName()`, which is the last component alone.
+        Some(index) => ReadsDataSource::open(path, index).map_err(|_| {
+            Thrown::non_user(
+                gatk_tools::read_walker_refusal::SAM_FORMAT,
+                format!(
+                    "Unknown BAM index file type: {}",
+                    index
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                ),
+            )
+        })?,
+        None => ReadsDataSource::open_unindexed(path)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    };
+
+    let header = source.header().clone();
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            validate_against_master(master, "reads", &header.sequences)?;
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+        }
+    }
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
+    if !intervals.is_empty() && index.is_none() {
+        return Err(Thrown::user(
+            "Traversal by intervals was requested but some input files are not indexed.",
+        ));
+    }
+    let filter = read_filter(parser, &resolved_filters, &header)?;
+
+    let command_line = crate::command_line::expanded("PrintReads", parser);
+    let options = gatk_tools::print_reads::Options {
+        intervals,
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let (bam, bai) =
+        gatk_tools::print_reads::print_reads_with(&source, &options, &filter, level, deflater)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let written = bam;
+    std::fs::write(&output, &written).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    if let Some(bai) = bai {
+        // The index REPLACES the output's extension: `out.bam` is indexed by `out.bai`.
+        let companion = std::path::Path::new(&output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        // The digest APPENDS where the index replaces: `out.bam` is checksummed by `out.bam.md5`,
+        // and the file is the thirty-two hex characters and nothing else.
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&written)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
+    }
+    // The tool returns nothing, so `handleResult` prints nothing.
+    Ok(None)
+}
