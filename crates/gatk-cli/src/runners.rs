@@ -92,7 +92,16 @@ pub fn index_feature_file(parser: &Parser) -> Outcome {
             } else {
                 htsjdk_bgzf::Deflater::Gkl
             };
-            index_feature_file::build_tabix(&bytes, &source, &input, deflater).map_err(refused)?
+            // And the LEVEL is GATKConfig's, which is two rather than htsjdk's five: `Main`
+            // installs it as a system property before any tool runs, so every block-compressed
+            // file a real invocation writes uses it (#1032).
+            let level = gatk_tools::gatk_config::compression_level(
+                std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
+                    .ok()
+                    .as_deref(),
+            );
+            index_feature_file::build_tabix(&bytes, &source, &input, deflater, level)
+                .map_err(refused)?
         }
         _ => index_feature_file::build(&text, &source, &input).map_err(refused)?,
     };

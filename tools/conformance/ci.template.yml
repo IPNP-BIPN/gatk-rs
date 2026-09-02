@@ -40,6 +40,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        # `gkl-igzip` links ISA-L, and ISA-L without an assembler falls back to its readable C.
+        # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
+        # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
+        # is one of them, so a build without nasm cannot write a block-compressed file at all.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
+
       - uses: dtolnay/rust-toolchain@master
         with:
           # Pinned; must match rust-toolchain.toml.
@@ -91,6 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        # `gkl-igzip` links ISA-L, and ISA-L without an assembler falls back to its readable C.
+        # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
+        # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
+        # is one of them, so a build without nasm cannot write a block-compressed file at all.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -153,6 +167,13 @@ jobs:
           fail-on-cache-miss: true
 
       - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        # `gkl-igzip` links ISA-L, and ISA-L without an assembler falls back to its readable C.
+        # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
+        # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
+        # is one of them, so a build without nasm cannot write a block-compressed file at all.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
 
       - name: Build the port binary
         # linux/amd64, which is what the container runs. The port is executed INSIDE the container

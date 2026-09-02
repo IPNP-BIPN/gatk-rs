@@ -147,6 +147,10 @@ fn a_block_compressed_input_gets_the_reference_tabix_index() {
         &source("compressed"),
         name("compressed"),
         Deflater::Gkl,
+        // FIVE, not GATKConfig's two. This dump calls `new IndexFeatureFile().instanceMain(...)`
+        // directly, so `Main` never installs the config and htsjdk's own default stands. A real
+        // `gatk` invocation writes at two, which is #1032's row and the covering array's.
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
     )
     .expect("the tabix index");
     assert_eq!(ours, bytes(&text, "index", "compressed"));
@@ -163,6 +167,7 @@ fn a_stream_that_is_not_block_compressed_is_not_a_user_error() {
         &source("compressed"),
         name("compressed"),
         Deflater::Gkl,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
     )
     .expect_err("plain bytes are not a BGZF stream");
     assert!(!refusal.is_user());

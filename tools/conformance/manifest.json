@@ -6351,6 +6351,26 @@
       ]
     },
     {
+      "id": "gatk-config",
+      "status": "golden-pending",
+      "title": "the system properties GATKConfig installs before any tool runs",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "A covering-array row over IndexFeatureFile disagreed with the port on a .tbi whose INDEX was already byte for byte, and the difference was the compression: `samjdk.compression_level` is declared here with a default of TWO where htsjdk's own is five, and two is the one level pair Intel's GKL routes through igzip rather than zlib. Every BGZF byte a real `gatk` invocation writes therefore depends on this table, and a dump that calls a tool's instanceMain directly never sees it (#1032). What is measured is the declaration and the effect both: the key each method carries, its default, whether it is a @SystemProperty at all, what System.getProperties holds after injection, and whether injection overwrites a property that was already set.",
+      "cases": [
+        {
+          "dump": "GatkConfigDump",
+          "golden": null,
+          "why": "Every key the interface declares, sorted by property name so no JVM's reflection order can reach the golden; the injected value of each system property; and the precedence case, which decides whether a -D on the command line means anything."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",

@@ -36,13 +36,23 @@
 //! boundary is the NEXT block's address with offset zero. The file's end is the same rule reached
 //! at the terminator block.
 //!
-//! # The `.tbi` is a BGZF file, so the deflater decides its bytes
+//! # The `.tbi` is a BGZF file, so the deflater and the level decide its bytes
 //!
-//! `TabixIndex.write` block compresses through `BlockCompressedOutputStream`, whose deflater is a
-//! STATIC factory GATK replaces: the reference's `.tbi` is Intel's GKL and not the JDK's zlib
-//! unless `--use-jdk-deflater` says otherwise. The golden's own block settles it -- 104 bytes,
-//! which `java.util.zip` gives at no level and GKL gives at five -- so [`build_tabix`] takes the
-//! deflater as an argument rather than assuming either.
+//! `TabixIndex.write` block compresses through `BlockCompressedOutputStream`, and two things about
+//! it are GATK's rather than htsjdk's.
+//!
+//! The DEFLATER is a static factory GATK replaces: the reference's `.tbi` is Intel's GKL and not
+//! the JDK's zlib unless `--use-jdk-deflater` says otherwise.
+//!
+//! The LEVEL is `samjdk.compression_level`, which [`crate::gatk_config`] installs as **two** where
+//! htsjdk's own default is five. Two is the one level pair GKL routes through igzip rather than
+//! zlib, so the difference is not a few bytes of ratio, it is a different compressor.
+//!
+//! Both were found the same way, and neither from reading: the `index-feature-file` golden calls
+//! `instanceMain` directly and never installs the config, so its block is GKL at five; the
+//! covering array runs `Main`, which does, so its block is GKL at two. The same eighty-one bytes
+//! deflate to 43 and to 49 (#1032). [`build_tabix`] therefore takes both as arguments and assumes
+//! neither.
 
 use htsjdk_bgzf::read::BgzfReader;
 use htsjdk_bgzf::{vfp, Deflater};
@@ -342,6 +352,7 @@ pub fn build_tabix(
     source: &Source,
     file_name: &str,
     deflater: Deflater,
+    level: u32,
 ) -> Result<Vec<u8>, Refusal> {
     let codec = codec_for(file_name).ok_or_else(|| Refusal::NoSuitableCodecs {
         path: source.path.clone(),
@@ -387,7 +398,15 @@ pub fn build_tabix(
             path: source.path.clone(),
             detail: format!("{}: {}", error.java_class(), error.message()),
         })?;
-    Ok(index.write_with(deflater))
+    // `TabixIndex.write` composes the body and hands it to a `BlockCompressedOutputStream`; the
+    // framing is done here rather than through `write_with` because the level is the RUN's and not
+    // htsjdk's, and htsjdk's own writer answers for htsjdk's default.
+    let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+    std::io::Write::write_all(&mut writer, &index.write_body())
+        .expect("a vector never fails to be written to");
+    Ok(writer
+        .into_inner()
+        .expect("a vector never fails to be written to"))
 }
 
 /// `IndexFactory.createIndex` for the two branches that write a `.idx`, then `index.write(path)`.
