@@ -349,6 +349,32 @@ fn a_bam_that_shares_no_contig_with_the_vcf_is_refused_before_the_traversal() {
     let run = gatk_cli::run(&argv);
     assert_eq!(run.status, 0, "{}", run.stderr);
 
+    // A reads input that is not a BAM at all has an EMPTY dictionary rather than a refusal: the
+    // header is asked for before any record is read, so a VCF handed to `--input` shares no contig
+    // with anything. That is four rows of the covering array, and the refusal a read walker makes
+    // for the same file is a later one.
+    let not_a_bam = dir.join("not-a-bam.vcf");
+    std::fs::write(&not_a_bam, "##fileformat=VCFv4.2\n#CHROM\tPOS\n").expect("the fixture");
+    let run = gatk_cli::run(&args(&[
+        "CountVariants",
+        "--variant",
+        &input.to_string_lossy(),
+        "--input",
+        &not_a_bam.to_string_lossy(),
+    ]));
+    assert_eq!(
+        run.status,
+        main_entry::exit_status(Failure::User),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stderr.contains("No overlapping contigs found."),
+        "{}",
+        run.stderr
+    );
+    assert!(run.stderr.contains("reads contigs = []"), "{}", run.stderr);
+
     // And the argument that turns the check off turns it off.
     let mut argv = args(&[
         "CountVariants",
