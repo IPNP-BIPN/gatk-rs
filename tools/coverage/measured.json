@@ -29,20 +29,20 @@
       "share": 1.0
     },
     "CountReads": {
-      "rows": 18,
+      "rows": 19,
       "accepted": 3,
-      "rejected": 15,
-      "distinct_outputs": 1,
-      "matched": 18,
+      "rejected": 16,
+      "distinct_outputs": 3,
+      "matched": 19,
       "t": 2,
       "share": 1.0
     },
     "CountVariants": {
-      "rows": 24,
-      "accepted": 11,
+      "rows": 22,
+      "accepted": 9,
       "rejected": 13,
-      "distinct_outputs": 2,
-      "matched": 24,
+      "distinct_outputs": 3,
+      "matched": 22,
       "t": 2,
       "share": 1.0
     }

@@ -6412,7 +6412,7 @@
     },
     {
       "id": "interval-arguments",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the five arguments that turn -L and -XL into the list a walker traverses",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6426,7 +6426,7 @@
       "cases": [
         {
           "dump": "IntervalArgumentsDump",
-          "golden": null,
+          "golden": "crates/gatk-engine/tests/data/interval_arguments.txt.gz",
           "why": "Twenty-four command lines over one three-contig dictionary whose order is not alphabetical, covering each argument alone, the pairs that interact, and the three refusals."
         }
       ]

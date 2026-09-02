@@ -19,7 +19,9 @@
 //!  * **and `unmapped` being a traversal flag rather than an interval**, accepted on `-L` and
 //!    refused on `-XL`.
 //!
-//! While the suite is `golden-pending` the dump is named by `INTERVAL_ARGUMENTS_DUMP`.
+//! The golden is committed and re-derived by the `interval-arguments` suite on every run; the
+//! dump can still be overridden with an environment variable while a harness change is being
+//! checked.
 
 use gatk_engine::interval::MergingRule;
 use gatk_engine::interval_arguments::{traversal_parameters, SetRule};
@@ -248,18 +250,17 @@ fn field(dump: &str, kind: &str, case: &str) -> Option<String> {
 
 #[test]
 fn every_command_line_resolves_as_the_reference_resolves_it() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `INTERVAL_ARGUMENTS_DUMP` still overrides it, which is how a harness change is checked
+    // before CI sees it.
     let dump = match std::env::var("INTERVAL_ARGUMENTS_DUMP") {
         Ok(path) => {
             std::fs::read_to_string(path).expect("the dump named by INTERVAL_ARGUMENTS_DUMP")
         }
-        Err(_) => {
-            println!(
-                "skipped: the interval-arguments golden is still pending. Run the suite and point \
-                 INTERVAL_ARGUMENTS_DUMP at \
-                 tools/conformance/pending/interval-arguments.IntervalArgumentsDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/interval_arguments.txt.gz"),
+        ),
     };
     let header = dictionary();
 
