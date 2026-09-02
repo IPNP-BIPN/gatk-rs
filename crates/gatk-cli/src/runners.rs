@@ -480,49 +480,106 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
     };
     let intervals_given = !arguments(parser, "intervals").is_empty();
-    // `-L` against a stream with no dictionary is `IllegalArgumentException: Dictionary cannot
-    // have size zero`, and the dictionary it asks for is the BEST AVAILABLE one. A
-    // `--sequence-dictionary` supplies one, so the refusal does not fire and the run reaches the
-    // checks after it.
-    let has_master = argument(parser, "sequence-dictionary").is_some();
-    if let Some(refusal) = gatk_tools::read_walker_refusal::refusal(
+
+    // `GATKTool.onStartup` fixes the order, and the order is most of what a covering-array row
+    // over this tool measures:
+    //
+    //   loadMasterSequenceDictionary, initializeReads, initializeIntervals,
+    //   validateSequenceDictionaries, then the traversal -- which sets its bounds before it reads
+    //   a record.
+    //
+    // So a file that is not a BAM is refused LAST, by the record parse, and everything the
+    // arguments decide is refused before it. A port that asked the reader first answered a later
+    // question first (#69).
+    let master = master_dictionary(parser)?;
+
+    // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
+    let bytes = std::fs::read(path).ok();
+    let compressed = bytes
+        .as_deref()
+        .map(gatk_tools::read_walker_refusal::is_block_compressed)
+        .unwrap_or(false);
+    let decompressed = match (&bytes, compressed) {
+        (None, _) => None,
+        (Some(bytes), false) => Some(bytes.clone()),
+        (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
+    };
+    let reader_refusal = gatk_tools::read_walker_refusal::refusal(
         &input,
         path.exists(),
         path.is_dir(),
         decompressed.as_deref(),
         compressed,
-        intervals_given && !has_master,
-    ) {
-        // The refusal names the exception the reference throws, and the non-user handler PRINTS
-        // that class: a walker refusing an interval over a stream with no dictionary answers
-        // `java.lang.IllegalArgumentException: ...` and not a banner (#1020).
-        return Err(if refusal.is_user() {
-            Thrown::user(refusal.message())
-        } else {
-            Thrown::non_user(refusal.exception(), refusal.message())
-        });
+        // The empty-dictionary refusal belongs to the INTERVAL step, and the dictionary it asks
+        // for is the best available one, so a `--sequence-dictionary` supplies it.
+        intervals_given && master.is_none(),
+    );
+    if let Some(refusal) = &reader_refusal {
+        if !matches!(
+            refusal,
+            gatk_tools::read_walker_refusal::Refusal::NotSamText { .. }
+        ) {
+            // The refusal names the exception the reference throws, and the non-user handler
+            // PRINTS that class: a walker refusing an interval over a stream with no dictionary
+            // answers `java.lang.IllegalArgumentException: ...` and not a banner (#1020).
+            return Err(if refusal.is_user() {
+                Thrown::user(refusal.message())
+            } else {
+                Thrown::non_user(refusal.exception(), refusal.message())
+            });
+        }
     }
+    // A stream that is not SAM text has a header of no sequences, which is what the checks below
+    // see; the refusal itself waits for the traversal.
+    let deferred_parse_refusal = reader_refusal;
+
     // The index is the one htsjdk's own search finds, not the one a single `with_extension` call
     // guesses. `reads.bam.bai` was the only name asked for here, and htsjdk writes `reads.bai` at
     // least as often and looks for it FIRST, so an interval query over a file indexed the other
     // way found no index and answered zero rather than refusing (#1020).
-    let source = match htsjdk_bam::sam_files::find_index(path) {
-        Some(index) => ReadsDataSource::open(path, &index),
-        None => ReadsDataSource::open_unindexed(path),
-    }
-    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let index = htsjdk_bam::sam_files::find_index(path);
+    let source = if deferred_parse_refusal.is_some() {
+        None
+    } else {
+        Some(
+            match &index {
+                Some(index) => ReadsDataSource::open(path, index),
+                None => ReadsDataSource::open_unindexed(path),
+            }
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        )
+    };
+    let header = source
+        .as_ref()
+        .map(|source| source.header().clone())
+        .unwrap_or_default();
 
-    let header = source.header().clone();
-    // The MASTER dictionary is validated against the reads before the traversal, and it is what
-    // `getBestAvailableSequenceDictionary` answers with, so `-L` resolves against it too.
-    let master = master_dictionary(parser)?;
-    if let Some(master) = &master {
-        validate_against_master(master, "reads", &header.sequences)?;
-    }
+    // `initializeIntervals`, against the best available dictionary: the master where there is one.
     let best = master.clone().unwrap_or_else(|| header.clone());
     let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
+
+    // `validateSequenceDictionaries`, which the argument turns off wholesale.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            validate_against_master(master, "reads", &header.sequences)?;
+        }
+    }
+
+    // `setTraversalBounds`, which the traversal calls before it reads anything.
+    if intervals_given && index.is_none() {
+        return Err(Thrown::user(
+            "Traversal by intervals was requested but some input files are not indexed.",
+        ));
+    }
+
+    // And only now the record parse.
+    if let Some(refusal) = deferred_parse_refusal {
+        return Err(Thrown::non_user(refusal.exception(), refusal.message()));
+    }
+    let source = source.expect("a source, since the parse refusal was not taken");
+
     let filter = read_filter(parser, &resolved_filters, &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -660,13 +717,18 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
     // `##contig` lines gives a real one.
     let master = master_dictionary(parser)?;
-    if let Some(master) = &master {
-        // The master block runs before the reference/reads/features loop, and inside it the READS
-        // come before the features: a command line naming both gets the reads' refusal first.
-        for reads in arguments(parser, "input") {
-            validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
+    // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
+    // master block included: a guard around part of it refuses command lines the reference runs.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            // The master block runs before the reference/reads/features loop, and inside it the
+            // READS come before the features: a command line naming both gets the reads' refusal
+            // first.
+            for reads in arguments(parser, "input") {
+                validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
+            }
+            validate_against_master(master, "features", &header.sequences)?;
         }
-        validate_against_master(master, "features", &header.sequences)?;
     }
     let best = if header.sequences.is_empty() {
         master.clone().unwrap_or_else(|| header.clone())
