@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 14,
-  "arguments_in_array": 3,
-  "arguments_excluded": 11,
+  "arguments_in_array": 4,
+  "arguments_excluded": 10,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -57,13 +57,6 @@
       "source": "none"
     },
     {
-      "argument": "--use-jdk-deflater",
-      "type": "boolean",
-      "reason": "excluded by the repository: chooses a deflater for files this tool does not write compressed",
-      "held_at": null,
-      "source": "none"
-    },
-    {
       "argument": "--use-jdk-inflater",
       "type": "boolean",
       "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
@@ -86,8 +79,8 @@
     }
   ],
   "rows": 8,
-  "tuples_total": 20,
-  "tuples_covered": 20,
+  "tuples_total": 36,
+  "tuples_covered": 36,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -97,12 +90,14 @@
       "labels": {
         "--input": "fixture[0]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[0]"
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/index.idx",
-        "--tmp-dir=/work/tmp"
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -110,12 +105,14 @@
       "labels": {
         "--input": "fixture[0]",
         "--output": "fixture[1]",
-        "--tmp-dir": "fixture[1]"
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/index.tbi",
-        "--tmp-dir=/work/tmp2"
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -123,12 +120,14 @@
       "labels": {
         "--input": "fixture[1]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[1]"
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--input=/work/fixtures/regions.bed",
         "--output=/work/out/index.idx",
-        "--tmp-dir=/work/tmp2"
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -136,12 +135,14 @@
       "labels": {
         "--input": "fixture[1]",
         "--output": "fixture[1]",
-        "--tmp-dir": "fixture[0]"
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--input=/work/fixtures/regions.bed",
         "--output=/work/out/index.tbi",
-        "--tmp-dir=/work/tmp"
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -149,12 +150,14 @@
       "labels": {
         "--input": "fixture[2]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[0]"
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--input=/work/fixtures/reads.vcf.gz",
         "--output=/work/out/index.idx",
-        "--tmp-dir=/work/tmp"
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -162,12 +165,14 @@
       "labels": {
         "--input": "fixture[2]",
         "--output": "fixture[1]",
-        "--tmp-dir": "fixture[1]"
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--input=/work/fixtures/reads.vcf.gz",
         "--output=/work/out/index.tbi",
-        "--tmp-dir=/work/tmp2"
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -175,12 +180,14 @@
       "labels": {
         "--input": "fixture[3]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[0]"
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--input=/work/fixtures/reads.bam",
         "--output=/work/out/index.idx",
-        "--tmp-dir=/work/tmp"
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -188,12 +195,14 @@
       "labels": {
         "--input": "fixture[3]",
         "--output": "fixture[1]",
-        "--tmp-dir": "fixture[1]"
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--input=/work/fixtures/reads.bam",
         "--output=/work/out/index.tbi",
-        "--tmp-dir=/work/tmp2"
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
       ]
     }
   ]
