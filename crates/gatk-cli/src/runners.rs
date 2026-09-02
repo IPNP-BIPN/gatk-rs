@@ -1369,10 +1369,17 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
 
     let written =
         gatk_tools::gather_vcfs::gather(&shards, &arguments_for_gather).map_err(|error| {
+            let class = error.java_class();
             Thrown {
                 failure: Failure::User,
-                exception: error.java_class(),
-                message: Some(error.message()),
+                exception: class,
+                // `UserException$BadInput`'s constructor puts `Bad input: ` in front of whatever
+                // it is handed, and the port's message is what it was handed.
+                message: Some(if class.ends_with("$BadInput") {
+                    format!("Bad input: {}", error.message())
+                } else {
+                    error.message()
+                }),
             }
         })?;
 
@@ -1437,7 +1444,12 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
     if flag(parser, "create-output-variant-index") {
         // The index a feature file's name implies: a `.tbi` for a block compressed output and a
         // Tribble `.idx` for a plain one, both APPENDED to the whole name.
-        let source = index_feature_file::Source::new(&output);
+        //
+        // The Tribble header records the file's URI, its SIZE and its lastModified, so an index
+        // built with the zero `Source` defaults to differs from the reference's in bytes it never
+        // looks at again. The file has just been written, so its mtime is there to be read.
+        let mut source = index_feature_file::Source::new(&output);
+        source.timestamp = modified_millis(&output);
         let index = match index_feature_file::index_kind(&output) {
             index_feature_file::IndexKind::Tabix => {
                 let (level, deflater) = output_compression(parser);
