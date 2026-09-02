@@ -29,6 +29,11 @@
     "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
     "a count. A `.idx` there would measure nothing but a file name.",
     "",
+    "`--reference` takes two FASTAs, each with the .fai and .dict beside it that GATK requires: one",
+    "on the corpus's own contig and one on a contig it does not carry. The reference dictionary",
+    "takes part in the validation and outranks the reads' in the best-available chain, so the",
+    "second value is a refusal and the first is not.",
+    "",
     "`--read-index` takes two paths that both exist, because what the argument decides is not",
     "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
     "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
@@ -128,6 +133,10 @@
     "--inverted-read-filter": [
       "FirstOfPairReadFilter",
       "PrimaryLineReadFilter"
+    ],
+    "--reference": [
+      "/work/fixtures/reference.fasta",
+      "/work/fixtures/other.fasta"
     ],
     "--read-index": [
       "/work/fixtures/reads.bai",

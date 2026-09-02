@@ -373,6 +373,24 @@ fn read_index(
     Ok(is_binary.then(|| std::path::PathBuf::from(&indices[0])))
 }
 
+/// `--reference`: the reference dictionary, read off the `.dict` beside the FASTA.
+///
+/// GATK requires a reference to carry both an index and a dictionary, and the dictionary's name
+/// REPLACES the FASTA's extension rather than appending to it, which is the opposite of a feature
+/// file's index and the same rule `SamFiles.findIndex` follows for a BAM.
+///
+/// What the port needs from a reference is that dictionary: it takes part in the validation, and
+/// it is the best available one when no `--sequence-dictionary` was given.
+fn reference_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
+    let Some(path) = argument(parser, "reference") else {
+        return Ok(None);
+    };
+    let dictionary = std::path::Path::new(&path).with_extension("dict");
+    let text = std::fs::read_to_string(&dictionary)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
+    Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
+}
+
 /// `--sequence-dictionary`: the MASTER dictionary, read off a `.dict` file.
 ///
 /// A `.dict` is a SAM header with `@SQ` lines and no records, so it parses as one. `None` where
@@ -524,6 +542,9 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     // arguments decide is refused before it. A port that asked the reader first answered a later
     // question first (#69).
     let master = master_dictionary(parser)?;
+    // `initializeReference` comes before `initializeReads`, and its dictionary outranks the reads'
+    // in `getBestAvailableSequenceDictionary`.
+    let reference = reference_dictionary(parser)?;
 
     // `initializeReads`: the file itself, which is a refusal only when it cannot be read at all.
     let bytes = std::fs::read(path).ok();
@@ -602,16 +623,40 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         .map(|source| source.header().clone())
         .unwrap_or_default();
 
-    // `initializeIntervals`, against the best available dictionary: the master where there is one.
-    let best = master.clone().unwrap_or_else(|| header.clone());
+    // `initializeIntervals`, against the best available dictionary: master, then reference, then
+    // reads, which is `getBestAvailableSequenceDictionary`'s own order.
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
     let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
 
-    // `validateSequenceDictionaries`, which the argument turns off wholesale.
+    // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
+    // runs first and checks the reference before the reads; then the reference is checked against
+    // the reads on its own.
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reads", &header.sequences)?;
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+        }
+        if let Some(reference) = &reference {
+            gatk_tools::sequence_dictionary::validate(
+                "reference",
+                &reference.sequences,
+                "reads",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
         }
     }
 
@@ -748,17 +793,51 @@ pub fn count_variants(parser: &Parser) -> Outcome {
             .collect::<Result<_, _>>()?;
 
     let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             // The master block runs before the reference/reads/features loop, and inside it the
-            // READS come before the features: a command line naming both gets the reads' refusal
-            // first.
+            // READS come before the reference and the reference before the features.
             for reads in &reads_dictionaries {
                 validate_against_master(master, "reads", reads)?;
             }
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
             validate_against_master(master, "features", &header.sequences)?;
+        }
+        if let Some(reference) = &reference {
+            // The reference against the reads, then the reference against the features.
+            for reads in &reads_dictionaries {
+                gatk_tools::sequence_dictionary::validate(
+                    "reference",
+                    &reference.sequences,
+                    "reads",
+                    reads,
+                    false,
+                    false,
+                )
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?;
+            }
+            gatk_tools::sequence_dictionary::validate(
+                "reference",
+                &reference.sequences,
+                "features",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
         }
     }
     // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
