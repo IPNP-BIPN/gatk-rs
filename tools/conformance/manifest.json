@@ -6371,6 +6371,26 @@
       ]
     },
     {
+      "id": "main-usage",
+      "status": "golden-pending",
+      "title": "the main usage listing, all three hundred and seventy-three lines of it",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "`main-entry` measured the listing's SHAPE -- 373 lines on stdout and the first of them -- because the other 372 are tool names and one-line summaries no golden carried. C.1 has been open on exactly that (#818). What the listing is made of is not obvious from the class names: the tools are GROUPED by program group with a heading and a summary per group, both the groups and the tools inside them are sorted, every line is coloured in escapes that are bytes like any other, a summary is TRUNCATED to the width the renderer chose so the golden holds what was printed rather than what the annotation says, and a beta or experimental tool carries a marker inside the line. The same text goes to stdout for no arguments and to stderr for a name that does not resolve, and both are recorded so a port that built one of them cannot pass.",
+      "cases": [
+        {
+          "dump": "MainUsageDump",
+          "golden": null,
+          "why": "Two runs, four streams: the listing on stdout with the other stream empty, and the listing on stderr with stdout empty."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",
