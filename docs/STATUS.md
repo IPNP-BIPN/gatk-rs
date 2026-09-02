@@ -159,7 +159,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | not measured |
 | `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
-| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, read-walker-refusals, tool-argument-declarations, tool-argument-enums, usage-text | 7 | t=2, 4/18 rows (22%), **1 distinct output** |
+| `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, read-walker-refusals, tool-argument-declarations, tool-argument-enums, usage-text | 7 | t=2, 18/18 rows (100%), **1 distinct output** |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, tool-argument-declarations, tool-argument-enums | 3 | not measured |
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
