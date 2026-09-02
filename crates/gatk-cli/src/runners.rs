@@ -467,18 +467,6 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
     let path = std::path::Path::new(&input);
-    // What a walker makes of the file is the READER's answer and not the tool's, and it is three
-    // different answers with two different statuses: `read-walker-refusals` measured them.
-    let bytes = std::fs::read(path).ok();
-    let compressed = bytes
-        .as_deref()
-        .map(gatk_tools::read_walker_refusal::is_block_compressed)
-        .unwrap_or(false);
-    let decompressed = match (&bytes, compressed) {
-        (None, _) => None,
-        (Some(bytes), false) => Some(bytes.clone()),
-        (Some(bytes), true) => htsjdk_bgzf::read::decompress_all(bytes).ok(),
-    };
     let intervals_given = !arguments(parser, "intervals").is_empty();
 
     // `GATKTool.onStartup` fixes the order, and the order is most of what a covering-array row
