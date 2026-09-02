@@ -14,6 +14,8 @@
 //! `org.broadinstitute.hellbender.tools.CountReads`.
 
 use gatk_barclay::{Parser, Value};
+use gatk_engine::interval::MergingRule;
+use gatk_engine::interval_arguments::{SetRule, TraversalParameters};
 use gatk_engine::reads::ReadsDataSource;
 use gatk_tools::index_feature_file::{self, Refusal, Source};
 use gatk_tools::main_entry::{Failure, Thrown, PORT_FAILURE, PORT_LIMITATION};
@@ -293,6 +295,83 @@ fn read_filter<'a>(
     }))
 }
 
+/// The five arguments of `IntervalArgumentCollection`, resolved against a dictionary.
+///
+/// `--intervals` was the only one the runners read: `--exclude-intervals`, `--interval-set-rule`,
+/// `--interval-merging-rule`, `--interval-padding` and `--interval-exclusion-padding` changed
+/// nothing here and change the answer in the reference. They are measured in `interval-arguments`
+/// and ported in [`gatk_engine::interval_arguments`]; this is the layer that reads them off a
+/// command line.
+///
+/// `None` where the collection was not specified at all, which is what a walker traverses
+/// everything for.
+fn interval_arguments(
+    parser: &Parser,
+    header: &SamHeader,
+) -> Result<Option<TraversalParameters>, Thrown> {
+    let include = arguments(parser, "intervals");
+    let exclude = arguments(parser, "exclude-intervals");
+    if include.is_empty() && exclude.is_empty() {
+        return Ok(None);
+    }
+
+    // The two enums arrive as their constant names, which is what the declaration's domain holds.
+    let set_rule = match scalar(parser, "interval-set-rule").as_deref() {
+        Some("INTERSECTION") => SetRule::Intersection,
+        _ => SetRule::Union,
+    };
+    let merging_rule = match scalar(parser, "interval-merging-rule").as_deref() {
+        Some("OVERLAPPING_ONLY") => MergingRule::OverlappingOnly,
+        _ => MergingRule::All,
+    };
+    let padding = number(parser, "interval-padding");
+    let exclusion_padding = number(parser, "interval-exclusion-padding");
+
+    let parameters = gatk_engine::interval_arguments::traversal_parameters(
+        &include,
+        &exclude,
+        header,
+        set_rule,
+        merging_rule,
+        padding,
+        exclusion_padding,
+    )
+    .map_err(|error| Thrown {
+        failure: match error {
+            // A bad argument value is a `CommandLineException`, which is status ONE, and the two
+            // interval refusals are exactly that where the parse failures are status two.
+            gatk_engine::interval_arguments::IntervalArgumentError::EmptyIntersection {
+                ..
+            }
+            | gatk_engine::interval_arguments::IntervalArgumentError::ExcludedEverything {
+                ..
+            } => Failure::CommandLine,
+            _ => Failure::User,
+        },
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+
+    if parameters.traverse_unmapped {
+        // `-L unmapped` asks the traversal for the records with no position, which neither of
+        // these tools' ported traversals can produce. Refusing is the port's own answer and says
+        // so; counting the mapped ones and calling it the total would not.
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "-L unmapped asks for a traversal of unmapped records that this port does not carry \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(Some(parameters))
+}
+
+/// An integer argument, or zero where it was not given.
+pub fn number(parser: &Parser, long_name: &str) -> i32 {
+    scalar(parser, long_name)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(0)
+}
+
 /// `CountReads.doWork`, with the input read and the output written.
 ///
 /// Three things the `count-reads-plumbing` golden pins and this reproduces: the tool RETURNS the
@@ -355,12 +434,9 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let header = source.header().clone();
-    let mut intervals = Vec::new();
-    for query in arguments(parser, "intervals") {
-        let interval = gatk_engine::interval::parse_interval(&query, &header)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-        intervals.push(interval);
-    }
+    let intervals = interval_arguments(parser, &header)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
     let filter = read_filter(parser, "CountReads", &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -489,13 +565,7 @@ pub fn count_variants(parser: &Parser) -> Outcome {
         }
     }
 
-    let mut intervals = Vec::new();
-    for query in arguments(parser, "intervals") {
-        let interval = gatk_engine::interval::parse_interval(&query, &header)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-        intervals.push(interval);
-    }
-    let intervals = (!intervals.is_empty()).then_some(intervals);
+    let intervals = interval_arguments(parser, &header)?.map(|parameters| parameters.intervals);
 
     let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
         .into_iter()

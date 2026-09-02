@@ -6411,6 +6411,27 @@
       ]
     },
     {
+      "id": "interval-arguments",
+      "status": "golden-pending",
+      "title": "the five arguments that turn -L and -XL into the list a walker traverses",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountReads",
+        "CountVariants"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The runners read --intervals and ignore the other four, so --interval-padding, --interval-exclusion-padding, --interval-set-rule and --exclude-intervals change nothing in the port and change the answer in the reference: four of the five arguments of the collection every walker carries. The rules are not guessable. Padding is applied PER -L argument, before the set operator, and each padded batch is sorted and merged with ALL whatever the merging rule is. The set operator folds one argument at a time into an accumulator, and an EMPTY accumulator short-circuits it, which is why the first -L is never intersected with anything and why INTERSECTION over three arguments is not the intersection of all three at once. An empty intersection is a REFUSAL rather than an empty traversal, and so is an exclusion that removes everything. -XL with no -L means the whole reference contig by contig. And `unmapped` is a traversal flag rather than an interval, accepted on -L and refused on -XL.",
+      "cases": [
+        {
+          "dump": "IntervalArgumentsDump",
+          "golden": null,
+          "why": "Twenty-four command lines over one three-contig dictionary whose order is not alphabetical, covering each argument alone, the pairs that interact, and the three refusals."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",
