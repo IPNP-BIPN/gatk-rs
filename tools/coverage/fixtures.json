@@ -163,6 +163,16 @@
     ]
   },
   "per_tool": {
+    "GatherVcfsCloud": {
+      "--input": [
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/gathered.vcf",
+        "/work/out/gathered.vcf.gz"
+      ]
+    },
     "PrintReads": {
       "--input": [
         "/work/fixtures/reads.bam",

@@ -1259,3 +1259,197 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     // The tool returns nothing, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// One input VCF, read as far as the gather looks at it.
+///
+/// The gather compares dictionaries, sample lists and record positions, and copies lines: nothing
+/// it decides needs an allele parsed, so the file is read as text and the header kept whole.
+fn gather_shard(name: &str) -> Result<(gatk_tools::gather_vcfs::Shard, Vec<String>, bool), Thrown> {
+    let bytes = std::fs::read(name)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(name, false)))?;
+    let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
+    let text = if compressed {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    gatk_tools::read_walker_refusal::SAM_FORMAT,
+                    format!("{name} is not a block compressed file"),
+                )
+            })?
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
+
+    let mut header = Vec::new();
+    let mut dictionary = Vec::new();
+    let mut samples = Vec::new();
+    let mut records = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("##") {
+            header.push(line.to_string());
+            if let Some(body) = line.strip_prefix("##contig=<") {
+                if let Some(id) = body
+                    .trim_end_matches('>')
+                    .split(',')
+                    .find_map(|field| field.strip_prefix("ID="))
+                {
+                    dictionary.push(id.to_string());
+                }
+            }
+        } else if line.starts_with("#CHROM") {
+            header.push(line.to_string());
+            // The samples are every column past FORMAT, which is the ninth.
+            samples = line.split('\t').skip(9).map(str::to_string).collect();
+        } else if !line.is_empty() {
+            let mut fields = line.split('\t');
+            let contig = fields.next().unwrap_or_default().to_string();
+            let position = fields
+                .next()
+                .and_then(|text| text.parse::<i32>().ok())
+                .unwrap_or(0);
+            records.push((contig, position));
+        }
+    }
+    Ok((
+        gatk_tools::gather_vcfs::Shard {
+            name: name.to_string(),
+            dictionary,
+            samples,
+            records,
+        },
+        header,
+        compressed,
+    ))
+}
+
+/// `GatherVcfsCloud.doWork`: the shards' records, in order, under the first shard's header.
+///
+/// The tool has two paths and this carries one. CONVENTIONAL re-reads and re-writes the records;
+/// BLOCK copies the compressed BLOCKS of each input, which is a different set of bytes for the
+/// same records and is not something a text writer can produce. The port refuses that path in its
+/// own words rather than writing the conventional bytes under its name.
+pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
+    use gatk_tools::gather_vcfs::{Arguments, GatherType};
+
+    let inputs = arguments(parser, "input");
+    if inputs.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument input was missing: Argument 'input' is required",
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let mut shards = Vec::new();
+    let mut lines = Vec::new();
+    let mut all_compressed = true;
+    for input in &inputs {
+        let (shard, header, compressed) = gather_shard(input)?;
+        all_compressed &= compressed;
+        lines.push((header, input.clone()));
+        shards.push(shard);
+    }
+
+    let output_is_block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
+    let gather_type = match scalar(parser, "gather-type").as_deref() {
+        Some("BLOCK") => GatherType::Block,
+        Some("CONVENTIONAL") => GatherType::Conventional,
+        _ => GatherType::Automatic,
+    };
+    let arguments_for_gather = Arguments {
+        gather_type,
+        ignore_safety_checks: flag(parser, "ignore-safety-checks"),
+        disable_contig_ordering_check: flag(parser, "disable-contig-ordering-check"),
+        output_is_block_compressed,
+        inputs_are_block_compressed: all_compressed,
+    };
+
+    let written =
+        gatk_tools::gather_vcfs::gather(&shards, &arguments_for_gather).map_err(|error| {
+            Thrown {
+                failure: Failure::User,
+                exception: error.java_class(),
+                message: Some(error.message()),
+            }
+        })?;
+
+    // `AUTOMATIC` resolves to BLOCK when everything in sight is block compressed, and BLOCK copies
+    // bytes rather than records.
+    let effective_block = gather_type == GatherType::Block
+        || (gather_type == GatherType::Automatic && all_compressed && output_is_block_compressed);
+    if effective_block {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "Block gathering copies the inputs' compressed blocks, which this port does not carry \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // The header is the FIRST shard's, whole, and then every record the gather selected.
+    let mut text = String::new();
+    for line in &lines[0].0 {
+        text.push_str(line);
+        text.push('\n');
+    }
+    let bodies: Vec<Vec<String>> = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(input)
+                .ok()
+                .map(|bytes| {
+                    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+                        htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
+                    } else {
+                        bytes
+                    };
+                    String::from_utf8_lossy(&text)
+                        .lines()
+                        .filter(|line| !line.starts_with('#') && !line.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    for (shard, record) in &written {
+        text.push_str(&bodies[*shard][*record]);
+        text.push('\n');
+    }
+
+    let bytes = if output_is_block_compressed {
+        let (level, deflater) = output_compression(parser);
+        let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+        std::io::Write::write_all(&mut writer, text.as_bytes())
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?;
+        writer
+            .into_inner()
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?
+    } else {
+        text.into_bytes()
+    };
+    std::fs::write(&output, &bytes).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+
+    if flag(parser, "create-output-variant-index") {
+        // The index a feature file's name implies: a `.tbi` for a block compressed output and a
+        // Tribble `.idx` for a plain one, both APPENDED to the whole name.
+        let source = index_feature_file::Source::new(&output);
+        let index = match index_feature_file::index_kind(&output) {
+            index_feature_file::IndexKind::Tabix => {
+                let (level, deflater) = output_compression(parser);
+                index_feature_file::build_tabix(&bytes, &source, &output, deflater, level)
+            }
+            _ => index_feature_file::build(&String::from_utf8_lossy(&bytes), &source, &output),
+        }
+        .map_err(|refusal| Thrown::user(refusal.message()))?;
+        let name = index_feature_file::default_output(&output);
+        std::fs::write(&name, index).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
+        })?;
+    }
+    Ok(None)
+}

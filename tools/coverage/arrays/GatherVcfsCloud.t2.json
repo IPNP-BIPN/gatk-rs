@@ -1,0 +1,396 @@
+{
+  "tool": "GatherVcfsCloud",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 20,
+  "arguments_in_array": 9,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--progress-logger-frequency",
+      "type": "Integer",
+      "reason": "only one value available (default)",
+      "held_at": "10000",
+      "source": "default"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 12,
+  "tuples_total": 160,
+  "tuples_covered": 160,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "false",
+        "--disable-contig-ordering-check": "false",
+        "--gather-type": "CONVENTIONAL",
+        "--ignore-safety-checks": "false",
+        "--input": "fixture[1]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=false",
+        "--disable-contig-ordering-check=false",
+        "--gather-type=CONVENTIONAL",
+        "--ignore-safety-checks=false",
+        "--input=/work/fixtures/indexed.vcf",
+        "--output=/work/out/gathered.vcf.gz",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[1]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "false",
+        "--gather-type": "AUTOMATIC",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=0",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=false",
+        "--gather-type=AUTOMATIC",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/indexed.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[1]",
+        "--create-output-variant-index": "false",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "false",
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=0",
+        "--create-output-variant-index=false",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=false",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf.gz",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "false",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "AUTOMATIC",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=false",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=AUTOMATIC",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf.gz",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[1]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "CONVENTIONAL",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=0",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=CONVENTIONAL",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "false",
+        "--disable-contig-ordering-check": "false",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=false",
+        "--disable-contig-ordering-check=false",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "AUTOMATIC",
+        "--ignore-safety-checks": "false",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=AUTOMATIC",
+        "--ignore-safety-checks=false",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/indexed.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "CONVENTIONAL",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=CONVENTIONAL",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf.gz",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 11,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-variant-index": "true",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "AUTOMATIC",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--create-output-variant-index=true",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=AUTOMATIC",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    }
+  ]
+}
