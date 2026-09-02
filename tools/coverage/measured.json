@@ -39,8 +39,8 @@
     },
     "CountVariants": {
       "rows": 31,
-      "accepted": 19,
-      "rejected": 12,
+      "accepted": 17,
+      "rejected": 14,
       "distinct_outputs": 3,
       "matched": 31,
       "t": 2,
