@@ -103,6 +103,35 @@ public class MakeFixtures {
                         indexed, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("indexed.vcf.idx"));
+        // A reference, with the .fai and .dict beside it that GATK requires: the writer names all
+        // three, so the naming is htsjdk's rather than this harness's.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("reference.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 100000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            reference.startSequence("chr1").appendBases(bases.toString());
+        }
+        // A second reference on a contig the corpus does not carry, so `--reference` has a value
+        // that agrees with the reads and a value that does not.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter other =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("other.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 1000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            other.startSequence("chrOther").appendBases(bases.toString());
+        }
+
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is
         // accepted and a row that is refused.
