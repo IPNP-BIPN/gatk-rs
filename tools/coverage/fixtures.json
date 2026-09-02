@@ -32,7 +32,16 @@
     "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
     "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
     "having one value, and a free-form string with no default is excluded for having none. With no",
-    "values they were covered by being absent, which is the one setting that cannot disagree."
+    "values they were covered by being absent, which is the one setting that cannot disagree.",
+    "",
+    "The three read-filter arguments are here for the same reason. `--inverted-read-filter` names",
+    "filters that are neither a tool default nor a value of `--read-filter`: inverting a default is",
+    "refused outright, and inverting a filter the same row enables is refused too, so an overlap",
+    "would spend rows on refusals the unit suite already covers. And",
+    "`--disable-read-filter` names WellformedReadFilter, which IS the default, so the row actually",
+    "removes a filter rather than warning about one that was never there. Both take a second value",
+    "because one is no domain at all: an argument with a single value is covered by being present",
+    "or absent, which the generator excludes for the same reason it excludes a lone default."
   ],
   "$per_tool": [
     "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
@@ -79,6 +88,18 @@
     "--interval-exclusion-padding": [
       "0",
       "50"
+    ],
+    "--read-filter": [
+      "GoodCigarReadFilter",
+      "MappedReadFilter"
+    ],
+    "--disable-read-filter": [
+      "WellformedReadFilter",
+      "MappedReadFilter"
+    ],
+    "--inverted-read-filter": [
+      "FirstOfPairReadFilter",
+      "PrimaryLineReadFilter"
     ]
   },
   "per_tool": {

@@ -6432,6 +6432,26 @@
       ]
     },
     {
+      "id": "filter-resolution",
+      "status": "golden-pending",
+      "title": "which read filters a command line actually ends up with",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountReads"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "The runner reads --read-filter and --disable-tool-default-read-filters and ignores the other two arguments the descriptor owns: --disable-read-filter and --inverted-read-filter change nothing in the port and change the filters, and therefore the count, in the reference (#69). The resolution is order-dependent and its rules are not guessable: disabling removes from the DEFAULTS only and before anything is added; an enabled filter already among the defaults is not added twice, and the check is contains() on INSTANCES rather than on names; an inverted filter is always added, as a negated instance, so inverting a tool default leaves both in the list; and the refusal for a filter that is both enabled and inverted prints the WRONG variable, so its message lists the empty set. That last one is the reference's behaviour and a port has to reproduce it.",
+      "cases": [
+        {
+          "dump": "FilterResolutionDump",
+          "golden": null,
+          "why": "Seventeen command lines over one tool's three default filters, covering each argument alone, the pairs that interact, and the five refusals."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",

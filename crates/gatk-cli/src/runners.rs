@@ -239,40 +239,67 @@ pub type Filter<'a> = Box<dyn Fn(&BamRecord) -> bool + 'a>;
 ///
 /// A filter this port does not carry is refused rather than ignored, because ignoring one would
 /// count reads the reference filtered out and answer with a number that looks right.
+/// `validateAndResolvePlugins`, which the reference runs while it PARSES the command line.
+///
+/// That is the whole reason this is a function of its own: the refusals happen before a file is
+/// opened, an interval is resolved or a dictionary is compared, so a port that resolved its
+/// filters at the point of use answered a later question first. A covering-array row naming a
+/// filter both enabled and disabled read `Dictionary cannot have size zero` in the port and
+/// `are both enabled and disabled` in the reference (#69).
+///
+/// A tool that applies no read filter still validates them: the descriptor is the command line's,
+/// not the traversal's.
+fn resolve_read_filters(
+    parser: &Parser,
+    tool: &str,
+) -> Result<Vec<gatk_tools::filter_resolution::ResolvedFilter>, Thrown> {
+    // The descriptor owns FOUR arguments, and reading two of them was a port that ignored
+    // `--disable-read-filter` and `--inverted-read-filter` entirely. `filter-resolution` measured
+    // what all four decide, including the order and the six refusals.
+    gatk_tools::filter_resolution::resolve(
+        gatk_tools::plugin_ownership::default_filters(tool).unwrap_or(&[]),
+        &gatk_tools::plugin_ownership::CATALOGUE,
+        &arguments(parser, "read-filter"),
+        &arguments(parser, "disable-read-filter"),
+        &arguments(parser, "inverted-read-filter"),
+        flag(parser, "disable-tool-default-read-filters"),
+    )
+    .map_err(|error| Thrown {
+        // Every one of them is a `CommandLineException`, which is status ONE.
+        failure: Failure::CommandLine,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })
+}
+
+/// The predicate the resolved list becomes, once a header exists to read a filter against.
 fn read_filter<'a>(
     parser: &'a Parser,
-    tool: &str,
+    resolved: &[gatk_tools::filter_resolution::ResolvedFilter],
     header: &'a SamHeader,
 ) -> Result<Filter<'a>, Thrown> {
-    let mut names: Vec<String> = Vec::new();
-    if !flag(parser, "disable-tool-default-read-filters") {
-        names.extend(
-            gatk_tools::plugin_ownership::default_filters(tool)
-                .unwrap_or(&[])
-                .iter()
-                .map(|name| (*name).to_string()),
-        );
-    }
-    names.extend(arguments(parser, "read-filter"));
-
-    let mut plain: Vec<gatk_readfilter::ReadFilter> = Vec::new();
-    let mut wellformed = false;
-    let mut parameterized: Vec<gatk_readfilter::Parameterized> = Vec::new();
-    for name in &names {
+    let mut plain: Vec<(gatk_readfilter::ReadFilter, bool)> = Vec::new();
+    let mut wellformed: Option<bool> = None;
+    let mut parameterized: Vec<(gatk_readfilter::Parameterized, bool)> = Vec::new();
+    for filter in resolved {
+        let name = filter.name.as_str();
         if name == "WellformedReadFilter" {
-            wellformed = true;
-        } else if let Some(filter) = gatk_readfilter::by_name(name) {
-            plain.push(filter);
+            wellformed = Some(filter.negated);
+        } else if let Some(plain_filter) = gatk_readfilter::by_name(name) {
+            plain.push((plain_filter, filter.negated));
         } else if name == "MappingQualityReadFilter" {
             let minimum = scalar(parser, "minimum-mapping-quality")
                 .and_then(|text| text.parse::<i32>().ok())
                 .unwrap_or(10);
             let maximum =
                 scalar(parser, "maximum-mapping-quality").and_then(|text| text.parse::<i32>().ok());
-            parameterized.push(gatk_readfilter::Parameterized::MappingQuality {
-                min: minimum,
-                max: maximum,
-            });
+            parameterized.push((
+                gatk_readfilter::Parameterized::MappingQuality {
+                    min: minimum,
+                    max: maximum,
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
@@ -283,15 +310,22 @@ fn read_filter<'a>(
         }
     }
     Ok(Box::new(move |read: &BamRecord| {
-        if wellformed && !gatk_readfilter::with_header::wellformed(read, header) {
-            return false;
+        // `ReadFilterNegate` wraps the filter rather than replacing it, so a negated one answers
+        // the opposite of what the filter itself answers, on the same read.
+        if let Some(negated) = wellformed {
+            if gatk_readfilter::with_header::wellformed(read, header) == negated {
+                return false;
+            }
         }
-        if !plain.iter().all(|filter| filter(read)) {
+        if !plain
+            .iter()
+            .all(|(filter, negated)| filter(read) != *negated)
+        {
             return false;
         }
         parameterized
             .iter()
-            .all(|filter| filter.decide(read).unwrap_or(false))
+            .all(|(filter, negated)| filter.decide(read).unwrap_or(false) != *negated)
     }))
 }
 
@@ -379,6 +413,9 @@ pub fn number(parser: &Parser, long_name: &str) -> i32 {
 /// trailing newline, because the reference writes it with `print`; and `-O` does not suppress the
 /// return, so the file is written AND the value comes back.
 pub fn count_reads(parser: &Parser) -> Outcome {
+    // The plugin descriptor is validated while the command line is PARSED, so its refusals come
+    // before the input is even opened.
+    let resolved_filters = resolve_read_filters(parser, "CountReads")?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
     // BAM and merges their headers. This port reads one, which is what every case of the golden
     // hands it, and refuses the rest rather than silently counting the first.
@@ -437,7 +474,7 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     let intervals = interval_arguments(parser, &header)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
-    let filter = read_filter(parser, "CountReads", &header)?;
+    let filter = read_filter(parser, &resolved_filters, &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
@@ -502,6 +539,10 @@ fn has_feature_index(path: &str) -> bool {
 /// `-L` against an input with no index is refused BEFORE any record is read; and the refusal for
 /// an unwritable `-O` carries the path and nothing else.
 pub fn count_variants(parser: &Parser) -> Outcome {
+    // A variant walker applies no read filter and still VALIDATES the ones a command line names:
+    // the descriptor belongs to the command line rather than to the traversal, so `--read-filter`
+    // and its three companions are refused here exactly as they are on a read walker.
+    let _ = resolve_read_filters(parser, "CountVariants")?;
     // `--variant` is a SCALAR on this tool, where a read walker's `--input` is a collection: the
     // declaration says `collection: false`, and reading it as a list finds nothing at all.
     let input = argument(parser, "variant").ok_or_else(|| {
