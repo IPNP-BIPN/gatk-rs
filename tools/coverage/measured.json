@@ -45,6 +45,15 @@
       "matched": 31,
       "t": 2,
       "share": 1.0
+    },
+    "CreateHadoopBamSplittingIndex": {
+      "rows": 9,
+      "accepted": 6,
+      "rejected": 3,
+      "distinct_outputs": 4,
+      "matched": 9,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
