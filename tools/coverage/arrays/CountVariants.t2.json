@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 44,
-  "arguments_in_array": 33,
-  "arguments_excluded": 11,
+  "arguments_in_array": 34,
+  "arguments_excluded": 10,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -57,13 +57,6 @@
       "source": "none"
     },
     {
-      "argument": "--use-jdk-deflater",
-      "type": "boolean",
-      "reason": "excluded by the repository: chooses a deflater for files this tool does not write compressed",
-      "held_at": null,
-      "source": "none"
-    },
-    {
       "argument": "--use-jdk-inflater",
       "type": "boolean",
       "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
@@ -86,8 +79,8 @@
     }
   ],
   "rows": 31,
-  "tuples_total": 2577,
-  "tuples_covered": 2577,
+  "tuples_total": 2723,
+  "tuples_covered": 2723,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -126,6 +119,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -161,6 +155,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -199,6 +194,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false",
         "--variant": "fixture[1]",
         "--variant-output-filtering": "ENDS_IN"
       },
@@ -234,6 +230,7 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false",
         "--variant=/work/fixtures/reads.vcf",
         "--variant-output-filtering=ENDS_IN"
       ]
@@ -272,7 +269,8 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
@@ -307,7 +305,8 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/reads.vcf",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=OVERLAPS"
       ]
     },
@@ -345,7 +344,8 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--variant": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "CONTAINED"
       },
       "arguments": [
@@ -380,7 +380,8 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/reads.vcf",
         "--variant-output-filtering=CONTAINED"
       ]
     },
@@ -418,7 +419,8 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "ANYWHERE"
       },
       "arguments": [
@@ -453,7 +455,8 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/reads.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
     },
@@ -491,7 +494,8 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--variant": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "ANYWHERE"
       },
       "arguments": [
@@ -526,7 +530,8 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--variant=/work/fixtures/reads.vcf",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
     },
@@ -564,8 +569,9 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[0]",
-        "--variant-output-filtering": "ENDS_IN"
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]",
+        "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -599,8 +605,9 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=ENDS_IN"
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/reads.vcf",
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -637,7 +644,8 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--variant": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "CONTAINED"
       },
       "arguments": [
@@ -672,14 +680,15 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--variant=/work/fixtures/reads.vcf",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=CONTAINED"
       ]
     },
     {
       "row": 8,
       "labels": {
-        "--add-output-sam-program-record": "true",
+        "--add-output-sam-program-record": "false",
         "--add-output-vcf-command-line": "false",
         "--cloud-index-prefetch-buffer": "fixture[1]",
         "--cloud-prefetch-buffer": "fixture[0]",
@@ -710,11 +719,12 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--variant": "fixture[0]",
-        "--variant-output-filtering": "OVERLAPS"
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]",
+        "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
-        "--add-output-sam-program-record=true",
+        "--add-output-sam-program-record=false",
         "--add-output-vcf-command-line=false",
         "--cloud-index-prefetch-buffer=0",
         "--cloud-prefetch-buffer=40",
@@ -745,8 +755,9 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=OVERLAPS"
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/reads.vcf",
+        "--variant-output-filtering=ENDS_IN"
       ]
     },
     {
@@ -783,8 +794,9 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[1]",
-        "--variant-output-filtering": "OVERLAPS"
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]",
+        "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -818,8 +830,9 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/reads.vcf",
-        "--variant-output-filtering=OVERLAPS"
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/indexed.vcf",
+        "--variant-output-filtering=ENDS_IN"
       ]
     },
     {
@@ -856,7 +869,8 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[1]",
         "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
@@ -891,7 +905,8 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/indexed.vcf",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/reads.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
     },
@@ -903,13 +918,13 @@
         "--cloud-index-prefetch-buffer": "fixture[0]",
         "--cloud-prefetch-buffer": "fixture[0]",
         "--create-output-bam-index": "true",
-        "--create-output-bam-md5": "true",
+        "--create-output-bam-md5": "false",
         "--create-output-variant-index": "true",
-        "--create-output-variant-md5": "true",
+        "--create-output-variant-md5": "false",
         "--disable-bam-index-caching": "true",
-        "--disable-read-filter": "fixture[0]",
+        "--disable-read-filter": "fixture[1]",
         "--disable-sequence-dictionary-validation": "false",
-        "--disable-tool-default-read-filters": "true",
+        "--disable-tool-default-read-filters": "false",
         "--exclude-intervals": "fixture[0]",
         "--input": "fixture[0]",
         "--interval-exclusion-padding": "fixture[0]",
@@ -929,8 +944,9 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "ENDS_IN"
+        "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -938,13 +954,13 @@
         "--cloud-index-prefetch-buffer=-1",
         "--cloud-prefetch-buffer=40",
         "--create-output-bam-index=true",
-        "--create-output-bam-md5=true",
+        "--create-output-bam-md5=false",
         "--create-output-variant-index=true",
-        "--create-output-variant-md5=true",
+        "--create-output-variant-md5=false",
         "--disable-bam-index-caching=true",
-        "--disable-read-filter=WellformedReadFilter",
+        "--disable-read-filter=MappedReadFilter",
         "--disable-sequence-dictionary-validation=false",
-        "--disable-tool-default-read-filters=true",
+        "--disable-tool-default-read-filters=false",
         "--exclude-intervals=chr1:1-500",
         "--input=/work/fixtures/reads.vcf",
         "--interval-exclusion-padding=0",
@@ -964,8 +980,9 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=ENDS_IN"
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -1002,6 +1019,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "CONTAINED"
       },
@@ -1037,6 +1055,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=CONTAINED"
       ]
@@ -1075,6 +1094,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1110,6 +1130,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1148,6 +1169,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1183,6 +1205,7 @@
         "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1221,6 +1244,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1256,6 +1280,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1294,7 +1319,8 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--variant": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
       "arguments": [
@@ -1329,7 +1355,8 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--variant=/work/fixtures/reads.vcf",
+        "--use-jdk-deflater=false",
+        "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
     },
@@ -1367,8 +1394,9 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "STARTS_IN"
+        "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1402,14 +1430,15 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=STARTS_IN"
+        "--variant-output-filtering=ENDS_IN"
       ]
     },
     {
       "row": 18,
       "labels": {
-        "--add-output-sam-program-record": "false",
+        "--add-output-sam-program-record": "true",
         "--add-output-vcf-command-line": "true",
         "--cloud-index-prefetch-buffer": "fixture[0]",
         "--cloud-prefetch-buffer": "fixture[0]",
@@ -1440,11 +1469,12 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "ENDS_IN"
       },
       "arguments": [
-        "--add-output-sam-program-record=false",
+        "--add-output-sam-program-record=true",
         "--add-output-vcf-command-line=true",
         "--cloud-index-prefetch-buffer=-1",
         "--cloud-prefetch-buffer=40",
@@ -1475,6 +1505,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ENDS_IN"
       ]
@@ -1503,7 +1534,7 @@
         "--intervals": "fixture[0]",
         "--inverted-read-filter": "fixture[0]",
         "--lenient": "true",
-        "--max-variants-per-shard": "default",
+        "--max-variants-per-shard": "min",
         "--output": "fixture[1]",
         "--read-filter": "fixture[0]",
         "--read-index": "fixture[0]",
@@ -1513,6 +1544,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1548,6 +1580,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1583,11 +1616,12 @@
         "--read-validation-stringency": "STRICT",
         "--reference": "fixture[0]",
         "--seconds-between-progress-updates": "fixture[0]",
-        "--sequence-dictionary": "fixture[0]",
+        "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
-        "--variant-output-filtering": "STARTS_IN"
+        "--variant-output-filtering": "OVERLAPS"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1618,11 +1652,12 @@
         "--read-validation-stringency=STRICT",
         "--reference=/work/fixtures/reference.fasta",
         "--seconds-between-progress-updates=10.0",
-        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sequence-dictionary=/work/fixtures/other.dict",
         "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=STARTS_IN"
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -1651,7 +1686,7 @@
         "--lenient": "true",
         "--max-variants-per-shard": "default",
         "--output": "fixture[0]",
-        "--read-filter": "fixture[0]",
+        "--read-filter": "fixture[1]",
         "--read-index": "fixture[0]",
         "--read-validation-stringency": "STRICT",
         "--reference": "fixture[1]",
@@ -1659,6 +1694,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1686,7 +1722,7 @@
         "--lenient=true",
         "--max-variants-per-shard=0",
         "--output=/work/out/count.txt",
-        "--read-filter=GoodCigarReadFilter",
+        "--read-filter=MappedReadFilter",
         "--read-index=/work/fixtures/reads.bai",
         "--read-validation-stringency=STRICT",
         "--reference=/work/fixtures/other.fasta",
@@ -1694,6 +1730,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1732,6 +1769,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "STARTS_IN"
       },
@@ -1767,6 +1805,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=STARTS_IN"
       ]
@@ -1805,6 +1844,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "ANYWHERE"
       },
@@ -1840,85 +1880,13 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
     },
     {
       "row": 24,
-      "labels": {
-        "--add-output-sam-program-record": "true",
-        "--add-output-vcf-command-line": "true",
-        "--cloud-index-prefetch-buffer": "fixture[0]",
-        "--cloud-prefetch-buffer": "fixture[0]",
-        "--create-output-bam-index": "true",
-        "--create-output-bam-md5": "true",
-        "--create-output-variant-index": "true",
-        "--create-output-variant-md5": "true",
-        "--disable-bam-index-caching": "true",
-        "--disable-read-filter": "fixture[1]",
-        "--disable-sequence-dictionary-validation": "true",
-        "--disable-tool-default-read-filters": "false",
-        "--exclude-intervals": "fixture[0]",
-        "--input": "fixture[0]",
-        "--interval-exclusion-padding": "fixture[1]",
-        "--interval-merging-rule": "ALL",
-        "--interval-padding": "fixture[1]",
-        "--interval-set-rule": "UNION",
-        "--intervals": "fixture[0]",
-        "--inverted-read-filter": "fixture[0]",
-        "--lenient": "false",
-        "--max-variants-per-shard": "default",
-        "--output": "fixture[0]",
-        "--read-filter": "fixture[0]",
-        "--read-index": "fixture[0]",
-        "--read-validation-stringency": "LENIENT",
-        "--reference": "fixture[0]",
-        "--seconds-between-progress-updates": "fixture[0]",
-        "--sequence-dictionary": "fixture[0]",
-        "--sites-only-vcf-output": "true",
-        "--tmp-dir": "fixture[0]",
-        "--variant": "fixture[0]",
-        "--variant-output-filtering": "OVERLAPS"
-      },
-      "arguments": [
-        "--add-output-sam-program-record=true",
-        "--add-output-vcf-command-line=true",
-        "--cloud-index-prefetch-buffer=-1",
-        "--cloud-prefetch-buffer=40",
-        "--create-output-bam-index=true",
-        "--create-output-bam-md5=true",
-        "--create-output-variant-index=true",
-        "--create-output-variant-md5=true",
-        "--disable-bam-index-caching=true",
-        "--disable-read-filter=MappedReadFilter",
-        "--disable-sequence-dictionary-validation=true",
-        "--disable-tool-default-read-filters=false",
-        "--exclude-intervals=chr1:1-500",
-        "--input=/work/fixtures/reads.vcf",
-        "--interval-exclusion-padding=50",
-        "--interval-merging-rule=ALL",
-        "--interval-padding=100",
-        "--interval-set-rule=UNION",
-        "--intervals=chr1:1-1000",
-        "--inverted-read-filter=FirstOfPairReadFilter",
-        "--lenient=false",
-        "--max-variants-per-shard=0",
-        "--output=/work/out/count.txt",
-        "--read-filter=GoodCigarReadFilter",
-        "--read-index=/work/fixtures/reads.bai",
-        "--read-validation-stringency=LENIENT",
-        "--reference=/work/fixtures/reference.fasta",
-        "--seconds-between-progress-updates=10.0",
-        "--sequence-dictionary=/work/fixtures/matching.dict",
-        "--sites-only-vcf-output=true",
-        "--tmp-dir=/work/tmp",
-        "--variant=/work/fixtures/indexed.vcf",
-        "--variant-output-filtering=OVERLAPS"
-      ]
-    },
-    {
-      "row": 25,
       "labels": {
         "--add-output-sam-program-record": "true",
         "--add-output-vcf-command-line": "true",
@@ -1951,6 +1919,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "CONTAINED"
       },
@@ -1986,8 +1955,84 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=CONTAINED"
+      ]
+    },
+    {
+      "row": 25,
+      "labels": {
+        "--add-output-sam-program-record": "true",
+        "--add-output-vcf-command-line": "true",
+        "--cloud-index-prefetch-buffer": "fixture[0]",
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--create-output-bam-index": "true",
+        "--create-output-bam-md5": "true",
+        "--create-output-variant-index": "true",
+        "--create-output-variant-md5": "true",
+        "--disable-bam-index-caching": "true",
+        "--disable-read-filter": "fixture[0]",
+        "--disable-sequence-dictionary-validation": "true",
+        "--disable-tool-default-read-filters": "true",
+        "--exclude-intervals": "fixture[0]",
+        "--input": "fixture[1]",
+        "--interval-exclusion-padding": "fixture[0]",
+        "--interval-merging-rule": "ALL",
+        "--interval-padding": "fixture[0]",
+        "--interval-set-rule": "UNION",
+        "--intervals": "fixture[0]",
+        "--inverted-read-filter": "fixture[0]",
+        "--lenient": "true",
+        "--max-variants-per-shard": "default",
+        "--output": "fixture[0]",
+        "--read-filter": "fixture[0]",
+        "--read-index": "fixture[0]",
+        "--read-validation-stringency": "STRICT",
+        "--reference": "fixture[0]",
+        "--seconds-between-progress-updates": "fixture[0]",
+        "--sequence-dictionary": "fixture[0]",
+        "--sites-only-vcf-output": "true",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--variant": "fixture[0]",
+        "--variant-output-filtering": "OVERLAPS"
+      },
+      "arguments": [
+        "--add-output-sam-program-record=true",
+        "--add-output-vcf-command-line=true",
+        "--cloud-index-prefetch-buffer=-1",
+        "--cloud-prefetch-buffer=40",
+        "--create-output-bam-index=true",
+        "--create-output-bam-md5=true",
+        "--create-output-variant-index=true",
+        "--create-output-variant-md5=true",
+        "--disable-bam-index-caching=true",
+        "--disable-read-filter=WellformedReadFilter",
+        "--disable-sequence-dictionary-validation=true",
+        "--disable-tool-default-read-filters=true",
+        "--exclude-intervals=chr1:1-500",
+        "--input=/work/fixtures/regions.bed",
+        "--interval-exclusion-padding=0",
+        "--interval-merging-rule=ALL",
+        "--interval-padding=0",
+        "--interval-set-rule=UNION",
+        "--intervals=chr1:1-1000",
+        "--inverted-read-filter=FirstOfPairReadFilter",
+        "--lenient=true",
+        "--max-variants-per-shard=0",
+        "--output=/work/out/count.txt",
+        "--read-filter=GoodCigarReadFilter",
+        "--read-index=/work/fixtures/reads.bai",
+        "--read-validation-stringency=STRICT",
+        "--reference=/work/fixtures/reference.fasta",
+        "--seconds-between-progress-updates=10.0",
+        "--sequence-dictionary=/work/fixtures/matching.dict",
+        "--sites-only-vcf-output=true",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--variant=/work/fixtures/indexed.vcf",
+        "--variant-output-filtering=OVERLAPS"
       ]
     },
     {
@@ -2024,6 +2069,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "CONTAINED"
       },
@@ -2059,6 +2105,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=CONTAINED"
       ]
@@ -2097,6 +2144,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "CONTAINED"
       },
@@ -2132,6 +2180,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=CONTAINED"
       ]
@@ -2170,6 +2219,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "ENDS_IN"
       },
@@ -2205,6 +2255,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ENDS_IN"
       ]
@@ -2243,6 +2294,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "OVERLAPS"
       },
@@ -2278,6 +2330,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=OVERLAPS"
       ]
@@ -2316,6 +2369,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
         "--variant": "fixture[0]",
         "--variant-output-filtering": "ANYWHERE"
       },
@@ -2351,6 +2405,7 @@
         "--sequence-dictionary=/work/fixtures/matching.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
         "--variant=/work/fixtures/indexed.vcf",
         "--variant-output-filtering=ANYWHERE"
       ]
