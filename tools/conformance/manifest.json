@@ -6352,7 +6352,7 @@
     },
     {
       "id": "main-non-user",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6365,7 +6365,7 @@
       "cases": [
         {
           "dump": "MainNonUserDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/main_non_user.txt.gz",
           "why": "Eight throwables: the two a read walker reaches, a null message and an empty one, a nested class of this harness and a nested class of the reference's own, a message that spans lines, and the Error overload. The frames are not committed -- they name this harness and its line numbers -- so each case carries its first line and whether everything after it was a frame."
         }
       ]
