@@ -27,7 +27,12 @@
     "would lose that refusal, which is behaviour too.",
     "",
     "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
-    "a count. A `.idx` there would measure nothing but a file name."
+    "a count. A `.idx` there would measure nothing but a file name.",
+    "",
+    "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
+    "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
+    "having one value, and a free-form string with no default is excluded for having none. With no",
+    "values they were covered by being absent, which is the one setting that cannot disagree."
   ],
   "$per_tool": [
     "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
@@ -62,6 +67,18 @@
     "--variant": [
       "/work/fixtures/indexed.vcf",
       "/work/fixtures/reads.vcf"
+    ],
+    "--exclude-intervals": [
+      "chr1:1-500",
+      "chr1:400-600"
+    ],
+    "--interval-padding": [
+      "0",
+      "100"
+    ],
+    "--interval-exclusion-padding": [
+      "0",
+      "50"
     ]
   },
   "per_tool": {
