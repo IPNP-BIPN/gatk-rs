@@ -6452,6 +6452,26 @@
       ]
     },
     {
+      "id": "expanded-command-line",
+      "status": "golden-pending",
+      "title": "the command line a tool records in every file it writes",
+      "harness": "tools/argument-conformance",
+      "tools": [
+        "PrintReads"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "A BAM's @PG carries it in CL and a VCF's ##GATKCommandLine carries it in CommandLine, so it is a byte of the output for every record-transform and variant-transform tool there is: `sam_output::Options` takes it as an INPUT because no port could invent it, which is what stops PrintReads from having a runner (#69). The rule is not guessable from the string. It opens with the tool CLASS's simple name; the arguments come in two groups, those the user SET in the parser's declaration order and then those that were not set but have a non-null default, in that same order rather than the order they were typed; every one is printed as `--longName value` whatever the user typed, so a short alias is expanded and an `=` is separated; a collection becomes one pair PER ELEMENT; and a default of null is omitted where any other default is printed, which is why the line is long for a command line that set two arguments.",
+      "cases": [
+        {
+          "dump": "ExpandedCommandLineDump",
+          "golden": null,
+          "why": "Seven command lines over PrintReads covering each rule, and one over each of the other four declared tools so the opening name and the defaults behind it are measured rather than assumed to follow one pattern."
+        }
+      ]
+    },
+    {
       "id": "main-non-user",
       "status": "oracle-backed",
       "title": "handleNonUserException, which is the handler handleUserException is not",

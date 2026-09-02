@@ -20,6 +20,7 @@
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
+pub mod command_line;
 pub mod definitions;
 pub mod runners;
 
@@ -297,6 +298,14 @@ fn run_index_feature_file(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_print_bgzf_block_information(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_bgzf_block_information(&parsed("PrintBGZFBlockInformation", args)?)
+}
+
+/// The tool's own parser over a command line, for a caller that wants the parse and not the run.
+///
+/// The dispatcher reaches this through [`parsed`]; the suite that compares the expanded command
+/// line reaches it directly, because what it measures is the parser's state and not a tool's work.
+pub fn parse_for(tool: &str, args: &[String]) -> Result<gatk_barclay::Parser, String> {
+    parsed(tool, args).map_err(|thrown| thrown.message.unwrap_or_default())
 }
 
 /// The tool's own parser, over the command line the dispatcher was handed.
