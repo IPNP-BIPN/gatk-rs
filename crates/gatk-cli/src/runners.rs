@@ -329,6 +329,50 @@ fn read_filter<'a>(
     }))
 }
 
+/// `--read-index`: the index to use for each reads input, in place of the one the name implies.
+///
+/// Two rules, and both fire while the reads are OPENED, before the intervals are resolved or any
+/// dictionary is compared.
+///
+/// The count has to match: `ReadsPathDataSource` refuses a command line with a different number of
+/// indices and inputs, and the message counts both.
+///
+/// And an index is refused only by the LAST branch of `SamReaderFactory`, which is plain text. The
+/// order there is BAM, then block compressed, then gzip, then CRAM, then SRA, then text -- and the
+/// two compressed branches build a `SAMTextReader` over the decompressed stream without looking at
+/// the index at all. So a `.vcf.gz` handed to `--input` with an index beside it is accepted and the
+/// index ignored, where the same file uncompressed is a `RuntimeException` and exits three.
+///
+/// `Ok(None)` where the argument was not given, which is what tells the caller to look for the
+/// index the file's own name implies (`SamFiles.findIndex`).
+fn read_index(
+    parser: &Parser,
+    inputs: usize,
+    is_binary: bool,
+    is_compressed: bool,
+) -> Result<Option<std::path::PathBuf>, Thrown> {
+    let indices = arguments(parser, "read-index");
+    if indices.is_empty() {
+        return Ok(None);
+    }
+    if indices.len() != inputs {
+        return Err(Thrown::user(format!(
+            "Must have the same number of BAM/CRAM/SAM paths and indices. Saw {inputs} \
+             BAM/CRAM/SAMs but {} indices",
+            indices.len()
+        )));
+    }
+    if !is_binary && !is_compressed {
+        return Err(Thrown::non_user(
+            "java.lang.RuntimeException",
+            "Cannot use index file with textual SAM file",
+        ));
+    }
+    // A compressed text stream takes a reader that never asks for one, so the index is accepted
+    // and dropped rather than used.
+    Ok(is_binary.then(|| std::path::PathBuf::from(&indices[0])))
+}
+
 /// `--sequence-dictionary`: the MASTER dictionary, read off a `.dict` file.
 ///
 /// A `.dict` is a SAM header with `@SQ` lines and no records, so it parses as one. `None` where
@@ -525,17 +569,33 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     // guesses. `reads.bam.bai` was the only name asked for here, and htsjdk writes `reads.bai` at
     // least as often and looks for it FIRST, so an interval query over a file indexed the other
     // way found no index and answered zero rather than refusing (#1020).
-    let index = htsjdk_bam::sam_files::find_index(path);
+    // `--read-index` names the index outright, and its two refusals fire while the reads are
+    // opened. Without it the index is the one htsjdk's own search finds.
+    let is_binary = decompressed
+        .as_deref()
+        .is_some_and(|bytes| bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC));
+    let named_index = read_index(parser, 1, is_binary, compressed)?;
+    // Only a BAM has an index at all: the compressed and plain text branches build a reader that
+    // has none, so `indicesAvailable` is false there whatever the command line named.
+    let index = if is_binary {
+        named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
+    } else {
+        None
+    };
     let source = if deferred_parse_refusal.is_some() {
         None
     } else {
-        Some(
-            match &index {
-                Some(index) => ReadsDataSource::open(path, index),
-                None => ReadsDataSource::open_unindexed(path),
-            }
-            .map_err(|error| Thrown::user(format!("{error:?}")))?,
-        )
+        Some(match &index {
+            // An index that does not parse is not refused here: htsjdk opens it lazily, so the
+            // checks after this one run first and one of them is usually what refuses.
+            Some(index) => match ReadsDataSource::open(path, index) {
+                Ok(source) => source,
+                Err(_) => ReadsDataSource::open_unindexed(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            },
+            None => ReadsDataSource::open_unindexed(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        })
     };
     let header = source
         .as_ref()
@@ -677,6 +737,16 @@ pub fn count_variants(parser: &Parser) -> Outcome {
 
     let header = vcf_dictionary(&text);
 
+    // `--read-index` is counted against the READS inputs, and both its refusals fire while they
+    // are opened -- which a variant walker does whenever a command line names any, and before
+    // anything decides whether the dictionaries are compared at all.
+    let reads_inputs = arguments(parser, "input").len();
+    let reads_dictionaries: Vec<Vec<htsjdk_bam::header::SequenceRecord>> =
+        arguments(parser, "input")
+            .iter()
+            .map(|reads| reads_dictionary(parser, reads, reads_inputs))
+            .collect::<Result<_, _>>()?;
+
     let master = master_dictionary(parser)?;
     // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
     // master block included: a guard around part of it refuses command lines the reference runs.
@@ -685,8 +755,8 @@ pub fn count_variants(parser: &Parser) -> Outcome {
             // The master block runs before the reference/reads/features loop, and inside it the
             // READS come before the features: a command line naming both gets the reads' refusal
             // first.
-            for reads in arguments(parser, "input") {
-                validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
+            for reads in &reads_dictionaries {
+                validate_against_master(master, "reads", reads)?;
             }
             validate_against_master(master, "features", &header.sequences)?;
         }
@@ -697,10 +767,10 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
     // VCF share no contig is therefore refused whatever the intervals say (#1038).
     if !flag(parser, "disable-sequence-dictionary-validation") {
-        for reads in arguments(parser, "input") {
+        for reads in &reads_dictionaries {
             gatk_tools::sequence_dictionary::validate(
                 "reads",
-                &reads_dictionary(&reads)?,
+                reads,
                 "features",
                 &header.sequences,
                 false,
@@ -764,15 +834,24 @@ pub fn count_variants(parser: &Parser) -> Outcome {
 /// refusal: the dictionary comes back empty and the comparison against the features' dictionary
 /// finds no common contigs. The refusal a read WALKER makes for the same file is a later one, and
 /// it is the record parse rather than the header that makes it (`read-walker-refusals`).
-fn reads_dictionary(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+fn reads_dictionary(
+    parser: &Parser,
+    path: &str,
+    inputs: usize,
+) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
     let bytes = std::fs::read(path)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
-    let decompressed = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+    let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
+    let decompressed = if compressed {
         htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
     } else {
         bytes
     };
-    if !decompressed.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC) {
+    let is_binary = decompressed.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC);
+    // `--read-index` is refused while the reads are OPENED, so it refuses here too: a walker that
+    // only wants the dictionary still opens them.
+    let _ = read_index(parser, inputs, is_binary, compressed)?;
+    if !is_binary {
         return Ok(Vec::new());
     }
     let source = ReadsDataSource::open_unindexed(std::path::Path::new(path))
