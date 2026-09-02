@@ -465,6 +465,32 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     };
 
     let header = vcf_dictionary(&text);
+
+    // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
+    // a variant walker still opens the reads when a command line names any: the pair goes through
+    // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
+    // overload requires no superset and does not check the contig ordering. A corpus whose BAM and
+    // VCF share no contig is therefore refused whatever the intervals say (#1038).
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        for reads in arguments(parser, "input") {
+            let source = ReadsDataSource::open_unindexed(std::path::Path::new(&reads))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            gatk_tools::sequence_dictionary::validate(
+                "reads",
+                &source.header().sequences,
+                "features",
+                &header.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+
     let mut intervals = Vec::new();
     for query in arguments(parser, "intervals") {
         let interval = gatk_engine::interval::parse_interval(&query, &header)
