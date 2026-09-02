@@ -59,9 +59,9 @@
     {
       "argument": "--read-index",
       "type": "List[GATKPath]",
-      "reason": "only one value available (fixture[0])",
-      "held_at": "/work/fixtures/reads.bai",
-      "source": "fixture"
+      "reason": "List[GATKPath] needs a fixture; declare one in the repository's fixtures file",
+      "held_at": null,
+      "source": "none"
     },
     {
       "argument": "--reference",

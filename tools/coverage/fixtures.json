@@ -127,9 +127,6 @@
     "--sequence-dictionary": [
       "/work/fixtures/matching.dict",
       "/work/fixtures/other.dict"
-    ],
-    "--read-index": [
-      "/work/fixtures/reads.bai"
     ]
   },
   "per_tool": {
