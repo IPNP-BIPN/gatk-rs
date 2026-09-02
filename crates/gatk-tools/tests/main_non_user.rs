@@ -22,7 +22,8 @@
 //! golden's `shape` row says everything after the first line was a frame, and this test asserts
 //! that the port's report is the message and stops.
 //!
-//! While the suite is `golden-pending` the dump is named by `MAIN_NON_USER_DUMP`.
+//! The golden is committed and re-derived by the `main-non-user` suite on every run; the dump can
+//! still be overridden with an environment variable while a harness change is being checked.
 
 use gatk_tools::main_entry::non_user_exception_report;
 
@@ -77,15 +78,15 @@ fn field(dump: &str, kind: &str, name: &str) -> String {
 
 #[test]
 fn the_non_user_handler_prints_the_class_and_the_message() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `MAIN_NON_USER_DUMP` still overrides it, which is how a harness change is checked
+    // before CI sees it.
     let dump = match std::env::var("MAIN_NON_USER_DUMP") {
         Ok(path) => std::fs::read_to_string(path).expect("the dump named by MAIN_NON_USER_DUMP"),
-        Err(_) => {
-            println!(
-                "skipped: the main-non-user golden is still pending. Run the suite and point \
-                 MAIN_NON_USER_DUMP at tools/conformance/pending/main-non-user.MainNonUserDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/main_non_user.txt.gz"),
+        ),
     };
 
     for (case, exception, message) in CASES {
