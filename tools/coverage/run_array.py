@@ -109,7 +109,7 @@ def run_oracle(tool, row_args, workdir):
     cli = " ".join(as_cli(row_args))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'mkdir -p /work/tmp /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
+    command = f'mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -177,7 +177,7 @@ def run_port(binary, tool, row_args, workdir):
 
     binary = Path(binary).resolve()
     cli = " ".join(as_cli(row_args))
-    command = f"mkdir -p /work/tmp /work/out && /work/port-binary/{binary.name} {tool} {cli}"
+    command = f"mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,

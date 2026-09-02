@@ -29,6 +29,12 @@
     "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
     "a count. A `.idx` there would measure nothing but a file name.",
     "",
+    "Four arguments are here with a SECOND value and no expectation that they change anything:",
+    "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
+    "excluded as having one value, which meant the array covered it by holding it at its default",
+    "and could not have noticed if it mattered. A row that varies them and gets the same answer on",
+    "both sides is a claim; a row that never varied them was not.",
+    "",
     "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
     "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
     "having one value, and a free-form string with no default is excluded for having none. With no",
@@ -63,7 +69,20 @@
       "/work/out/index.tbi"
     ],
     "--tmp-dir": [
-      "/work/tmp"
+      "/work/tmp",
+      "/work/tmp2"
+    ],
+    "--cloud-prefetch-buffer": [
+      "40",
+      "0"
+    ],
+    "--cloud-index-prefetch-buffer": [
+      "-1",
+      "0"
+    ],
+    "--seconds-between-progress-updates": [
+      "10.0",
+      "60.0"
     ],
     "--bgzf-file": [
       "/work/fixtures/reads.vcf.gz",
