@@ -956,3 +956,158 @@ impl gatk_engine::variant_source::Located for Locus {
         self.stop
     }
 }
+
+/// `UserException$BadInput`, whose constructor puts `Bad input: ` in front of the message.
+fn bad_input(message: String) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!("Bad input: {message}")),
+    }
+}
+
+/// Whether a BAM's header says `SO:coordinate`, which is what a `.bai` needs.
+fn is_coordinate_sorted(bam: &[u8]) -> bool {
+    htsjdk_bgzf::read::decompress_all(bam)
+        .ok()
+        .map(|bytes| {
+            // The header text starts at byte 8, after the magic and its length.
+            let length = bytes
+                .get(4..8)
+                .map(|four| i32::from_le_bytes(four.try_into().unwrap_or_default()) as usize)
+                .unwrap_or(0);
+            String::from_utf8_lossy(bytes.get(8..8 + length).unwrap_or_default()).into_owned()
+        })
+        .is_some_and(|text| {
+            text.lines()
+                .find(|line| line.starts_with("@HD"))
+                .is_some_and(|line| line.contains("SO:coordinate"))
+        })
+}
+
+/// Every record's virtual offset in a BAM, plus the offset after the last one and the file's size.
+///
+/// `SBIIndexWriter` is fed one pointer per record and closed with the position the next record
+/// would have gone to, so a walker is what the tool needs from the file and not its records: the
+/// bytes are skipped by their own length prefix and never decoded.
+fn record_offsets(bam: &[u8]) -> Result<(Vec<u64>, u64), Thrown> {
+    use std::io::Read;
+
+    let truncated = || Thrown::user("The BAM ends inside a record".to_string());
+    let mut reader = htsjdk_bgzf::BgzfReader::new(bam);
+
+    // The header, which is skipped whole: its text and its reference names decide nothing here.
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic).map_err(|_| truncated())?;
+    if magic != htsjdk_bam::writer::BAM_MAGIC {
+        return Err(Thrown::user("The file is not a BAM".to_string()));
+    }
+    let read_i32 = |reader: &mut htsjdk_bgzf::BgzfReader<&[u8]>| -> Result<i32, Thrown> {
+        let mut bytes = [0u8; 4];
+        reader.read_exact(&mut bytes).map_err(|_| truncated())?;
+        Ok(i32::from_le_bytes(bytes))
+    };
+    let text_length = read_i32(&mut reader)?;
+    std::io::copy(
+        &mut std::io::Read::by_ref(&mut reader).take(text_length as u64),
+        &mut std::io::sink(),
+    )
+    .map_err(|_| truncated())?;
+    let references = read_i32(&mut reader)?;
+    for _ in 0..references {
+        let name_length = read_i32(&mut reader)?;
+        std::io::copy(
+            &mut std::io::Read::by_ref(&mut reader).take(name_length as u64),
+            &mut std::io::sink(),
+        )
+        .map_err(|_| truncated())?;
+        let _length = read_i32(&mut reader)?;
+    }
+
+    let mut offsets = Vec::new();
+    let mut next_start = reader.virtual_pos();
+    loop {
+        let start = reader.virtual_pos();
+        let mut size_bytes = [0u8; 4];
+        match reader.read_exact(&mut size_bytes) {
+            Ok(()) => {}
+            Err(_) => break,
+        }
+        let block_size = i32::from_le_bytes(size_bytes);
+        std::io::copy(
+            &mut std::io::Read::by_ref(&mut reader).take(block_size as u64),
+            &mut std::io::sink(),
+        )
+        .map_err(|_| truncated())?;
+        offsets.push(start);
+        next_start = reader.virtual_pos();
+    }
+    Ok((offsets, next_start))
+}
+
+/// `CreateHadoopBamSplittingIndex.doWork`, with the BAM read and the index written.
+///
+/// Four things the `splitting-index` golden pins and this reproduces: the granularity is refused
+/// BEFORE anything is opened; the input's extension is refused next, by its extension and not by
+/// its contents; the default output APPENDS `.sbi` where the `.bai` companion REPLACES an
+/// extension; and the last entry is where the next record would have gone, which for an empty BAM
+/// is the file's own length rather than anything inside it.
+pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
+    use gatk_tools::create_hadoop_bam_splitting_index as sbi;
+
+    let granularity = scalar(parser, "splitting-index-granularity")
+        .and_then(|text| text.parse::<i64>().ok())
+        .unwrap_or(sbi::DEFAULT_GRANULARITY as i64);
+    // `doWork`'s first line: the argument is judged before the input is looked at, and it is the
+    // PARSER that refuses it, so the message names the argument and the status is one.
+    sbi::assert_granularity(granularity).map_err(|message| {
+        Thrown::command_line(format!(
+            "Argument splitting-index-granularity has a bad value: {granularity}. {message}"
+        ))
+    })?;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    // `UserException$BadInput`, whose own constructor puts `Bad input: ` in front of whatever it
+    // is handed. The golden carries the prefix and the class both.
+    sbi::assert_is_bam(&input).map_err(bad_input)?;
+
+    let bytes = std::fs::read(&input)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    let (offsets, next_start) = record_offsets(&bytes)?;
+    let entries = sbi::offsets(&offsets, granularity as u64, next_start);
+    let index = sbi::write(
+        bytes.len() as u64,
+        offsets.len() as u64,
+        granularity as u64,
+        &entries,
+    );
+
+    let output = argument(parser, "output").unwrap_or_else(|| sbi::default_output(&input));
+    std::fs::write(&output, index).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+
+    if flag(parser, "create-bai") {
+        // Only the `.bai` path reads the records, so only it cares how they are sorted.
+        if !is_coordinate_sorted(&bytes) {
+            return Err(bad_input(
+                "Cannot create a .bai index for a file that isn't coordinate sorted.".to_string(),
+            ));
+        }
+        // The companion's name REPLACES the index's extension, so `reads.bam.sbi` becomes
+        // `reads.bam.bai` and an output named `elsewhere.idx` becomes `elsewhere.bai`.
+        let companion = sbi::bai_companion(&output);
+        let bai = htsjdk_bam::build_index::build_bam_index(&bytes)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {companion}: {error}"),
+            )
+        })?;
+    }
+    // The tool returns nothing, so `handleResult` prints nothing.
+    Ok(None)
+}
