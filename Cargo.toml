@@ -22,12 +22,12 @@ repository = "https://github.com/IPNP-BIPN/gatk-rs"
 # resolved it. A pin nothing resolves is a pin nothing checks, so the line arrives with its first
 # caller.
 [workspace.dependencies]
-htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
-htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
-htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
-htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
-htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
-jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "411afed193ee19a284be7f7e21e068b4df4db9aa" }
+htsjdk-bam = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
+htsjdk-bgzf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
+htsjdk-metrics = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
+htsjdk-tribble = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
+htsjdk-vcf = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
+jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "bef0b550cb7bbd6c326dac822c2158eacd382838" }
 # GatherBamFiles writes a .md5 beside its output, which is the only digest a ported tool computes
 # for itself. htsjdk-bam already pulls this crate in for the same algorithm.
 md-5 = "0.11.0"
