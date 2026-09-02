@@ -64,6 +64,7 @@ pub mod extract_variant_annotations;
 pub mod family_priors;
 pub mod fasta_alternate_reference_maker;
 pub mod fasta_reference_maker;
+pub mod feature_codec;
 pub mod filter_alignment_artifacts;
 pub mod filter_funcotations;
 pub mod filter_intervals;

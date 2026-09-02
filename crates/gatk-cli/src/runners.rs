@@ -16,7 +16,7 @@
 use gatk_barclay::{Parser, Value};
 use gatk_engine::reads::ReadsDataSource;
 use gatk_tools::index_feature_file::{self, Refusal, Source};
-use gatk_tools::main_entry::{Thrown, PORT_FAILURE, PORT_LIMITATION};
+use gatk_tools::main_entry::{Failure, Thrown, PORT_FAILURE, PORT_LIMITATION};
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
@@ -372,4 +372,154 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     }
     // The tool returns the count itself, which is what `handleResult` prints.
     Ok(Some(count.to_string()))
+}
+
+/// The sequence dictionary a VCF's own header declares, which is what `-L` resolves against.
+///
+/// `##contig=<ID=chr1,length=100000>`, in the order the header writes them. Anything else on the
+/// line is ignored: `assembly` and `URL` are carried by `SAMSequenceRecord` and no interval query
+/// reads them.
+fn vcf_dictionary(text: &str) -> SamHeader {
+    let mut header = SamHeader::default();
+    for line in text.lines() {
+        let Some(body) = line.strip_prefix("##contig=<") else {
+            if line.starts_with("#CHROM") {
+                // The header ends here; a `##contig` after it is not a header line.
+                break;
+            }
+            continue;
+        };
+        let body = body.trim_end_matches('>');
+        let mut name = None;
+        let mut length = None;
+        for field in body.split(',') {
+            match field.split_once('=') {
+                Some(("ID", value)) => name = Some(value.to_string()),
+                Some(("length", value)) => length = value.parse::<i32>().ok(),
+                _ => {}
+            }
+        }
+        if let (Some(name), Some(length)) = (name, length) {
+            header
+                .sequences
+                .push(htsjdk_bam::header::SequenceRecord::new(&name, length));
+        }
+    }
+    header
+}
+
+/// Whether the input supports random access, which is what `-L` needs before any record is read.
+///
+/// `FeatureDataSource` asks the codec for an index beside the file: `.idx` for a plain feature
+/// file and `.tbi` for a block compressed one, both APPENDED to the whole name rather than
+/// replacing anything. That is `Tribble.indexPath` and `Tribble.tabixIndexPath`, and it is not
+/// `SamFiles.findIndex`'s rule: a feature file's index is never named by replacing its extension.
+fn has_feature_index(path: &str) -> bool {
+    std::path::Path::new(&index_feature_file::default_output(path)).is_file()
+}
+
+/// `CountVariants.doWork`, with the input read, the intervals resolved and the count written.
+///
+/// Four things the `count-variants` golden pins and this reproduces: the count reaches no stream
+/// without `-O`, whatever the class documentation says; a record is selected by its whole SPAN,
+/// `END` or the length of `REF`, so an interval reaches a record whose position it does not hold;
+/// `-L` against an input with no index is refused BEFORE any record is read; and the refusal for
+/// an unwritable `-O` carries the path and nothing else.
+pub fn count_variants(parser: &Parser) -> Outcome {
+    // `--variant` is a SCALAR on this tool, where a read walker's `--input` is a collection: the
+    // declaration says `collection: false`, and reading it as a list finds nothing at all.
+    let input = argument(parser, "variant").ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+
+    let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
+        Thrown::user(
+            index_feature_file::Refusal::NoSuitableCodecs {
+                path: input.clone(),
+            }
+            .message(),
+        )
+    })?;
+    let bytes = std::fs::read(&input).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: input.clone(),
+            }
+            .message(),
+        )
+    })?;
+    // A block compressed feature file is read through its own decompression, and its index is a
+    // `.tbi` rather than a `.idx`; neither changes what the traversal counts.
+    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    gatk_tools::read_walker_refusal::SAM_FORMAT,
+                    format!("{input} is not a block compressed file"),
+                )
+            })?
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
+
+    let header = vcf_dictionary(&text);
+    let mut intervals = Vec::new();
+    for query in arguments(parser, "intervals") {
+        let interval = gatk_engine::interval::parse_interval(&query, &header)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        intervals.push(interval);
+    }
+    let intervals = (!intervals.is_empty()).then_some(intervals);
+
+    let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
+        .into_iter()
+        .map(|(feature, _)| Locus {
+            contig: feature.contig,
+            start: feature.start,
+            stop: feature.end,
+        })
+        .collect();
+
+    let count = gatk_tools::count_variants::count(
+        &features,
+        intervals.as_deref(),
+        has_feature_index(&input),
+        &input,
+    )
+    .map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.class(),
+        message: Some(error.message()),
+    })?;
+
+    let output = argument(parser, "output");
+    gatk_tools::count_variants::write_output(output.as_deref().map(std::path::Path::new), count)
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.class(),
+            message: Some(error.message()),
+        })?;
+    // The tool returns the count, which `handleResult` prints.
+    Ok(Some(count.to_string()))
+}
+
+/// One decoded locus, which is all the traversal looks at.
+struct Locus {
+    contig: String,
+    start: i32,
+    stop: i32,
+}
+
+impl gatk_engine::variant_source::Located for Locus {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn stop(&self) -> i32 {
+        self.stop
+    }
 }

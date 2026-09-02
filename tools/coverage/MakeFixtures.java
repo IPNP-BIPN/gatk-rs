@@ -94,6 +94,15 @@ public class MakeFixtures {
             out.write(vcf().getBytes(StandardCharsets.UTF_8));
         }
         bam(dir.resolve("reads.bam"));
+        // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
+        // input with no random access, so an array whose only VCF were unindexed would compare two
+        // refusals on every interval row and never reach a traversal.
+        final Path indexed = dir.resolve("indexed.vcf");
+        Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        indexed, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("indexed.vcf.idx"));
         System.out.println("wrote " + dir);
     }
 }

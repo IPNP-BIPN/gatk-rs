@@ -19,7 +19,15 @@
     "that reproduces a report.",
     "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
     "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
-    "refusals are rows rather than exclusions."
+    "refusals are rows rather than exclusions.",
+    "",
+    "`--variant` takes an INDEXED VCF and an unindexed one. A feature walker refuses `-L` against",
+    "an input with no random access, so a list with only the unindexed file would compare two",
+    "refusals on every interval row and never reach a traversal; and dropping the unindexed one",
+    "would lose that refusal, which is behaviour too.",
+    "",
+    "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
+    "a count. A `.idx` there would measure nothing but a file name."
   ],
   "$per_tool": [
     "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
@@ -50,7 +58,18 @@
     "--intervals": [
       "chr1:1-1000",
       "chr1:50000-60000"
+    ],
+    "--variant": [
+      "/work/fixtures/indexed.vcf",
+      "/work/fixtures/reads.vcf"
     ]
+  },
+  "per_tool": {
+    "CountVariants": {
+      "--output": [
+        "/work/out/count.txt"
+      ]
+    }
   },
   "constraints": [],
   "exclude": {
