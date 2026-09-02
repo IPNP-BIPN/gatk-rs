@@ -161,7 +161,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
 | `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, filter-resolution, interval-arguments, read-walker-refusals, tool-argument-declarations, tool-argument-enums, usage-text | 9 | t=2, 23/23 rows (100%) |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, interval-arguments, sequence-dictionary-validation, tool-argument-declarations, tool-argument-enums | 5 | t=2, 31/31 rows (100%) |
-| `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | not measured |
+| `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 9/9 rows (100%) |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
