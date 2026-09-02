@@ -335,9 +335,13 @@ fn read_filter<'a>(
 /// dictionary is compared.
 ///
 /// The count has to match: `ReadsPathDataSource` refuses a command line with a different number of
-/// indices and inputs, and the message counts both. And an index handed to a file that is neither
-/// a BAM nor a CRAM reaches htsjdk's text-SAM branch, which refuses it with a `RuntimeException`
-/// rather than a `UserException`, so that path exits three.
+/// indices and inputs, and the message counts both.
+///
+/// And an index is refused only by the LAST branch of `SamReaderFactory`, which is plain text. The
+/// order there is BAM, then block compressed, then gzip, then CRAM, then SRA, then text -- and the
+/// two compressed branches build a `SAMTextReader` over the decompressed stream without looking at
+/// the index at all. So a `.vcf.gz` handed to `--input` with an index beside it is accepted and the
+/// index ignored, where the same file uncompressed is a `RuntimeException` and exits three.
 ///
 /// `Ok(None)` where the argument was not given, which is what tells the caller to look for the
 /// index the file's own name implies (`SamFiles.findIndex`).
@@ -345,6 +349,7 @@ fn read_index(
     parser: &Parser,
     inputs: usize,
     is_binary: bool,
+    is_compressed: bool,
 ) -> Result<Option<std::path::PathBuf>, Thrown> {
     let indices = arguments(parser, "read-index");
     if indices.is_empty() {
@@ -357,13 +362,15 @@ fn read_index(
             indices.len()
         )));
     }
-    if !is_binary {
+    if !is_binary && !is_compressed {
         return Err(Thrown::non_user(
             "java.lang.RuntimeException",
             "Cannot use index file with textual SAM file",
         ));
     }
-    Ok(Some(std::path::PathBuf::from(&indices[0])))
+    // A compressed text stream takes a reader that never asks for one, so the index is accepted
+    // and dropped rather than used.
+    Ok(is_binary.then(|| std::path::PathBuf::from(&indices[0])))
 }
 
 /// `--sequence-dictionary`: the MASTER dictionary, read off a `.dict` file.
@@ -567,20 +574,28 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     let is_binary = decompressed
         .as_deref()
         .is_some_and(|bytes| bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC));
-    let index = match read_index(parser, 1, is_binary)? {
-        Some(named) => Some(named),
-        None => htsjdk_bam::sam_files::find_index(path),
+    let named_index = read_index(parser, 1, is_binary, compressed)?;
+    // Only a BAM has an index at all: the compressed and plain text branches build a reader that
+    // has none, so `indicesAvailable` is false there whatever the command line named.
+    let index = if is_binary {
+        named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
+    } else {
+        None
     };
     let source = if deferred_parse_refusal.is_some() {
         None
     } else {
-        Some(
-            match &index {
-                Some(index) => ReadsDataSource::open(path, index),
-                None => ReadsDataSource::open_unindexed(path),
-            }
-            .map_err(|error| Thrown::user(format!("{error:?}")))?,
-        )
+        Some(match &index {
+            // An index that does not parse is not refused here: htsjdk opens it lazily, so the
+            // checks after this one run first and one of them is usually what refuses.
+            Some(index) => match ReadsDataSource::open(path, index) {
+                Ok(source) => source,
+                Err(_) => ReadsDataSource::open_unindexed(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            },
+            None => ReadsDataSource::open_unindexed(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        })
     };
     let header = source
         .as_ref()
@@ -826,7 +841,8 @@ fn reads_dictionary(
 ) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
     let bytes = std::fs::read(path)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
-    let decompressed = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+    let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
+    let decompressed = if compressed {
         htsjdk_bgzf::read::decompress_all(&bytes).unwrap_or_default()
     } else {
         bytes
@@ -834,7 +850,7 @@ fn reads_dictionary(
     let is_binary = decompressed.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC);
     // `--read-index` is refused while the reads are OPENED, so it refuses here too: a walker that
     // only wants the dictionary still opens them.
-    let _ = read_index(parser, inputs, is_binary)?;
+    let _ = read_index(parser, inputs, is_binary, compressed)?;
     if !is_binary {
         return Ok(Vec::new());
     }
