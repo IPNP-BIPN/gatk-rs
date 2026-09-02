@@ -329,6 +329,43 @@ fn read_filter<'a>(
     }))
 }
 
+/// `--sequence-dictionary`: the MASTER dictionary, read off a `.dict` file.
+///
+/// A `.dict` is a SAM header with `@SQ` lines and no records, so it parses as one. `None` where
+/// the argument was not given, which is what `masterSequenceDictionary == null` means.
+fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
+    let Some(path) = argument(parser, "sequence-dictionary") else {
+        return Ok(None);
+    };
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
+    Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
+}
+
+/// `validateDictionaries` against the master, which runs before the pairs that do not involve it.
+///
+/// `requireSuperset` is `hasCramInput()`, which is false for every input this port opens, and the
+/// contig ordering is not checked. The name in the message is the reference's own.
+fn validate_against_master(
+    master: &SamHeader,
+    other_name: &str,
+    other: &[htsjdk_bam::header::SequenceRecord],
+) -> Result<(), Thrown> {
+    gatk_tools::sequence_dictionary::validate(
+        "master sequence dictionary",
+        &master.sequences,
+        other_name,
+        other,
+        false,
+        false,
+    )
+    .map_err(|refusal| Thrown {
+        failure: Failure::User,
+        exception: refusal.java_class(),
+        message: Some(refusal.message()),
+    })
+}
+
 /// The five arguments of `IntervalArgumentCollection`, resolved against a dictionary.
 ///
 /// `--intervals` was the only one the runners read: `--exclude-intervals`, `--interval-set-rule`,
@@ -471,7 +508,14 @@ pub fn count_reads(parser: &Parser) -> Outcome {
     .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let header = source.header().clone();
-    let intervals = interval_arguments(parser, &header)?
+    // The MASTER dictionary is validated against the reads before the traversal, and it is what
+    // `getBestAvailableSequenceDictionary` answers with, so `-L` resolves against it too.
+    let master = master_dictionary(parser)?;
+    if let Some(master) = &master {
+        validate_against_master(master, "reads", &header.sequences)?;
+    }
+    let best = master.clone().unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
         .map(|parameters| parameters.intervals)
         .unwrap_or_default();
     let filter = read_filter(parser, &resolved_filters, &header)?;
@@ -606,7 +650,20 @@ pub fn count_variants(parser: &Parser) -> Outcome {
         }
     }
 
-    let intervals = interval_arguments(parser, &header)?.map(|parameters| parameters.intervals);
+    // The master dictionary is validated against the features, and then again as `best available`.
+    // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
+    // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
+    // `##contig` lines gives a real one.
+    let master = master_dictionary(parser)?;
+    if let Some(master) = &master {
+        validate_against_master(master, "features", &header.sequences)?;
+    }
+    let best = if header.sequences.is_empty() {
+        master.clone().unwrap_or_else(|| header.clone())
+    } else {
+        header.clone()
+    };
+    let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
 
     let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
         .into_iter()

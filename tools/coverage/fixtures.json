@@ -29,6 +29,10 @@
     "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
     "a count. A `.idx` there would measure nothing but a file name.",
     "",
+    "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
+    "shares nothing with it. The MASTER dictionary is validated against every other one before the",
+    "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
+    "",
     "Four arguments are here with a SECOND value and no expectation that they change anything:",
     "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
     "excluded as having one value, which meant the array covered it by holding it at its default",
@@ -119,6 +123,13 @@
     "--inverted-read-filter": [
       "FirstOfPairReadFilter",
       "PrimaryLineReadFilter"
+    ],
+    "--sequence-dictionary": [
+      "/work/fixtures/matching.dict",
+      "/work/fixtures/other.dict"
+    ],
+    "--read-index": [
+      "/work/fixtures/reads.bai"
     ]
   },
   "per_tool": {
