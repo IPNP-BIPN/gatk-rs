@@ -244,35 +244,46 @@ fn read_filter<'a>(
     tool: &str,
     header: &'a SamHeader,
 ) -> Result<Filter<'a>, Thrown> {
-    let mut names: Vec<String> = Vec::new();
-    if !flag(parser, "disable-tool-default-read-filters") {
-        names.extend(
-            gatk_tools::plugin_ownership::default_filters(tool)
-                .unwrap_or(&[])
-                .iter()
-                .map(|name| (*name).to_string()),
-        );
-    }
-    names.extend(arguments(parser, "read-filter"));
+    // The descriptor owns FOUR arguments, and reading two of them was a port that ignored
+    // `--disable-read-filter` and `--inverted-read-filter` entirely. `filter-resolution` measured
+    // what all four decide, including the order and the six refusals.
+    let resolved = gatk_tools::filter_resolution::resolve(
+        gatk_tools::plugin_ownership::default_filters(tool).unwrap_or(&[]),
+        &gatk_tools::plugin_ownership::CATALOGUE,
+        &arguments(parser, "read-filter"),
+        &arguments(parser, "disable-read-filter"),
+        &arguments(parser, "inverted-read-filter"),
+        flag(parser, "disable-tool-default-read-filters"),
+    )
+    .map_err(|error| Thrown {
+        // Every one of them is a `CommandLineException`, which is status ONE.
+        failure: Failure::CommandLine,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
 
-    let mut plain: Vec<gatk_readfilter::ReadFilter> = Vec::new();
-    let mut wellformed = false;
-    let mut parameterized: Vec<gatk_readfilter::Parameterized> = Vec::new();
-    for name in &names {
+    let mut plain: Vec<(gatk_readfilter::ReadFilter, bool)> = Vec::new();
+    let mut wellformed: Option<bool> = None;
+    let mut parameterized: Vec<(gatk_readfilter::Parameterized, bool)> = Vec::new();
+    for filter in &resolved {
+        let name = filter.name.as_str();
         if name == "WellformedReadFilter" {
-            wellformed = true;
-        } else if let Some(filter) = gatk_readfilter::by_name(name) {
-            plain.push(filter);
+            wellformed = Some(filter.negated);
+        } else if let Some(plain_filter) = gatk_readfilter::by_name(name) {
+            plain.push((plain_filter, filter.negated));
         } else if name == "MappingQualityReadFilter" {
             let minimum = scalar(parser, "minimum-mapping-quality")
                 .and_then(|text| text.parse::<i32>().ok())
                 .unwrap_or(10);
             let maximum =
                 scalar(parser, "maximum-mapping-quality").and_then(|text| text.parse::<i32>().ok());
-            parameterized.push(gatk_readfilter::Parameterized::MappingQuality {
-                min: minimum,
-                max: maximum,
-            });
+            parameterized.push((
+                gatk_readfilter::Parameterized::MappingQuality {
+                    min: minimum,
+                    max: maximum,
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
@@ -283,15 +294,22 @@ fn read_filter<'a>(
         }
     }
     Ok(Box::new(move |read: &BamRecord| {
-        if wellformed && !gatk_readfilter::with_header::wellformed(read, header) {
-            return false;
+        // `ReadFilterNegate` wraps the filter rather than replacing it, so a negated one answers
+        // the opposite of what the filter itself answers, on the same read.
+        if let Some(negated) = wellformed {
+            if gatk_readfilter::with_header::wellformed(read, header) == negated {
+                return false;
+            }
         }
-        if !plain.iter().all(|filter| filter(read)) {
+        if !plain
+            .iter()
+            .all(|(filter, negated)| filter(read) != *negated)
+        {
             return false;
         }
         parameterized
             .iter()
-            .all(|filter| filter.decide(read).unwrap_or(false))
+            .all(|(filter, negated)| filter.decide(read).unwrap_or(false) != *negated)
     }))
 }
 

@@ -69,6 +69,7 @@ pub mod filter_alignment_artifacts;
 pub mod filter_funcotations;
 pub mod filter_intervals;
 pub mod filter_mutect_calls;
+pub mod filter_resolution;
 pub mod filter_variant_tranches;
 pub mod filter_vcf;
 pub mod fix_misencoded_base_quality_reads;
