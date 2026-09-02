@@ -271,6 +271,7 @@ pub fn runner(name: &str) -> Option<Runner> {
     match name {
         "CountReads" => Some(run_count_reads),
         "CountVariants" => Some(run_count_variants),
+        "CreateHadoopBamSplittingIndex" => Some(run_create_hadoop_bam_splitting_index),
         "IndexFeatureFile" => Some(run_index_feature_file),
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
         _ => None,
@@ -278,6 +279,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_create_hadoop_bam_splitting_index(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::create_hadoop_bam_splitting_index(&parsed("CreateHadoopBamSplittingIndex", args)?)
+}
+
 fn run_count_variants(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::count_variants(&parsed("CountVariants", args)?)
 }

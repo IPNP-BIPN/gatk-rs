@@ -73,6 +73,11 @@
     "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
     "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
     "",
+    "`CreateHadoopBamSplittingIndex` declares its own `--input` and `--output`: the shared input",
+    "list carries three feature files this tool refuses by EXTENSION before it opens anything, so",
+    "an array built from it would measure one refusal four times. Two values are enough to have the",
+    "refusal and the index both.",
+    "",
     "It takes TWO names for the same reason every other argument here does: one value is covered by",
     "being present or absent, and the second is what lets a row notice that the tool writes where it",
     "was told to.",
@@ -158,6 +163,16 @@
     ]
   },
   "per_tool": {
+    "CreateHadoopBamSplittingIndex": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/reads.bam.sbi",
+        "/work/out/elsewhere.sbi"
+      ]
+    },
     "CountVariants": {
       "--output": [
         "/work/out/count.txt",
