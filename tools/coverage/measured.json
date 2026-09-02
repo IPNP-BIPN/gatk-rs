@@ -63,6 +63,15 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "GatherVcfsCloud": {
+      "rows": 10,
+      "accepted": 5,
+      "rejected": 5,
+      "distinct_outputs": 3,
+      "matched": 10,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
