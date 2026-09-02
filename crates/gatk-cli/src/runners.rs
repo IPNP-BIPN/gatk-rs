@@ -1177,10 +1177,24 @@ pub fn print_reads(parser: &Parser) -> Outcome {
         None
     };
     let source = match &index {
-        Some(index) => ReadsDataSource::open(path, index),
-        None => ReadsDataSource::open_unindexed(path),
-    }
-    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        // An index that is not a BAI is refused by its MAGIC, and the message names the file
+        // rather than the path: `AbstractBAMFileIndex` throws `Unknown BAM index file type` with
+        // `getName()`, which is the last component alone.
+        Some(index) => ReadsDataSource::open(path, index).map_err(|_| {
+            Thrown::non_user(
+                gatk_tools::read_walker_refusal::SAM_FORMAT,
+                format!(
+                    "Unknown BAM index file type: {}",
+                    index
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                ),
+            )
+        })?,
+        None => ReadsDataSource::open_unindexed(path)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    };
 
     let header = source.header().clone();
     let master = master_dictionary(parser)?;
