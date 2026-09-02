@@ -410,24 +410,20 @@ jobs:
             suites: "gnarly-genotyper model-segments local-assembler funcotator main-dispatch"
           - group: oracle-backed
             index: "56/59"
-            slug: "main-catalogue-main-non-user-main-entry-splitting-index-allele-frequency-qc"
-            suites: "main-catalogue main-non-user main-entry splitting-index allele-frequency-qc"
+            slug: "main-catalogue-gatk-config-main-non-user-main-entry-splitting-index"
+            suites: "main-catalogue gatk-config main-non-user main-entry splitting-index"
           - group: oracle-backed
             index: "57/59"
-            slug: "calculate-contamination-tool-argument-declarations-usage-text-bwa-index-image-tool-argument-enums"
-            suites: "calculate-contamination tool-argument-declarations usage-text bwa-index-image tool-argument-enums"
+            slug: "allele-frequency-qc-calculate-contamination-tool-argument-declarations-usage-text-bwa-index-image"
+            suites: "allele-frequency-qc calculate-contamination tool-argument-declarations usage-text bwa-index-image"
           - group: oracle-backed
             index: "58/59"
-            slug: "tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing"
-            suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
+            slug: "tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue-mutex-target-names"
+            suites: "tool-argument-enums tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names"
           - group: oracle-backed
             index: "59/59"
-            slug: "read-walker-refusals"
-            suites: "read-walker-refusals"
-          - group: golden-pending
-            index: "1/1"
-            slug: "gatk-config"
-            suites: "gatk-config"
+            slug: "count-reads-plumbing-read-walker-refusals"
+            suites: "count-reads-plumbing read-walker-refusals"
     steps:
       - uses: actions/checkout@v7
 

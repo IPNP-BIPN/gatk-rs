@@ -13,7 +13,8 @@
 //!  * **the property name being `@Key` and not the method name**;
 //!  * **and injection leaving an already-set property alone**, so a `-D` on the command line wins.
 //!
-//! While the suite is `golden-pending` the dump is named by `GATK_CONFIG_DUMP`.
+//! The golden is committed and re-derived by the `gatk-config` suite on every run; the dump can
+//! still be overridden with an environment variable while a harness change is being checked.
 
 use gatk_tools::gatk_config::{compression_level, default, resolve, COMPRESSION_LEVEL, DEFAULTS};
 
@@ -26,15 +27,14 @@ fn rows<'a>(dump: &'a str, kind: &str) -> Vec<Vec<&'a str>> {
 
 #[test]
 fn the_table_is_the_reference_one() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `GATK_CONFIG_DUMP` still overrides it, which is how a harness change is checked before
+    // CI sees it.
     let dump = match std::env::var("GATK_CONFIG_DUMP") {
         Ok(path) => std::fs::read_to_string(path).expect("the dump named by GATK_CONFIG_DUMP"),
-        Err(_) => {
-            println!(
-                "skipped: the gatk-config golden is still pending. Run the suite and point \
-                 GATK_CONFIG_DUMP at tools/conformance/pending/gatk-config.GatkConfigDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/gatk_config.txt.gz"),
+        ),
     };
 
     // The declaration: key, default, and whether it is injected at all.

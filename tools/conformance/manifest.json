@@ -6352,7 +6352,7 @@
     },
     {
       "id": "gatk-config",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the system properties GATKConfig installs before any tool runs",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6365,7 +6365,7 @@
       "cases": [
         {
           "dump": "GatkConfigDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/gatk_config.txt.gz",
           "why": "Every key the interface declares, sorted by property name so no JVM's reflection order can reach the golden; the injected value of each system property; and the precedence case, which decides whether a -D on the command line means anything."
         }
       ]
