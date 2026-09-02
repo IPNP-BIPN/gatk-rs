@@ -29,6 +29,11 @@
     "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
     "a count. A `.idx` there would measure nothing but a file name.",
     "",
+    "`--read-index` takes two paths that both exist, because what the argument decides is not",
+    "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
+    "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
+    "number of reads inputs before the contents are read at all.",
+    "",
     "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
     "shares nothing with it. The MASTER dictionary is validated against every other one before the",
     "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
@@ -123,6 +128,10 @@
     "--inverted-read-filter": [
       "FirstOfPairReadFilter",
       "PrimaryLineReadFilter"
+    ],
+    "--read-index": [
+      "/work/fixtures/reads.bai",
+      "/work/fixtures/indexed.vcf.idx"
     ],
     "--sequence-dictionary": [
       "/work/fixtures/matching.dict",
