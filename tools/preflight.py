@@ -88,6 +88,9 @@ def main():
     step("the tool declarations are generated, not written",
          ["python3", "tools/declarations/generate.py", "--check"])
 
+    step("the usage catalogue is generated, not written",
+         ["python3", "tools/declarations/generate_usage.py", "--check"])
+
     # The suites, last, because they are the slowest and need the oracle image.
     suites = [s for s in arguments.suites.split(",") if s]
     if suites:

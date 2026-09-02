@@ -109,10 +109,9 @@ fn asking_for_the_usage_is_not_an_error() {
         // `handleResult(null)` prints nothing, which is why the run that reaches it with no
         // program at all is silent past the usage.
         assert_eq!(field(&text, "result", case), "null");
-        // The listing under that first line is the port's own: the names resolve, the one-line
-        // summaries are not measured, and the golden is not asked to agree with the count.
-        assert!(counted(&written.stdout).0 > 1, "{case}");
-        assert_ne!(counted(&written.stdout).0, out.0, "{case}");
+        // The listing is the reference's now, so the count is asked to agree: `main-usage`
+        // compares it line for line, and this asserts the dispatcher hands over the whole of it.
+        assert_eq!(counted(&written.stdout).0, out.0, "{case}");
     }
 }
 

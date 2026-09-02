@@ -8,20 +8,15 @@
 //!
 //! # What this does not do yet
 //!
-//! Two things, both of them measured and neither of them portable from what is measured:
+//! One thing, and it is a deliberate boundary rather than an omission: **a WALKER's own usage**
+//! carries a conditional block per read filter the plugin descriptor discovered, and neither the
+//! blocks nor their order is measured, so [`tool_usage`] answers for a tool with no controlled
+//! argument and nothing for the rest. Its command line does reach the parser: the plugin trim runs
+//! over the ownership table measured in `plugin-argument-ownership`.
 //!
-//!  * **the main usage listing** is three hundred and seventy-three lines of tool names and their
-//!    one-line summaries, and the summaries are not in any golden: what is reproduced here is the
-//!    stream it goes to, the status that follows it, and its first line;
-//!  * **a WALKER's own usage** carries a conditional block per read filter the plugin descriptor
-//!    discovered, and neither the blocks nor their order is measured, so [`tool_usage`] answers
-//!    for a tool with no controlled argument and nothing for the rest. Its command line does
-//!    reach the parser: the plugin trim runs over the ownership table measured in
-//!    `plugin-argument-ownership`.
-//!
-//! Both are deliberate boundaries rather than omissions, and the test beside this file states
-//! them as such: it compares what the port claims against the golden, and says nothing about the
-//! lines the port does not produce.
+//! The main usage listing WAS the other one. It is three hundred and seventy-three lines of tool
+//! names, program groups and one-line summaries, and none of them was in a golden; they are now
+//! (`main-usage`), and [`usage`] reproduces the listing line for line.
 //!
 //! Ported from `org.broadinstitute.hellbender.Main`.
 
@@ -35,6 +30,10 @@ pub const TOOLKIT_NAME: &str = "The Genome Analysis Toolkit (GATK)";
 pub const TOOLKIT_VERSION: &str = "4.6.2.0";
 pub const HTSJDK_VERSION: &str = "4.2.0";
 pub const PICARD_VERSION: &str = "3.4.0";
+
+/// `getCommandLineName()`, which GATK leaves empty: the first line of the usage therefore reads
+/// `USAGE:  <program name>`, with two spaces where a toolkit's name would have been.
+pub const COMMAND_LINE_NAME: &str = "";
 
 /// The first line of the main usage, which Barclay writes in colour.
 ///
@@ -328,19 +327,11 @@ pub fn not_ported(name: &str) -> String {
     format!("{name} is a GATK tool that this port does not carry yet. This message is the port's own and not GATK's.")
 }
 
-/// The main usage, of which the first line is the reference's and the rest is not yet.
+/// The main usage: all three hundred and seventy-three lines of it.
 ///
-/// The reference prints three hundred and seventy-three lines here: a header, then every tool it
-/// found on the class path under its program group, each with the one-line summary its annotation
-/// carries. The names are ported in [`gatk_tools::main_catalogue`]; the summaries are not measured,
-/// so the listing is the names alone and the golden is not asked to agree with it.
+/// `getCommandLineName()` is EMPTY for GATK, which is why the first line reads `USAGE:  <program
+/// name>` with two spaces. The listing itself is [`gatk_tools::main_usage`], compared against the
+/// reference's own line for line by the `main-usage` suite.
 pub fn usage() -> String {
-    let mut text = String::from(USAGE_FIRST_LINE);
-    text.push('\n');
-    for name in gatk_tools::main_catalogue::CATALOGUE {
-        text.push_str("    ");
-        text.push_str(name);
-        text.push('\n');
-    }
-    text
+    gatk_tools::main_usage::usage(COMMAND_LINE_NAME)
 }

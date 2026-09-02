@@ -104,6 +104,8 @@ pub mod locus_walker;
 pub mod main_catalogue;
 pub mod main_dispatch;
 pub mod main_entry;
+pub mod main_usage;
+pub mod main_usage_catalogue;
 pub mod make_sites_only_vcf;
 pub mod merge_mutect2_mc3;
 pub mod merge_vcfs;
