@@ -957,6 +957,34 @@ impl gatk_engine::variant_source::Located for Locus {
     }
 }
 
+/// `UserException$BadInput`, whose constructor puts `Bad input: ` in front of the message.
+fn bad_input(message: String) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!("Bad input: {message}")),
+    }
+}
+
+/// Whether a BAM's header says `SO:coordinate`, which is what a `.bai` needs.
+fn is_coordinate_sorted(bam: &[u8]) -> bool {
+    htsjdk_bgzf::read::decompress_all(bam)
+        .ok()
+        .map(|bytes| {
+            // The header text starts at byte 8, after the magic and its length.
+            let length = bytes
+                .get(4..8)
+                .map(|four| i32::from_le_bytes(four.try_into().unwrap_or_default()) as usize)
+                .unwrap_or(0);
+            String::from_utf8_lossy(bytes.get(8..8 + length).unwrap_or_default()).into_owned()
+        })
+        .is_some_and(|text| {
+            text.lines()
+                .find(|line| line.starts_with("@HD"))
+                .is_some_and(|line| line.contains("SO:coordinate"))
+        })
+}
+
 /// Every record's virtual offset in a BAM, plus the offset after the last one and the file's size.
 ///
 /// `SBIIndexWriter` is fed one pointer per record and closed with the position the next record
@@ -1030,13 +1058,20 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
     let granularity = scalar(parser, "splitting-index-granularity")
         .and_then(|text| text.parse::<i64>().ok())
         .unwrap_or(sbi::DEFAULT_GRANULARITY as i64);
-    // `doWork`'s first line: the argument is judged before the input is looked at.
-    sbi::assert_granularity(granularity).map_err(Thrown::user)?;
+    // `doWork`'s first line: the argument is judged before the input is looked at, and it is the
+    // PARSER that refuses it, so the message names the argument and the status is one.
+    sbi::assert_granularity(granularity).map_err(|message| {
+        Thrown::command_line(format!(
+            "Argument splitting-index-granularity has a bad value: {granularity}. {message}"
+        ))
+    })?;
 
     let input = argument(parser, "input").ok_or_else(|| {
         Thrown::command_line("Argument input was missing: Argument 'input' is required")
     })?;
-    sbi::assert_is_bam(&input).map_err(Thrown::user)?;
+    // `UserException$BadInput`, whose own constructor puts `Bad input: ` in front of whatever it
+    // is handed. The golden carries the prefix and the class both.
+    sbi::assert_is_bam(&input).map_err(bad_input)?;
 
     let bytes = std::fs::read(&input)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
@@ -1055,6 +1090,12 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
     })?;
 
     if flag(parser, "create-bai") {
+        // Only the `.bai` path reads the records, so only it cares how they are sorted.
+        if !is_coordinate_sorted(&bytes) {
+            return Err(bad_input(
+                "Cannot create a .bai index for a file that isn't coordinate sorted.".to_string(),
+            ));
+        }
         // The companion's name REPLACES the index's extension, so `reads.bam.sbi` becomes
         // `reads.bam.bai` and an output named `elsewhere.idx` becomes `elsewhere.bai`.
         let companion = sbi::bai_companion(&output);
