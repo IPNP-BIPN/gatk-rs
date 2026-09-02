@@ -18,7 +18,9 @@
 //!  * **and the "enabled and inverted" refusal listing the empty set**, because the reference
 //!    formats the wrong variable. That is its behaviour, and the port reproduces it.
 //!
-//! While the suite is `golden-pending` the dump is named by `FILTER_RESOLUTION_DUMP`.
+//! The golden is committed and re-derived by the `filter-resolution` suite on every run; the
+//! dump can still be overridden with an environment variable while a harness change is being
+//! checked.
 
 use gatk_tools::filter_resolution::resolve;
 use gatk_tools::plugin_ownership::CATALOGUE;
@@ -146,18 +148,17 @@ fn field(dump: &str, kind: &str, case: &str) -> Option<String> {
 
 #[test]
 fn every_command_line_resolves_to_the_reference_filters() {
+    // The golden was produced by the pinned container on real x86-64 and is re-derived on every
+    // run; `FILTER_RESOLUTION_DUMP` still overrides it, which is how a harness change is checked
+    // before CI sees it.
     let dump = match std::env::var("FILTER_RESOLUTION_DUMP") {
         Ok(path) => {
             std::fs::read_to_string(path).expect("the dump named by FILTER_RESOLUTION_DUMP")
         }
-        Err(_) => {
-            println!(
-                "skipped: the filter-resolution golden is still pending. Run the suite and point \
-                 FILTER_RESOLUTION_DUMP at \
-                 tools/conformance/pending/filter-resolution.FilterResolutionDump.txt"
-            );
-            return;
-        }
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/filter_resolution.txt.gz"),
+        ),
     };
 
     for (case, enabled, disabled, inverted, disable_defaults) in CASES {

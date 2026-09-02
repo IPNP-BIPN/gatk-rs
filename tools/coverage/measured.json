@@ -38,11 +38,11 @@
       "share": 1.0
     },
     "CountVariants": {
-      "rows": 22,
-      "accepted": 9,
-      "rejected": 13,
+      "rows": 25,
+      "accepted": 13,
+      "rejected": 12,
       "distinct_outputs": 3,
-      "matched": 22,
+      "matched": 25,
       "t": 2,
       "share": 1.0
     }

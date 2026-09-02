@@ -6433,7 +6433,7 @@
     },
     {
       "id": "filter-resolution",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "which read filters a command line actually ends up with",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6446,7 +6446,7 @@
       "cases": [
         {
           "dump": "FilterResolutionDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/filter_resolution.txt.gz",
           "why": "Seventeen command lines over one tool's three default filters, covering each argument alone, the pairs that interact, and the five refusals."
         }
       ]
