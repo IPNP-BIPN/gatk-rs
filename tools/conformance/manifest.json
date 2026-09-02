@@ -6351,6 +6351,26 @@
       ]
     },
     {
+      "id": "main-non-user",
+      "status": "golden-pending",
+      "title": "handleNonUserException, which is the handler handleUserException is not",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Main"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "why": "`main-entry` measured `handleUserException` and left the other handler alone, so the port has one banner and prints it for both: a CountReads covering-array row shows the reference answering `java.lang.IllegalArgumentException: Dictionary cannot have size zero` and the port answering `A USER ERROR has occurred: Dictionary cannot have size zero`, with the right message, the right status and the wrong wrapper (#1020). What the reference prints on this path is `printStackTrace` and nothing else: no banner, no prefix, no property notice, and a first line that is `Throwable.toString()`, which is the class's BINARY name, so a nested class prints with a `$`.",
+      "cases": [
+        {
+          "dump": "MainNonUserDump",
+          "golden": null,
+          "why": "Eight throwables: the two a read walker reaches, a null message and an empty one, a nested class of this harness and a nested class of the reference's own, a message that spans lines, and the Error overload. The frames are not committed -- they name this harness and its line numbers -- so each case carries its first line and whether everything after it was a frame."
+        }
+      ]
+    },
+    {
       "id": "main-entry",
       "status": "oracle-backed",
       "title": "which stream each entry path writes to, what it returns, and the exit status an exception carries",

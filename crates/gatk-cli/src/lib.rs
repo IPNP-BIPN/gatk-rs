@@ -28,7 +28,7 @@
 pub mod definitions;
 pub mod runners;
 
-use gatk_tools::main_entry::{self, Failure, Route, Stream};
+use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
 /// The reference's own pins, which `printVersionInfo` reads off the jar's manifest.
 pub const TOOLKIT_NAME: &str = "The Genome Analysis Toolkit (GATK)";
@@ -56,7 +56,7 @@ pub struct Outcome {
 /// The list is empty of walkers on purpose: a tool becomes reachable here the moment its name
 /// resolves, and runnable only once its arguments have a declaration to parse against. The gap
 /// between the two is Milestone C's, and it is visible rather than papered over.
-pub type Runner = fn(&[String]) -> Result<Option<String>, (Failure, String)>;
+pub type Runner = fn(&[String]) -> Result<Option<String>, Thrown>;
 
 /// `Main.instanceMain`, with the two streams returned rather than written.
 pub fn run(args: &[String]) -> Outcome {
@@ -161,12 +161,16 @@ pub fn run(args: &[String]) -> Outcome {
                             status: 0,
                         }
                     }
-                    Err((failure, message)) => {
-                        stderr.push_str(&main_entry::user_exception_report(&message));
+                    Err(thrown) => {
+                        // Which handler this reaches is the throwable's own answer: a
+                        // `UserException` is decorated with the banner, and anything else is
+                        // printed as `handleNonUserException` prints it, which is the exception's
+                        // CLASS in front of its message and no banner at all (#1020).
+                        stderr.push_str(&thrown.report());
                         Outcome {
                             stdout,
                             stderr,
-                            status: main_entry::exit_status(failure),
+                            status: thrown.status(),
                         }
                     }
                 },
@@ -274,27 +278,27 @@ pub fn runner(name: &str) -> Option<Runner> {
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
-fn run_count_reads(args: &[String]) -> Result<Option<String>, (Failure, String)> {
+fn run_count_reads(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::count_reads(&parsed("CountReads", args)?)
 }
 
-fn run_index_feature_file(args: &[String]) -> Result<Option<String>, (Failure, String)> {
+fn run_index_feature_file(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::index_feature_file(&parsed("IndexFeatureFile", args)?)
 }
 
-fn run_print_bgzf_block_information(args: &[String]) -> Result<Option<String>, (Failure, String)> {
+fn run_print_bgzf_block_information(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_bgzf_block_information(&parsed("PrintBGZFBlockInformation", args)?)
 }
 
 /// The tool's own parser, over the command line the dispatcher was handed.
-fn parsed(tool: &str, args: &[String]) -> Result<gatk_barclay::Parser, (Failure, String)> {
+fn parsed(tool: &str, args: &[String]) -> Result<gatk_barclay::Parser, Thrown> {
     let list = gatk_tools::tool_declarations::declarations(tool)
         .expect("the declarations of a tool with a runner");
     let mut parser = parser_for(tool, list);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     parser
         .parse_arguments(&borrowed)
-        .map_err(|error| (Failure::CommandLine, error.message))?;
+        .map_err(|error| Thrown::command_line(error.message))?;
     Ok(parser)
 }
 
