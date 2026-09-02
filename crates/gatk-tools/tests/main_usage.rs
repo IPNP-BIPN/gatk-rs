@@ -20,9 +20,20 @@
 //!  * **and the same text reaching stdout for no arguments and stderr for a name that does not
 //!    resolve.**
 //!
-//! While the suite is `golden-pending` the dump is named by `MAIN_USAGE_DUMP`.
+//! The golden is committed and re-derived by the `main-usage` suite on every run; the dump can
+//! still be overridden with an environment variable while a harness change is being checked.
 
 use gatk_tools::main_usage::usage;
+
+/// The golden, or the dump named by `MAIN_USAGE_DUMP` while a harness change is being checked.
+fn golden() -> String {
+    match std::env::var("MAIN_USAGE_DUMP") {
+        Ok(path) => std::fs::read_to_string(path).expect("the dump named by MAIN_USAGE_DUMP"),
+        Err(_) => gatk_corpus::read_golden(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/main_usage.txt.gz"),
+        ),
+    }
+}
 
 fn unescape(text: &str) -> String {
     text.replace("\\t", "\t")
@@ -56,16 +67,7 @@ fn count(dump: &str, stream: &str) -> usize {
 
 #[test]
 fn the_listing_is_the_reference_one_line_for_line() {
-    let dump = match std::env::var("MAIN_USAGE_DUMP") {
-        Ok(path) => std::fs::read_to_string(path).expect("the dump named by MAIN_USAGE_DUMP"),
-        Err(_) => {
-            println!(
-                "skipped: the main-usage golden is still pending. Run the suite and point \
-                 MAIN_USAGE_DUMP at tools/conformance/pending/main-usage.MainUsageDump.txt"
-            );
-            return;
-        }
-    };
+    let dump = golden();
 
     // `getCommandLineName()` is empty for GATK, which is why the first line has two spaces.
     let ours: Vec<String> = usage("").split('\n').map(str::to_string).collect();
@@ -91,10 +93,7 @@ fn the_listing_is_the_reference_one_line_for_line() {
 /// The declarations the port carries are the ones the dump measured, and nothing has been dropped.
 #[test]
 fn every_tool_and_group_the_reference_declares_is_here() {
-    let dump = match std::env::var("MAIN_USAGE_DUMP") {
-        Ok(path) => std::fs::read_to_string(path).expect("the dump named by MAIN_USAGE_DUMP"),
-        Err(_) => return,
-    };
+    let dump = golden();
     use gatk_tools::main_usage_catalogue::{GROUPS, TOOLS};
 
     let tools: Vec<&str> = dump

@@ -1259,16 +1259,19 @@ cases the dumps exercise". It does not mean any of them runs, and it does not me
 agrees with the reference across its argument surface. This milestone is what turns the first
 sentence into the second.
 
-- [~] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
+- [x] **C.1 the dispatcher binary**, `gatk-rs <Tool> <args>`, the tool named first, which is the
       shape the bit-identity claim is defined against. The crate is `gatk-cli` and the binary is
       `gatk-rs`, deliberately not `gatk`. Routing, the five exit statuses, the version, the
-      refusals and the two handlers are compared against the `main-entry` golden; every declared
-      tool's command line reaches the parser, a walker's included, because the plugin trim now
-      runs over the ownership table measured in `plugin-argument-ownership` and removes the twelve
-      required-looking descriptor arguments before the required check. What is left is the main
-      usage listing, which needs every tool's one-line summary. The per-tool DEFAULT filter lists
-      are measured now, so a default filter's own argument is accepted where the reference accepts
-      it
+      refusals and BOTH handlers are compared against the `main-entry` and `main-non-user`
+      goldens: a non-user failure prints the exception's own class where the port used to print
+      one banner for both. Every declared tool's command line reaches the parser, a walker's
+      included, because the plugin trim runs over the ownership table measured in
+      `plugin-argument-ownership` and removes the twelve required-looking descriptor arguments
+      before the required check, and the per-tool DEFAULT filter lists are measured, so a default
+      filter's own argument is accepted where the reference accepts it. The main usage listing is
+      the reference's, all 373 lines of it (`main-usage`): the tools' groups, markers and one-line
+      summaries are generated from the golden, the layout is ported, and the padding a Picard
+      tool's line gets is decided by a name that line does not show
 - [x] **C.2 per-tool argument declarations** on the ported Barclay value model, for the seven
       tools the golden carries. The declarations are generated from `tool-argument-declarations`,
       which now measures the type, the primitiveness, the three visibility flags, the bounds, the

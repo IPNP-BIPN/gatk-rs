@@ -6372,7 +6372,7 @@
     },
     {
       "id": "main-usage",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the main usage listing, all three hundred and seventy-three lines of it",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -6385,7 +6385,7 @@
       "cases": [
         {
           "dump": "MainUsageDump",
-          "golden": null,
+          "golden": "crates/gatk-tools/tests/data/main_usage.txt.gz",
           "why": "Two runs, four streams: the listing on stdout with the other stream empty, and the listing on stderr with stdout empty."
         }
       ]
