@@ -677,6 +677,20 @@ pub fn count_variants(parser: &Parser) -> Outcome {
 
     let header = vcf_dictionary(&text);
 
+    let master = master_dictionary(parser)?;
+    // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
+    // master block included: a guard around part of it refuses command lines the reference runs.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            // The master block runs before the reference/reads/features loop, and inside it the
+            // READS come before the features: a command line naming both gets the reads' refusal
+            // first.
+            for reads in arguments(parser, "input") {
+                validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
+            }
+            validate_against_master(master, "features", &header.sequences)?;
+        }
+    }
     // `GATKTool.onStartup` validates the dictionaries against each other BEFORE the traversal, and
     // a variant walker still opens the reads when a command line names any: the pair goes through
     // `validateDictionaries("reads", readDict, "features", featureDict)`, whose four-argument
@@ -704,20 +718,6 @@ pub fn count_variants(parser: &Parser) -> Outcome {
     // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
     // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
     // `##contig` lines gives a real one.
-    let master = master_dictionary(parser)?;
-    // `validateSequenceDictionaries` is ONE method and the argument turns all of it off, the
-    // master block included: a guard around part of it refuses command lines the reference runs.
-    if !flag(parser, "disable-sequence-dictionary-validation") {
-        if let Some(master) = &master {
-            // The master block runs before the reference/reads/features loop, and inside it the
-            // READS come before the features: a command line naming both gets the reads' refusal
-            // first.
-            for reads in arguments(parser, "input") {
-                validate_against_master(master, "reads", &reads_dictionary(&reads)?)?;
-            }
-            validate_against_master(master, "features", &header.sequences)?;
-        }
-    }
     let best = if header.sequences.is_empty() {
         master.clone().unwrap_or_else(|| header.clone())
     } else {
