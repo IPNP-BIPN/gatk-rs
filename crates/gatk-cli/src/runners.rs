@@ -1888,22 +1888,29 @@ pub fn count_bases_in_reference(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    let arguments = gatk_engine::interval_args::IntervalArguments {
-        include: arguments(parser, "intervals"),
-        exclude: arguments(parser, "exclude-intervals"),
-        padding: number(parser, "interval-padding"),
-        exclusion_padding: number(parser, "interval-exclusion-padding"),
-        set_rule: match scalar(parser, "interval-set-rule").as_deref() {
-            Some("INTERSECTION") => gatk_engine::interval_args::SetRule::Intersection,
-            _ => gatk_engine::interval_args::SetRule::Union,
-        },
-        merging_rule: match scalar(parser, "interval-merging-rule").as_deref() {
-            Some("OVERLAPPING_ONLY") => MergingRule::OverlappingOnly,
-            _ => MergingRule::All,
-        },
+    // `getBestAvailableSequenceDictionary` prefers a `--sequence-dictionary` over the reference's
+    // own, and the intervals resolve against THAT. A run naming both therefore resolves `-L`
+    // against the master and then queries the FASTA, which is how a contig the master declares and
+    // the FASTA does not reaches the query rather than the parser (measured on rows 4, 6 and 9 of
+    // this tool's array; rows 5, 7 and 8 are the same rule the other way round).
+    let master = master_dictionary(parser)?;
+    let own = gatk_tools::reference_walker::dictionary(&source);
+    let best = master.unwrap_or(own);
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        // `getTraversalIntervals` with no interval argument at all: one interval per contig of the
+        // dictionary, covering all of it.
+        None => best
+            .sequences
+            .iter()
+            .map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                    .expect("a contig length is at least one")
+            })
+            .collect(),
     };
-    let counts = gatk_tools::count_bases_in_reference::run(&mut source, &arguments)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let counts = gatk_tools::count_bases_in_reference::run_over(&mut source, &intervals)
+        .map_err(reference_traversal_error)?;
     let report = counts.report();
 
     if let Some(output) = argument(parser, "output") {
@@ -1912,4 +1919,19 @@ pub fn count_bases_in_reference(parser: &Parser) -> Outcome {
             .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     }
     Ok(Some(report))
+}
+
+/// A reference walker's traversal failure, as the reference throws it.
+///
+/// The query's own refusal is a `UserException` naming the contig, which is what a run whose
+/// master dictionary declares a contig the FASTA does not ends with.
+fn reference_traversal_error(error: gatk_tools::reference_walker::TraversalError) -> Thrown {
+    match error {
+        gatk_tools::reference_walker::TraversalError::Reference(
+            gatk_engine::reference::ReferenceError::UnknownContig(contig),
+        ) => Thrown::user(format!(
+            "Given reference file does not have data at the requested contig({contig})!"
+        )),
+        other => Thrown::user(format!("{other:?}")),
+    }
 }
