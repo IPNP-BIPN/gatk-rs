@@ -426,8 +426,8 @@ jobs:
             suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue count-reads-plumbing read-walker-refusals"
           - group: golden-pending
             index: "1/1"
-            slug: "tool-argument-declarations-mutex-target-names"
-            suites: "tool-argument-declarations mutex-target-names"
+            slug: "select-variants-header-tool-argument-declarations-mutex-target-names"
+            suites: "select-variants-header tool-argument-declarations mutex-target-names"
     steps:
       - uses: actions/checkout@v7
 

@@ -2897,6 +2897,32 @@
       ]
     },
     {
+      "id": "select-variants-header",
+      "status": "golden-pending",
+      "title": "the header SelectVariants writes, where four INFO lines are replaced rather than merged",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "SelectVariants"
+      ],
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "header\tplain\t##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes, for each ALT allele, in the same order as listed\">",
+        "header\tplain\t##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency, for each ALT allele, in the same order as listed\">",
+        "header\tkeep-original-ac\t##INFO=<ID=AC_Orig,Number=A,Type=Integer,Description=\"Original AC\">",
+        "samples\tsubset\ts0,s2"
+      ],
+      "why": "The five existing select-variants suites all skip the `#` lines of the output, because the default header carries a ##GATKCommandLine line holding the wall-clock time of the run and a golden of it would flake by construction. So the header is the part of this tool nothing measures, and createVCFHeaderLineList is not a small part of it: AN, AC, AF and DP are REMOVED and re-added from htsjdk's standard definitions rather than merged, so an input whose ##INFO=<ID=AC> carries its own description comes out with htsjdk's and an AF appears in a file that never had one. --keep-original-ac adds three lines and --keep-original-dp one; the two --drop arguments remove header lines and run AFTER the replacements, so dropping AC removes the standard line just added; the sample columns are the selected set rather than the file's; and --add-output-vcf-command-line false removes the ##source line as well, because getDefaultToolVCFHeaderLines returns an empty set rather than dropping one line. The last case runs with the command line ON and elides its Date and Version, so where the line goes is measured without the golden moving.",
+      "cases": [
+        {
+          "dump": "SelectVariantsHeaderDump",
+          "golden": null,
+          "why": "Golden-pending: to be measured in the pinned container on a real x86-64 runner."
+        }
+      ]
+    },
+    {
       "id": "select-variants-concordance",
       "status": "oracle-backed",
       "title": "SelectVariants' discordance and concordance, which are not opposites",
