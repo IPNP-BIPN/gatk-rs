@@ -217,9 +217,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | not measured |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy | 1 | not measured |
-| `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | not measured |
+| `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 21/21 rows (100%) |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
-| `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | not measured |
+| `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | not measured |
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
