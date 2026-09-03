@@ -2117,8 +2117,13 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
     // dictionary built from the `.fai` drops it too.
     let from_dict = reference_dictionary(parser)?;
     let own = gatk_tools::reference_walker::dictionary(&source);
-    let best = from_dict.unwrap_or(own);
-    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = best
+    let written = from_dict.clone().unwrap_or(own.clone());
+    // The INTERVALS resolve against a different dictionary from the one the file is written with:
+    // `getBestAvailableSequenceDictionary` prefers a `--sequence-dictionary`, so a `-L` naming a
+    // contig the master does not declare is refused even where the reference has it, while the
+    // `@SQ` lines still come from the reference. One tool, two dictionaries.
+    let best = master_dictionary(parser)?.or(from_dict).unwrap_or(own);
+    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = written
         .sequences
         .iter()
         .map(|sequence| gatk_tools::preprocess_intervals::Sequence {
