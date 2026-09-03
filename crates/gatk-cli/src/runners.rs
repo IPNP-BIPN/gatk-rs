@@ -2062,3 +2062,80 @@ pub fn split_intervals(parser: &Parser) -> Outcome {
     }
     Ok(None)
 }
+
+/// `PreprocessIntervals.onTraversalStart`, which like `SplitIntervals` is the whole tool.
+///
+/// The second interval utility, and it shares that one's shape: the best available dictionary, the
+/// intervals over it, one file out. What is its own is the binning -- `--bin-length` chops the
+/// padded intervals into fixed pieces -- and the filter that drops a bin whose every base is an N,
+/// which is why this one needs the reference's BASES and not only its dictionary.
+pub fn preprocess_intervals(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "PreprocessIntervals")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut source =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // The reference's `.dict` rather than its `.fai`: both name the same contigs and only the
+    // first carries the ATTRIBUTES, and the `@SQ` lines this tool writes carry them through. A
+    // dictionary built from the index alone dropped the `M5` the reference writes.
+    let master = master_dictionary(parser)?;
+    let from_dict = reference_dictionary(parser)?;
+    let own = gatk_tools::reference_walker::dictionary(&source);
+    let best = master.or(from_dict).unwrap_or(own);
+    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = best
+        .sequences
+        .iter()
+        .map(|sequence| gatk_tools::preprocess_intervals::Sequence {
+            name: sequence.name.clone(),
+            length: sequence.length,
+            md5: sequence.attributes.get("M5").map(str::to_string),
+            uri: sequence.attributes.get("UR").map(str::to_string),
+        })
+        .collect();
+
+    // This tool's own `Interval`, which is three fields and no strand: an interval list's other
+    // two columns are written by the writer rather than carried by the interval.
+    let given = interval_arguments(parser, &best)?.map(|parameters| {
+        parameters
+            .intervals
+            .iter()
+            .map(|interval| gatk_tools::filter_intervals::Interval {
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // One whole contig at a time, which is what the N filter asks for, and each is read once.
+    let mut contigs: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    for sequence in &best.sequences {
+        let bases = source
+            .query(&sequence.name, 1, sequence.length)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        contigs.insert(sequence.name.clone(), bases);
+    }
+
+    let text = gatk_tools::preprocess_intervals::preprocess(
+        given.as_deref(),
+        &sequences,
+        number_or(parser, "bin-length", 1000),
+        number_or(parser, "padding", 250),
+        |contig| contigs.get(contig).cloned().unwrap_or_default(),
+    )
+    .map_err(|error| Thrown {
+        failure: Failure::CommandLine,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
