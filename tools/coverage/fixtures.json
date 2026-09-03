@@ -191,14 +191,6 @@
    "-1.0",
    "20.0"
   ],
-  "--quantize-quals": [
-   "0",
-   "8"
-  ],
-  "--static-quantized-quals": [
-   "10",
-   "30"
-  ],
   "--splitting-index-granularity": [
    "4096",
    "1024"
@@ -206,6 +198,10 @@
   "--progress-logger-frequency": [
    "10000",
    "1000"
+  ],
+  "--static-quantized-quals": [
+   "10",
+   "30"
   ]
  },
  "per_tool": {
@@ -307,6 +303,7 @@
   "--gcs-max-retries": "reaches nothing without a cloud path in the row",
   "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
   "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
-  "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead"
+  "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+  "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite"
  }
 }
