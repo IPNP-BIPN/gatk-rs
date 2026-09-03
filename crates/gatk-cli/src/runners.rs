@@ -1176,24 +1176,28 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     } else {
         None
     };
-    let source = match &index {
-        // An index that is not a BAI is refused by its MAGIC, and the message names the file
-        // rather than the path: `AbstractBAMFileIndex` throws `Unknown BAM index file type` with
-        // `getName()`, which is the last component alone.
-        Some(index) => ReadsDataSource::open(path, index).map_err(|_| {
-            Thrown::non_user(
-                gatk_tools::read_walker_refusal::SAM_FORMAT,
-                format!(
-                    "Unknown BAM index file type: {}",
+    // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
+    // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
+    // refused before anything asks the index what it is.
+    let (source, bad_index) = match &index {
+        Some(index) => match ReadsDataSource::open(path, index) {
+            Ok(source) => (source, None),
+            Err(_) => (
+                ReadsDataSource::open_unindexed(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                Some(
                     index
                         .file_name()
                         .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default()
+                        .unwrap_or_default(),
                 ),
-            )
-        })?,
-        None => ReadsDataSource::open_unindexed(path)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            ),
+        },
+        None => (
+            ReadsDataSource::open_unindexed(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None,
+        ),
     };
 
     let header = source.header().clone();
@@ -1217,6 +1221,12 @@ pub fn print_reads(parser: &Parser) -> Outcome {
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
+        ));
+    }
+    if let Some(name) = bad_index {
+        return Err(Thrown::non_user(
+            gatk_tools::read_walker_refusal::SAM_FORMAT,
+            format!("Unknown BAM index file type: {name}"),
         ));
     }
     let filter = read_filter(parser, &resolved_filters, &header)?;
@@ -1620,21 +1630,28 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     } else {
         None
     };
-    let source = match &index {
-        Some(index) => ReadsDataSource::open(path, index).map_err(|_| {
-            Thrown::non_user(
-                gatk_tools::read_walker_refusal::SAM_FORMAT,
-                format!(
-                    "Unknown BAM index file type: {}",
+    // An index that is not one is refused by its MAGIC, and the refusal WAITS: `initializeReads`
+    // opens the file, `initializeIntervals` runs next, and a query that does not resolve is
+    // refused before anything asks the index what it is.
+    let (source, bad_index) = match &index {
+        Some(index) => match ReadsDataSource::open(path, index) {
+            Ok(source) => (source, None),
+            Err(_) => (
+                ReadsDataSource::open_unindexed(path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+                Some(
                     index
                         .file_name()
                         .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default()
+                        .unwrap_or_default(),
                 ),
-            )
-        })?,
-        None => ReadsDataSource::open_unindexed(path)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            ),
+        },
+        None => (
+            ReadsDataSource::open_unindexed(path)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None,
+        ),
     };
 
     let header = source.header().clone();
@@ -1658,6 +1675,12 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
     if !intervals.is_empty() && index.is_none() {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
+        ));
+    }
+    if let Some(name) = bad_index {
+        return Err(Thrown::non_user(
+            gatk_tools::read_walker_refusal::SAM_FORMAT,
+            format!("Unknown BAM index file type: {name}"),
         ));
     }
     let filter = read_filter(parser, &resolved_filters, &header)?;
