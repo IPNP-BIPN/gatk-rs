@@ -1570,3 +1570,162 @@ pub fn gather_vcfs_cloud(parser: &Parser) -> Outcome {
     }
     Ok(None)
 }
+
+/// `ApplyBQSR.doWork`: every read that survives the filters, recalibrated and written back out.
+///
+/// It is `PrintReads` with a transformer between the traversal and the writer, and the transformer
+/// is where nine arguments of this tool's own finally reach something. The recalibration table is
+/// read WHOLE before the traversal starts, because the transformer needs its covariates before it
+/// can judge a base.
+pub fn apply_bqsr(parser: &Parser) -> Outcome {
+    use gatk_engine::bqsr_transformer::ApplyBqsrArguments;
+
+    let resolved_filters = resolve_read_filters(parser, "ApplyBQSR")?;
+
+    let inputs = arguments(parser, "input");
+    if inputs.len() > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "More than one --input is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let input = inputs.into_iter().next().ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let recal = argument(parser, "bqsr-recal-file").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument bqsr-recal-file was missing: Argument 'bqsr-recal-file' is required",
+        )
+    })?;
+    let recal_text = std::fs::read_to_string(&recal)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&recal, false)))?;
+
+    let path = std::path::Path::new(&input);
+    let bytes = std::fs::read(path)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    let compressed = gatk_tools::read_walker_refusal::is_block_compressed(&bytes);
+    let is_binary = if compressed {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .map(|inflated| inflated.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC))
+            .unwrap_or(false)
+    } else {
+        bytes.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC)
+    };
+    let named_index = read_index(parser, 1, is_binary, compressed)?;
+    let index = if is_binary {
+        named_index.or_else(|| htsjdk_bam::sam_files::find_index(path))
+    } else {
+        None
+    };
+    let source = match &index {
+        Some(index) => ReadsDataSource::open(path, index).map_err(|_| {
+            Thrown::non_user(
+                gatk_tools::read_walker_refusal::SAM_FORMAT,
+                format!(
+                    "Unknown BAM index file type: {}",
+                    index
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                ),
+            )
+        })?,
+        None => ReadsDataSource::open_unindexed(path)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    };
+
+    let header = source.header().clone();
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            validate_against_master(master, "reads", &header.sequences)?;
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+        }
+    }
+    let best = master
+        .clone()
+        .or_else(|| reference.clone())
+        .unwrap_or_else(|| header.clone());
+    let intervals = interval_arguments(parser, &best)?
+        .map(|parameters| parameters.intervals)
+        .unwrap_or_default();
+    if !intervals.is_empty() && index.is_none() {
+        return Err(Thrown::user(
+            "Traversal by intervals was requested but some input files are not indexed.",
+        ));
+    }
+    let filter = read_filter(parser, &resolved_filters, &header)?;
+
+    let bqsr = ApplyBqsrArguments {
+        preserve_qscores_less_than: number_or(parser, "preserve-qscores-less-than", 6),
+        quantization_levels: number_or(parser, "quantize-quals", 0),
+        static_quantization_quals: arguments(parser, "static-quantized-quals")
+            .iter()
+            .filter_map(|value| value.parse().ok())
+            .collect(),
+        round_down: flag(parser, "round-down-quantized"),
+        emit_original_quals: flag(parser, "emit-original-quals"),
+        use_original_base_qualities: flag(parser, "use-original-qualities"),
+        global_qscore_prior: scalar(parser, "global-qscore-prior")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(-1.0),
+        allow_missing_read_groups: flag(parser, "allow-missing-read-group"),
+    };
+
+    let command_line = crate::command_line::expanded("ApplyBQSR", parser);
+    let options = gatk_tools::print_reads::Options {
+        intervals,
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let (bam, bai) = gatk_tools::apply_bqsr::apply_bqsr_with(
+        &source,
+        &recal_text,
+        &bqsr,
+        &options,
+        &filter,
+        level,
+        deflater,
+    )
+    .map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+
+    std::fs::write(&output, &bam).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    if let Some(bai) = bai {
+        let companion = std::path::Path::new(&output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bam)).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+        })?;
+    }
+    Ok(None)
+}
+
+/// An integer argument with the tool's own default where it was not given.
+fn number_or(parser: &Parser, long_name: &str, default: i32) -> i32 {
+    scalar(parser, long_name)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(default)
+}

@@ -164,12 +164,24 @@
       "/work/fixtures/reads.bai",
       "/work/fixtures/indexed.vcf.idx"
     ],
+    "--bqsr-recal-file": [
+      "/work/fixtures/recal.table"
+    ],
     "--sequence-dictionary": [
       "/work/fixtures/matching.dict",
       "/work/fixtures/other.dict"
     ]
   },
   "per_tool": {
+    "ApplyBQSR": {
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--output": [
+        "/work/out/recalibrated.bam",
+        "/work/out/other.bam"
+      ]
+    },
     "GatherVcfsCloud": {
       "--create-output-variant-index": [
         "false"

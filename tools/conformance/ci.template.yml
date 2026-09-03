@@ -187,7 +187,7 @@ jobs:
           python3 tools/coverage/measure.py \
             --tool IndexFeatureFile --tool PrintBGZFBlockInformation --tool CountReads \
             --tool CountVariants --tool CreateHadoopBamSplittingIndex \
-            --tool PrintReads --tool GatherVcfsCloud \
+            --tool PrintReads --tool GatherVcfsCloud --tool ApplyBQSR \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
