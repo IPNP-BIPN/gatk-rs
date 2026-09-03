@@ -239,7 +239,12 @@ def main(argv):
 
     rows, matched, rejected = [], 0, 0
     outputs = set()
-    with tempfile.TemporaryDirectory(prefix="gatk-coverage-") as tmp:
+    # `ignore_cleanup_errors` because a tool whose `--output` is a DIRECTORY leaves one the
+    # CONTAINER created, owned by root: the per-row sweep is best effort for the same reason, and
+    # the teardown would otherwise end a green run with a PermissionError.
+    with tempfile.TemporaryDirectory(
+        prefix="gatk-coverage-", ignore_cleanup_errors=True
+    ) as tmp:
         workdir = Path(tmp)
         build_fixtures(workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
