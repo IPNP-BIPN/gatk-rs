@@ -278,6 +278,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyBQSR" => Some(run_apply_bqsr),
         "IndexFeatureFile" => Some(run_index_feature_file),
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
+        "CountBases" => Some(run_count_bases),
+        "FlagStat" => Some(run_flag_stat),
         _ => None,
     }
 }
@@ -285,6 +287,14 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_count_bases(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_bases(&parsed("CountBases", args)?)
+}
+
+fn run_flag_stat(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::flag_stat(&parsed("FlagStat", args)?)
 }
 
 fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {

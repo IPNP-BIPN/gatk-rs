@@ -115,7 +115,11 @@
   "refused by htsjdk before the tool runs (`Cannot use index file with textual SAM file`), which",
   "was fourteen of its thirty-one rows measuring one refusal. Two BAMs and the indexes that belong",
   "to them turn those rows into traversals whose reads dictionary is compared against the",
-  "features', which is what the tool actually does with them."
+  "features', which is what the tool actually does with them.",
+  "",
+  "`CountBases` and `FlagStat` take `CountReads`' values verbatim, which is the archetype paying",
+  "for itself: the three declare the same seventy arguments and read the same files, so the",
+  "fixtures that made one measurable make all three."
  ],
  "values": {
   "--input": [
@@ -309,6 +313,44 @@
    "--intervals": [
     "chr1:1-6000",
     "chr1:50000-60000"
+   ]
+  },
+  "CountBases": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/countbases.txt",
+    "/work/out/countbases2.txt"
+   ]
+  },
+  "FlagStat": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/flagstat.txt",
+    "/work/out/flagstat2.txt"
    ]
   }
  },
