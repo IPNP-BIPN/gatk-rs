@@ -23,6 +23,7 @@ Two modes, and the difference is the whole point of Milestone C:
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -99,17 +100,34 @@ def output_path(row_args):
     return None
 
 
+def clear(out_dir):
+    """Empty an output directory between rows, whoever owns what is in it.
+
+    A tool whose `--output` is a DIRECTORY leaves one here -- `SplitIntervals` writes a shard per
+    file into one it creates itself -- and a directory the CONTAINER created belongs to root, so
+    the host cannot remove it at all. Each run therefore opens with `rm -rf /work/out/*` INSIDE the
+    container, and this is the best-effort half that keeps a host-owned leftover from accumulating.
+    """
+    for stale in out_dir.iterdir():
+        try:
+            if stale.is_dir():
+                shutil.rmtree(stale)
+            else:
+                stale.unlink()
+        except OSError:
+            pass
+
+
 def run_oracle(tool, row_args, workdir):
     """Run one row in the container. Returns (exit code, output as text or digest, error line)."""
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
-    for stale in out_dir.iterdir():
-        stale.unlink()
+    clear(out_dir)
 
     cli = " ".join(as_cli(row_args))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -129,17 +147,20 @@ def read_output(out_dir):
     An index is binary, so hashing it is what keeps the row measurable: the comparison needs to
     know whether the two sides produced the same bytes, and a digest answers that exactly.
     """
-    produced = sorted(p for p in out_dir.iterdir() if p.is_file())
+    # Recursive, because a directory output's files are the row's answer; their names are relative
+    # to the output directory so two runs of one tool stay comparable.
+    produced = sorted(p for p in out_dir.rglob("*") if p.is_file())
     if not produced:
         return ""
     parts = []
     for path in produced:
         raw = path.read_bytes()
+        name = path.relative_to(out_dir).as_posix()
         try:
-            parts.append(f"{path.name}: {raw.decode('utf-8')}")
+            parts.append(f"{name}: {raw.decode('utf-8')}")
         except UnicodeDecodeError:
             digest = hashlib.sha256(raw).hexdigest()
-            parts.append(f"{path.name}: BINARY sha256={digest} bytes={len(raw)}")
+            parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
 
 
@@ -172,12 +193,11 @@ def run_port(binary, tool, row_args, workdir):
     """
     out_dir = workdir / "port"
     out_dir.mkdir(exist_ok=True)
-    for stale in out_dir.iterdir():
-        stale.unlink()
+    clear(out_dir)
 
     binary = Path(binary).resolve()
     cli = " ".join(as_cli(row_args))
-    command = f"mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
+    command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,

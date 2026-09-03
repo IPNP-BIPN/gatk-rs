@@ -190,6 +190,7 @@ jobs:
             --tool PrintReads --tool GatherVcfsCloud --tool ApplyBQSR \
             --tool CountBases --tool FlagStat \
             --tool CountBasesInReference \
+            --tool SplitIntervals \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

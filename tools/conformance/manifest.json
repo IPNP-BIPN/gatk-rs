@@ -6668,7 +6668,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6688,7 +6688,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
+          "why": "Golden-pending: the four tools that joined the declarations after this dump was written are in it now, so the golden is re-measured on a real x86-64 runner. One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
         }
       ]
     },

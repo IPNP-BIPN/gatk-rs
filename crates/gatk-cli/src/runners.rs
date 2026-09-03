@@ -1935,3 +1935,124 @@ fn reference_traversal_error(error: gatk_tools::reference_walker::TraversalError
         other => Thrown::user(format!("{other:?}")),
     }
 }
+
+/// `SplitIntervals.onTraversalStart`, which is the whole tool: `traverse()` is empty.
+///
+/// The third archetype here, and the first that writes a DIRECTORY. Its dictionary is the best
+/// available one -- a `--sequence-dictionary`, else the reference, else the reads or the variants
+/// -- and with no `-L` at all the intervals are every contig of it long enough to pass
+/// `--min-contig-size`.
+///
+/// The file each shard is written to is the reference's own format, measured in the container: the
+/// header is `@HD VN:1.6` and the `@SQ` lines of the dictionary, and each interval is the five
+/// columns `IntervalListWriter` emits.
+pub fn split_intervals(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "SplitIntervals")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?.map(|reference| reference.sequences);
+    let best = match master.map(|header| header.sequences).or(reference) {
+        Some(sequences) => sequences,
+        None => {
+            return Err(Thrown::user(
+                "Reference sequence file or sequence dictionary required for this tool",
+            ))
+        }
+    };
+    let header = SamHeader {
+        sequences: best.clone(),
+        ..SamHeader::default()
+    };
+    let sequences: Vec<(String, i32)> = best
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+
+    // `hasUserSuppliedIntervals()`: with none, the tool builds its own from the dictionary and
+    // filters them by `--min-contig-size`, which is what `split` does when it is handed nothing.
+    let given = interval_arguments(parser, &header)?.map(|parameters| {
+        parameters
+            .intervals
+            .iter()
+            .map(|interval| {
+                htsjdk_bam::interval::Interval::new(&interval.contig, interval.start, interval.end)
+            })
+            .collect::<Vec<_>>()
+    });
+
+    let arguments = gatk_tools::split_intervals::Arguments {
+        scatter_count: number_or(parser, "scatter-count", 1),
+        min_contig_size: number_or(parser, "min-contig-size", 0),
+        subdivision_mode: match scalar(parser, "subdivision-mode").as_deref() {
+            Some("BALANCING_WITHOUT_INTERVAL_SUBDIVISION") => {
+                gatk_engine::interval_list_scatter::ScatterMode::BalancingWithoutIntervalSubdivision
+            }
+            Some("BALANCING_WITHOUT_INTERVAL_SUBDIVISION_WITH_OVERFLOW") => {
+                gatk_engine::interval_list_scatter::ScatterMode::BalancingWithoutIntervalSubdivisionWithOverflow
+            }
+            Some("INTERVAL_COUNT") => gatk_engine::interval_list_scatter::ScatterMode::IntervalCount,
+            Some("INTERVAL_COUNT_WITH_DISTRIBUTED_REMAINDER") => {
+                gatk_engine::interval_list_scatter::ScatterMode::IntervalCountWithDistributedRemainder
+            }
+            _ => gatk_engine::interval_list_scatter::ScatterMode::IntervalSubdivision,
+        },
+        prefix: argument(parser, "interval-file-prefix")
+            .unwrap_or_else(|| gatk_tools::split_intervals::DEFAULT_PREFIX.to_string()),
+        extension: argument(parser, "extension")
+            .unwrap_or_else(|| gatk_tools::split_intervals::DEFAULT_EXTENSION.to_string()),
+        num_digits: number_or(
+            parser,
+            "interval-file-num-digits",
+            gatk_tools::split_intervals::DEFAULT_NUMBER_OF_DIGITS,
+        ),
+        dont_mix_contigs: flag(parser, "dont-mix-contigs"),
+    };
+
+    let shards = gatk_tools::split_intervals::split(given.as_deref(), &sequences, &arguments)
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+
+    // `outputDir.mkdir()`, whose failure is a `RuntimeIOException` naming the absolute path.
+    let directory = std::path::Path::new(&output);
+    if !directory.exists() {
+        std::fs::create_dir(directory).map_err(|_| {
+            Thrown::non_user(
+                "htsjdk.samtools.util.RuntimeIOException",
+                format!("Unable to create directory: {}", directory.display()),
+            )
+        })?;
+    }
+    // A shard's header carries `SO:coordinate` for four of the five modes and not for the fifth:
+    // `preprocessIntervalList` is `sorted()` everywhere but `INTERVAL_SUBDIVISION`, and `sorted()`
+    // stamps the order on the copy it returns where `uniqued()` clones the original header and
+    // stamps nothing. The port models that; the runner has to ask.
+    let sort_order = if arguments.subdivision_mode.stamps_sort_order() {
+        "\tSO:coordinate"
+    } else {
+        ""
+    };
+    for (name, list) in &shards {
+        let mut text = format!("@HD\tVN:1.6{sort_order}\n");
+        for sequence in &best {
+            text.push_str(&format!(
+                "@SQ\tSN:{}\tLN:{}\n",
+                sequence.name, sequence.length
+            ));
+        }
+        for interval in &list.intervals {
+            text.push_str(&interval.to_file_line());
+            text.push('\n');
+        }
+        let path = directory.join(name);
+        std::fs::write(&path, text).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("{}: {error}", path.display()))
+        })?;
+    }
+    Ok(None)
+}
