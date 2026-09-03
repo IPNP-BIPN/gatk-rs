@@ -113,6 +113,15 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "SplitIntervals": {
+      "rows": 25,
+      "accepted": 13,
+      "rejected": 12,
+      "distinct_outputs": 8,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
