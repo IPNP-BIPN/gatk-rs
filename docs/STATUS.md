@@ -241,7 +241,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |
-| `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | not measured |
+| `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | t=2, 25/25 rows (100%) |
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | not measured |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | not measured |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | not measured |
