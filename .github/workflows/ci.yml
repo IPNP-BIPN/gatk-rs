@@ -418,16 +418,20 @@ jobs:
             suites: "interval-arguments filter-resolution expanded-command-line main-non-user main-entry"
           - group: oracle-backed
             index: "58/60"
-            slug: "splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations-usage-text"
-            suites: "splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations usage-text"
+            slug: "splitting-index-allele-frequency-qc-calculate-contamination-usage-text-bwa-index-image"
+            suites: "splitting-index allele-frequency-qc calculate-contamination usage-text bwa-index-image"
           - group: oracle-backed
             index: "59/60"
-            slug: "bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue"
-            suites: "bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership read-filter-catalogue"
+            slug: "tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing"
+            suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
           - group: oracle-backed
             index: "60/60"
-            slug: "mutex-target-names-count-reads-plumbing-read-walker-refusals"
-            suites: "mutex-target-names count-reads-plumbing read-walker-refusals"
+            slug: "read-walker-refusals"
+            suites: "read-walker-refusals"
+          - group: golden-pending
+            index: "1/1"
+            slug: "tool-argument-declarations-tool-argument-enums"
+            suites: "tool-argument-declarations tool-argument-enums"
     steps:
       - uses: actions/checkout@v7
 
@@ -498,6 +502,7 @@ jobs:
             --tool CountBases --tool FlagStat \
             --tool CountBasesInReference \
             --tool SplitIntervals \
+            --tool Pileup --tool PreprocessIntervals \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

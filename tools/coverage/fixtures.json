@@ -134,7 +134,19 @@
   "",
   "`--interval-file-prefix` carries two NON-EMPTY names, and the tool's own default is the empty",
   "string: a covering array writes every argument as `--name value`, so an empty value leaves the",
-  "next token to be read as a positional argument and the row is refused before the tool runs."
+  "next token to be read as a positional argument and the row is refused before the tool runs.",
+  "",
+  "`Pileup` takes the read walkers' corpus because it IS a read walker's startup with a different",
+  "traversal after it. `PreprocessIntervals` opens no reads and still DECLARES them, so it takes",
+  "the two BAMs for the same reason `CountBasesInReference` does: a row pairing a `--read-index`",
+  "with the shared list's feature files is refused by htsjdk before the tool runs. Its own two",
+  "arguments, `--bin-length` and `--padding`, are what decide the bins it writes.",
+  "",
+  "`PreprocessIntervals` REFUSES two of the standard interval arguments outright, in its own",
+  "`IllegalArgumentException`s: the merging rule must be OVERLAPPING_ONLY and the interval padding",
+  "must be zero, because the tool bins and pads by its own `--bin-length` and `--padding` instead.",
+  "Each is held at the one value the tool accepts; varying them measured that refusal on nine of",
+  "twenty-one rows and nothing else."
  ],
  "values": {
   "--input": [
@@ -233,6 +245,18 @@
   "--interval-file-prefix": [
    "shard",
    "part"
+  ],
+  "--bin-length": [
+   "1000",
+   "500"
+  ],
+  "--padding": [
+   "250",
+   "0"
+  ],
+  "--max-depth-per-sample": [
+   "0",
+   "2"
   ]
  },
  "per_tool": {
@@ -423,6 +447,48 @@
     "-scattered.interval_list",
     ".list"
    ]
+  },
+  "Pileup": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/pileup.txt",
+    "/work/out/pileup2.txt"
+   ]
+  },
+  "PreprocessIntervals": {
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/bins.interval_list",
+    "/work/out/bins2.interval_list"
+   ],
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--interval-merging-rule": [
+    "OVERLAPPING_ONLY"
+   ],
+   "--interval-padding": [
+    "0"
+   ]
   }
  },
  "constraints": [],
@@ -437,6 +503,7 @@
   "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
   "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
   "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
-  "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite"
+  "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite",
+  "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal"
  }
 }
