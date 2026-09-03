@@ -144,6 +144,7 @@ pub mod rename_sample_in_vcf;
 pub mod revert_base_quality_scores;
 pub mod sam_output;
 pub mod select_variants;
+pub mod select_variants_header;
 pub mod sequence_dictionary;
 pub mod series_stats;
 pub mod set_nm_md_and_uq_tags;

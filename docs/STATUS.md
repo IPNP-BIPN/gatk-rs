@@ -237,7 +237,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | not measured |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |
-| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 7 | not measured |
+| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | not measured |
 | `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |
