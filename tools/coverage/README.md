@@ -58,6 +58,18 @@ taking a `File` can want a BED and an interval list. It replaces the list rather
 because the reason to declare one is that the shared value is wrong here, not that it is
 incomplete.
 
+## One value is not a domain
+
+An argument with a single fixture value is *held* at it: every row carries it, no row varies it,
+and no row can notice whether it matters. The generator says so in the exclusion list ("only one
+value available"), and the honest reading of that line is that the argument is present rather than
+covered. Two values is the minimum for a claim, including for an argument expected to be inert.
+
+`distinct_outputs` in `measured.json` is the other half of the same question. An array whose
+accepted rows all produce one answer covers its arguments without testing them, and the fix is
+usually the corpus rather than the array: `CountReads` answered 0 or 1 on every accepted row until
+its interval fixture spanned more than two reads, so twenty rows observed two outputs.
+
 ## The rule this code exists to enforce
 
 A covering array over invented values proves nothing, and fails silently, because the array still

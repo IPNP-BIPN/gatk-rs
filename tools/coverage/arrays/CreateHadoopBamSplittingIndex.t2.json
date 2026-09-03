@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 17,
-  "arguments_in_array": 6,
-  "arguments_excluded": 11,
+  "arguments_in_array": 7,
+  "arguments_excluded": 10,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -57,13 +57,6 @@
       "source": "none"
     },
     {
-      "argument": "--splitting-index-granularity",
-      "type": "long",
-      "reason": "only one value available (default)",
-      "held_at": "4096",
-      "source": "default"
-    },
-    {
       "argument": "--use-jdk-inflater",
       "type": "boolean",
       "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
@@ -85,9 +78,9 @@
       "source": "none"
     }
   ],
-  "rows": 9,
-  "tuples_total": 70,
-  "tuples_covered": 70,
+  "rows": 11,
+  "tuples_total": 109,
+  "tuples_covered": 109,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -99,6 +92,7 @@
         "--input": "fixture[0]",
         "--output": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--splitting-index-granularity": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -107,6 +101,7 @@
         "--input=/work/fixtures/reads.bam",
         "--output=/work/out/reads.bam.sbi",
         "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=4096",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -118,14 +113,16 @@
         "--input": "fixture[1]",
         "--output": "fixture[1]",
         "--read-validation-stringency": "LENIENT",
+        "--splitting-index-granularity": "fixture[1]",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--create-bai=true",
-        "--input=/work/fixtures/reads.vcf",
+        "--input=/work/fixtures/reads2.bam",
         "--output=/work/out/elsewhere.sbi",
         "--read-validation-stringency=LENIENT",
+        "--splitting-index-granularity=1024",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
@@ -133,18 +130,20 @@
     {
       "row": 2,
       "labels": {
-        "--create-bai": "false",
-        "--input": "fixture[0]",
-        "--output": "fixture[1]",
+        "--create-bai": "true",
+        "--input": "fixture[2]",
+        "--output": "fixture[0]",
         "--read-validation-stringency": "SILENT",
+        "--splitting-index-granularity": "fixture[1]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
-        "--create-bai=false",
-        "--input=/work/fixtures/reads.bam",
-        "--output=/work/out/elsewhere.sbi",
+        "--create-bai=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/reads.bam.sbi",
         "--read-validation-stringency=SILENT",
+        "--splitting-index-granularity=1024",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
       ]
@@ -153,17 +152,19 @@
       "row": 3,
       "labels": {
         "--create-bai": "false",
-        "--input": "fixture[1]",
-        "--output": "fixture[0]",
-        "--read-validation-stringency": "STRICT",
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--read-validation-stringency": "SILENT",
+        "--splitting-index-granularity": "fixture[0]",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--create-bai=false",
-        "--input=/work/fixtures/reads.vcf",
-        "--output=/work/out/reads.bam.sbi",
-        "--read-validation-stringency=STRICT",
+        "--input=/work/fixtures/reads.bam",
+        "--output=/work/out/elsewhere.sbi",
+        "--read-validation-stringency=SILENT",
+        "--splitting-index-granularity=4096",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true"
       ]
@@ -171,18 +172,20 @@
     {
       "row": 4,
       "labels": {
-        "--create-bai": "true",
+        "--create-bai": "false",
         "--input": "fixture[1]",
         "--output": "fixture[0]",
-        "--read-validation-stringency": "SILENT",
+        "--read-validation-stringency": "STRICT",
+        "--splitting-index-granularity": "fixture[1]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
-        "--create-bai=true",
-        "--input=/work/fixtures/reads.vcf",
+        "--create-bai=false",
+        "--input=/work/fixtures/reads2.bam",
         "--output=/work/out/reads.bam.sbi",
-        "--read-validation-stringency=SILENT",
+        "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=1024",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -191,9 +194,31 @@
       "row": 5,
       "labels": {
         "--create-bai": "false",
+        "--input": "fixture[2]",
+        "--output": "fixture[1]",
+        "--read-validation-stringency": "STRICT",
+        "--splitting-index-granularity": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--create-bai=false",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/elsewhere.sbi",
+        "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=4096",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--create-bai": "false",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
         "--read-validation-stringency": "LENIENT",
+        "--splitting-index-granularity": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -202,25 +227,7 @@
         "--input=/work/fixtures/reads.bam",
         "--output=/work/out/reads.bam.sbi",
         "--read-validation-stringency=LENIENT",
-        "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
-      ]
-    },
-    {
-      "row": 6,
-      "labels": {
-        "--create-bai": "true",
-        "--input": "fixture[0]",
-        "--output": "fixture[1]",
-        "--read-validation-stringency": "STRICT",
-        "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
-      },
-      "arguments": [
-        "--create-bai=true",
-        "--input=/work/fixtures/reads.bam",
-        "--output=/work/out/elsewhere.sbi",
-        "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=4096",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -229,18 +236,20 @@
       "row": 7,
       "labels": {
         "--create-bai": "true",
-        "--input": "fixture[0]",
-        "--output": "fixture[0]",
+        "--input": "fixture[1]",
+        "--output": "fixture[1]",
         "--read-validation-stringency": "SILENT",
-        "--tmp-dir": "fixture[1]",
+        "--splitting-index-granularity": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--create-bai=true",
-        "--input=/work/fixtures/reads.bam",
-        "--output=/work/out/reads.bam.sbi",
+        "--input=/work/fixtures/reads2.bam",
+        "--output=/work/out/elsewhere.sbi",
         "--read-validation-stringency=SILENT",
-        "--tmp-dir=/work/tmp2",
+        "--splitting-index-granularity=4096",
+        "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
     },
@@ -248,9 +257,31 @@
       "row": 8,
       "labels": {
         "--create-bai": "true",
+        "--input": "fixture[2]",
+        "--output": "fixture[0]",
+        "--read-validation-stringency": "LENIENT",
+        "--splitting-index-granularity": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--create-bai=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/reads.bam.sbi",
+        "--read-validation-stringency=LENIENT",
+        "--splitting-index-granularity=4096",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--create-bai": "true",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
         "--read-validation-stringency": "STRICT",
+        "--splitting-index-granularity": "fixture[1]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false"
       },
@@ -259,8 +290,30 @@
         "--input=/work/fixtures/reads.bam",
         "--output=/work/out/reads.bam.sbi",
         "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=1024",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--create-bai": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--read-validation-stringency": "STRICT",
+        "--splitting-index-granularity": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--create-bai=true",
+        "--input=/work/fixtures/reads.bam",
+        "--output=/work/out/reads.bam.sbi",
+        "--read-validation-stringency=STRICT",
+        "--splitting-index-granularity=4096",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     }
   ]

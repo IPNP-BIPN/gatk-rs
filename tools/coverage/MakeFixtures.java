@@ -81,6 +81,58 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * A second coordinate-sorted BAM, so that `--input` has two values rather than one.
+     *
+     * An argument with a single fixture value is held at it and no row can notice whether it
+     * matters, which is the difference between an argument that is covered and one that is only
+     * present. The reads differ from `reads.bam` in the three ways the corpus needs: a different
+     * count, positions that fall on the other side of both interval fixtures, and two records that
+     * the default read filters disagree about. `1D9M` is a well-formed cigar that
+     * `GoodCigarReadFilter` refuses for its leading deletion, and the unmapped record is what
+     * `MappedReadFilter` is there to remove; without them every filter fixture would be inert.
+     */
+    static void bamTwo(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg2");
+        group.setSample("sample2");
+        group.setLibrary("lib2");
+        group.setPlatformUnit("unit2");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final int[] starts = {200, 900, 1600, 50500, 51200};
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < starts.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:2:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setFlags(0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(starts[index]);
+                // One record carries the leading deletion, and it consumes nine read bases.
+                final boolean clipped = index == 2;
+                record.setCigarString(clipped ? "1D9M" : "10M");
+                record.setMappingQuality(60);
+                record.setReadString(clipped ? "ACGTACGTA" : "ACGTACGTAC");
+                record.setBaseQualityString(clipped ? "IIIIIIIII" : "IIIIIIIIII");
+                record.setAttribute("RG", "rg2");
+                writer.addAlignment(record);
+            }
+            final SAMRecord unmapped = new SAMRecord(header);
+            unmapped.setReadName("HWI:2:FC:1:1:9:9");
+            unmapped.setReadUnmappedFlag(true);
+            unmapped.setReadString("ACGTACGTAC");
+            unmapped.setBaseQualityString("IIIIIIIIII");
+            unmapped.setAttribute("RG", "rg2");
+            writer.addAlignment(unmapped);
+        }
+    }
+
     public static void main(final String[] args) throws Exception {
         // The deflater is pinned exactly as the oracle contract pins it for goldens: a fixture
         // that is not byte-reproducible would make a coverage measurement unrepeatable.
@@ -94,6 +146,7 @@ public class MakeFixtures {
             out.write(vcf().getBytes(StandardCharsets.UTF_8));
         }
         bam(dir.resolve("reads.bam"));
+        bamTwo(dir.resolve("reads2.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.
@@ -152,6 +205,17 @@ public class MakeFixtures {
                         "--output", dir.resolve("recal.table").toString(),
                 }) == null ? 1 : 0;
         System.out.println("recalibrator status " + status);
+        // A second table over the second BAM, for the same reason `reads2.bam` exists: with one
+        // value `--bqsr-recal-file` is held at it and the argument is present rather than covered.
+        final int otherStatus =
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.BaseRecalibrator()
+                        .instanceMain(new String[] {
+                                "--input", dir.resolve("reads2.bam").toString(),
+                                "--reference", dir.resolve("reference.fasta").toString(),
+                                "--known-sites", dir.resolve("indexed.vcf").toString(),
+                                "--output", dir.resolve("recal2.table").toString(),
+                        }) == null ? 1 : 0;
+        System.out.println("second recalibrator status " + otherStatus);
         System.out.println("wrote " + dir);
     }
 }
