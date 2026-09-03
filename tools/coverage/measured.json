@@ -42,6 +42,15 @@
       "t": 2,
       "share": 1.0
     },
+    "CountVariants": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
     "CreateHadoopBamSplittingIndex": {
       "rows": 11,
       "accepted": 8,
