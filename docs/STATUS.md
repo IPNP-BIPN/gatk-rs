@@ -157,7 +157,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CondenseDepthEvidence` | unclassified | oracle-backed | condense-depth-evidence | 1 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | t=2, 21/21 rows (100%) |
-| `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | not measured |
+| `CountBasesInReference` | reference-utility | oracle-backed | reference-walker | 1 | t=2, 19/19 rows (100%) |
 | `CountFalsePositives` | variant-walker | oracle-backed | count-false-positives | 1 | not measured |
 | `CountReads` | locus-walker | oracle-backed | count-reads-and-bases, count-reads-plumbing, counting-walkers, filter-resolution, interval-arguments, read-walker-refusals, tool-argument-declarations, tool-argument-enums, usage-text | 9 | t=2, 21/21 rows (100%) |
 | `CountVariants` | variant-walker | oracle-backed | count-variants, interval-arguments, sequence-dictionary-validation, tool-argument-declarations, tool-argument-enums | 5 | t=2, 23/23 rows (100%) |

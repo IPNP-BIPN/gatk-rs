@@ -104,6 +104,15 @@
       "matched": 21,
       "t": 2,
       "share": 1.0
+    },
+    "CountBasesInReference": {
+      "rows": 19,
+      "accepted": 8,
+      "rejected": 11,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
