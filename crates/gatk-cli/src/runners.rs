@@ -520,16 +520,25 @@ pub fn number(parser: &Parser, long_name: &str) -> i32 {
         .unwrap_or(0)
 }
 
-/// `CountReads.doWork`, with the input read and the output written.
+/// Everything `GATKTool.onStartup` does for a READ walker, up to the record the traversal reads.
 ///
-/// Three things the `count-reads-plumbing` golden pins and this reproduces: the tool RETURNS the
-/// count, so `handleResult` prints a number; `-O` receives that number and nothing else, with no
-/// trailing newline, because the reference writes it with `print`; and `-O` does not suppress the
-/// return, so the file is written AND the value comes back.
-pub fn count_reads(parser: &Parser) -> Outcome {
-    // The plugin descriptor is validated while the command line is PARSED, so its refusals come
-    // before the input is even opened.
-    let resolved_filters = resolve_read_filters(parser, "CountReads")?;
+/// Shared rather than copied, because the ORDER is what a covering-array row over any of these
+/// tools measures: `loadMasterSequenceDictionary`, `initializeReference`, `initializeReads`,
+/// `initializeIntervals`, `validateSequenceDictionaries`, the traversal bounds, and only then the
+/// record parse. A port that asked the reader first answered a later question first (#69), and
+/// three tools of one archetype copying that order three times is three chances to get it wrong.
+///
+/// The filter is NOT built here. `read_filter` borrows the header, and a struct that owned both
+/// would be self-referential; the caller builds it in one line from what this returns.
+struct ReadWalkerStart {
+    source: ReadsDataSource,
+    header: SamHeader,
+    intervals: Vec<gatk_engine::interval::SimpleInterval>,
+    filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
+}
+
+fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
+    let resolved_filters = resolve_read_filters(parser, tool)?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
     // BAM and merges their headers. This port reads one, which is what every case of the golden
     // hands it, and refuses the rest rather than silently counting the first.
@@ -687,8 +696,30 @@ pub fn count_reads(parser: &Parser) -> Outcome {
         return Err(Thrown::non_user(refusal.exception(), refusal.message()));
     }
     let source = source.expect("a source, since the parse refusal was not taken");
+    Ok(ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters: resolved_filters,
+    })
+}
+/// `CountReads.doWork`, with the input read and the output written.
+///
+/// Three things the `count-reads-plumbing` golden pins and this reproduces: the tool RETURNS the
+/// count, so `handleResult` prints a number; `-O` receives that number and nothing else, with no
+/// trailing newline, because the reference writes it with `print`; and `-O` does not suppress the
+/// return, so the file is written AND the value comes back.
+pub fn count_reads(parser: &Parser) -> Outcome {
+    // The plugin descriptor is validated while the command line is PARSED, so its refusals come
+    // before the input is even opened.
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CountReads")?;
 
-    let filter = read_filter(parser, &resolved_filters, &header)?;
+    let filter = read_filter(parser, &filters, &header)?;
     let count = gatk_tools::count_reads::count_reads(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
@@ -1773,4 +1804,70 @@ fn number_or(parser: &Parser, long_name: &str, default: i32) -> i32 {
     scalar(parser, long_name)
         .and_then(|text| text.parse().ok())
         .unwrap_or(default)
+}
+
+/// `CountBases.doWork`: the same traversal `CountReads` runs, summing lengths instead of records.
+///
+/// The whole startup is shared, which is the point of doing an archetype rather than a tool: these
+/// two declare the same seventy arguments as `CountReads` and differ in one line of `apply` and in
+/// what is printed.
+pub fn count_bases(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CountBases")?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let count = gatk_tools::count_reads::count_bases(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    if let Some(output) = argument(parser, "output") {
+        // `print`, not `println`: the file is the number's digits and nothing else.
+        std::fs::write(&output, gatk_tools::count_reads::output(count))
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    }
+    Ok(Some(count.to_string()))
+}
+
+/// `FlagStat.doWork`: thirteen counters and their percentages, over the same traversal.
+///
+/// The counters need the record's contig AND its mate's, because two of them ask whether the mate
+/// is on a different one, so the traversal carries the header's names rather than the indices.
+pub fn flag_stat(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "FlagStat")?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut status = gatk_tools::counting_walkers::FlagStatus::default();
+    for record in &records {
+        status.add(
+            record,
+            contig_name(&header, record.reference_index),
+            contig_name(&header, record.mate_reference_index),
+        );
+    }
+    let text = status.to_text();
+
+    if let Some(output) = argument(parser, "output") {
+        std::fs::write(&output, &text)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    }
+    // `onTraversalSuccess` returns the report itself, which `handleResult` prints.
+    Ok(Some(text))
+}
+
+/// The contig a reference index names, or nothing where the index is `-1`.
+fn contig_name(header: &SamHeader, index: i32) -> Option<&str> {
+    usize::try_from(index)
+        .ok()
+        .and_then(|index| header.sequences.get(index))
+        .map(|sequence| sequence.name.as_str())
 }
