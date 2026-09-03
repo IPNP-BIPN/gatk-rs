@@ -968,26 +968,31 @@ pub fn drop_annotations(record: &mut Record, arguments: &OutputArguments) {
 /// changes, then adds the record it just finished. `onTraversalSuccess` drains the rest. The queue
 /// exists because trimming moves a record RIGHT, so a file written in the order it was read would
 /// not be sorted; it is the tool repairing an order it broke itself.
+///
+/// `T` is whatever the caller wants back beside the record. A tool that only measures the ORDER
+/// passes `()`; a runner that has to write the file passes the record the file was decoded from,
+/// because the queue reorders and nothing else can pair the two afterwards. The ordering itself
+/// reads only the record, so the payload cannot change the answer.
 #[derive(Debug, Default)]
-pub struct PendingWriter {
-    pending: Vec<Record>,
+pub struct PendingWriter<T = ()> {
+    pending: Vec<(Record, T)>,
 }
 
-impl PendingWriter {
-    pub fn new() -> PendingWriter {
+impl<T> PendingWriter<T> {
+    pub fn new() -> PendingWriter<T> {
         PendingWriter {
             pending: Vec::new(),
         }
     }
 
     /// What is written before `record` is read, in order.
-    pub fn drain_before(&mut self, contig: &str, start: i32) -> Vec<Record> {
+    pub fn drain_before(&mut self, contig: &str, start: i32) -> Vec<(Record, T)> {
         let mut written = Vec::new();
         // `PriorityQueue.peek` is the smallest start; ties keep insertion order here, which is the
         // order the reference's heap gives for equal keys of a two-element comparison.
         while let Some(head) = self.head() {
-            let same_contig = self.pending[head].variant.contig == contig;
-            if same_contig && self.pending[head].variant.start > start {
+            let same_contig = self.pending[head].0.variant.contig == contig;
+            if same_contig && self.pending[head].0.variant.start > start {
                 break;
             }
             written.push(self.pending.remove(head));
@@ -996,12 +1001,12 @@ impl PendingWriter {
     }
 
     /// The record joins the queue rather than the file.
-    pub fn add(&mut self, record: Record) {
-        self.pending.push(record);
+    pub fn add(&mut self, record: Record, payload: T) {
+        self.pending.push((record, payload));
     }
 
     /// `onTraversalSuccess`: whatever is left, in start order.
-    pub fn drain(&mut self) -> Vec<Record> {
+    pub fn drain(&mut self) -> Vec<(Record, T)> {
         let mut written = Vec::new();
         while let Some(head) = self.head() {
             written.push(self.pending.remove(head));
@@ -1013,7 +1018,7 @@ impl PendingWriter {
         self.pending
             .iter()
             .enumerate()
-            .min_by_key(|(index, record)| (record.variant.start, *index))
+            .min_by_key(|(index, (record, _))| (record.variant.start, *index))
             .map(|(index, _)| index)
     }
 }

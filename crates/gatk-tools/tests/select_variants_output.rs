@@ -220,18 +220,25 @@ fn written(records: &[Record], header_samples: &[String], run: &str) -> Vec<Reco
     let (sample_arguments, subset_arguments, output_arguments) = setup(run);
     let selection =
         create_sample_name_inclusion_list(header_samples, &sample_arguments).expect("a selection");
-    let mut writer = PendingWriter::new();
-    let mut out = Vec::new();
+    // The queue carries a payload for a caller that has to write the file; this suite measures the
+    // ORDER, so its payload is the unit and the pairs are unwrapped on the way out.
+    let mut writer: PendingWriter<()> = PendingWriter::new();
+    let mut out: Vec<Record> = Vec::new();
     for record in records {
-        out.extend(writer.drain_before(&record.variant.contig, record.variant.start));
+        out.extend(
+            writer
+                .drain_before(&record.variant.contig, record.variant.start)
+                .into_iter()
+                .map(|(record, ())| record),
+        );
         let mut result = subset_record(record, &selection, &subset_arguments).expect("a subset");
         if output_arguments.set_filtered_genotypes_to_no_call {
             set_filtered_genotypes_to_no_call(&mut result);
         }
         drop_annotations(&mut result, &output_arguments);
-        writer.add(result);
+        writer.add(result, ());
     }
-    out.extend(writer.drain());
+    out.extend(writer.drain().into_iter().map(|(record, ())| record));
     out
 }
 

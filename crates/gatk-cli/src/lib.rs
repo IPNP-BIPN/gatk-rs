@@ -23,6 +23,7 @@
 pub mod command_line;
 pub mod definitions;
 pub mod runners;
+pub mod variant_bridge;
 
 use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
@@ -316,6 +317,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CompareBaseQualities" => Some(run_compare_base_qualities),
         "RemoveNearbyIndels" => Some(run_remove_nearby_indels),
         "UpdateVCFSequenceDictionary" => Some(run_update_vcf_sequence_dictionary),
+        "SelectVariants" => Some(run_select_variants),
         _ => None,
     }
 }
@@ -407,6 +409,10 @@ fn run_remove_nearby_indels(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::update_vcf_sequence_dictionary(&parsed("UpdateVCFSequenceDictionary", args)?)
+}
+
+fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::select_variants(&parsed("SelectVariants", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
