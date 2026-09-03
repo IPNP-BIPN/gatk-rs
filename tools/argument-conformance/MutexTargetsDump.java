@@ -23,6 +23,7 @@
  *
  * Output:
  *
+ *     order\t<tool>\t<long name>\t<the target list, space-joined, in the order it holds>
  *     mutex\t<tool>\t<long name>\t<target long name>\t<target field name>\t<annotated|resolved>
  *     sentence\t<tool>\t<long name>\t<the rendered sentence, escaped>
  *
@@ -60,7 +61,15 @@ public class MutexTargetsDump {
             if (definition.getMutexTargetList().isEmpty()) {
                 continue;
             }
-            final List<String> targets = new ArrayList<>(definition.getMutexTargetList());
+            final List<String> ownOrder = new ArrayList<>(definition.getMutexTargetList());
+            // The list in the order it HOLDS, which is the order the refusal joins it in. It is
+            // its own row because the rows below are sorted for stability, and sorting the list
+            // itself is what hid this: `quantize-quals` reads `static-quantized-quals
+            // round-down-quantized`, the order those two declare their own mutex in, and nothing
+            // recovers that from an alphabetical list.
+            rows.add(String.format("order\t%s\t%s\t%s", name, definition.getLongName(),
+                    String.join(" ", ownOrder)));
+            final List<String> targets = new ArrayList<>(ownOrder);
             Collections.sort(targets);
             for (final String targetName : targets) {
                 // The name the usage prints is the TARGET DEFINITION'S FIELD name, which is

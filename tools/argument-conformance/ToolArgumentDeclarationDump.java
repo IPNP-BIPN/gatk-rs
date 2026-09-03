@@ -164,8 +164,13 @@ public class ToolArgumentDeclarationDump {
             // collection is its element class and not the collection's own.
             final String type = definition.getUnderlyingFieldClass().getSimpleName();
             final boolean primitive = definition.getUnderlyingField().getType().isPrimitive();
+            // NOT sorted. The message a mutex violation prints joins this list in the order it
+            // holds, and that order is neither alphabetical nor the annotation's: `quantize-quals`
+            // declares no mutex at all, and Barclay fills its list in reverse as it walks the
+            // declarations, so it reads `static-quantized-quals round-down-quantized` -- the order
+            // those two are declared in. Sorting it here made the generated declarations hold the
+            // alphabetical order and the port print a message the reference never writes.
             final List<String> mutex = new ArrayList<>(definition.getMutexTargetList());
-            java.util.Collections.sort(mutex);
             final Object plugin = definition.getDescriptorForControllingPlugin();
             System.out.printf(
                     "def\t%s\t%d\t%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s%n",
