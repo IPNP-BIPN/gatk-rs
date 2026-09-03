@@ -281,6 +281,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountBases" => Some(run_count_bases),
         "FlagStat" => Some(run_flag_stat),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
+        "SplitIntervals" => Some(run_split_intervals),
         _ => None,
     }
 }
@@ -288,6 +289,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_split_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_intervals(&parsed("SplitIntervals", args)?)
 }
 
 fn run_count_bases_in_reference(args: &[String]) -> Result<Option<String>, Thrown> {

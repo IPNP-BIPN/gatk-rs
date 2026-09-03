@@ -58,6 +58,16 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.IndexFeatureFile());
         declarations("GatherVcfsCloud",
                 new org.broadinstitute.hellbender.tools.GatherVcfsCloud());
+        // The tools that joined the declarations after this dump was written. Three of them point
+        // at enums the seven above already name; `SplitIntervals` brings one of its own, and an
+        // argument whose type is missing from this table is DROPPED by the port's parser -- it
+        // answered `subdivision-mode is not a recognized option` for a name the reference accepts.
+        declarations("CountBases", new org.broadinstitute.hellbender.tools.CountBases());
+        declarations("FlagStat", new org.broadinstitute.hellbender.tools.FlagStat());
+        declarations("CountBasesInReference",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.CountBasesInReference());
+        declarations("SplitIntervals",
+                new org.broadinstitute.hellbender.tools.walkers.SplitIntervals());
 
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());

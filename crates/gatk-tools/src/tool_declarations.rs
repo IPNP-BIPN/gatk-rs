@@ -16980,6 +16980,11 @@ pub const ENUM_TYPES: &[EnumType] = &[
         docs: &[],
     },
     EnumType {
+        name: "IntervalListScatterMode",
+        constants: &["INTERVAL_SUBDIVISION", "BALANCING_WITHOUT_INTERVAL_SUBDIVISION", "BALANCING_WITHOUT_INTERVAL_SUBDIVISION_WITH_OVERFLOW", "INTERVAL_COUNT", "INTERVAL_COUNT_WITH_DISTRIBUTED_REMAINDER"],
+        docs: &[("INTERVAL_SUBDIVISION", "Scatter the interval list into similarly sized interval lists (by base count), breaking up intervals as needed."), ("BALANCING_WITHOUT_INTERVAL_SUBDIVISION", "Scatter the interval list into similarly sized interval lists (by base count), but without breaking up intervals."), ("BALANCING_WITHOUT_INTERVAL_SUBDIVISION_WITH_OVERFLOW", "Scatter the interval list into similarly sized interval lists (by base count), but without breaking up intervals. Will overflow current interval list so that the remaining lists will not have too many bases to deal with."), ("INTERVAL_COUNT", "Scatter the interval list into similarly sized interval lists (by interval count, not by base count). Resulting interval lists will contain the same number of intervals except for the last, which contains the remainder."), ("INTERVAL_COUNT_WITH_DISTRIBUTED_REMAINDER", "Scatter the interval list into similarly sized interval lists (by interval count, not by base count). Resulting interval lists will contain similar number of intervals.")],
+    },
+    EnumType {
         name: "IntervalMergingRule",
         constants: &["ALL", "OVERLAPPING_ONLY"],
         docs: &[],
@@ -16997,16 +17002,7 @@ pub const ENUM_TYPES: &[EnumType] = &[
     EnumType {
         name: "Mode",
         constants: &["STARTS_IN", "ENDS_IN", "OVERLAPS", "CONTAINED", "ANYWHERE"],
-        docs: &[
-            ("STARTS_IN", "starts within any of the given intervals"),
-            ("ENDS_IN", "ends within any of the given intervals"),
-            ("OVERLAPS", "overlaps any of the given intervals"),
-            (
-                "CONTAINED",
-                "contained completely within a contiguous block of intervals without overlap",
-            ),
-            ("ANYWHERE", "no filtering"),
-        ],
+        docs: &[("STARTS_IN", "starts within any of the given intervals"), ("ENDS_IN", "ends within any of the given intervals"), ("OVERLAPS", "overlaps any of the given intervals"), ("CONTAINED", "contained completely within a contiguous block of intervals without overlap"), ("ANYWHERE", "no filtering")],
     },
     EnumType {
         name: "NumberAlleleRestriction",
@@ -17015,14 +17011,7 @@ pub const ENUM_TYPES: &[EnumType] = &[
     },
     EnumType {
         name: "Operator",
-        constants: &[
-            "LESS",
-            "LESS_OR_EQUAL",
-            "GREATER",
-            "GREATER_OR_EQUAL",
-            "EQUAL",
-            "NOT_EQUAL",
-        ],
+        constants: &["LESS", "LESS_OR_EQUAL", "GREATER", "GREATER_OR_EQUAL", "EQUAL", "NOT_EQUAL"],
         docs: &[],
     },
     EnumType {

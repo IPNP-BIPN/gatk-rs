@@ -125,7 +125,16 @@
   "the standard read arguments are its inheritance, so a row pairing a `--read-index` with the",
   "shared list's feature files is refused by htsjdk before the tool runs, and eleven of its",
   "twenty-three rows measured that one refusal. It names the read walkers' intervals for the",
-  "same reason the others do: the corpus's reference carries the same contig."
+  "same reason the others do: the corpus's reference carries the same contig.",
+  "",
+  "`SplitIntervals` writes a DIRECTORY, so its `--output` values are two directory names the run",
+  "creates rather than two files. Its own five arguments carry two values each: a scatter count",
+  "of one and of three, a minimum contig size that keeps both contigs and one that drops the",
+  "second, and the two halves of a file name.",
+  "",
+  "`--interval-file-prefix` carries two NON-EMPTY names, and the tool's own default is the empty",
+  "string: a covering array writes every argument as `--name value`, so an empty value leaves the",
+  "next token to be read as a positional argument and the row is refused before the tool runs."
  ],
  "values": {
   "--input": [
@@ -220,6 +229,10 @@
   "--static-quantized-quals": [
    "10",
    "30"
+  ],
+  "--interval-file-prefix": [
+   "shard",
+   "part"
   ]
  },
  "per_tool": {
@@ -375,6 +388,40 @@
    "--read-index": [
     "/work/fixtures/reads.bai",
     "/work/fixtures/reads2.bai"
+   ]
+  },
+  "SplitIntervals": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/split",
+    "/work/out/split2"
+   ],
+   "--scatter-count": [
+    "1",
+    "3"
+   ],
+   "--min-contig-size": [
+    "0",
+    "50000"
+   ],
+   "--interval-file-num-digits": [
+    "4",
+    "2"
+   ],
+   "--extension": [
+    "-scattered.interval_list",
+    ".list"
    ]
   }
  },

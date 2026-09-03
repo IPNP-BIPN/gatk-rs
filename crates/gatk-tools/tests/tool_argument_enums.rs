@@ -83,10 +83,24 @@ fn an_arguments_default_is_one_of_the_constants() {
 fn a_clp_enum_documents_its_constants() {
     let text = golden();
     let documented: Vec<String> = rows(&text, "clp");
-    // One type in this corpus implements it, and every one of its constants is documented.
-    let mode = enum_type("Mode").expect("Mode");
-    assert_eq!(mode.docs.len(), mode.constants.len());
-    assert_eq!(documented.len(), mode.docs.len());
+    // TWO types in this corpus implement it now: `Mode` was alone until `SplitIntervals` brought
+    // `IntervalListScatterMode`, whose five constants each carry a sentence of their own. Every
+    // constant of a documented type is documented, and the golden's rows are exactly those.
+    let implementing: Vec<&str> = ENUM_TYPES
+        .iter()
+        .filter(|type_| !type_.docs.is_empty())
+        .map(|type_| type_.name)
+        .collect();
+    assert_eq!(implementing, vec!["IntervalListScatterMode", "Mode"]);
+    let expected: usize = ENUM_TYPES
+        .iter()
+        .filter(|type_| !type_.docs.is_empty())
+        .map(|type_| {
+            assert_eq!(type_.docs.len(), type_.constants.len(), "{}", type_.name);
+            type_.docs.len()
+        })
+        .sum();
+    assert_eq!(documented.len(), expected);
     for row in documented {
         let (name, body) = row.split_once('\t').expect("a type and a body");
         let (constant, doc) = body.split_once('=').expect("a constant and its doc");
@@ -98,9 +112,10 @@ fn a_clp_enum_documents_its_constants() {
             .unwrap_or_else(|| panic!("{name}/{constant}"));
         assert_eq!(written.1, doc, "{name}/{constant}");
     }
-    // And every other type in the table carries none, which is what makes the two apart.
+    // And every type that does NOT implement it carries no documentation at all, which is what
+    // keeps the two kinds apart.
     for type_ in ENUM_TYPES {
-        if type_.name != "Mode" {
+        if !implementing.contains(&type_.name) {
             assert!(type_.docs.is_empty(), "{}", type_.name);
         }
     }

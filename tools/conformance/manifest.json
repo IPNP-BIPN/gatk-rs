@@ -6688,7 +6688,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
+          "why": "Re-measured with the thirteen declared tools rather than the seven this dump was written with, in the pinned container on a real x86-64 runner; identical to the local smoke run. `IntervalListScatterMode` arrives with `SplitIntervals`, and an enum missing from this table is an argument the port's parser DROPS. One table of enum types with their constants in declaration order, the ClpEnum documentation where there is any, every enum-valued argument of the seven tools with its default, and seven command lines: two constants, a lower-case one, a value the type does not carry, an empty one, and the same pair on a second type."
         }
       ]
     },
