@@ -99,7 +99,11 @@ pub fn gather(inputs: &[&[u8]]) -> Result<Vec<u8>, GatherError> {
 /// The `.md5` the tool writes beside the output when `CREATE_MD5_FILE` is set: the digest as
 /// lower-case hex, with no file name and no newline.
 pub fn md5_file(output: &[u8]) -> String {
-    format!("{:x}", md5_digest(output))
+    // ZERO PADDED to thirty-two. `Md5CalculatingOutputStream` prints the digest with
+    // `String.format("%032x", new BigInteger(1, digest))`, and a digest whose first nibble is zero
+    // is thirty-one characters without the padding: a covering-array row over ApplyBQSR caught one
+    // (`0f6124c6...` against `f6124c6...`), and no golden had happened to hold one.
+    format!("{:032x}", md5_digest(output))
 }
 
 /// The digest itself, as a 128-bit value so the hex above is exactly 32 characters.

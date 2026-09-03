@@ -35,7 +35,7 @@ use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use gatk_engine::recalibration_report::{RecalibrationReport, RecalibrationReportError};
 use htsjdk_bam::record::BamRecord;
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool, which is not the string the command line starts with.
 pub const TOOL_NAME: &str = "GATK ApplyBQSR";
@@ -59,6 +59,14 @@ impl ApplyBqsrError {
             ApplyBqsrError::Reads(error) => format!("{error:?}"),
         }
     }
+
+    /// The Java class the reference throws, which the non-user handler prints.
+    ///
+    /// One class for all three: the report's own refusals and the transformer's are
+    /// `UserException`s, and a read the reader cannot make sense of is one too.
+    pub fn java_class(&self) -> &'static str {
+        "org.broadinstitute.hellbender.exceptions.UserException"
+    }
 }
 
 /// `ApplyBQSR`: every read that survives the filters, recalibrated and written back out.
@@ -74,6 +82,28 @@ pub fn apply_bqsr(
     arguments: &ApplyBqsrArguments,
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ApplyBqsrError> {
+    apply_bqsr_with(
+        source,
+        recal_text,
+        arguments,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same, with the BGZF compression named: see [`crate::sam_output::write_records_with`].
+#[allow(clippy::too_many_arguments)]
+pub fn apply_bqsr_with(
+    source: &ReadsDataSource,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ApplyBqsrError> {
     let mut report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
 
@@ -102,6 +132,12 @@ pub fn apply_bqsr(
     }
 
     let out_header = header_for_sam_writer(source.header(), TOOL_NAME, options);
-    write_records(&out_header, &recalibrated, options.create_output_bam_index)
-        .map_err(ApplyBqsrError::Reads)
+    crate::sam_output::write_records_with(
+        &out_header,
+        &recalibrated,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
+    .map_err(ApplyBqsrError::Reads)
 }

@@ -139,6 +139,19 @@ public class MakeFixtures {
                 "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("other.dict"),
                 "@HD\tVN:1.6\n@SQ\tSN:chrOther\tLN:1000\n", StandardCharsets.UTF_8);
+        // A recalibration table, produced by the REFERENCE rather than written here: ApplyBQSR
+        // reads one and nothing else in the corpus can make a valid one. BaseRecalibrator is a
+        // GATK tool like any other, so it is run the way the array runs a tool.
+        final int status = new org.broadinstitute.hellbender.tools.walkers.bqsr.BaseRecalibrator()
+                .instanceMain(new String[] {
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        // The INDEXED copy: known sites are queried by interval, so an
+                        // unindexed VCF is refused before a read is looked at.
+                        "--known-sites", dir.resolve("indexed.vcf").toString(),
+                        "--output", dir.resolve("recal.table").toString(),
+                }) == null ? 1 : 0;
+        System.out.println("recalibrator status " + status);
         System.out.println("wrote " + dir);
     }
 }
