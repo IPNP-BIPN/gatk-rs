@@ -2032,11 +2032,17 @@ pub fn split_intervals(parser: &Parser) -> Outcome {
     // `preprocessIntervalList` is `sorted()` everywhere but `INTERVAL_SUBDIVISION`, and `sorted()`
     // stamps the order on the copy it returns where `uniqued()` clones the original header and
     // stamps nothing. The port models that; the runner has to ask.
-    let sort_order = if arguments.subdivision_mode.stamps_sort_order() {
-        "\tSO:coordinate"
-    } else {
-        ""
-    };
+    // ...and `--dont-mix-contigs` takes it away again, whatever the mode: the regrouping builds
+    // each shard as `new IntervalList(sequenceDictionary)` and `addall`, a FRESH list whose header
+    // carries no sort order, so the stamp `sorted()` had put on the scatterer's output is gone.
+    // Measured on rows 10, 14, 20, 21 and 23 of this tool's array, which are exactly the rows that
+    // pair the flag with one of the four stamping modes.
+    let sort_order =
+        if arguments.subdivision_mode.stamps_sort_order() && !arguments.dont_mix_contigs {
+            "\tSO:coordinate"
+        } else {
+            ""
+        };
     for (name, list) in &shards {
         let mut text = format!("@HD\tVN:1.6{sort_order}\n");
         for sequence in &best {
