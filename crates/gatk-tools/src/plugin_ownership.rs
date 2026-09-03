@@ -223,6 +223,16 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         "CountReads" | "CountVariants" | "PrintReads" | "ApplyBQSR" | "SelectVariants" => {
             Some(&["WellformedReadFilter"])
         }
+        // `Pileup.getDefaultReadFilters` is the walker's own plus three of its own, and they are
+        // not decoration: each one changes which reads reach a pileup, and therefore the depth
+        // every line of the output reports.
+        "Pileup" => Some(&[
+            "WellformedReadFilter",
+            "MappedReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+        ]),
         _ => None,
     }
 }

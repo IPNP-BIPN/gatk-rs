@@ -2139,3 +2139,97 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
 }
+
+/// `Pileup.apply`, once per locus of the traversal.
+///
+/// The fourth archetype: a LOCUS walker, whose unit is not a record or a base but the pileup of
+/// every read covering one position. The read walker's startup still applies -- the reads are
+/// opened, the dictionaries compared and the intervals resolved exactly as they are for
+/// `CountReads` -- and what follows it is a different traversal entirely.
+///
+/// `--metadata` is refused rather than ignored: the features it annotates a locus with are a
+/// second data source this runner does not open, and a silent empty column would be a different
+/// answer rather than a refusal.
+pub fn pileup(parser: &Parser) -> Outcome {
+    if !arguments(parser, "metadata").is_empty() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "Pileup's --metadata is a feature source this port does not open yet, and a run that \
+             ignored it would answer without the column it asks for. This message is the port's \
+             own and not GATK's.",
+        ));
+    }
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "Pileup")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // `hasReference()` decides the reference base: without one every locus reports `N`.
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    // The contigs whole, so a locus can be answered without a query per position.
+    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    if let Some(source) = reference.as_mut() {
+        for (name, length) in source.sequences().to_vec() {
+            let contig = source
+                .query(&name, 1, length as i32)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            bases.insert(name, contig);
+        }
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    // The records the traversal would hand `apply`, unfiltered: the locus walker applies the
+    // filter itself, and it does so BEFORE the loci are built, so a filtered read is absent from
+    // the pileup rather than present and ignored.
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let output_insert_length = flag(parser, "output-insert-length");
+    let show_verbose = flag(parser, "show-verbose");
+    let mut text = String::new();
+    for one in &applied {
+        let base = bases
+            .get(&one.context.contig)
+            .and_then(|contig| contig.get((one.context.position - 1) as usize))
+            .map(|base| *base as char)
+            .unwrap_or('N');
+        text.push_str(&gatk_tools::pileup::line(
+            &one.context.pileup,
+            base,
+            &[],
+            output_insert_length,
+            show_verbose,
+        ));
+    }
+
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
