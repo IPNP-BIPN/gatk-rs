@@ -62,10 +62,25 @@ impl ApplyBqsrError {
 
     /// The Java class the reference throws, which the non-user handler prints.
     ///
-    /// One class for all three: the report's own refusals and the transformer's are
-    /// `UserException`s, and a read the reader cannot make sense of is one too.
+    /// NOT one class for all three. The transformer's refusals are `GATKException`s: a
+    /// recalibration table written from a different BAM answers `Read group rg1 not found in the
+    /// recalibration table.` and leaves **exit 3**, where a `UserException` would leave 2 and be
+    /// printed as `A USER ERROR has occurred`. Measured on row 10 of this tool's covering array,
+    /// which is a row the corpus only reached once `--bqsr-recal-file` had a second value.
+    ///
+    /// The report's own refusals and the reader's are user errors, and stay one.
     pub fn java_class(&self) -> &'static str {
-        "org.broadinstitute.hellbender.exceptions.UserException"
+        match self {
+            ApplyBqsrError::Transform(error) => error.java_class(),
+            ApplyBqsrError::Report(_) | ApplyBqsrError::Reads(_) => {
+                "org.broadinstitute.hellbender.exceptions.UserException"
+            }
+        }
+    }
+
+    /// Whether `Main` prints it as a user error, which is what decides the exit code.
+    pub fn is_user(&self) -> bool {
+        self.java_class() == "org.broadinstitute.hellbender.exceptions.UserException"
     }
 }
 

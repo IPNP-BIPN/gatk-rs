@@ -114,6 +114,20 @@ pub enum BqsrError {
 }
 
 impl BqsrError {
+    /// The Java class the reference throws.
+    ///
+    /// Both of the transformer's own refusals are `GATKException`s rather than `UserException`s,
+    /// which is what the documentation above already said and what the caller did not read: a
+    /// recalibration table written from a different BAM leaves exit 3, not 2.
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            BqsrError::ReadGroupNotInTable(_) | BqsrError::NoReadGroupDatum(_) => {
+                "org.broadinstitute.hellbender.exceptions.GATKException"
+            }
+            BqsrError::Covariate(error) => error.java_class(),
+        }
+    }
+
     pub fn message(&self) -> String {
         match self {
             // No space after the full stop, which is the reference's concatenation.
