@@ -105,6 +105,13 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.CountBases());
         declarations("FlagStat",
                 new org.broadinstitute.hellbender.tools.FlagStat());
+        // Two archetypes neither the read walkers nor the variant walkers reach: a REFERENCE
+        // walker, whose traversal is the FASTA rather than a file of records, and an interval
+        // utility, which is a `GATKTool` with no traversal at all and writes a DIRECTORY of files.
+        declarations("CountBasesInReference",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.CountBasesInReference());
+        declarations("SplitIntervals",
+                new org.broadinstitute.hellbender.tools.walkers.SplitIntervals());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
