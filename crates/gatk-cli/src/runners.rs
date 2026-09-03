@@ -1871,3 +1871,45 @@ fn contig_name(header: &SamHeader, index: i32) -> Option<&str> {
         .and_then(|index| header.sequences.get(index))
         .map(|sequence| sequence.name.as_str())
 }
+
+/// `CountBasesInReference.doWork`: every base of the traversal, counted by its byte.
+///
+/// A `ReferenceWalker` is the first archetype here whose traversal is the FASTA rather than a file
+/// of records, so almost none of the read walker's startup applies: there are no reads to open, no
+/// index to find and no dictionaries to compare. What is left is the reference itself and the
+/// intervals over it, and the intervals are the tool's own -- `reference_walker::traverse` resolves
+/// them against the FASTA's dictionary, which is the only dictionary a run of this tool has.
+pub fn count_bases_in_reference(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "CountBasesInReference")?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut source =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let arguments = gatk_engine::interval_args::IntervalArguments {
+        include: arguments(parser, "intervals"),
+        exclude: arguments(parser, "exclude-intervals"),
+        padding: number(parser, "interval-padding"),
+        exclusion_padding: number(parser, "interval-exclusion-padding"),
+        set_rule: match scalar(parser, "interval-set-rule").as_deref() {
+            Some("INTERSECTION") => gatk_engine::interval_args::SetRule::Intersection,
+            _ => gatk_engine::interval_args::SetRule::Union,
+        },
+        merging_rule: match scalar(parser, "interval-merging-rule").as_deref() {
+            Some("OVERLAPPING_ONLY") => MergingRule::OverlappingOnly,
+            _ => MergingRule::All,
+        },
+    };
+    let counts = gatk_tools::count_bases_in_reference::run(&mut source, &arguments)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let report = counts.report();
+
+    if let Some(output) = argument(parser, "output") {
+        // `print`, not `println`: the rows already carry their own newlines.
+        std::fs::write(&output, &report)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    }
+    Ok(Some(report))
+}
