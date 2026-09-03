@@ -122,6 +122,24 @@
       "matched": 25,
       "t": 2,
       "share": 1.0
+    },
+    "Pileup": {
+      "rows": 21,
+      "accepted": 10,
+      "rejected": 11,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "PreprocessIntervals": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
