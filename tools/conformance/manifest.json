@@ -6600,7 +6600,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6620,7 +6620,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Re-measured without the sort, in the pinned container on a real x86-64 runner, as the candidate artefact of run 33704325792; the mutex target list now carries the order it holds, which is the order the refusal joins it in (#1069). Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
+          "why": "Golden-pending: `CountBases` and `FlagStat` join the declared tools, so the golden is re-measured on a real x86-64 runner before it is frozen again. Re-measured without the sort, in the pinned container on a real x86-64 runner, as the candidate artefact of run 33704325792; the mutex target list now carries the order it holds, which is the order the refusal joins it in (#1069). Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
         }
       ]
     },
