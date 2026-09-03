@@ -4860,7 +4860,7 @@ pub const APPLYBQSR: &[Declaration] = &[
         max_value: f64::INFINITY,
         min_recommended_value: f64::NEG_INFINITY,
         max_recommended_value: f64::INFINITY,
-        mutex: &["round-down-quantized", "static-quantized-quals"],
+        mutex: &["static-quantized-quals", "round-down-quantized"],
         controlled_by: None,
         doc: "Quantize quality scores to a given number of levels",
     },
