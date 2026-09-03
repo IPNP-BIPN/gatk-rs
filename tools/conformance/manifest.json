@@ -6600,7 +6600,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6620,7 +6620,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Golden-pending: the dump no longer sorts the mutex target list, because the order that list holds is the order the refusal joins it in and sorting it made the port print a message the reference never writes (#1069). The golden this replaces was measured with the sort, so it is re-measured on a real x86-64 runner before it is frozen again. Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
+          "why": "Re-measured without the sort, in the pinned container on a real x86-64 runner, as the candidate artefact of run 33704325792; the mutex target list now carries the order it holds, which is the order the refusal joins it in (#1069). Seven tools' full declaration lists, and eighteen command lines over them: the empty one, the input alone under each spelling, the input twice, an unknown argument, one and two intervals, a variant argument given to a read walker and an input given to a variant walker, a print tool with and without its output and with its output twice, and a tool that is no walker at all."
         }
       ]
     },
@@ -6752,7 +6752,7 @@
     },
     {
       "id": "mutex-target-names",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the long name and the field name of a mutex target, which are not the same string",
       "harness": "tools/argument-conformance",
       "tools": [],
@@ -6764,7 +6764,7 @@
         {
           "dump": "MutexTargetsDump",
           "golden": "crates/gatk-tools/tests/data/mutex_target_names.txt.gz",
-          "why": "Golden-pending: the dump no longer sorts the mutex target list, because the order that list holds is the order the refusal joins it in and sorting it made the port print a message the reference never writes (#1069). The golden this replaces was measured with the sort, so it is re-measured on a real x86-64 runner before it is frozen again. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Four mutex arguments, all of them a read filter's, over two of the four tools: the target's long name, the target definition's FIELD name, and the sentence the usage renders from the second."
+          "why": "Re-measured without the sort, in the pinned container on a real x86-64 runner, as the candidate artefact of run 33704325792; the mutex target list now carries the order it holds, which is the order the refusal joins it in (#1069). From the pinned container on a real x86-64 runner, published as the golden-pending artefact of the run that added this suite, and identical to the local smoke run. Four mutex arguments, all of them a read filter's, over two of the four tools: the target's long name, the target definition's FIELD name, and the sentence the usage renders from the second."
         }
       ]
     },
