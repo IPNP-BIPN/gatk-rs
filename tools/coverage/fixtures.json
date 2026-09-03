@@ -119,7 +119,13 @@
   "",
   "`CountBases` and `FlagStat` take `CountReads`' values verbatim, which is the archetype paying",
   "for itself: the three declare the same seventy arguments and read the same files, so the",
-  "fixtures that made one measurable make all three."
+  "fixtures that made one measurable make all three.",
+  "",
+  "`CountBasesInReference` names the two BAMs even though a reference walker never opens them:",
+  "the standard read arguments are its inheritance, so a row pairing a `--read-index` with the",
+  "shared list's feature files is refused by htsjdk before the tool runs, and eleven of its",
+  "twenty-three rows measured that one refusal. It names the read walkers' intervals for the",
+  "same reason the others do: the corpus's reference carries the same contig."
  ],
  "values": {
   "--input": [
@@ -351,6 +357,24 @@
    "--output": [
     "/work/out/flagstat.txt",
     "/work/out/flagstat2.txt"
+   ]
+  },
+  "CountBasesInReference": {
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/bases.txt",
+    "/work/out/bases2.txt"
+   ],
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
    ]
   }
  },

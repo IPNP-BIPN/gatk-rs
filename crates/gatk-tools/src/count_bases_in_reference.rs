@@ -64,10 +64,28 @@ pub fn run(
 ) -> Result<BaseCounts, TraversalError> {
     let applied =
         reference_walker::traverse(reference, arguments, |locus: &SimpleInterval| locus.clone())?;
+    Ok(count(&applied))
+}
+
+/// The same count over a traversal somebody else drove.
+///
+/// A runner resolves its intervals against the BEST AVAILABLE dictionary, which a
+/// `--sequence-dictionary` outranks the reference's in, so the traversal it drives is not the one
+/// `run` would have built for itself.
+pub fn run_over(
+    reference: &mut ReferenceFileSource,
+    intervals: &[SimpleInterval],
+) -> Result<BaseCounts, TraversalError> {
+    let applied =
+        reference_walker::traverse_intervals(reference, intervals, |locus| locus.clone())?;
+    Ok(count(&applied))
+}
+
+fn count(applied: &[reference_walker::Applied]) -> BaseCounts {
     let mut counts = BaseCounts::default();
     for call in applied {
         // `getBase()` is the first byte of the window, which at the default window is its only one.
         counts.counts[call.bases[0] as usize] += 1;
     }
-    Ok(counts)
+    counts
 }

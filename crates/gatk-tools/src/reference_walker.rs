@@ -98,7 +98,22 @@ pub fn traverse(
 ) -> Result<Vec<Applied>, TraversalError> {
     let header = dictionary(reference);
     let intervals = traversal_intervals(arguments, &header)?;
+    traverse_intervals(reference, &intervals, window)
+}
 
+/// The same traversal over intervals somebody else resolved.
+///
+/// It exists because the dictionary the intervals resolve against is NOT always the reference's:
+/// `getBestAvailableSequenceDictionary` prefers a `--sequence-dictionary` over it, so a run with
+/// both resolves `-L` against the master and then queries the FASTA, which is how the reference
+/// answers `Given reference file does not have data at the requested contig` rather than refusing
+/// the interval. A traversal that resolved its own intervals could not reach that.
+pub fn traverse_intervals(
+    reference: &mut ReferenceFileSource,
+    intervals: &[SimpleInterval],
+    window: impl Fn(&SimpleInterval) -> SimpleInterval,
+) -> Result<Vec<Applied>, TraversalError> {
+    let intervals = intervals.to_vec();
     let mut applied = Vec::new();
     for locus in interval_loci(&intervals) {
         let reference_window = window(&locus);
