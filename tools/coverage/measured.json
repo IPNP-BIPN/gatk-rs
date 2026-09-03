@@ -86,6 +86,24 @@
       "matched": 21,
       "t": 2,
       "share": 1.0
+    },
+    "CountBases": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "FlagStat": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
