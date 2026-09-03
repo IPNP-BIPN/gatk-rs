@@ -1251,6 +1251,15 @@ pub struct Parser {
     plugin_resolution: Option<PluginResolution>,
     /// The plugins the tool handed the descriptor as defaults, which count as selected.
     default_plugins: Vec<String>,
+    /// `pluginDescriptor.validateAndResolvePlugins()`, which is the descriptor's OWN validation
+    /// and not the parser's.
+    ///
+    /// It lives here rather than in the caller because of WHEN it runs: `validateArgumentValues`
+    /// calls it before it walks the definitions, so a command line that both names a filter twice
+    /// and breaks a mutex reports the filter. A port that ran it after parsing reported the mutex
+    /// (#1070).
+    #[allow(clippy::type_complexity)]
+    plugin_validation: Option<Box<dyn Fn(&Parser) -> Result<(), Error>>>,
     /// `argumentsFilesLoadedAlready`.
     ///
     /// Parser state rather than per-call state, because the recursion is the same parser calling
@@ -1269,6 +1278,7 @@ impl Parser {
             append_to_collections: false,
             plugin_resolution: None,
             default_plugins: Vec::new(),
+            plugin_validation: None,
             arguments_files_loaded_already: Vec::new(),
         }
     }
@@ -1277,6 +1287,15 @@ impl Parser {
     /// before the required check.
     pub fn with_plugin_resolution(mut self, resolution: PluginResolution) -> Self {
         self.plugin_resolution = Some(resolution);
+        self
+    }
+
+    /// The descriptor's own validation, which runs where the reference runs it.
+    pub fn with_plugin_validation(
+        mut self,
+        validate: impl Fn(&Parser) -> Result<(), Error> + 'static,
+    ) -> Self {
+        self.plugin_validation = Some(Box::new(validate));
         self
     }
 
@@ -1663,7 +1682,14 @@ impl Parser {
     /// `validateArgumentValues()`: every definition, in declaration order, so the first missing
     /// required argument reported is the first one declared.
     fn validate_argument_values(&self) -> Result<(), Error> {
-        for definition in self.validate_plugin_argument_values()? {
+        let definitions = self.validate_plugin_argument_values()?;
+        // The descriptor's own validation, BEFORE the per-definition walk: this is where the
+        // reference decides that a read filter is both enabled and disabled, and a command line
+        // that also breaks a mutex reports the filter rather than the mutex.
+        if let Some(validate) = &self.plugin_validation {
+            validate(self)?;
+        }
+        for definition in definitions {
             // The partners that were actually given, by long name, in the annotation's order.
             let provided: Vec<String> = definition
                 .annotation

@@ -345,12 +345,20 @@ fn parser_for(
     list: &'static [gatk_tools::tool_declarations::Declaration],
 ) -> gatk_barclay::Parser {
     let parser = gatk_barclay::Parser::new(definitions::definitions(list));
-    match gatk_tools::plugin_ownership::default_filters(tool) {
+    let parser = match gatk_tools::plugin_ownership::default_filters(tool) {
         None => parser,
         Some(defaults) => {
             parser.with_default_plugins(defaults.iter().map(|name| (*name).to_string()).collect())
         }
-    }
+    };
+    // `GATKReadFilterPluginDescriptor.validateAndResolvePlugins()`, which the parser runs before
+    // it walks the definitions. The resolution itself is the same one the runner asks for; what
+    // this places is WHEN it refuses, and the difference is visible on a command line that breaks
+    // two rules at once (#1070).
+    let owned = tool.to_string();
+    parser.with_plugin_validation(move |parser| {
+        runners::resolve_read_filters_in(parser, &owned).map(|_| ())
+    })
 }
 
 /// The port's own refusal, which the reference has no equivalent of.
