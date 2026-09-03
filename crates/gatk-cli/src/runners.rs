@@ -2081,14 +2081,49 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    // The reference's `.dict` rather than its `.fai`: both name the same contigs and only the
-    // first carries the ATTRIBUTES, and the `@SQ` lines this tool writes carry them through. A
-    // dictionary built from the index alone dropped the `M5` the reference writes.
-    let master = master_dictionary(parser)?;
+    // `validateIntervalArgumentCollection`, in its own order: this tool bins and pads by its own
+    // two arguments, so it refuses every standard interval argument that would modify the input
+    // intervals before it. Each is an `IllegalArgumentException` from `Utils.validateArg`, which
+    // is a NON-user failure and leaves exit 3.
+    for (wrong, message) in [
+        (
+            scalar(parser, "interval-set-rule").as_deref() == Some("INTERSECTION"),
+            "Interval set rule must be set to UNION.",
+        ),
+        (
+            number(parser, "interval-exclusion-padding") != 0,
+            "Interval exclusion padding must be set to 0.",
+        ),
+        (
+            number(parser, "interval-padding") != 0,
+            "Interval padding must be set to 0.",
+        ),
+        (
+            scalar(parser, "interval-merging-rule").as_deref() != Some("OVERLAPPING_ONLY"),
+            "Interval merging rule must be set to OVERLAPPING_ONLY.",
+        ),
+    ] {
+        if wrong {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                message,
+            ));
+        }
+    }
+
+    // The REFERENCE's dictionary, not the best available one: a `--sequence-dictionary` does not
+    // reach this tool's output, and only the reference's `.dict` carries the attributes its `@SQ`
+    // lines write through. A run naming both wrote no `M5` where the reference writes one, and a
+    // dictionary built from the `.fai` drops it too.
     let from_dict = reference_dictionary(parser)?;
     let own = gatk_tools::reference_walker::dictionary(&source);
-    let best = master.or(from_dict).unwrap_or(own);
-    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = best
+    let written = from_dict.clone().unwrap_or(own.clone());
+    // The INTERVALS resolve against a different dictionary from the one the file is written with:
+    // `getBestAvailableSequenceDictionary` prefers a `--sequence-dictionary`, so a `-L` naming a
+    // contig the master does not declare is refused even where the reference has it, while the
+    // `@SQ` lines still come from the reference. One tool, two dictionaries.
+    let best = master_dictionary(parser)?.or(from_dict).unwrap_or(own);
+    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = written
         .sequences
         .iter()
         .map(|sequence| gatk_tools::preprocess_intervals::Sequence {
@@ -2185,6 +2220,27 @@ pub fn pileup(parser: &Parser) -> Outcome {
                 .query(&name, 1, length as i32)
                 .map_err(|error| Thrown::user(format!("{error:?}")))?;
             bases.insert(name, contig);
+        }
+    }
+
+    // `MissingContigInSequenceDictionary`: the locus walker checks each interval's contig against
+    // the REFERENCE's dictionary rather than the best available one, so a run whose master
+    // declares a contig the FASTA does not is refused here rather than answering `N` for every
+    // base of it. Measured on row 8 of this tool's array.
+    if let Some(source) = reference.as_ref() {
+        let known = gatk_tools::reference_walker::dictionary(source);
+        for interval in &intervals {
+            if !known
+                .sequences
+                .iter()
+                .any(|sequence| sequence.name == interval.contig)
+            {
+                return Err(Thrown::user(format!(
+                    "Contig {} not present in the sequence dictionary {}\n",
+                    interval.contig,
+                    gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+                )));
+            }
         }
     }
 

@@ -142,11 +142,21 @@
   "with the shared list's feature files is refused by htsjdk before the tool runs. Its own two",
   "arguments, `--bin-length` and `--padding`, are what decide the bins it writes.",
   "",
-  "`PreprocessIntervals` REFUSES two of the standard interval arguments outright, in its own",
   "`IllegalArgumentException`s: the merging rule must be OVERLAPPING_ONLY and the interval padding",
   "must be zero, because the tool bins and pads by its own `--bin-length` and `--padding` instead.",
   "Each is held at the one value the tool accepts; varying them measured that refusal on nine of",
-  "twenty-one rows and nothing else."
+  "twenty-one rows and nothing else.",
+  "",
+  "`PreprocessIntervals` refuses FOUR of the standard interval arguments in its own",
+  "`IllegalArgumentException`s -- the set rule must be UNION, the exclusion padding and the",
+  "interval padding must be zero, and the merging rule must be OVERLAPPING_ONLY -- because it bins",
+  "reproduces each refusal, so a row that carries one measures behaviour rather than a gap.",
+  "",
+  "and each is HELD at the value the tool accepts. Varying them measured the refusal on twenty of",
+  "twenty-one rows and left ONE distinct output, which is an array that covers its arguments",
+  "without testing them; held, the same array runs nine accepted rows over four outputs. The",
+  "refusals are the runner's and are reproduced -- they are simply not what these rows spend",
+  "themselves on."
  ],
  "values": {
   "--input": [
@@ -483,11 +493,17 @@
     "/work/fixtures/reads.bai",
     "/work/fixtures/reads2.bai"
    ],
-   "--interval-merging-rule": [
-    "OVERLAPPING_ONLY"
+   "--interval-set-rule": [
+    "UNION"
+   ],
+   "--interval-exclusion-padding": [
+    "0"
    ],
    "--interval-padding": [
     "0"
+   ],
+   "--interval-merging-rule": [
+    "OVERLAPPING_ONLY"
    ]
   }
  },
