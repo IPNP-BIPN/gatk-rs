@@ -233,6 +233,7 @@ dependencies = [
  "htsjdk-bam",
  "htsjdk-bgzf",
  "htsjdk-tribble",
+ "htsjdk-vcf",
 ]
 
 [[package]]

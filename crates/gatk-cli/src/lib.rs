@@ -23,6 +23,7 @@
 pub mod command_line;
 pub mod definitions;
 pub mod runners;
+pub mod variant_bridge;
 
 use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
@@ -278,6 +279,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyBQSR" => Some(run_apply_bqsr),
         "IndexFeatureFile" => Some(run_index_feature_file),
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
+        "SelectVariants" => Some(run_select_variants),
         _ => None,
     }
 }
@@ -285,6 +287,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::select_variants(&parsed("SelectVariants", args)?)
 }
 
 fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {
