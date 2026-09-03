@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 20,
-  "arguments_in_array": 8,
-  "arguments_excluded": 12,
+  "arguments_in_array": 9,
+  "arguments_excluded": 11,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -50,13 +50,6 @@
       "source": "none"
     },
     {
-      "argument": "--progress-logger-frequency",
-      "type": "Integer",
-      "reason": "only one value available (default)",
-      "held_at": "10000",
-      "source": "default"
-    },
-    {
       "argument": "--QUIET",
       "type": "Boolean",
       "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
@@ -92,9 +85,9 @@
       "source": "none"
     }
   ],
-  "rows": 10,
-  "tuples_total": 126,
-  "tuples_covered": 126,
+  "rows": 11,
+  "tuples_total": 160,
+  "tuples_covered": 160,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -108,6 +101,7 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
+        "--progress-logger-frequency": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -118,6 +112,7 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf",
+        "--progress-logger-frequency=10000",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -131,6 +126,7 @@
         "--ignore-safety-checks": "false",
         "--input": "fixture[1]",
         "--output": "fixture[1]",
+        "--progress-logger-frequency": "fixture[1]",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "false"
       },
@@ -141,6 +137,7 @@
         "--ignore-safety-checks=false",
         "--input=/work/fixtures/indexed.vcf",
         "--output=/work/out/gathered.vcf.gz",
+        "--progress-logger-frequency=1000",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
@@ -154,8 +151,9 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[1]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true"
+        "--progress-logger-frequency": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--cloud-prefetch-buffer=0",
@@ -164,8 +162,9 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/indexed.vcf",
         "--output=/work/out/gathered.vcf",
-        "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true"
+        "--progress-logger-frequency=1000",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -177,8 +176,9 @@
         "--ignore-safety-checks": "false",
         "--input": "fixture[0]",
         "--output": "fixture[1]",
-        "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--progress-logger-frequency": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--cloud-prefetch-buffer=0",
@@ -187,8 +187,9 @@
         "--ignore-safety-checks=false",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf.gz",
-        "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--progress-logger-frequency=10000",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -200,8 +201,9 @@
         "--ignore-safety-checks": "false",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
+        "--progress-logger-frequency": "fixture[1]",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--cloud-prefetch-buffer=40",
@@ -210,8 +212,9 @@
         "--ignore-safety-checks=false",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf",
+        "--progress-logger-frequency=1000",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -223,8 +226,9 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[1]",
         "--output": "fixture[1]",
+        "--progress-logger-frequency": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--cloud-prefetch-buffer=0",
@@ -233,8 +237,9 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/indexed.vcf",
         "--output=/work/out/gathered.vcf.gz",
+        "--progress-logger-frequency=10000",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -246,7 +251,8 @@
         "--ignore-safety-checks": "false",
         "--input": "fixture[1]",
         "--output": "fixture[0]",
-        "--tmp-dir": "fixture[1]",
+        "--progress-logger-frequency": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
@@ -256,7 +262,8 @@
         "--ignore-safety-checks=false",
         "--input=/work/fixtures/indexed.vcf",
         "--output=/work/out/gathered.vcf",
-        "--tmp-dir=/work/tmp2",
+        "--progress-logger-frequency=1000",
+        "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
     },
@@ -269,6 +276,7 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
+        "--progress-logger-frequency": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -279,6 +287,7 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf",
+        "--progress-logger-frequency=10000",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -292,6 +301,7 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[0]",
         "--output": "fixture[1]",
+        "--progress-logger-frequency": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
@@ -302,6 +312,7 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf.gz",
+        "--progress-logger-frequency=10000",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=true"
       ]
@@ -315,6 +326,32 @@
         "--ignore-safety-checks": "true",
         "--input": "fixture[0]",
         "--output": "fixture[0]",
+        "--progress-logger-frequency": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--cloud-prefetch-buffer=40",
+        "--disable-contig-ordering-check=true",
+        "--gather-type=BLOCK",
+        "--ignore-safety-checks=true",
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/gathered.vcf",
+        "--progress-logger-frequency=10000",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--cloud-prefetch-buffer": "fixture[0]",
+        "--disable-contig-ordering-check": "true",
+        "--gather-type": "BLOCK",
+        "--ignore-safety-checks": "true",
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--progress-logger-frequency": "fixture[0]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false"
       },
@@ -325,6 +362,7 @@
         "--ignore-safety-checks=true",
         "--input=/work/fixtures/reads.vcf",
         "--output=/work/out/gathered.vcf",
+        "--progress-logger-frequency=10000",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
       ]

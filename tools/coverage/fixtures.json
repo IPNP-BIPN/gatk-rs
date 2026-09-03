@@ -1,238 +1,312 @@
 {
-  "$comment": [
-    "The values this repository is willing to pass for arguments the inventory cannot give a",
-    "domain to, plus the arguments it refuses to vary and why.",
-    "",
-    "Paths point inside the oracle container, where MakeFixtures.java writes the corpus. They are",
-    "not committed files: the corpus is rebuilt from the program on every run, which keeps it",
-    "deterministic and keeps binary fixtures out of the tree.",
-    "",
-    "Adding a value here widens a covering array. Adding an exclusion narrows it, and the reason",
-    "is required, because an exclusion is the one thing in this file that can hide a difference.",
-    "",
-    "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
-    "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
-    "kept and both sides are compared on the refusal rather than on an output.",
-    "",
-    "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
-    "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
-    "that reproduces a report.",
-    "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
-    "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
-    "refusals are rows rather than exclusions.",
-    "",
-    "`--variant` takes an INDEXED VCF and an unindexed one. A feature walker refuses `-L` against",
-    "an input with no random access, so a list with only the unindexed file would compare two",
-    "refusals on every interval row and never reach a traversal; and dropping the unindexed one",
-    "would lose that refusal, which is behaviour too.",
-    "",
-    "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
-    "a count. A `.idx` there would measure nothing but a file name.",
-    "",
-    "`--use-jdk-deflater` used to be excluded here, on the ground that these tools write nothing",
-    "compressed. That stopped being true when IndexFeatureFile learned to write a tabix index: a",
-    ".tbi is a BGZF file, and the deflater decides its bytes. The argument is a boolean with a",
-    "domain of its own, so it needs no fixture; what it needed was for the exclusion to be read",
-    "again after the tool changed.",
-    "",
-    "`--reference` takes two FASTAs, each with the .fai and .dict beside it that GATK requires: one",
-    "on the corpus's own contig and one on a contig it does not carry. The reference dictionary",
-    "takes part in the validation and outranks the reads' in the best-available chain, so the",
-    "second value is a refusal and the first is not.",
-    "",
-    "`GatherVcfsCloud` holds `--create-output-variant-index` at FALSE, and the reason is the",
-    "measurement rather than the port. A Tribble index records the last-modified time of the file",
-    "it indexes, and here that file is the tool's own OUTPUT: the two sides write their own copy at",
-    "their own moment, so the two indexes differ in eight bytes of clock and the row measures when",
-    "the run happened. The port builds the index byte for byte otherwise -- checked against the",
-    "reference's own on one input -- and every other tool indexes a file both sides were GIVEN.",
-    "",
-    "`--read-index` takes two paths that both exist, because what the argument decides is not",
-    "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
-    "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
-    "number of reads inputs before the contents are read at all.",
-    "",
-    "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
-    "shares nothing with it. The MASTER dictionary is validated against every other one before the",
-    "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
-    "",
-    "Four arguments are here with a SECOND value and no expectation that they change anything:",
-    "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
-    "excluded as having one value, which meant the array covered it by holding it at its default",
-    "and could not have noticed if it mattered. A row that varies them and gets the same answer on",
-    "both sides is a claim; a row that never varied them was not.",
-    "",
-    "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
-    "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
-    "having one value, and a free-form string with no default is excluded for having none. With no",
-    "values they were covered by being absent, which is the one setting that cannot disagree.",
-    "",
-    "The three read-filter arguments are here for the same reason. `--inverted-read-filter` names",
-    "filters that are neither a tool default nor a value of `--read-filter`: inverting a default is",
-    "refused outright, and inverting a filter the same row enables is refused too, so an overlap",
-    "would spend rows on refusals the unit suite already covers. And",
-    "`--disable-read-filter` names WellformedReadFilter, which IS the default, so the row actually",
-    "removes a filter rather than warning about one that was never there. Both take a second value",
-    "because one is no domain at all: an argument with a single value is covered by being present",
-    "or absent, which the generator excludes for the same reason it excludes a lone default."
+ "$comment": [
+  "The values this repository is willing to pass for arguments the inventory cannot give a",
+  "domain to, plus the arguments it refuses to vary and why.",
+  "",
+  "Paths point inside the oracle container, where MakeFixtures.java writes the corpus. They are",
+  "not committed files: the corpus is rebuilt from the program on every run, which keeps it",
+  "deterministic and keeps binary fixtures out of the tree.",
+  "",
+  "Adding a value here widens a covering array. Adding an exclusion narrows it, and the reason",
+  "is required, because an exclusion is the one thing in this file that can hide a difference.",
+  "",
+  "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
+  "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
+  "kept and both sides are compared on the refusal rather than on an output.",
+  "",
+  "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
+  "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
+  "that reproduces a report.",
+  "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
+  "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
+  "refusals are rows rather than exclusions.",
+  "",
+  "`--variant` takes an INDEXED VCF and an unindexed one. A feature walker refuses `-L` against",
+  "an input with no random access, so a list with only the unindexed file would compare two",
+  "refusals on every interval row and never reach a traversal; and dropping the unindexed one",
+  "would lose that refusal, which is behaviour too.",
+  "",
+  "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
+  "a count. A `.idx` there would measure nothing but a file name.",
+  "",
+  "`--use-jdk-deflater` used to be excluded here, on the ground that these tools write nothing",
+  "compressed. That stopped being true when IndexFeatureFile learned to write a tabix index: a",
+  ".tbi is a BGZF file, and the deflater decides its bytes. The argument is a boolean with a",
+  "domain of its own, so it needs no fixture; what it needed was for the exclusion to be read",
+  "again after the tool changed.",
+  "",
+  "`--reference` takes two FASTAs, each with the .fai and .dict beside it that GATK requires: one",
+  "on the corpus's own contig and one on a contig it does not carry. The reference dictionary",
+  "takes part in the validation and outranks the reads' in the best-available chain, so the",
+  "second value is a refusal and the first is not.",
+  "",
+  "`GatherVcfsCloud` holds `--create-output-variant-index` at FALSE, and the reason is the",
+  "measurement rather than the port. A Tribble index records the last-modified time of the file",
+  "it indexes, and here that file is the tool's own OUTPUT: the two sides write their own copy at",
+  "their own moment, so the two indexes differ in eight bytes of clock and the row measures when",
+  "the run happened. The port builds the index byte for byte otherwise -- checked against the",
+  "reference's own on one input -- and every other tool indexes a file both sides were GIVEN.",
+  "",
+  "`--read-index` takes two paths that both exist, because what the argument decides is not",
+  "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
+  "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
+  "number of reads inputs before the contents are read at all.",
+  "",
+  "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
+  "shares nothing with it. The MASTER dictionary is validated against every other one before the",
+  "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
+  "",
+  "Four arguments are here with a SECOND value and no expectation that they change anything:",
+  "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
+  "excluded as having one value, which meant the array covered it by holding it at its default",
+  "and could not have noticed if it mattered. A row that varies them and gets the same answer on",
+  "both sides is a claim; a row that never varied them was not.",
+  "",
+  "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
+  "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
+  "having one value, and a free-form string with no default is excluded for having none. With no",
+  "values they were covered by being absent, which is the one setting that cannot disagree.",
+  "",
+  "The three read-filter arguments are here for the same reason. `--inverted-read-filter` names",
+  "filters that are neither a tool default nor a value of `--read-filter`: inverting a default is",
+  "refused outright, and inverting a filter the same row enables is refused too, so an overlap",
+  "would spend rows on refusals the unit suite already covers. And",
+  "`--disable-read-filter` names WellformedReadFilter, which IS the default, so the row actually",
+  "removes a filter rather than warning about one that was never there. Both take a second value",
+  "because one is no domain at all: an argument with a single value is covered by being present",
+  "or absent, which the generator excludes for the same reason it excludes a lone default."
+ ],
+ "$per_tool": [
+  "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
+  "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
+  "",
+  "`CreateHadoopBamSplittingIndex` declares its own `--input` and `--output`: the shared input",
+  "list carries three feature files this tool refuses by EXTENSION before it opens anything, so",
+  "an array built from it would measure one refusal four times. Two values are enough to have the",
+  "refusal and the index both.",
+  "",
+  "It takes TWO names for the same reason every other argument here does: one value is covered by",
+  "being present or absent, and the second is what lets a row notice that the tool writes where it",
+  "was told to.",
+  "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
+  "lives here because the generator does.",
+  "",
+  "See tools/coverage/README.md.",
+  "",
+  "`reads2.bam` is the second BAM, and the reason it exists is that an argument with ONE fixture",
+  "value is held at it: the row carries it, no row varies it, and nothing can notice whether it",
+  "matters. Every read-taking tool therefore names two BAMs. They differ in the three ways the",
+  "corpus needs: a different record count, positions on the other side of both interval fixtures,",
+  "and two records the default read filters disagree about (a leading-deletion cigar that",
+  "`GoodCigarReadFilter` refuses, and an unmapped record that `MappedReadFilter` removes).",
+  "`recal2.table` and `reads2.bai` follow it, so `--bqsr-recal-file` and `--read-index` have a",
+  "value that belongs to the input in the row and a value that belongs to the other one.",
+  "",
+  "The read tools name their own `--intervals` as well, and the reason is `distinct_outputs`",
+  "rather than acceptance: the shared `chr1:1-1000` holds two of the first BAM's reads and the",
+  "exclusion fixture removes one of them, so every accepted row answered 0 or 1 and an array of",
+  "twenty rows observed two outputs. `chr1:1-6000` spans all eight reads of `reads.bam` and three",
+  "of `reads2.bam`, and `chr1:50000-60000` spans none of the first and two of the second, which is",
+  "what makes a padding, an exclusion or a read filter visible as a different number."
+ ],
+ "values": {
+  "--input": [
+   "/work/fixtures/reads.vcf",
+   "/work/fixtures/regions.bed",
+   "/work/fixtures/reads.vcf.gz",
+   "/work/fixtures/reads.bam"
   ],
-  "$per_tool": [
-    "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
-    "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
-    "",
-    "`CreateHadoopBamSplittingIndex` declares its own `--input` and `--output`: the shared input",
-    "list carries three feature files this tool refuses by EXTENSION before it opens anything, so",
-    "an array built from it would measure one refusal four times. Two values are enough to have the",
-    "refusal and the index both.",
-    "",
-    "It takes TWO names for the same reason every other argument here does: one value is covered by",
-    "being present or absent, and the second is what lets a row notice that the tool writes where it",
-    "was told to.",
-    "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
-    "lives here because the generator does.",
-    "",
-    "See tools/coverage/README.md."
+  "--output": [
+   "/work/out/index.idx",
+   "/work/out/index.tbi"
   ],
-  "values": {
-    "--input": [
-      "/work/fixtures/reads.vcf",
-      "/work/fixtures/regions.bed",
-      "/work/fixtures/reads.vcf.gz",
-      "/work/fixtures/reads.bam"
-    ],
-    "--output": [
-      "/work/out/index.idx",
-      "/work/out/index.tbi"
-    ],
-    "--tmp-dir": [
-      "/work/tmp",
-      "/work/tmp2"
-    ],
-    "--cloud-prefetch-buffer": [
-      "40",
-      "0"
-    ],
-    "--cloud-index-prefetch-buffer": [
-      "-1",
-      "0"
-    ],
-    "--seconds-between-progress-updates": [
-      "10.0",
-      "60.0"
-    ],
-    "--bgzf-file": [
-      "/work/fixtures/reads.vcf.gz",
-      "/work/fixtures/reads.vcf"
-    ],
-    "--intervals": [
-      "chr1:1-1000",
-      "chr1:50000-60000"
-    ],
-    "--variant": [
-      "/work/fixtures/indexed.vcf",
-      "/work/fixtures/reads.vcf"
-    ],
-    "--exclude-intervals": [
-      "chr1:1-500",
-      "chr1:400-600"
-    ],
-    "--interval-padding": [
-      "0",
-      "100"
-    ],
-    "--interval-exclusion-padding": [
-      "0",
-      "50"
-    ],
-    "--read-filter": [
-      "GoodCigarReadFilter",
-      "MappedReadFilter"
-    ],
-    "--disable-read-filter": [
-      "WellformedReadFilter",
-      "MappedReadFilter"
-    ],
-    "--inverted-read-filter": [
-      "FirstOfPairReadFilter",
-      "PrimaryLineReadFilter"
-    ],
-    "--reference": [
-      "/work/fixtures/reference.fasta",
-      "/work/fixtures/other.fasta"
-    ],
-    "--read-index": [
-      "/work/fixtures/reads.bai",
-      "/work/fixtures/indexed.vcf.idx"
-    ],
-    "--bqsr-recal-file": [
-      "/work/fixtures/recal.table"
-    ],
-    "--sequence-dictionary": [
-      "/work/fixtures/matching.dict",
-      "/work/fixtures/other.dict"
-    ]
+  "--tmp-dir": [
+   "/work/tmp",
+   "/work/tmp2"
+  ],
+  "--cloud-prefetch-buffer": [
+   "40",
+   "0"
+  ],
+  "--cloud-index-prefetch-buffer": [
+   "-1",
+   "0"
+  ],
+  "--seconds-between-progress-updates": [
+   "10.0",
+   "60.0"
+  ],
+  "--bgzf-file": [
+   "/work/fixtures/reads.vcf.gz",
+   "/work/fixtures/reads.vcf"
+  ],
+  "--intervals": [
+   "chr1:1-1000",
+   "chr1:50000-60000"
+  ],
+  "--variant": [
+   "/work/fixtures/indexed.vcf",
+   "/work/fixtures/reads.vcf"
+  ],
+  "--exclude-intervals": [
+   "chr1:1-500",
+   "chr1:400-600"
+  ],
+  "--interval-padding": [
+   "0",
+   "100"
+  ],
+  "--interval-exclusion-padding": [
+   "0",
+   "50"
+  ],
+  "--read-filter": [
+   "GoodCigarReadFilter",
+   "MappedReadFilter"
+  ],
+  "--disable-read-filter": [
+   "WellformedReadFilter",
+   "MappedReadFilter"
+  ],
+  "--inverted-read-filter": [
+   "FirstOfPairReadFilter",
+   "PrimaryLineReadFilter"
+  ],
+  "--reference": [
+   "/work/fixtures/reference.fasta",
+   "/work/fixtures/other.fasta"
+  ],
+  "--read-index": [
+   "/work/fixtures/reads.bai",
+   "/work/fixtures/indexed.vcf.idx"
+  ],
+  "--bqsr-recal-file": [
+   "/work/fixtures/recal.table"
+  ],
+  "--sequence-dictionary": [
+   "/work/fixtures/matching.dict",
+   "/work/fixtures/other.dict"
+  ],
+  "--global-qscore-prior": [
+   "-1.0",
+   "20.0"
+  ],
+  "--quantize-quals": [
+   "0",
+   "8"
+  ],
+  "--static-quantized-quals": [
+   "10",
+   "30"
+  ],
+  "--splitting-index-granularity": [
+   "4096",
+   "1024"
+  ],
+  "--progress-logger-frequency": [
+   "10000",
+   "1000"
+  ]
+ },
+ "per_tool": {
+  "ApplyBQSR": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--output": [
+    "/work/out/recalibrated.bam",
+    "/work/out/other.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--bqsr-recal-file": [
+    "/work/fixtures/recal.table",
+    "/work/fixtures/recal2.table"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ]
   },
-  "per_tool": {
-    "ApplyBQSR": {
-      "--input": [
-        "/work/fixtures/reads.bam"
-      ],
-      "--output": [
-        "/work/out/recalibrated.bam",
-        "/work/out/other.bam"
-      ]
-    },
-    "GatherVcfsCloud": {
-      "--create-output-variant-index": [
-        "false"
-      ],
-      "--input": [
-        "/work/fixtures/reads.vcf",
-        "/work/fixtures/indexed.vcf"
-      ],
-      "--output": [
-        "/work/out/gathered.vcf",
-        "/work/out/gathered.vcf.gz"
-      ]
-    },
-    "PrintReads": {
-      "--input": [
-        "/work/fixtures/reads.bam",
-        "/work/fixtures/reads.vcf"
-      ],
-      "--output": [
-        "/work/out/out.bam",
-        "/work/out/other.bam"
-      ]
-    },
-    "CreateHadoopBamSplittingIndex": {
-      "--input": [
-        "/work/fixtures/reads.bam",
-        "/work/fixtures/reads.vcf"
-      ],
-      "--output": [
-        "/work/out/reads.bam.sbi",
-        "/work/out/elsewhere.sbi"
-      ]
-    },
-    "CountVariants": {
-      "--output": [
-        "/work/out/count.txt",
-        "/work/out/count2.txt"
-      ]
-    }
+  "GatherVcfsCloud": {
+   "--create-output-variant-index": [
+    "false"
+   ],
+   "--input": [
+    "/work/fixtures/reads.vcf",
+    "/work/fixtures/indexed.vcf"
+   ],
+   "--output": [
+    "/work/out/gathered.vcf",
+    "/work/out/gathered.vcf.gz"
+   ]
   },
-  "constraints": [],
-  "exclude": {
-    "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
-    "--version": "prints the version and returns, same reason",
-    "--showHidden": "changes the usage text only",
-    "--QUIET": "suppresses the log on stderr, and what is compared is stdout and the output file",
-    "--verbosity": "log level on stderr, same reason",
-    "--use-jdk-inflater": "chooses an inflater, and the input is read the same way either way",
-    "--gcs-max-retries": "reaches nothing without a cloud path in the row",
-    "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
-    "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
-    "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead"
+  "PrintReads": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--output": [
+    "/work/out/out.bam",
+    "/work/out/other.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ]
+  },
+  "CreateHadoopBamSplittingIndex": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--output": [
+    "/work/out/reads.bam.sbi",
+    "/work/out/elsewhere.sbi"
+   ]
+  },
+  "CountVariants": {
+   "--output": [
+    "/work/out/count.txt",
+    "/work/out/count2.txt"
+   ]
+  },
+  "CountReads": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ]
   }
+ },
+ "constraints": [],
+ "exclude": {
+  "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
+  "--version": "prints the version and returns, same reason",
+  "--showHidden": "changes the usage text only",
+  "--QUIET": "suppresses the log on stderr, and what is compared is stdout and the output file",
+  "--verbosity": "log level on stderr, same reason",
+  "--use-jdk-inflater": "chooses an inflater, and the input is read the same way either way",
+  "--gcs-max-retries": "reaches nothing without a cloud path in the row",
+  "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
+  "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
+  "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead"
+ }
 }
