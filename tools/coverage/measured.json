@@ -33,12 +33,57 @@
       "t": 2,
       "share": 1.0
     },
+    "CountReads": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
     "CountVariants": {
       "rows": 31,
       "accepted": 7,
       "rejected": 24,
       "distinct_outputs": 3,
       "matched": 31,
+      "t": 2,
+      "share": 1.0
+    },
+    "CreateHadoopBamSplittingIndex": {
+      "rows": 11,
+      "accepted": 8,
+      "rejected": 3,
+      "distinct_outputs": 7,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintReads": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 9,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherVcfsCloud": {
+      "rows": 11,
+      "accepted": 5,
+      "rejected": 6,
+      "distinct_outputs": 2,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "ApplyBQSR": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 9,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     }
