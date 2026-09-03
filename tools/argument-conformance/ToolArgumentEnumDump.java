@@ -68,6 +68,14 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.fasta.CountBasesInReference());
         declarations("SplitIntervals",
                 new org.broadinstitute.hellbender.tools.walkers.SplitIntervals());
+        // A LOCUS walker, whose traversal is the pileup at each position rather than a record or
+        // a base, and a second interval utility, which shares `SplitIntervals`' plumbing. Both
+        // dumps gain them together: an enum missing from the enums table is an argument the
+        // port's parser drops whole, which cost `SplitIntervals` a whole CI round.
+        declarations("Pileup",
+                new org.broadinstitute.hellbender.tools.walkers.qc.Pileup());
+        declarations("PreprocessIntervals",
+                new org.broadinstitute.hellbender.tools.copynumber.PreprocessIntervals());
 
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
