@@ -2898,7 +2898,7 @@
     },
     {
       "id": "select-variants-header",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the header SelectVariants writes, where four INFO lines are replaced rather than merged",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -2917,10 +2917,11 @@
       "cases": [
         {
           "dump": "SelectVariantsHeaderDump",
-          "golden": null,
-          "why": "Golden-pending: to be measured in the pinned container on a real x86-64 runner."
+          "golden": "crates/gatk-tools/tests/data/select_variants_header.txt.gz",
+          "why": "163 rows: one input over eleven runs. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 33705117850, and byte for byte what an Apple Silicon laptop produced apart from the one line the dump elides."
         }
-      ]
+      ],
+      "expect_rows": 163
     },
     {
       "id": "select-variants-concordance",
