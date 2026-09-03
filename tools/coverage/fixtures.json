@@ -107,7 +107,15 @@
   "exclusion fixture removes one of them, so every accepted row answered 0 or 1 and an array of",
   "twenty rows observed two outputs. `chr1:1-6000` spans all eight reads of `reads.bam` and three",
   "of `reads2.bam`, and `chr1:50000-60000` spans none of the first and two of the second, which is",
-  "what makes a padding, an exclusion or a read filter visible as a different number."
+  "what makes a padding, an exclusion or a read filter visible as a different number.",
+  "",
+  "`CountVariants` names its own `--input` for a reason the other tools do not have: it is a",
+  "VARIANT walker, so `--input` is the optional READS beside the driving variants, and the shared",
+  "list carries three feature files. A row that pairs one of those with a `--read-index` is",
+  "refused by htsjdk before the tool runs (`Cannot use index file with textual SAM file`), which",
+  "was fourteen of its thirty-one rows measuring one refusal. Two BAMs and the indexes that belong",
+  "to them turn those rows into traversals whose reads dictionary is compared against the",
+  "features', which is what the tool actually does with them."
  ],
  "values": {
   "--input": [
@@ -274,6 +282,18 @@
    "--output": [
     "/work/out/count.txt",
     "/work/out/count2.txt"
+   ],
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
    ]
   },
   "CountReads": {
