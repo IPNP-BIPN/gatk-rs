@@ -97,6 +97,14 @@ public class ToolArgumentDeclarationDump {
         // `CheckTerminatorBlock` and `BuildBamIndex` would have been two more and are not here:
         // they are PICARD's tools, which GATK dispatches to, so their declarations come from
         // Picard's own parser and belong in picard-rs's measurement rather than this one.
+        // The two read walkers that share `CountReads`' plumbing exactly: reads in, a number or a
+        // report out. They are here because an archetype is the unit of this milestone -- a tool
+        // of one archetype shares its argument shape AND its file plumbing with the others, so the
+        // second and third cost a fraction of the first.
+        declarations("CountBases",
+                new org.broadinstitute.hellbender.tools.CountBases());
+        declarations("FlagStat",
+                new org.broadinstitute.hellbender.tools.FlagStat());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
