@@ -2289,3 +2289,62 @@ pub fn pileup(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
 }
+
+/// `GetSampleName.traverse`, which is the whole tool: it opens the reads to read their header and
+/// never asks for a record.
+///
+/// The read walker's startup still runs in front of it -- the dictionaries are compared and the
+/// intervals resolved -- because the arguments that ask for those are declared whether or not a
+/// traversal uses them.
+pub fn get_sample_name(parser: &Parser) -> Outcome {
+    let ReadWalkerStart { source, .. } = read_walker_startup(parser, "GetSampleName")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let text =
+        gatk_tools::get_sample_name::get_sample_name(&source, flag(parser, "use-url-encoding"))
+            .map_err(|error| Thrown::user(format!("Bad input: {}", error.message())))?;
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `PrintDistantMates.apply`, which writes the reads whose mate is far away or on another contig.
+///
+/// `PrintReads`' plumbing with a filter in front of it, and one alteration on the way out: a
+/// printed read carries its original alignment in an `OA` tag and is written unmapped-adjacent,
+/// which `do_distant_mate_alterations` is the port of.
+pub fn print_distant_mates(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "PrintDistantMates")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let written: Vec<BamRecord> = records
+        .iter()
+        .filter(|read| gatk_tools::print_distant_mates::is_distant_mate(read))
+        .map(|read| gatk_tools::print_distant_mates::do_distant_mate_alterations(read, &header))
+        .collect();
+
+    let (level, deflater) = output_compression(parser);
+    let bytes = gatk_tools::sam_output::write_records_with(
+        &header,
+        &written,
+        flag(parser, "create-output-bam-index"),
+        level,
+        deflater,
+    )
+    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    std::fs::write(&output, &bytes.0)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}

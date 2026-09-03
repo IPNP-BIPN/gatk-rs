@@ -226,6 +226,17 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `Pileup.getDefaultReadFilters` is the walker's own plus three of its own, and they are
         // not decoration: each one changes which reads reach a pileup, and therefore the depth
         // every line of the output reports.
+        // `PrintDistantMates.getDefaultReadFilters`: the walker's, then PAIRED, PRIMARY_LINE,
+        // NOT_DUPLICATE and the parameterised mate-distance filter. Without them an unpaired read
+        // reaches the mate query, which is what `Cannot get mate information for an unpaired read`
+        // is.
+        "PrintDistantMates" => Some(&[
+            "WellformedReadFilter",
+            "PairedReadFilter",
+            "PrimaryLineReadFilter",
+            "NotDuplicateReadFilter",
+            "MateDistantReadFilter",
+        ]),
         "Pileup" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",
