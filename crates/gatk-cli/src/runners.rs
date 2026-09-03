@@ -253,6 +253,23 @@ fn resolve_read_filters(
     parser: &Parser,
     tool: &str,
 ) -> Result<Vec<gatk_tools::filter_resolution::ResolvedFilter>, Thrown> {
+    resolve_read_filters_in(parser, tool).map_err(|error| Thrown {
+        // Every one of them is a `CommandLineException`, which is status ONE.
+        failure: Failure::CommandLine,
+        exception: error.class,
+        message: Some(error.message),
+    })
+}
+
+/// The same resolution as the parser's own, which is where it FIRST runs.
+///
+/// The descriptor validates while the command line is parsed, so by the time a runner asks, the
+/// answer is either already a refusal or cannot become one. It is asked twice rather than cached
+/// because the resolution is a pure function of four arguments and the tool's defaults.
+pub(crate) fn resolve_read_filters_in(
+    parser: &Parser,
+    tool: &str,
+) -> Result<Vec<gatk_tools::filter_resolution::ResolvedFilter>, gatk_barclay::Error> {
     // The descriptor owns FOUR arguments, and reading two of them was a port that ignored
     // `--disable-read-filter` and `--inverted-read-filter` entirely. `filter-resolution` measured
     // what all four decide, including the order and the six refusals.
@@ -264,11 +281,9 @@ fn resolve_read_filters(
         &arguments(parser, "inverted-read-filter"),
         flag(parser, "disable-tool-default-read-filters"),
     )
-    .map_err(|error| Thrown {
-        // Every one of them is a `CommandLineException`, which is status ONE.
-        failure: Failure::CommandLine,
-        exception: error.java_class(),
-        message: Some(error.message()),
+    .map_err(|error| gatk_barclay::Error {
+        class: error.java_class(),
+        message: error.message(),
     })
 }
 
