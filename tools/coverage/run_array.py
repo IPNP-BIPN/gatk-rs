@@ -237,15 +237,46 @@ def main(argv):
     array = json.loads(array_path.read_text())
     held = array.get("excluded", [])
 
-    rows, matched, rejected = [], 0, 0
-    outputs = set()
-    # `ignore_cleanup_errors` because a tool whose `--output` is a DIRECTORY leaves one the
-    # CONTAINER created, owned by root: the per-row sweep is best effort for the same reason, and
-    # the teardown would otherwise end a green run with a PermissionError.
+    # `ignore_cleanup_errors` is not enough on its own and is kept for the rest: what a tool whose
+    # `--output` is a DIRECTORY leaves behind belongs to ROOT, because the container created it,
+    # and `shutil.rmtree` cannot remove it however the errors are handled. The container is what
+    # takes it away again, in the `finally` below.
     with tempfile.TemporaryDirectory(
         prefix="gatk-coverage-", ignore_cleanup_errors=True
     ) as tmp:
         workdir = Path(tmp)
+        try:
+            return run_rows(options, array, held, workdir)
+        finally:
+            empty_output_in_container(workdir)
+
+
+def empty_output_in_container(workdir):
+    """`rm -rf` the output directory's contents as ROOT, which is who owns them.
+
+    A tool that writes a DIRECTORY leaves one the host cannot remove at all, so the temporary
+    directory's own teardown fails and a run that measured everything correctly exits non-zero.
+    """
+    for name in ("out", "port"):
+        directory = workdir / name
+        if not directory.is_dir():
+            continue
+        subprocess.run(
+            [
+                "docker", "run", "--rm", "--platform", PLATFORM,
+                "-v", f"{directory}:/work/out",
+                "-w", "/work", IMAGE, "rm -rf /work/out/*",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+
+def run_rows(options, array, held, workdir):
+    """Every row of the array, against the oracle and optionally against the port."""
+    rows, matched, rejected = [], 0, 0
+    outputs = set()
+    if True:  # keeps the body's indentation while it lives in its own function
         build_fixtures(workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
