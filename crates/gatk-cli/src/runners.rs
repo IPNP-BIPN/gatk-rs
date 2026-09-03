@@ -1719,8 +1719,15 @@ pub fn apply_bqsr(parser: &Parser) -> Outcome {
         level,
         deflater,
     )
+    // The failure follows the CLASS rather than being assumed: the transformer throws a
+    // `GATKException`, which leaves exit 3 and is printed as a stack trace rather than as
+    // `A USER ERROR has occurred`.
     .map_err(|error| Thrown {
-        failure: Failure::User,
+        failure: if error.is_user() {
+            Failure::User
+        } else {
+            Failure::Other
+        },
         exception: error.java_class(),
         message: Some(error.message()),
     })?;

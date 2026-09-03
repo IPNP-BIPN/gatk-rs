@@ -126,6 +126,33 @@ pub enum CovariateError {
 }
 
 impl CovariateError {
+    /// The Java class the reference throws, which decides whether the run is a USER error.
+    ///
+    /// Each of these is the class named in the variant's own documentation above, and the reason
+    /// it is here rather than assumed is that the caller's answer decides the EXIT CODE: a
+    /// `UserException` leaves 2 and anything else leaves 3, so classifying a `GATKException` as a
+    /// user error is a divergence a covering-array row reads as a wrong exit rather than a wrong
+    /// message (measured on `ApplyBQSR`'s row 10).
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            CovariateError::ContextSizeTooBig { .. } => {
+                "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue"
+            }
+            CovariateError::ContextSizeNotPositive { .. } => {
+                "org.broadinstitute.barclay.argparser.CommandLineException"
+            }
+            CovariateError::MissingKey(_) => "java.lang.IllegalStateException",
+            CovariateError::NegativeContextKey => {
+                "org.broadinstitute.hellbender.exceptions.GATKException"
+            }
+            CovariateError::CycleTooBig { .. } => {
+                "org.broadinstitute.hellbender.exceptions.UserException"
+            }
+            CovariateError::NoReadGroupInHeader => "java.lang.NullPointerException",
+            CovariateError::Clip(_) => "java.lang.ArrayIndexOutOfBoundsException",
+        }
+    }
+
     /// The exact message, which the golden compares character for character.
     pub fn message(&self) -> String {
         match self {
