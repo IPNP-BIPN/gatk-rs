@@ -89,6 +89,12 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.CompareIntervalLists());
         declarations("FixMisencodedBaseQualityReads",
                 new org.broadinstitute.hellbender.tools.FixMisencodedBaseQualityReads());
+        // A second LOCUS walker, which compares the engine's pileup to a samtools one, and a
+        // third interval utility, which annotates each interval with its GC content.
+        declarations("CheckPileup",
+                new org.broadinstitute.hellbender.tools.walkers.qc.CheckPileup());
+        declarations("AnnotateIntervals",
+                new org.broadinstitute.hellbender.tools.copynumber.AnnotateIntervals());
 
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());

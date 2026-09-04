@@ -175,7 +175,11 @@
   "exception, and the corpus records the output files plus the first error line. So its accepted",
   "rows all read as the empty output and `distinct_outputs` is 1 by construction rather than for",
   "want of fixtures -- what the array measures for this tool is which of the three verdicts each",
-  "row reaches, and two of them are exceptions the corpus does record."
+  "row reaches, and two of them are exceptions the corpus does record.",
+  "",
+  "`AnnotateIntervals` holds the same four interval arguments `PreprocessIntervals` holds, and for",
+  "the same reason: both call `validateIntervalArgumentCollection`, and varying them measures that",
+  "refusal instead of the table the tool writes."
  ],
  "values": {
   "--input": [
@@ -286,6 +290,10 @@
   "--max-depth-per-sample": [
    "0",
    "2"
+  ],
+  "--feature-query-lookahead": [
+   "1000000",
+   "500000"
   ]
  },
  "per_tool": {
@@ -590,6 +598,36 @@
     "chr1:1-6000",
     "chr1:1-500"
    ]
+  },
+  "AnnotateIntervals": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/annotated.tsv",
+    "/work/out/annotated2.tsv"
+   ],
+   "--interval-set-rule": [
+    "UNION"
+   ],
+   "--interval-exclusion-padding": [
+    "0"
+   ],
+   "--interval-padding": [
+    "0"
+   ],
+   "--interval-merging-rule": [
+    "OVERLAPPING_ONLY"
+   ]
   }
  },
  "constraints": [],
@@ -605,6 +643,8 @@
   "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
   "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
   "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite",
-  "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal"
+  "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal",
+  "--mappability-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal",
+  "--segmental-duplication-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal"
  }
 }

@@ -2091,35 +2091,7 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    // `validateIntervalArgumentCollection`, in its own order: this tool bins and pads by its own
-    // two arguments, so it refuses every standard interval argument that would modify the input
-    // intervals before it. Each is an `IllegalArgumentException` from `Utils.validateArg`, which
-    // is a NON-user failure and leaves exit 3.
-    for (wrong, message) in [
-        (
-            scalar(parser, "interval-set-rule").as_deref() == Some("INTERSECTION"),
-            "Interval set rule must be set to UNION.",
-        ),
-        (
-            number(parser, "interval-exclusion-padding") != 0,
-            "Interval exclusion padding must be set to 0.",
-        ),
-        (
-            number(parser, "interval-padding") != 0,
-            "Interval padding must be set to 0.",
-        ),
-        (
-            scalar(parser, "interval-merging-rule").as_deref() != Some("OVERLAPPING_ONLY"),
-            "Interval merging rule must be set to OVERLAPPING_ONLY.",
-        ),
-    ] {
-        if wrong {
-            return Err(Thrown::non_user(
-                "java.lang.IllegalArgumentException",
-                message,
-            ));
-        }
-    }
+    validate_copy_number_intervals(parser)?;
 
     // The REFERENCE's dictionary, not the best available one: a `--sequence-dictionary` does not
     // reach this tool's output, and only the reference's `.dict` carries the attributes its `@SQ`
@@ -2501,5 +2473,126 @@ pub fn fix_misencoded_base_quality_reads(parser: &Parser) -> Outcome {
             |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
         )?;
     }
+    Ok(None)
+}
+
+/// `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`, in its own order.
+///
+/// The copy-number tools bin and pad by their OWN arguments, so they refuse every standard
+/// interval argument that would modify the input intervals before them. Each is an
+/// `IllegalArgumentException` from `Utils.validateArg`, which is a non-user failure and leaves
+/// exit 3, and `AnnotateIntervals` calls the same method `PreprocessIntervals` does.
+fn validate_copy_number_intervals(parser: &Parser) -> Result<(), Thrown> {
+    for (wrong, message) in [
+        (
+            scalar(parser, "interval-set-rule").as_deref() == Some("INTERSECTION"),
+            "Interval set rule must be set to UNION.",
+        ),
+        (
+            number(parser, "interval-exclusion-padding") != 0,
+            "Interval exclusion padding must be set to 0.",
+        ),
+        (
+            number(parser, "interval-padding") != 0,
+            "Interval padding must be set to 0.",
+        ),
+        (
+            scalar(parser, "interval-merging-rule").as_deref() != Some("OVERLAPPING_ONLY"),
+            "Interval merging rule must be set to OVERLAPPING_ONLY.",
+        ),
+    ] {
+        if wrong {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                message,
+            ));
+        }
+    }
+    Ok(())
+}
+/// `AnnotateIntervals.onTraversalStart`, which like the other copy-number tools is the whole run.
+///
+/// A third interval utility, and the second to call
+/// `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`: the four standard
+/// interval arguments it refuses are the same four `PreprocessIntervals` refuses, for the same
+/// reason.
+///
+/// `--mappability-track` and `--segmental-duplication-track` are refused rather than ignored: each
+/// adds a COLUMN to the table from a feature file this runner does not open, and a table missing a
+/// column its arguments asked for is a different answer rather than a refusal.
+pub fn annotate_intervals(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "AnnotateIntervals")?;
+    for track in ["mappability-track", "segmental-duplication-track"] {
+        if argument(parser, track).is_some() {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "AnnotateIntervals' --{track} annotates each interval from a feature file this \
+                     port does not open yet, and a table without the column it asks for would be a \
+                     different answer. This message is the port's own and not GATK's."
+                ),
+            ));
+        }
+    }
+    validate_copy_number_intervals(parser)?;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut source =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // The same two dictionaries `PreprocessIntervals` uses: the master resolves the intervals and
+    // the reference's own `.dict` is written into the `@SQ` lines.
+    let from_dict = reference_dictionary(parser)?;
+    let own = gatk_tools::reference_walker::dictionary(&source);
+    let written = from_dict.clone().unwrap_or(own.clone());
+    let best = master_dictionary(parser)?.or(from_dict).unwrap_or(own);
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        None => best
+            .sequences
+            .iter()
+            .map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                    .expect("a contig length is at least one")
+            })
+            .collect(),
+    };
+
+    let mut text = String::from("@HD\tVN:1.6\n");
+    for sequence in &written.sequences {
+        text.push_str(&format!(
+            "@SQ\tSN:{}\tLN:{}",
+            sequence.name, sequence.length
+        ));
+        for key in ["M5", "UR"] {
+            if let Some(value) = sequence.attributes.get(key) {
+                text.push_str(&format!("\t{key}:{value}"));
+            }
+        }
+        text.push('\n');
+    }
+    text.push_str(&gatk_tools::annotate_intervals::columns(&["GC_CONTENT"]));
+    text.push('\n');
+    for interval in &intervals {
+        let bases = source
+            .query(&interval.contig, interval.start, interval.end)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        text.push_str(&gatk_tools::annotate_intervals::row(
+            &interval.contig,
+            interval.start,
+            interval.end,
+            &[gatk_tools::annotate_intervals::gc_content(&bases)],
+        ));
+        text.push('\n');
+    }
+
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
 }
