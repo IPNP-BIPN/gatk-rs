@@ -2546,12 +2546,14 @@ pub fn annotate_intervals(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    // The same two dictionaries `PreprocessIntervals` uses: the master resolves the intervals and
-    // the reference's own `.dict` is written into the `@SQ` lines.
+    // ONE dictionary here, unlike `PreprocessIntervals`: `getBestAvailableSequenceDictionary`
+    // answers both questions, so a `--sequence-dictionary` resolves the intervals AND is written
+    // into the `@SQ` lines. Writing the reference's own put an `M5` in ten rows where the
+    // reference writes none, which is the master's dictionary showing through.
     let from_dict = reference_dictionary(parser)?;
     let own = gatk_tools::reference_walker::dictionary(&source);
-    let written = from_dict.clone().unwrap_or(own.clone());
     let best = master_dictionary(parser)?.or(from_dict).unwrap_or(own);
+    let written = best.clone();
     let intervals = match interval_arguments(parser, &best)? {
         Some(parameters) => parameters.intervals,
         None => best
