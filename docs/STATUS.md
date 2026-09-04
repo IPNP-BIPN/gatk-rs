@@ -150,7 +150,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | not measured |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
-| `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | not measured |
+| `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | not measured |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | not measured |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
@@ -178,7 +178,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | not measured |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | not measured |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | not measured |
-| `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | not measured |
+| `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) |
 | `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | not measured |
 | `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | not measured |
