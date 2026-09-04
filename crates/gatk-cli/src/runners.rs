@@ -2327,25 +2327,23 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
     })?;
 
     let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    // `apply` writes EVERY read it is handed: the selection is the FILTER CHAIN, whose
-    // `MateDistantReadFilter` is what "distant" means, and `isDistantMate` is for reading such a
-    // file back rather than for writing one. Filtering on it here wrote an empty BAM on every row.
-    let written: Vec<BamRecord> = records
-        .iter()
-        .map(|read| gatk_tools::print_distant_mates::do_distant_mate_alterations(read, &header))
-        .collect();
-
+    // The tool's own `doWork`, which is three steps rather than one: every read the filter chain
+    // kept is ALTERED -- moved to its mate's position and unmapped -- and the result is RE-SORTED,
+    // because an alteration that moves a read breaks the order it arrived in. The port had all of
+    // that already; the runner was reimplementing two of the three and getting both wrong.
+    let command_line = crate::command_line::expanded("PrintDistantMates", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
     let (level, deflater) = output_compression(parser);
-    let (bytes, bai) = gatk_tools::sam_output::write_records_with(
-        &header,
-        &written,
-        flag(parser, "create-output-bam-index"),
-        level,
-        deflater,
+    let (bytes, bai) = gatk_tools::print_distant_mates::print_distant_mates_with(
+        &source, &options, &filter, level, deflater,
     )
-    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
     std::fs::write(&output, &bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     if let Some(bai) = bai {
