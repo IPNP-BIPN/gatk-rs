@@ -284,6 +284,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SplitIntervals" => Some(run_split_intervals),
         "PreprocessIntervals" => Some(run_preprocess_intervals),
         "Pileup" => Some(run_pileup),
+        "CheckPileup" => Some(run_check_pileup),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
         "CompareIntervalLists" => Some(run_compare_interval_lists),
@@ -316,6 +317,10 @@ fn run_get_sample_name(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_print_distant_mates(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_distant_mates(&parsed("PrintDistantMates", args)?)
+}
+
+fn run_check_pileup(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::check_pileup(&parsed("CheckPileup", args)?)
 }
 
 fn run_pileup(args: &[String]) -> Result<Option<String>, Thrown> {

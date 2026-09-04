@@ -179,7 +179,21 @@
   "",
   "`AnnotateIntervals` holds the same four interval arguments `PreprocessIntervals` holds, and for",
   "the same reason: both call `validateIntervalArgumentCollection`, and varying them measures that",
-  "refusal instead of the table the tool writes."
+  "refusal instead of the table the tool writes.",
+  "",
+  "`CheckPileup` takes `Pileup`'s corpus -- one locus walker's startup is the other's -- plus the",
+  "two mpileup files it compares against: `truth.pileup` is the REFERENCE's own `Pileup` output",
+  "converted to samtools' six columns, so it agrees with the traversal at every locus, and",
+  "`wrong.pileup` disagrees at the first, which is the difference between a run that validates and",
+  "a run that is refused.",
+  "",
+  "It HOLDS `--max-depth-per-sample` at zero, which is the one hold in this file that names a gap",
+  "in the port rather than a refusal in the tool: any value above zero asks for the locus",
+  "iterator's leveling downsampler, which the port does not carry, so the row would compare a",
+  "traversal against the port's own limitation message. `Pileup` varies the same argument and",
+  "measures nothing by it -- every one of its rows carrying two is refused earlier, for a",
+  "dictionary the reads do not match -- so the argument has never actually been measured here.",
+  "gatk-rs#1102 is the downsampler; when it lands both tools can vary this again."
  ],
  "values": {
   "--input": [
@@ -627,6 +641,31 @@
    ],
    "--interval-merging-rule": [
     "OVERLAPPING_ONLY"
+   ]
+  },
+  "CheckPileup": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/checked.txt",
+    "/work/out/checked2.txt"
+   ],
+   "--pileup": [
+    "/work/fixtures/truth.pileup",
+    "/work/fixtures/wrong.pileup"
+   ],
+   "--max-depth-per-sample": [
+    "0"
    ]
   }
  },

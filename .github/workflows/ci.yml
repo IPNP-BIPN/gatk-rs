@@ -501,7 +501,7 @@ jobs:
             --tool Pileup --tool PreprocessIntervals \
             --tool GetSampleName --tool PrintDistantMates \
             --tool CompareIntervalLists --tool FixMisencodedBaseQualityReads \
-            --tool AnnotateIntervals \
+            --tool AnnotateIntervals --tool CheckPileup \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

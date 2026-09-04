@@ -237,7 +237,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "NotDuplicateReadFilter",
             "MateDistantReadFilter",
         ]),
-        "Pileup" => Some(&[
+        // `CheckPileup.getDefaultReadFilters` is the same five in the same order: the walker's two
+        // and the three samtools ones, which are what makes its pileup samtools' pileup.
+        "Pileup" | "CheckPileup" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",
             "NotDuplicateReadFilter",

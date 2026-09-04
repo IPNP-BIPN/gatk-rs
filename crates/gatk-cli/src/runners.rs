@@ -2157,6 +2157,29 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// What a locus traversal refused with, told apart by whose refusal it is.
+///
+/// `DownsamplingUnsupported` is the port's own and not GATK's: `--max-depth-per-sample` above zero
+/// asks for `LocusIteratorByState`'s leveling downsampler, which this port does not have, and a run
+/// that ignored the argument would answer a different pileup rather than refuse. Every other
+/// refusal here is the reference's, so it keeps the user banner.
+fn locus_traversal_error(error: gatk_tools::locus_walker::LocusWalkerError) -> Thrown {
+    if matches!(
+        error,
+        gatk_tools::locus_walker::LocusWalkerError::States(
+            gatk_engine::read_states::ReadStateError::DownsamplingUnsupported
+        )
+    ) {
+        return Thrown::non_user(
+            PORT_LIMITATION,
+            "--max-depth-per-sample above zero asks for the locus iterator's downsampler, which \
+             this port does not carry yet, and a run that ignored it would report a pileup the \
+             reference would have thinned. This message is the port's own and not GATK's.",
+        );
+    }
+    Thrown::user(format!("{error:?}"))
+}
+
 /// `Pileup.apply`, once per locus of the traversal.
 ///
 /// The fourth archetype: a LOCUS walker, whose unit is not a record or a base but the pileup of
@@ -2247,7 +2270,7 @@ pub fn pileup(parser: &Parser) -> Outcome {
         },
         &filter,
     )
-    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    .map_err(locus_traversal_error)?;
 
     let output_insert_length = flag(parser, "output-insert-length");
     let show_verbose = flag(parser, "show-verbose");
@@ -2270,6 +2293,142 @@ pub fn pileup(parser: &Parser) -> Outcome {
     std::fs::write(&output, &text)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
+}
+
+/// `CheckPileup.apply`, once per locus, against the samtools mpileup file `--pileup` names.
+///
+/// `Pileup`'s traversal with a second data source beside it, and three things the other locus
+/// walker does not have:
+///
+///   - the report is written to a FILE ONLY IF `--output` names one, and to stdout otherwise,
+///     because `outFile` is optional and `new PrintStream(System.out)` is what a null becomes;
+///   - a failing run still leaves the report behind: the line that explains the disagreement is
+///     printed BEFORE the exception is thrown, and `closeTool` flushes the stream on the way out;
+///   - and `onTraversalSuccess` returns the counters rather than writing them, so they are the
+///     tool's RESULT and a refused run never reports them at all.
+///
+/// The truth file is read whole rather than queried per locus. The reference reaches it through a
+/// `FeatureInput`, which is why the file has to be indexed for the reference to run at all; what
+/// the index buys there is the query, and a port that holds every feature answers the same
+/// question from memory.
+pub fn check_pileup(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CheckPileup")?;
+    let truth_path = argument(parser, "pileup").ok_or_else(|| {
+        Thrown::command_line("Argument pileup was missing: Argument 'pileup' is required")
+    })?;
+    // `requiresReference()` is true, so the declaration itself is required and the parser refuses
+    // a run without one before this is reached.
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // The locus walker checks each interval's contig against the REFERENCE's dictionary, which is
+    // the same check `Pileup` makes and for the same reason: a master dictionary declaring a
+    // contig the FASTA does not is refused here rather than answered with `N`.
+    let known = gatk_tools::reference_walker::dictionary(&reference);
+    for interval in &intervals {
+        if !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == interval.contig)
+        {
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                interval.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+            )));
+        }
+    }
+
+    let text = std::fs::read_to_string(&truth_path)
+        .map_err(|error| Thrown::user(format!("{truth_path}: {error}")))?;
+    let mut truth: Vec<gatk_engine::sam_pileup::SamPileupFeature> = Vec::new();
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let feature = gatk_engine::sam_pileup::decode(line).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+        truth.push(feature);
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        Some(&mut reference),
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    let arguments = gatk_tools::check_pileup::CheckPileupArguments {
+        ignore_overlaps: flag(parser, "ignore-overlaps"),
+        continue_after_error: flag(parser, "continue-after-error"),
+    };
+    let output = argument(parser, "output");
+    let mut report = String::new();
+    let mut loci = 0i64;
+    let mut bases = 0i64;
+
+    for one in &applied {
+        let mut context = one.reference.clone();
+        let base = context
+            .base(&mut reference)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        // `featureContext.getValues(mpileup)`, which is every feature OVERLAPPING the locus and of
+        // which the tool takes the first. A samtools pileup feature is one base wide, so the
+        // overlap is an equality.
+        let feature = truth.iter().find(|feature| {
+            feature.contig == one.context.contig && feature.position == one.context.position
+        });
+        let (line, error) =
+            gatk_tools::check_pileup::apply(&one.context, base, feature, &arguments);
+        if let Some(line) = line {
+            report.push_str(&line);
+        }
+        if let Some(error) = error {
+            if !arguments.continue_after_error {
+                write_report(&output, &report)?;
+                return Err(Thrown::user(format!("Bad input: {}", error.message())));
+            }
+        }
+        loci += 1;
+        bases += one.context.pileup.size() as i64;
+    }
+
+    write_report(&output, &report)?;
+    Ok(Some(gatk_tools::check_pileup::summary(loci, bases)))
+}
+
+/// The report, to the file `--output` names or to stdout when it names none.
+fn write_report(output: &Option<String>, report: &str) -> Result<(), Thrown> {
+    match output {
+        Some(path) => std::fs::write(path, report)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}"))),
+        None => {
+            print!("{report}");
+            Ok(())
+        }
+    }
 }
 
 /// `GetSampleName.traverse`, which is the whole tool: it opens the reads to read their header and

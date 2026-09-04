@@ -25,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MakeFixtures {
 
@@ -188,6 +190,54 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * The samtools mpileup files `CheckPileup` compares GATK's own pileup against.
+     *
+     * The truth is not written by hand: it is the REFERENCE's own `Pileup` output, converted line
+     * by line into samtools' six columns. The two tools share their five default read filters and
+     * `reads.bam` carries no pairs, so nothing between them changes a base or a quality, and a
+     * file built any other way would be a guess about the traversal rather than a record of it.
+     *
+     * Two files, because one is a value and not a covered argument: `truth.pileup` agrees with the
+     * traversal at every locus and `wrong.pileup` disagrees at the first, so `--pileup` has a row
+     * that validates and a row that is refused.
+     *
+     * Each is indexed the way the tool's own message tells the user to. A `FeatureInput` is queried
+     * by interval, so without an index every run dies before it reads a locus.
+     */
+    static void pileups(final Path dir) throws Exception {
+        final Path raw = dir.resolve("pileup.txt");
+        new org.broadinstitute.hellbender.tools.walkers.qc.Pileup().instanceMain(new String[] {
+                "--input", dir.resolve("reads.bam").toString(),
+                "--reference", dir.resolve("reference.fasta").toString(),
+                "--output", raw.toString(),
+        });
+        final List<String> lines = new ArrayList<>();
+        for (final String line : Files.readAllLines(raw, StandardCharsets.UTF_8)) {
+            if (line.isBlank()) {
+                continue;
+            }
+            // `contig position referenceBase bases quals`, which is the same five fields samtools
+            // writes with the DEPTH inserted before the bases.
+            final String[] fields = line.split(" ");
+            lines.add(String.join("\t", fields[0], fields[1], fields[2],
+                    String.valueOf(fields[3].length()), fields[3], fields[4]));
+        }
+        Files.write(dir.resolve("truth.pileup"), lines, StandardCharsets.UTF_8);
+        // One locus disagreeing, which is a `Bases not equal` and not a size or a location: the
+        // three comparisons are ordered, and the one the array should reach is the deepest.
+        final List<String> wrong = new ArrayList<>(lines);
+        final String[] first = wrong.get(0).split("\t");
+        first[4] = first[4].replace('A', 'T').replace('C', 'G');
+        wrong.set(0, String.join("\t", first));
+        Files.write(dir.resolve("wrong.pileup"), wrong, StandardCharsets.UTF_8);
+        Files.delete(raw);
+        for (final String label : new String[] {"truth", "wrong"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(label + ".pileup").toString()});
+        }
+    }
+
     public static void main(final String[] args) throws Exception {
         // The deflater is pinned exactly as the oracle contract pins it for goldens: a fixture
         // that is not byte-reproducible would make a coverage measurement unrepeatable.
@@ -272,6 +322,7 @@ public class MakeFixtures {
                                 "--output", dir.resolve("recal2.table").toString(),
                         }) == null ? 1 : 0;
         System.out.println("second recalibrator status " + otherStatus);
+        pileups(dir);
         System.out.println("wrote " + dir);
     }
 }
