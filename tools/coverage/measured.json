@@ -185,6 +185,15 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "CheckPileup": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
