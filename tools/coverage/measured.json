@@ -140,6 +140,24 @@
       "matched": 20,
       "t": 2,
       "share": 1.0
+    },
+    "GetSampleName": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 2,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintDistantMates": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
