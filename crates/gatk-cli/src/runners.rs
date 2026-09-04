@@ -2329,14 +2329,16 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `apply` writes EVERY read it is handed: the selection is the FILTER CHAIN, whose
+    // `MateDistantReadFilter` is what "distant" means, and `isDistantMate` is for reading such a
+    // file back rather than for writing one. Filtering on it here wrote an empty BAM on every row.
     let written: Vec<BamRecord> = records
         .iter()
-        .filter(|read| gatk_tools::print_distant_mates::is_distant_mate(read))
         .map(|read| gatk_tools::print_distant_mates::do_distant_mate_alterations(read, &header))
         .collect();
 
     let (level, deflater) = output_compression(parser);
-    let bytes = gatk_tools::sam_output::write_records_with(
+    let (bytes, bai) = gatk_tools::sam_output::write_records_with(
         &header,
         &written,
         flag(parser, "create-output-bam-index"),
@@ -2344,7 +2346,23 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
         deflater,
     )
     .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
-    std::fs::write(&output, &bytes.0)
+    std::fs::write(&output, &bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    if let Some(bai) = bai {
+        // The index REPLACES the output's extension, and the digest APPENDS to it.
+        let companion = std::path::Path::new(&output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bytes)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
+    }
     Ok(None)
 }
