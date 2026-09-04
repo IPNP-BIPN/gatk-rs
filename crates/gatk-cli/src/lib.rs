@@ -288,6 +288,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PrintDistantMates" => Some(run_print_distant_mates),
         "CompareIntervalLists" => Some(run_compare_interval_lists),
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
+        "AnnotateIntervals" => Some(run_annotate_intervals),
         _ => None,
     }
 }
@@ -295,6 +296,10 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_annotate_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::annotate_intervals(&parsed("AnnotateIntervals", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
