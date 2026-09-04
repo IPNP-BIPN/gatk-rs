@@ -140,7 +140,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
 | `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
 | `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | not measured |
-| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | not measured |
+| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 20/20 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
