@@ -125,7 +125,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
 | `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | not measured |
-| `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | not measured |
+| `AnnotateIntervals` | cnv-segmentation | oracle-backed | annotate-intervals | 1 | t=2, 19/19 rows (100%) |
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | not measured |
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) |

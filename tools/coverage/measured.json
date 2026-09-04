@@ -176,6 +176,15 @@
       "matched": 21,
       "t": 2,
       "share": 1.0
+    },
+    "AnnotateIntervals": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
