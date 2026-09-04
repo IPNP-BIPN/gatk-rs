@@ -108,6 +108,40 @@ pub fn fix_misencoded_base_quality_reads(
             return Ok(Err(error));
         }
     }
+    fixed_records_to_bam(source, options, records)
+}
+
+/// The same, with the BGZF compression named: see [`crate::sam_output::write_records_with`].
+///
+/// A real `gatk` run writes at level TWO through GKL rather than at htsjdk's default of five.
+pub fn fix_misencoded_base_quality_reads_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
+    let mut records = crate::read_walker::traverse(source, &options.intervals, filter)?;
+    for record in &mut records {
+        if let Err(error) = fix(record) {
+            return Ok(Err(error));
+        }
+    }
+    let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    Ok(Ok(crate::sam_output::write_records_with(
+        &header,
+        &records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )?))
+}
+
+fn fixed_records_to_bam(
+    source: &ReadsDataSource,
+    options: &Options,
+    records: Vec<BamRecord>,
+) -> RunResult {
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
     Ok(Ok(write_records(
         &header,

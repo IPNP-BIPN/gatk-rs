@@ -165,7 +165,17 @@
   "`PrintDistantMates` names `pairs.bam` first, and it is the only tool that needs it: every",
   "record's mate is read, and the other BAMs are unpaired, so the REFERENCE answered `Cannot get",
   "mate information for an unpaired read` on eight of its rows. The second value is one of those",
-  "unpaired BAMs, which keeps that refusal in the array rather than losing it."
+  "unpaired BAMs, which keeps that refusal in the array rather than losing it.",
+  "",
+  "`CompareIntervalLists` names `--L` and `--L2`, which are ITS OWN scalars rather than the",
+  "engine's interval collection: two values each, so the array sees the same list compared with",
+  "itself and a shorter one compared with a longer, which are the three verdicts the tool has.",
+  "",
+  "`CompareIntervalLists` writes NO FILE: its verdict is a line on standard output or an",
+  "exception, and the corpus records the output files plus the first error line. So its accepted",
+  "rows all read as the empty output and `distinct_outputs` is 1 by construction rather than for",
+  "want of fixtures -- what the array measures for this tool is which of the three verdicts each",
+  "row reaches, and two of them are exceptions the corpus does record."
  ],
  "values": {
   "--input": [
@@ -550,6 +560,35 @@
    "--output": [
     "/work/out/distant.bam",
     "/work/out/distant2.bam"
+   ]
+  },
+  "FixMisencodedBaseQualityReads": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/fixed.bam",
+    "/work/out/fixed2.bam"
+   ]
+  },
+  "CompareIntervalLists": {
+   "--L": [
+    "chr1:1-6000",
+    "chr1:1-500"
+   ],
+   "--L2": [
+    "chr1:1-6000",
+    "chr1:1-500"
    ]
   }
  },

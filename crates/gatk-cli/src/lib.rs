@@ -286,6 +286,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "Pileup" => Some(run_pileup),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
+        "CompareIntervalLists" => Some(run_compare_interval_lists),
+        "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         _ => None,
     }
 }
@@ -293,6 +295,14 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::compare_interval_lists(&parsed("CompareIntervalLists", args)?)
+}
+
+fn run_fix_misencoded_base_quality_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::fix_misencoded_base_quality_reads(&parsed("FixMisencodedBaseQualityReads", args)?)
 }
 
 fn run_get_sample_name(args: &[String]) -> Result<Option<String>, Thrown> {

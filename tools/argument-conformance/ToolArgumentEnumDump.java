@@ -83,6 +83,12 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.PrintDistantMates());
         declarations("GetSampleName",
                 new org.broadinstitute.hellbender.tools.GetSampleName());
+        // A `CommandLineProgram` that is no GATKTool at all -- fifteen arguments, two interval
+        // lists in and a verdict out -- and a read walker that rewrites qualities and writes a BAM.
+        declarations("CompareIntervalLists",
+                new org.broadinstitute.hellbender.tools.CompareIntervalLists());
+        declarations("FixMisencodedBaseQualityReads",
+                new org.broadinstitute.hellbender.tools.FixMisencodedBaseQualityReads());
 
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
