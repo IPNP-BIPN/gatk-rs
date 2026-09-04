@@ -96,6 +96,16 @@ public class ToolArgumentEnumDump {
         declarations("AnnotateIntervals",
                 new org.broadinstitute.hellbender.tools.copynumber.AnnotateIntervals());
 
+        // A second REFERENCE walker, which writes a FASTA rather than a number, and a third LOCUS
+        // walker, which counts the reads over each interval. `CollectReadCounts` brings an enum of
+        // its own -- `--format`, whose two constants are the TSV and the HDF5 it writes -- and an
+        // enum missing from the enums table is an argument the port's parser drops whole, so the
+        // two dumps gain the pair together as ever.
+        declarations("FastaReferenceMaker",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.FastaReferenceMaker());
+        declarations("CollectReadCounts",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectReadCounts());
+
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
