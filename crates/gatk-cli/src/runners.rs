@@ -2374,3 +2374,132 @@ pub fn print_distant_mates(parser: &Parser) -> Outcome {
     }
     Ok(None)
 }
+
+/// `CompareIntervalLists.doWork`: two interval lists, and whether they cover the same bases.
+///
+/// The first tool here that is a `CommandLineProgram` rather than a `GATKTool`, which the counts
+/// say plainly: fifteen arguments declared and fifteen on the instance, where every walker has
+/// seventy against thirty-eight. So there is no startup at all -- no reads, no plugin descriptor,
+/// no interval collection -- and `-L` and `-L2` are this tool's own arguments rather than the
+/// engine's.
+pub fn compare_interval_lists(parser: &Parser) -> Outcome {
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let dictionary = reference_dictionary(parser)?.ok_or_else(|| {
+        Thrown::user(gatk_tools::read_walker_refusal::cannot_read(
+            &reference, false,
+        ))
+    })?;
+
+    // Each file is parsed and `ALL`-merged against the reference's dictionary before the two are
+    // compared, which is what the tool's own `getGenomeLocs` does to each.
+    let mut lists = Vec::new();
+    for name in ["L", "L2"] {
+        // SCALARS, not collections: this tool declares `-L` and `-L2` itself, as one string each,
+        // where the engine's own `--intervals` is a list. Reading them as a collection found
+        // nothing at all and refused a command line the reference runs.
+        let given = argument(parser, name).ok_or_else(|| {
+            Thrown::command_line(format!(
+                "Argument {name} was missing: Argument '{name}' is required"
+            ))
+        })?;
+        let parameters = gatk_engine::interval_arguments::traversal_parameters(
+            std::slice::from_ref(&given),
+            &[],
+            &dictionary,
+            SetRule::Union,
+            MergingRule::All,
+            0,
+            0,
+        )
+        .map_err(|refusal| Thrown {
+            failure: Failure::User,
+            exception: refusal.java_class(),
+            message: Some(refusal.message()),
+        })?;
+        lists.push(parameters.intervals);
+    }
+
+    let comparison = gatk_tools::compare_interval_lists::equate_intervals(&lists[0], &lists[1]);
+    match comparison {
+        gatk_tools::compare_interval_lists::Comparison::Equal => {
+            Ok(Some("Intervals are equal".to_string()))
+        }
+        gatk_tools::compare_interval_lists::Comparison::Different(difference) => Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("Intervals are not equal: \n{difference}")),
+        }),
+        // `test.pop()` on an empty list, which leaves the engine as itself and carries NO message
+        // at all. `None` rather than an empty string: the handler prints `<class>: <message>`, so
+        // an empty one leaves a trailing colon the reference never writes.
+        gatk_tools::compare_interval_lists::Comparison::TestExhausted => Err(Thrown {
+            failure: Failure::Other,
+            exception: "java.util.NoSuchElementException",
+            message: None,
+        }),
+    }
+}
+
+/// `FixMisencodedBaseQualityReads.apply`: every quality with 31 taken off it.
+///
+/// A read walker that writes a BAM, which is `PrintDistantMates`' shape; what is its own is the
+/// refusal, which fires on the FIRST quality below the offset and abandons the run rather than
+/// writing what it had.
+pub fn fix_misencoded_base_quality_reads(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "FixMisencodedBaseQualityReads")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("FixMisencodedBaseQualityReads", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let outcome =
+        gatk_tools::fix_misencoded_base_quality_reads::fix_misencoded_base_quality_reads_with(
+            &source, &options, &filter, level, deflater,
+        )
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let (bytes, bai) = match outcome {
+        Ok(written) => written,
+        Err(refusal) => {
+            return Err(Thrown {
+                failure: Failure::User,
+                exception: refusal.class(),
+                message: Some(refusal.message()),
+            })
+        }
+    };
+
+    std::fs::write(&output, &bytes)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    if let Some(bai) = bai {
+        let companion = std::path::Path::new(&output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bytes)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
+    }
+    Ok(None)
+}

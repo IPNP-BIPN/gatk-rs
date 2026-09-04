@@ -6626,7 +6626,7 @@
     },
     {
       "id": "usage-text",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the usage text Barclay renders, which is a rendering and not prose",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6642,7 +6642,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Three tools' whole usage text, its line count, and whether -h and --help agree."
+          "why": "Golden-pending: `CompareIntervalLists` is undocumented, so its one-line summary comes from this golden rather than from the inventory, and the declarations generator refuses without it. Three tools' whole usage text, its line count, and whether -h and --help agree."
         }
       ]
     },

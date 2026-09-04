@@ -50,6 +50,11 @@ public class UsageTextDump {
         // The two the port can run, whose usage the dispatcher answers `-h` with. The other two
         // of that shape, CheckTerminatorBlock and BuildBamIndex, are Picard's and are measured
         // there.
+        // Undocumented, like `PrintBGZFBlockInformation` below it: the inventory carries a
+        // summary only for a DOCUMENTED tool, so the usage golden is where this one's comes from
+        // and the declarations generator refuses without it.
+        usage("CompareIntervalLists",
+                new org.broadinstitute.hellbender.tools.CompareIntervalLists());
         usage("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         usage("CreateHadoopBamSplittingIndex",
