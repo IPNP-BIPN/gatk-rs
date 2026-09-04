@@ -158,6 +158,24 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "CompareIntervalLists": {
+      "rows": 7,
+      "accepted": 3,
+      "rejected": 4,
+      "distinct_outputs": 1,
+      "matched": 7,
+      "t": 2,
+      "share": 1.0
+    },
+    "FixMisencodedBaseQualityReads": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 9,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
