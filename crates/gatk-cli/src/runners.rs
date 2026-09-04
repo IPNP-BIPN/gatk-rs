@@ -315,6 +315,16 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "MateDistantReadFilter" {
+            // `PrintDistantMates`' own default, and the one argument that decides what "distant"
+            // means. The filter was ported; only this branch was missing, so a row that kept the
+            // tool's defaults refused instead of running.
+            parameterized.push((
+                gatk_readfilter::Parameterized::MateDistant {
+                    threshold: number_or(parser, "mate-too-distant-length", 1000),
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
