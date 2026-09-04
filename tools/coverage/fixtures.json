@@ -156,7 +156,16 @@
   "twenty-one rows and left ONE distinct output, which is an array that covers its arguments",
   "without testing them; held, the same array runs nine accepted rows over four outputs. The",
   "refusals are the runner's and are reproduced -- they are simply not what these rows spend",
-  "themselves on."
+  "themselves on.",
+  "",
+  "`PrintDistantMates` and `GetSampleName` take the read walkers' corpus unchanged, which is what",
+  "the archetype is for: the first writes a BAM like `PrintReads` and the second reads a header",
+  "and nothing else, and both open the same files by the same arguments.",
+  "",
+  "`PrintDistantMates` names `pairs.bam` first, and it is the only tool that needs it: every",
+  "record's mate is read, and the other BAMs are unpaired, so the REFERENCE answered `Cannot get",
+  "mate information for an unpaired read` on eight of its rows. The second value is one of those",
+  "unpaired BAMs, which keeps that refusal in the array rather than losing it."
  ],
  "values": {
   "--input": [
@@ -504,6 +513,43 @@
    ],
    "--interval-merging-rule": [
     "OVERLAPPING_ONLY"
+   ]
+  },
+  "GetSampleName": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam",
+    "/work/fixtures/reads.vcf"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/sample.txt",
+    "/work/out/sample2.txt"
+   ]
+  },
+  "PrintDistantMates": {
+   "--input": [
+    "/work/fixtures/pairs.bam",
+    "/work/fixtures/reads.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/pairs.bai",
+    "/work/fixtures/reads.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/distant.bam",
+    "/work/out/distant2.bam"
    ]
   }
  },

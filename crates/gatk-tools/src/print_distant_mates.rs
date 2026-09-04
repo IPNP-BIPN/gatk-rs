@@ -67,7 +67,7 @@ use htsjdk_bam::text_parse::parse_cigar;
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use gatk_readfilter::{not_duplicate, paired, primary_line, with_header, Parameterized};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK PrintDistantMates";
@@ -293,6 +293,26 @@ pub fn print_distant_mates(
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    print_distant_mates_with(
+        source,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same, with the BGZF compression named: see [`crate::sam_output::write_records_with`].
+///
+/// A real `gatk` run writes at level TWO through GKL rather than at htsjdk's default of five, so a
+/// runner that wants the reference's BYTES has to say so.
+pub fn print_distant_mates_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
     let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     let input_header = source.header().clone();
     let mut altered: Vec<BamRecord> = records
@@ -301,7 +321,13 @@ pub fn print_distant_mates(
         .collect();
     altered.sort_by(coordinate::compare);
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
-    write_records(&header, &altered, options.create_output_bam_index)
+    crate::sam_output::write_records_with(
+        &header,
+        &altered,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
 }
 
 /// The output order of a set of altered records, for a caller that wants the order without the

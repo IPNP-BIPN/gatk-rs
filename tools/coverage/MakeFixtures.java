@@ -133,6 +133,61 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * A BAM of PAIRS, which is what a tool asking for mate information needs.
+     *
+     * `PrintDistantMates` reads every record's mate, and the two BAMs above are unpaired: the
+     * REFERENCE itself answers `Cannot get mate information for an unpaired read` on eight of that
+     * tool's twenty-one rows, so a corpus without pairs cannot measure it at all. Three pairs, and
+     * they differ in the one way the tool selects on: the first two mates sit beside each other,
+     * the second pair straddles most of the contig, and the third is a pair whose mate is
+     * unmapped.
+     */
+    static void pairs(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg3");
+        group.setSample("sample3");
+        group.setLibrary("lib3");
+        group.setPlatformUnit("unit3");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        // start, mate start: near, far, and far again. The writer is PRESORTED, so the six
+        // records are built first and written in coordinate order rather than pair by pair.
+        final int[][] pairs = {{100, 300}, {1000, 60000}, {2000, 90000}};
+        final java.util.List<SAMRecord> records = new java.util.ArrayList<>();
+        for (int pair = 0; pair < pairs.length; pair++) {
+            for (int end = 0; end < 2; end++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("PAIR:" + (pair + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(pairs[pair][end]);
+                record.setMateReferenceName("chr1");
+                record.setMateAlignmentStart(pairs[pair][1 - end]);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg3");
+                record.setReadPairedFlag(true);
+                record.setProperPairFlag(pair == 0);
+                record.setMateUnmappedFlag(false);
+                record.setFirstOfPairFlag(end == 0);
+                record.setSecondOfPairFlag(end == 1);
+                records.add(record);
+            }
+        }
+        records.sort(java.util.Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     public static void main(final String[] args) throws Exception {
         // The deflater is pinned exactly as the oracle contract pins it for goldens: a fixture
         // that is not byte-reproducible would make a coverage measurement unrepeatable.
@@ -147,6 +202,7 @@ public class MakeFixtures {
         }
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
+        pairs(dir.resolve("pairs.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.

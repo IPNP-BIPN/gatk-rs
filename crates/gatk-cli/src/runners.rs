@@ -315,6 +315,16 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "MateDistantReadFilter" {
+            // `PrintDistantMates`' own default, and the one argument that decides what "distant"
+            // means. The filter was ported; only this branch was missing, so a row that kept the
+            // tool's defaults refused instead of running.
+            parameterized.push((
+                gatk_readfilter::Parameterized::MateDistant {
+                    threshold: number_or(parser, "mate-too-distant-length", 1000),
+                },
+                filter.negated,
+            ));
         } else {
             return Err(Thrown::non_user(
                 PORT_LIMITATION,
@@ -2287,5 +2297,80 @@ pub fn pileup(parser: &Parser) -> Outcome {
 
     std::fs::write(&output, &text)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `GetSampleName.traverse`, which is the whole tool: it opens the reads to read their header and
+/// never asks for a record.
+///
+/// The read walker's startup still runs in front of it -- the dictionaries are compared and the
+/// intervals resolved -- because the arguments that ask for those are declared whether or not a
+/// traversal uses them.
+pub fn get_sample_name(parser: &Parser) -> Outcome {
+    let ReadWalkerStart { source, .. } = read_walker_startup(parser, "GetSampleName")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let text =
+        gatk_tools::get_sample_name::get_sample_name(&source, flag(parser, "use-url-encoding"))
+            .map_err(|error| Thrown::user(format!("Bad input: {}", error.message())))?;
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `PrintDistantMates.apply`, which writes the reads whose mate is far away or on another contig.
+///
+/// `PrintReads`' plumbing with a filter in front of it, and one alteration on the way out: a
+/// printed read carries its original alignment in an `OA` tag and is written unmapped-adjacent,
+/// which `do_distant_mate_alterations` is the port of.
+pub fn print_distant_mates(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "PrintDistantMates")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    // The tool's own `doWork`, which is three steps rather than one: every read the filter chain
+    // kept is ALTERED -- moved to its mate's position and unmapped -- and the result is RE-SORTED,
+    // because an alteration that moves a read breaks the order it arrived in. The port had all of
+    // that already; the runner was reimplementing two of the three and getting both wrong.
+    let command_line = crate::command_line::expanded("PrintDistantMates", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let (bytes, bai) = gatk_tools::print_distant_mates::print_distant_mates_with(
+        &source, &options, &filter, level, deflater,
+    )
+    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    std::fs::write(&output, &bytes)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    if let Some(bai) = bai {
+        // The index REPLACES the output's extension, and the digest APPENDS to it.
+        let companion = std::path::Path::new(&output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&bytes)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
+    }
     Ok(None)
 }

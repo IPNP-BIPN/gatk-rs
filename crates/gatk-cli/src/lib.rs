@@ -284,6 +284,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SplitIntervals" => Some(run_split_intervals),
         "PreprocessIntervals" => Some(run_preprocess_intervals),
         "Pileup" => Some(run_pileup),
+        "GetSampleName" => Some(run_get_sample_name),
+        "PrintDistantMates" => Some(run_print_distant_mates),
         _ => None,
     }
 }
@@ -291,6 +293,14 @@ pub fn runner(name: &str) -> Option<Runner> {
 /// The runners, each of which needs the parsed command line rather than the raw one.
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
+}
+
+fn run_get_sample_name(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::get_sample_name(&parsed("GetSampleName", args)?)
+}
+
+fn run_print_distant_mates(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_distant_mates(&parsed("PrintDistantMates", args)?)
 }
 
 fn run_pileup(args: &[String]) -> Result<Option<String>, Thrown> {

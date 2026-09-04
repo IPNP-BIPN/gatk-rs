@@ -91,12 +91,16 @@ pub fn expanded(class_name: &str, parser: &Parser) -> String {
         if definition.default_value_as_string() == NULL_ARGUMENT_STRING {
             continue;
         }
-        // A PLUGIN's own argument does not reach the line unless somebody set it. The descriptor
-        // registers every read filter it discovers, so an unselected one's arguments are in the
-        // parser with their defaults and in no command line the reference records: the line stops
-        // at `--disable-tool-default-read-filters`, which is the descriptor's own.
-        if definition.controlled_by.is_some() {
-            continue;
+        // A PLUGIN's own argument reaches the line when its plugin is SELECTED, and a tool's
+        // DEFAULT filter counts as selected. The descriptor registers every read filter it
+        // discovers, so an unselected one's arguments sit in the parser with their defaults and
+        // reach no command line the reference records; `PrintDistantMates` is the first tool here
+        // whose default filter has an argument of its own, and the reference prints
+        // `--mate-too-distant-length 1000` for it.
+        if let Some(control) = &definition.controlled_by {
+            if !parser.plugin_is_selected(control) {
+                continue;
+            }
         }
         // The DEFAULT is what is printed, and the parser left it in the value, so the two agree.
         // A default that renders as the empty string still prints its name and a trailing space.

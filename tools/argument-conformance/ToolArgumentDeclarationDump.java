@@ -120,6 +120,13 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.qc.Pileup());
         declarations("PreprocessIntervals",
                 new org.broadinstitute.hellbender.tools.copynumber.PreprocessIntervals());
+        // A read walker that WRITES a BAM, which is `PrintReads`' plumbing with a filter in front
+        // of it, and a `GATKTool` that opens the reads only to read their header. Both dumps
+        // together, as ever.
+        declarations("PrintDistantMates",
+                new org.broadinstitute.hellbender.tools.PrintDistantMates());
+        declarations("GetSampleName",
+                new org.broadinstitute.hellbender.tools.GetSampleName());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
