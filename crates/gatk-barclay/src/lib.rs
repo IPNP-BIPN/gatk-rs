@@ -1609,6 +1609,12 @@ impl Parser {
     }
 
     /// `isDependentArgumentAllowed`: did the command line name this plugin?
+    /// Whether a plugin the parser knows about is SELECTED, by a command line or by the tool's
+    /// own defaults. Public because the expanded command line asks the same question.
+    pub fn plugin_is_selected(&self, control: &PluginControl) -> bool {
+        self.is_dependent_argument_allowed(control)
+    }
+
     fn is_dependent_argument_allowed(&self, control: &PluginControl) -> bool {
         // A default counts as named: the descriptor was constructed with the tool's own filters,
         // and it does not distinguish those from the ones the command line asked for.
