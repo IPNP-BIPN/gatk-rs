@@ -3017,7 +3017,9 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
             // whatever a tool returns.
             Ok(Some("SUCCESS".to_string()))
         }
-        Err(refusal) => Err(Thrown::user(format!("Bad input: {}", refusal.message()))),
+        // `message()` already carries the `Bad input: ` the exception adds, so the runner does not
+        // add a second one: the reference prints the prefix once.
+        Err(refusal) => Err(Thrown::user(refusal.message())),
     }
 }
 
