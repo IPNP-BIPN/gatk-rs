@@ -249,6 +249,26 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `CollectReadCounts.getDefaultReadFilters`: the read walker's wellformed, then four of
         // its own, the last of which is PARAMETERISED -- its `--minimum-mapping-quality` default is
         // thirty rather than the library's ten, and that default is the declaration's own.
+        // `UnmarkDuplicates.getDefaultReadFilters` is a SINGLETON and not the walker's own: it
+        // returns `ALLOW_ALL_READS` alone, so this is the one read walker here whose default chain
+        // does not carry the wellformed filter at all.
+        "UnmarkDuplicates" => Some(&["AllowAllReadsReadFilter"]),
+        // `GetPileupSummaries.getDefaultReadFilters` does NOT call super, so the wellformed filter
+        // is LAST rather than first, and the list is eleven long: the order is the tool's own and
+        // it is what `--disable-read-filter` lists.
+        "GetPileupSummaries" => Some(&[
+            "MappingQualityReadFilter",
+            "MappingQualityAvailableReadFilter",
+            "MappingQualityNotZeroReadFilter",
+            "MappedReadFilter",
+            "PrimaryLineReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "NonZeroReferenceLengthAlignmentReadFilter",
+            "MateOnSameContigOrNoMappedMateReadFilter",
+            "GoodCigarReadFilter",
+            "WellformedReadFilter",
+        ]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",

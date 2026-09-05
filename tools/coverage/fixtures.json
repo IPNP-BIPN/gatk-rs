@@ -201,6 +201,17 @@
   "writer's default and a width narrow enough to wrap the corpus's intervals more than once, which",
   "is what makes the argument visible in the FASTA rather than only present.",
   "",
+  "`GetPileupSummaries` needs a POPULATION vcf, which the corpus did not have: the tool refuses a",
+  "file whose header declares no `AF` before its first locus, so an array built on `reads.vcf`",
+  "would have measured that one refusal on every row. `population.vcf` carries the field and sits",
+  "on the reads of `reads.bam`, one record per read, with frequencies straddling the default",
+  "window and a triallelic site the tool skips whatever its frequency is. `indexed.vcf` is the",
+  "second value, which keeps the header refusal in the array rather than losing it. It holds",
+  "`--max-depth-per-sample` at zero for the same reason `CheckPileup` does (gatk-rs#1102).",
+  "",
+  "`UnmarkDuplicates` takes the read walkers' corpus unchanged: it writes a BAM like `PrintReads`",
+  "and differs from it only in the flag bit it clears.",
+  "",
   "`CollectReadCounts` HOLDS `--format` at TSV, and that is the second hold naming a gap in the",
   "port rather than a refusal in the tool: the tool's own default is HDF5, which is a file format",
   "this port does not write at all (gatk-rs#1107). It holds the same four interval arguments",
@@ -700,6 +711,57 @@
    "--line-width": [
     "60",
     "7"
+   ]
+  },
+  "GetPileupSummaries": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/summaries.table",
+    "/work/out/summaries2.table"
+   ],
+   "--variant": [
+    "/work/fixtures/population.vcf",
+    "/work/fixtures/indexed.vcf"
+   ],
+   "--minimum-population-allele-frequency": [
+    "0.01",
+    "0.04"
+   ],
+   "--maximum-population-allele-frequency": [
+    "0.2",
+    "0.06"
+   ],
+   "--max-depth-per-sample": [
+    "0"
+   ]
+  },
+  "UnmarkDuplicates": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/unmarked.bam",
+    "/work/out/unmarked2.bam"
    ]
   },
   "CollectReadCounts": {

@@ -42,6 +42,36 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * A POPULATION VCF: biallelic SNPs carrying the `AF` info field `GetPileupSummaries` reads.
+     *
+     * The corpus's own `reads.vcf` declares no `AF` at all, and that tool refuses such a file
+     * before its first locus, so an array built on it would measure one refusal on every row. This
+     * one carries the field in its header and on every record, and the frequencies straddle the
+     * tool's default window (0.01 to 0.2, both bounds STRICT): 0.005 is below it, 0.2 is exactly
+     * the upper bound and therefore excluded, and the rest are inside.
+     *
+     * The records sit on the reads of `reads.bam`, one per read, because a site the reads do not
+     * cover produces no pileup and therefore no row. The last is a triallelic site, which the tool
+     * skips whatever its frequency is: without it nothing in the array distinguishes the
+     * biallelic-SNP test from the frequency test.
+     */
+    static String populationVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        final double[] frequencies = {0.005, 0.02, 0.05, 0.1, 0.15, 0.2, 0.03};
+        int index = 0;
+        for (int position = 100; position <= 4300; position += 700) {
+            text.append("chr1\t").append(position).append("\trs").append(position)
+                    .append("\tA\tC\t100\tPASS\tAF=").append(frequencies[index]).append('\n');
+            index++;
+        }
+        text.append("chr1\t5000\trs5000\tA\tC,G\t100\tPASS\tAF=0.05,0.03\n");
+        return text.toString();
+    }
+
     static String bed() {
         final StringBuilder text = new StringBuilder();
         for (int start = 100; start <= 5000; start += 700) {
@@ -323,6 +353,12 @@ public class MakeFixtures {
                         }) == null ? 1 : 0;
         System.out.println("second recalibrator status " + otherStatus);
         pileups(dir);
+        // The population VCF, indexed: a `FeatureInput` is queried by interval, so an unindexed
+        // one is refused before the traversal starts.
+        final Path population = dir.resolve("population.vcf");
+        Files.writeString(population, populationVcf(), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", population.toString()});
         System.out.println("wrote " + dir);
     }
 }
