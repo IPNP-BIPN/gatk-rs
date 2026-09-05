@@ -246,6 +246,16 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "PassesVendorQualityCheckReadFilter",
             "NotSecondaryAlignmentReadFilter",
         ]),
+        // `CollectReadCounts.getDefaultReadFilters`: the read walker's wellformed, then four of
+        // its own, the last of which is PARAMETERISED -- its `--minimum-mapping-quality` default is
+        // thirty rather than the library's ten, and that default is the declaration's own.
+        "CollectReadCounts" => Some(&[
+            "WellformedReadFilter",
+            "MappedReadFilter",
+            "NonZeroReferenceLengthAlignmentReadFilter",
+            "NotDuplicateReadFilter",
+            "MappingQualityReadFilter",
+        ]),
         _ => None,
     }
 }

@@ -285,6 +285,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PreprocessIntervals" => Some(run_preprocess_intervals),
         "Pileup" => Some(run_pileup),
         "CheckPileup" => Some(run_check_pileup),
+        "FastaReferenceMaker" => Some(run_fasta_reference_maker),
+        "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
         "CompareIntervalLists" => Some(run_compare_interval_lists),
@@ -317,6 +319,14 @@ fn run_get_sample_name(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_print_distant_mates(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_distant_mates(&parsed("PrintDistantMates", args)?)
+}
+
+fn run_collect_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_read_counts(&parsed("CollectReadCounts", args)?)
+}
+
+fn run_fasta_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::fasta_reference_maker(&parsed("FastaReferenceMaker", args)?)
 }
 
 fn run_check_pileup(args: &[String]) -> Result<Option<String>, Thrown> {
