@@ -2862,8 +2862,28 @@ pub fn unmark_duplicates(parser: &Parser) -> Outcome {
     let (bytes, bai) = gatk_tools::unmark_duplicates::unmark_duplicates_with(
         &source, &options, &filter, level, deflater,
     )
-    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    .map_err(reads_traversal_error)?;
     write_bam(parser, &output, &bytes, bai)
+}
+
+/// A traversal's refusal, told apart by whose exception it is.
+///
+/// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,
+/// so the handler prints its CLASS and the run ends at status three rather than two. Measured on
+/// row 9 of `UnmarkDuplicates`' array, where a BAM is handed the OTHER BAM's index: the query
+/// lands mid-file, the next record's length reads as zero, and the port answered a user banner
+/// where the reference answered `htsjdk.samtools.SAMFormatException: Invalid record length: 0`.
+fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
+    match &error {
+        gatk_engine::reads::ReadsError::Malformed(detail) => {
+            let message = match detail.strip_prefix("InvalidRecordLength(") {
+                Some(rest) => format!("Invalid record length: {}", rest.trim_end_matches(')')),
+                None => detail.clone(),
+            };
+            Thrown::non_user(gatk_tools::read_walker_refusal::SAM_FORMAT, message)
+        }
+        other => Thrown::user(format!("{other:?}")),
+    }
 }
 
 /// A BAM and the two files that follow it, written the way every read walker here writes them.
@@ -2917,7 +2937,11 @@ pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
         Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
     })?;
 
-    let file = htsjdk_vcf::reader::read_vcf(&variants).map_err(|failure| Thrown {
+    // `read_vcf` takes the file's TEXT and not its path: the reader is the thing being compared,
+    // so the filesystem stays out of it and the runner does the reading.
+    let text = std::fs::read_to_string(&variants)
+        .map_err(|error| Thrown::user(format!("{variants}: {error}")))?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
         failure: Failure::User,
         exception: failure.error.class(),
         message: Some(failure.error.message()),
