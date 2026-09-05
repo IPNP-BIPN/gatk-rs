@@ -50,13 +50,42 @@ pub fn run(
     arguments: &IntervalArguments,
     bases_per_line: usize,
 ) -> Result<FastaOutputs, MakerError> {
+    let intervals =
+        reference_walker::traversal_intervals(arguments, &reference_walker::dictionary(reference))
+            .map_err(MakerError::Traversal)?;
+    run_over(reference, &intervals, bases_per_line)
+}
+
+/// What the writer leaves behind when the traversal refuses.
+///
+/// The writer is built in `onTraversalStart` and closed in `closeTool`, so a run that dies in the
+/// middle of the traversal still writes its three files: the FASTA and the `.fai` are empty, and
+/// the dictionary holds nothing but its `@HD` line. This is that state, produced by the same
+/// writer rather than spelled out, so it cannot drift from what a real close would emit.
+pub fn empty_outputs(bases_per_line: usize) -> Result<FastaOutputs, MakerError> {
+    let writer = FastaReferenceWriter::new(bases_per_line, true).map_err(MakerError::Writer)?;
+    writer.close().map_err(MakerError::Writer)
+}
+
+/// The same run over intervals somebody else resolved.
+///
+/// It exists for the reason [`reference_walker::traverse_intervals`] does: a command line resolves
+/// its intervals against the BEST available dictionary, which a `--sequence-dictionary` outranks
+/// the reference in, and the traversal then queries the FASTA with them.
+pub fn run_over(
+    reference: &mut ReferenceFileSource,
+    intervals: &[SimpleInterval],
+    bases_per_line: usize,
+) -> Result<FastaOutputs, MakerError> {
     // The writer is built in `onTraversalStart`, before a single locus is read, so a width of zero
     // is refused before the reference is touched.
     let mut writer = FastaReferenceWriter::new(bases_per_line, true).map_err(MakerError::Writer)?;
 
     let applied =
-        reference_walker::traverse(reference, arguments, |locus: &SimpleInterval| locus.clone())
-            .map_err(MakerError::Traversal)?;
+        reference_walker::traverse_intervals(reference, intervals, |locus: &SimpleInterval| {
+            locus.clone()
+        })
+        .map_err(MakerError::Traversal)?;
 
     let mut count = 0usize;
     let mut last: Option<SimpleInterval> = None;

@@ -2431,6 +2431,204 @@ fn write_report(output: &Option<String>, report: &str) -> Result<(), Thrown> {
     }
 }
 
+/// `FastaReferenceMaker.apply`, which appends one base of the reference per locus.
+///
+/// A second REFERENCE walker, and its startup is `CountBasesInReference`'s to the line: the
+/// intervals resolve against the best available dictionary, which a `--sequence-dictionary`
+/// outranks the reference in, and the traversal then queries the FASTA with them.
+///
+/// What is new is the OUTPUT, which is three files rather than one. `FastaReferenceWriterBuilder`
+/// makes the `.fai` and the `.dict` beside the FASTA unless told otherwise, and htsjdk names them:
+/// the index is the output plus `.fai`, and the dictionary replaces the FASTA's extension.
+pub fn fasta_reference_maker(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "FastaReferenceMaker")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut source =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let master = master_dictionary(parser)?;
+    let own = gatk_tools::reference_walker::dictionary(&source);
+    let best = master.unwrap_or(own);
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        None => best
+            .sequences
+            .iter()
+            .map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                    .expect("a contig length is at least one")
+            })
+            .collect(),
+    };
+
+    let width = number_or(
+        parser,
+        "line-width",
+        gatk_tools::fasta_reference_maker::DEFAULT_LINE_WIDTH as i32,
+    )
+    .max(0) as usize;
+    // A refused traversal still leaves three files: the writer is built in `onTraversalStart` and
+    // closed in `closeTool`, so a reference that has no data at a requested contig ends with an
+    // empty FASTA, an empty `.fai` and a dictionary of nothing but its `@HD` line. Measured on rows
+    // 8 and 18 of this tool's array, where the port wrote nothing at all.
+    let refused = |error| -> Thrown {
+        match gatk_tools::fasta_reference_maker::empty_outputs(width) {
+            Ok(empty) => {
+                let _ = write_outputs(&output, &empty);
+                fasta_maker_error(error)
+            }
+            Err(failure) => fasta_maker_error(failure),
+        }
+    };
+    let outputs = gatk_tools::fasta_reference_maker::run_over(&mut source, &intervals, width)
+        .map_err(refused)?;
+
+    write_outputs(&output, &outputs)?;
+    Ok(None)
+}
+
+/// The FASTA and the two files htsjdk writes beside it, named the way htsjdk names them.
+fn write_outputs(
+    output: &str,
+    outputs: &htsjdk_bam::fasta_writer::FastaOutputs,
+) -> Result<(), Thrown> {
+    write_file(output, &outputs.fasta)?;
+    write_file(&format!("{output}.fai"), outputs.index.as_bytes())?;
+    write_file(&dictionary_path(output), outputs.dictionary.as_bytes())
+}
+
+/// `ReferenceSequenceFileFactory.getDefaultDictionaryForReferenceSequence`: the FASTA's extension
+/// replaced by `.dict`, and a name with no extension of that kind simply gains one.
+fn dictionary_path(output: &str) -> String {
+    for extension in [".fasta", ".fa", ".fna", ".fasta.gz", ".fa.gz", ".fna.gz"] {
+        if let Some(stem) = output.strip_suffix(extension) {
+            return format!("{stem}.dict");
+        }
+    }
+    format!("{output}.dict")
+}
+
+fn write_file(path: &str, bytes: &[u8]) -> Result<(), Thrown> {
+    std::fs::write(path, bytes)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))
+}
+
+/// What `FastaReferenceMaker` refused with, told apart by whose refusal it is.
+fn fasta_maker_error(error: gatk_tools::fasta_reference_maker::MakerError) -> Thrown {
+    match error {
+        gatk_tools::fasta_reference_maker::MakerError::Traversal(traversal) => {
+            reference_traversal_error(traversal)
+        }
+        // The writer's own refusals are `IllegalArgumentException`s, which the non-user handler
+        // prints the class of: a `--line-width` of zero is refused before the reference is read.
+        gatk_tools::fasta_reference_maker::MakerError::Writer(writer) => {
+            Thrown::non_user("java.lang.IllegalArgumentException", format!("{writer:?}"))
+        }
+    }
+}
+
+/// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
+///
+/// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
+/// own:
+///
+///   - `requiresIntervals()` is true, so the interval argument is REQUIRED by its declaration and
+///     a run without `-L` is refused by the parser rather than by the tool;
+///   - `validateIntervalArgumentCollection` is the copy-number check `PreprocessIntervals` and
+///     `AnnotateIntervals` make, which is why it lives in one place here;
+///   - and the sample name is read off the header's read groups, one distinct `SM` or a refusal.
+///
+/// `--format HDF5` is the default and is refused: the port writes the TSV and HDF5 is a file format
+/// rather than a spelling of it.
+pub fn collect_read_counts(parser: &Parser) -> Outcome {
+    if scalar(parser, "format").as_deref() != Some("TSV") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "CollectReadCounts writes HDF5 by default, which this port does not write; pass \
+             --format TSV. This message is the port's own and not GATK's.",
+        ));
+    }
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectReadCounts")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if arguments(parser, "intervals").is_empty()
+        && arguments(parser, "exclude-intervals").is_empty()
+    {
+        return Err(Thrown::command_line(
+            "Argument intervals was missing: Argument 'intervals' is required",
+        ));
+    }
+    validate_copy_number_intervals(parser)?;
+
+    let sample = sample_name(&header)?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // A read with no contig cannot fall in an interval, so it counts nowhere: `apply` reads
+    // `read.getContig()`, which the wellformed filter has already guaranteed is a mapped one.
+    let starts: Vec<(&str, i32)> = records
+        .iter()
+        .filter_map(|record| {
+            contig_name(&header, record.reference_index)
+                .map(|contig| (contig, record.alignment_start))
+        })
+        .collect();
+    let counts = gatk_tools::collect_read_counts::count(&starts, &intervals);
+    // The TSV's `@SQ` lines are the METADATA's dictionary, which is the reads' own header rather
+    // than the best available one: a `--sequence-dictionary` resolves the intervals and is only
+    // warned about here when it disagrees.
+    let sequences: Vec<(String, i32)> = header
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    let text = gatk_tools::collect_read_counts::write(&sequences, &sample, &intervals, &counts);
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// `MetadataUtils.readSampleName`: one distinct `SM` over the read groups, or an
+/// `IllegalArgumentException` naming what it found instead.
+fn sample_name(header: &SamHeader) -> Result<String, Thrown> {
+    let refuse = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    if header.read_groups.is_empty() {
+        return Err(refuse(
+            "The input header does not contain any read groups.  Cannot determine a sample name."
+                .to_string(),
+        ));
+    }
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        if let Some(sample) = group.attributes.get("SM").map(str::to_string) {
+            if !samples.contains(&sample) {
+                samples.push(sample);
+            }
+        }
+    }
+    match samples.len() {
+        0 => Err(refuse(
+            "The input header does not contain a sample name.".to_string(),
+        )),
+        1 => Ok(samples.remove(0)),
+        _ => Err(refuse(format!(
+            "The input header contains more than one unique sample name: {}",
+            samples.join(", ")
+        ))),
+    }
+}
+
 /// `GetSampleName.traverse`, which is the whole tool: it opens the reads to read their header and
 /// never asks for a record.
 ///

@@ -193,7 +193,19 @@
   "traversal against the port's own limitation message. `Pileup` varies the same argument and",
   "measures nothing by it -- every one of its rows carrying two is refused earlier, for a",
   "dictionary the reads do not match -- so the argument has never actually been measured here.",
-  "gatk-rs#1102 is the downsampler; when it lands both tools can vary this again."
+  "gatk-rs#1102 is the downsampler; when it lands both tools can vary this again.",
+  "",
+  "`FastaReferenceMaker` takes `CountBasesInReference`'s corpus, which is the reference walker's:",
+  "the reads it declares are never opened and are there so that a `--read-index` paired with a",
+  "feature file is refused by htsjdk rather than measured. Its own `--line-width` carries the",
+  "writer's default and a width narrow enough to wrap the corpus's intervals more than once, which",
+  "is what makes the argument visible in the FASTA rather than only present.",
+  "",
+  "`CollectReadCounts` HOLDS `--format` at TSV, and that is the second hold naming a gap in the",
+  "port rather than a refusal in the tool: the tool's own default is HDF5, which is a file format",
+  "this port does not write at all (gatk-rs#1107). It holds the same four interval arguments",
+  "`PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
+  "`validateIntervalArgumentCollection`."
  ],
  "values": {
   "--input": [
@@ -666,6 +678,61 @@
    ],
    "--max-depth-per-sample": [
     "0"
+   ]
+  },
+  "FastaReferenceMaker": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/made.fasta",
+    "/work/out/made2.fasta"
+   ],
+   "--line-width": [
+    "60",
+    "7"
+   ]
+  },
+  "CollectReadCounts": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/counts.tsv",
+    "/work/out/counts2.tsv"
+   ],
+   "--format": [
+    "TSV"
+   ],
+   "--interval-set-rule": [
+    "UNION"
+   ],
+   "--interval-exclusion-padding": [
+    "0"
+   ],
+   "--interval-padding": [
+    "0"
+   ],
+   "--interval-merging-rule": [
+    "OVERLAPPING_ONLY"
    ]
   }
  },
