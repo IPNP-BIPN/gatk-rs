@@ -34,7 +34,7 @@
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use htsjdk_bam::record::BamRecord;
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK UnmarkDuplicates";
@@ -59,12 +59,38 @@ pub fn unmark_duplicates(
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    unmark_duplicates_with(
+        source,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same, with the BGZF compression named: see [`crate::sam_output::write_records_with`].
+///
+/// A command line needs this rather than the default: `GATKConfig` sets `samjdk.compression_level`
+/// to TWO and routes it through GKL, so a BAM written at the library default is a different file.
+pub fn unmark_duplicates_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
     let mut records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     for record in &mut records {
         unmark(record);
     }
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
-    write_records(&header, &records, options.create_output_bam_index)
+    crate::sam_output::write_records_with(
+        &header,
+        &records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
 }
 
 #[cfg(test)]

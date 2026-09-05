@@ -503,6 +503,7 @@ jobs:
             --tool CompareIntervalLists --tool FixMisencodedBaseQualityReads \
             --tool AnnotateIntervals --tool CheckPileup \
             --tool FastaReferenceMaker --tool CollectReadCounts \
+            --tool GetPileupSummaries --tool UnmarkDuplicates \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

@@ -2833,6 +2833,203 @@ pub fn fix_misencoded_base_quality_reads(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `UnmarkDuplicates.apply`, which clears one flag bit and writes the read back.
+///
+/// `PrintReads`' plumbing with a mutation in the middle, and the same three companions on the way
+/// out: the index when `--create-output-bam-index` asks for one, the MD5 when
+/// `--create-output-bam-md5` does, and the `@PG` line the writer adds.
+pub fn unmark_duplicates(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "UnmarkDuplicates")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("UnmarkDuplicates", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let (bytes, bai) = gatk_tools::unmark_duplicates::unmark_duplicates_with(
+        &source, &options, &filter, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    write_bam(parser, &output, &bytes, bai)
+}
+
+/// A traversal's refusal, told apart by whose exception it is.
+///
+/// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,
+/// so the handler prints its CLASS and the run ends at status three rather than two. Measured on
+/// row 9 of `UnmarkDuplicates`' array, where a BAM is handed the OTHER BAM's index: the query
+/// lands mid-file, the next record's length reads as zero, and the port answered a user banner
+/// where the reference answered `htsjdk.samtools.SAMFormatException: Invalid record length: 0`.
+fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
+    match &error {
+        gatk_engine::reads::ReadsError::Malformed(detail) => {
+            let message = match detail.strip_prefix("InvalidRecordLength(") {
+                Some(rest) => format!("Invalid record length: {}", rest.trim_end_matches(')')),
+                None => detail.clone(),
+            };
+            Thrown::non_user(gatk_tools::read_walker_refusal::SAM_FORMAT, message)
+        }
+        other => Thrown::user(format!("{other:?}")),
+    }
+}
+
+/// A BAM and the two files that follow it, written the way every read walker here writes them.
+fn write_bam(
+    parser: &Parser,
+    output: &str,
+    bytes: &[u8],
+    bai: Option<Vec<u8>>,
+) -> Result<Option<String>, Thrown> {
+    std::fs::write(output, bytes)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    if let Some(bai) = bai {
+        let companion = std::path::Path::new(output).with_extension("bai");
+        std::fs::write(&companion, bai).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", companion.display()),
+            )
+        })?;
+    }
+    if flag(parser, "create-output-bam-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(bytes)).map_err(
+            |error| Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}")),
+        )?;
+    }
+    Ok(None)
+}
+
+/// `GetPileupSummaries.apply`, which writes one row per biallelic SNP the population VCF carries.
+///
+/// The first tool here whose traversal drives a FEATURE source: `-V` is not an input the tool reads
+/// once but the thing each locus is looked up in, and the run is refused before the first locus if
+/// that file's header declares no `AF`.
+///
+/// Three refusals in three different places, which is most of what a row of this tool's array
+/// measures: the header check is `onTraversalStart`, the biallelic-SNP and frequency-range tests
+/// are `apply`, and "no variant carried an AF at all" is `onTraversalSuccess` -- a run whose
+/// records all lack the field is refused AFTER the table is written rather than before it.
+pub fn get_pileup_summaries(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GetPileupSummaries")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let variants = argument(parser, "variant").ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+
+    // `read_vcf` takes the file's TEXT and not its path: the reader is the thing being compared,
+    // so the filesystem stays out of it and the runner does the reading.
+    let text = std::fs::read_to_string(&variants)
+        .map_err(|error| Thrown::user(format!("{variants}: {error}")))?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    // `getHeaderForFeatures(variants).getInfoHeaderLines()`, which is the check the tool makes
+    // before it opens its writer.
+    let declares_allele_frequency = file.header.lines.iter().any(|line| {
+        matches!(
+            line,
+            htsjdk_vcf::header::HeaderLine::Compound { key, id, .. } if key == "INFO" && id == "AF"
+        )
+    });
+
+    // `ReadUtils.getSamplesFromHeader(...).stream().findFirst().get()`, which is the SM of the
+    // first read group in the header's own order.
+    let sample = header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    // `featureContext.getValues(variants)` at each locus, which is every record OVERLAPPING it in
+    // the file's own order; the tool reads the first and ignores the rest.
+    let sites: Vec<(Vec<htsjdk_vcf::variant::VariantContext>, [i32; 4])> = applied
+        .iter()
+        .map(|one| {
+            let overlapping: Vec<htsjdk_vcf::variant::VariantContext> = file
+                .records
+                .iter()
+                .filter(|record| {
+                    record.contig == one.context.contig
+                        && record.start <= one.context.position as i64
+                        && one.context.position as i64 <= record.stop
+                })
+                .cloned()
+                .collect();
+            (overlapping, one.context.pileup.base_counts())
+        })
+        .collect();
+
+    let text = gatk_tools::get_pileup_summaries::run(
+        &sites,
+        declares_allele_frequency,
+        &sample,
+        fraction_or(parser, "minimum-population-allele-frequency", 0.01),
+        fraction_or(parser, "maximum-population-allele-frequency", 0.2),
+    );
+    match text {
+        Ok(text) => {
+            std::fs::write(&output, &text)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+            // `onTraversalSuccess` returns the word rather than a count, and the dispatcher prints
+            // whatever a tool returns.
+            Ok(Some("SUCCESS".to_string()))
+        }
+        // `message()` already carries the `Bad input: ` the exception adds, so the runner does not
+        // add a second one: the reference prints the prefix once.
+        Err(refusal) => Err(Thrown::user(refusal.message())),
+    }
+}
+
+/// A double-valued argument, or the default the declaration carries.
+fn fraction_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
+    scalar(parser, long_name)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(default)
+}
+
 /// `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`, in its own order.
 ///
 /// The copy-number tools bin and pad by their OWN arguments, so they refuse every standard

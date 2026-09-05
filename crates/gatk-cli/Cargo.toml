@@ -24,6 +24,7 @@ htsjdk-bgzf.workspace = true
 # The index a VCF WRITER builds on the fly, which is not the one IndexFeatureFile builds from the
 # same file: the dictionary is properties and the file's own stats are left at zero.
 htsjdk-tribble.workspace = true
+htsjdk-vcf.workspace = true
 
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }
