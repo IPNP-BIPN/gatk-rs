@@ -148,6 +148,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.fasta.FastaReferenceMaker());
         declarations("CollectReadCounts",
                 new org.broadinstitute.hellbender.tools.copynumber.CollectReadCounts());
+        // A third LOCUS walker, which is the first tool here whose traversal drives a FEATURE
+        // source -- its `-V` is the allele frequencies it summarises the pileup at -- and a read
+        // walker that clears one flag bit and writes the reads back, which is `PrintReads`'
+        // plumbing with a mutation in the middle.
+        declarations("GetPileupSummaries",
+                new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries());
+        declarations("UnmarkDuplicates",
+                new org.broadinstitute.hellbender.tools.walkers.UnmarkDuplicates());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
