@@ -212,6 +212,24 @@
       "matched": 17,
       "t": 2,
       "share": 1.0
+    },
+    "GetPileupSummaries": {
+      "rows": 19,
+      "accepted": 7,
+      "rejected": 12,
+      "distinct_outputs": 3,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "UnmarkDuplicates": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

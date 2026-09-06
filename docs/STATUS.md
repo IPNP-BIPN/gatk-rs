@@ -193,7 +193,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | not measured |
-| `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | not measured |
+| `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) |
 | `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | not measured |
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
@@ -247,7 +247,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | not measured |
-| `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | not measured |
+| `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | not measured |
 | `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | not measured |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | not measured |
