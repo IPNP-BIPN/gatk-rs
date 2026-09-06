@@ -230,6 +230,24 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "CalculateContamination": {
+      "rows": 8,
+      "accepted": 8,
+      "rejected": 0,
+      "distinct_outputs": 6,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintReadsHeader": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 3,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
