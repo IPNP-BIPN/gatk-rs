@@ -359,6 +359,21 @@ public class MakeFixtures {
         Files.writeString(population, populationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", population.toString()});
+        // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
+        // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
+        // other's input, so the second tool is measured on a table the first really writes rather
+        // than on one this harness invented. A second table over `reads2.bam` gives
+        // `--matched-normal` a value that is not the input.
+        for (final String[] pair : new String[][] {
+                {"reads.bam", "summaries.table"}, {"reads2.bam", "summaries2.table"}}) {
+            new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries()
+                    .instanceMain(new String[] {
+                            "--input", dir.resolve(pair[0]).toString(),
+                            "--variant", population.toString(),
+                            "--intervals", "chr1:1-60000",
+                            "--output", dir.resolve(pair[1]).toString(),
+                    });
+        }
         System.out.println("wrote " + dir);
     }
 }

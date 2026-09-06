@@ -209,6 +209,15 @@
   "second value, which keeps the header refusal in the array rather than losing it. It holds",
   "`--max-depth-per-sample` at zero for the same reason `CheckPileup` does (gatk-rs#1102).",
   "",
+  "`CalculateContamination` reads the table `GetPileupSummaries` writes, and the corpus therefore",
+  "carries two of those tables produced by the REFERENCE itself rather than written by hand: the",
+  "chain is the point, so the second tool is measured on a table the first really writes. The",
+  "second table, over `reads2.bam`, is what gives `--matched-normal` a value that is not the",
+  "input, which is the argument that decides whether the genotyping model is rebuilt.",
+  "",
+  "`PrintReadsHeader` takes the read walkers' corpus unchanged: it opens the reads for their",
+  "header and asks for no record.",
+  "",
   "`UnmarkDuplicates` takes the read walkers' corpus unchanged: it writes a BAM like `PrintReads`",
   "and differs from it only in the flag bit it clears.",
   "",
@@ -744,6 +753,42 @@
    ],
    "--max-depth-per-sample": [
     "0"
+   ]
+  },
+  "CalculateContamination": {
+   "--input": [
+    "/work/fixtures/summaries.table",
+    "/work/fixtures/summaries2.table"
+   ],
+   "--output": [
+    "/work/out/contamination.table",
+    "/work/out/contamination2.table"
+   ],
+   "--matched-normal": [
+    "/work/fixtures/summaries2.table",
+    "/work/fixtures/summaries.table"
+   ],
+   "--tumor-segmentation": [
+    "/work/out/segments.table",
+    "/work/out/segments2.table"
+   ]
+  },
+  "PrintReadsHeader": {
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--output": [
+    "/work/out/header.txt",
+    "/work/out/header2.txt"
    ]
   },
   "UnmarkDuplicates": {
