@@ -115,6 +115,14 @@ public class ToolArgumentEnumDump {
         declarations("UnmarkDuplicates",
                 new org.broadinstitute.hellbender.tools.walkers.UnmarkDuplicates());
 
+        // A `CommandLineProgram` that is no GATKTool -- it reads the table `GetPileupSummaries`
+        // writes, so the two together are the first CHAIN of ported tools a command line can run
+        // end to end -- and a `GATKTool` with no traversal at all, which opens the reads only to
+        // print their header.
+        declarations("CalculateContamination",
+                new org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination());
+        declarations("PrintReadsHeader",
+                new org.broadinstitute.hellbender.tools.PrintReadsHeader());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
