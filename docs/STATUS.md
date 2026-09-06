@@ -134,7 +134,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
-| `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | not measured |
+| `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | t=2, 8/8 rows (100%) |
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | not measured |
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
@@ -225,7 +225,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) |
-| `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | not measured |
+| `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
