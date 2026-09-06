@@ -164,6 +164,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.contamination.CalculateContamination());
         declarations("PrintReadsHeader",
                 new org.broadinstitute.hellbender.tools.PrintReadsHeader());
+        // A third LOCUS walker, which writes TWO files -- a BED of runs and a summary of counts --
+        // and a second REFERENCE utility, which writes a shifted FASTA with its dictionary and two
+        // interval lists beside it. Neither shape has been declared here before: every tool
+        // measured so far writes one file or a directory of them.
+        declarations("CallableLoci",
+                new org.broadinstitute.hellbender.tools.walkers.coverage.CallableLoci());
+        declarations("ShiftFasta",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
