@@ -3030,6 +3030,111 @@ fn fraction_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+/// `PrintReadsHeader.traverse`, which is the whole tool: it opens the reads for their header.
+///
+/// `GetSampleName`'s shape with a different answer, and the same startup in front of it: a
+/// `GATKTool` declares the interval and dictionary arguments whether or not a traversal uses them,
+/// so the refusals they carry are refusals here too.
+pub fn print_reads_header(parser: &Parser) -> Outcome {
+    let ReadWalkerStart { source, .. } = read_walker_startup(parser, "PrintReadsHeader")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let bytes = gatk_tools::print_reads_header::print_reads_header(&source);
+    std::fs::write(&output, &bytes)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `CalculateContamination.doWork`, which reads the table `GetPileupSummaries` writes.
+///
+/// The first CHAIN this port can run: one tool's output is the other's input, and both ends are
+/// compared against the reference. It is a `CommandLineProgram` and no `GATKTool`, so there is no
+/// startup to speak of -- no reads, no dictionary, no intervals -- and the whole run is two tables
+/// in and one or two out.
+///
+/// The sample name is the INPUT table's metadata and is what both outputs are written under; a
+/// table with no `SAMPLE` metadata tag leaves it empty, which is what the reference does with it.
+pub fn calculate_contamination(parser: &Parser) -> Outcome {
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let (sample, sites) = read_pileup_table(&input)?;
+    let matched = match argument(parser, "matched-normal") {
+        Some(path) => Some(read_pileup_table(&path)?.1),
+        None => None,
+    };
+
+    let segmentation_path = argument(parser, "tumor-segmentation");
+    let answer = gatk_tools::calculate_contamination::run_from_command_line(
+        &sites,
+        matched.as_deref(),
+        segmentation_path.is_some(),
+        fraction_or(parser, "low-coverage-ratio-threshold", 0.1),
+        fraction_or(parser, "high-coverage-ratio-threshold", 3.0),
+    );
+
+    // The segmentation is written FIRST, before the contamination is calculated at all, so a run
+    // that dies in the model still leaves it.
+    if let (Some(path), Some(records)) = (&segmentation_path, &answer.segmentation) {
+        // The model's record carries the three interval fields flat; the writer's carries a
+        // `SimpleInterval`. They are the same record either side of the table layer.
+        let rows: Vec<gatk_engine::contamination_tables::MinorAlleleFractionRecord> = records
+            .iter()
+            .map(
+                |record| gatk_engine::contamination_tables::MinorAlleleFractionRecord {
+                    segment: gatk_engine::interval::SimpleInterval {
+                        contig: record.contig.clone(),
+                        start: record.start,
+                        end: record.end,
+                    },
+                    minor_allele_fraction: record.minor_allele_fraction,
+                },
+            )
+            .collect();
+        let text = gatk_engine::contamination_tables::write_segments(
+            sample.as_deref().unwrap_or_default(),
+            &rows,
+        );
+        std::fs::write(path, &text)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+    }
+
+    let text = gatk_engine::contamination_tables::write_contamination(&[
+        gatk_engine::contamination_tables::ContaminationRecord {
+            sample: sample.unwrap_or_default(),
+            contamination: answer.contamination,
+            error: answer.error,
+        },
+    ]);
+    std::fs::write(&output, &text)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `PileupSummary.readFromFile`, with the file read here rather than inside the port.
+fn read_pileup_table(
+    path: &str,
+) -> Result<
+    (
+        Option<String>,
+        Vec<gatk_engine::pileup_summary::PileupSummary>,
+    ),
+    Thrown,
+> {
+    let text =
+        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    gatk_engine::pileup_summary::read_from_file(&text, path).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })
+}
+
 /// `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`, in its own order.
 ///
 /// The copy-number tools bin and pad by their OWN arguments, so they refuse every standard

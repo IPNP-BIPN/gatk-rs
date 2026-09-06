@@ -1,0 +1,255 @@
+{
+  "tool": "CalculateContamination",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 18,
+  "arguments_in_array": 6,
+  "arguments_excluded": 12,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--high-coverage-ratio-threshold",
+      "type": "double",
+      "reason": "only one value available (default)",
+      "held_at": "3.0",
+      "source": "default"
+    },
+    {
+      "argument": "--low-coverage-ratio-threshold",
+      "type": "double",
+      "reason": "only one value available (default)",
+      "held_at": "0.5",
+      "source": "default"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 8,
+  "tuples_total": 60,
+  "tuples_covered": 60,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tumor-segmentation": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries2.table",
+        "--output=/work/out/contamination.table",
+        "--tmp-dir=/work/tmp",
+        "--tumor-segmentation=/work/out/segments.table",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[1]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--tumor-segmentation": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries.table",
+        "--output=/work/out/contamination2.table",
+        "--tmp-dir=/work/tmp2",
+        "--tumor-segmentation=/work/out/segments2.table",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--input": "fixture[1]",
+        "--matched-normal": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--tumor-segmentation": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries2.table",
+        "--matched-normal=/work/fixtures/summaries2.table",
+        "--output=/work/out/contamination2.table",
+        "--tmp-dir=/work/tmp",
+        "--tumor-segmentation=/work/out/segments2.table",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--input": "fixture[1]",
+        "--matched-normal": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--tumor-segmentation": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries2.table",
+        "--matched-normal=/work/fixtures/summaries.table",
+        "--output=/work/out/contamination.table",
+        "--tmp-dir=/work/tmp2",
+        "--tumor-segmentation=/work/out/segments.table",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--tumor-segmentation": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries2.table",
+        "--output=/work/out/contamination2.table",
+        "--tmp-dir=/work/tmp2",
+        "--tumor-segmentation=/work/out/segments.table",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tumor-segmentation": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries.table",
+        "--output=/work/out/contamination.table",
+        "--tmp-dir=/work/tmp",
+        "--tumor-segmentation=/work/out/segments.table",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tumor-segmentation": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries2.table",
+        "--output=/work/out/contamination.table",
+        "--tmp-dir=/work/tmp",
+        "--tumor-segmentation=/work/out/segments2.table",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--input": "fixture[0]",
+        "--matched-normal": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--tumor-segmentation": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/summaries.table",
+        "--matched-normal=/work/fixtures/summaries2.table",
+        "--output=/work/out/contamination.table",
+        "--tmp-dir=/work/tmp",
+        "--tumor-segmentation=/work/out/segments.table",
+        "--use-jdk-deflater=false"
+      ]
+    }
+  ]
+}

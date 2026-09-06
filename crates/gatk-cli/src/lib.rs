@@ -285,6 +285,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PreprocessIntervals" => Some(run_preprocess_intervals),
         "Pileup" => Some(run_pileup),
         "CheckPileup" => Some(run_check_pileup),
+        "CalculateContamination" => Some(run_calculate_contamination),
+        "PrintReadsHeader" => Some(run_print_reads_header),
         "GetPileupSummaries" => Some(run_get_pileup_summaries),
         "UnmarkDuplicates" => Some(run_unmark_duplicates),
         "FastaReferenceMaker" => Some(run_fasta_reference_maker),
@@ -337,6 +339,14 @@ fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_unmark_duplicates(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::unmark_duplicates(&parsed("UnmarkDuplicates", args)?)
+}
+
+fn run_calculate_contamination(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::calculate_contamination(&parsed("CalculateContamination", args)?)
+}
+
+fn run_print_reads_header(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_reads_header(&parsed("PrintReadsHeader", args)?)
 }
 
 fn run_check_pileup(args: &[String]) -> Result<Option<String>, Thrown> {
