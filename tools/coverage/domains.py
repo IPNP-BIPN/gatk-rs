@@ -113,6 +113,15 @@ def domain_of(arg, fixtures, numeric_policy="strict", excluded_by_hand=None):
     if excluded_by_hand and name in excluded_by_hand:
         return [], f"excluded by the repository: {excluded_by_hand[name]}"
     if name in fixtures:
+        # An EMPTY list is a declaration, not an oversight: it says this repository must not give
+        # this tool this argument at all. Picard has tools whose arguments are mutually exclusive
+        # by another argument's value -- `FilterSamReads` refuses a `READ_LIST_FILE` unless
+        # `FILTER` names a read-list filter, `MarkDuplicatesWithMateCigar` refuses `ASSUME_SORTED`
+        # beside `ASSUME_SORT_ORDER` -- and a row carries every argument the domain holds, so one
+        # such argument refuses every row of the array. Declaring the empty list drops it from the
+        # rows and records why, which is the same bargain the exclusions below make.
+        if not fixtures[name]:
+            return [], "excluded by the repository: no value is declared for this tool"
         return [(f"fixture[{i}]", v) for i, v in enumerate(fixtures[name])], None
 
     if arg.get("deprecated"):
