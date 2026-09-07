@@ -58,6 +58,26 @@ taking a `File` can want a BED and an interval list. It replaces the list rather
 because the reason to declare one is that the shared value is wrong here, not that it is
 incomplete.
 
+An **empty** list in `per_tool` says something stronger: this tool must not be given this argument
+at all.
+
+```json
+{
+  "per_tool": {
+    "MarkDuplicatesWithMateCigar": { "--ASSUME_SORTED": [] }
+  }
+}
+```
+
+It exists because a row carries every argument the domain holds, and some tools refuse an argument
+because of what another argument says. `MarkDuplicatesWithMateCigar` refuses `ASSUME_SORTED`
+whenever `ASSUME_SORT_ORDER` is given, and Barclay refuses both together before the tool runs, so
+an array holding the pair has every one of its rows rejected for the same reason -- nineteen rows
+measuring the argument parser. `FilterSamReads` is the same shape with eight filters and eight
+mutually exclusive arguments. The empty list drops the argument from the rows and records why in
+the exclusion list, which is the same bargain `exclude` makes for `--help` and `--version`: a
+narrower claim, stated rather than implied.
+
 ## One value is not a domain
 
 An argument with a single fixture value is *held* at it: every row carries it, no row varies it,
