@@ -296,6 +296,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CompareIntervalLists" => Some(run_compare_interval_lists),
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         "AnnotateIntervals" => Some(run_annotate_intervals),
+        "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
+        "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
         _ => None,
     }
 }
@@ -307,6 +309,14 @@ fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_annotate_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::annotate_intervals(&parsed("AnnotateIntervals", args)?)
+}
+
+fn run_revert_base_quality_scores(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::revert_base_quality_scores(&parsed("RevertBaseQualityScores", args)?)
+}
+
+fn run_add_original_alignment_tags(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::add_original_alignment_tags(&parsed("AddOriginalAlignmentTags", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

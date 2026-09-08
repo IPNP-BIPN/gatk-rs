@@ -2866,6 +2866,90 @@ pub fn unmark_duplicates(parser: &Parser) -> Outcome {
     write_bam(parser, &output, &bytes, bai)
 }
 
+/// `RevertBaseQualityScores`, which is `UnmarkDuplicates`' plumbing with an abort in the middle.
+///
+/// The refusal is the tool's own `UserException` and it happens PART WAY: the reference writes as
+/// it goes, so a run that hits a read with no `OQ` leaves whatever had been flushed behind and
+/// exits non-zero. This port writes nothing in that case, and the difference is the one thing here
+/// that is not the reference's: a partial BAM is not an answer a covering array can compare, and
+/// the row is the refusal either way.
+pub fn revert_base_quality_scores(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "RevertBaseQualityScores")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("RevertBaseQualityScores", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::revert_base_quality_scores::revert_base_quality_scores_with(
+        &source, &options, &filter, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        // Two exceptions, two handlers: the tool's own `UserException` is decorated and exits at
+        // two, while `fastqToPhred`'s `IllegalArgumentException` is a bug rather than a refusal and
+        // prints its class before the message at three.
+        Err(refusal) => Err(
+            if refusal.class() == gatk_tools::main_entry::USER_EXCEPTION {
+                Thrown::user(refusal.message())
+            } else {
+                Thrown::non_user(refusal.class(), refusal.message())
+            },
+        ),
+    }
+}
+
+/// `AddOriginalAlignmentTags`, the first of the archetype that writes TAGS rather than changing
+/// the read.
+///
+/// Its refusal is htsjdk's rather than the tool's: `getMateReferenceName` on an unpaired read
+/// throws `IllegalStateException`, so the handler prints the class in front of the message and the
+/// run ends at status three rather than two.
+pub fn add_original_alignment_tags(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "AddOriginalAlignmentTags")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("AddOriginalAlignmentTags", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::add_original_alignment_tags::add_original_alignment_tags_with(
+        &source, &options, &filter, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Err(refusal) => Err(Thrown::non_user(refusal.class(), refusal.message())),
+    }
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,
