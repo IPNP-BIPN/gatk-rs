@@ -2985,6 +2985,7 @@ pub fn left_align_indels(parser: &Parser) -> Outcome {
         version: crate::TOOLKIT_VERSION,
     };
     let (level, deflater) = output_compression(parser);
+    let dictionary = gatk_tools::reference_walker::dictionary(&reference);
     let run = gatk_tools::left_align_indels::left_align_indels_with(
         &source,
         &mut reference,
@@ -2993,7 +2994,17 @@ pub fn left_align_indels(parser: &Parser) -> Outcome {
         level,
         deflater,
     )
-    .map_err(reads_traversal_error)?;
+    .map_err(|error| match error {
+        // `MissingContigInSequenceDictionary`, raised by the per-read reference query: the
+        // dictionary it prints is the REFERENCE's, which is why this is formatted here. Measured on
+        // row 6 of this tool's array, where the reads are on `chr1` and `--reference` is the fasta
+        // that carries `chrOther`; the port answered a `SAMFormatException` at three.
+        gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => Thrown::user(format!(
+            "Contig {contig} not present in the sequence dictionary {}\n",
+            gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+        )),
+        other => reads_traversal_error(other),
+    })?;
     match run {
         Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
         Err(error) => Err(Thrown::non_user(

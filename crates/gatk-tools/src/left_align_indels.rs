@@ -125,7 +125,16 @@ pub fn left_align_indels_with(
         let bases = entry
             .context
             .bases(reference)
-            .map_err(|error| ReadsError::Malformed(format!("{error:?}")))?;
+            .map_err(|error| match error {
+                // The window is queried PER READ, so a reference that does not carry the read's contig
+                // is refused here and not at startup, and it is a `UserException` naming the contig
+                // rather than a format error. The caller turns it into the message, because the
+                // dictionary that message prints is the caller's to pretty-print.
+                gatk_engine::context::ContextError::Reference(
+                    gatk_engine::reference::ReferenceError::UnknownContig(contig),
+                ) => ReadsError::ContigNotInDictionary(contig),
+                other => ReadsError::Malformed(format!("{other:?}")),
+            })?;
         if let Err(error) = left_align(&mut entry.read, &bases) {
             return Ok(Err(error));
         }
