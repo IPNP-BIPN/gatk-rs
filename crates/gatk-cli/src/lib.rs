@@ -298,6 +298,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "AnnotateIntervals" => Some(run_annotate_intervals),
         "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
         "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
+        "LeftAlignIndels" => Some(run_left_align_indels),
+        "DumpTabixIndex" => Some(run_dump_tabix_index),
         _ => None,
     }
 }
@@ -317,6 +319,14 @@ fn run_revert_base_quality_scores(args: &[String]) -> Result<Option<String>, Thr
 
 fn run_add_original_alignment_tags(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::add_original_alignment_tags(&parsed("AddOriginalAlignmentTags", args)?)
+}
+
+fn run_left_align_indels(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::left_align_indels(&parsed("LeftAlignIndels", args)?)
+}
+
+fn run_dump_tabix_index(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::dump_tabix_index(&parsed("DumpTabixIndex", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
