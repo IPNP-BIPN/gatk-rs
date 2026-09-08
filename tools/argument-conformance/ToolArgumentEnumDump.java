@@ -131,6 +131,10 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.coverage.CallableLoci());
         declarations("ShiftFasta",
                 new org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta());
+        declarations("RevertBaseQualityScores",
+                new org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores());
+        declarations("AddOriginalAlignmentTags",
+                new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

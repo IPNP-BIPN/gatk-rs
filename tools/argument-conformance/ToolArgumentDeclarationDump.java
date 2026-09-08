@@ -172,6 +172,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.coverage.CallableLoci());
         declarations("ShiftFasta",
                 new org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta());
+        // Two more of the record-transform archetype, both already ported and neither runnable
+        // until its arguments are declared. `RevertBaseQualityScores` is the one that ABORTS on a
+        // read without `OQ` rather than skipping it, and `AddOriginalAlignmentTags` is the first
+        // that writes tags rather than changing the read.
+        declarations("RevertBaseQualityScores",
+                new org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores());
+        declarations("AddOriginalAlignmentTags",
+                new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
