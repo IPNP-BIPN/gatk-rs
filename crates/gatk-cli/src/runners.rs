@@ -3005,10 +3005,18 @@ pub fn left_align_indels(parser: &Parser) -> Outcome {
 
 /// `DumpTabixIndex`, which is no walker at all: a `.tbi` in, its text out.
 ///
-/// The two refusals live on either side of the gzip layer, and they are two different exceptions.
-/// A file that is not gzipped fails inside `java.util.zip` before the magic is ever looked at, so
-/// it is a `ZipException` at status three, and a gzipped file whose first four bytes are not
-/// `TBI\1` is the tool's own `UserException` at two. Both are in the dump-tabix-index golden.
+/// Three refusals, in the order the tool reaches them, and the first is the file's NAME.
+///
+///   - a path that does not end in `.tbi` is refused before anything is opened, whatever it
+///     holds: `Expected a .tbi file as input.`;
+///   - a `.tbi` that is not gzipped fails inside `java.util.zip`, and the tool CATCHES that and
+///     raises its own `Trouble reading index.` -- the bare `java.util.zip.ZipException` in the
+///     dump-tabix-index golden is the same failure reached through the tool's method rather than
+///     through `Main`, which is a different door and a different handler;
+///   - and a gzipped `.tbi` whose magic is not `TBI\1` is `Incorrect magic number for tabix
+///     index`.
+///
+/// All three are `UserException` at status two.
 pub fn dump_tabix_index(parser: &Parser) -> Outcome {
     let input = argument(parser, "tabix-index").ok_or_else(|| {
         Thrown::command_line("Argument tabix-index was missing: Argument 'tabix-index' is required")
@@ -3016,10 +3024,15 @@ pub fn dump_tabix_index(parser: &Parser) -> Outcome {
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
+    // The NAME is checked before anything is opened, so a file that is not called `.tbi` is
+    // refused for its name and never reaches the gzip layer whatever it holds.
+    if !input.ends_with(".tbi") {
+        return Err(Thrown::user("Expected a .tbi file as input."));
+    }
     let bytes = std::fs::read(&input)
         .map_err(|error| Thrown::user(format!("Couldn't read {input}: {error}")))?;
     let decompressed = htsjdk_bgzf::read::decompress_all(&bytes)
-        .map_err(|_| Thrown::non_user("java.util.zip.ZipException", "Not in GZIP format"))?;
+        .map_err(|_| Thrown::user("Trouble reading index."))?;
     let text = gatk_tools::dump_tabix_index::dump_tabix_index(&decompressed)
         .map_err(|error| Thrown::user(error.message()))?;
     std::fs::write(&output, text).map_err(|error| {

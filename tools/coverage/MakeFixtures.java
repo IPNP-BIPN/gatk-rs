@@ -114,6 +114,63 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM whose reads carry INDELS inside the reference's repeat, which is
+     * what `LeftAlignIndels` needs to move anything.
+     *
+     * The reference this corpus carries is `ACGT` repeated, so an indel of a whole four-base unit
+     * can walk left through the repeat: a deletion that reaches the front of the read's window is
+     * DROPPED and the read moves right by the bases it removed, and an insertion that reaches it
+     * is kept where it is. Both branches are here, next to the two kinds of read that never reach
+     * the call at all: one whose cigar is a single element, and an unmapped one.
+     *
+     * A file of plain `10M` reads would leave every row of the array with the input unchanged,
+     * which is an array that measures the traversal and not the tool.
+     */
+    static void indels(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        // Position 5 is an `A`, so a read starting there is in phase with the repeat and an indel
+        // of one whole unit leaves the alignment just as good four bases to the left.
+        final String[][] reads = {
+                {"4M4D6M", "ACGTACGTAC"},
+                {"4M4I6M", "ACGTACGTACGTAC"},
+                {"10M", "ACGTACGTAC"},
+        };
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < reads.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(5 + index * 700);
+                record.setCigarString(reads[index][0]);
+                record.setMappingQuality(60);
+                record.setReadString(reads[index][1]);
+                record.setBaseQualityString("I".repeat(reads[index][1].length()));
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+            final SAMRecord unmapped = new SAMRecord(header);
+            unmapped.setReadName("HWI:1:FC:1:1:9:9");
+            unmapped.setReadUnmappedFlag(true);
+            unmapped.setReadString("ACGTACGTAC");
+            unmapped.setBaseQualityString("IIIIIIIIII");
+            unmapped.setAttribute("RG", "rg1");
+            writer.addAlignment(unmapped);
+        }
+    }
+
+    /**
      * A coordinate-sorted BAM whose every read carries `OQ`, which is what
      * `RevertBaseQualityScores` needs to do anything at all.
      *
@@ -322,9 +379,21 @@ public class MakeFixtures {
                      new BlockCompressedOutputStream(dir.resolve("reads.vcf.gz").toFile())) {
             out.write(vcf().getBytes(StandardCharsets.UTF_8));
         }
+        // The tabix index of that block-compressed VCF, which is the only `.tbi` in the corpus and
+        // the only thing `DumpTabixIndex` can be given that it does not refuse. It is written by
+        // the reference's own `IndexFeatureFile` rather than here, so what the array reads is an
+        // index GATK produced.
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("reads.vcf.gz").toString()});
+        // A file NAMED like a tabix index and not gzipped at all. `DumpTabixIndex` checks the name
+        // before it opens anything, so a `.vcf` handed to it is refused for its name and never
+        // reaches the gzip layer; this one gets past the name and fails inside `java.util.zip`,
+        // which is the second of the two refusals in the dump-tabix-index golden.
+        Files.writeString(dir.resolve("plain.tbi"), vcf(), StandardCharsets.UTF_8);
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
+        indels(dir.resolve("indels.bam"));
         pairs(dir.resolve("pairs.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two

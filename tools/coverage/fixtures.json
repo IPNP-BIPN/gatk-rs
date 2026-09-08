@@ -899,6 +899,54 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "LeftAlignIndels": {
+      "$why": [
+        "indels.bam is the file the tool can do anything to: its reads carry a deletion and an",
+        "insertion of one whole repeat unit, which the ACGT reference lets walk left, next to a",
+        "single-element cigar and an unmapped read, which are the two branches that never reach",
+        "the call. reads.bam is every read at `10M`, so a row given it comes back unchanged, and",
+        "the pair is the difference between the tool running and the tool being a copy.",
+        "--reference has both fastas: other.fasta is a contig the reads do not carry, which is",
+        "the dictionary refusal rather than an empty answer."
+      ],
+      "--input": [
+        "/work/fixtures/indels.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/indels.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/left_aligned.bam",
+        "/work/out/left_aligned2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "DumpTabixIndex": {
+      "$why": [
+        "The three values of --tabix-index are the tool's three answers: reads.vcf.gz.tbi is a real",
+        "tabix index written by the reference's own IndexFeatureFile, reads.vcf is refused for its",
+        "NAME before anything is opened, and plain.tbi gets past the name and is not gzipped, which",
+        "fails inside java.util.zip and is the `ZipException` of the dump-tabix-index golden."
+      ],
+      "--tabix-index": [
+        "/work/fixtures/reads.vcf.gz.tbi",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/plain.tbi"
+      ],
+      "--output": [
+        "/work/out/tabix.txt",
+        "/work/out/tabix2.txt"
+      ]
     }
   },
   "constraints": [],
