@@ -266,6 +266,24 @@
       "matched": 18,
       "t": 2,
       "share": 1.0
+    },
+    "LeftAlignIndels": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "DumpTabixIndex": {
+      "rows": 7,
+      "accepted": 3,
+      "rejected": 4,
+      "distinct_outputs": 2,
+      "matched": 7,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

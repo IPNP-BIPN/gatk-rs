@@ -135,6 +135,13 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores());
         declarations("AddOriginalAlignmentTags",
                 new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
+        // The next two. `LeftAlignIndels` is a read walker that needs a REFERENCE, which is the
+        // first required argument in this dump that is not the reads, and `DumpTabixIndex` is a
+        // tool that is no walker at all and whose whole namespace is fourteen arguments.
+        declarations("LeftAlignIndels",
+                new org.broadinstitute.hellbender.tools.LeftAlignIndels());
+        declarations("DumpTabixIndex",
+                new org.broadinstitute.hellbender.tools.DumpTabixIndex());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

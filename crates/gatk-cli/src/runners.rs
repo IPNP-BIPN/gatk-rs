@@ -2950,6 +2950,108 @@ pub fn add_original_alignment_tags(parser: &Parser) -> Outcome {
     }
 }
 
+/// `LeftAlignIndels`, the first read walker here whose REFERENCE is required.
+///
+/// The window each read is left-aligned in is the read's own span, which the walker builds as
+/// `new ReferenceContext(reference, new SimpleInterval(read))`, so the reference is queried per
+/// read and not per interval. `AlignmentUtils.leftAlignIndels` raises `IllegalArgumentException`
+/// on a cigar it cannot align, which is a bug rather than a refusal: the handler prints the class
+/// and the run ends at three.
+pub fn left_align_indels(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "LeftAlignIndels")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `requiresReference()` is true, so the parser refuses a run without one before this.
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("LeftAlignIndels", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let dictionary = gatk_tools::reference_walker::dictionary(&reference);
+    let run = gatk_tools::left_align_indels::left_align_indels_with(
+        &source,
+        &mut reference,
+        &options,
+        &filter,
+        level,
+        deflater,
+    )
+    .map_err(|error| match error {
+        // `MissingContigInSequenceDictionary`, raised by the per-read reference query: the
+        // dictionary it prints is the REFERENCE's, which is why this is formatted here. Measured on
+        // row 6 of this tool's array, where the reads are on `chr1` and `--reference` is the fasta
+        // that carries `chrOther`; the port answered a `SAMFormatException` at three.
+        gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => Thrown::user(format!(
+            "Contig {contig} not present in the sequence dictionary {}\n",
+            gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+        )),
+        other => reads_traversal_error(other),
+    })?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Err(error) => Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            format!("{error:?}"),
+        )),
+    }
+}
+
+/// `DumpTabixIndex`, which is no walker at all: a `.tbi` in, its text out.
+///
+/// Three refusals, in the order the tool reaches them, and the first is the file's NAME.
+///
+///   - a path that does not end in `.tbi` is refused before anything is opened, whatever it
+///     holds: `Expected a .tbi file as input.`;
+///   - a `.tbi` that is not gzipped fails inside `java.util.zip`, and the tool CATCHES that and
+///     raises its own `Trouble reading index.` -- the bare `java.util.zip.ZipException` in the
+///     dump-tabix-index golden is the same failure reached through the tool's method rather than
+///     through `Main`, which is a different door and a different handler;
+///   - and a gzipped `.tbi` whose magic is not `TBI\1` is `Incorrect magic number for tabix
+///     index`.
+///
+/// All three are `UserException` at status two.
+pub fn dump_tabix_index(parser: &Parser) -> Outcome {
+    let input = argument(parser, "tabix-index").ok_or_else(|| {
+        Thrown::command_line("Argument tabix-index was missing: Argument 'tabix-index' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // The NAME is checked before anything is opened, so a file that is not called `.tbi` is
+    // refused for its name and never reaches the gzip layer whatever it holds.
+    if !input.ends_with(".tbi") {
+        return Err(Thrown::user("Expected a .tbi file as input."));
+    }
+    let bytes = std::fs::read(&input)
+        .map_err(|error| Thrown::user(format!("Couldn't read {input}: {error}")))?;
+    let decompressed = htsjdk_bgzf::read::decompress_all(&bytes)
+        .map_err(|_| Thrown::user("Trouble reading index."))?;
+    let text = gatk_tools::dump_tabix_index::dump_tabix_index(&decompressed)
+        .map_err(|error| Thrown::user(error.message()))?;
+    std::fs::write(&output, text).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    Ok(None)
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,

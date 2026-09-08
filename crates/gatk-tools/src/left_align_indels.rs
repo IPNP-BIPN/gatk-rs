@@ -52,7 +52,7 @@ use gatk_engine::read;
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 use gatk_engine::reference::ReferenceFileSource;
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK LeftAlignIndels";
@@ -90,6 +90,28 @@ pub fn left_align_indels(
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> RunResult {
+    left_align_indels_with(
+        source,
+        reference,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run with the writer's compression named, which is what a command line decides.
+///
+/// `--gatk-config-file` sets the level and `--use-jdk-deflater` the implementation, and neither
+/// reaches the records: they reach the bytes the records are written as.
+pub fn left_align_indels_with(
+    source: &ReadsDataSource,
+    reference: &mut ReferenceFileSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     let applied = crate::read_walker::traverse_with_reference(
         source,
         Some(reference),
@@ -103,7 +125,16 @@ pub fn left_align_indels(
         let bases = entry
             .context
             .bases(reference)
-            .map_err(|error| ReadsError::Malformed(format!("{error:?}")))?;
+            .map_err(|error| match error {
+                // The window is queried PER READ, so a reference that does not carry the read's contig
+                // is refused here and not at startup, and it is a `UserException` naming the contig
+                // rather than a format error. The caller turns it into the message, because the
+                // dictionary that message prints is the caller's to pretty-print.
+                gatk_engine::context::ContextError::Reference(
+                    gatk_engine::reference::ReferenceError::UnknownContig(contig),
+                ) => ReadsError::ContigNotInDictionary(contig),
+                other => ReadsError::Malformed(format!("{other:?}")),
+            })?;
         if let Err(error) = left_align(&mut entry.read, &bases) {
             return Ok(Err(error));
         }
@@ -111,10 +142,12 @@ pub fn left_align_indels(
     }
 
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
-    Ok(Ok(write_records(
+    Ok(Ok(crate::sam_output::write_records_with(
         &header,
         &records,
         options.create_output_bam_index,
+        level,
+        deflater,
     )?))
 }
 
