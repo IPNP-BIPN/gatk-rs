@@ -248,6 +248,24 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "RevertBaseQualityScores": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "AddOriginalAlignmentTags": {
+      "rows": 18,
+      "accepted": 10,
+      "rejected": 8,
+      "distinct_outputs": 10,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
