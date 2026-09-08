@@ -45,6 +45,9 @@ use htsjdk_bgzf::vfp;
 
 use crate::interval::SimpleInterval;
 
+/// `BAMFileConstants.FIXED_BLOCK_SIZE`: the part of a record before its name.
+const FIXED_BLOCK_SIZE: usize = 32;
+
 /// What a query refuses to answer, rather than answering wrongly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadsError {
@@ -715,21 +718,40 @@ impl<'a> BlockCursor<'a> {
             return Ok(None);
         }
         let block_size = i32::from_le_bytes([size[0], size[1], size[2], size[3]]);
-        if block_size < 0 {
-            return Err(ReadsError::Malformed(format!(
-                "negative record length {block_size}"
-            )));
-        }
-        let body = self.read_up_to(block_size as usize)?;
-        if body.len() < block_size as usize {
-            // The EOF on the BODY is not caught: `BinaryCodec.readBytes` raises, and the file it
-            // names is filled in by the caller, which is the one that knows the path.
-            return Err(ReadsError::PrematureEof {
-                expected: i64::from(block_size),
-                received: body.len(),
-                file: String::new(),
-            });
-        }
+        // A length under the fixed block size, negative ones included, never reaches a read at
+        // all: `BAMRecordCodec.decode` compares it first and raises `SAMFormatException`, which is
+        // what `BamRecord::decode` answers below with the bytes it was given.
+        let body = if (block_size as usize) < FIXED_BLOCK_SIZE || block_size < 0 {
+            self.read_up_to(block_size.max(0) as usize)?
+        } else {
+            // The body is read in TWO calls, and which one runs out decides the numbers the
+            // exception carries: the fixed block first, then the variable part after it. So a
+            // stream with a hundred bytes left and a length of a gigabyte reports the SECOND
+            // call, expecting the length less the fixed block and having received what was left
+            // after it.
+            let fixed = self.read_up_to(FIXED_BLOCK_SIZE)?;
+            if fixed.len() < FIXED_BLOCK_SIZE {
+                return Err(ReadsError::PrematureEof {
+                    expected: FIXED_BLOCK_SIZE as i64,
+                    received: fixed.len(),
+                    file: String::new(),
+                });
+            }
+            let rest_length = block_size as usize - FIXED_BLOCK_SIZE;
+            let rest = self.read_up_to(rest_length)?;
+            if rest.len() < rest_length {
+                // The EOF here is not caught: `BinaryCodec.readBytes` raises, and the file it
+                // names is filled in by the caller, which is the one that knows the path.
+                return Err(ReadsError::PrematureEof {
+                    expected: rest_length as i64,
+                    received: rest.len(),
+                    file: String::new(),
+                });
+            }
+            let mut body = fixed;
+            body.extend_from_slice(&rest);
+            body
+        };
         let mut bytes = size;
         bytes.extend_from_slice(&body);
         match BamRecord::decode(&bytes) {
