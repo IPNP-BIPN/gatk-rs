@@ -870,7 +870,15 @@
       "$why": [
         "`getMateReferenceName` on an unpaired read throws, so the pairs file is the answer and the",
         "unpaired one is the refusal -- htsjdk's `IllegalStateException` rather than the tool's own",
-        "exception, which is a different handler and a different exit status."
+        "exception, which is a different handler and a different exit status.",
+        "The three read-filter arguments below are held out. Each belongs to a filter that no row",
+        "selects -- --read-filter-tag-op to ReadTagValueFilter, --keep-reverse-strand-only to",
+        "ReadStrandFilter, --dont-require-soft-clips-both-ends to OverclippedReadFilter -- and the",
+        "reference refuses a command line that carries an argument whose filter is not among the",
+        "selected ones: `Argument \"/read-filter-tag-op\" is only valid when the argument",
+        "\"ReadTagValueFilter\" is specified`. With them in the array all twenty rows are that one",
+        "refusal and the array measures nothing. Which filter owns which argument, and what the",
+        "refusal costs, is measured by the filter-resolution and read-filter-catalogue suites."
       ],
       "--input": [
         "/work/fixtures/pairs.bam",
@@ -887,7 +895,10 @@
       "--output": [
         "/work/out/tagged.bam",
         "/work/out/tagged2.bam"
-      ]
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
     }
   },
   "constraints": [],
