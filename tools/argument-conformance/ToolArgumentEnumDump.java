@@ -142,6 +142,12 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.LeftAlignIndels());
         declarations("DumpTabixIndex",
                 new org.broadinstitute.hellbender.tools.DumpTabixIndex());
+        // The next two. `ReadAnonymizer` is a read walker that needs a reference AND rewrites the
+        // bases it reads, and `PrintFileDiagnostics` declares fifteen arguments and is no walker.
+        declarations("ReadAnonymizer",
+                new org.broadinstitute.hellbender.tools.walkers.ReadAnonymizer());
+        declarations("PrintFileDiagnostics",
+                new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
