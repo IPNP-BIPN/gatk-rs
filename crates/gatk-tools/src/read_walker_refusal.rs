@@ -45,6 +45,8 @@ pub const COULD_NOT_READ: &str =
     "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile";
 pub const SAM_FORMAT: &str = "htsjdk.samtools.SAMFormatException";
 pub const ILLEGAL_ARGUMENT: &str = "java.lang.IllegalArgumentException";
+/// `BinaryCodec.readBytes` when the record body it was promised is not there.
+pub const RUNTIME_EOF: &str = "htsjdk.samtools.util.RuntimeEOFException";
 
 impl Refusal {
     /// The exception class the reference throws.

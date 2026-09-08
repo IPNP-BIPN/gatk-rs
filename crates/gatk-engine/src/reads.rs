@@ -55,6 +55,18 @@ pub enum ReadsError {
     Io(String),
     /// The bytes are not a BAM, or a record does not decode.
     Malformed(String),
+    /// A record's length was read and the bytes it promises are not there.
+    ///
+    /// `BinaryCodec.readBytes` reads until it has the length it was asked for and raises
+    /// `RuntimeEOFException` when the stream ends first, counting both numbers. It is reached by
+    /// seeking to an offset that is not a record boundary, which is what an index built for a
+    /// DIFFERENT file does: the four bytes there read as a length of over a gigabyte and the file
+    /// has a few hundred left. The reference names the file it was reading, so this carries it.
+    PrematureEof {
+        expected: i64,
+        received: usize,
+        file: String,
+    },
 }
 
 /// `htsjdk.samtools.QueryInterval`: a reference *index*, not a name, and a 1-based closed span.
@@ -361,6 +373,8 @@ pub fn minimum_offset(linear_index: &[u64], start_pos: i32) -> u64 {
 pub struct ReadsDataSource {
     compressed: Vec<u8>,
     header: SamHeader,
+    /// The path the BAM was opened from, which a `RuntimeEOFException` names.
+    path: String,
     /// One entry per reference sequence: its bins' chunks and its linear index.
     index: Vec<ReferenceIndex>,
 }
@@ -410,6 +424,7 @@ impl ReadsDataSource {
         Ok(ReadsDataSource {
             compressed,
             header,
+            path: bam.display().to_string(),
             index,
         })
     }
@@ -433,12 +448,27 @@ impl ReadsDataSource {
         Ok(ReadsDataSource {
             compressed,
             header,
+            path: bam.display().to_string(),
             index: Vec::new(),
         })
     }
 
     pub fn header(&self) -> &SamHeader {
         &self.header
+    }
+
+    /// Fill in the file a `RuntimeEOFException` names, which the cursor cannot know.
+    fn name_the_file(&self, error: ReadsError) -> ReadsError {
+        match error {
+            ReadsError::PrematureEof {
+                expected, received, ..
+            } => ReadsError::PrematureEof {
+                expected,
+                received,
+                file: self.path.clone(),
+            },
+            other => other,
+        }
     }
 
     /// `BinningIndexContent.getChunksOverlapping` then `Chunk.optimizeChunkList`.
@@ -492,7 +522,7 @@ impl ReadsDataSource {
         'chunks: for chunk in span {
             let mut cursor = BlockCursor::seek(&self.compressed, chunk.start)?;
             while cursor.virtual_pos() < chunk.end {
-                let Some(record) = cursor.next_record()? else {
+                let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
                     break;
                 };
                 match filter.compare_to_filter(&record) {
@@ -519,7 +549,7 @@ impl ReadsDataSource {
         let mut cursor = BlockCursor::seek(&self.compressed, start)?;
         let mut kept = Vec::new();
         let mut reached = false;
-        while let Some(record) = cursor.next_record()? {
+        while let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? {
             if !reached {
                 if record.reference_index != -1 {
                     continue;
@@ -650,18 +680,23 @@ impl<'a> BlockCursor<'a> {
         }
     }
 
-    /// Reads `n` bytes, crossing into following blocks as needed.
-    fn read_exact(&mut self, n: usize) -> Result<Option<Vec<u8>>, ReadsError> {
-        let mut out = Vec::with_capacity(n);
+    /// Reads up to `n` bytes, crossing into following blocks as needed.
+    ///
+    /// A short result is the stream ending, and the caller decides what that means: the length
+    /// word ending short is the end of the records, and a record BODY ending short is
+    /// `RuntimeEOFException`. Both need the count, which is why this returns what it read rather
+    /// than `None`.
+    fn read_up_to(&mut self, n: usize) -> Result<Vec<u8>, ReadsError> {
+        let mut out = Vec::with_capacity(n.min(self.data.len()));
         while out.len() < n {
             if self.offset >= self.block.len() {
                 let next = self.next_address;
                 if !self.load_block(next)? {
-                    return Ok(None);
+                    return Ok(out);
                 }
                 // An empty block (the BGZF terminator) is not the end of the stream by itself.
                 if self.block.is_empty() && self.next_address as usize >= self.data.len() {
-                    return Ok(None);
+                    return Ok(out);
                 }
                 continue;
             }
@@ -669,22 +704,32 @@ impl<'a> BlockCursor<'a> {
             out.extend_from_slice(&self.block[self.offset..self.offset + take]);
             self.offset += take;
         }
-        Ok(Some(out))
+        Ok(out)
     }
 
     fn next_record(&mut self) -> Result<Option<BamRecord>, ReadsError> {
-        let Some(size) = self.read_exact(4)? else {
+        let size = self.read_up_to(4)?;
+        if size.len() < 4 {
+            // `BAMRecordCodec.decode` catches the EOF on the LENGTH and answers null, which is
+            // how a traversal ends rather than how it fails.
             return Ok(None);
-        };
+        }
         let block_size = i32::from_le_bytes([size[0], size[1], size[2], size[3]]);
         if block_size < 0 {
             return Err(ReadsError::Malformed(format!(
                 "negative record length {block_size}"
             )));
         }
-        let Some(body) = self.read_exact(block_size as usize)? else {
-            return Ok(None);
-        };
+        let body = self.read_up_to(block_size as usize)?;
+        if body.len() < block_size as usize {
+            // The EOF on the BODY is not caught: `BinaryCodec.readBytes` raises, and the file it
+            // names is filled in by the caller, which is the one that knows the path.
+            return Err(ReadsError::PrematureEof {
+                expected: i64::from(block_size),
+                received: body.len(),
+                file: String::new(),
+            });
+        }
         let mut bytes = size;
         bytes.extend_from_slice(&body);
         match BamRecord::decode(&bytes) {

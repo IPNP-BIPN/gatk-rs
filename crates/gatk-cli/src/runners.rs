@@ -2966,6 +2966,22 @@ fn reads_traversal_error(error: gatk_engine::reads::ReadsError) -> Thrown {
             };
             Thrown::non_user(gatk_tools::read_walker_refusal::SAM_FORMAT, message)
         }
+        // A record whose LENGTH decodes and whose body is not there is a different exception in a
+        // different package: `BinaryCodec.readBytes` counts what it asked for and what it got, and
+        // names the file it was reading. Measured on row 7 of `AddOriginalAlignmentTags`' array,
+        // where reads.bam is handed pairs.bai: the seek lands mid-record, four bytes of a read
+        // name read as a length of 1178218778, and 320 bytes are left in the file.
+        gatk_engine::reads::ReadsError::PrematureEof {
+            expected,
+            received,
+            file,
+        } => Thrown::non_user(
+            gatk_tools::read_walker_refusal::RUNTIME_EOF,
+            format!(
+                "Premature EOF. Expected {expected} but only received {received}; \
+                 BinaryCodec in readmode; file: {file}"
+            ),
+        ),
         other => Thrown::user(format!("{other:?}")),
     }
 }
