@@ -145,6 +145,13 @@ def cross_check(tool, entries):
     documented argument has to be in the declarations, with the same `required` and the same
     default. The declarations hold more, because the usage text does not print the common and
     advanced ones.
+
+    One kind of argument reads differently in the two, and the difference is a fact about the
+    reference rather than a disagreement: an argument owned by a plugin descriptor is declared
+    `required` because it is required once its filter is selected, and the usage text prints it as
+    optional because selecting the filter is itself optional. AddOriginalAlignmentTags is the first
+    declared tool whose usage text prints any of them, and all twelve read that way. So `required`
+    is compared for the tool's own arguments only.
     """
     inventory = json.loads(INVENTORY.read_text())
     documented = next(t for t in inventory["tools"] if t["name"] == tool)["arguments"]
@@ -154,7 +161,7 @@ def cross_check(tool, entries):
         entry = by_name.get(name)
         if entry is None:
             sys.exit(f"{tool}: the usage text documents --{name} and the parser does not declare it")
-        if entry["required"] != bool(argument["required"]):
+        if entry["controlled_by"] is None and entry["required"] != bool(argument["required"]):
             sys.exit(f"{tool}: --{name} is required in one reading and not the other")
         written = argument.get("default")
         if written is None:
@@ -342,6 +349,7 @@ def main():
             parsed.append({
                 "long_name": long_name,
                 "required": required == "required",
+                "controlled_by": None if plugin == "none" else plugin,
                 "default": None if default == "null" else default,
             })
             entries.append(

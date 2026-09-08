@@ -114,6 +114,48 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM whose every read carries `OQ`, which is what
+     * `RevertBaseQualityScores` needs to do anything at all.
+     *
+     * That tool ABORTS on the first read without the tag rather than skipping it, so a corpus
+     * holding only `reads.bam` measures the refusal and nothing else. Here every read has one, and
+     * the original qualities DIFFER from the current ones -- `2` against `I`, which is quality two
+     * against forty -- so a row that reverts is a different file rather than the same one.
+     */
+    static void bamWithOriginalQualities(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg4");
+        group.setSample("sample4");
+        group.setLibrary("lib4");
+        group.setPlatformUnit("unit4");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 6; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("OQ:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setFlags(0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(150 + index * 800);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                // The original qualities the tool restores, and they are not the current ones.
+                record.setAttribute("OQ", "##########");
+                record.setAttribute("RG", "rg4");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A second coordinate-sorted BAM, so that `--input` has two values rather than one.
      *
      * An argument with a single fixture value is held at it and no row can notice whether it
@@ -282,6 +324,7 @@ public class MakeFixtures {
         }
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
+        bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         pairs(dir.resolve("pairs.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two

@@ -38,7 +38,7 @@ use htsjdk_bam::tag::{Tag, TagValue};
 
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK AddOriginalAlignmentTags";
@@ -145,6 +145,23 @@ pub fn add_original_alignment_tags(
     options: &Options,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> RunResult {
+    add_original_alignment_tags_with(
+        source,
+        options,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run with the writer's compression named, which is what a command line decides.
+pub fn add_original_alignment_tags_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     let mut records = crate::read_walker::traverse(source, &options.intervals, filter)?;
     let input_header = source.header().clone();
     for record in &mut records {
@@ -153,9 +170,11 @@ pub fn add_original_alignment_tags(
         }
     }
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
-    Ok(Ok(write_records(
+    Ok(Ok(crate::sam_output::write_records_with(
         &header,
         &records,
         options.create_output_bam_index,
+        level,
+        deflater,
     )?))
 }
