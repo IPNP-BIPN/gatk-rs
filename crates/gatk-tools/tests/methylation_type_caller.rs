@@ -112,6 +112,8 @@ fn run(dir: &std::path::Path, fasta: &std::path::Path, label: &str) -> String {
         intervals.as_deref(),
         // `--add-output-vcf-command-line false`, which is what makes the file comparable.
         Vec::new(),
+        // `--sites-only-vcf-output` is not set in any golden run of this suite.
+        false,
     )
     .expect("the run finishes")
 }

@@ -3392,12 +3392,15 @@ pub fn split_n_cigar_reads(parser: &Parser) -> Outcome {
             .query(contig, start, end)
             .map_err(|error| format!("{error:?}"))
     };
-    let produced = gatk_tools::split_n_cigar_reads::split_n_cigar_reads(
+    let (level, deflater) = output_compression(parser);
+    let produced = gatk_tools::split_n_cigar_reads::split_n_cigar_reads_with(
         &source,
         &arguments_for_split,
         &options,
         &filter,
         &mut query,
+        level,
+        deflater,
     );
     let (bytes, bai) = match produced {
         Ok(produced) => produced,
@@ -3469,11 +3472,43 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
             Some(&intervals)
         },
         default_lines,
+        flag(parser, "sites-only-vcf-output"),
     )
     .map_err(|error| Thrown::user(error.message()))?;
-    std::fs::write(&output, text).map_err(|error| {
+    std::fs::write(&output, &text).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
+
+    // A variant output carries the same two companions a BAM does, under their own arguments: the
+    // index the file's name implies, and the digest APPENDED to the whole name.
+    if flag(parser, "create-output-variant-index") {
+        let lengths: Vec<(String, i32)> = gatk_tools::reference_walker::dictionary(&reference)
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect();
+        let index = on_the_fly_index(
+            &text,
+            &lengths,
+            &output,
+            text.len() as i64,
+            modified_millis(&output),
+        );
+        let name = format!("{output}.idx");
+        std::fs::write(&name, index).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
+        })?;
+    }
+    if flag(parser, "create-output-variant-md5") {
+        let digest = format!("{output}.md5");
+        std::fs::write(
+            &digest,
+            gatk_tools::gather_bam_files::md5_file(text.as_bytes()),
+        )
+        .map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+        })?;
+    }
     Ok(None)
 }
 

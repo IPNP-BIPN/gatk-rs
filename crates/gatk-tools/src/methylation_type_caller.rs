@@ -84,7 +84,11 @@ impl MethylationError {
 /// `default_lines` is what `getDefaultToolVCFHeaderLines` returned. It is a parameter because it
 /// carries the run's own date, which no golden can hold: a caller that wants a comparable file
 /// passes nothing, which is what `--add-output-vcf-command-line false` does.
-pub fn create_methylation_header(header: &SamHeader, default_lines: Vec<HeaderLine>) -> VcfHeader {
+pub fn create_methylation_header(
+    header: &SamHeader,
+    default_lines: Vec<HeaderLine>,
+    sites_only: bool,
+) -> VcfHeader {
     let mut lines = default_lines;
     lines.push(HeaderLine::info(
         UNCONVERTED_BASE_COVERAGE_KEY,
@@ -119,11 +123,19 @@ pub fn create_methylation_header(header: &SamHeader, default_lines: Vec<HeaderLi
         "Genotype",
     ));
 
-    let mut samples: Vec<String> = header
-        .read_groups
-        .iter()
-        .filter_map(|group| group.attributes.get("SM").map(|s| s.to_string()))
-        .collect();
+    // `--sites-only-vcf-output` builds the writer with `setOption(DO_NOT_WRITE_GENOTYPES)`, and a
+    // header with no samples is what that writes: the `#CHROM` line stops at INFO, with no FORMAT
+    // column after it. The `##FORMAT=<ID=GT>` line above it stays, because the option drops the
+    // genotypes and not the declaration.
+    let mut samples: Vec<String> = if sites_only {
+        Vec::new()
+    } else {
+        header
+            .read_groups
+            .iter()
+            .filter_map(|group| group.attributes.get("SM").map(|s| s.to_string()))
+            .collect()
+    };
     samples.sort();
     samples.dedup();
 
@@ -140,6 +152,7 @@ pub fn methylation_type_caller(
     reference: &mut ReferenceFileSource,
     intervals: Option<&[SimpleInterval]>,
     default_lines: Vec<HeaderLine>,
+    sites_only: bool,
 ) -> Result<String, MethylationError> {
     let header = source.header().clone();
     let reads = crate::read_walker::traverse(source, intervals.unwrap_or(&[]), &|_| true)
@@ -163,7 +176,7 @@ pub fn methylation_type_caller(
         }
     }
 
-    let vcf_header = create_methylation_header(&header, default_lines);
+    let vcf_header = create_methylation_header(&header, default_lines, sites_only);
     htsjdk_vcf::vcf_file::write_vcf(&vcf_header, &records)
         .map_err(|error| MethylationError::Reference(format!("{error:?}")))
 }
@@ -320,14 +333,14 @@ mod tests {
     #[test]
     fn the_samples_are_sorted_and_then_deduplicated() {
         let header = header_with(&["s2", "s1", "s2"]);
-        let vcf = create_methylation_header(&header, Vec::new());
+        let vcf = create_methylation_header(&header, Vec::new(), false);
         assert_eq!(vcf.samples, vec!["s1".to_string(), "s2".to_string()]);
     }
 
     #[test]
     fn the_header_carries_five_lines_of_its_own() {
         let header = header_with(&["s1"]);
-        let vcf = create_methylation_header(&header, Vec::new());
+        let vcf = create_methylation_header(&header, Vec::new(), false);
         assert_eq!(vcf.lines.len(), 5);
         let rendered = vcf.write();
         assert!(rendered.contains("##INFO=<ID=UNCONVERTED_BASE_COV,"));
