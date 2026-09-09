@@ -371,7 +371,7 @@ jobs:
         # document is stale, and a stale number in a sizing document is how a plan drifts.
         run: |
           python3 tools/coverage/covering.py --all --t 2 | tee /tmp/all.txt
-          grep -q "oracle runs=19437" /tmp/all.txt || {
+          grep -q "oracle runs=19454" /tmp/all.txt || {
             echo "pairwise sizing changed; update docs/what-pairwise-coverage-costs.md"
             exit 1
           }
