@@ -210,6 +210,65 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM whose reads PILE UP: eight of them at one locus, four at the next.
+     *
+     * `--max-depth-per-sample` thins a pileup deeper than its target, and every other file in this
+     * corpus has a depth of one, so the argument decided nothing and could not be measured. Eight
+     * at one position is deep enough for the reservoir to draw and the leveller to level at any
+     * target the array uses.
+     *
+     * The bases differ read by read, which is what makes a thinned pileup VISIBLE: eight identical
+     * reads would print the same column whichever four survived.
+     */
+    static void deep(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            final String[] bases = {
+                    "ACGTACGTAC", "ACGTACGTAG", "ACGTACGTAT", "ACGTACGTAA",
+                    "CCGTACGTAC", "GCGTACGTAC", "TCGTACGTAC", "ACGTACGTCC",
+            };
+            for (int index = 0; index < bases.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                // Eight at 1005 and four more at 1105, so a run sees one deep locus and one that is
+                // deep for half as long: the leveller's plan depends on the stacks it is given.
+                record.setAlignmentStart(index < 8 ? 1005 : 1105);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString(bases[index]);
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+            for (int index = 0; index < 4; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:2:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(1105);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString(bases[index]);
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A coordinate-sorted BAM with TWO read groups, differing in sample and in library.
      *
      * `SplitReads` writes one file per key, so a file with a single read group is one file
@@ -532,6 +591,7 @@ public class MakeFixtures {
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
+        deep(dir.resolve("deep.bam"));
         spliced(dir.resolve("spliced.bam"));
         methylation(dir.resolve("methyl.bam"));
         // The `-XF` file `ClipReads` reads: a FASTA of sequences to clip, which is a different
