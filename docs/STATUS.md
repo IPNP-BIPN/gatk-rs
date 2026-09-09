@@ -130,7 +130,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | not measured |
-| `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
+| `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
@@ -199,7 +199,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | not measured |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
-| `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
+| `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |

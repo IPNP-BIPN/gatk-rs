@@ -3532,6 +3532,217 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `BaseRecalibrator`, whose output is a GATKReport and whose second input is a set of KNOWN SITES.
+///
+/// The sites are read whole rather than queried: the counting pass asks, per base, whether the
+/// locus is known, and a port that holds them all answers that from memory. Both formats GATK
+/// registers for this argument are read here, a BED and a VCF, and the golden's two runs over the
+/// same sites in the two formats produce the same table.
+///
+/// The reference contig is read whole for the same reason `ReadAnonymizer`'s window is: the
+/// counting pass compares the read's bases against it, and BAQ looks wider than the read.
+pub fn base_recalibrator(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "BaseRecalibrator")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let dictionary = gatk_tools::reference_walker::dictionary(&reference);
+
+    let sites_paths = arguments(parser, "known-sites");
+    if sites_paths.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument known-sites was missing: Argument 'known-sites' is required",
+        ));
+    }
+    let mut known_sites = Vec::new();
+    for path in &sites_paths {
+        let text = std::fs::read_to_string(path)
+            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        // The codec is chosen by the file's NAME, which is what `FeatureManager` does. Neither is
+        // read as an interval argument: these are features, so they are not checked against the
+        // reference's dictionary and a site on a contig the reference does not carry is simply a
+        // site no read is at.
+        if path.ends_with(".bed") {
+            for line in text.lines() {
+                // `BEDCodec` with `StartOffset.ONE`: the file is half-open and zero-based and the
+                // locus it decodes to is neither.
+                if let Ok(Some(feature)) =
+                    htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
+                {
+                    known_sites.push(gatk_engine::interval::SimpleInterval {
+                        contig: feature.contig,
+                        start: feature.start,
+                        end: feature.end,
+                    });
+                }
+            }
+        } else {
+            // The whole file through the VCF reader, header included: a record's INFO is decoded
+            // against the declarations above it, and a reader given an empty header answers
+            // nothing at all, which is a run with no known sites and no way to tell.
+            let file = htsjdk_vcf::reader::read_vcf(&text)
+                .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+            for record in &file.records {
+                known_sites.push(gatk_engine::interval::SimpleInterval {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    end: record.stop as i32,
+                });
+            }
+        }
+    }
+
+    // The contig the READS are on, whole: the counting pass compares a read's bases against the
+    // reference, so the contig it needs is the reads' and not whichever the reference lists first.
+    // Taking the reference's first contig instead sliced a thousand bases of `chrOther` with `chr1`
+    // coordinates and panicked.
+    //
+    // The query is a CLOSURE because the order is observable: the reference is opened at startup
+    // and read only once the traversal has produced reads, so a row that hands a BAM the wrong
+    // index AND a reference without the reads' contig answers the read failure. Querying first
+    // answered the contig instead.
+    let wanted = header
+        .sequences
+        .first()
+        .map(|sequence| sequence.name.clone())
+        .unwrap_or_default();
+    let mut bases = || -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
+        let length = dictionary
+            .sequences
+            .iter()
+            .find(|sequence| sequence.name == wanted)
+            .map(|sequence| sequence.length)
+            .ok_or_else(|| {
+                gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                    gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.clone()),
+                )
+            })?;
+        reference.query(&wanted, 1, length).map_err(|error| {
+            gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
+            )
+        })
+    };
+
+    let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {
+        covariates: gatk_engine::covariates::RecalibrationArguments {
+            mismatches_context_size: number_or(parser, "mismatches-context-size", 2),
+            indels_context_size: number_or(parser, "indels-context-size", 3),
+            maximum_cycle_value: number_or(parser, "maximum-cycle-value", 500),
+            low_qual_tail: u8::try_from(number_or(parser, "low-quality-tail", 2)).unwrap_or(2),
+        },
+        enable_baq: flag(parser, "enable-baq"),
+        compute_indel_bqsr_tables: flag(parser, "compute-indel-bqsr-tables"),
+        preserve_qscores_less_than: number_or(parser, "preserve-qscores-less-than", 6),
+        default_base_qualities: i8::try_from(number_or(parser, "default-base-qualities", -1))
+            .unwrap_or(-1),
+        use_original_base_qualities: flag(parser, "use-original-qualities"),
+    };
+    let filter = read_filter(parser, &filters, &header)?;
+    let table = gatk_tools::base_recalibrator::base_recalibrator(
+        &source,
+        &mut bases,
+        &known_sites,
+        &arguments_for_engine,
+        number_or(parser, "quantizing-levels", 16),
+        &filter,
+        &intervals,
+    )
+    .map_err(|error| match error {
+        // A read failure is the reference's own exception, class and all: the EOF on a record body
+        // is `RuntimeEOFException` at status three, not a user banner carrying a Rust debug string.
+        gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+            gatk_engine::reads::ReadsError::ContigNotInDictionary(contig),
+        ) => Thrown::user(format!(
+            "Contig {contig} not present in the sequence dictionary {}\n",
+            gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+        )),
+        gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(error) => {
+            reads_traversal_error(error)
+        }
+        other => Thrown::user(other.message()),
+    })?;
+    std::fs::write(&output, table).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    Ok(None)
+}
+
+/// `GtfToBed`, whose BED is one-based because nothing converts the GTF's own coordinates.
+///
+/// The dictionary is REQUIRED and comes from `--sequence-dictionary`: the tool sorts its rows by
+/// the contig's index in it, so a run without one is refused before a line is read.
+pub fn gtf_to_bed(parser: &Parser) -> Outcome {
+    let input = argument(parser, "gtf-path").ok_or_else(|| {
+        Thrown::command_line("Argument gtf-path was missing: Argument 'gtf-path' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let text = std::fs::read_to_string(&input)
+        .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // `validateSequenceDictionaries` runs at STARTUP, before a line of the annotation is read: a
+    // master dictionary and a `--reference` that disagree are refused there, and the two messages
+    // are the dictionary comparison's own -- "No overlapping contigs found" for two that share
+    // nothing and "Found contigs with the same name but different lengths" for two that do.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(path)) =
+            (master_dictionary(parser)?, argument(parser, "reference"))
+        {
+            let mut reference =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let theirs = gatk_tools::reference_walker::dictionary(&reference);
+            validate_against_master(&master, "reference", &theirs.sequences)?;
+            let _ = &mut reference;
+        }
+    }
+    let dictionary = match master_dictionary(parser)? {
+        Some(header) => Some(
+            header
+                .sequences
+                .iter()
+                .map(|sequence| sequence.name.clone())
+                .collect::<Vec<String>>(),
+        ),
+        None => None,
+    };
+    let features = gatk_tools::gtf_to_bed::parse_features(&text);
+    let bed = gatk_tools::gtf_to_bed::run(
+        &features,
+        dictionary.as_deref(),
+        flag(parser, "sort-by-transcript"),
+        // `--use-basic-transcript`, singular. The plural spelling is not an argument at all, so a
+        // runner that asked for it read false on every row and answered with the transcripts the
+        // reference had dropped.
+        flag(parser, "use-basic-transcript"),
+    )
+    .map_err(|error| match error {
+        // The comparator's refusal is an `IllegalArgumentException` and not the tool's own: it
+        // reaches the handler as a bug rather than a user error, so the class is printed and the
+        // run ends at three.
+        gatk_tools::gtf_to_bed::GtfError::UnknownContig { .. } => {
+            Thrown::non_user("java.lang.IllegalArgumentException", error.message())
+        }
+        other => Thrown::user(other.message()),
+    })?;
+    std::fs::write(&output, bed).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    Ok(None)
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,

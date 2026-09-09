@@ -66,17 +66,32 @@ impl BaseRecalibratorError {
 ///
 /// The quantization is computed **after** `finalizeData`, so it depends on every read the traversal
 /// kept, and the report is written from the finalised tables.
+/// `contig_bases` is a CLOSURE and not a slice, because the order matters: the reference is opened
+/// at startup and queried only once the traversal has produced reads, so a file whose reads cannot
+/// be read fails on the reads and not on the reference. A row that hands a BAM the wrong index and
+/// a reference the reads' contig is missing from answers the read failure, which is what the
+/// reference answers.
+#[allow(clippy::too_many_arguments)]
 pub fn base_recalibrator(
     source: &ReadsDataSource,
-    contig_bases: &[u8],
+    contig_bases: &mut dyn FnMut() -> Result<Vec<u8>, BaseRecalibratorError>,
     known_sites: &[SimpleInterval],
     arguments: &EngineArguments,
     quantizing_levels: i32,
     filter: &dyn Fn(&BamRecord) -> bool,
+    intervals: &[SimpleInterval],
 ) -> Result<String, BaseRecalibratorError> {
     let header = source.header().clone();
-    let records =
-        crate::read_walker::traverse(source, &[], filter).map_err(BaseRecalibratorError::Reads)?;
+    // The traversal is bounded like any other walker's. Hardcoding no intervals here counted the
+    // reads a command line had excluded: `--intervals chr1:1-6000 --exclude-intervals chr1:1-500`
+    // leaves seven of the corpus's eight reads, and the eighth's nine countable bases were nine
+    // observations the recalibration table carried too many.
+    let records = crate::read_walker::traverse(source, intervals, filter)
+        .map_err(BaseRecalibratorError::Reads)?;
+
+    // The bases come after the traversal, for the reason in the doc comment above.
+    let contig_bases = contig_bases()?;
+    let contig_bases = contig_bases.as_slice();
 
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), &header)
         .map_err(BaseRecalibratorError::Engine)?;

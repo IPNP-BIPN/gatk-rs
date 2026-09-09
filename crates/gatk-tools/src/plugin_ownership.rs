@@ -269,6 +269,21 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "GoodCigarReadFilter",
             "WellformedReadFilter",
         ]),
+        // `BaseRecalibrator.getDefaultReadFilters` does not call super either, and the reference
+        // NAMES the chain on its way out: "0 read(s) filtered by: MappingQualityNotZeroReadFilter"
+        // and the six after it, in this order, with the wellformed filter last. Measured on a run
+        // over the corpus's reads.bam, where the eighth read is a duplicate and the reference
+        // reports "1 read(s) filtered by: NotDuplicateReadFilter" -- a port with no defaults at all
+        // counted that read and its recalibration table carried nine observations too many.
+        "BaseRecalibrator" => Some(&[
+            "MappingQualityNotZeroReadFilter",
+            "MappingQualityAvailableReadFilter",
+            "MappedReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "WellformedReadFilter",
+        ]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",

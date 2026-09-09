@@ -338,6 +338,24 @@
       "matched": 21,
       "t": 2,
       "share": 1.0
+    },
+    "BaseRecalibrator": {
+      "rows": 21,
+      "accepted": 8,
+      "rejected": 13,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "GtfToBed": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 3,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

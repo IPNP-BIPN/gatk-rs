@@ -527,6 +527,46 @@ public class MakeFixtures {
         // reaches the gzip layer; this one gets past the name and fails inside `java.util.zip`,
         // which is the second of the two refusals in the dump-tabix-index golden.
         Files.writeString(dir.resolve("plain.tbi"), vcf(), StandardCharsets.UTF_8);
+        // The known sites `BaseRecalibrator` reads, as a BED naming the same loci the population
+        // VCF does. Both formats are registered for that argument and the reference's own two runs
+        // over them produce the same table, so the pair is what makes the argument's two values
+        // comparable rather than merely different.
+        final StringBuilder bed = new StringBuilder();
+        for (int position = 100; position <= 4300; position += 700) {
+            // A BED is half-open and zero-based, so the same one-based locus starts one lower.
+            bed.append("chr1\t").append(position - 1).append('\t').append(position).append('\n');
+        }
+        Files.writeString(dir.resolve("known.bed"), bed.toString(), StandardCharsets.UTF_8);
+        // Indexed, because `--known-sites` is QUERIED by interval: an unindexed file is refused
+        // with `must support random access to enable queries by interval`, and a corpus that
+        // carried one would compare two refusals rather than two tables.
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("known.bed").toString()});
+        // The annotation `GtfToBed` reads, which is the gtf-to-bed golden's own: the
+        // reference's Gencode codec refuses anything less than a full one -- a hand-written
+        // file of gene and transcript lines is `Decoded feature is not valid: null`, because
+        // every transcript needs its exon line and its type, name and havana attributes.
+        Files.writeString(dir.resolve("annotation.gtf"),
+                "chr1\tHAVANA\tgene\t100\t200\t.\t+\t.\tgene_id \"GENE_B.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t50\t250\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B1.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B1.1\"; level 2; tag \"basic\"; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t50\t250\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B1.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B1.1\"; exon_number 1; exon_id \"TX_B1.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\ttranscript\t120\t180\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B2.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B2.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t120\t180\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B2.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B2.1\"; exon_number 1; exon_id \"TX_B2.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\tgene\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; transcript_id \"TX_A1.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TX_A1.1\"; level 2; tag \"basic\"; tag \"basic\"; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; transcript_id \"TX_A1.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TX_A1.1\"; exon_number 1; exon_id \"TX_A1.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\tgene\t300\t400\t.\t+\t.\tgene_id \"GENE_C.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t300\t500\t.\t+\t.\tgene_id \"GENE_C.1\"; transcript_id \"TX_C1.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; transcript_type \"protein_coding\"; transcript_name \"TX_C1.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t300\t500\t.\t+\t.\tgene_id \"GENE_C.1\"; transcript_id \"TX_C1.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; transcript_type \"protein_coding\"; transcript_name \"TX_C1.1\"; exon_number 1; exon_id \"TX_C1.1.1\"; level 2;\n"
+                        + "chr2\tHAVANA\tgene\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr2\tHAVANA\ttranscript\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; transcript_id \"TX_D1.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; transcript_type \"protein_coding\"; transcript_name \"TX_D1.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr2\tHAVANA\texon\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; transcript_id \"TX_D1.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; transcript_type \"protein_coding\"; transcript_name \"TX_D1.1\"; exon_number 1; exon_id \"TX_D1.1.1\"; level 2;\n",
+                StandardCharsets.UTF_8);
+        // The dictionary that annotation is sorted by, which is the golden's: both contigs,
+        // so the corpus's own matching.dict is the value that refuses the chr2 gene.
+        Files.writeString(dir.resolve("gtf.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:1040\n@SQ\tSN:chr2\tLN:1040\n",
+                StandardCharsets.UTF_8);
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
