@@ -3337,6 +3337,146 @@ pub fn clip_reads(parser: &Parser) -> Outcome {
     write_bam(parser, &output, &bytes, bai)
 }
 
+/// `SplitNCigarReads`, which splits a read at every `N` of its cigar.
+///
+/// The overhang-fixing manager holds a queue of reads and asks the reference for the bases around a
+/// splice, so the runner hands it a query closure over the reference source rather than a slice: the
+/// window is per SPLICE and not per read.
+pub fn split_n_cigar_reads(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "SplitNCigarReads")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("SplitNCigarReads", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let arguments_for_split = gatk_tools::split_n_cigar_reads::SplitArguments {
+        refactor_ndn_cigar_reads: flag(parser, "refactor-cigar-string"),
+        skip_mq_transform: flag(parser, "skip-mapping-quality-transform"),
+        process_secondary_alignments: flag(parser, "process-secondary-alignments"),
+        overhang: gatk_engine::overhang_fixing_manager::OverhangArguments {
+            max_records_in_memory: usize::try_from(number_or(
+                parser,
+                "max-reads-in-memory",
+                150_000,
+            ))
+            .unwrap_or(150_000),
+            max_mismatches_in_overhang: number_or(parser, "max-mismatches-in-overhang", 1),
+            max_bases_in_overhang: number_or(parser, "max-bases-in-overhang", 40),
+            do_not_fix_overhangs: flag(parser, "do-not-fix-overhangs"),
+            process_secondary_reads: flag(parser, "process-secondary-alignments"),
+        },
+    };
+
+    let dictionary = gatk_tools::reference_walker::dictionary(&reference);
+    let mut query = |contig: &str, start: i32, end: i32| -> Result<Vec<u8>, String> {
+        reference
+            .query(contig, start, end)
+            .map_err(|error| format!("{error:?}"))
+    };
+    let produced = gatk_tools::split_n_cigar_reads::split_n_cigar_reads(
+        &source,
+        &arguments_for_split,
+        &options,
+        &filter,
+        &mut query,
+    );
+    let (bytes, bai) = match produced {
+        Ok(produced) => produced,
+        Err(gatk_tools::split_n_cigar_reads::SplitToolError::Reads(error)) => {
+            return Err(match error {
+                gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => {
+                    Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+                    ))
+                }
+                other => reads_traversal_error(other),
+            })
+        }
+        // `splitReadBasedOnCigar` and the manager both raise GATK's own unchecked exception, so the
+        // class is printed and the run ends at three.
+        Err(gatk_tools::split_n_cigar_reads::SplitToolError::Split(error)) => {
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                error.message(),
+            ))
+        }
+    };
+    write_bam(parser, &output, &bytes, bai)
+}
+
+/// `MethylationTypeCaller`, the first declared read walker that writes a VCF.
+///
+/// `--add-output-vcf-command-line` adds `##source` and `##GATKCommandLine`, and the second carries
+/// the run's own DATE, which is why the suite's comparable runs turn it off. The line is built here
+/// because the tool takes the default lines as a parameter for that reason.
+pub fn methylation_type_caller(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source, intervals, ..
+    } = read_walker_startup(parser, "MethylationTypeCaller")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let mut default_lines = Vec::new();
+    if flag(parser, "add-output-vcf-command-line") {
+        let command_line = crate::command_line::expanded("MethylationTypeCaller", parser);
+        default_lines.push(htsjdk_vcf::header::HeaderLine::Unstructured {
+            key: "source".to_string(),
+            value: "MethylationTypeCaller".to_string(),
+        });
+        default_lines.push(htsjdk_vcf::header::HeaderLine::Structured {
+            key: "GATKCommandLine".to_string(),
+            fields: vec![
+                ("ID".to_string(), "MethylationTypeCaller".to_string()),
+                ("CommandLine".to_string(), command_line),
+                ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
+            ],
+        });
+    }
+
+    let text = gatk_tools::methylation_type_caller::methylation_type_caller(
+        &source,
+        &mut reference,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        default_lines,
+    )
+    .map_err(|error| Thrown::user(error.message()))?;
+    std::fs::write(&output, text).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    Ok(None)
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,
