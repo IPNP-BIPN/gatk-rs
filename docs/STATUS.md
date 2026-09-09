@@ -222,13 +222,13 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) |
-| `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
+| `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | t=2, 6/6 rows (100%) |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
-| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
+| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 20/22 rows (91%) |
 | `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | not measured |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
