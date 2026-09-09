@@ -1343,7 +1343,14 @@
         "which this tool refuses outright, so the argument has a row that traverses and a row that",
         "refuses.",
         "--read-index is held out for the reason it is held out of TransferReadTags: a query-name",
-        "sorted BAM has no index."
+        "sorted BAM has no index.",
+        "--inverted-read-filter is held out, and the first measurement is why: all nineteen rows were",
+        "REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers",
+        "leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the",
+        "second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then",
+        "dereferences null inside the guard that exists because read1 may be null. That exception is the",
+        "tool's behaviour and is measured, in the module's own tests and against the golden; what an array",
+        "of nineteen refusals cannot measure is the argument surface it is for."
       ],
       "--input": [
         "/work/fixtures/qname.bam",
@@ -1353,7 +1360,8 @@
         "/work/out/rsem.bam",
         "/work/out/rsem2.bam"
       ],
-      "--read-index": []
+      "--read-index": [],
+      "--inverted-read-filter": []
     }
   },
   "constraints": [],
