@@ -37,6 +37,7 @@ use gatk_engine::read;
 use gatk_engine::reads::ReadsDataSource;
 use gatk_engine::reference::{ReferenceError, ReferenceFileSource};
 use htsjdk_bam::header::SamHeader;
+use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 use htsjdk_vcf::variant::{Value, VariantContext};
@@ -153,19 +154,21 @@ pub fn methylation_type_caller(
     intervals: Option<&[SimpleInterval]>,
     default_lines: Vec<HeaderLine>,
     sites_only: bool,
+    filter: &dyn Fn(&BamRecord) -> bool,
 ) -> Result<String, MethylationError> {
     let header = source.header().clone();
     let reads = crate::read_walker::traverse(source, intervals.unwrap_or(&[]), &|_| true)
         .map_err(|error| MethylationError::Reference(format!("{error:?}")))?;
 
-    let filter = crate::locus_walker::default_filter(&header);
+    // The filter is the CALLER's: a command line adds to the tool's defaults and can invert or
+    // disable them, and a row that keeps no read at all writes a header and nothing else.
     let applied = crate::locus_walker::traverse(
         &reads,
         &header,
         Some(reference),
         intervals,
         crate::locus_walker::Options::default(),
-        &filter,
+        filter,
     )
     .map_err(|error| MethylationError::Reference(format!("{error:?}")))?;
 

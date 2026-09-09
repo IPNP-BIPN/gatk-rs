@@ -105,6 +105,8 @@ fn run(dir: &std::path::Path, fasta: &std::path::Path, label: &str) -> String {
     let bai = dir.join(format!("{fixture}.bai"));
     let source = ReadsDataSource::open(&bam, &bai).expect("the fixture opens");
     let mut reference = ReferenceFileSource::open(fasta).expect("the reference opens");
+    let header = source.header().clone();
+    let filter = gatk_tools::locus_walker::default_filter(&header);
 
     methylation_type_caller(
         &source,
@@ -114,6 +116,8 @@ fn run(dir: &std::path::Path, fasta: &std::path::Path, label: &str) -> String {
         Vec::new(),
         // `--sites-only-vcf-output` is not set in any golden run of this suite.
         false,
+        // No `--read-filter` either, so the filter is the walker's own default.
+        &filter,
     )
     .expect("the run finishes")
 }

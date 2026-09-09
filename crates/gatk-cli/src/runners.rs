@@ -3434,7 +3434,10 @@ pub fn split_n_cigar_reads(parser: &Parser) -> Outcome {
 /// because the tool takes the default lines as a parameter for that reason.
 pub fn methylation_type_caller(parser: &Parser) -> Outcome {
     let ReadWalkerStart {
-        source, intervals, ..
+        source,
+        header,
+        intervals,
+        filters,
     } = read_walker_startup(parser, "MethylationTypeCaller")?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
@@ -3473,6 +3476,11 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
         },
         default_lines,
         flag(parser, "sites-only-vcf-output"),
+        // A command line adds to the tool's default filters and can invert or disable them, and a
+        // row that keeps no read writes a header and nothing else. Measured on row 13 of this
+        // tool's array, where `--inverted-read-filter PrimaryLineReadFilter` keeps only the
+        // non-primary reads and the corpus has none.
+        &read_filter(parser, &filters, &header)?,
     )
     .map_err(|error| Thrown::user(error.message()))?;
     std::fs::write(&output, &text).map_err(|error| {
