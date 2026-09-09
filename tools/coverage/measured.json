@@ -290,9 +290,9 @@
       "accepted": 6,
       "rejected": 16,
       "distinct_outputs": 6,
-      "matched": 20,
+      "matched": 22,
       "t": 2,
-      "share": 0.909
+      "share": 1.0
     },
     "PrintFileDiagnostics": {
       "rows": 6,
