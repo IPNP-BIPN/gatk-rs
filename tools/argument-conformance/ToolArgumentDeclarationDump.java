@@ -199,6 +199,12 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.SplitReads());
         declarations("ClipReads",
                 new org.broadinstitute.hellbender.tools.ClipReads());
+        // The next two, and both need a REFERENCE: `SplitNCigarReads` splits a read at every `N`
+        // and `MethylationTypeCaller` writes a VCF rather than reads.
+        declarations("SplitNCigarReads",
+                new org.broadinstitute.hellbender.tools.walkers.rnaseq.SplitNCigarReads());
+        declarations("MethylationTypeCaller",
+                new org.broadinstitute.hellbender.tools.walkers.MethylationTypeCaller());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
