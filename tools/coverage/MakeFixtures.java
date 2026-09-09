@@ -184,10 +184,13 @@ public class MakeFixtures {
                 final SAMRecord record = new SAMRecord(header);
                 record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
                 record.setReferenceName("chr1");
-                record.setAlignmentStart(5);
+                // Every row of the array excludes an interval near the start of the contig, so
+                // reads placed there are filtered out and the tool writes a header and no record.
+                // 1005 is in phase with the ACGT repeat and outside both excluded ranges.
+                record.setAlignmentStart(1005);
                 record.setCigarString("12M");
                 record.setMappingQuality(60);
-                // The reference from position five is ACGTACGTACGT. A converted forward read reads
+                // The reference from position 1005 is ACGTACGTACGT. A converted forward read reads
                 // T where the reference has C, and a converted reverse read reads A where it has G.
                 final String bases;
                 if (!converted) {

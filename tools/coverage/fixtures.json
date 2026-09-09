@@ -1099,7 +1099,13 @@
         "--add-output-vcf-command-line is held at FALSE. Its true value adds a `##GATKCommandLine`",
         "line carrying the run's own DATE, and the reference and the port run minutes apart, so",
         "every row that set it would differ for a reason that is not the tool's. The suite's own",
-        "goldens turn it off for the same reason."
+        "goldens turn it off for the same reason.",
+        "--create-output-variant-index is held at FALSE for a measured reason. The Tribble index a",
+        "tool writes for its OWN output records that file's last-modified time, so two runs of the",
+        "REFERENCE, minutes apart over the same inputs, produce two different index files: `cmp` on",
+        "them differs at byte 55, which is the timestamp, while the VCF beside them is identical. No",
+        "port can match a clock, and the argument is measured where an index is built from an input",
+        "that already exists, which is the index-feature-file suite."
       ],
       "--input": [
         "/work/fixtures/methyl.bam",
@@ -1122,6 +1128,9 @@
         "/work/fixtures/other.fasta"
       ],
       "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
         "false"
       ]
     }

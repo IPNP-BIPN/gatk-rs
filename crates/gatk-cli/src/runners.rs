@@ -3482,11 +3482,23 @@ pub fn methylation_type_caller(parser: &Parser) -> Outcome {
     // A variant output carries the same two companions a BAM does, under their own arguments: the
     // index the file's name implies, and the digest APPENDED to the whole name.
     if flag(parser, "create-output-variant-index") {
-        let lengths: Vec<(String, i32)> = gatk_tools::reference_walker::dictionary(&reference)
-            .sequences
-            .iter()
-            .map(|sequence| (sequence.name.clone(), sequence.length))
-            .collect();
+        // `getBestAvailableSequenceDictionary`, which the index's `DICT:` properties come from: a
+        // `--sequence-dictionary` OUTRANKS the reference's own. Measured on row 6 of this tool's
+        // array, where `--reference other.fasta` and `--sequence-dictionary matching.dict`
+        // disagree and the reference indexed `chr1` where the port indexed `chrOther`.
+        let master = master_dictionary(parser)?;
+        let lengths: Vec<(String, i32)> = match &master {
+            Some(header) => header
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
+            None => gatk_tools::reference_walker::dictionary(&reference)
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect(),
+        };
         let index = on_the_fly_index(
             &text,
             &lengths,
