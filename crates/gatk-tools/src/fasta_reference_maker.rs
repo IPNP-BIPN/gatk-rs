@@ -64,7 +64,10 @@ pub fn run(
 /// writer rather than spelled out, so it cannot drift from what a real close would emit.
 pub fn empty_outputs(bases_per_line: usize) -> Result<FastaOutputs, MakerError> {
     let writer = FastaReferenceWriter::new(bases_per_line, true).map_err(MakerError::Writer)?;
-    writer.close().map_err(MakerError::Writer)
+    // `close_streams` and not `close`: an empty reference is refused by `close()`, and what is
+    // wanted here is the three files the reference's `finally` clause leaves behind, not that
+    // refusal. The tool has already refused for its own reason by the time this is called.
+    writer.close_streams().map_err(MakerError::Writer)
 }
 
 /// The same run over intervals somebody else resolved.

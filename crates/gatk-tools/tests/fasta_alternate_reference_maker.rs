@@ -102,27 +102,27 @@ fn variants() -> Vec<VariantContext> {
     // 2 C>T, a plain SNP.
     let mut snp = VariantContext::new("chr1", 2, vec![allele("C", true), allele("T", false)]);
     snp.filters = Some(Vec::new());
-    snp.genotypes = genotypes(&["C", "T"], &["T", "T"]);
+    snp.genotypes = genotypes(&["C", "T"], &["T", "T"]).into();
     records.push(snp);
 
     // 5 A>AGG, a simple insertion.
     let mut insertion =
         VariantContext::new("chr1", 5, vec![allele("A", true), allele("AGG", false)]);
     insertion.filters = Some(Vec::new());
-    insertion.genotypes = genotypes(&["A", "AGG"], &["AGG", "AGG"]);
+    insertion.genotypes = genotypes(&["A", "AGG"], &["AGG", "AGG"]).into();
     records.push(insertion);
 
     // 8 TAC>T, a simple deletion of the two bases after 8.
     let mut deletion =
         VariantContext::new("chr1", 8, vec![allele("TAC", true), allele("T", false)]);
     deletion.filters = Some(Vec::new());
-    deletion.genotypes = genotypes(&["TAC", "T"], &["T", "T"]);
+    deletion.genotypes = genotypes(&["TAC", "T"], &["T", "T"]).into();
     records.push(deletion);
 
     // 15 N>A, filtered.
     let mut filtered = VariantContext::new("chr1", 15, vec![allele("N", true), allele("A", false)]);
     filtered.filters = Some(vec!["LowQual".to_string()]);
-    filtered.genotypes = genotypes(&["N", "A"], &["A", "A"]);
+    filtered.genotypes = genotypes(&["N", "A"], &["A", "A"]).into();
     records.push(filtered);
 
     // 20 N>*,C, whose first alternate is the spanning deletion.
@@ -132,13 +132,13 @@ fn variants() -> Vec<VariantContext> {
         vec![allele("N", true), allele("*", false), allele("C", false)],
     );
     spanning.filters = Some(Vec::new());
-    spanning.genotypes = genotypes(&["N", "*"], &["*", "*"]);
+    spanning.genotypes = genotypes(&["N", "*"], &["*", "*"]).into();
     records.push(spanning);
 
     // 30 N>G, a het for NA1 and a hom var for NA2.
     let mut het = VariantContext::new("chr1", 30, vec![allele("N", true), allele("G", false)]);
     het.filters = Some(Vec::new());
-    het.genotypes = genotypes(&["N", "G"], &["G", "G"]);
+    het.genotypes = genotypes(&["N", "G"], &["G", "G"]).into();
     records.push(het);
 
     records

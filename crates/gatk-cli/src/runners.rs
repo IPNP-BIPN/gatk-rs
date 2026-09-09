@@ -4393,11 +4393,20 @@ pub fn shift_fasta(parser: &Parser) -> Outcome {
 
 /// What `ShiftFasta` refused with, told apart by whose refusal it is.
 fn shift_error(error: gatk_tools::shift_fasta::ShiftError) -> Thrown {
-    // Every one of the three is a `UserException` of some kind, and the class the handler prints is
-    // the port's record of which: the bad offset list is `$BadInput`, the writer's is htsjdk's.
-    Thrown {
-        failure: Failure::User,
-        exception: error.java_class(),
-        message: Some(error.message()),
+    match &error {
+        // The writer's refusals are htsjdk's exceptions and no `UserException` at all, so the handler
+        // prints the class and the run ends at three. A `--shift-offset-list 0` shifts no contig,
+        // which leaves the writer with nothing to close: `no sequences were added to the reference`.
+        // Measured on rows 4 and 9 of this tool's array, where the port had answered at zero with
+        // four empty files.
+        gatk_tools::shift_fasta::ShiftError::Writer(_) => {
+            Thrown::non_user(error.java_class(), error.message())
+        }
+        // The tool's own two, whose banner the handler prints at two.
+        _ => Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        },
     }
 }
