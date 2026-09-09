@@ -2214,10 +2214,22 @@ pub fn pileup(parser: &Parser) -> Outcome {
         }
     }
 
+    let filter = read_filter(parser, &filters, &header)?;
+    // The records the traversal would hand `apply`, unfiltered: the locus walker applies the
+    // filter itself, and it does so BEFORE the loci are built, so a filtered read is absent from
+    // the pileup rather than present and ignored.
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+
     // `MissingContigInSequenceDictionary`: the locus walker checks each interval's contig against
-    // the REFERENCE's dictionary rather than the best available one, so a run whose master
-    // declares a contig the FASTA does not is refused here rather than answering `N` for every
-    // base of it. Measured on row 8 of this tool's array.
+    // the REFERENCE's dictionary rather than the best available one, so a run whose master declares
+    // a contig the FASTA does not is refused here rather than answering `N` for every base of it.
+    //
+    // It comes AFTER the reads. The check happens when a locus queries the reference, and the reads
+    // for that locus are pulled first, so a file handed the wrong index answers htsjdk's read
+    // failure instead. Measured on row 8 of `CheckPileup`'s array, where reads.bam is given
+    // reads2.bai and other.fasta: the reference answered `Invalid record length: 0` and the port
+    // answered this.
     if let Some(source) = reference.as_ref() {
         let known = gatk_tools::reference_walker::dictionary(source);
         for interval in &intervals {
@@ -2235,12 +2247,6 @@ pub fn pileup(parser: &Parser) -> Outcome {
         }
     }
 
-    let filter = read_filter(parser, &filters, &header)?;
-    // The records the traversal would hand `apply`, unfiltered: the locus walker applies the
-    // filter itself, and it does so BEFORE the loci are built, so a filtered read is absent from
-    // the pileup rather than present and ignored.
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
@@ -2319,20 +2325,6 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
     // The locus walker checks each interval's contig against the REFERENCE's dictionary, which is
     // the same check `Pileup` makes and for the same reason: a master dictionary declaring a
     // contig the FASTA does not is refused here rather than answered with `N`.
-    let known = gatk_tools::reference_walker::dictionary(&reference);
-    for interval in &intervals {
-        if !known
-            .sequences
-            .iter()
-            .any(|sequence| sequence.name == interval.contig)
-        {
-            return Err(Thrown::user(format!(
-                "Contig {} not present in the sequence dictionary {}\n",
-                interval.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
-            )));
-        }
-    }
 
     let text = std::fs::read_to_string(&truth_path)
         .map_err(|error| Thrown::user(format!("{truth_path}: {error}")))?;
@@ -2348,7 +2340,26 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
 
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        .map_err(reads_traversal_error)?;
+    // The contigs are checked against the REFERENCE's dictionary, and only once the reads have been
+    // read: the check happens when a locus queries the reference, and the reads for that locus are
+    // pulled first, so a file handed the wrong index answers htsjdk's read failure and not this.
+    // Measured on row 8 of `CheckPileup`'s array, where reads.bam is given reads2.bai and
+    // other.fasta: the reference answered `Invalid record length: 0`.
+    let known = gatk_tools::reference_walker::dictionary(&reference);
+    for interval in &intervals {
+        if !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == interval.contig)
+        {
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                interval.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+            )));
+        }
+    }
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
@@ -4172,22 +4183,6 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let known = gatk_tools::reference_walker::dictionary(&reference);
 
-    // The locus walker checks each interval's contig against the REFERENCE's dictionary rather than
-    // the best available one, which is the same check `Pileup` makes and for the same reason.
-    for interval in &intervals {
-        if !known
-            .sequences
-            .iter()
-            .any(|sequence| sequence.name == interval.contig)
-        {
-            return Err(Thrown::user(format!(
-                "Contig {} not present in the sequence dictionary {}\n",
-                interval.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
-            )));
-        }
-    }
-
     // `onTraversalStart`'s own check, on the DISTINCT samples in read-group order.
     let mut samples: Vec<String> = Vec::new();
     for group in &header.read_groups {
@@ -4205,6 +4200,29 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
         )));
     }
 
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+
+    // The interval contigs are checked against the REFERENCE's dictionary rather than the best
+    // available one, which is the same check `Pileup` makes and for the same reason. Both it and the
+    // contigs themselves come AFTER the reads: the reference is queried when a locus asks for its
+    // base, and the reads for that locus are pulled first, so a file handed the wrong index answers
+    // htsjdk's read failure instead.
+    for interval in &intervals {
+        if !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == interval.contig)
+        {
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                interval.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+            )));
+        }
+    }
+
     // The contigs whole: a state per base would otherwise be a reference query per base.
     let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     for (name, length) in reference.sequences().to_vec() {
@@ -4213,10 +4231,6 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
         bases.insert(name, contig);
     }
-
-    let filter = read_filter(parser, &filters, &header)?;
-    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
-        .map_err(reads_traversal_error)?;
     // `getTraversalIntervals()`: the user's intervals, or every interval of the reference.
     let requested: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
         known
@@ -4325,13 +4339,18 @@ pub fn shift_fasta(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let theirs = gatk_tools::reference_walker::dictionary(&reference);
+    // `initializeIntervals` runs BEFORE `validateSequenceDictionaries`, so an interval that the best
+    // available dictionary does not carry is refused before the two dictionaries are compared at
+    // all. Measured on row 7 of this tool's array, where `--sequence-dictionary other.dict` and
+    // `--reference reference.fasta` share no contig AND `-L chr1:50000-60000` is off the master: the
+    // reference answered `Badly formed genome unclippedLoc` and the port answered the mismatch.
+    let best = master.clone().unwrap_or_else(|| theirs.clone());
+    let _ = interval_arguments(parser, &best)?;
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(master) = &master {
             validate_against_master(master, "reference", &theirs.sequences)?;
         }
     }
-    let best = master.clone().unwrap_or_else(|| theirs.clone());
-    let _ = interval_arguments(parser, &best)?;
 
     let offsets: Vec<i32> = arguments(parser, "shift-offset-list")
         .iter()
