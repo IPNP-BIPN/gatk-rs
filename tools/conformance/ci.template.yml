@@ -201,6 +201,7 @@ jobs:
             --tool RevertBaseQualityScores --tool AddOriginalAlignmentTags \
             --tool LeftAlignIndels --tool DumpTabixIndex \
             --tool ReadAnonymizer --tool PrintFileDiagnostics \
+            --tool SplitReads --tool ClipReads \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
