@@ -3605,28 +3605,35 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
 
     // The contig the READS are on, whole: the counting pass compares a read's bases against the
     // reference, so the contig it needs is the reads' and not whichever the reference lists first.
-    // A reference that does not carry it is the walker's own refusal, which is what the query
-    // raises per read in every other tool here -- and taking the reference's first contig instead
-    // sliced a thousand bases of `chrOther` with `chr1` coordinates and panicked.
+    // Taking the reference's first contig instead sliced a thousand bases of `chrOther` with `chr1`
+    // coordinates and panicked.
+    //
+    // The query is a CLOSURE because the order is observable: the reference is opened at startup
+    // and read only once the traversal has produced reads, so a row that hands a BAM the wrong
+    // index AND a reference without the reads' contig answers the read failure. Querying first
+    // answered the contig instead.
     let wanted = header
         .sequences
         .first()
         .map(|sequence| sequence.name.clone())
-        .ok_or_else(|| Thrown::user("The reads have no sequence dictionary".to_string()))?;
-    let length = dictionary
-        .sequences
-        .iter()
-        .find(|sequence| sequence.name == wanted)
-        .map(|sequence| sequence.length)
-        .ok_or_else(|| {
-            Thrown::user(format!(
-                "Contig {wanted} not present in the sequence dictionary {}\n",
-                gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
-            ))
-        })?;
-    let contig_bases = reference
-        .query(&wanted, 1, length)
-        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        .unwrap_or_default();
+    let mut bases = || -> Result<Vec<u8>, gatk_tools::base_recalibrator::BaseRecalibratorError> {
+        let length = dictionary
+            .sequences
+            .iter()
+            .find(|sequence| sequence.name == wanted)
+            .map(|sequence| sequence.length)
+            .ok_or_else(|| {
+                gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                    gatk_engine::reads::ReadsError::ContigNotInDictionary(wanted.clone()),
+                )
+            })?;
+        reference.query(&wanted, 1, length).map_err(|error| {
+            gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+                gatk_engine::reads::ReadsError::Malformed(format!("{error:?}")),
+            )
+        })
+    };
 
     let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {
         covariates: gatk_engine::covariates::RecalibrationArguments {
@@ -3645,14 +3652,27 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let table = gatk_tools::base_recalibrator::base_recalibrator(
         &source,
-        &contig_bases,
+        &mut bases,
         &known_sites,
         &arguments_for_engine,
         number_or(parser, "quantizing-levels", 16),
         &filter,
         &intervals,
     )
-    .map_err(|error| Thrown::user(error.message()))?;
+    .map_err(|error| match error {
+        // A read failure is the reference's own exception, class and all: the EOF on a record body
+        // is `RuntimeEOFException` at status three, not a user banner carrying a Rust debug string.
+        gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(
+            gatk_engine::reads::ReadsError::ContigNotInDictionary(contig),
+        ) => Thrown::user(format!(
+            "Contig {contig} not present in the sequence dictionary {}\n",
+            gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+        )),
+        gatk_tools::base_recalibrator::BaseRecalibratorError::Reads(error) => {
+            reads_traversal_error(error)
+        }
+        other => Thrown::user(other.message()),
+    })?;
     std::fs::write(&output, table).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;

@@ -176,7 +176,9 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
 
         let ours = base_recalibrator::base_recalibrator(
             &source,
-            reference.as_bytes(),
+            // The bases are read after the traversal, so the caller hands over a closure. This
+            // suite's reference is a string from the golden and cannot fail.
+            &mut || Ok(reference.as_bytes().to_vec()),
             &known_sites(),
             &engine_arguments,
             levels,
