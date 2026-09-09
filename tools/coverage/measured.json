@@ -320,6 +320,24 @@
       "matched": 24,
       "t": 2,
       "share": 1.0
+    },
+    "SplitNCigarReads": {
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 13,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "MethylationTypeCaller": {
+      "rows": 21,
+      "accepted": 11,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
