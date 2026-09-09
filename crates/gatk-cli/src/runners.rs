@@ -2157,26 +2157,12 @@ pub fn preprocess_intervals(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
-/// What a locus traversal refused with, told apart by whose refusal it is.
+/// What a locus traversal refused with.
 ///
-/// `DownsamplingUnsupported` is the port's own and not GATK's: `--max-depth-per-sample` above zero
-/// asks for `LocusIteratorByState`'s leveling downsampler, which this port does not have, and a run
-/// that ignored the argument would answer a different pileup rather than refuse. Every other
-/// refusal here is the reference's, so it keeps the user banner.
+/// `--max-depth-per-sample` above zero used to be refused here as the port's own limitation. It is
+/// not any more: the reservoir and leveling downsamplers are wired into the read-state managers, so
+/// the argument thins a pileup the way the reference thins it (#1102).
 fn locus_traversal_error(error: gatk_tools::locus_walker::LocusWalkerError) -> Thrown {
-    if matches!(
-        error,
-        gatk_tools::locus_walker::LocusWalkerError::States(
-            gatk_engine::read_states::ReadStateError::DownsamplingUnsupported
-        )
-    ) {
-        return Thrown::non_user(
-            PORT_LIMITATION,
-            "--max-depth-per-sample above zero asks for the locus iterator's downsampler, which \
-             this port does not carry yet, and a run that ignored it would report a pileup the \
-             reference would have thinned. This message is the port's own and not GATK's.",
-        );
-    }
     Thrown::user(format!("{error:?}"))
 }
 

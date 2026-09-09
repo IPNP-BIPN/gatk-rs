@@ -533,12 +533,12 @@
     },
     "Pileup": {
       "--input": [
-        "/work/fixtures/reads.bam",
-        "/work/fixtures/reads2.bam"
+        "/work/fixtures/deep.bam",
+        "/work/fixtures/reads.bam"
       ],
       "--read-index": [
-        "/work/fixtures/reads.bai",
-        "/work/fixtures/reads2.bai"
+        "/work/fixtures/deep.bai",
+        "/work/fixtures/reads.bai"
       ],
       "--intervals": [
         "chr1:1-6000",
@@ -696,8 +696,14 @@
         "/work/fixtures/truth.pileup",
         "/work/fixtures/wrong.pileup"
       ],
-      "--max-depth-per-sample": [
-        "0"
+      "$why": [
+        "--max-depth-per-sample is no longer held at zero: the locus iterator's reservoir and leveling",
+        "thin -- eight reads at one locus, where every other file here has a depth of one.",
+        "--max-depth-per-sample is no longer held at zero: the locus iterator's downsamplers are wired",
+        "in (#1102), so the argument is a value like any other here. Its DEPTH is measured on `Pileup`,",
+        "whose input can be deep.bam; this tool's is the file its truth pileup was built from, and a",
+        "pileup compared against a truth file for a different input measures the pairing rather than",
+        "the tool."
       ]
     },
     "FastaReferenceMaker": {

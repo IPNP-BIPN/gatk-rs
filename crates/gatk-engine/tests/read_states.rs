@@ -151,10 +151,15 @@ fn every_step_holds_what_the_reference_holds() {
         let mut manager = ReadStateManager::new(samples.clone(), DownsamplingInfo::NONE)
             .expect("no downsampling");
         let mut pending: VecDeque<&BamRecord> = reads.iter().collect();
+        // Every golden run of this suite has downsampling OFF, so neither stream is drawn from;
+        // they are here because the signature carries them for the runs that do.
+        let mut random = gatk_engine::java_random::JavaRandom::gatk();
+        let mut leveling = gatk_engine::well19937c::Well19937c::gatk();
 
         if let Some(class) = errors.get(label) {
             // The reference refuses at the first collect, when the undeclared sample is submitted.
-            let result = manager.collect_pending_reads(&mut pending, &header);
+            let result =
+                manager.collect_pending_reads(&mut pending, &header, &mut random, &mut leveling);
             assert!(
                 matches!(result, Err(ReadStateError::UndeclaredSample(_))),
                 "{label}: the reference raised {class}, the port gave {result:?}"
@@ -165,7 +170,7 @@ fn every_step_holds_what_the_reference_holds() {
         let expected = &steps[label];
         for (index, row) in expected.iter().enumerate() {
             manager
-                .collect_pending_reads(&mut pending, &header)
+                .collect_pending_reads(&mut pending, &header, &mut random, &mut leveling)
                 .unwrap_or_else(|e| panic!("{label} step {index}: {e:?}"));
 
             let (total, contents) = row.split_once('\t').expect("a total and contents");
