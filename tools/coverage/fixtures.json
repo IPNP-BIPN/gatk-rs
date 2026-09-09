@@ -1060,6 +1060,70 @@
       "--read": [
         "HWI:1:FC:1:1:1:1"
       ]
+    },
+    "SplitNCigarReads": {
+      "$why": [
+        "spliced.bam is the input the tool can split: its cigars carry one and two `N` elements",
+        "beside a read that has none, so a row over it produces more reads than it read. reads.bam",
+        "is every read at `10M`, which the tool copies, and the pair is the difference between the",
+        "split running and the traversal running.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not."
+      ],
+      "--input": [
+        "/work/fixtures/spliced.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/spliced.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/split.bam",
+        "/work/out/split2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "MethylationTypeCaller": {
+      "$why": [
+        "methyl.bam reads like bisulfite sequencing over the corpus's ACGT reference: forward",
+        "reads that kept their C and forward reads that read T, and the same pair on the reverse",
+        "strand for the G. A file of plain reads produces a VCF with no record at all, which is a",
+        "row that measures the header and nothing else.",
+        "--add-output-vcf-command-line is held at FALSE. Its true value adds a `##GATKCommandLine`",
+        "line carrying the run's own DATE, and the reference and the port run minutes apart, so",
+        "every row that set it would differ for a reason that is not the tool's. The suite's own",
+        "goldens turn it off for the same reason."
+      ],
+      "--input": [
+        "/work/fixtures/methyl.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/methyl.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/methylation.vcf",
+        "/work/out/methylation2.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [],

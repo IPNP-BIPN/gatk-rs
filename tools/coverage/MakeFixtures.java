@@ -114,6 +114,99 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM whose reads carry `N` in their cigars, which is what
+     * `SplitNCigarReads` splits on, and one whose cigar has none.
+     *
+     * A read with k `N` elements becomes k+1 reads, so a file of plain `10M` reads comes out of
+     * the tool unchanged and measures the traversal rather than the split. The `N` here is ten
+     * bases of reference between two matched sections, which is a splice a reference of repeats
+     * still supports.
+     */
+    static void spliced(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final String[] cigars = {"4M10N6M", "3M5N3M5N4M", "10M"};
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < cigars.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(5 + index * 700);
+                record.setCigarString(cigars[index]);
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM that reads like bisulfite sequencing over the corpus's reference.
+     *
+     * The reference is `ACGT` repeated, so a C sits at every fourth base and a G beside it. The
+     * tool counts, at a reference C, the FORWARD reads that kept the C against those that read T,
+     * and at a reference G the REVERSE reads that kept the G against those that read A. Both
+     * strands are here and both conversions, so the array has records to compare rather than an
+     * empty VCF: four forward reads of which two are converted, and four reverse reads of which
+     * two are.
+     */
+    static void methylation(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final boolean reverse = index >= 4;
+                final boolean converted = index % 4 >= 2;
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(5);
+                record.setCigarString("12M");
+                record.setMappingQuality(60);
+                // The reference from position five is ACGTACGTACGT. A converted forward read reads
+                // T where the reference has C, and a converted reverse read reads A where it has G.
+                final String bases;
+                if (!converted) {
+                    bases = "ACGTACGTACGT";
+                } else if (reverse) {
+                    bases = "ACATACATACAT";
+                } else {
+                    bases = "ATGTATGTATGT";
+                }
+                record.setReadString(bases);
+                record.setBaseQualityString("IIIIIIIIIIII");
+                record.setReadNegativeStrandFlag(reverse);
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A coordinate-sorted BAM with TWO read groups, differing in sample and in library.
      *
      * `SplitReads` writes one file per key, so a file with a single read group is one file
@@ -436,6 +529,8 @@ public class MakeFixtures {
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
+        spliced(dir.resolve("spliced.bam"));
+        methylation(dir.resolve("methyl.bam"));
         // The `-XF` file `ClipReads` reads: a FASTA of sequences to clip, which is a different
         // argument from `-X` and takes its names from the records rather than numbering them.
         Files.writeString(dir.resolve("clip.fasta"),
