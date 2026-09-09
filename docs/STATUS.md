@@ -139,8 +139,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
 | `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
-| `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | not measured |
-| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 20/20 rows (100%) |
+| `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | t=2, 45/45 rows (100%) |
+| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 21/21 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
@@ -238,7 +238,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |
 | `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | not measured |
-| `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
+| `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |
 | `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | t=2, 25/25 rows (100%) |

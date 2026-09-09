@@ -99,7 +99,7 @@ pub fn rename(input: &str, new_name: &str, old_name: Option<&str>) -> Result<Str
     // The reference does this by not decoding at all; see the note above.
     let mut records = file.records.clone();
     for record in &mut records {
-        for genotype in &mut record.genotypes {
+        for genotype in record.genotypes.iter_mut() {
             genotype.sample_name = new_name.to_string();
         }
     }

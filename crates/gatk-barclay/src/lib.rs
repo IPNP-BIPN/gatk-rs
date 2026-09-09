@@ -1378,8 +1378,7 @@ impl Parser {
             hash
         };
         let spec_hash = |definition: &Definition| -> i32 {
-            definition
-                .argument_aliases()
+            jopt_option_names(&definition.argument_aliases())
                 .iter()
                 .fold(1i32, |hash, alias| {
                     hash.wrapping_mul(31).wrapping_add(string_hash(alias))
@@ -1796,6 +1795,40 @@ impl Parser {
             .find(|definition| definition.long_name() == long_name)
             .map(|definition| &definition.value)
     }
+}
+
+/// `AbstractOptionSpec.arrangeOptions`, which is what the spec's own `options()` list holds.
+///
+/// jopt-simple does not keep the names it was handed. A spec with more than one name is split into
+/// the ONE-CHARACTER names and the rest, **each half sorted**, and the short half comes first. The
+/// hash that decides [`Parser::propagation_order`] is that list's, so the sort is not cosmetic:
+/// `CallableLoci` declares `--max-low-mapq` as `{mlmq, max-low-mapq}` and neither name is one
+/// character, so the pair is stored as `[max-low-mapq, mlmq]` and hashes to a different bucket than
+/// the order the annotation gives. Measured on eight rows of that tool's covering array, where the
+/// reference reports `max-low-mapq` out of range and the port reported whichever other argument the
+/// unsorted hash reached first.
+///
+/// A single name is returned untouched, which is the reference's own early exit.
+fn jopt_option_names<'a>(aliases: &[&'a str]) -> Vec<&'a str> {
+    if aliases.len() == 1 {
+        return aliases.to_vec();
+    }
+    let mut short: Vec<&str> = aliases
+        .iter()
+        .copied()
+        .filter(|name| name.encode_utf16().count() == 1)
+        .collect();
+    let mut long: Vec<&str> = aliases
+        .iter()
+        .copied()
+        .filter(|name| name.encode_utf16().count() != 1)
+        .collect();
+    // `Collections.sort`, which for strings is `compareTo`: UTF-16 code unit order, and for the
+    // ASCII these names are made of that is byte order.
+    short.sort_unstable();
+    long.sort_unstable();
+    short.extend(long);
+    short
 }
 
 /// `detectAndRejectHybridSyntax`: an option **name** may not contain `=`.

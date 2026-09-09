@@ -284,6 +284,18 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "PassesVendorQualityCheckReadFilter",
             "WellformedReadFilter",
         ]),
+        // `CallableLoci.getDefaultReadFilters` does not call super and carries the GATK3 chain: six
+        // filters in this order, with the wellformed one FOURTH rather than first or last. That
+        // position is observable, because it is the order `--disable-read-filter` lists and the
+        // order a counting summary reports.
+        "CallableLoci" => Some(&[
+            "GoodCigarReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "WellformedReadFilter",
+            "PrimaryLineReadFilter",
+            "MappedReadFilter",
+        ]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",

@@ -68,3 +68,38 @@ fn one_bad_argument_is_still_its_own_message() {
         "Argument ref-base-quality has a bad value: 61. allowed range [0, 60]."
     );
 }
+
+#[test]
+fn joptsimple_sorts_a_specs_names_before_hashing_them() {
+    // `CallableLoci` declares `--max-low-mapq` as `{mlmq, max-low-mapq}`. Neither name is one
+    // character, so jopt-simple's `arrangeOptions` sorts the pair into `[max-low-mapq, mlmq]`, and
+    // the hash of THAT list is what the map is keyed by. Hashing the annotation's order instead put
+    // this argument at position 54 of 80 and reported whichever other bad value came before it: the
+    // reference reports this one on every row of the array that carries it.
+    for other in [
+        "--min-mapping-quality",
+        "--min-base-quality",
+        "--min-depth",
+        "--max-variants-per-shard",
+    ] {
+        let argv = vec![
+            "--input",
+            "/x.bam",
+            "--output",
+            "/o.bed",
+            "--summary",
+            "/o.txt",
+            "--reference",
+            "/x.fasta",
+            "--max-low-mapq",
+            "-1",
+            other,
+            "-1",
+        ];
+        assert_eq!(
+            reported("CallableLoci", &argv),
+            "Argument max-low-mapq has a bad value: -1. allowed range [0, 255].",
+            "against {other}"
+        );
+    }
+}

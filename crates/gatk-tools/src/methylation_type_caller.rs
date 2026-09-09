@@ -275,7 +275,7 @@ pub fn apply(
         ),
     ];
     // `vcb.noGenotypes()`. The encoder still writes a `./.` column for every sample of the header.
-    variant.genotypes = Vec::new();
+    variant.genotypes = Vec::new().into();
     Ok(Some(variant))
 }
 
