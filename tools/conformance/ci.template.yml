@@ -233,6 +233,7 @@ jobs:
             --tool ReadAnonymizer --tool PrintFileDiagnostics \
             --tool SplitReads --tool ClipReads \
             --tool SplitNCigarReads --tool MethylationTypeCaller \
+            --tool BaseRecalibrator --tool GtfToBed \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

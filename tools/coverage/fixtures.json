@@ -1133,6 +1133,71 @@
       "--create-output-variant-index": [
         "false"
       ]
+    },
+    "BaseRecalibrator": {
+      "$why": [
+        "--known-sites has both formats GATK registers for it, naming the same loci: the",
+        "population VCF the corpus already carries and a BED beside it. The reference's own two",
+        "runs over them produce the same table, so the two values are comparable rather than",
+        "merely different.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/groups.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/groups.bai"
+      ],
+      "--known-sites": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/known.bed"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/recal.table",
+        "/work/out/recal2.table"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "GtfToBed": {
+      "$why": [
+        "annotation.gtf is the gtf-to-bed golden's own annotation. The reference's Gencode codec",
+        "refuses anything less: a hand-written file of gene and transcript lines is `Unknown file is",
+        "malformed: Decoded feature is not valid: null`, because every transcript needs its exon line",
+        "and its type, name and havana attributes. It carries a gene whose transcript is WIDER than",
+        "its gene line, which is what makes a gene row take the transcript's span, and one gene on a",
+        "second contig.",
+        "--sequence-dictionary is the tool's own requirement rather than an engine argument: the rows",
+        "are sorted by the contig's index in it, so gtf.dict is the run that answers and the corpus's",
+        "matching.dict, which has chr1 and not chr2, is the comparator's refusal.",
+        "Four engine arguments are held out, and the first measurement is why: all twenty-three rows",
+        "refused. This tool WALKS the GTF, so `--intervals` asks for random access to a file the",
+        "corpus has no index for, and `--input` is reads, which this tool does not read at all: the",
+        "array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index."
+      ],
+      "--gtf-path": [
+        "/work/fixtures/annotation.gtf"
+      ],
+      "--output": [
+        "/work/out/annotation.bed",
+        "/work/out/annotation2.bed"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/gtf.dict",
+        "/work/fixtures/matching.dict"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": []
     }
   },
   "constraints": [],
