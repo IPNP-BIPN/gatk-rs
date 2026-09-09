@@ -308,6 +308,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "MethylationTypeCaller" => Some(run_methylation_type_caller),
         "BaseRecalibrator" => Some(run_base_recalibrator),
         "GtfToBed" => Some(run_gtf_to_bed),
+        "CallableLoci" => Some(run_callable_loci),
+        "ShiftFasta" => Some(run_shift_fasta),
         _ => None,
     }
 }
@@ -367,6 +369,14 @@ fn run_base_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_gtf_to_bed(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::gtf_to_bed(&parsed("GtfToBed", args)?)
+}
+
+fn run_callable_loci(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::callable_loci(&parsed("CallableLoci", args)?)
+}
+
+fn run_shift_fasta(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::shift_fasta(&parsed("ShiftFasta", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

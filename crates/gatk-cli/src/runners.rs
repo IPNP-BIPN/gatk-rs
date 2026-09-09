@@ -4136,3 +4136,249 @@ pub fn annotate_intervals(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     Ok(None)
 }
+
+/// `CallableLoci`, a locus walker whose two outputs are a BED and a summary of six counts.
+///
+/// Four things here are the tool's own and none of them are decoration:
+///
+///   - `emitEmptyLoci()` and `includeNs()` are both true, so the traversal reports EVERY base of
+///     its intervals, uncovered ones included, and a locus over an `N` is answered `REF_N` before
+///     any depth is counted;
+///   - without `-L` the loci come from the REFERENCE's dictionary and not the reads'
+///     (`getTraversalIntervals` asks `hasReference()`), so a reference longer than the reads' header
+///     claims still produces a line per base;
+///   - the single-sample check runs in `onTraversalStart` BEFORE either stream is opened, so a
+///     refused run leaves no output file at all, unlike the tools whose writer is built first;
+///   - and its six default read filters do not include the walker's own, so `--disable-read-filter`
+///     lists them and nothing else.
+pub fn callable_loci(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CallableLoci")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let summary_output = argument(parser, "summary").ok_or_else(|| {
+        Thrown::command_line("Argument summary was missing: Argument 'summary' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let known = gatk_tools::reference_walker::dictionary(&reference);
+
+    // The locus walker checks each interval's contig against the REFERENCE's dictionary rather than
+    // the best available one, which is the same check `Pileup` makes and for the same reason.
+    for interval in &intervals {
+        if !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == interval.contig)
+        {
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                interval.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+            )));
+        }
+    }
+
+    // `onTraversalStart`'s own check, on the DISTINCT samples in read-group order.
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        if let Some(sample) = group.attributes.get("SM") {
+            if !samples.iter().any(|seen| seen == sample) {
+                samples.push(sample.to_string());
+            }
+        }
+    }
+    if samples.len() != 1 {
+        return Err(bad_input(format!(
+            "CallableLoci only works for a single sample.  Found {} samples ({}).",
+            samples.len(),
+            samples.join(", ")
+        )));
+    }
+
+    // The contigs whole: a state per base would otherwise be a reference query per base.
+    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    for (name, length) in reference.sequences().to_vec() {
+        let contig = reference
+            .query(&name, 1, length as i32)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        bases.insert(name, contig);
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    // `getTraversalIntervals()`: the user's intervals, or every interval of the reference.
+    let requested: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        known
+            .sequences
+            .iter()
+            .map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                    .expect("a contig length is at least one")
+            })
+            .collect()
+    } else {
+        intervals.clone()
+    };
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        Some(&requested),
+        gatk_tools::locus_walker::Options {
+            include_deletions: true,
+            include_ns: true,
+            emit_empty_loci: true,
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    let thresholds = gatk_tools::callable_loci::Arguments {
+        max_low_mapq: number_or(parser, "max-low-mapq", 1),
+        min_mapping_quality: number_or(parser, "min-mapping-quality", 10),
+        min_base_quality: number_or(parser, "min-base-quality", 20),
+        min_depth: number_or(parser, "min-depth", 4),
+        // `maxDepth` is an `Integer` and not an `int`: unset is null, and null is not a threshold
+        // rather than a threshold of zero. A run with `--max-depth 0` calls every covered locus
+        // excessive, and a run without it calls none.
+        max_depth: scalar(parser, "max-depth").and_then(|text| text.parse().ok()),
+        min_depth_low_mapq: number_or(parser, "min-depth-for-low-mapq", 10),
+        max_low_mapq_fraction: fraction_or(parser, "max-fraction-of-reads-with-low-mapq", 0.1),
+    };
+    // A locus with no reference base at all cannot be read from the map, and the reference would
+    // have refused before the traversal; `N` is what the state machine answers for one.
+    let loci: Vec<(String, i32, gatk_tools::callable_loci::State)> = applied
+        .iter()
+        .map(|one| {
+            let base = bases
+                .get(&one.context.contig)
+                .and_then(|contig| contig.get((one.context.position - 1) as usize))
+                .copied()
+                .unwrap_or(b'N');
+            let pileup: Vec<gatk_tools::callable_loci::Element> = one
+                .context
+                .pileup
+                .elements
+                .iter()
+                .map(|element| gatk_tools::callable_loci::Element {
+                    mapping_quality: i32::from(element.read.mapping_quality),
+                    base_quality: element.qual() as i32,
+                    is_deletion: element.is_deletion(),
+                })
+                .collect();
+            (
+                one.context.contig.clone(),
+                one.context.position,
+                gatk_tools::callable_loci::state_at(base, &pileup, &thresholds),
+            )
+        })
+        .collect();
+
+    let format = match scalar(parser, "format").as_deref() {
+        Some("STATE_PER_BASE") => gatk_tools::callable_loci::OutputFormat::StatePerBase,
+        _ => gatk_tools::callable_loci::OutputFormat::Bed,
+    };
+    let (bed, summary) = gatk_tools::callable_loci::write(&loci, format);
+    write_file(&output, bed.as_bytes())?;
+    write_file(&summary_output, summary.as_bytes())?;
+    Ok(None)
+}
+
+/// `ShiftFasta`, which is a `GATKTool` with `traverse` overridden and therefore no walker at all.
+///
+/// Its four outputs are written from three arguments: `-O` takes the FASTA and the index and
+/// dictionary htsjdk writes beside it, `--shift-back-output` the chain, and `--interval-file-name`
+/// the base name of a PAIR of interval lists. Two of those are opened in `onTraversalStart`, so a
+/// refused traversal still leaves them behind, empty: see `docs`'s note on a writer built at
+/// startup.
+pub fn shift_fasta(parser: &Parser) -> Outcome {
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let chain_output = argument(parser, "shift-back-output").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument shift-back-output was missing: Argument 'shift-back-output' is required",
+        )
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let interval_name = argument(parser, "interval-file-name");
+
+    // A `GATKTool` loads the master dictionary, opens the reference, resolves the intervals and
+    // validates the dictionaries whether or not its traversal uses any of them, so those refusals
+    // are this tool's refusals too.
+    let master = master_dictionary(parser)?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let theirs = gatk_tools::reference_walker::dictionary(&reference);
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            validate_against_master(master, "reference", &theirs.sequences)?;
+        }
+    }
+    let best = master.clone().unwrap_or_else(|| theirs.clone());
+    let _ = interval_arguments(parser, &best)?;
+
+    let offsets: Vec<i32> = arguments(parser, "shift-offset-list")
+        .iter()
+        .filter_map(|text| text.parse().ok())
+        .collect();
+    let width = number_or(parser, "line-width", 60).max(0) as usize;
+
+    // The three writers `onTraversalStart` builds, which exist before the offset list is checked:
+    // the FASTA's (with its `.fai` and `.dict`), the chain's, and the pair the interval base name
+    // asks for. A refused traversal closes all of them, so the run leaves an empty FASTA, an empty
+    // index, a dictionary of nothing but its `@HD` line, and three empty text files.
+    let write_companions = |chain: &str, plain: &str, shifted: &str| -> Result<(), Thrown> {
+        write_file(&chain_output, chain.as_bytes())?;
+        if let Some(name) = &interval_name {
+            write_file(&format!("{name}.intervals"), plain.as_bytes())?;
+            write_file(&format!("{name}.shifted.intervals"), shifted.as_bytes())?;
+        }
+        Ok(())
+    };
+    let refused = |error: gatk_tools::shift_fasta::ShiftError| -> Thrown {
+        match gatk_tools::fasta_reference_maker::empty_outputs(width) {
+            Ok(empty) => {
+                let _ = write_outputs(&output, &empty);
+                let _ = write_companions("", "", "");
+                shift_error(error)
+            }
+            Err(failure) => fasta_maker_error(failure),
+        }
+    };
+    let outputs = gatk_tools::shift_fasta::run(&mut reference, &offsets, width).map_err(refused)?;
+
+    write_outputs(&output, &outputs.reference)?;
+    write_companions(
+        &outputs.chain,
+        &outputs.intervals,
+        &outputs.shifted_intervals,
+    )?;
+    Ok(None)
+}
+
+/// What `ShiftFasta` refused with, told apart by whose refusal it is.
+fn shift_error(error: gatk_tools::shift_fasta::ShiftError) -> Thrown {
+    // Every one of the three is a `UserException` of some kind, and the class the handler prints is
+    // the port's record of which: the bad offset list is `$BadInput`, the writer's is htsjdk's.
+    Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    }
+}
