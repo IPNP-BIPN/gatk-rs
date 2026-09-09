@@ -47,7 +47,7 @@ pub enum DiagnosticsError {
 }
 
 impl DiagnosticsError {
-    pub fn java_class(&self) -> &str {
+    pub fn java_class(&self) -> &'static str {
         match self {
             DiagnosticsError::Unsupported { .. } => "java.lang.RuntimeException",
             DiagnosticsError::Unreadable { .. } => "htsjdk.samtools.SAMException",

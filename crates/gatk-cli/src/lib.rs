@@ -300,6 +300,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
         "LeftAlignIndels" => Some(run_left_align_indels),
         "DumpTabixIndex" => Some(run_dump_tabix_index),
+        "ReadAnonymizer" => Some(run_read_anonymizer),
+        "PrintFileDiagnostics" => Some(run_print_file_diagnostics),
         _ => None,
     }
 }
@@ -327,6 +329,14 @@ fn run_left_align_indels(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_dump_tabix_index(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::dump_tabix_index(&parsed("DumpTabixIndex", args)?)
+}
+
+fn run_read_anonymizer(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::read_anonymizer(&parsed("ReadAnonymizer", args)?)
+}
+
+fn run_print_file_diagnostics(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_file_diagnostics(&parsed("PrintFileDiagnostics", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

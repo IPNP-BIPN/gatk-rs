@@ -3052,6 +3052,107 @@ pub fn dump_tabix_index(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `ReadAnonymizer`, the first declared walker that REWRITES the bases it reads.
+///
+/// Every base a match consumes is replaced by the reference's, a base that already agreed keeps its
+/// own quality and one that was replaced takes `--ref-base-quality`, and the cigar's `M` becomes
+/// `=` unless `--use-simple-cigar` says otherwise. The window is the read's own span and is built
+/// per read, so a reference that does not carry the read's contig is refused during the traversal.
+pub fn read_anonymizer(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "ReadAnonymizer")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("ReadAnonymizer", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let arguments = gatk_tools::read_anonymizer::AnonymizerArguments {
+        ref_base_quality: u8::try_from(number_or(
+            parser,
+            "ref-base-quality",
+            i32::from(gatk_tools::read_anonymizer::DEFAULT_REF_BASE_QUALITY),
+        ))
+        .unwrap_or(gatk_tools::read_anonymizer::DEFAULT_REF_BASE_QUALITY),
+        use_simple_cigar: flag(parser, "use-simple-cigar"),
+    };
+    let dictionary = gatk_tools::reference_walker::dictionary(&reference);
+    let (bytes, bai) = gatk_tools::read_anonymizer::read_anonymizer_with(
+        &source,
+        &mut reference,
+        &arguments,
+        &options,
+        &filter,
+        output_compression(parser).0,
+        output_compression(parser).1,
+    )
+    .map_err(|error| match error {
+        gatk_engine::reads::ReadsError::ContigNotInDictionary(contig) => Thrown::user(format!(
+            "Contig {contig} not present in the sequence dictionary {}\n",
+            gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+        )),
+        other => reads_traversal_error(other),
+    })?;
+    write_bam(parser, &output, &bytes, bai)
+}
+
+/// `PrintFileDiagnostics`, which chooses an analyzer by the input's EXTENSION and nothing else.
+///
+/// `.bai` is the only branch this port carries, and it is the textual index htsjdk writes; `.cram`
+/// and `.crai` are the reference's other two. A name no analyzer claims is a `RuntimeException`
+/// quoting the argument, and a `.bai` that does not read is htsjdk's `SAMException`, so the two
+/// refusals exit at three and print their classes.
+pub fn print_file_diagnostics(parser: &Parser) -> Outcome {
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let analyzer = gatk_tools::print_file_diagnostics::analyzer_for(&input)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let bytes = std::fs::read(&input)
+        .map_err(|error| Thrown::user(format!("Couldn't read {input}: {error}")))?;
+    let report = match analyzer {
+        gatk_tools::print_file_diagnostics::Analyzer::Bai => {
+            gatk_tools::print_file_diagnostics::bai_report(&bytes)
+                .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?
+        }
+        // The CRAM analyzers read a container structure this port does not carry. A row that asks
+        // for one says so rather than answering with a report that is not the reference's.
+        other => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "The {other:?} analyzer is a GATK feature that this port does not carry yet. \
+                     This message is the port's own and not GATK's."
+                ),
+            ))
+        }
+    };
+    std::fs::write(&output, report).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+    Ok(None)
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,
