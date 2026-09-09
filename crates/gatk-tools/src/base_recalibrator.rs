@@ -66,6 +66,7 @@ impl BaseRecalibratorError {
 ///
 /// The quantization is computed **after** `finalizeData`, so it depends on every read the traversal
 /// kept, and the report is written from the finalised tables.
+#[allow(clippy::too_many_arguments)]
 pub fn base_recalibrator(
     source: &ReadsDataSource,
     contig_bases: &[u8],
@@ -73,10 +74,15 @@ pub fn base_recalibrator(
     arguments: &EngineArguments,
     quantizing_levels: i32,
     filter: &dyn Fn(&BamRecord) -> bool,
+    intervals: &[SimpleInterval],
 ) -> Result<String, BaseRecalibratorError> {
     let header = source.header().clone();
-    let records =
-        crate::read_walker::traverse(source, &[], filter).map_err(BaseRecalibratorError::Reads)?;
+    // The traversal is bounded like any other walker's. Hardcoding no intervals here counted the
+    // reads a command line had excluded: `--intervals chr1:1-6000 --exclude-intervals chr1:1-500`
+    // leaves seven of the corpus's eight reads, and the eighth's nine countable bases were nine
+    // observations the recalibration table carried too many.
+    let records = crate::read_walker::traverse(source, intervals, filter)
+        .map_err(BaseRecalibratorError::Reads)?;
 
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), &header)
         .map_err(BaseRecalibratorError::Engine)?;

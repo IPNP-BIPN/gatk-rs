@@ -181,6 +181,8 @@ fn every_recalibration_table_is_the_reference_line_for_line() {
             &engine_arguments,
             levels,
             &filter,
+            // No `--intervals`: every golden run of this suite walks the whole file.
+            &[],
         )
         .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
 

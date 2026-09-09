@@ -3545,8 +3545,8 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
     let ReadWalkerStart {
         source,
         header,
+        intervals,
         filters,
-        ..
     } = read_walker_startup(parser, "BaseRecalibrator")?;
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
@@ -3603,15 +3603,29 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
         }
     }
 
-    // The contig the reads are on, whole. One contig is what this corpus carries and what the
-    // engine's window arithmetic is written against.
-    let contig = dictionary
+    // The contig the READS are on, whole: the counting pass compares a read's bases against the
+    // reference, so the contig it needs is the reads' and not whichever the reference lists first.
+    // A reference that does not carry it is the walker's own refusal, which is what the query
+    // raises per read in every other tool here -- and taking the reference's first contig instead
+    // sliced a thousand bases of `chrOther` with `chr1` coordinates and panicked.
+    let wanted = header
         .sequences
         .first()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .ok_or_else(|| Thrown::user("The reference has no sequences".to_string()))?;
+        .map(|sequence| sequence.name.clone())
+        .ok_or_else(|| Thrown::user("The reads have no sequence dictionary".to_string()))?;
+    let length = dictionary
+        .sequences
+        .iter()
+        .find(|sequence| sequence.name == wanted)
+        .map(|sequence| sequence.length)
+        .ok_or_else(|| {
+            Thrown::user(format!(
+                "Contig {wanted} not present in the sequence dictionary {}\n",
+                gatk_tools::sequence_dictionary::pretty_print(&dictionary.sequences)
+            ))
+        })?;
     let contig_bases = reference
-        .query(&contig.0, 1, contig.1)
+        .query(&wanted, 1, length)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     let arguments_for_engine = gatk_engine::base_recalibration_engine::EngineArguments {
@@ -3636,6 +3650,7 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
         &arguments_for_engine,
         number_or(parser, "quantizing-levels", 16),
         &filter,
+        &intervals,
     )
     .map_err(|error| Thrown::user(error.message()))?;
     std::fs::write(&output, table).map_err(|error| {
@@ -3657,6 +3672,22 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
     })?;
     let text = std::fs::read_to_string(&input)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&input, false)))?;
+    // `validateSequenceDictionaries` runs at STARTUP, before a line of the annotation is read: a
+    // master dictionary and a `--reference` that disagree are refused there, and the two messages
+    // are the dictionary comparison's own -- "No overlapping contigs found" for two that share
+    // nothing and "Found contigs with the same name but different lengths" for two that do.
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(master), Some(path)) =
+            (master_dictionary(parser)?, argument(parser, "reference"))
+        {
+            let mut reference =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let theirs = gatk_tools::reference_walker::dictionary(&reference);
+            validate_against_master(&master, "reference", &theirs.sequences)?;
+            let _ = &mut reference;
+        }
+    }
     let dictionary = match master_dictionary(parser)? {
         Some(header) => Some(
             header
