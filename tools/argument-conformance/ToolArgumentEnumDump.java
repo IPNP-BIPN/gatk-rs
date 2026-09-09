@@ -166,6 +166,15 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.bqsr.BaseRecalibrator());
         declarations("GtfToBed",
                 new org.broadinstitute.hellbender.tools.walkers.conversion.GtfToBed());
+        // Two tools of the record-transform archetype that are no WALKERS: both extend `GATKTool`
+        // and override `traverse()`, so a second reads source is opened by hand and the engine's
+        // filter, transformer and interval machinery never runs. `TransferReadTags` walks two files
+        // in lockstep and copies tags from the unmapped one, and `PostProcessReadsForRSEM` reorders
+        // a query-name-sorted file into the pairs RSEM will read.
+        declarations("TransferReadTags",
+                new org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags());
+        declarations("PostProcessReadsForRSEM",
+                new org.broadinstitute.hellbender.tools.walkers.qc.PostProcessReadsForRSEM());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
