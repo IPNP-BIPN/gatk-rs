@@ -114,6 +114,47 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM with TWO read groups, differing in sample and in library.
+     *
+     * `SplitReads` writes one file per key, so a file with a single read group is one file
+     * whichever splitter is asked for, and an array over it would compare one output to itself.
+     * Two groups make `--split-sample`, `--split-read-group` and `--split-library-name` each
+     * produce two files, and their keys differ from one another.
+     */
+    static void twoGroups(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {
+                {"rg1", "sample1", "lib1"}, {"rg2", "sample2", "lib2"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary(group[2]);
+            record.setPlatformUnit("unit1");
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 6; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("II##IIII##");
+                record.setAttribute("RG", index % 2 == 0 ? "rg1" : "rg2");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A coordinate-sorted BAM whose reads carry INDELS inside the reference's repeat, which is
      * what `LeftAlignIndels` needs to move anything.
      *
@@ -394,6 +435,11 @@ public class MakeFixtures {
         bamTwo(dir.resolve("reads2.bam"));
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
+        twoGroups(dir.resolve("groups.bam"));
+        // The `-XF` file `ClipReads` reads: a FASTA of sequences to clip, which is a different
+        // argument from `-X` and takes its names from the records rather than numbering them.
+        Files.writeString(dir.resolve("clip.fasta"),
+                ">adapterOne\nACGTACGT\n>adapterTwo\nTTTTGGGG\n", StandardCharsets.UTF_8);
         pairs(dir.resolve("pairs.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two

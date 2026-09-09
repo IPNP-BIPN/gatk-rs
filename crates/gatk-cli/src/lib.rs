@@ -302,6 +302,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "DumpTabixIndex" => Some(run_dump_tabix_index),
         "ReadAnonymizer" => Some(run_read_anonymizer),
         "PrintFileDiagnostics" => Some(run_print_file_diagnostics),
+        "SplitReads" => Some(run_split_reads),
+        "ClipReads" => Some(run_clip_reads),
         _ => None,
     }
 }
@@ -337,6 +339,14 @@ fn run_read_anonymizer(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_print_file_diagnostics(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::print_file_diagnostics(&parsed("PrintFileDiagnostics", args)?)
+}
+
+fn run_split_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_reads(&parsed("SplitReads", args)?)
+}
+
+fn run_clip_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::clip_reads(&parsed("ClipReads", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

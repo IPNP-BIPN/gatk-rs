@@ -193,6 +193,12 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.ReadAnonymizer());
         declarations("PrintFileDiagnostics",
                 new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
+        // The next two, and both write MORE than one output: `SplitReads` writes one file per
+        // key of up to three splitters, and `ClipReads` writes a statistics file beside its BAM.
+        declarations("SplitReads",
+                new org.broadinstitute.hellbender.tools.SplitReads());
+        declarations("ClipReads",
+                new org.broadinstitute.hellbender.tools.ClipReads());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",

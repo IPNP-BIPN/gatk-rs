@@ -3153,6 +3153,190 @@ pub fn print_file_diagnostics(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `SplitReads`, whose `--output` names a DIRECTORY and whose file names it builds itself.
+///
+/// One file per key of the splitters that were asked for, named
+/// `<input base name><key><input extension>`, and with no `--split-*` at all that is one file named
+/// after the input. The key is built per read, so a read whose read group cannot answer a splitter
+/// is the tool's refusal rather than a file named `unknown` -- except where the whole key is
+/// `.unknown`, which is a file.
+pub fn split_reads(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "SplitReads")?;
+    let directory = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let input = arguments(parser, "input")
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    // `getOutputFileName`: the base name and the extension of the INPUT, which is what the key is
+    // inserted between.
+    let file_name = std::path::Path::new(&input)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| input.clone());
+    let (base_name, extension) = match file_name.rfind('.') {
+        Some(dot) => (file_name[..dot].to_string(), file_name[dot..].to_string()),
+        None => (file_name.clone(), String::new()),
+    };
+
+    let mut splitters = Vec::new();
+    if flag(parser, "split-sample") {
+        splitters.push(gatk_tools::split_reads::Splitter::Sample);
+    }
+    if flag(parser, "split-read-group") {
+        splitters.push(gatk_tools::split_reads::Splitter::ReadGroupId);
+    }
+    if flag(parser, "split-library-name") {
+        splitters.push(gatk_tools::split_reads::Splitter::LibraryName);
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("SplitReads", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::split_reads::split_reads_with(
+        &source, &options, &splitters, &base_name, &extension, &filter, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    let files = match run {
+        Ok(files) => files,
+        Err(refusal) => return Err(Thrown::non_user(refusal.class(), refusal.message())),
+    };
+    for file in &files {
+        let path = std::path::Path::new(&directory).join(&file.name);
+        std::fs::write(&path, &file.bam).map_err(|error| {
+            Thrown::non_user(
+                PORT_FAILURE,
+                format!("could not write {}: {error}", path.display()),
+            )
+        })?;
+        if let Some(index) = &file.index {
+            let companion = path.with_extension("bai");
+            std::fs::write(&companion, index).map_err(|error| {
+                Thrown::non_user(
+                    PORT_FAILURE,
+                    format!("could not write {}: {error}", companion.display()),
+                )
+            })?;
+        }
+        // The digest is written per FILE, like the index: a run that splits into six files and
+        // asks for md5s leaves six of them, each APPENDED to its own name.
+        if flag(parser, "create-output-bam-md5") {
+            let digest = format!("{}.md5", path.display());
+            std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&file.bam)).map_err(
+                |error| {
+                    Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+                },
+            )?;
+        }
+    }
+    Ok(None)
+}
+
+/// `ClipReads`, which writes a BAM and, when asked, a statistics file beside it.
+///
+/// `--cycles-to-trim` is kept unparsed until the tool runs, because the parse fails with a message
+/// of its own: every malformed spelling raises the same `RuntimeException`.
+pub fn clip_reads(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "ClipReads")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // `-XF`, read here rather than in the tool: the reference reads a FASTA and the port takes the
+    // records, so a file that cannot be read is this runner's refusal.
+    let mut clip_sequence_file = Vec::new();
+    if let Some(path) = argument(parser, "clip-sequences-file") {
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| Thrown::user(format!("Couldn't read {path}: {error}")))?;
+        clip_sequence_file = gatk_tools::clip_reads::parse_clip_sequence_file(&text);
+    }
+    let arguments_for_clip = gatk_tools::clip_reads::ClipArguments {
+        q_trimming_threshold: number_or(parser, "q-trimming-threshold", -1),
+        cycles_to_clip: argument(parser, "cycles-to-trim"),
+        clip_sequences: arguments(parser, "clip-sequence"),
+        clip_sequence_file,
+        clipping_representation: {
+            use gatk_engine::clipping::ClippingRepresentation as Representation;
+            // The parser refuses a constant this list does not carry, so the default arm is the
+            // argument left unset rather than a spelling nothing recognises.
+            match scalar(parser, "clip-representation").as_deref() {
+                Some("WRITE_Q0S") => Representation::WriteQ0s,
+                Some("WRITE_NS_Q0S") => Representation::WriteNsQ0s,
+                Some("SOFTCLIP_BASES") => Representation::SoftclipBases,
+                Some("HARDCLIP_BASES") => Representation::HardclipBases,
+                Some("REVERT_SOFTCLIPPED_BASES") => Representation::RevertSoftclippedBases,
+                _ => Representation::WriteNs,
+            }
+        },
+        only_do_read: argument(parser, "read"),
+        clip_adapter: flag(parser, "clip-adapter"),
+        min_read_length: number_or(parser, "min-read-length-to-output", 0),
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("ClipReads", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::clip_reads::clip_reads_with(
+        &source,
+        &options,
+        &arguments_for_clip,
+        &filter,
+        level,
+        deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    let (bytes, bai, statistics) = match run {
+        Ok(produced) => produced,
+        // Both of these are `RuntimeException`s rather than the tool's own refusal, so the class is
+        // printed and the run ends at three. The cycles message is the reference's own; a clip the
+        // `ReadClipper` refuses is not reached by any row of this tool's array, and the corpus is
+        // where that would show.
+        Err(gatk_tools::clip_reads::ClipReadsError::BadlyFormattedCycles(argument)) => {
+            return Err(Thrown::non_user(
+                "java.lang.RuntimeException",
+                format!("Badly formatted cyclesToClip argument: {argument}"),
+            ))
+        }
+        Err(gatk_tools::clip_reads::ClipReadsError::Clip(error)) => {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("{error:?}"),
+            ))
+        }
+    };
+    if let Some(path) = argument(parser, "output-statistics") {
+        std::fs::write(&path, statistics).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
+        })?;
+    }
+    write_bam(parser, &output, &bytes, bai)
+}
+
 /// A traversal's refusal, told apart by whose exception it is.
 ///
 /// A record that does not decode is htsjdk's `SAMFormatException` and no `UserException` at all,

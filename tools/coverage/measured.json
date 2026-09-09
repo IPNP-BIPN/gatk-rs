@@ -302,6 +302,24 @@
       "matched": 6,
       "t": 2,
       "share": 1.0
+    },
+    "SplitReads": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 10,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "ClipReads": {
+      "rows": 24,
+      "accepted": 10,
+      "rejected": 14,
+      "distinct_outputs": 10,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

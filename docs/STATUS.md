@@ -142,7 +142,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | not measured |
 | `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 20/20 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
-| `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
+| `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 17/17 rows (100%) |
@@ -243,7 +243,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |
 | `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | t=2, 25/25 rows (100%) |
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | not measured |
-| `SplitReads` | record-transform | oracle-backed | split-reads | 1 | not measured |
+| `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | not measured |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | not measured |

@@ -994,6 +994,72 @@
         "/work/out/diagnostics.txt",
         "/work/out/diagnostics2.txt"
       ]
+    },
+    "SplitReads": {
+      "$why": [
+        "groups.bam carries two read groups differing in sample and library, so each splitter",
+        "writes two files with different keys; reads.bam has one group, so the same row over it",
+        "writes one. --output is the output DIRECTORY itself, which is what this tool's argument",
+        "names: the file names are the tool's own, built from the input's base name and the key."
+      ],
+      "--input": [
+        "/work/fixtures/groups.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/groups.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out"
+      ]
+    },
+    "ClipReads": {
+      "$why": [
+        "--cycles-to-trim has a well formed range and a malformed one, which is the tool's own",
+        "`RuntimeException` and not the parser's: every bad spelling raises the same message.",
+        "-X is a sequence present in the corpus's reads and -XF the FASTA beside it, so the two",
+        "ways of naming a sequence to clip are both covered. --read names a read that exists, so",
+        "the row that sets it keeps one read and drops the rest.",
+        "groups.bam is the input whose qualities dip in the middle, which is what a quality trim",
+        "has to find."
+      ],
+      "--input": [
+        "/work/fixtures/groups.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/groups.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/clipped.bam",
+        "/work/out/clipped2.bam"
+      ],
+      "--output-statistics": [
+        "/work/out/clipped.stats"
+      ],
+      "--clip-sequence": [
+        "ACGTACGT"
+      ],
+      "--clip-sequences-file": [
+        "/work/fixtures/clip.fasta"
+      ],
+      "--cycles-to-trim": [
+        "1-5",
+        "1-"
+      ],
+      "--read": [
+        "HWI:1:FC:1:1:1:1"
+      ]
     }
   },
   "constraints": [],
