@@ -306,6 +306,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ClipReads" => Some(run_clip_reads),
         "SplitNCigarReads" => Some(run_split_n_cigar_reads),
         "MethylationTypeCaller" => Some(run_methylation_type_caller),
+        "BaseRecalibrator" => Some(run_base_recalibrator),
+        "GtfToBed" => Some(run_gtf_to_bed),
         _ => None,
     }
 }
@@ -357,6 +359,14 @@ fn run_split_n_cigar_reads(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_methylation_type_caller(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::methylation_type_caller(&parsed("MethylationTypeCaller", args)?)
+}
+
+fn run_base_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::base_recalibrator(&parsed("BaseRecalibrator", args)?)
+}
+
+fn run_gtf_to_bed(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gtf_to_bed(&parsed("GtfToBed", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

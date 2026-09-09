@@ -55,6 +55,60 @@ pub struct Feature {
     pub tags: Vec<String>,
 }
 
+/// One `tag`, `gene_id` or `gene_name` of a GTF line's ninth column.
+///
+/// The column is `key "value"; key "value";`, and a key may repeat: `tag` does, which is why the
+/// tags are a list. Quotes are stripped and nothing else is interpreted.
+fn attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
+    attributes.split("; ").find_map(|entry| {
+        let entry = entry.trim().trim_end_matches(';');
+        let (name, value) = entry.split_once(' ')?;
+        (name == key).then(|| value.trim_matches('"'))
+    })
+}
+
+/// The GTF's `gene` and `transcript` lines, which are the only two the tool reads.
+///
+/// `GencodeGtfCodec` decodes every feature type and the tool then keeps these two, so a line of any
+/// other type is dropped here rather than carried and ignored. A `gene` line has no
+/// `transcript_id`, which is what leaves that field empty.
+pub fn parse_features(gtf: &str) -> Vec<Feature> {
+    gtf.lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() < 9 {
+                return None;
+            }
+            let kind = match fields[2] {
+                "gene" => EntryType::Gene,
+                "transcript" => EntryType::Transcript,
+                _ => return None,
+            };
+            let attributes = fields[8];
+            Some(Feature {
+                contig: fields[0].to_string(),
+                start: fields[3].parse().ok()?,
+                end: fields[4].parse().ok()?,
+                kind,
+                gene_id: attribute(attributes, "gene_id")?.to_string(),
+                transcript_id: attribute(attributes, "transcript_id")
+                    .unwrap_or("")
+                    .to_string(),
+                gene_name: attribute(attributes, "gene_name")?.to_string(),
+                tags: attributes
+                    .split("; ")
+                    .filter_map(|entry| {
+                        let entry = entry.trim().trim_end_matches(';');
+                        let (name, value) = entry.split_once(' ')?;
+                        (name == "tag").then(|| value.trim_matches('"').to_string())
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
 /// `GtfInfo`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GtfInfo {
