@@ -537,6 +537,11 @@ public class MakeFixtures {
             bed.append("chr1\t").append(position - 1).append('\t').append(position).append('\n');
         }
         Files.writeString(dir.resolve("known.bed"), bed.toString(), StandardCharsets.UTF_8);
+        // Indexed, because `--known-sites` is QUERIED by interval: an unindexed file is refused
+        // with `must support random access to enable queries by interval`, and a corpus that
+        // carried one would compare two refusals rather than two tables.
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("known.bed").toString()});
         // The annotation `GtfToBed` reads, which is the gtf-to-bed golden's own: the
         // reference's Gencode codec refuses anything less than a full one -- a hand-written
         // file of gene and transcript lines is `Decoded feature is not valid: null`, because

@@ -3565,18 +3565,42 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
             "Argument known-sites was missing: Argument 'known-sites' is required",
         ));
     }
-    let codecs = gatk_engine::feature_intervals::RegisteredCodecs;
     let mut known_sites = Vec::new();
     for path in &sites_paths {
         let text = std::fs::read_to_string(path)
             .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
-        // The codec is chosen by the file's name, which is what `FeatureManager` does.
-        let intervals = if path.ends_with(".bed") {
-            codecs.bed_intervals(&text, &dictionary, path)
+        // The codec is chosen by the file's NAME, which is what `FeatureManager` does. Neither is
+        // read as an interval argument: these are features, so they are not checked against the
+        // reference's dictionary and a site on a contig the reference does not carry is simply a
+        // site no read is at.
+        if path.ends_with(".bed") {
+            for line in text.lines() {
+                // `BEDCodec` with `StartOffset.ONE`: the file is half-open and zero-based and the
+                // locus it decodes to is neither.
+                if let Ok(Some(feature)) =
+                    htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
+                {
+                    known_sites.push(gatk_engine::interval::SimpleInterval {
+                        contig: feature.contig,
+                        start: feature.start,
+                        end: feature.end,
+                    });
+                }
+            }
         } else {
-            codecs.vcf_intervals(&text, &dictionary, path)
-        };
-        known_sites.extend(intervals.map_err(|error| Thrown::user(format!("{error:?}")))?);
+            // The whole file through the VCF reader, header included: a record's INFO is decoded
+            // against the declarations above it, and a reader given an empty header answers
+            // nothing at all, which is a run with no known sites and no way to tell.
+            let file = htsjdk_vcf::reader::read_vcf(&text)
+                .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+            for record in &file.records {
+                known_sites.push(gatk_engine::interval::SimpleInterval {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    end: record.stop as i32,
+                });
+            }
+        }
     }
 
     // The contig the reads are on, whole. One contig is what this corpus carries and what the
@@ -3648,9 +3672,20 @@ pub fn gtf_to_bed(parser: &Parser) -> Outcome {
         &features,
         dictionary.as_deref(),
         flag(parser, "sort-by-transcript"),
-        flag(parser, "use-basic-transcripts"),
+        // `--use-basic-transcript`, singular. The plural spelling is not an argument at all, so a
+        // runner that asked for it read false on every row and answered with the transcripts the
+        // reference had dropped.
+        flag(parser, "use-basic-transcript"),
     )
-    .map_err(|error| Thrown::user(error.message()))?;
+    .map_err(|error| match error {
+        // The comparator's refusal is an `IllegalArgumentException` and not the tool's own: it
+        // reaches the handler as a bug rather than a user error, so the class is printed and the
+        // run ends at three.
+        gatk_tools::gtf_to_bed::GtfError::UnknownContig { .. } => {
+            Thrown::non_user("java.lang.IllegalArgumentException", error.message())
+        }
+        other => Thrown::user(other.message()),
+    })?;
     std::fs::write(&output, bed).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
