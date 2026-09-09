@@ -70,7 +70,11 @@ fn configuration(label: &str) -> (Option<Vec<&'static str>>, bool, bool, i32) {
 }
 
 /// The run whose rows the reference produced but the port refuses, with the reason.
-const PENDING_DOWNSAMPLING: &str = "depth-1";
+// `depth-1` used to be asserted as a REFUSAL: the reference completed the run and the port did
+// not, because the locus iterator had no downsampler. It has one now (#1102), so the case is
+// compared like every other label. It still thins nothing -- the fixture's depth is one, so a
+// target of one is already met, which is why the golden's rows for it equal the undownsampled
+// run's -- and a corpus where a target below the depth is observed is #1135.
 
 #[test]
 fn every_apply_call_matches_the_reference() {
@@ -150,33 +154,6 @@ fn every_apply_call_matches_the_reference() {
             options,
             &filter,
         );
-
-        if label == PENDING_DOWNSAMPLING {
-            // The reference completes this run; the port refuses it. The refusal is asserted so it
-            // cannot pass silently, and the golden's rows are identical to the undownsampled run,
-            // so nothing about downsampling is measured either way.
-            assert!(
-                matches!(
-                    result,
-                    Err(LocusWalkerError::States(
-                        gatk_engine::read_states::ReadStateError::DownsamplingUnsupported
-                    ))
-                ),
-                "{label}: expected the port to refuse downsampling, got {:?}",
-                result.as_ref().map(|a| a.len())
-            );
-            assert_eq!(
-                outcomes[label], "ok",
-                "{label} is only pending because it succeeds"
-            );
-            assert_eq!(
-                rows.get(label),
-                rows.get("all"),
-                "{label} is only inert while its rows equal the undownsampled run's"
-            );
-            refused += 1;
-            continue;
-        }
 
         let outcome = &outcomes[label];
         if outcome.starts_with("E:") {
