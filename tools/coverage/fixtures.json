@@ -1204,6 +1204,103 @@
       "--read-index": [],
       "--intervals": [],
       "--exclude-intervals": []
+    },
+    "CallableLoci": {
+      "$why": [
+        "deep.bam is the pileup this tool needs: every other single-sample file in the corpus has a",
+        "depth of ONE, and a depth of one reaches only two of the six states. Eight reads at 1005 and",
+        "four at 1105 reach CALLABLE at the default min-depth, EXCESSIVE_COVERAGE at a --max-depth",
+        "under the stack, and LOW_COVERAGE once --max-depth-per-sample thins the stack below the",
+        "threshold, which is the one place in this programme where a THINNED pileup is visible in an",
+        "output (#1135): the state depends on the count the leveller leaves, not on which reads it",
+        "kept, so the row is reproducible while the identity of the survivors is not.",
+        "reads.bam is the depth-one file beside it, so the pair covers a stack and a single read.",
+        "--intervals is narrow on purpose. emitEmptyLoci() is true, so a row reports a line per BASE",
+        "of its intervals and the whole contig would be a hundred thousand of them per row; the first",
+        "window holds both of deep.bam's stacks and the second holds no read at all, which is the",
+        "NO_COVERAGE run.",
+        "--max-depth, --min-depth-for-low-mapq and --max-fraction-of-reads-with-low-mapq carry values",
+        "because the inventory has none to invent: the first is an Integer with no bounds and no",
+        "default, and the other two have a default and nothing else, so all three were held at one",
+        "value and covered nothing. POOR_MAPPING_QUALITY needs the trio to agree, and it is reachable",
+        "here because --max-low-mapq's declared maximum is 255 and every read in the corpus is MAPQ 60.",
+        "REF_N is the one state no row reaches: both references in the corpus are ACGT repeats with no",
+        "N in them, and the state is measured by this tool's own golden instead."
+      ],
+      "--input": [
+        "/work/fixtures/deep.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/deep.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1000-1120",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/callable.bed",
+        "/work/out/callable2.bed"
+      ],
+      "--summary": [
+        "/work/out/callable.summary",
+        "/work/out/callable2.summary"
+      ],
+      "--max-depth": [
+        "4",
+        "100"
+      ],
+      "--min-depth-for-low-mapq": [
+        "10",
+        "1"
+      ],
+      "--max-fraction-of-reads-with-low-mapq": [
+        "0.1",
+        "1.0"
+      ]
+    },
+    "ShiftFasta": {
+      "$why": [
+        "The tool overrides traverse() and loops over the reference's own dictionary, so the reference",
+        "is the input and the corpus's two are the two rows: reference.fasta is one contig of a",
+        "hundred thousand bases and other.fasta one of a thousand, which is a shift the chain file",
+        "records at both scales.",
+        "--shift-offset-list carries 100 and 0 for two different reasons. 100 shifts the contig; 0 is",
+        "BELOW the range shiftContig works in, so that contig is dropped from all four outputs at once",
+        "and the row measures a reference that comes out with no sequence in it. Both are lists of ONE",
+        "value and both references have ONE contig, so the size check passes; the refusal it carries is",
+        "measured by this tool's own golden, which is where a two-contig reference lives.",
+        "--interval-file-name is a base name and not a path: the tool appends .intervals and",
+        "..shifted.intervals to it, so the fixture names the stem and the row compares two files.",
+        "--line-width has a default and no bounds, so the inventory could not vary it; 7 breaks the",
+        "output's lines mid-repeat, which is what makes the writer's running count observable.",
+        "--input and --read-index are held out. This tool reads no reads at all, and the corpus's",
+        "shared values are VCFs and BEDs, so every row would have measured a reader refusal on a file",
+        "the tool never asks for."
+      ],
+      "--output": [
+        "/work/out/shifted.fasta",
+        "/work/out/shifted2.fasta"
+      ],
+      "--shift-back-output": [
+        "/work/out/shiftback.chain",
+        "/work/out/shiftback2.chain"
+      ],
+      "--interval-file-name": [
+        "/work/out/shift",
+        "/work/out/shift2"
+      ],
+      "--shift-offset-list": [
+        "100",
+        "0"
+      ],
+      "--line-width": [
+        "60",
+        "7"
+      ],
+      "--input": [],
+      "--read-index": []
     }
   },
   "constraints": [],
