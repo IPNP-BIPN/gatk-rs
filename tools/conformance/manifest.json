@@ -6626,7 +6626,7 @@
     },
     {
       "id": "usage-text",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the usage text Barclay renders, which is a rendering and not prose",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6642,7 +6642,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
+          "why": "Golden-pending: `PrintFileDiagnostics` joins the dump. It is UNDOCUMENTED, so the inventory carries no summary for it and this golden is where the declarations generator reads one. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
         }
       ]
     },

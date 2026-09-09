@@ -61,6 +61,10 @@ public class UsageTextDump {
         // arguments the two above it do not.
         usage("AddOriginalAlignmentTags",
                 new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
+        // Undocumented as well, and the shortest namespace of the four: fifteen arguments, none of
+        // them a walker's.
+        usage("PrintFileDiagnostics",
+                new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
         usage("CreateHadoopBamSplittingIndex",
                 new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
     }
