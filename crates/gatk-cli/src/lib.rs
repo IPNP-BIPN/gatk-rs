@@ -304,6 +304,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PrintFileDiagnostics" => Some(run_print_file_diagnostics),
         "SplitReads" => Some(run_split_reads),
         "ClipReads" => Some(run_clip_reads),
+        "SplitNCigarReads" => Some(run_split_n_cigar_reads),
+        "MethylationTypeCaller" => Some(run_methylation_type_caller),
         _ => None,
     }
 }
@@ -347,6 +349,14 @@ fn run_split_reads(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_clip_reads(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::clip_reads(&parsed("ClipReads", args)?)
+}
+
+fn run_split_n_cigar_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_n_cigar_reads(&parsed("SplitNCigarReads", args)?)
+}
+
+fn run_methylation_type_caller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::methylation_type_caller(&parsed("MethylationTypeCaller", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {

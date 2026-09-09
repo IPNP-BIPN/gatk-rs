@@ -45,7 +45,17 @@ jobs:
         # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
         # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
         # is one of them, so a build without nasm cannot write a block-compressed file at all.
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
+        #
+        # The refresh is allowed to FAIL and the install is not. The runner image carries
+        # third-party apt sources of its own -- Google Chrome's among them -- and one of those
+        # answering a bad hash fails `apt-get update` as a whole, which took three jobs of this
+        # workflow down for a reason that has nothing to do with this repository. What the gate is
+        # actually about is the next two commands: nasm installs from the distribution's own
+        # archive, and it runs.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -104,7 +114,17 @@ jobs:
         # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
         # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
         # is one of them, so a build without nasm cannot write a block-compressed file at all.
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
+        #
+        # The refresh is allowed to FAIL and the install is not. The runner image carries
+        # third-party apt sources of its own -- Google Chrome's among them -- and one of those
+        # answering a bad hash fails `apt-get update` as a whole, which took three jobs of this
+        # workflow down for a reason that has nothing to do with this repository. What the gate is
+        # actually about is the next two commands: nasm installs from the distribution's own
+        # archive, and it runs.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -173,7 +193,17 @@ jobs:
         # That C still returns valid deflate; it is simply not GKL's, and `gkl-deflate` refuses the
         # levels it would have answered rather than guessing. GATKConfig writes at level TWO, which
         # is one of them, so a build without nasm cannot write a block-compressed file at all.
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq nasm && nasm -v
+        #
+        # The refresh is allowed to FAIL and the install is not. The runner image carries
+        # third-party apt sources of its own -- Google Chrome's among them -- and one of those
+        # answering a bad hash fails `apt-get update` as a whole, which took three jobs of this
+        # workflow down for a reason that has nothing to do with this repository. What the gate is
+        # actually about is the next two commands: nasm installs from the distribution's own
+        # archive, and it runs.
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
 
       - name: Build the port binary
         # linux/amd64, which is what the container runs. The port is executed INSIDE the container
@@ -202,6 +232,7 @@ jobs:
             --tool LeftAlignIndels --tool DumpTabixIndex \
             --tool ReadAnonymizer --tool PrintFileDiagnostics \
             --tool SplitReads --tool ClipReads \
+            --tool SplitNCigarReads --tool MethylationTypeCaller \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
