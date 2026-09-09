@@ -547,6 +547,25 @@ struct ReadWalkerStart {
     filters: Vec<gatk_tools::filter_resolution::ResolvedFilter>,
 }
 
+/// Whether the tool's traversal calls `setTraversalBounds`, which only a walker's does.
+///
+/// The list is the tools here that extend `GATKTool` and override `traverse()` rather than
+/// inheriting a walker's. For them `-L` is still parsed, still validated against the best available
+/// dictionary and still refused when it names an unknown contig; what it does not do is bound the
+/// reads, which is why an unindexed input reaches them.
+fn sets_traversal_bounds(tool: &str) -> bool {
+    !matches!(
+        tool,
+        "SplitIntervals"
+            | "PreprocessIntervals"
+            | "AnnotateIntervals"
+            | "PrintReadsHeader"
+            | "GetSampleName"
+            | "TransferReadTags"
+            | "PostProcessReadsForRSEM"
+    )
+}
+
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
     let resolved_filters = resolve_read_filters(parser, tool)?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
@@ -694,8 +713,13 @@ fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, T
         }
     }
 
-    // `setTraversalBounds`, which the traversal calls before it reads anything.
-    if intervals_given && index.is_none() {
+    // `setTraversalBounds`, which the traversal calls before it reads anything -- if the traversal
+    // is a WALKER's. `ReadWalker.traverse` and `LocusWalker.traverse` make that call; a `GATKTool`
+    // that overrides `traverse()` never does, so `-L` does not bound its reads source and an
+    // unindexed input is not refused at all. Measured on ten rows each of `TransferReadTags` and
+    // `PostProcessReadsForRSEM`, whose corpus is query-name sorted and therefore has no index to
+    // find: the reference traversed the whole file and the port refused every row.
+    if intervals_given && index.is_none() && sets_traversal_bounds(tool) {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
         ));
@@ -4408,5 +4432,119 @@ fn shift_error(error: gatk_tools::shift_fasta::ShiftError) -> Thrown {
             exception: error.java_class(),
             message: Some(error.message()),
         },
+    }
+}
+
+/// `TransferReadTags`, which is a `GATKTool` with `traverse()` overridden and TWO reads sources.
+///
+/// The second one is opened by the tool and not by the engine: `new ReadsPathDataSource(path)` with
+/// no index, no interval bound and no filter, which is why the unmapped side is read whole here.
+/// The engine's own source is reached through `directlyAccessEngineReadsDataSource().iterator()`,
+/// so the filter chain the command line resolved is SELECTED and never consulted: a
+/// `--read-filter` on this tool changes what `--disable-read-filter` lists and nothing else.
+pub fn transfer_read_tags(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "TransferReadTags")?;
+    // Resolved for its refusals, which are the parser's, and then not applied: see above.
+    let _ = read_filter(parser, &filters, &header)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let unmapped_path = argument(parser, "unmapped-sam").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument unmapped-sam was missing: Argument 'unmapped-sam' is required",
+        )
+    })?;
+    let read_tags = arguments(parser, "read-tags");
+    let unmapped =
+        gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&unmapped_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let command_line = crate::command_line::expanded("TransferReadTags", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::transfer_read_tags::transfer_read_tags_with(
+        &source, &unmapped, &read_tags, &options, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Err(refusal) => Err(transfer_error(refusal)),
+    }
+}
+
+/// Which exception each of `TransferReadTags`' refusals arrives as.
+///
+/// Only one of the five is a `UserException`. `Utils.validate` throws `IllegalStateException` and
+/// `Utils.nonNull` and `Utils.nonEmpty` throw `IllegalArgumentException`, so four of the five reach
+/// the handler as a bug rather than a refusal: the class is printed and the run ends at three.
+fn transfer_error(error: gatk_tools::transfer_read_tags::TransferError) -> Thrown {
+    use gatk_tools::transfer_read_tags::TransferError;
+    let message = error.message();
+    match error {
+        TransferError::UnmappedEmptyAndAlignedIsNot => Thrown::user(message),
+        TransferError::AlignedNotQueryNameSorted | TransferError::NotInUnmapped { .. } => {
+            Thrown::non_user("java.lang.IllegalStateException", message)
+        }
+        TransferError::NoReadTags | TransferError::AttributeEmpty { .. } => {
+            Thrown::non_user("java.lang.IllegalArgumentException", message)
+        }
+    }
+}
+
+/// `PostProcessReadsForRSEM`, the second `GATKTool` here that groups the traversal itself.
+///
+/// Its default read filter is a SINGLETON that is not the walker's -- `NOT_SUPPLEMENTARY_ALIGNMENT`
+/// alone, with no wellformed filter at all -- and `traverse()` calls `makeReadFilter()`, so the
+/// chain a row builds is the chain that decides which reads reach the query-name groups.
+pub fn post_process_reads_for_rsem(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "PostProcessReadsForRSEM")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("PostProcessReadsForRSEM", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::post_process_reads_for_rsem::post_process_reads_for_rsem_with(
+        &source, &options, &filter, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        // Four of the five refusals are the tool's own `UserException`s; the fifth is the JVM's
+        // `NullPointerException`, raised from inside a guard that exists because the value may be
+        // null and dereferences it anyway.
+        Err(refusal) => Err(match refusal {
+            gatk_tools::post_process_reads_for_rsem::RsemError::NullDereference(_) => {
+                Thrown::non_user("java.lang.NullPointerException", refusal.message())
+            }
+            gatk_tools::post_process_reads_for_rsem::RsemError::PrimaryAlreadySet { .. } => {
+                Thrown::non_user("java.lang.IllegalStateException", refusal.message())
+            }
+            other => Thrown::user(other.message()),
+        }),
     }
 }
