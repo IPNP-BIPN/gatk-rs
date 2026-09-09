@@ -7,12 +7,7 @@
     "It is not a byte-identity claim over the argument surface: an array covers PAIRS of argument",
     "values, and `distinct_outputs` says how many of those pairs the corpus can actually observe.",
     "A tool whose accepted rows all produce one output has an array that covers its arguments",
-    "without testing them.",
-    "",
-    "A tool whose array changed is REMOVED here rather than left at its old number, and the",
-    "dashboard prints `not measured` for it until CI runs the new array. The number has to come",
-    "from the run that produced it: an array with different rows and a share carried over from the",
-    "previous one is a claim about a file that no longer exists."
+    "without testing them."
   ],
   "tools": {
     "IndexFeatureFile": {
@@ -187,11 +182,11 @@
       "share": 1.0
     },
     "CheckPileup": {
-      "rows": 20,
+      "rows": 21,
       "accepted": 10,
-      "rejected": 10,
-      "distinct_outputs": 5,
-      "matched": 20,
+      "rejected": 11,
+      "distinct_outputs": 3,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -354,6 +349,24 @@
       "rejected": 10,
       "distinct_outputs": 3,
       "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "CallableLoci": {
+      "rows": 45,
+      "accepted": 7,
+      "rejected": 38,
+      "distinct_outputs": 5,
+      "matched": 45,
+      "t": 2,
+      "share": 1.0
+    },
+    "ShiftFasta": {
+      "rows": 21,
+      "accepted": 11,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     }
