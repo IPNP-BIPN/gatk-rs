@@ -1335,6 +1335,86 @@ impl Parser {
             .position(|definition| definition.argument_aliases().contains(&alias))
     }
 
+    /// The order values are propagated in, which is a `java.util.HashMap`'s.
+    ///
+    /// `propagateParsedValues` walks `parsedArguments.asMap().keySet()`, and jopt-simple builds
+    /// that map by putting every recognized spec into a **plain `HashMap`**:
+    ///
+    /// ```text
+    /// 0: new  #34   // class java/util/HashMap
+    /// ...
+    /// 56: invokeinterface #184, 3  // InterfaceMethod java/util/Map.put
+    /// ```
+    ///
+    /// so the walk is in hash order over the specs and not in field order. It matters because a
+    /// value is range-checked as it is SET: a command line with two arguments out of range reports
+    /// whichever of them this order reaches first, and reports it in place of the other. Measured
+    /// on three pairs across two tools, in both command-line orders (#1128).
+    ///
+    /// Three pieces, each of them specified rather than incidental:
+    ///
+    ///   - the key's hash is `AbstractOptionSpec.hashCode()`, which is `options.hashCode()`, the
+    ///     `List<String>` hash of the spec's own option names -- the short one then the long one,
+    ///     which is [`Definition::argument_aliases`];
+    ///   - the insertion order is `recognizedSpecs.values()`, and `_recognizedOptions()` builds a
+    ///     `LinkedHashMap` over `trainingOrder`, so it is the order the options were registered in,
+    ///     which is field order. A spec registered under two aliases is put twice under the same
+    ///     key and enters the table once, at its first;
+    ///   - the table itself: sixteen buckets, doubling past three quarters full, the bucket chosen
+    ///     by the low bits of the mixed hash, and each bucket in insertion order.
+    ///
+    /// `gatk_engine::java_hash` carries the same layout for the engine's own `HashMap` orders and
+    /// is measured against the reference there. It is transcribed rather than shared because this
+    /// crate is a port of a SEPARATE library and carries no dependencies. A bucket that grows past
+    /// eight entries is treeified by the reference and ordered by hash rather than by insertion;
+    /// nothing here reaches that, and this keeps insertion order if it ever does.
+    fn propagation_order(&self) -> Vec<usize> {
+        // `List.hashCode`: `31 * h + e.hashCode()` from one, and `String.hashCode` over UTF-16.
+        let string_hash = |text: &str| -> i32 {
+            let mut hash: i32 = 0;
+            for unit in text.encode_utf16() {
+                hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
+            }
+            hash
+        };
+        let spec_hash = |definition: &Definition| -> i32 {
+            definition
+                .argument_aliases()
+                .iter()
+                .fold(1i32, |hash, alias| {
+                    hash.wrapping_mul(31).wrapping_add(string_hash(alias))
+                })
+        };
+
+        let mut capacity: usize = 16;
+        let mut table: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
+        let mut size: usize = 0;
+        for (index, definition) in self.definitions.iter().enumerate() {
+            let hash = spec_hash(definition);
+            let mixed = hash ^ ((hash as u32) >> 16) as i32;
+            let bucket = ((capacity - 1) as u32 & mixed as u32) as usize;
+            table[bucket].push((index, hash));
+            size += 1;
+            if size > capacity * 3 / 4 {
+                capacity *= 2;
+                let mut resized: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
+                for entries in table.into_iter() {
+                    for (entry, entry_hash) in entries {
+                        let mixed = entry_hash ^ ((entry_hash as u32) >> 16) as i32;
+                        let to = ((capacity - 1) as u32 & mixed as u32) as usize;
+                        resized[to].push((entry, entry_hash));
+                    }
+                }
+                table = resized;
+            }
+        }
+        table
+            .into_iter()
+            .flatten()
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     /// `parseArguments(messageStream, args)`.
     ///
     /// Three phases, in this order, because the order decides which error a doubly-wrong command
@@ -1376,11 +1456,10 @@ impl Parser {
             return self.parse_arguments_with(&borrowed, files);
         }
 
-        // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`: the map is over
-        // the specs as they were registered, which is field order, and `has` filters it to the
-        // ones actually given. So values are propagated in **declaration** order, not in the order
-        // the user wrote them.
-        for index in 0..self.definitions.len() {
+        // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`, and `has`
+        // filters it to the ones actually given. The map is NOT in field order: see
+        // [`Parser::propagation_order`].
+        for index in self.propagation_order() {
             let Some(values) = parsed.iter().find(|(i, _)| *i == index).map(|(_, v)| v) else {
                 continue;
             };
