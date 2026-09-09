@@ -228,7 +228,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
-| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 20/22 rows (91%) |
+| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) |
 | `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | not measured |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
