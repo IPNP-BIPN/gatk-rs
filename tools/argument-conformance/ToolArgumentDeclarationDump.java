@@ -205,6 +205,12 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.rnaseq.SplitNCigarReads());
         declarations("MethylationTypeCaller",
                 new org.broadinstitute.hellbender.tools.walkers.MethylationTypeCaller());
+        // The next two. `BaseRecalibrator` writes a GATKReport rather than reads and takes a
+        // FeatureInput of known sites, and `GtfToBed` reads an annotation and writes a BED.
+        declarations("BaseRecalibrator",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.BaseRecalibrator());
+        declarations("GtfToBed",
+                new org.broadinstitute.hellbender.tools.walkers.conversion.GtfToBed());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
