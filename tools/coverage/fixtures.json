@@ -947,6 +947,53 @@
         "/work/out/tabix.txt",
         "/work/out/tabix2.txt"
       ]
+    },
+    "ReadAnonymizer": {
+      "$why": [
+        "indels.bam is the input that makes the tool do something visible: its reads carry",
+        "matches over a reference the bases disagree with, and an insertion and a deletion, which",
+        "are the cigar branches that copy rather than replace. reads.bam is every read at `10M`,",
+        "so the two inputs differ in what the anonymiser has to rebuild.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not, which is the",
+        "per-read query's refusal rather than an empty answer."
+      ],
+      "--input": [
+        "/work/fixtures/indels.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/indels.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/anonymised.bam",
+        "/work/out/anonymised2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "PrintFileDiagnostics": {
+      "$why": [
+        "The analyzer is chosen by the EXTENSION and nothing else, so the three values are the",
+        "three answers: reads.bai is a real index and the only branch this port carries,",
+        "reads.vcf is a name no analyzer claims, and plain.tbi is claimed by no analyzer either",
+        "-- the `.cram` and `.crai` branches read a container structure the port refuses in its",
+        "own words, so they are not in the array."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/diagnostics.txt",
+        "/work/out/diagnostics2.txt"
+      ]
     }
   },
   "constraints": [],
