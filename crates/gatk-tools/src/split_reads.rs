@@ -61,7 +61,7 @@ use htsjdk_bam::tag::{Tag, TagValue};
 
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK SplitReads";
@@ -240,6 +240,30 @@ pub fn split_reads(
     extension: &str,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> RunResult {
+    split_reads_with(
+        source,
+        options,
+        splitters,
+        base_name,
+        extension,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run with the writer's compression named, which is what a command line decides.
+#[allow(clippy::too_many_arguments)]
+pub fn split_reads_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    splitters: &[Splitter],
+    base_name: &str,
+    extension: &str,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     let input_header = source.header().clone();
     let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
 
@@ -288,7 +312,13 @@ pub fn split_reads(
 
     let mut files = Vec::with_capacity(keys.len());
     for ((key, header), records) in keys.iter().zip(&headers).zip(&written) {
-        let (bam, index) = write_records(header, records, options.create_output_bam_index)?;
+        let (bam, index) = crate::sam_output::write_records_with(
+            header,
+            records,
+            options.create_output_bam_index,
+            level,
+            deflater,
+        )?;
         files.push(OutputFile {
             name: file_name(base_name, key, extension),
             bam,

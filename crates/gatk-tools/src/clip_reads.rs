@@ -89,7 +89,7 @@ use gatk_engine::java_format::format_decimals;
 use gatk_engine::read;
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK ClipReads";
@@ -667,6 +667,25 @@ pub fn clip_reads(
     arguments: &ClipArguments,
     filter: &dyn Fn(&BamRecord) -> bool,
 ) -> RunResult {
+    clip_reads_with(
+        source,
+        options,
+        arguments,
+        filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run with the writer's compression named, which is what a command line decides.
+pub fn clip_reads_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    arguments: &ClipArguments,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     let cycles = match arguments.cycles() {
         Ok(cycles) => cycles,
         Err(error) => return Ok(Err(error)),
@@ -712,7 +731,13 @@ pub fn clip_reads(
     }
 
     let header = header_for_sam_writer(source_header, TOOL_NAME, options);
-    let (bam, bai) = write_records(&header, &records, options.create_output_bam_index)?;
+    let (bam, bai) = crate::sam_output::write_records_with(
+        &header,
+        &records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )?;
     Ok(Ok((bam, bai, accumulator.to_text(arguments.clip_adapter))))
 }
 

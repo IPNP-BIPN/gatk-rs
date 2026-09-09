@@ -3205,8 +3205,9 @@ pub fn split_reads(parser: &Parser) -> Outcome {
         command_line: &command_line,
         version: crate::TOOLKIT_VERSION,
     };
-    let run = gatk_tools::split_reads::split_reads(
-        &source, &options, &splitters, &base_name, &extension, &filter,
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::split_reads::split_reads_with(
+        &source, &options, &splitters, &base_name, &extension, &filter, level, deflater,
     )
     .map_err(reads_traversal_error)?;
     let files = match run {
@@ -3229,6 +3230,16 @@ pub fn split_reads(parser: &Parser) -> Outcome {
                     format!("could not write {}: {error}", companion.display()),
                 )
             })?;
+        }
+        // The digest is written per FILE, like the index: a run that splits into six files and
+        // asks for md5s leaves six of them, each APPENDED to its own name.
+        if flag(parser, "create-output-bam-md5") {
+            let digest = format!("{}.md5", path.display());
+            std::fs::write(&digest, gatk_tools::gather_bam_files::md5_file(&file.bam)).map_err(
+                |error| {
+                    Thrown::non_user(PORT_FAILURE, format!("could not write {digest}: {error}"))
+                },
+            )?;
         }
     }
     Ok(None)
@@ -3289,8 +3300,16 @@ pub fn clip_reads(parser: &Parser) -> Outcome {
         command_line: &command_line,
         version: crate::TOOLKIT_VERSION,
     };
-    let run = gatk_tools::clip_reads::clip_reads(&source, &options, &arguments_for_clip, &filter)
-        .map_err(reads_traversal_error)?;
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::clip_reads::clip_reads_with(
+        &source,
+        &options,
+        &arguments_for_clip,
+        &filter,
+        level,
+        deflater,
+    )
+    .map_err(reads_traversal_error)?;
     let (bytes, bai, statistics) = match run {
         Ok(produced) => produced,
         // Both of these are `RuntimeException`s rather than the tool's own refusal, so the class is
