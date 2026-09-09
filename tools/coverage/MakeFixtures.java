@@ -470,6 +470,132 @@ public class MakeFixtures {
      * the second pair straddles most of the contig, and the third is a pair whose mate is
      * unmapped.
      */
+    /**
+     * A QUERY-NAME sorted BAM of pairs, which is what the two tools that are no walkers require.
+     *
+     * `PostProcessReadsForRSEM` refuses anything else outright, and `TransferReadTags` refuses an
+     * aligned file whose header does not say `SO:queryname`, so every other BAM in this corpus
+     * reaches one line of either tool and stops. The four groups here are the four answers
+     * `passesRSEMFilter` gives:
+     *
+     *   - `PAIR:1` is a proper pair of single-`M` reads, which passes, and it carries a pair of
+     *     SECONDARY alignments whose mate positions point at each other, which is the one shape
+     *     `groupSecondaryReads` keeps;
+     *   - `PAIR:2`'s second read is unmapped, which is the `notBothMapped` count;
+     *   - `PAIR:3`'s first read has an insertion in its cigar, which is the `unsupportedCigar`
+     *     count: RSEM takes one `M` element and nothing else;
+     *   - and `PAIR:4` is a first-of-pair with no second, which warns and is dropped.
+     *
+     * A group holding only a SECOND-of-pair is deliberately absent: it dereferences null in the
+     * reference and would end every row of both arrays at the same line.
+     *
+     * There is no index. A queryname-sorted BAM cannot have one, which is also why the writer is
+     * not asked for it here.
+     */
+    static void queryNameSorted(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, bam.toFile())) {
+            // PAIR:1, the group that passes: two primaries and two secondaries.
+            writer.addAlignment(mate(header, "PAIR:1", 100, 300, "10M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:1", 500, 700, "10M", true, true, false));
+            writer.addAlignment(mate(header, "PAIR:1", 300, 100, "10M", false, false, false));
+            writer.addAlignment(mate(header, "PAIR:1", 700, 500, "10M", false, true, false));
+            // PAIR:2, whose second read is unmapped.
+            writer.addAlignment(mate(header, "PAIR:2", 1000, 1200, "10M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:2", 1200, 1000, "10M", false, false, true));
+            // PAIR:3, whose first read carries an insertion.
+            writer.addAlignment(mate(header, "PAIR:3", 2000, 2200, "5M1I4M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:3", 2200, 2000, "10M", false, false, false));
+            // PAIR:4, a first of pair with no second.
+            writer.addAlignment(mate(header, "PAIR:4", 3000, 3200, "10M", true, false, false));
+        }
+    }
+
+    /** One record of {@link #queryNameSorted}, with the flags the group it belongs to needs. */
+    static SAMRecord mate(final SAMFileHeader header, final String name, final int start,
+                          final int mateStart, final String cigar, final boolean first,
+                          final boolean secondary, final boolean unmapped) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString("ACGTACGTAC");
+        record.setBaseQualityString("IIIIIIIIII");
+        record.setAttribute("RG", "rg1");
+        record.setReadPairedFlag(true);
+        record.setFirstOfPairFlag(first);
+        record.setSecondOfPairFlag(!first);
+        if (unmapped) {
+            record.setReadUnmappedFlag(true);
+            record.setMateReferenceName("chr1");
+            record.setMateAlignmentStart(mateStart);
+            return record;
+        }
+        record.setReferenceName("chr1");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(60);
+        record.setMateReferenceName("chr1");
+        record.setMateAlignmentStart(mateStart);
+        record.setProperPairFlag(!secondary);
+        record.setSecondaryAlignment(secondary);
+        return record;
+    }
+
+    /**
+     * The unmapped, query-name sorted file `TransferReadTags` copies tags FROM.
+     *
+     * One record per query name of {@link #queryNameSorted}, each carrying `RX` and none carrying
+     * `MI`: the tool asks for the tags named on its command line and refuses a read whose value is
+     * absent, so the pair of tag names is a row that answers and a row that refuses.
+     *
+     * The names are a SUPERSET of the aligned file's on purpose. The traversal plays this file
+     * forward until it catches up with the aligned read, so a name here that the aligned file does
+     * not carry is skipped, while the reverse is the tool's `IllegalStateException`.
+     */
+    static void umi(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, bam.toFile())) {
+            final String[] names = {"PAIR:1", "PAIR:2", "PAIR:3", "PAIR:4", "PAIR:5"};
+            for (final String name : names) {
+                for (final boolean first : new boolean[] {true, false}) {
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(name);
+                    record.setReadUnmappedFlag(true);
+                    record.setMateUnmappedFlag(true);
+                    record.setReadPairedFlag(true);
+                    record.setFirstOfPairFlag(first);
+                    record.setSecondOfPairFlag(!first);
+                    record.setReadString("ACGTACGTAC");
+                    record.setBaseQualityString("IIIIIIIIII");
+                    record.setAttribute("RG", "rg1");
+                    record.setAttribute("RX", "ACG-TGC");
+                    writer.addAlignment(record);
+                }
+            }
+        }
+    }
+
     static void pairs(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -639,6 +765,8 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("clip.fasta"),
                 ">adapterOne\nACGTACGT\n>adapterTwo\nTTTTGGGG\n", StandardCharsets.UTF_8);
         pairs(dir.resolve("pairs.bam"));
+        queryNameSorted(dir.resolve("qname.bam"));
+        umi(dir.resolve("umi.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.
