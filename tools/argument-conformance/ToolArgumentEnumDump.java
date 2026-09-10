@@ -182,6 +182,15 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.VariantsToTable());
         declarations("CompareBaseQualities",
                 new org.broadinstitute.hellbender.tools.validation.CompareBaseQualities());
+        // The first two tools here that WRITE a VCF, which is a writer this port has not used from a
+        // runner before. `RemoveNearbyIndels` buffers one indel at a time and drops any pair closer
+        // than a spacing; `UpdateVCFSequenceDictionary` replaces the header's dictionary and passes
+        // every record through, and its `--source-dictionary` is the first argument here that takes
+        // a dictionary from any of four file kinds.
+        declarations("RemoveNearbyIndels",
+                new org.broadinstitute.hellbender.tools.walkers.validation.RemoveNearbyIndels());
+        declarations("UpdateVCFSequenceDictionary",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.UpdateVCFSequenceDictionary());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
