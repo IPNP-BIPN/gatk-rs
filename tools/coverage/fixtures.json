@@ -1450,17 +1450,19 @@
       "$why": [
         "The two SAM files are POSITIONAL, so they cannot come out of the array at all: every assignment",
         "there carries a name and these have none. They are held under $positional, which run_array.py",
-        "appends to every row, and the pair is reads.bam against reads_oq.bam -- the same reads with a",
-        "different quality array, so the matrix has off-diagonal entries and the tool returns 1 rather",
-        "than 0.",
-        "--static-quantized-quals carries two values because --round-down-quantized means nothing",
-        "without it: the pair is what makes the quantization observable rather than held.",
-        "--throw-on-diff turns the same difference into a refusal, which is the row that measures the",
-        "tool's second answer."
+        "appends to every row.",
+        "The pair is reads.bam against requal.bam, which exists for this tool: the same eight reads under",
+        "the same NAMES with a different quality array. The first measurement paired reads.bam with",
+        "reads_oq.bam and every row refused, because the tool walks the two files in lockstep and gives up",
+        "as soon as two reads disagree by name -- `OQ:1:FC:1:1:1:1` against `HWI:1:FC:1:1:1:1` on the very",
+        "first record. With names that match, the matrix has off-diagonal entries: the tool returns 1",
+        "rather than 0, and --throw-on-diff turns that into a refusal.",
+        "--static-quantized-quals carries two values because --round-down-quantized means nothing without",
+        "it: the pair is what makes the quantization observable rather than held."
       ],
       "$positional": [
         "/work/fixtures/reads.bam",
-        "/work/fixtures/reads_oq.bam"
+        "/work/fixtures/requal.bam"
       ],
       "--output": [
         "/work/out/quals.txt",
