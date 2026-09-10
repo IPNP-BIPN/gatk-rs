@@ -2245,32 +2245,6 @@ pub fn pileup(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
 
-    // `MissingContigInSequenceDictionary`: the locus walker checks each interval's contig against
-    // the REFERENCE's dictionary rather than the best available one, so a run whose master declares
-    // a contig the FASTA does not is refused here rather than answering `N` for every base of it.
-    //
-    // It comes AFTER the reads. The check happens when a locus queries the reference, and the reads
-    // for that locus are pulled first, so a file handed the wrong index answers htsjdk's read
-    // failure instead. Measured on row 8 of `CheckPileup`'s array, where reads.bam is given
-    // reads2.bai and other.fasta: the reference answered `Invalid record length: 0` and the port
-    // answered this.
-    if let Some(source) = reference.as_ref() {
-        let known = gatk_tools::reference_walker::dictionary(source);
-        for interval in &intervals {
-            if !known
-                .sequences
-                .iter()
-                .any(|sequence| sequence.name == interval.contig)
-            {
-                return Err(Thrown::user(format!(
-                    "Contig {} not present in the sequence dictionary {}\n",
-                    interval.contig,
-                    gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
-                )));
-            }
-        }
-    }
-
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
@@ -2287,6 +2261,32 @@ pub fn pileup(parser: &Parser) -> Outcome {
         &filter,
     )
     .map_err(locus_traversal_error)?;
+
+    // `MissingContigInSequenceDictionary`, which is raised when a LOCUS asks the reference for its
+    // base and not before. Three things follow from that, and all three are measured:
+    //
+    //   - it is the REFERENCE's dictionary that is consulted rather than the best available one;
+    //   - the reads are read first, so a BAM handed another file's index answers htsjdk's failure
+    //     (row 8 of `CheckPileup`'s array);
+    //   - and a traversal that visits NO locus never asks, so a row whose filters keep no read at
+    //     all writes an empty file rather than refusing. Measured on row 4 of this tool's array,
+    //     where `--inverted-read-filter PrimaryLineReadFilter` keeps nothing and the reference
+    //     wrote an empty pileup over a reference whose only contig is not the reads'.
+    if let Some(source) = reference.as_ref() {
+        let known = gatk_tools::reference_walker::dictionary(source);
+        if let Some(unknown) = applied.iter().find(|one| {
+            !known
+                .sequences
+                .iter()
+                .any(|sequence| sequence.name == one.context.contig)
+        }) {
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                unknown.context.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+            )));
+        }
+    }
 
     let output_insert_length = flag(parser, "output-insert-length");
     let show_verbose = flag(parser, "show-verbose");
@@ -2365,25 +2365,6 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
     let filter = read_filter(parser, &filters, &header)?;
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
-    // The contigs are checked against the REFERENCE's dictionary, and only once the reads have been
-    // read: the check happens when a locus queries the reference, and the reads for that locus are
-    // pulled first, so a file handed the wrong index answers htsjdk's read failure and not this.
-    // Measured on row 8 of `CheckPileup`'s array, where reads.bam is given reads2.bai and
-    // other.fasta: the reference answered `Invalid record length: 0`.
-    let known = gatk_tools::reference_walker::dictionary(&reference);
-    for interval in &intervals {
-        if !known
-            .sequences
-            .iter()
-            .any(|sequence| sequence.name == interval.contig)
-        {
-            return Err(Thrown::user(format!(
-                "Contig {} not present in the sequence dictionary {}\n",
-                interval.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
-            )));
-        }
-    }
     let applied = gatk_tools::locus_walker::traverse(
         &records,
         &header,
@@ -2400,6 +2381,23 @@ pub fn check_pileup(parser: &Parser) -> Outcome {
         &filter,
     )
     .map_err(locus_traversal_error)?;
+
+    // `MissingContigInSequenceDictionary`, raised when a LOCUS asks the reference for its base: the
+    // reads are read first, and a traversal that visits no locus never asks at all. Both halves are
+    // measured, on row 8 of this tool's array and on row 4 of `Pileup`'s.
+    let known = gatk_tools::reference_walker::dictionary(&reference);
+    if let Some(unknown) = applied.iter().find(|one| {
+        !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == one.context.contig)
+    }) {
+        return Err(Thrown::user(format!(
+            "Contig {} not present in the sequence dictionary {}\n",
+            unknown.context.contig,
+            gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+        )));
+    }
 
     let arguments = gatk_tools::check_pileup::CheckPileupArguments {
         ignore_overlaps: flag(parser, "ignore-overlaps"),
@@ -4228,25 +4226,6 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
     let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
         .map_err(reads_traversal_error)?;
 
-    // The interval contigs are checked against the REFERENCE's dictionary rather than the best
-    // available one, which is the same check `Pileup` makes and for the same reason. Both it and the
-    // contigs themselves come AFTER the reads: the reference is queried when a locus asks for its
-    // base, and the reads for that locus are pulled first, so a file handed the wrong index answers
-    // htsjdk's read failure instead.
-    for interval in &intervals {
-        if !known
-            .sequences
-            .iter()
-            .any(|sequence| sequence.name == interval.contig)
-        {
-            return Err(Thrown::user(format!(
-                "Contig {} not present in the sequence dictionary {}\n",
-                interval.contig,
-                gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
-            )));
-        }
-    }
-
     // The contigs whole: a state per base would otherwise be a reference query per base.
     let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     for (name, length) in reference.sequences().to_vec() {
@@ -4282,6 +4261,22 @@ pub fn callable_loci(parser: &Parser) -> Outcome {
         &filter,
     )
     .map_err(locus_traversal_error)?;
+
+    // `MissingContigInSequenceDictionary`, raised when a LOCUS asks the reference for its base: the
+    // reads come first, and a traversal that visits no locus never asks. `Pileup`'s note carries the
+    // rows that measure both halves.
+    if let Some(unknown) = applied.iter().find(|one| {
+        !known
+            .sequences
+            .iter()
+            .any(|sequence| sequence.name == one.context.contig)
+    }) {
+        return Err(Thrown::user(format!(
+            "Contig {} not present in the sequence dictionary {}\n",
+            unknown.context.contig,
+            gatk_tools::sequence_dictionary::pretty_print(&known.sequences)
+        )));
+    }
 
     let thresholds = gatk_tools::callable_loci::Arguments {
         max_low_mapq: number_or(parser, "max-low-mapq", 1),
