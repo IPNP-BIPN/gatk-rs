@@ -1472,6 +1472,74 @@
         "10",
         "30"
       ]
+    },
+    "RemoveNearbyIndels": {
+      "$why": [
+        "indels.vcf is the file this tool needs, and it is written for it: the corpus's other VCFs hold",
+        "SNPs alone, and a run over those emits every record whatever the spacing is. It carries pairs at",
+        "several distances, a run of three, and non-indels between them, so a spacing of 10 and one of",
+        "200 keep different sets.",
+        "--min-indel-spacing is REQUIRED on this tool, which is why it carries values here rather than",
+        "sitting at its declared default: a row without it is refused by the parser.",
+        "--input and --read-index are held out. This tool reads no reads, and the corpus's shared value",
+        "for --input is a VCF, whose refusal as a reads source is measured by CountVariants."
+      ],
+      "--variant": [
+        "/work/fixtures/indels.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/nearby.vcf",
+        "/work/out/nearby2.vcf"
+      ],
+      "--min-indel-spacing": [
+        "10",
+        "200"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "UpdateVCFSequenceDictionary": {
+      "$why": [
+        "--source-dictionary takes a dictionary out of four kinds of file, so it carries two of them: a",
+        "`.dict` and a BAM. matching.dict agrees with the corpus's contig and reads.bam carries the same",
+        "one in its header, which is what makes the two rows differ in the SOURCE rather than in the",
+        "answer.",
+        "indexed.vcf already declares a ##contig line, so every row needs --replace to get past",
+        "onTraversalStart; reads.vcf declares none, which is the case the tool exists for. The pair is",
+        "what makes the check observable.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false for the reason",
+        "MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the",
+        "second writes an index carrying the output file's last-modified time, so two runs minutes apart",
+        "differ for a reason that is not the tool's.",
+        "--input and --read-index are held out, as for RemoveNearbyIndels."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/updated.vcf",
+        "/work/out/updated2.vcf"
+      ],
+      "--source-dictionary": [
+        "/work/fixtures/matching.dict",
+        "/work/fixtures/reads.bam"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
     }
   },
   "constraints": [

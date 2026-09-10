@@ -548,6 +548,7 @@ jobs:
             --tool CallableLoci --tool ShiftFasta \
             --tool TransferReadTags --tool PostProcessReadsForRSEM \
             --tool VariantsToTable --tool CompareBaseQualities \
+            --tool RemoveNearbyIndels --tool UpdateVCFSequenceDictionary \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
