@@ -132,7 +132,7 @@ def run_oracle(tool, row_args, workdir, positional=()):
     out_dir.mkdir(exist_ok=True)
     clear(out_dir)
 
-    cli = " ".join(as_cli(row_args))
+    cli = " ".join(as_cli(row_args, positional))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
