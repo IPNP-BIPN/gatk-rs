@@ -662,6 +662,11 @@ pub enum SelectError {
     Invalid { index: usize, genotype: bool },
     /// The expression did not compile, refused by the argument parser before any record was read.
     Unparseable { index: usize, text: String },
+    /// The expression evaluated to something that is not a Boolean, which the reference CASTS
+    /// rather than tests: `(Boolean) filter.evaluate(...)`. A `--select QUAL` is a Double there and
+    /// the JVM's own `ClassCastException` reaches the handler, which prints its class and ends the
+    /// run at three. Carries the class the value had, because the message names it twice.
+    NotBoolean { class: &'static str },
 }
 
 impl SelectError {
@@ -678,6 +683,12 @@ impl SelectError {
                 "Argument select-{index}has a bad value. Invalid expression used ({text}). Please \
                  see the JEXL docs for correct syntax."
             ),
+            // The JVM's message for a failed cast, which names the class, the target, and the
+            // module and loader both live in.
+            SelectError::NotBoolean { class } => format!(
+                "class {class} cannot be cast to class java.lang.Boolean ({class} and \
+                 java.lang.Boolean are in module java.base of loader 'bootstrap')"
+            ),
         }
     }
 
@@ -685,7 +696,25 @@ impl SelectError {
         match self {
             SelectError::Invalid { .. } => "org.broadinstitute.hellbender.exceptions.UserException",
             SelectError::Unparseable { .. } => "java.lang.IllegalArgumentException",
+            SelectError::NotBoolean { .. } => "java.lang.ClassCastException",
         }
+    }
+}
+
+/// The Java class a JEXL value has, which a failed cast to Boolean names.
+///
+/// The engine's literals are the reference's: a real is a Float unless it needs a Double, an
+/// integer is an Integer unless it needs a Long, and a variable's value keeps whatever class the
+/// context put in it. `QUAL` is a Double, which is the one this port has measured.
+fn jexl_value_class(value: &JexlValue) -> &'static str {
+    match value {
+        JexlValue::Null => "null",
+        JexlValue::Bool(_) => "java.lang.Boolean",
+        JexlValue::Int(_) => "java.lang.Integer",
+        JexlValue::Long(_) => "java.lang.Long",
+        JexlValue::Float(_) => "java.lang.Float",
+        JexlValue::Double(_) => "java.lang.Double",
+        JexlValue::Str(_) => "java.lang.String",
     }
 }
 
@@ -849,7 +878,13 @@ fn passes_jexl_filters(
         })?;
         let matched = match expression.evaluate(&record.info) {
             Ok(JexlValue::Bool(value)) => value,
-            Ok(_) => false,
+            // `(Boolean) filter.evaluate(...)`: a value of any other class is a failed CAST and not
+            // a false. Measured on rows of this tool's array where `--select QUAL` reaches a Double.
+            Ok(other) => {
+                return Err(SelectError::NotBoolean {
+                    class: jexl_value_class(&other),
+                })
+            }
             // A per-allele annotation reaches here: the comparison is not defined over a list, and
             // the reference turns the engine's complaint into a UserException naming the index.
             Err(_) => {
@@ -872,7 +907,11 @@ fn passes_jexl_filters(
         for fields in &record.genotype_fields {
             let matched = match expression.evaluate(fields) {
                 Ok(JexlValue::Bool(value)) => value,
-                Ok(_) => false,
+                Ok(other) => {
+                    return Err(SelectError::NotBoolean {
+                        class: jexl_value_class(&other),
+                    })
+                }
                 Err(_) => {
                     return Err(SelectError::Invalid {
                         index,

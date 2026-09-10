@@ -5443,10 +5443,18 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         &file.header.samples,
         &sample_arguments,
     )
-    .map_err(|refusal| Thrown {
-        failure: Failure::User,
-        exception: refusal.java_class(),
-        message: Some(refusal.message()),
+    // `UserException$BadInput` puts `Bad input: ` in front of its message, which the port's
+    // `message()` leaves to the caller. Measured on six rows of this tool's array.
+    .map_err(|refusal| {
+        if refusal.java_class().ends_with("UserException$BadInput") {
+            bad_input(refusal.message())
+        } else {
+            Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            }
+        }
     })?;
 
     let subset_arguments = gatk_tools::select_variants::SubsetArguments {
@@ -5481,6 +5489,12 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             },
         },
     );
+    // `VcfUtils.updateHeaderContigLines`, which every tool that writes a VCF beside a REFERENCE
+    // calls and which rewrites two kinds of line: every `##contig` is replaced by one built from
+    // the dictionary, carrying `assembly=` when a reference path is known, and the `##reference`
+    // line is replaced by that path's URI. Without a reference the dictionary is the driving
+    // VCF's own, and a file that declares none keeps the lines it had.
+    let header = update_header_contig_lines(parser, header)?;
 
     // The traversal, which is the intervals' if there are any. A feature file with no index is
     // refused here rather than earlier, exactly as `CountVariants`' is.
@@ -5632,6 +5646,86 @@ pub fn select_variants(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
+///
+/// The dictionary is the REFERENCE's when there is one and the driving variants' otherwise, and a
+/// file that declares neither keeps whatever contig lines it had. `assembly=` is the reference
+/// file's NAME, and the `##reference` value is its URI unless `--suppress-reference-path` asks for
+/// the bare name with its extension cut. Measured on twenty-three rows of `SelectVariants`' array,
+/// where the port wrote the input's contig lines and no reference line at all.
+fn update_header_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let reference = argument(parser, "reference");
+    let dictionary: Vec<(String, i32)> = match &reference {
+        Some(path) => {
+            let source =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            gatk_tools::reference_walker::dictionary(&source)
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        }
+        None => sequence_dictionary_of(&header),
+    };
+    if dictionary.is_empty() {
+        return Ok(header);
+    }
+
+    let mut header = header;
+    header.lines.retain(|line| {
+        !matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }) && line.key() != "reference"
+    });
+    let assembly = reference.as_ref().map(|path| {
+        std::path::Path::new(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone())
+    });
+    for (index, (name, length)) in dictionary.iter().enumerate() {
+        let mut fields = vec![
+            ("ID".to_string(), name.clone()),
+            ("length".to_string(), length.to_string()),
+        ];
+        if let Some(assembly) = &assembly {
+            fields.push(("assembly".to_string(), assembly.clone()));
+        }
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Contig {
+            index: index as i32,
+            fields,
+        });
+    }
+    if let Some(path) = &reference {
+        // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
+        // command line wrote, so the path is resolved before it is rendered.
+        let value = if flag(parser, "suppress-reference-path") {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.clone());
+            match name.rfind('.') {
+                Some(dot) => name[..dot].to_string(),
+                None => name,
+            }
+        } else {
+            let absolute = std::path::Path::new(path)
+                .canonicalize()
+                .unwrap_or_else(|_| std::path::PathBuf::from(path));
+            format!("file://{}", absolute.display())
+        };
+        header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                key: "reference".to_string(),
+                value,
+            });
+    }
+    Ok(header)
+}
+
 /// A decoded record's position, which is all the traversal needs to select it.
 struct LocatedRecord {
     index: usize,
@@ -5654,6 +5748,12 @@ impl gatk_engine::variant_source::Located for LocatedRecord {
 
 /// A `SelectError` as the reference throws it.
 fn select_error(error: gatk_tools::select_variants::SelectError) -> Thrown {
+    // Two of the three are not `UserException`s: an expression that does not compile is an
+    // `IllegalArgumentException` and one that evaluates to the wrong class is the JVM's own
+    // `ClassCastException`, so the handler prints the class and the run ends at three.
+    if error.java_class().starts_with("java.lang.") {
+        return Thrown::non_user(error.java_class(), error.message());
+    }
     Thrown {
         failure: Failure::User,
         exception: error.java_class(),

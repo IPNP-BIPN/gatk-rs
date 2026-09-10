@@ -1553,7 +1553,6 @@
         "samples at all, which is what makes the sample arguments and the JEXL expressions reach",
         "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
         "over a file with none is the refusal that names it.",
-        "-select carries an expression that is TRUE for some records and one that no record satisfies, so",
         "the JEXL path is measured rather than merely present.",
         "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
         "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
@@ -1564,7 +1563,17 @@
         "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
         "it: the index a tool builds for its own output records that file's last-modified time.",
         "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
-        "value is a VCF, whose refusal as a reads source is measured by CountVariants."
+        "value is a VCF, whose refusal as a reads source is measured by CountVariants.",
+        "command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL",
+        "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
+        "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
+        "and is now the port's.",
+        "-select carries no SPACES, and the first measurement is why: a row is joined into one command",
+        "line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell.",
+        "Both values compare against a REAL literal rather than an integer one. The reference's JEXL",
+        "context returns a typed value for QUAL and this port's returns the rendered string, so an",
+        "integer literal sends the comparison down Integer.parseInt and refuses; a real literal takes the",
+        "double path and answers. The gap is the context's types and is tracked on its own issue."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
@@ -1579,8 +1588,8 @@
         "nosuchsample"
       ],
       "--select": [
-        "QUAL > 50",
-        "QUAL > 5000"
+        "QUAL>50.0",
+        "QUAL>5000.0"
       ],
       "--pedigree": [],
       "--mendelian-violation": [],

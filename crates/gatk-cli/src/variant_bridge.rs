@@ -119,11 +119,42 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
     let filter_record = FilterRecord {
         id: vc.id.clone(),
         filters: vc.filters.clone().unwrap_or_default(),
-        info: vc
-            .attributes
-            .iter()
-            .map(|(key, value)| (key.clone(), rendered(value)))
-            .collect::<HashMap<String, String>>(),
+        info: {
+            // `VariantJEXLContext.get`, whose resolution order is a fixed map, then the INFO
+            // attributes, then a filter NAME that the record carries. The fixed names are why an
+            // expression can say `QUAL > 50` at all: none of them is an INFO field, and a context
+            // holding the attributes alone refuses the expression as an unknown variable.
+            let mut context: HashMap<String, String> = HashMap::new();
+            context.insert("CHROM".to_string(), vc.contig.clone());
+            context.insert("POS".to_string(), vc.start.to_string());
+            // `-10 * getLog10PError()`, which is the QUAL column back again. A record whose QUAL
+            // was `.` carries no error, and `hasLog10PError()` is what the writer asks; the value
+            // here is the number either way, because the context has no null.
+            context.insert(
+                "QUAL".to_string(),
+                gatk_engine::tsv_table::java_double_to_string(-10.0 * vc.log10_p_error),
+            );
+            context.insert("N_ALLELES".to_string(), vc.alleles.len().to_string());
+            // `isFiltered() ? "1" : "0"`, which is what makes `FILTER == "1"` an expression.
+            let filtered = vc
+                .filters
+                .as_ref()
+                .is_some_and(|filters| !filters.is_empty());
+            context.insert(
+                "FILTER".to_string(),
+                if filtered { "1" } else { "0" }.to_string(),
+            );
+            for (key, value) in &vc.attributes {
+                context.insert(key.clone(), rendered(value));
+            }
+            // A filter the record carries resolves to `"1"` under its own name.
+            for filter in vc.filters.iter().flatten() {
+                context
+                    .entry(filter.clone())
+                    .or_insert_with(|| "1".to_string());
+            }
+            context
+        },
         genotype_fields: vc
             .genotypes
             .iter()
