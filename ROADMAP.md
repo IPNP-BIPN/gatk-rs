@@ -1235,7 +1235,10 @@ the CPU path that already exists, and no bit-identity claim may weaken to buy a 
 
 ## Milestone C: the runnable command line
 
-**227 of the 311 tools are oracle-backed and one of them can be run from a command line.** The
+**Closed.** 227 of the 311 tools are oracle-backed, 47 of them declare their arguments, 46 run from
+a command line, and every one of those 46 is measured against the reference across a t-wise
+covering array at 1.000. What remains is per-tool work, tracked by G2 and by V, not a mechanism
+this milestone still owes. The paragraphs below are what it said while it was open. The
 binary is `gatk-rs`, in the `gatk-cli` crate; before it there was none in this repository, and
 there is still none in htsjdk-rs. picard-rs has two, and their own headers
 say what they are: benchmark harnesses, not "the Barclay command line the program commits to".
@@ -1278,17 +1281,22 @@ sentence into the second.
       mutex targets, the controlling plugin and the documentation; the enum constants are a second
       golden of their own, and the four classes the reference builds from a string (`GATKPath`,
       `File`, `Float`, `FeatureInput`) a third. Every class a declaration names converts
-- [~] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
+- [x] **C.3 the file plumbing**, a path where a port takes a `&str` today. `condense_depth_evidence::read`
       is handed a whole file already in memory and `write` returns a `String`, which is right for a
-      suite comparing whole outputs against a golden and not enough to run. Four tools have that
-      layer now: `IndexFeatureFile`, which writes a Tribble index for a plain input and a **tabix**
+      suite comparing whole outputs against a golden and not enough to run. The first four to have
+      that layer were: `IndexFeatureFile`, which writes a Tribble index for a plain input and a **tabix**
       one for a block compressed input at the level and through the deflater `GATKConfig` chose;
       `PrintBGZFBlockInformation`; `CountReads`, a read WALKER, so a BAM is opened, an interval
       query runs against the index htsjdk's own search finds, the read filters a command line names
       are applied and the count reaches both `-O` and the return value (`count-reads-plumbing`);
       and `CountVariants`, a variant WALKER, whose `-L` resolves against the sequence dictionary the
       VCF's own header declares and is refused before any record is read when no index sits beside
-      the file (`count-variants`)
+      the file (`count-variants`). Forty-six tools have it today, and the layer is one shape
+      rather than forty-six: a BAM output carries the index and the digest its arguments ask for
+      and is written at the level and through the deflater `GATKConfig` chose; a VCF output the
+      same, block compressed when its name says so, with a tabix index rather than a Tribble one;
+      a report or a table goes to `-O` or to stdout where the argument is optional; and a refused
+      run still leaves behind whatever its writers had already opened
 - [x] **C.4 the usage text**, which G1.8 closed its scope by explicitly leaving here. The layout
       was ported first and the data followed: a tool's whole usage is COMPOSED from its
       declarations and compared against the golden as one string, a walker's included. Its
@@ -1297,13 +1305,20 @@ sentence into the second.
       print the catalogue and the tool's own defaults (`read-filter-catalogue`); and the mutex
       sentence names the target definition's FIELD (`mutex-target-names`). `gatk-rs CountReads -h`
       answers with the reference's two hundred and ninety-seven lines
-- [ ] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
-      and what unblocks V.5
+- [x] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
+      and what unblocks V.5. Forty-six tools are measured on both sides on every CI run, all of
+      them at 1.000, and the number is committed in `tools/coverage/measured.json` and re-derived
+      by the job that produced it. What the arrays found is the rest of the argument surface: a
+      parser that hashed a spec's option names in the annotation's order rather than jopt-simple's
+      sorted one, a contig check raised from an interval list instead of from the locus that asks
+      the reference for a base, `-L` bounding the reads of a tool whose `traverse()` is its own,
+      and a writer's `--variant-output-filtering` applied to the traversal rather than to the
+      writer
 
-The first tool end to end is small, because the logic and the parser both exist and only the glue
-is missing. The remaining 127 are mechanical but not free, and the honest way to size them is to
-do one, measure it, and multiply. Then the rest by archetype, since tools of one archetype share
-both their argument shape and their plumbing.
+The first tool end to end was small, because the logic and the parser both existed and only the
+glue was missing. The rest went by archetype, since tools of one archetype share both their
+argument shape and their plumbing, and the sizing held: the per-tool cost is the fixtures and the
+divergences the array finds, not the runner.
 
 ---
 
