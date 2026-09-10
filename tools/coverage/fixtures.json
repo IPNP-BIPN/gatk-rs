@@ -1301,6 +1301,67 @@
       ],
       "--input": [],
       "--read-index": []
+    },
+    "TransferReadTags": {
+      "$why": [
+        "qname.bam is the only QUERY-NAME sorted file in the corpus, and this tool refuses an aligned",
+        "file whose header does not say so; reads.bam is the coordinate-sorted value beside it, so the",
+        "argument has a row that traverses and a row that refuses.",
+        "umi.bam is the unmapped side: one pair per query name, every read carrying RX and none",
+        "carrying MI. reads.bam as the unmapped side is the other refusal, an aligned read whose name",
+        "the unmapped file does not carry, which is the tool's IllegalStateException.",
+        "--read-tags carries RX and MI for the same reason: the first is present on every unmapped read",
+        "and the second on none, and a missing value is refused by name.",
+        "--read-index is held out. Neither query-name sorted file can have an index, and the corpus's",
+        "coordinate indexes belong to other files, so every row carrying one would measure a reader",
+        "refusal rather than the tool."
+      ],
+      "--input": [
+        "/work/fixtures/qname.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--unmapped-sam": [
+        "/work/fixtures/umi.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-tags": [
+        "RX",
+        "MI"
+      ],
+      "--output": [
+        "/work/out/tagged.bam",
+        "/work/out/tagged2.bam"
+      ],
+      "--read-index": []
+    },
+    "PostProcessReadsForRSEM": {
+      "$why": [
+        "qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads",
+        "with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair",
+        "whose first read carries an insertion, and a first of pair with no second -- so a row's output",
+        "is the groups that survive rather than the file back again. reads.bam is coordinate-sorted,",
+        "which this tool refuses outright, so the argument has a row that traverses and a row that",
+        "refuses.",
+        "--read-index is held out for the reason it is held out of TransferReadTags: a query-name",
+        "sorted BAM has no index.",
+        "--inverted-read-filter is held out, and the first measurement is why: all nineteen rows were",
+        "REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers",
+        "leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the",
+        "second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then",
+        "dereferences null inside the guard that exists because read1 may be null. That exception is the",
+        "tool's behaviour and is measured, in the module's own tests and against the golden; what an array",
+        "of nineteen refusals cannot measure is the argument surface it is for."
+      ],
+      "--input": [
+        "/work/fixtures/qname.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--output": [
+        "/work/out/rsem.bam",
+        "/work/out/rsem2.bam"
+      ],
+      "--read-index": [],
+      "--inverted-read-filter": []
     }
   },
   "constraints": [],

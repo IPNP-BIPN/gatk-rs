@@ -542,6 +542,7 @@ jobs:
             --tool SplitNCigarReads --tool MethylationTypeCaller \
             --tool BaseRecalibrator --tool GtfToBed \
             --tool CallableLoci --tool ShiftFasta \
+            --tool TransferReadTags --tool PostProcessReadsForRSEM \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

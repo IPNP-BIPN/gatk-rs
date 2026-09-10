@@ -60,7 +60,7 @@ use htsjdk_bam::record::BamRecord;
 use gatk_engine::read;
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, write_records_with, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK PostProcessReadsForRSEM";
@@ -295,6 +295,28 @@ pub type RunResult = Result<Result<(Vec<u8>, Option<Vec<u8>>), RsemError>, Reads
 
 /// `PostProcessReadsForRSEM`: the query-name groups that survive, reordered for RSEM.
 pub fn post_process_reads_for_rsem(source: &ReadsDataSource, options: &Options) -> RunResult {
+    post_process_reads_for_rsem_with(
+        source,
+        options,
+        &default_read_filter,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run, with the filter chain the command line resolved and the block compression it
+/// chose.
+///
+/// The filter is a parameter and not this module's own, because `traverse()` calls
+/// `makeReadFilter()`: the single default filter is what a command line ADDS to, inverts or
+/// disables, and a run whose chain kept no read writes a header and nothing else.
+pub fn post_process_reads_for_rsem_with(
+    source: &ReadsDataSource,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     if source.header().attributes.get("SO") != Some("queryname") {
         return Ok(Err(RsemError::NotQueryNameSorted));
     }
@@ -302,7 +324,7 @@ pub fn post_process_reads_for_rsem(source: &ReadsDataSource, options: &Options) 
     let reads: Vec<BamRecord> = source
         .iter_all()?
         .into_iter()
-        .filter(default_read_filter)
+        .filter(|record| filter(record))
         .collect();
 
     let mut records = Vec::new();
@@ -342,7 +364,9 @@ pub fn post_process_reads_for_rsem(source: &ReadsDataSource, options: &Options) 
     let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
     // `createSAMWriter(outSam, true)`: presorted, so nothing is re-ordered on the way out, and a
     // queryname header has no index.
-    Ok(Ok(write_records(&header, &records, false)?))
+    Ok(Ok(write_records_with(
+        &header, &records, false, level, deflater,
+    )?))
 }
 
 #[cfg(test)]

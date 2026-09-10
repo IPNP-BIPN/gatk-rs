@@ -296,6 +296,15 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "PrimaryLineReadFilter",
             "MappedReadFilter",
         ]),
+        // `PostProcessReadsForRSEM.getDefaultReadFilters` is a SINGLETON that is not the walker's:
+        // `NOT_SUPPLEMENTARY_ALIGNMENT` alone, with no wellformed filter at all, so a malformed read
+        // reaches the tool and a supplementary one never does.
+        "PostProcessReadsForRSEM" => Some(&["NotSupplementaryAlignmentReadFilter"]),
+        // `TransferReadTags` overrides no filter, so its default is `GATKTool`'s own wellformed one.
+        // It is declared here rather than left to the fallback because the tool APPLIES NONE of it:
+        // `traverse()` iterates the data source directly, so the chain is selected, listed by
+        // `--disable-read-filter`, and never consulted.
+        "TransferReadTags" => Some(&["WellformedReadFilter"]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",

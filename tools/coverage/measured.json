@@ -369,6 +369,24 @@
       "matched": 21,
       "t": 2,
       "share": 1.0
+    },
+    "TransferReadTags": {
+      "rows": 19,
+      "accepted": 9,
+      "rejected": 10,
+      "distinct_outputs": 9,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "PostProcessReadsForRSEM": {
+      "rows": 20,
+      "accepted": 9,
+      "rejected": 11,
+      "distinct_outputs": 9,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

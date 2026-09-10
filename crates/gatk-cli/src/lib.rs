@@ -310,6 +310,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GtfToBed" => Some(run_gtf_to_bed),
         "CallableLoci" => Some(run_callable_loci),
         "ShiftFasta" => Some(run_shift_fasta),
+        "TransferReadTags" => Some(run_transfer_read_tags),
+        "PostProcessReadsForRSEM" => Some(run_post_process_reads_for_rsem),
         _ => None,
     }
 }
@@ -377,6 +379,14 @@ fn run_callable_loci(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_shift_fasta(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::shift_fasta(&parsed("ShiftFasta", args)?)
+}
+
+fn run_transfer_read_tags(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::transfer_read_tags(&parsed("TransferReadTags", args)?)
+}
+
+fn run_post_process_reads_for_rsem(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::post_process_reads_for_rsem(&parsed("PostProcessReadsForRSEM", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
