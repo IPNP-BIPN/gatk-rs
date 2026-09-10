@@ -119,11 +119,11 @@
       "share": 1.0
     },
     "Pileup": {
-      "rows": 21,
-      "accepted": 10,
-      "rejected": 11,
-      "distinct_outputs": 3,
-      "matched": 21,
+      "rows": 18,
+      "accepted": 12,
+      "rejected": 6,
+      "distinct_outputs": 7,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
@@ -353,11 +353,11 @@
       "share": 1.0
     },
     "CallableLoci": {
-      "rows": 45,
-      "accepted": 7,
-      "rejected": 38,
-      "distinct_outputs": 5,
-      "matched": 45,
+      "rows": 18,
+      "accepted": 10,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
