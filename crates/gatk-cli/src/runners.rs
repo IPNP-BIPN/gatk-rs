@@ -5102,7 +5102,6 @@ fn default_tool_vcf_header_lines(
     ]
 }
 
-
 /// `RemoveNearbyIndels`, the first tool here that writes a VCF of its own records.
 ///
 /// The buffer holds at most one indel and remembers one it has already thrown away, so three indels
@@ -5509,6 +5508,35 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         });
     }
 
+    // Whether any argument on this command line READS a genotype, which is what decides whether the
+    // output carries the file's own genotype text or a rebuilt one. It is an access and not a
+    // change: a run that decodes and rewrites nothing still writes the sorted form, because htsjdk
+    // drops the unparsed block on the first accessor. Every clause here is a gate in the reference
+    // that reaches `getGenotypes()`.
+    let touches_genotypes = !selection.no_samples_specified
+        || subset_arguments.remove_unused_alternates
+        || subset_arguments.keep_original_chr_counts
+        || subset_arguments.keep_original_depth
+        || filter_arguments.exclude_non_variants
+        || !filter_arguments.select_genotype_expressions.is_empty()
+        || filter_arguments.max_filtered_genotypes != i32::MAX
+        || filter_arguments.min_filtered_genotypes != 0
+        || filter_arguments.max_fraction_filtered_genotypes != 1.0
+        || filter_arguments.min_fraction_filtered_genotypes != 0.0
+        || filter_arguments.max_nocall_number != i32::MAX
+        || filter_arguments.max_nocall_fraction != 1.0
+        || output_arguments.set_filtered_genotypes_to_no_call
+        || !output_arguments.genotype_annotations_to_drop.is_empty();
+
+    // The genotype text every record was READ with, taken before anything decodes it: the first
+    // accessor drops it, and this port has to decode to decide what to keep.
+    let unparsed: Vec<Option<String>> = file
+        .records
+        .iter()
+        .map(|record| record.genotypes.unparsed().map(|text| text.to_string()))
+        .collect();
+    let sample_names: std::sync::Arc<[String]> = file.header.samples.clone().into();
+
     let mut pending: gatk_tools::select_variants::PendingWriter<
         htsjdk_vcf::variant::VariantContext,
     > = gatk_tools::select_variants::PendingWriter::new();
@@ -5564,7 +5592,20 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         gatk_tools::select_variants::drop_annotations(&mut record, &output_arguments);
         // The file's own record is built HERE and carried through the queue: the queue reorders,
         // and nothing downstream could pair a reordered record with the one it was decoded from.
-        let vc = crate::variant_bridge::from_engine(original, &record);
+        let mut vc = crate::variant_bridge::from_engine(original, &record);
+        // And its genotypes come back from the FILE when nothing on this command line reads one.
+        // htsjdk writes an untouched context from the text it was read with, so a whole-cohort run
+        // keeps the input's `GT:GQ:DP` where a subsetting run recomputes and sorts to `GT:DP:GQ`.
+        // The port decodes to decide, so it puts the text back rather than never taking it out.
+        if !touches_genotypes {
+            if let Some(text) = &unparsed[located.index] {
+                vc.genotypes = htsjdk_vcf::genotypes_context::GenotypesContext::lazy(
+                    vc.genotypes.to_vec(),
+                    text.clone(),
+                    sample_names.clone(),
+                );
+            }
+        }
         pending.add(record, vc);
     }
     for (_, vc) in pending.drain() {
