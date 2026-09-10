@@ -547,6 +547,20 @@
       "--output": [
         "/work/out/pileup.txt",
         "/work/out/pileup2.txt"
+      ],
+      "$why": [
+        "deep.bam is the only file in this corpus with a stack deep enough for --max-depth-per-sample to",
+        "thin: eight reads at 1005 and four at 1105, each with a different base, so a thinned column is",
+        "visible in the output rather than merely smaller. reads.bam beside it has a depth of one.",
+        "--max-variants-per-shard is held at 0, for the reason CallableLoci holds it: its other value is",
+        "refused by the parser and a locus walker never reads it.",
+        "The constraints below are what make the thinning observable at all (#1135). A t=2 array",
+        "guarantees the pair (deep.bam, target 2) appears once; it does not guarantee that the row it",
+        "lands on runs, and the first measurement put it on a row whose dictionary makes the interval",
+        "invalid. The clauses keep the maskers off the rows that carry a target above zero."
+      ],
+      "--max-variants-per-shard": [
+        "0"
       ]
     },
     "PreprocessIntervals": {
@@ -1225,7 +1239,18 @@
         "value and covered nothing. POOR_MAPPING_QUALITY needs the trio to agree, and it is reachable",
         "here because --max-low-mapq's declared maximum is 255 and every read in the corpus is MAPQ 60.",
         "REF_N is the one state no row reaches: both references in the corpus are ACGT repeats with no",
-        "N in them, and the state is measured by this tool's own golden instead."
+        "N in them, and the state is measured by this tool's own golden instead.",
+        "The four arguments over [0, 255] carry IN-RANGE values, and the first measurement is why: the",
+        "generator offers one value outside each finite bound on purpose, and CallableLoci declares four",
+        "such arguments, so 38 of 45 rows were refused by the parser and seven reached the tool. The",
+        "out-of-range path is measured where it belongs, by the tool-argument-declarations suite and by",
+        "the propagation-order test that reads the FIRST such refusal off this very tool.",
+        "The values are chosen to reach the states rather than to sit at the default: --max-low-mapq 255",
+        "makes every read of the corpus low-mapping-quality, which is POOR_MAPPING_QUALITY when",
+        "--min-depth-for-low-mapq is 1; --min-mapping-quality 255 makes every read fail QC, which is",
+        "LOW_COVERAGE; and --min-depth 0 is what lets CALLABLE and EXCESSIVE_COVERAGE be told apart.",
+        "--max-variants-per-shard is held at 0. Its other value is -1, which the parser refuses, and a",
+        "locus walker never reads it: it shards a VARIANT traversal."
       ],
       "--input": [
         "/work/fixtures/deep.bam",
@@ -1258,6 +1283,25 @@
       "--max-fraction-of-reads-with-low-mapq": [
         "0.1",
         "1.0"
+      ],
+      "--max-low-mapq": [
+        "1",
+        "255"
+      ],
+      "--min-mapping-quality": [
+        "10",
+        "255"
+      ],
+      "--min-base-quality": [
+        "20",
+        "0"
+      ],
+      "--min-depth": [
+        "4",
+        "0"
+      ],
+      "--max-variants-per-shard": [
+        "0"
       ]
     },
     "ShiftFasta": {
@@ -1364,7 +1408,69 @@
       "--inverted-read-filter": []
     }
   },
-  "constraints": [],
+  "constraints": [
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--input": "/work/fixtures/reads.bam"
+      },
+      "why": "A depth of one cannot be thinned, so this pair measures the argument without observing it."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--intervals": "chr1:50000-60000"
+      },
+      "why": "No read of the corpus lies in that window, so the pileup is empty whatever the target is."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--sequence-dictionary": "/work/fixtures/other.dict"
+      },
+      "why": "The master dictionary carries chrOther alone, so every interval over chr1 is refused before the traversal."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--reference": "/work/fixtures/other.fasta"
+      },
+      "why": "The reference carries chrOther alone, which the locus walker refuses for the same reason."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--inverted-read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "Inverted, it keeps only the non-primary reads, and the corpus has none: the pileup is empty."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    }
+  ],
   "exclude": {
     "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
     "--version": "prints the version and returns, same reason",
