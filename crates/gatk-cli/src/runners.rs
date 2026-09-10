@@ -5102,37 +5102,6 @@ fn default_tool_vcf_header_lines(
     ]
 }
 
-/// A VCF written where `-O` points, with the index and the digest their arguments ask for.
-///
-/// The index is the one a tool builds for its OWN output, which records that file's last-modified
-/// time; `docs` explains why no golden can hold one. The digest is the whole name plus `.md5`, the
-/// same shape a BAM's is.
-fn write_variant_output(
-    parser: &Parser,
-    output: &str,
-    text: &str,
-    dictionary: &[(String, i32)],
-) -> Result<(), Thrown> {
-    write_file(output, text.as_bytes())?;
-    if flag(parser, "create-output-variant-index") {
-        let index = on_the_fly_index(
-            text,
-            dictionary,
-            output,
-            text.len() as i64,
-            modified_millis(output),
-        );
-        write_file(&format!("{output}.idx"), &index)?;
-    }
-    if flag(parser, "create-output-variant-md5") {
-        write_file(
-            &format!("{output}.md5"),
-            gatk_tools::gather_bam_files::md5_file(text.as_bytes()).as_bytes(),
-        )?;
-    }
-    Ok(())
-}
-
 /// `RemoveNearbyIndels`, the first tool here that writes a VCF of its own records.
 ///
 /// The buffer holds at most one indel and remembers one it has already thrown away, so three indels
@@ -5175,8 +5144,7 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
-    let dictionary: Vec<(String, i32)> = sequence_dictionary_of(&header);
-    write_variant_output(parser, &output, &out, &dictionary)?;
+    write_variant_output(parser, &output, &out)?;
     // `onTraversalSuccess` returns the word, which `handleResult` prints.
     Ok(Some("SUCCESS".to_string()))
 }
@@ -5389,11 +5357,7 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
     apply_sites_only(parser, &mut header, &mut emitted);
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &emitted)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let pairs: Vec<(String, i32)> = dictionary
-        .iter()
-        .map(|record| (record.name.clone(), record.length))
-        .collect();
-    write_variant_output(parser, &output, &out, &pairs)?;
+    write_variant_output(parser, &output, &out)?;
     match refusal {
         Some(error) => Err(refuse(error)),
         None => Ok(None),
@@ -5427,4 +5391,646 @@ fn dictionary_from_any(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRec
     let text =
         std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
     Ok(htsjdk_bam::reader::parse_header_text(&text).sequences)
+}
+/// `SelectVariants.doWork`: the records the arguments select, written as a VCF.
+///
+/// The tool is a variant walker like `CountVariants`, so the whole startup is shared -- and shared
+/// rather than copied because the order of the refusals is what a covering-array row measures.
+/// What follows the startup is the pipeline the five `select-variants-*` suites measure, in the
+/// reference's own order: the queue is drained as far as the record about to be read, the record
+/// is filtered, subset, filtered again, no-called and dropped from, and joins the queue rather
+/// than the file.
+///
+/// # What this refuses rather than approximates
+///
+/// Six argument groups reach behaviour no static in this repository reproduces: a pedigree and
+/// its Mendelian violations, the two random fractions, the GenomicsDB-only decoding, the
+/// concordance tracks, `--variant-output-filtering` and `--fully-decode`. Each is refused when it
+/// is SET, which is a port limitation with the tool's name on it rather than a silent difference:
+/// a run that ignored `--select-random-fraction 0.5` would answer a question it was not asked.
+pub fn select_variants(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "SelectVariants")?;
+
+    select_variants_limits(parser)?;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    // `createSampleNameInclusionList(vcfHeaders)`, over the driving variants' own samples.
+    let sample_arguments = gatk_tools::select_variants::SampleArguments {
+        sample_names: arguments(parser, "sample-name"),
+        sample_expressions: arguments(parser, "sample-expressions"),
+        exclude_sample_names: arguments(parser, "exclude-sample-name"),
+        exclude_sample_expressions: arguments(parser, "exclude-sample-expressions"),
+        allow_nonoverlapping_command_line_samples: flag(
+            parser,
+            "allow-nonoverlapping-command-line-samples",
+        ),
+    };
+    let selection = gatk_tools::select_variants::create_sample_name_inclusion_list(
+        &file.header.samples,
+        &sample_arguments,
+    )
+    // `UserException$BadInput` puts `Bad input: ` in front of its message, which the port's
+    // `message()` leaves to the caller. Measured on six rows of this tool's array.
+    .map_err(|refusal| {
+        if refusal.java_class().ends_with("UserException$BadInput") {
+            bad_input(refusal.message())
+        } else {
+            Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            }
+        }
+    })?;
+
+    let subset_arguments = gatk_tools::select_variants::SubsetArguments {
+        remove_unused_alternates: flag(parser, "remove-unused-alternates"),
+        preserve_alleles: flag(parser, "preserve-alleles"),
+        keep_original_chr_counts: flag(parser, "keep-original-ac"),
+        keep_original_depth: flag(parser, "keep-original-dp"),
+    };
+    let filter_arguments = select_variants_filters(parser)?;
+    let output_arguments = gatk_tools::select_variants::OutputArguments {
+        set_filtered_genotypes_to_no_call: flag(parser, "set-filtered-gt-to-nocall"),
+        info_annotations_to_drop: arguments(parser, "drop-info-annotation"),
+        genotype_annotations_to_drop: arguments(parser, "drop-genotype-annotation"),
+    };
+
+    // `--sites-only-vcf-output` empties the sample columns, and it does so on the HEADER as well
+    // as on every record, which is why it is read before the header is built.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    let header = gatk_tools::select_variants_header::output_header(
+        &file.header,
+        &gatk_tools::select_variants_header::HeaderArguments {
+            keep_original_chr_counts: subset_arguments.keep_original_chr_counts,
+            keep_original_depth: subset_arguments.keep_original_depth,
+            info_annotations_to_drop: output_arguments.info_annotations_to_drop.clone(),
+            genotype_annotations_to_drop: output_arguments.genotype_annotations_to_drop.clone(),
+            add_output_vcf_command_line: flag(parser, "add-output-vcf-command-line"),
+            tool_command_line: command_line_header_line(parser),
+            samples: if sites_only {
+                Vec::new()
+            } else {
+                selection.samples.clone()
+            },
+        },
+    );
+    // `VcfUtils.updateHeaderContigLines`, which every tool that writes a VCF beside a REFERENCE
+    // calls and which rewrites two kinds of line: every `##contig` is replaced by one built from
+    // the dictionary, carrying `assembly=` when a reference path is known, and the `##reference`
+    // line is replaced by that path's URI. Without a reference the dictionary is the driving
+    // VCF's own, and a file that declares none keeps the lines it had.
+    let header = update_header_contig_lines(parser, header)?;
+
+    // The traversal, which is the intervals' if there are any. A feature file with no index is
+    // refused here rather than earlier, exactly as `CountVariants`' is.
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    // Whether any argument on this command line READS a genotype, which is what decides whether the
+    // output carries the file's own genotype text or a rebuilt one. It is an access and not a
+    // change: a run that decodes and rewrites nothing still writes the sorted form, because htsjdk
+    // drops the unparsed block on the first accessor. Every clause here is a gate in the reference
+    // that reaches `getGenotypes()`.
+    let touches_genotypes = !selection.no_samples_specified
+        || subset_arguments.remove_unused_alternates
+        || subset_arguments.keep_original_chr_counts
+        || subset_arguments.keep_original_depth
+        || filter_arguments.exclude_non_variants
+        || !filter_arguments.select_genotype_expressions.is_empty()
+        || filter_arguments.max_filtered_genotypes != i32::MAX
+        || filter_arguments.min_filtered_genotypes != 0
+        || filter_arguments.max_fraction_filtered_genotypes != 1.0
+        || filter_arguments.min_fraction_filtered_genotypes != 0.0
+        || filter_arguments.max_nocall_number != i32::MAX
+        || filter_arguments.max_nocall_fraction != 1.0
+        || output_arguments.set_filtered_genotypes_to_no_call
+        || !output_arguments.genotype_annotations_to_drop.is_empty();
+
+    // The genotype text every record was READ with, taken before anything decodes it: the first
+    // accessor drops it, and this port has to decode to decide what to keep.
+    let unparsed: Vec<Option<String>> = file
+        .records
+        .iter()
+        .map(|record| record.genotypes.unparsed().map(|text| text.to_string()))
+        .collect();
+    let sample_names: std::sync::Arc<[String]> = file.header.samples.clone().into();
+
+    let mut pending: gatk_tools::select_variants::PendingWriter<
+        htsjdk_vcf::variant::VariantContext,
+    > = gatk_tools::select_variants::PendingWriter::new();
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let original = &file.records[located.index];
+        // `apply` drains BEFORE it looks at the record, which is what lets a record trimmed onto a
+        // later start be written first.
+        for (_, vc) in pending.drain_before(&original.contig, original.start as i32) {
+            written.push(vc);
+        }
+
+        let bridged = crate::variant_bridge::to_engine(original);
+        if !gatk_tools::select_variants::keeps_before_subset(
+            &bridged.record,
+            &bridged.filter_record,
+            &filter_arguments,
+            &selection,
+        )
+        .map_err(select_error)?
+        {
+            continue;
+        }
+
+        let subset = gatk_tools::select_variants::subset_record(
+            &bridged.record,
+            &selection,
+            &subset_arguments,
+        )
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.GATKException",
+            message: Some(error.message()),
+        })?;
+        // The second round of JEXL sees the record the subset produced, not the one that was read.
+        let after = crate::variant_bridge::to_engine(&crate::variant_bridge::from_engine(
+            original, &subset,
+        ));
+        if !gatk_tools::select_variants::keeps_after_subset(
+            &subset,
+            &after.filter_record,
+            &filter_arguments,
+        )
+        .map_err(select_error)?
+        {
+            continue;
+        }
+
+        let mut record = subset;
+        if output_arguments.set_filtered_genotypes_to_no_call {
+            gatk_tools::select_variants::set_filtered_genotypes_to_no_call(&mut record);
+        }
+        gatk_tools::select_variants::drop_annotations(&mut record, &output_arguments);
+        // The file's own record is built HERE and carried through the queue: the queue reorders,
+        // and nothing downstream could pair a reordered record with the one it was decoded from.
+        let mut vc = crate::variant_bridge::from_engine(original, &record);
+        // And its genotypes come back from the FILE when nothing on this command line reads one.
+        // htsjdk writes an untouched context from the text it was read with, so a whole-cohort run
+        // keeps the input's `GT:GQ:DP` where a subsetting run recomputes and sorts to `GT:DP:GQ`.
+        // The port decodes to decide, so it puts the text back rather than never taking it out.
+        if !touches_genotypes {
+            if let Some(text) = &unparsed[located.index] {
+                vc.genotypes = htsjdk_vcf::genotypes_context::GenotypesContext::lazy(
+                    vc.genotypes.to_vec(),
+                    text.clone(),
+                    sample_names.clone(),
+                );
+            }
+        }
+        pending.add(record, vc);
+    }
+    for (_, vc) in pending.drain() {
+        written.push(vc);
+    }
+
+    // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
+    // write a VCF: the traversal reached the record and the writer decides whether it lands.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+
+    if sites_only {
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
+/// `VcfUtils.updateHeaderContigLines`: the contig lines and the `##reference` line, rebuilt.
+///
+/// The dictionary is the REFERENCE's when there is one and the driving variants' otherwise, and a
+/// file that declares neither keeps whatever contig lines it had. `assembly=` is the reference
+/// file's NAME, and the `##reference` value is its URI unless `--suppress-reference-path` asks for
+/// the bare name with its extension cut. Measured on twenty-three rows of `SelectVariants`' array,
+/// where the port wrote the input's contig lines and no reference line at all.
+fn update_header_contig_lines(
+    parser: &Parser,
+    header: htsjdk_vcf::header::VcfHeader,
+) -> Result<htsjdk_vcf::header::VcfHeader, Thrown> {
+    let reference = argument(parser, "reference");
+    let dictionary: Vec<(String, i32)> = match &reference {
+        Some(path) => {
+            let source =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            gatk_tools::reference_walker::dictionary(&source)
+                .sequences
+                .iter()
+                .map(|sequence| (sequence.name.clone(), sequence.length))
+                .collect()
+        }
+        None => sequence_dictionary_of(&header),
+    };
+    if dictionary.is_empty() {
+        return Ok(header);
+    }
+
+    let mut header = header;
+    header.lines.retain(|line| {
+        !matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }) && line.key() != "reference"
+    });
+    let assembly = reference.as_ref().map(|path| {
+        std::path::Path::new(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone())
+    });
+    for (index, (name, length)) in dictionary.iter().enumerate() {
+        let mut fields = vec![
+            ("ID".to_string(), name.clone()),
+            ("length".to_string(), length.to_string()),
+        ];
+        if let Some(assembly) = &assembly {
+            fields.push(("assembly".to_string(), assembly.clone()));
+        }
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Contig {
+            index: index as i32,
+            fields,
+        });
+    }
+    if let Some(path) = &reference {
+        // `referencePath.toUri()`, which is an ABSOLUTE URI: the runner is handed whatever the
+        // command line wrote, so the path is resolved before it is rendered.
+        let value = if flag(parser, "suppress-reference-path") {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.clone());
+            match name.rfind('.') {
+                Some(dot) => name[..dot].to_string(),
+                None => name,
+            }
+        } else {
+            let absolute = std::path::Path::new(path)
+                .canonicalize()
+                .unwrap_or_else(|_| std::path::PathBuf::from(path));
+            format!("file://{}", absolute.display())
+        };
+        header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                key: "reference".to_string(),
+                value,
+            });
+    }
+    Ok(header)
+}
+
+/// A decoded record's position, which is all the traversal needs to select it.
+struct LocatedRecord {
+    index: usize,
+    contig: String,
+    start: i32,
+    stop: i32,
+}
+
+impl gatk_engine::variant_source::Located for LocatedRecord {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn stop(&self) -> i32 {
+        self.stop
+    }
+}
+
+/// A `SelectError` as the reference throws it.
+fn select_error(error: gatk_tools::select_variants::SelectError) -> Thrown {
+    // Two of the three are not `UserException`s: an expression that does not compile is an
+    // `IllegalArgumentException` and one that evaluates to the wrong class is the JVM's own
+    // `ClassCastException`, so the handler prints the class and the run ends at three.
+    if error.java_class().starts_with("java.lang.") {
+        return Thrown::non_user(error.java_class(), error.message());
+    }
+    Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    }
+}
+
+/// The arguments that decide which records survive, read off the command line.
+fn select_variants_filters(
+    parser: &Parser,
+) -> Result<gatk_tools::select_variants::FilterArguments, Thrown> {
+    use gatk_tools::select_variants::{AlleleRestriction, VariantType};
+
+    fn types(parser: &Parser, name: &str) -> Result<Vec<VariantType>, Thrown> {
+        arguments(parser, name)
+            .iter()
+            .map(|value| match value.as_str() {
+                "NO_VARIATION" => Ok(VariantType::NoVariation),
+                "SNP" => Ok(VariantType::Snp),
+                "MNP" => Ok(VariantType::Mnp),
+                "INDEL" => Ok(VariantType::Indel),
+                "SYMBOLIC" => Ok(VariantType::Symbolic),
+                "MIXED" => Ok(VariantType::Mixed),
+                other => Err(Thrown::command_line(format!(
+                    "'{other}' is not a valid value for {name}."
+                ))),
+            })
+            .collect()
+    }
+
+    let restriction = match argument(parser, "restrict-alleles-to").as_deref() {
+        Some("BIALLELIC") => AlleleRestriction::Biallelic,
+        Some("MULTIALLELIC") => AlleleRestriction::Multiallelic,
+        _ => AlleleRestriction::All,
+    };
+    Ok(gatk_tools::select_variants::FilterArguments {
+        types_to_include: types(parser, "select-type-to-include")?,
+        types_to_exclude: types(parser, "select-type-to-exclude")?,
+        allele_restriction: restriction,
+        max_indel_size: number_or(parser, "max-indel-size", i32::MAX),
+        min_indel_size: number_or(parser, "min-indel-size", 0),
+        keep_ids: arguments(parser, "keep-ids"),
+        exclude_ids: arguments(parser, "exclude-ids"),
+        exclude_filtered: flag(parser, "exclude-filtered"),
+        exclude_non_variants: flag(parser, "exclude-non-variants"),
+        max_filtered_genotypes: number_or(parser, "max-filtered-genotypes", i32::MAX),
+        min_filtered_genotypes: number_or(parser, "min-filtered-genotypes", 0),
+        max_fraction_filtered_genotypes: fraction(parser, "max-fraction-filtered-genotypes", 1.0),
+        min_fraction_filtered_genotypes: fraction(parser, "min-fraction-filtered-genotypes", 0.0),
+        max_nocall_number: number_or(parser, "max-nocall-number", i32::MAX),
+        max_nocall_fraction: fraction(parser, "max-nocall-fraction", 1.0),
+        select_expressions: arguments(parser, "select"),
+        select_genotype_expressions: arguments(parser, "select-genotype-expressions"),
+        invert_select: flag(parser, "invertSelect"),
+        apply_jexl_filters_first: flag(parser, "apply-jexl-filters-first"),
+    })
+}
+
+/// A `double` argument, or the declared default when it was not given.
+fn fraction(parser: &Parser, long_name: &str, default: f64) -> f64 {
+    scalar(parser, long_name)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(default)
+}
+
+/// The six argument groups `SelectVariants` has and this port does not.
+///
+/// Each is refused when it is SET rather than ignored: a run that quietly dropped
+/// `--select-random-fraction 0.5` would answer a question it was not asked, and a refusal that
+/// names the port is the honest form of a gap (`gatk_rs::PortLimitation`).
+fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
+    let mut refused: Vec<&str> = Vec::new();
+    if argument(parser, "pedigree").is_some() {
+        refused.push("--pedigree");
+    }
+    for flagged in [
+        "mendelian-violation",
+        "invert-mendelian-violation",
+        "call-genotypes",
+    ] {
+        if flag(parser, flagged) {
+            refused.push(match flagged {
+                "mendelian-violation" => "--mendelian-violation",
+                "invert-mendelian-violation" => "--invert-mendelian-violation",
+                _ => "--call-genotypes",
+            });
+        }
+    }
+    if fraction(parser, "select-random-fraction", 1.0) != 1.0 {
+        refused.push("--select-random-fraction");
+    }
+    if fraction(parser, "remove-fraction-genotypes", 0.0) != 0.0 {
+        refused.push("--remove-fraction-genotypes");
+    }
+    if argument(parser, "concordance").is_some() {
+        refused.push("--concordance");
+    }
+    if argument(parser, "discordance").is_some() {
+        refused.push("--discordance");
+    }
+    if refused.is_empty() {
+        return Ok(());
+    }
+    Err(Thrown::non_user(
+        PORT_LIMITATION,
+        format!(
+            "SelectVariants in this port does not implement {}: a pedigree's Mendelian \
+             violations, the two random fractions, the concordance tracks and the genotype caller \
+             each reach behaviour no measured static reproduces, and answering without them would \
+             be a different answer rather than a refusal",
+            refused.join(", ")
+        ),
+    ))
+}
+
+/// `##GATKCommandLine=<ID=...,CommandLine="...",Version=...,Date=...>`, or nothing.
+///
+/// The four fields are in the reference's own order, and the value of the third is the toolkit
+/// version this port claims. The fourth is the run's own wall-clock time, which is why the header
+/// construction takes this as an input rather than building it: a golden of a file carrying it
+/// would move on every run, and the `select-variants-header` suite elides it for that reason.
+fn command_line_header_line(parser: &Parser) -> Option<htsjdk_vcf::header::HeaderLine> {
+    if !flag(parser, "add-output-vcf-command-line") {
+        return None;
+    }
+    Some(htsjdk_vcf::header::HeaderLine::Structured {
+        key: "GATKCommandLine".to_string(),
+        fields: vec![
+            ("ID".to_string(), "SelectVariants".to_string()),
+            (
+                "CommandLine".to_string(),
+                crate::command_line::expanded("SelectVariants", parser),
+            ),
+            ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
+            ("Date".to_string(), display_date_time()),
+        ],
+    })
+}
+
+/// `Utils.getDateTimeForDisplay(ZonedDateTime.now())`, which is
+/// `DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG)` under the US locale the reference
+/// pins: `September 3, 2026 at 1:38:54 AM UTC`, measured from the pinned container.
+///
+/// The ZONE here is UTC where the reference uses the machine's own, and the difference is
+/// deliberate rather than overlooked: the field holds the instant the run happened, so no two runs
+/// agree on it and no golden can compare it. The pinned container runs UTC, which is where every
+/// measurement of this port is made. Reproducing a local zone's abbreviation would need a tz
+/// database for a field nothing checks.
+fn display_date_time() -> String {
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or(0);
+    let days = seconds.div_euclid(86_400);
+    let time_of_day = seconds.rem_euclid(86_400);
+    // `days` since 1970-01-01 to a civil date, by Howard Hinnant's `civil_from_days`.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = if month <= 2 { year + 1 } else { year };
+
+    let hour24 = time_of_day / 3600;
+    let minute = (time_of_day % 3600) / 60;
+    let second = time_of_day % 60;
+    // A twelve-hour clock, where midnight is 12 AM and noon is 12 PM.
+    let hour = match hour24 % 12 {
+        0 => 12,
+        other => other,
+    };
+    let meridiem = if hour24 < 12 { "AM" } else { "PM" };
+    format!(
+        "{} {}, {} at {}:{:02}:{:02} {} UTC",
+        MONTHS[(month - 1) as usize],
+        day,
+        year,
+        hour,
+        minute,
+        second,
+        meridiem
+    )
+}
+
+/// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
+/// with the index the arguments ask for beside it.
+fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
+    let bytes = if block_compressed {
+        let (level, deflater) = output_compression(parser);
+        let mut writer = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+        std::io::Write::write_all(&mut writer, text.as_bytes())
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?;
+        writer
+            .into_inner()
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error}")))?
+    } else {
+        text.as_bytes().to_vec()
+    };
+    std::fs::write(output, &bytes).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    })?;
+
+    // `--create-output-variant-md5`, which digests the file as it was WRITTEN: a block compressed
+    // output is digested compressed, because the digest is taken by the stream the writer wraps.
+    if flag(parser, "create-output-variant-md5") {
+        write_file(
+            &format!("{output}.md5"),
+            gatk_tools::gather_bam_files::md5_file(&bytes).as_bytes(),
+        )?;
+    }
+
+    if !flag(parser, "create-output-variant-index") {
+        return Ok(());
+    }
+    let dictionary: Vec<(String, i32)> = text
+        .lines()
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+            let length = body
+                .split(',')
+                .find_map(|f| f.strip_prefix("length="))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            Some((name.to_string(), length))
+        })
+        .collect();
+    let mut source = index_feature_file::Source::new(output);
+    source.timestamp = modified_millis(output);
+    let index = match index_feature_file::index_kind(output) {
+        index_feature_file::IndexKind::Tabix => {
+            let (level, deflater) = output_compression(parser);
+            gatk_tools::index_feature_file::build_tabix(&bytes, &source, output, deflater, level)
+                .map_err(|refusal| Thrown {
+                    failure: Failure::User,
+                    exception: refusal.java_class(),
+                    message: Some(refusal.message()),
+                })?
+        }
+        _ => on_the_fly_index(
+            text,
+            &dictionary,
+            output,
+            bytes.len() as i64,
+            source.timestamp,
+        ),
+    };
+    let companion = index_feature_file::default_output(output);
+    std::fs::write(&companion, index).map_err(|error| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            format!("could not write {companion}: {error}"),
+        )
+    })
 }

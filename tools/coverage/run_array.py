@@ -23,6 +23,7 @@ Two modes, and the difference is the whole point of Milestone C:
 import argparse
 import hashlib
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -96,7 +97,12 @@ def as_cli(args, positional=()):
         name, _, value = pair.partition("=")
         out += [name, value]
     out += list(positional)
-    return out
+    # Both sides are run through a shell inside the container, so a value carrying a shell
+    # metacharacter has to survive it. `--select QUAL>50.0` was read as `--select QUAL` with the
+    # rest taken as a redirect, on the reference and on the port alike: seven rows of
+    # `SelectVariants`' array measured a ClassCastException over a bare `QUAL` instead of the
+    # comparison the fixture wrote. Quoting is what a value with a space needs too.
+    return [shlex.quote(token) for token in out]
 
 
 def output_path(row_args):

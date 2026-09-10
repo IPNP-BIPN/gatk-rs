@@ -662,6 +662,11 @@ pub enum SelectError {
     Invalid { index: usize, genotype: bool },
     /// The expression did not compile, refused by the argument parser before any record was read.
     Unparseable { index: usize, text: String },
+    /// The expression evaluated to something that is not a Boolean, which the reference CASTS
+    /// rather than tests: `(Boolean) filter.evaluate(...)`. A `--select QUAL` is a Double there and
+    /// the JVM's own `ClassCastException` reaches the handler, which prints its class and ends the
+    /// run at three. Carries the class the value had, because the message names it twice.
+    NotBoolean { class: &'static str },
 }
 
 impl SelectError {
@@ -678,6 +683,12 @@ impl SelectError {
                 "Argument select-{index}has a bad value. Invalid expression used ({text}). Please \
                  see the JEXL docs for correct syntax."
             ),
+            // The JVM's message for a failed cast, which names the class, the target, and the
+            // module and loader both live in.
+            SelectError::NotBoolean { class } => format!(
+                "class {class} cannot be cast to class java.lang.Boolean ({class} and \
+                 java.lang.Boolean are in module java.base of loader 'bootstrap')"
+            ),
         }
     }
 
@@ -685,7 +696,25 @@ impl SelectError {
         match self {
             SelectError::Invalid { .. } => "org.broadinstitute.hellbender.exceptions.UserException",
             SelectError::Unparseable { .. } => "java.lang.IllegalArgumentException",
+            SelectError::NotBoolean { .. } => "java.lang.ClassCastException",
         }
+    }
+}
+
+/// The Java class a JEXL value has, which a failed cast to Boolean names.
+///
+/// The engine's literals are the reference's: a real is a Float unless it needs a Double, an
+/// integer is an Integer unless it needs a Long, and a variable's value keeps whatever class the
+/// context put in it. `QUAL` is a Double, which is the one this port has measured.
+fn jexl_value_class(value: &JexlValue) -> &'static str {
+    match value {
+        JexlValue::Null => "null",
+        JexlValue::Bool(_) => "java.lang.Boolean",
+        JexlValue::Int(_) => "java.lang.Integer",
+        JexlValue::Long(_) => "java.lang.Long",
+        JexlValue::Float(_) => "java.lang.Float",
+        JexlValue::Double(_) => "java.lang.Double",
+        JexlValue::Str(_) => "java.lang.String",
     }
 }
 
@@ -719,8 +748,16 @@ pub fn keeps_before_subset(
     }
 
     // `makeVariantFilter` runs before `apply` and is the same decision, so it is here.
+    //
+    // An EMPTY set is no filter rather than no types: `if (!selectedTypes.isEmpty())` is what gates
+    // the `VariantTypesVariantFilter`, so a command line naming the same type on both
+    // `--select-type-to-include` and `--select-type-to-exclude` selects everything rather than
+    // nothing. Measured on rows 12 and 17 of this tool's array, where the reference kept the record
+    // the port had dropped.
     let selected_types = selected_types(arguments);
-    if !selected_types.contains(&variant_type(&record.variant.alleles)) {
+    if !selected_types.is_empty()
+        && !selected_types.contains(&variant_type(&record.variant.alleles))
+    {
         return Ok(false);
     }
     if !arguments.keep_ids.is_empty() && !arguments.keep_ids.contains(&filter_record.id) {
@@ -849,7 +886,13 @@ fn passes_jexl_filters(
         })?;
         let matched = match expression.evaluate(&record.info) {
             Ok(JexlValue::Bool(value)) => value,
-            Ok(_) => false,
+            // `(Boolean) filter.evaluate(...)`: a value of any other class is a failed CAST and not
+            // a false. Measured on rows of this tool's array where `--select QUAL` reaches a Double.
+            Ok(other) => {
+                return Err(SelectError::NotBoolean {
+                    class: jexl_value_class(&other),
+                })
+            }
             // A per-allele annotation reaches here: the comparison is not defined over a list, and
             // the reference turns the engine's complaint into a UserException naming the index.
             Err(_) => {
@@ -872,7 +915,11 @@ fn passes_jexl_filters(
         for fields in &record.genotype_fields {
             let matched = match expression.evaluate(fields) {
                 Ok(JexlValue::Bool(value)) => value,
-                Ok(_) => false,
+                Ok(other) => {
+                    return Err(SelectError::NotBoolean {
+                        class: jexl_value_class(&other),
+                    })
+                }
                 Err(_) => {
                     return Err(SelectError::Invalid {
                         index,
@@ -968,26 +1015,31 @@ pub fn drop_annotations(record: &mut Record, arguments: &OutputArguments) {
 /// changes, then adds the record it just finished. `onTraversalSuccess` drains the rest. The queue
 /// exists because trimming moves a record RIGHT, so a file written in the order it was read would
 /// not be sorted; it is the tool repairing an order it broke itself.
+///
+/// `T` is whatever the caller wants back beside the record. A tool that only measures the ORDER
+/// passes `()`; a runner that has to write the file passes the record the file was decoded from,
+/// because the queue reorders and nothing else can pair the two afterwards. The ordering itself
+/// reads only the record, so the payload cannot change the answer.
 #[derive(Debug, Default)]
-pub struct PendingWriter {
-    pending: Vec<Record>,
+pub struct PendingWriter<T = ()> {
+    pending: Vec<(Record, T)>,
 }
 
-impl PendingWriter {
-    pub fn new() -> PendingWriter {
+impl<T> PendingWriter<T> {
+    pub fn new() -> PendingWriter<T> {
         PendingWriter {
             pending: Vec::new(),
         }
     }
 
     /// What is written before `record` is read, in order.
-    pub fn drain_before(&mut self, contig: &str, start: i32) -> Vec<Record> {
+    pub fn drain_before(&mut self, contig: &str, start: i32) -> Vec<(Record, T)> {
         let mut written = Vec::new();
         // `PriorityQueue.peek` is the smallest start; ties keep insertion order here, which is the
         // order the reference's heap gives for equal keys of a two-element comparison.
         while let Some(head) = self.head() {
-            let same_contig = self.pending[head].variant.contig == contig;
-            if same_contig && self.pending[head].variant.start > start {
+            let same_contig = self.pending[head].0.variant.contig == contig;
+            if same_contig && self.pending[head].0.variant.start > start {
                 break;
             }
             written.push(self.pending.remove(head));
@@ -996,12 +1048,12 @@ impl PendingWriter {
     }
 
     /// The record joins the queue rather than the file.
-    pub fn add(&mut self, record: Record) {
-        self.pending.push(record);
+    pub fn add(&mut self, record: Record, payload: T) {
+        self.pending.push((record, payload));
     }
 
     /// `onTraversalSuccess`: whatever is left, in start order.
-    pub fn drain(&mut self) -> Vec<Record> {
+    pub fn drain(&mut self) -> Vec<(Record, T)> {
         let mut written = Vec::new();
         while let Some(head) = self.head() {
             written.push(self.pending.remove(head));
@@ -1013,7 +1065,7 @@ impl PendingWriter {
         self.pending
             .iter()
             .enumerate()
-            .min_by_key(|(index, record)| (record.variant.start, *index))
+            .min_by_key(|(index, (record, _))| (record.variant.start, *index))
             .map(|(index, _)| index)
     }
 }
