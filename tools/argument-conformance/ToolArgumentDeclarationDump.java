@@ -220,6 +220,13 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags());
         declarations("PostProcessReadsForRSEM",
                 new org.broadinstitute.hellbender.tools.walkers.qc.PostProcessReadsForRSEM());
+        // A `VariantWalker` that writes a TABLE rather than a VCF, and a tool that is no GATK tool
+        // at all: `CompareBaseQualities` extends `PicardCommandLineProgram`, so its namespace is
+        // Picard's argument set and not the engine's, which nothing declared here has been.
+        declarations("VariantsToTable",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.VariantsToTable());
+        declarations("CompareBaseQualities",
+                new org.broadinstitute.hellbender.tools.validation.CompareBaseQualities());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
