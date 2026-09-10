@@ -829,8 +829,6 @@ struct VariantWalkerStart {
     input: String,
     /// The file's text, decompressed if it was block compressed.
     text: String,
-    /// The dictionary the driving variants declare.
-    header: SamHeader,
     /// The codec the file's name resolved to.
     codec: gatk_tools::feature_codec::Codec,
     /// `-L`, resolved against the best available dictionary, or `None` when none was given.
@@ -977,7 +975,6 @@ fn variant_walker_startup(parser: &Parser, tool: &str) -> Result<VariantWalkerSt
     Ok(VariantWalkerStart {
         input,
         text,
-        header,
         codec,
         intervals,
     })
