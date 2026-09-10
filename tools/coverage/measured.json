@@ -405,6 +405,24 @@
       "matched": 11,
       "t": 2,
       "share": 1.0
+    },
+    "RemoveNearbyIndels": {
+      "rows": 24,
+      "accepted": 16,
+      "rejected": 8,
+      "distinct_outputs": 8,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "UpdateVCFSequenceDictionary": {
+      "rows": 24,
+      "accepted": 11,
+      "rejected": 13,
+      "distinct_outputs": 4,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
