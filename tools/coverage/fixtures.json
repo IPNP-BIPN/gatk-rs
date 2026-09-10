@@ -1546,6 +1546,58 @@
         "false"
       ],
       "--sequence-dictionary": []
+    },
+    "SelectVariants": {
+      "$why": [
+        "indexed.vcf is the corpus's one-sample VCF and population.vcf the one with an INFO field and no",
+        "samples at all, which is what makes the sample arguments and the JEXL expressions reach",
+        "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
+        "over a file with none is the refusal that names it.",
+        "-select carries an expression that is TRUE for some records and one that no record satisfies, so",
+        "the JEXL path is measured rather than merely present.",
+        "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
+        "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
+        "tracks. A row carrying one measures the port's own refusal, which is a message no golden holds",
+        "and which would be the same on every row that carries it.",
+        "--add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own",
+        "wall-clock time, and the reference and the port run minutes apart.",
+        "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
+        "it: the index a tool builds for its own output records that file's last-modified time.",
+        "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
+        "value is a VCF, whose refusal as a reads source is measured by CountVariants."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/population.vcf"
+      ],
+      "--output": [
+        "/work/out/selected.vcf",
+        "/work/out/selected2.vcf"
+      ],
+      "--sample-name": [
+        "sample1",
+        "nosuchsample"
+      ],
+      "--select": [
+        "QUAL > 50",
+        "QUAL > 5000"
+      ],
+      "--pedigree": [],
+      "--mendelian-violation": [],
+      "--invert-mendelian-violation": [],
+      "--select-random-fraction": [],
+      "--remove-fraction-genotypes": [],
+      "--call-genotypes": [],
+      "--concordance": [],
+      "--discordance": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
     }
   },
   "constraints": [

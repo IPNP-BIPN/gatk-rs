@@ -5612,6 +5612,11 @@ pub fn select_variants(parser: &Parser) -> Outcome {
         written.push(vc);
     }
 
+    // `--variant-output-filtering` wraps the writer here as it does on the other two tools that
+    // write a VCF: the traversal reached the record and the writer decides whether it lands.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+
     if sites_only {
         for record in &mut written {
             record.genotypes.clear();
@@ -5749,9 +5754,6 @@ fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
     if argument(parser, "discordance").is_some() {
         refused.push("--discordance");
     }
-    if argument(parser, "variant-output-filtering").is_some() {
-        refused.push("--variant-output-filtering");
-    }
     if refused.is_empty() {
         return Ok(());
     }
@@ -5759,9 +5761,9 @@ fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
         PORT_LIMITATION,
         format!(
             "SelectVariants in this port does not implement {}: a pedigree's Mendelian \
-             violations, the two random fractions, the concordance tracks, the genotype caller \
-             and the output filtering mode each reach behaviour no measured static reproduces, \
-             and answering without them would be a different answer rather than a refusal",
+             violations, the two random fractions, the concordance tracks and the genotype caller \
+             each reach behaviour no measured static reproduces, and answering without them would \
+             be a different answer rather than a refusal",
             refused.join(", ")
         ),
     ))
