@@ -5035,3 +5035,294 @@ fn variant_type_name(reference: &str, alternates: &[String]) -> &'static str {
     }
     kind.unwrap_or("NO_VARIATION")
 }
+
+/// The records a variant walker's traversal reaches, which is a QUERY by interval and not a filter.
+///
+/// Shared by the tools that write a VCF, because getting it wrong is invisible in a file that has
+/// one contig: the records outside the window are simply absent from the reference's output.
+fn variants_in_traversal<'a>(
+    records: &'a [htsjdk_vcf::variant::VariantContext],
+    intervals: Option<&[gatk_engine::interval::SimpleInterval]>,
+    input: &str,
+) -> Result<Vec<&'a htsjdk_vcf::variant::VariantContext>, Thrown> {
+    let spans: Vec<Locus> = records
+        .iter()
+        .map(|record| Locus {
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals).is_some()
+        && !has_feature_index(input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.to_string(),
+            }
+            .message(),
+        ));
+    }
+    Ok(gatk_engine::variant_source::traverse(&spans, intervals)
+        .into_iter()
+        .map(|span| {
+            let index = spans
+                .iter()
+                .position(|other| std::ptr::eq(other, span))
+                .expect("a span of this list");
+            &records[index]
+        })
+        .collect())
+}
+
+/// The two lines `getDefaultToolVCFHeaderLines` adds, which `--add-output-vcf-command-line` gates.
+fn default_tool_vcf_header_lines(
+    parser: &Parser,
+    tool: &str,
+) -> Vec<htsjdk_vcf::header::HeaderLine> {
+    if !flag(parser, "add-output-vcf-command-line") {
+        return Vec::new();
+    }
+    vec![
+        htsjdk_vcf::header::HeaderLine::Unstructured {
+            key: "source".to_string(),
+            value: tool.to_string(),
+        },
+        htsjdk_vcf::header::HeaderLine::Structured {
+            key: "GATKCommandLine".to_string(),
+            fields: vec![
+                ("ID".to_string(), tool.to_string()),
+                (
+                    "CommandLine".to_string(),
+                    crate::command_line::expanded(tool, parser),
+                ),
+                ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
+            ],
+        },
+    ]
+}
+
+/// A VCF written where `-O` points, with the index and the digest their arguments ask for.
+///
+/// The index is the one a tool builds for its OWN output, which records that file's last-modified
+/// time; `docs` explains why no golden can hold one. The digest is the whole name plus `.md5`, the
+/// same shape a BAM's is.
+fn write_variant_output(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    dictionary: &[(String, i32)],
+) -> Result<(), Thrown> {
+    write_file(output, text.as_bytes())?;
+    if flag(parser, "create-output-variant-index") {
+        let index = on_the_fly_index(
+            text,
+            dictionary,
+            output,
+            text.len() as i64,
+            modified_millis(output),
+        );
+        write_file(&format!("{output}.idx"), &index)?;
+    }
+    if flag(parser, "create-output-variant-md5") {
+        write_file(
+            &format!("{output}.md5"),
+            gatk_tools::gather_bam_files::md5_file(text.as_bytes()).as_bytes(),
+        )?;
+    }
+    Ok(())
+}
+
+/// `RemoveNearbyIndels`, the first tool here that writes a VCF of its own records.
+///
+/// The buffer holds at most one indel and remembers one it has already thrown away, so three indels
+/// in a row lose all three; `onTraversalSuccess` keeps the last one on a reference comparison rather
+/// than an equality. Both are the port's business; what the runner adds is the header the output
+/// carries and the traversal that decides which records reach the buffer at all.
+pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "RemoveNearbyIndels")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `--min-indel-spacing` is REQUIRED on this tool, which is unusual for a numeric argument with
+    // a default: the annotation says `optional = false`, so the parser refuses a command line
+    // without it however sensible the default looks.
+    let spacing = number_or(parser, "min-indel-spacing", 1);
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let records: Vec<htsjdk_vcf::variant::VariantContext> = kept.into_iter().cloned().collect();
+
+    let mut header = file.header.clone();
+    for line in default_tool_vcf_header_lines(parser, "RemoveNearbyIndels") {
+        header.lines.push(line);
+    }
+    let emitted = gatk_tools::remove_nearby_indels::remove_nearby_indels(&records, spacing);
+    let written: Vec<htsjdk_vcf::variant::VariantContext> = emitted
+        .into_iter()
+        .map(|index| records[index].clone())
+        .collect();
+    let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let dictionary: Vec<(String, i32)> = sequence_dictionary_of(&header);
+    write_variant_output(parser, &output, &out, &dictionary)?;
+    // `onTraversalSuccess` returns the word, which `handleResult` prints.
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// The `##contig` lines of a header, as the pairs an index's `DICT:` properties want.
+fn sequence_dictionary_of(header: &htsjdk_vcf::header::VcfHeader) -> Vec<(String, i32)> {
+    header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Contig { fields, .. } => {
+                let id = fields.iter().find(|(key, _)| key == "ID")?.1.clone();
+                let length = fields
+                    .iter()
+                    .find(|(key, _)| key == "length")
+                    .and_then(|(_, value)| value.parse().ok())
+                    .unwrap_or(0);
+                Some((id, length))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `UpdateVCFSequenceDictionary`, which replaces a header's dictionary and passes the records
+/// through.
+///
+/// Its `getBestAvailableSequenceDictionary` is OVERRIDDEN, so the dictionary every caller sees is
+/// the new one and not the VCF's own: that is what makes the index written beside the output carry
+/// the source's contigs. The four kinds of file `--source-dictionary` accepts are read here, because
+/// `SAMSequenceDictionaryExtractor` takes a dictionary out of a variant, an alignment, a `.dict` or
+/// a reference.
+///
+/// The records are written AS THEY GO, so a refusal leaves the ones before it on disk. Reproduced,
+/// because a refused run's output file is part of what a row compares.
+pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "UpdateVCFSequenceDictionary")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+
+    let refuse =
+        |error: gatk_tools::update_vcf_sequence_dictionary::UpdateDictionaryError| -> Thrown {
+            Thrown {
+                failure: Failure::User,
+                exception: error.java_class(),
+                message: Some(error.message()),
+            }
+        };
+
+    // `SAMSequenceDictionaryExtractor.extractDictionary`, whose four kinds this reads by name: a
+    // `.dict` and a SAM header are the same text, a VCF's is its `##contig` lines, and a FASTA's is
+    // the `.dict` beside it.
+    let source = match argument(parser, "source-dictionary") {
+        None => None,
+        Some(path) => Some((path.clone(), dictionary_from_any(&path)?)),
+    };
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let dictionary = gatk_tools::update_vcf_sequence_dictionary::best_available_dictionary(
+        source
+            .as_ref()
+            .map(|(name, sequences)| (name.as_str(), sequences.as_slice())),
+        master.as_ref().map(|header| header.sequences.as_slice()),
+        reference.as_ref().map(|header| header.sequences.as_slice()),
+        !flag(parser, "disable-sequence-dictionary-validation"),
+    )
+    .map_err(refuse)?;
+
+    // The input's OWN dictionary, read from its header rather than from the engine: the engine
+    // would dig one out of an index, and the check is about what the file says.
+    let own: Vec<htsjdk_bam::header::SequenceRecord> = sequence_dictionary_of(&file.header)
+        .into_iter()
+        .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(&name, length))
+        .collect();
+    gatk_tools::update_vcf_sequence_dictionary::check_replace(&own, flag(parser, "replace"))
+        .map_err(refuse)?;
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let records: Vec<htsjdk_vcf::variant::VariantContext> = kept.into_iter().cloned().collect();
+
+    // `outputHeader.setSequenceDictionary(sourceDictionary)`: the contig lines are REPLACED, and
+    // they carry the index they had in the dictionary rather than the one they had in the file.
+    let mut header = file.header.clone();
+    header
+        .lines
+        .retain(|line| !matches!(line, htsjdk_vcf::header::HeaderLine::Contig { .. }));
+    for line in default_tool_vcf_header_lines(parser, "UpdateVCFSequenceDictionary") {
+        header.lines.push(line);
+    }
+    for (index, record) in dictionary.iter().enumerate() {
+        header.lines.push(htsjdk_vcf::header::HeaderLine::contig(
+            &record.name,
+            i64::from(record.length),
+            index as i32,
+        ));
+    }
+
+    let (written, refusal) =
+        gatk_tools::update_vcf_sequence_dictionary::update_dictionary(&dictionary, &records);
+    let emitted: Vec<htsjdk_vcf::variant::VariantContext> = written
+        .into_iter()
+        .map(|index| records[index].clone())
+        .collect();
+    let out = htsjdk_vcf::vcf_file::write_vcf(&header, &emitted)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let pairs: Vec<(String, i32)> = dictionary
+        .iter()
+        .map(|record| (record.name.clone(), record.length))
+        .collect();
+    write_variant_output(parser, &output, &out, &pairs)?;
+    match refusal {
+        Some(error) => Err(refuse(error)),
+        None => Ok(None),
+    }
+}
+
+/// `SAMSequenceDictionaryExtractor.extractDictionary`, over the file kinds the corpus can hold.
+///
+/// A `.dict` and a SAM header are the same lines; a BAM carries them in its header; a VCF declares
+/// them as `##contig`; and a FASTA has none of its own, so the dictionary is the `.dict` beside it,
+/// which is what `ReferenceSequenceFileFactory` names.
+fn dictionary_from_any(path: &str) -> Result<Vec<htsjdk_bam::header::SequenceRecord>, Thrown> {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".vcf") || lower.ends_with(".vcf.gz") {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        return Ok(vcf_dictionary(&text).sequences);
+    }
+    if lower.ends_with(".fasta") || lower.ends_with(".fa") || lower.ends_with(".fna") {
+        let beside = dictionary_path(path);
+        let text = std::fs::read_to_string(&beside)
+            .map_err(|error| Thrown::user(format!("{beside}: {error}")))?;
+        return Ok(htsjdk_bam::reader::parse_header_text(&text).sequences);
+    }
+    if lower.ends_with(".bam") {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        return Ok(source.header().sequences.clone());
+    }
+    let text =
+        std::fs::read_to_string(path).map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+    Ok(htsjdk_bam::reader::parse_header_text(&text).sequences)
+}
