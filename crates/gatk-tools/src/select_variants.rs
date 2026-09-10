@@ -748,8 +748,16 @@ pub fn keeps_before_subset(
     }
 
     // `makeVariantFilter` runs before `apply` and is the same decision, so it is here.
+    //
+    // An EMPTY set is no filter rather than no types: `if (!selectedTypes.isEmpty())` is what gates
+    // the `VariantTypesVariantFilter`, so a command line naming the same type on both
+    // `--select-type-to-include` and `--select-type-to-exclude` selects everything rather than
+    // nothing. Measured on rows 12 and 17 of this tool's array, where the reference kept the record
+    // the port had dropped.
     let selected_types = selected_types(arguments);
-    if !selected_types.contains(&variant_type(&record.variant.alleles)) {
+    if !selected_types.is_empty()
+        && !selected_types.contains(&variant_type(&record.variant.alleles))
+    {
         return Ok(false);
     }
     if !arguments.keep_ids.is_empty() && !arguments.keep_ids.contains(&filter_record.id) {
