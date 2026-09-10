@@ -1568,12 +1568,12 @@
         "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
         "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
         "and is now the port's.",
-        "-select carries no SPACES, and the first measurement is why: a row is joined into one command",
-        "line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell.",
-        "Both values compare against a REAL literal rather than an integer one. The reference's JEXL",
         "context returns a typed value for QUAL and this port's returns the rendered string, so an",
-        "integer literal sends the comparison down Integer.parseInt and refuses; a real literal takes the",
-        "double path and answers. The gap is the context's types and is tracked on its own issue."
+        "-select compares against a REAL literal rather than an integer one, and the reason is this",
+        "port's JEXL context rather than the tool: it returns the rendered string where the reference",
+        "returns a typed value, so an integer literal sends the comparison down Integer.parseInt and",
+        "refuses while a real literal takes the double path. Tracked on #1142; the fixtures take the",
+        "path both sides agree on."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
