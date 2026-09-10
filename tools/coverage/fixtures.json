@@ -1406,6 +1406,70 @@
       ],
       "--read-index": [],
       "--inverted-read-filter": []
+    },
+    "VariantsToTable": {
+      "$why": [
+        "population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at",
+        "all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every",
+        "branch of onTraversalStart is reachable: the default column set differs, a field asked for by",
+        "name is present in one file and missing in the other, and a genotype field asked for of a file",
+        "with no samples is the run that empties the sample set and refuses when nothing else was asked",
+        "for.",
+        "AF is the field to ask for because population.vcf's last record carries TWO values for it,",
+        "which is what --split-multi-allelic splits and what -ASF reads differently.",
+        "--input and --read-index are held out. This tool reads no reads, and the corpus's shared value",
+        "for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal",
+        "that produces is measured by CountVariants, which shares this startup."
+      ],
+      "--variant": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/table.tsv",
+        "/work/out/table2.tsv"
+      ],
+      "--fields": [
+        "AF",
+        "POS"
+      ],
+      "--genotype-fields": [
+        "GT",
+        "DP"
+      ],
+      "--asFieldsToTake": [
+        "AF"
+      ],
+      "--asGenotypeFieldsToTake": [
+        "GT"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CompareBaseQualities": {
+      "$why": [
+        "The two SAM files are POSITIONAL, so they cannot come out of the array at all: every assignment",
+        "there carries a name and these have none. They are held under $positional, which run_array.py",
+        "appends to every row, and the pair is reads.bam against reads_oq.bam -- the same reads with a",
+        "different quality array, so the matrix has off-diagonal entries and the tool returns 1 rather",
+        "than 0.",
+        "--static-quantized-quals carries two values because --round-down-quantized means nothing",
+        "without it: the pair is what makes the quantization observable rather than held.",
+        "--throw-on-diff turns the same difference into a refusal, which is the row that measures the",
+        "tool's second answer."
+      ],
+      "$positional": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads_oq.bam"
+      ],
+      "--output": [
+        "/work/out/quals.txt",
+        "/work/out/quals2.txt"
+      ],
+      "--static-quantized-quals": [
+        "10",
+        "30"
+      ]
     }
   },
   "constraints": [

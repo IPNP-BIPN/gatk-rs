@@ -1260,6 +1260,15 @@ pub struct Parser {
     /// (#1070).
     #[allow(clippy::type_complexity)]
     plugin_validation: Option<Box<dyn Fn(&Parser) -> Result<(), Error>>>,
+    /// `@PositionalArguments(minElements, maxElements)`, when the tool declares one.
+    ///
+    /// A positional argument is not a NAMED one: `getNamedArgumentDefinitions` does not carry it,
+    /// the usage prints it under the placeholder `[NA - Positional]`, and its values arrive with no
+    /// name in front of them. What it needs from the parser is the pair of counts and the two
+    /// refusals they produce, both measured on `CompareBaseQualities`.
+    positional: Option<(usize, usize)>,
+    /// The positional values the last parse collected, in the order they were given.
+    positional_values: Vec<String>,
     /// `argumentsFilesLoadedAlready`.
     ///
     /// Parser state rather than per-call state, because the recursion is the same parser calling
@@ -1279,8 +1288,22 @@ impl Parser {
             plugin_resolution: None,
             default_plugins: Vec::new(),
             plugin_validation: None,
+            positional: None,
+            positional_values: Vec::new(),
             arguments_files_loaded_already: Vec::new(),
         }
+    }
+
+    /// `@PositionalArguments(minElements = ..., maxElements = ...)`, which a tool either has or
+    /// does not.
+    pub fn with_positional_arguments(mut self, minimum: usize, maximum: usize) -> Self {
+        self.positional = Some((minimum, maximum));
+        self
+    }
+
+    /// The positional values the parse collected, which is how a runner reads them.
+    pub fn positional_values(&self) -> &[String] {
+        &self.positional_values
     }
 
     /// The descriptor's own `validateAndResolvePlugins`, which runs after the plugin trim and
@@ -1466,7 +1489,24 @@ impl Parser {
             self.definitions[index].set_argument_values(values, append, &surrogates, files)?;
         }
 
-        if !positionals.is_empty() {
+        // A tool that DECLARES positional arguments takes them, and refuses two counts: fewer than
+        // the minimum is a `MissingArgument` naming "Positional Argument", and more than the maximum
+        // is a plain `CommandLineException`. Both messages are measured on `CompareBaseQualities`,
+        // whose pair of SAM files arrive this way.
+        if let Some((minimum, maximum)) = self.positional {
+            if positionals.len() > maximum {
+                return Err(Error::command_line(format!(
+                    "No more than {maximum} positional arguments may be specified."
+                )));
+            }
+            if positionals.len() < minimum {
+                return Err(Error::missing_argument(
+                    "Positional Argument",
+                    &format!("At least {minimum} positional arguments must be specified."),
+                ));
+            }
+            self.positional_values = positionals;
+        } else if !positionals.is_empty() {
             // `stringValues.stream().collect(Collectors.joining("{", ",", "}"))`. The three
             // arguments of `joining` are (delimiter, prefix, suffix), so this is a delimiter of
             // `{`, a prefix of `,` and a suffix of `}`: one value renders as `,maybe}` and two as

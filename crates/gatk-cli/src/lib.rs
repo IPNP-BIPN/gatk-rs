@@ -312,6 +312,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ShiftFasta" => Some(run_shift_fasta),
         "TransferReadTags" => Some(run_transfer_read_tags),
         "PostProcessReadsForRSEM" => Some(run_post_process_reads_for_rsem),
+        "VariantsToTable" => Some(run_variants_to_table),
+        "CompareBaseQualities" => Some(run_compare_base_qualities),
         _ => None,
     }
 }
@@ -387,6 +389,14 @@ fn run_transfer_read_tags(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_post_process_reads_for_rsem(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::post_process_reads_for_rsem(&parsed("PostProcessReadsForRSEM", args)?)
+}
+
+fn run_variants_to_table(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variants_to_table(&parsed("VariantsToTable", args)?)
+}
+
+fn run_compare_base_qualities(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::compare_base_qualities(&parsed("CompareBaseQualities", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -515,6 +525,13 @@ fn parser_for(
     list: &'static [gatk_tools::tool_declarations::Declaration],
 ) -> gatk_barclay::Parser {
     let parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    // `@PositionalArguments`, which one declared tool has: `CompareBaseQualities` takes exactly two
+    // SAM files that way. It is not part of the declarations golden, because
+    // `getNamedArgumentDefinitions` does not carry a positional argument at all.
+    let parser = match gatk_tools::plugin_ownership::positional_arguments(tool) {
+        None => parser,
+        Some((minimum, maximum)) => parser.with_positional_arguments(minimum, maximum),
+    };
     let parser = match gatk_tools::plugin_ownership::default_filters(tool) {
         None => parser,
         Some(defaults) => {

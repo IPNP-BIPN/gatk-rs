@@ -316,6 +316,22 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
     }
 }
 
+/// `@PositionalArguments(minElements, maxElements)`, for the tools that declare one.
+///
+/// A positional argument is not a named one: the declarations golden is
+/// `getNamedArgumentDefinitions`, which does not carry it, and the usage prints it under the
+/// placeholder `[NA - Positional]`. The pair of counts is what the parser needs, and what it says
+/// when a command line breaks either of them is measured by the tool-argument-declarations suite:
+/// too few is a `MissingArgument` naming "Positional Argument", too many is a plain
+/// `CommandLineException`.
+pub fn positional_arguments(tool: &str) -> Option<(usize, usize)> {
+    match tool {
+        // `CompareBaseQualities` takes the two SAM files it compares this way, and exactly two.
+        "CompareBaseQualities" => Some((2, 2)),
+        _ => None,
+    }
+}
+
 /// The FIELD name a mutex target is printed by, which is not the name it is declared by.
 ///
 /// A mutex target has two names. `getMutexTargetList()` and the annotation's own `mutex()` both

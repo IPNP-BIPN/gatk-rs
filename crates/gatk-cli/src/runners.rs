@@ -4857,3 +4857,54 @@ fn vcf_records(
         })
         .collect()
 }
+
+/// `CompareBaseQualities`, which is no GATK tool at all.
+///
+/// It extends `PicardCommandLineProgram`, so its namespace is Picard's argument set rather than the
+/// engine's: no read filter, no interval, no sequence-dictionary validation, and its two SAM files
+/// arrive as POSITIONAL arguments rather than under `--input`. Both readers are opened by hand and
+/// each is wrapped in a `SecondaryOrSupplementarySkippingIterator`, so the skipping happens per file
+/// rather than over the pair.
+///
+/// The tool RETURNS its verdict: `hasNonDiagonalElements() ? 1 : 0`, which the dispatcher prints and
+/// which is not an exit status. `--throw-on-diff` turns the same fact into a refusal instead.
+pub fn compare_base_qualities(parser: &Parser) -> Outcome {
+    let files = parser.positional_values();
+    // The parser has already refused any count but two, so this is a read of what it collected.
+    let (first, second) = (files[0].clone(), files[1].clone());
+
+    let read = |path: &str| -> Result<Vec<htsjdk_bam::record::BamRecord>, Thrown> {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        source.iter_all().map_err(reads_traversal_error)
+    };
+    let left = read(&first)?;
+    let right = read(&second)?;
+
+    let arguments = gatk_tools::compare_base_qualities::CompareArguments {
+        static_quantization_quals: arguments(parser, "static-quantized-quals")
+            .iter()
+            .filter_map(|value| value.parse().ok())
+            .collect(),
+        round_down: flag(parser, "round-down-quantized"),
+        throw_on_diff: flag(parser, "throw-on-diff"),
+    };
+    let result =
+        gatk_tools::compare_base_qualities::compare_base_qualities(&left, &right, &arguments)
+            .map_err(|refusal| match refusal {
+                // `--round-down-quantized` alone is the PARSER's refusal and not the tool's, so it carries
+                // the argument's name and the bad value rather than a banner of its own.
+                gatk_tools::compare_base_qualities::CompareError::RoundDownAlone => {
+                    Thrown::command_line(refusal.message())
+                }
+                gatk_tools::compare_base_qualities::CompareError::QualitiesDiffer => {
+                    Thrown::user(refusal.message())
+                }
+                other => bad_input(other.message()),
+            })?;
+
+    // The report is written where `printOutResults` writes it: the file `-O` names, or stdout.
+    write_report(&argument(parser, "output"), &result.report)?;
+    Ok(Some(result.exit_code.to_string()))
+}

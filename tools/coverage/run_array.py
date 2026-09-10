@@ -82,12 +82,20 @@ def row_arguments(row, held):
     return args
 
 
-def as_cli(args):
-    """Barclay long form: `--name value`, which is the syntax the claim is defined against."""
+def as_cli(args, positional=()):
+    """Barclay long form: `--name value`, which is the syntax the claim is defined against.
+
+    A POSITIONAL argument has no name to write, so it cannot come out of the array at all: every
+    assignment there is `--name=value`. The values are a per-tool fixture instead, under
+    `$positional`, and they go LAST, which is where a command line puts them and what the parser's
+    own tokenizer expects. `CompareBaseQualities` is the tool that has them: its two SAM files are
+    `@PositionalArguments(minElements = 2, maxElements = 2)`.
+    """
     out = []
     for pair in args:
         name, _, value = pair.partition("=")
         out += [name, value]
+    out += list(positional)
     return out
 
 
@@ -118,7 +126,7 @@ def clear(out_dir):
             pass
 
 
-def run_oracle(tool, row_args, workdir):
+def run_oracle(tool, row_args, workdir, positional=()):
     """Run one row in the container. Returns (exit code, output as text or digest, error line)."""
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
@@ -177,7 +185,7 @@ def first_error(text):
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
-def run_port(binary, tool, row_args, workdir):
+def run_port(binary, tool, row_args, workdir, positional=()):
     """Run the port binary on the same row, IN THE CONTAINER, at the same paths.
 
     Not on the host, and the reason is the output itself: a Tribble index records the file it was
@@ -196,7 +204,7 @@ def run_port(binary, tool, row_args, workdir):
     clear(out_dir)
 
     binary = Path(binary).resolve()
-    cli = " ".join(as_cli(row_args))
+    cli = " ".join(as_cli(row_args, positional))
     command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
@@ -272,16 +280,32 @@ def empty_output_in_container(workdir):
         )
 
 
+def positional_values(tool):
+    """The `$positional` fixture values for a tool, which every row carries unchanged.
+
+    They are not part of the array: an assignment there is `--name=value`, and a positional argument
+    has no name. Holding them per tool is the same bargain a held-at fixture makes -- the values are
+    present on every row rather than covered against each other -- and it is the only way a tool
+    whose inputs are positional can be run at all.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return []
+    fixtures = json.loads(path.read_text())
+    return list(fixtures.get("per_tool", {}).get(tool, {}).get("$positional", []))
+
+
 def run_rows(options, array, held, workdir):
     """Every row of the array, against the oracle and optionally against the port."""
     rows, matched, rejected = [], 0, 0
+    positional = positional_values(options.tool)
     outputs = set()
     if True:  # keeps the body's indentation while it lives in its own function
         build_fixtures(workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
-            code, text, error = run_oracle(options.tool, args, workdir)
+            code, text, error = run_oracle(options.tool, args, workdir, positional)
             reference = outcome(code, text, error)
             if code != 0:
                 rejected += 1
@@ -290,7 +314,7 @@ def run_rows(options, array, held, workdir):
             record = {"row": row["row"], "arguments": args, "reference": reference}
             if options.port:
                 port_code, port_text, port_error = run_port(
-                    options.port, options.tool, args, workdir
+                    options.port, options.tool, args, workdir, positional
                 )
                 ours = outcome(port_code, port_text, port_error)
                 record["port"] = ours
