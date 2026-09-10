@@ -5168,6 +5168,8 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
         .into_iter()
         .map(|index| records[index].clone())
         .collect();
+    let mut written = written;
+    apply_sites_only(parser, &mut header, &mut written);
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
@@ -5175,6 +5177,26 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
     write_variant_output(parser, &output, &out, &dictionary)?;
     // `onTraversalSuccess` returns the word, which `handleResult` prints.
     Ok(Some("SUCCESS".to_string()))
+}
+
+/// `--sites-only-vcf-output`, which builds the writer with `DO_NOT_WRITE_GENOTYPES`.
+///
+/// A header with no samples is what that writes: the `#CHROM` line stops at INFO and no record
+/// carries a FORMAT column. The `##FORMAT` declarations stay, because the option drops the
+/// genotypes and not the lines that describe them. Measured on rows 0 and 5 of
+/// `RemoveNearbyIndels`' array, where the port wrote a genotype column the reference did not.
+fn apply_sites_only(
+    parser: &Parser,
+    header: &mut htsjdk_vcf::header::VcfHeader,
+    records: &mut [htsjdk_vcf::variant::VariantContext],
+) {
+    if !flag(parser, "sites-only-vcf-output") {
+        return;
+    }
+    header.samples.clear();
+    for record in records {
+        record.genotypes = Vec::new().into();
+    }
 }
 
 /// The `##contig` lines of a header, as the pairs an index's `DICT:` properties want.
@@ -5209,6 +5231,19 @@ fn sequence_dictionary_of(header: &htsjdk_vcf::header::VcfHeader) -> Vec<(String
 /// The records are written AS THEY GO, so a refusal leaves the ones before it on disk. Reproduced,
 /// because a refused run's output file is part of what a row compares.
 pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
+    // `getBestAvailableSequenceDictionary` is overridden, and the FIRST thing to call it is
+    // `initializeIntervals`, which runs before `validateSequenceDictionaries`. So a command line
+    // that names both dictionaries is refused before the two it names are compared to anything, and
+    // the refusal is a `CommandLineException` rather than a `UserException`: status one, not two.
+    // Measured on rows 0 and 4 of this tool's array.
+    if argument(parser, "source-dictionary").is_some()
+        && argument(parser, "sequence-dictionary").is_some()
+    {
+        return Err(Thrown::command_line(
+            gatk_tools::update_vcf_sequence_dictionary::UpdateDictionaryError::TwoDictionaries
+                .message(),
+        ));
+    }
     let VariantWalkerStart {
         input,
         text,
@@ -5285,6 +5320,8 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
         .into_iter()
         .map(|index| records[index].clone())
         .collect();
+    let mut emitted = emitted;
+    apply_sites_only(parser, &mut header, &mut emitted);
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &emitted)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let pairs: Vec<(String, i32)> = dictionary

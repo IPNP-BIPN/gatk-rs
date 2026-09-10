@@ -1518,7 +1518,12 @@
         "MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the",
         "second writes an index carrying the output file's last-modified time, so two runs minutes apart",
         "differ for a reason that is not the tool's.",
-        "--input and --read-index are held out, as for RemoveNearbyIndels."
+        "--input and --read-index are held out, as for RemoveNearbyIndels.",
+        "--sequence-dictionary is held out, and the first measurement is why: all twenty-four rows were",
+        "refused. Every row carries every argument in the domain, and this tool refuses the pair",
+        "--sequence-dictionary and --source-dictionary outright, so an array holding both measures that",
+        "one refusal and nothing else. The refusal itself is measured by the runner's own check and by",
+        "the golden; what the array is for is the four kinds of source and the records they accept."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
@@ -1539,7 +1544,8 @@
       ],
       "--create-output-variant-index": [
         "false"
-      ]
+      ],
+      "--sequence-dictionary": []
     }
   },
   "constraints": [
