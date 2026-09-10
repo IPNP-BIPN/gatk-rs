@@ -1406,6 +1406,72 @@
       ],
       "--read-index": [],
       "--inverted-read-filter": []
+    },
+    "VariantsToTable": {
+      "$why": [
+        "population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at",
+        "all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every",
+        "branch of onTraversalStart is reachable: the default column set differs, a field asked for by",
+        "name is present in one file and missing in the other, and a genotype field asked for of a file",
+        "with no samples is the run that empties the sample set and refuses when nothing else was asked",
+        "for.",
+        "AF is the field to ask for because population.vcf's last record carries TWO values for it,",
+        "which is what --split-multi-allelic splits and what -ASF reads differently.",
+        "--input and --read-index are held out. This tool reads no reads, and the corpus's shared value",
+        "for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal",
+        "that produces is measured by CountVariants, which shares this startup."
+      ],
+      "--variant": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/table.tsv",
+        "/work/out/table2.tsv"
+      ],
+      "--fields": [
+        "AF",
+        "POS"
+      ],
+      "--genotype-fields": [
+        "GT",
+        "DP"
+      ],
+      "--asFieldsToTake": [
+        "AF"
+      ],
+      "--asGenotypeFieldsToTake": [
+        "GT"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CompareBaseQualities": {
+      "$why": [
+        "The two SAM files are POSITIONAL, so they cannot come out of the array at all: every assignment",
+        "there carries a name and these have none. They are held under $positional, which run_array.py",
+        "appends to every row.",
+        "The pair is reads.bam against requal.bam, which exists for this tool: the same eight reads under",
+        "the same NAMES with a different quality array. The first measurement paired reads.bam with",
+        "reads_oq.bam and every row refused, because the tool walks the two files in lockstep and gives up",
+        "as soon as two reads disagree by name -- `OQ:1:FC:1:1:1:1` against `HWI:1:FC:1:1:1:1` on the very",
+        "first record. With names that match, the matrix has off-diagonal entries: the tool returns 1",
+        "rather than 0, and --throw-on-diff turns that into a refusal.",
+        "--static-quantized-quals carries two values because --round-down-quantized means nothing without",
+        "it: the pair is what makes the quantization observable rather than held."
+      ],
+      "$positional": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/requal.bam"
+      ],
+      "--output": [
+        "/work/out/quals.txt",
+        "/work/out/quals2.txt"
+      ],
+      "--static-quantized-quals": [
+        "10",
+        "30"
+      ]
     }
   },
   "constraints": [

@@ -817,11 +817,29 @@ fn has_feature_index(path: &str) -> bool {
 /// `END` or the length of `REF`, so an interval reaches a record whose position it does not hold;
 /// `-L` against an input with no index is refused BEFORE any record is read; and the refusal for
 /// an unwritable `-O` carries the path and nothing else.
-pub fn count_variants(parser: &Parser) -> Outcome {
+/// What a variant walker's startup produces, up to the record the traversal reads.
+///
+/// Shared rather than copied, for the reason [`read_walker_startup`] is: the ORDER is most of what
+/// a covering-array row over any of these tools measures. `--read-index` is counted against the
+/// READS inputs a variant walker still opens, the dictionaries are validated master-first and then
+/// reference-first, and `-L` resolves against the DRIVING VARIANTS' dictionary rather than the
+/// master when the VCF carries `##contig` lines of its own.
+struct VariantWalkerStart {
+    /// `--variant`, which is a scalar on these tools.
+    input: String,
+    /// The file's text, decompressed if it was block compressed.
+    text: String,
+    /// The codec the file's name resolved to.
+    codec: gatk_tools::feature_codec::Codec,
+    /// `-L`, resolved against the best available dictionary, or `None` when none was given.
+    intervals: Option<Vec<gatk_engine::interval::SimpleInterval>>,
+}
+
+fn variant_walker_startup(parser: &Parser, tool: &str) -> Result<VariantWalkerStart, Thrown> {
     // A variant walker applies no read filter and still VALIDATES the ones a command line names:
     // the descriptor belongs to the command line rather than to the traversal, so `--read-filter`
     // and its three companions are refused here exactly as they are on a read walker.
-    let _ = resolve_read_filters(parser, "CountVariants")?;
+    let _ = resolve_read_filters(parser, tool)?;
     // `--variant` is a SCALAR on this tool, where a read walker's `--input` is a collection: the
     // declaration says `collection: false`, and reading it as a list finds nothing at all.
     let input = argument(parser, "variant").ok_or_else(|| {
@@ -953,6 +971,23 @@ pub fn count_variants(parser: &Parser) -> Outcome {
         header.clone()
     };
     let intervals = interval_arguments(parser, &best)?.map(|parameters| parameters.intervals);
+
+    Ok(VariantWalkerStart {
+        input,
+        text,
+        codec,
+        intervals,
+    })
+}
+
+pub fn count_variants(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        codec,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CountVariants")?;
 
     let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
         .into_iter()
@@ -4542,4 +4577,461 @@ pub fn post_process_reads_for_rsem(parser: &Parser) -> Outcome {
             other => Thrown::user(other.message()),
         }),
     }
+}
+
+/// `VariantsToTable`, the first `VariantWalker` here whose output is a TABLE.
+///
+/// The driving variants are the traversal and `-F`, `-GF`, `-ASF` and `-ASGF` decide the columns,
+/// so the tool reads what a VCF DECLARES as much as what it holds: a field's `Number` says whether
+/// its value is a list, and an `R` there is the only thing the allele-specific arguments treat
+/// differently.
+///
+/// Three things `onTraversalStart` does that the table's shape depends on:
+///
+///   - with none of the four field arguments given, the columns become every mandatory field except
+///     INFO, then every INFO id the header declares, then every FORMAT id with `GT` moved FIRST;
+///   - the samples are a SORTED set, and asking for no genotype field at all empties it, which is
+///     what keeps a genotype column out of a table nobody asked one for;
+///   - and a file with no samples and no fields is refused rather than answered with an empty table.
+pub fn variants_to_table(parser: &Parser) -> Outcome {
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "VariantsToTable")?;
+
+    let declared = vcf_declarations(&text);
+    let mut fields = arguments(parser, "fields");
+    let mut genotype_fields = arguments(parser, "genotype-fields");
+    let allele_specific_fields = arguments(parser, "asFieldsToTake");
+    let mut allele_specific_genotype_fields = arguments(parser, "asGenotypeFieldsToTake");
+    if fields.is_empty()
+        && genotype_fields.is_empty()
+        && allele_specific_fields.is_empty()
+        && allele_specific_genotype_fields.is_empty()
+    {
+        // `VCFHeader.HEADER_FIELDS.values()` minus INFO, in the enum's own order.
+        fields = ["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER"]
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect();
+        fields.extend(declared.info.clone());
+        for id in &declared.format {
+            if id == "GT" {
+                genotype_fields.insert(0, id.clone());
+            } else {
+                genotype_fields.push(id.clone());
+            }
+        }
+    }
+
+    // `VcfUtils.getSortedSampleSet`, which is a `TreeSet` and therefore sorted.
+    let mut samples: Vec<String> =
+        if genotype_fields.is_empty() && allele_specific_genotype_fields.is_empty() {
+            Vec::new()
+        } else {
+            let mut names = vcf_samples(&text);
+            names.sort();
+            names.dedup();
+            names
+        };
+    if samples.is_empty()
+        && !(genotype_fields.is_empty() && allele_specific_genotype_fields.is_empty())
+    {
+        genotype_fields.clear();
+        allele_specific_genotype_fields.clear();
+        if fields.is_empty() && allele_specific_fields.is_empty() {
+            return Err(Thrown::user(
+                "There are no samples and no fields - no output will be produced",
+            ));
+        }
+    }
+    if genotype_fields.is_empty() && allele_specific_genotype_fields.is_empty() {
+        samples.clear();
+    }
+
+    let table_arguments = gatk_tools::variants_to_table::Arguments {
+        fields,
+        genotype_fields,
+        allele_specific_fields,
+        allele_specific_genotype_fields,
+        split_multi_allelic: flag(parser, "split-multi-allelic"),
+        show_filtered: flag(parser, "show-filtered"),
+        moltenize: flag(parser, "moltenize"),
+        error_if_missing_data: flag(parser, "error-if-missing-data"),
+    };
+
+    let mut out = String::new();
+    for column in gatk_tools::variants_to_table::header(&samples, &table_arguments) {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\t');
+        }
+        out.push_str(&column);
+    }
+    out.push('\n');
+
+    let all = vcf_records(&text, &samples_in_file_order(&text), &declared);
+    // `-L` is the traversal and not a filter the tool applies: the driving variants are queried by
+    // interval, which is why an input with no random access is refused before a record is read.
+    // Measured on rows 0, 4 and 12 of this tool's array, where the reference emitted the ONE record
+    // the window holds and the port emitted all eight.
+    let spans: Vec<Locus> = all
+        .iter()
+        .map(|(record, _)| Locus {
+            contig: record.contig.clone(),
+            start: record.start,
+            stop: record.start + record.reference.len() as i32 - 1,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+    let kept: Vec<usize> = gatk_engine::variant_source::traverse(&spans, intervals.as_deref())
+        .into_iter()
+        .map(|span| {
+            spans
+                .iter()
+                .position(|other| std::ptr::eq(other, span))
+                .expect("a span of this list")
+        })
+        .collect();
+    let records: Vec<&(gatk_tools::variants_to_table::Record, String)> =
+        kept.into_iter().map(|index| &all[index]).collect();
+
+    let mut emitted = 0_usize;
+    for (record, raw) in records {
+        // `showFiltered || vc.isNotFiltered()`: a record whose FILTER is neither `.` nor `PASS` is
+        // skipped, and the counter that numbers the moltenized rows never sees it.
+        if !table_arguments.show_filtered && !record.filters.is_empty() {
+            continue;
+        }
+        emitted += 1;
+        let rows = gatk_tools::variants_to_table::extract_fields(
+            record,
+            &samples,
+            &table_arguments,
+            &declared.per_allele,
+        )
+        .map_err(|missing| {
+            // `String.format("Missing field %s in vc %s at %s", field, vc.getSource(), vc)`: the
+            // source is the driving input's NAME, which for a `-V` with no logical name is
+            // `Unknown`, and the third is the whole `VariantContext.toString()`.
+            Thrown::user(format!(
+                "Missing field {} in vc Unknown at {}",
+                missing.field,
+                variant_context_to_string(record, raw)
+            ))
+        })?;
+        for row in rows {
+            if table_arguments.moltenize {
+                let mut index = 0;
+                for field in &table_arguments.fields {
+                    out.push_str(&format!("{emitted}\tsite\t{field}\t{}\n", row[index]));
+                    index += 1;
+                }
+                for sample in &samples {
+                    for field in &table_arguments.genotype_fields {
+                        out.push_str(&format!(
+                            "{emitted}\t{}\t{field}\t{}\n",
+                            sample.replace(' ', "_"),
+                            row[index]
+                        ));
+                        index += 1;
+                    }
+                }
+            } else {
+                out.push_str(&row.join("\t"));
+                out.push('\n');
+            }
+        }
+    }
+
+    // `-O` is optional and a null one is `System.out`, which is the same shape `CheckPileup` has.
+    write_report(&argument(parser, "output"), &out)?;
+    Ok(None)
+}
+
+/// What a VCF's header DECLARES, which is what decides a value's shape.
+struct VcfDeclarations {
+    /// The INFO ids, in the order the header wrote them.
+    info: Vec<String>,
+    /// The FORMAT ids, in the same order.
+    format: Vec<String>,
+    /// Every id whose `Number` is `R`, which is what `-ASF` and `-ASGF` split.
+    per_allele: gatk_tools::variants_to_table::CountTypes,
+    /// Every id whose `Number` is not `1`, whose value is therefore a list.
+    lists: std::collections::HashSet<String>,
+}
+
+fn vcf_declarations(text: &str) -> VcfDeclarations {
+    let mut declared = VcfDeclarations {
+        info: Vec::new(),
+        format: Vec::new(),
+        per_allele: gatk_tools::variants_to_table::CountTypes::new(),
+        lists: std::collections::HashSet::new(),
+    };
+    for line in text.lines() {
+        let (kind, rest) = if let Some(rest) = line.strip_prefix("##INFO=<") {
+            ("INFO", rest)
+        } else if let Some(rest) = line.strip_prefix("##FORMAT=<") {
+            ("FORMAT", rest)
+        } else {
+            continue;
+        };
+        let field = |key: &str| -> Option<String> {
+            rest.split(',')
+                .find_map(|entry| entry.trim().strip_prefix(&format!("{key}=")))
+                .map(|value| value.trim_end_matches('>').to_string())
+        };
+        let Some(id) = field("ID") else { continue };
+        let number = field("Number").unwrap_or_default();
+        if kind == "INFO" {
+            declared.info.push(id.clone());
+        } else {
+            declared.format.push(id.clone());
+        }
+        declared.per_allele.insert(id.clone(), number == "R");
+        if number != "1" {
+            declared.lists.insert(id);
+        }
+    }
+    declared
+}
+
+/// The sample names, in the order the `#CHROM` line writes them.
+fn samples_in_file_order(text: &str) -> Vec<String> {
+    text.lines()
+        .find(|line| line.starts_with("#CHROM"))
+        .map(|line| {
+            line.split('\t')
+                .skip(9)
+                .map(|name| name.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn vcf_samples(text: &str) -> Vec<String> {
+    samples_in_file_order(text)
+}
+
+/// The records, projected to what the table reads.
+///
+/// A value is a LIST where the file wrote commas and the header said its `Number` is not one, which
+/// is the same rule the tool's own suite uses: the table prints a list differently from a string
+/// that happens to hold a comma.
+fn vcf_records(
+    text: &str,
+    samples: &[String],
+    declared: &VcfDeclarations,
+) -> Vec<(gatk_tools::variants_to_table::Record, String)> {
+    let value = |text: &str, key: &str| -> gatk_tools::variants_to_table::Value {
+        if declared.lists.contains(key) && text.contains(',') {
+            gatk_tools::variants_to_table::Value::Many(
+                text.split(',').map(|part| part.to_string()).collect(),
+            )
+        } else {
+            gatk_tools::variants_to_table::Value::One(text.to_string())
+        }
+    };
+    text.lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| {
+            let field: Vec<&str> = line.split('\t').collect();
+            let info = field
+                .get(7)
+                .map(|column| {
+                    column
+                        .split(';')
+                        .filter_map(|entry| entry.split_once('='))
+                        .map(|(key, text)| (key.to_string(), value(text, key)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let keys: Vec<&str> = field
+                .get(8)
+                .map(|f| f.split(':').collect())
+                .unwrap_or_default();
+            let genotypes = (0..samples.len())
+                .map(|index| {
+                    field
+                        .get(9 + index)
+                        .map(|column| {
+                            column
+                                .split(':')
+                                .enumerate()
+                                .filter_map(|(at, text)| {
+                                    keys.get(at)
+                                        .map(|key| ((*key).to_string(), value(text, key)))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            // The FORMAT column and the sample columns as the file wrote them, which is what a
+            // record's `toString` prints while its genotypes are still lazy.
+            let raw = field[8..].join("\t");
+            (
+                gatk_tools::variants_to_table::Record {
+                    contig: field[0].to_string(),
+                    start: field[1].parse().unwrap_or(0),
+                    id: field[2].to_string(),
+                    reference: field[3].to_string(),
+                    alternates: field[4].split(',').map(|alt| alt.to_string()).collect(),
+                    qual: field[5].parse().ok(),
+                    filters: match field[6] {
+                        "." | "PASS" => Vec::new(),
+                        names => names.split(';').map(|name| name.to_string()).collect(),
+                    },
+                    info,
+                    genotypes,
+                },
+                raw,
+            )
+        })
+        .collect()
+}
+
+/// `CompareBaseQualities`, which is no GATK tool at all.
+///
+/// It extends `PicardCommandLineProgram`, so its namespace is Picard's argument set rather than the
+/// engine's: no read filter, no interval, no sequence-dictionary validation, and its two SAM files
+/// arrive as POSITIONAL arguments rather than under `--input`. Both readers are opened by hand and
+/// each is wrapped in a `SecondaryOrSupplementarySkippingIterator`, so the skipping happens per file
+/// rather than over the pair.
+///
+/// The tool RETURNS its verdict: `hasNonDiagonalElements() ? 1 : 0`, which the dispatcher prints and
+/// which is not an exit status. `--throw-on-diff` turns the same fact into a refusal instead.
+pub fn compare_base_qualities(parser: &Parser) -> Outcome {
+    let files = parser.positional_values();
+    // The parser has already refused any count but two, so this is a read of what it collected.
+    let (first, second) = (files[0].clone(), files[1].clone());
+
+    let read = |path: &str| -> Result<Vec<htsjdk_bam::record::BamRecord>, Thrown> {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        source.iter_all().map_err(reads_traversal_error)
+    };
+    let left = read(&first)?;
+    let right = read(&second)?;
+
+    let arguments = gatk_tools::compare_base_qualities::CompareArguments {
+        static_quantization_quals: arguments(parser, "static-quantized-quals")
+            .iter()
+            .filter_map(|value| value.parse().ok())
+            .collect(),
+        round_down: flag(parser, "round-down-quantized"),
+        throw_on_diff: flag(parser, "throw-on-diff"),
+    };
+    let result =
+        gatk_tools::compare_base_qualities::compare_base_qualities(&left, &right, &arguments)
+            .map_err(|refusal| match refusal {
+                // `--round-down-quantized` alone is the PARSER's refusal and not the tool's, so it carries
+                // the argument's name and the bad value rather than a banner of its own.
+                gatk_tools::compare_base_qualities::CompareError::RoundDownAlone => {
+                    Thrown::command_line(refusal.message())
+                }
+                gatk_tools::compare_base_qualities::CompareError::QualitiesDiffer => {
+                    Thrown::user(refusal.message())
+                }
+                other => bad_input(other.message()),
+            })?;
+
+    // The report is written where `printOutResults` writes it: the file `-O` names, or stdout.
+    write_report(&argument(parser, "output"), &result.report)?;
+    Ok(Some(result.exit_code.to_string()))
+}
+
+/// `VariantContext.toString()`, which a refusal prints whole.
+///
+/// The lazy branch, `toStringUnparsedGenotypes`, because a record read from a file keeps its
+/// genotype text until something decodes it: what the string carries is the FORMAT column and the
+/// sample columns as they were written, tabs and all. Measured on row 9 of `VariantsToTable`'s
+/// array, which is the only place this port prints one.
+fn variant_context_to_string(
+    record: &gatk_tools::variants_to_table::Record,
+    raw_genotypes: &str,
+) -> String {
+    let stop = record.start + record.reference.len() as i32 - 1;
+    let position = if stop == record.start {
+        format!("{}:{}", record.contig, record.start)
+    } else {
+        format!("{}:{}-{}", record.contig, record.start, stop)
+    };
+    // `hasLog10PError()`, which is false for a QUAL the file wrote as `.`.
+    let qual = match record.qual {
+        Some(value) => format!("{value:.2}"),
+        None => ".".to_string(),
+    };
+    // `ParsingUtils.sortList(getAlleles())`: the reference allele carries a `*`, and the list is
+    // sorted by `Allele.compareTo`, which puts the reference first and the rest by their bases.
+    let mut alleles: Vec<String> = record.alternates.clone();
+    alleles.sort();
+    let alleles = std::iter::once(format!("{}*", record.reference))
+        .chain(alleles)
+        .collect::<Vec<String>>()
+        .join(", ");
+    // `ParsingUtils.sortedString(getAttributes())`: a `TreeMap`'s `toString`, so `{}` when empty and
+    // `{k=v, k=v}` sorted by key otherwise.
+    let mut attributes: Vec<String> = record
+        .info
+        .iter()
+        .map(|(key, value)| format!("{key}={}", attribute_to_string(value)))
+        .collect();
+    attributes.sort();
+    let attributes = format!("{{{}}}", attributes.join(", "));
+    format!(
+        "[VC Unknown @ {position} Q{qual} of type={} alleles=[{alleles}] attr={attributes} GT={} filters={}",
+        variant_type_name(&record.reference, &record.alternates),
+        raw_genotypes,
+        record.filters.join(",")
+    )
+}
+
+/// An attribute's `toString`, which for a list is Java's `[a, b]` and not the comma join a column
+/// carries.
+fn attribute_to_string(value: &gatk_tools::variants_to_table::Value) -> String {
+    match value {
+        gatk_tools::variants_to_table::Value::One(one) => one.clone(),
+        gatk_tools::variants_to_table::Value::Many(many) => format!("[{}]", many.join(", ")),
+    }
+}
+
+/// `VariantContext.getType()`, by the same rule [`gatk_tools::remove_nearby_indels`] ports: length
+/// decides, and two alternates that disagree are MIXED.
+fn variant_type_name(reference: &str, alternates: &[String]) -> &'static str {
+    if alternates.is_empty() || (alternates.len() == 1 && alternates[0] == ".") {
+        return "NO_VARIATION";
+    }
+    let mut kind: Option<&'static str> = None;
+    for alternate in alternates {
+        let this =
+            if alternate.starts_with('<') || alternate.contains('[') || alternate.contains(']') {
+                "SYMBOLIC"
+            } else if alternate.len() == reference.len() {
+                if reference.len() == 1 {
+                    "SNP"
+                } else {
+                    "MNP"
+                }
+            } else {
+                "INDEL"
+            };
+        match kind {
+            None => kind = Some(this),
+            Some(seen) if seen == this => {}
+            Some(_) => return "MIXED",
+        }
+    }
+    kind.unwrap_or("NO_VARIATION")
 }

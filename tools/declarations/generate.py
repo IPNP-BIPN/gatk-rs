@@ -158,6 +158,13 @@ def cross_check(tool, entries):
     by_name = {entry["long_name"]: entry for entry in entries}
     for argument in documented:
         name = argument["name"].lstrip("-")
+        # A POSITIONAL argument is not a named one. Barclay prints it in the usage under the
+        # placeholder `[NA - Positional]`, and `getNamedArgumentDefinitions` does not carry it at
+        # all, so the two readings disagree by design. CompareBaseQualities is the first declared
+        # tool that has one; what its parser says about the count is measured by the
+        # tool-argument-declarations suite's own parse cases instead.
+        if name == "[NA - Positional]":
+            continue
         entry = by_name.get(name)
         if entry is None:
             sys.exit(f"{tool}: the usage text documents --{name} and the parser does not declare it")
@@ -181,7 +188,13 @@ def cross_check(tool, entries):
         )
     # The usage text never prints MORE than the parser declares. It prints fewer for a walker,
     # whose plugin descriptors and standard collections it leaves out, and exactly as many for a
-    # tool that has neither: IndexFeatureFile is 14 of 14.
+    # tool that has neither: IndexFeatureFile is 14 of 14. A POSITIONAL argument is the one thing
+    # the usage prints that no named declaration answers, so it is not counted on either side.
+    documented = [
+        argument
+        for argument in documented
+        if argument["name"].lstrip("-") != "[NA - Positional]"
+    ]
     if len(documented) > len(entries):
         sys.exit(f"{tool}: the usage text prints {len(documented)} of {len(entries)} declarations")
     return len(documented)

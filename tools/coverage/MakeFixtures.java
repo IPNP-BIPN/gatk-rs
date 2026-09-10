@@ -596,6 +596,48 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * `reads.bam`'s eight reads, at the same positions and under the same NAMES, with a different
+     * quality array.
+     *
+     * `CompareBaseQualities` walks two files in lockstep and refuses the pair as soon as two reads
+     * disagree by name, so a comparison needs two files that hold the same reads. Every other pair
+     * in this corpus differs by name on the first record, which is one refusal on every row and no
+     * comparison at all. The qualities here are `I` where reads.bam has `I` on six bases and `#` on
+     * four, so the matrix has off-diagonal entries: the tool returns 1 rather than 0, and
+     * `--throw-on-diff` turns that into a refusal.
+     */
+    static void requalified(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setFlags(index == 7 ? 0x400 : 0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIII####");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     static void pairs(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -767,6 +809,7 @@ public class MakeFixtures {
         pairs(dir.resolve("pairs.bam"));
         queryNameSorted(dir.resolve("qname.bam"));
         umi(dir.resolve("umi.bam"));
+        requalified(dir.resolve("requal.bam"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.

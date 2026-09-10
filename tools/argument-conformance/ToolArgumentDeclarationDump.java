@@ -220,6 +220,13 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags());
         declarations("PostProcessReadsForRSEM",
                 new org.broadinstitute.hellbender.tools.walkers.qc.PostProcessReadsForRSEM());
+        // A `VariantWalker` that writes a TABLE rather than a VCF, and a tool that is no GATK tool
+        // at all: `CompareBaseQualities` extends `PicardCommandLineProgram`, so its namespace is
+        // Picard's argument set and not the engine's, which nothing declared here has been.
+        declarations("VariantsToTable",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.VariantsToTable());
+        declarations("CompareBaseQualities",
+                new org.broadinstitute.hellbender.tools.validation.CompareBaseQualities());
         declarations("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
@@ -255,6 +262,22 @@ public class ToolArgumentDeclarationDump {
         // The output is a scalar where the input is a collection, so naming it twice is refused.
         parse("PrintReads", "output-twice", new String[]{
             "-I", "/dev/null", "-O", "/dev/null", "-O", "/dev/null"});
+
+        // POSITIONAL arguments, which no tool declared here has had. `CompareBaseQualities` takes
+        // exactly two SAM files that way (`@PositionalArguments(minElements = 2, maxElements = 2)`),
+        // so all four counts are measured: none, one, the two it wants, and three. What the parser
+        // says for the three that are wrong is the whole reason these cases exist -- a port that
+        // guessed the messages would guess four of them.
+        parse("CompareBaseQualities", "positional-none", new String[]{});
+        parse("CompareBaseQualities", "positional-one", new String[]{"/dev/null"});
+        parse("CompareBaseQualities", "positional-two",
+            new String[]{"/dev/null", "/dev/null"});
+        parse("CompareBaseQualities", "positional-three",
+            new String[]{"/dev/null", "/dev/null", "/dev/null"});
+        // And the same pair with an argument that is named, so the order of the two kinds is
+        // measured rather than assumed.
+        parse("CompareBaseQualities", "positional-and-named",
+            new String[]{"/dev/null", "-O", "/dev/null", "/dev/null"});
     }
 
     /**
@@ -339,6 +362,8 @@ public class ToolArgumentDeclarationDump {
             case "CountReads" -> new org.broadinstitute.hellbender.tools.CountReads();
             case "CountVariants" -> new org.broadinstitute.hellbender.tools.walkers.CountVariants();
             case "IndexFeatureFile" -> new org.broadinstitute.hellbender.tools.IndexFeatureFile();
+            case "CompareBaseQualities" ->
+                    new org.broadinstitute.hellbender.tools.validation.CompareBaseQualities();
             default -> new org.broadinstitute.hellbender.tools.PrintReads();
         };
         String result;
