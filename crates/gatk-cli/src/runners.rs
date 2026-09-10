@@ -5168,7 +5168,9 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
         .into_iter()
         .map(|index| records[index].clone())
         .collect();
-    let mut written = written;
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> =
+        written.into_iter().filter(|record| keep(record)).collect();
     apply_sites_only(parser, &mut header, &mut written);
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
@@ -5177,6 +5179,49 @@ pub fn remove_nearby_indels(parser: &Parser) -> Outcome {
     write_variant_output(parser, &output, &out, &dictionary)?;
     // `onTraversalSuccess` returns the word, which `handleResult` prints.
     Ok(Some("SUCCESS".to_string()))
+}
+
+/// The predicate `--variant-output-filtering` builds, which every emitted record passes through.
+type VariantOutputFilter<'a> = Box<dyn Fn(&htsjdk_vcf::variant::VariantContext) -> bool + 'a>;
+
+/// `--variant-output-filtering`, which WRAPS the VCF writer rather than the traversal.
+///
+/// `IntervalFilteringVcfWriter` tests every record the tool emits against the user intervals, so a
+/// record the traversal reached can still be kept out of the file: `STARTS_IN` looks at the start
+/// position alone, `ENDS_IN` at the end, `CONTAINED` needs one overlapping interval to hold the
+/// whole record, and `ANYWHERE` is the default and no filter at all. Measured on rows 10, 13 and 22
+/// of `RemoveNearbyIndels`' array, where an indel at 1000 spanning four bases starts inside
+/// `chr1:1-1000` and ends outside it.
+///
+/// A mode other than `ANYWHERE` with no `-L` is refused, after the dictionaries are validated.
+fn variant_output_filter<'a>(
+    parser: &Parser,
+    intervals: Option<&'a [gatk_engine::interval::SimpleInterval]>,
+) -> Result<VariantOutputFilter<'a>, Thrown> {
+    let mode = scalar(parser, "variant-output-filtering").unwrap_or_else(|| "ANYWHERE".to_string());
+    if mode == "ANYWHERE" {
+        return Ok(Box::new(|_| true));
+    }
+    let Some(intervals) = intervals.filter(|list| !list.is_empty()) else {
+        return Err(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    };
+    Ok(Box::new(move |record| {
+        let start = record.start as i32;
+        let stop = record.stop as i32;
+        intervals.iter().any(|interval| {
+            interval.contig == record.contig
+                && match mode.as_str() {
+                    "STARTS_IN" => interval.start <= start && start <= interval.end,
+                    "ENDS_IN" => interval.start <= stop && stop <= interval.end,
+                    "CONTAINED" => interval.start <= start && stop <= interval.end,
+                    // `OVERLAPS`, and anything the parser would have refused before this.
+                    _ => interval.start <= stop && start <= interval.end,
+                }
+        })
+    }))
 }
 
 /// `--sites-only-vcf-output`, which builds the writer with `DO_NOT_WRITE_GENOTYPES`.
@@ -5259,6 +5304,22 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
 
     let refuse =
         |error: gatk_tools::update_vcf_sequence_dictionary::UpdateDictionaryError| -> Thrown {
+            // Four of the seven are `CommandLineException`s, which exit at ONE; the one-argument
+            // `BadArgumentValue` also carries the `Illegal argument value: ` its constructor
+            // prefixes. Measured on rows 5 and 7 of this tool's array.
+            if error.java_class().starts_with("org.broadinstitute.barclay") {
+                let message = error.message();
+                return Thrown::command_line(
+                    if error
+                        .java_class()
+                        .ends_with("CommandLineException$BadArgumentValue")
+                    {
+                        format!("Illegal argument value: {message}")
+                    } else {
+                        message
+                    },
+                );
+            }
             Thrown {
                 failure: Failure::User,
                 exception: error.java_class(),
@@ -5291,10 +5352,12 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
         .into_iter()
         .map(|(name, length)| htsjdk_bam::header::SequenceRecord::new(&name, length))
         .collect();
+    // The traversal's own refusal comes FIRST: `-L` over an input with no random access is refused
+    // while the data source is bounded, which is before `onTraversalStart` runs at all. Measured on
+    // row 21 of this tool's array, where the port answered the dictionary check.
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     gatk_tools::update_vcf_sequence_dictionary::check_replace(&own, flag(parser, "replace"))
         .map_err(refuse)?;
-
-    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     let records: Vec<htsjdk_vcf::variant::VariantContext> = kept.into_iter().cloned().collect();
 
     // `outputHeader.setSequenceDictionary(sourceDictionary)`: the contig lines are REPLACED, and
@@ -5320,7 +5383,9 @@ pub fn update_vcf_sequence_dictionary(parser: &Parser) -> Outcome {
         .into_iter()
         .map(|index| records[index].clone())
         .collect();
-    let mut emitted = emitted;
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut emitted: Vec<htsjdk_vcf::variant::VariantContext> =
+        emitted.into_iter().filter(|record| keep(record)).collect();
     apply_sites_only(parser, &mut header, &mut emitted);
     let out = htsjdk_vcf::vcf_file::write_vcf(&header, &emitted)
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
