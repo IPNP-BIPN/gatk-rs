@@ -314,6 +314,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PostProcessReadsForRSEM" => Some(run_post_process_reads_for_rsem),
         "VariantsToTable" => Some(run_variants_to_table),
         "CompareBaseQualities" => Some(run_compare_base_qualities),
+        "RemoveNearbyIndels" => Some(run_remove_nearby_indels),
+        "UpdateVCFSequenceDictionary" => Some(run_update_vcf_sequence_dictionary),
         _ => None,
     }
 }
@@ -397,6 +399,14 @@ fn run_variants_to_table(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_compare_base_qualities(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::compare_base_qualities(&parsed("CompareBaseQualities", args)?)
+}
+
+fn run_remove_nearby_indels(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::remove_nearby_indels(&parsed("RemoveNearbyIndels", args)?)
+}
+
+fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::update_vcf_sequence_dictionary(&parsed("UpdateVCFSequenceDictionary", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
