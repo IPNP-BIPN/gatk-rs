@@ -387,6 +387,24 @@
       "matched": 20,
       "t": 2,
       "share": 1.0
+    },
+    "VariantsToTable": {
+      "rows": 23,
+      "accepted": 10,
+      "rejected": 13,
+      "distinct_outputs": 8,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "CompareBaseQualities": {
+      "rows": 11,
+      "accepted": 4,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

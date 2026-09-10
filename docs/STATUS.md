@@ -149,7 +149,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | not measured |
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | not measured |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
-| `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
+| `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | not measured |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | not measured |
@@ -256,7 +256,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
-| `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | not measured |
+| `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) |
 
 <details><summary>51 not started</summary>
 
