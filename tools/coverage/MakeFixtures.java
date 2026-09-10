@@ -30,6 +30,37 @@ import java.util.List;
 
 public class MakeFixtures {
 
+    /**
+     * A VCF of INDELS at measured distances, which is what `RemoveNearbyIndels` needs.
+     *
+     * Every other VCF in this corpus holds SNPs alone, and a run over one of those emits every
+     * record whatever the spacing is: the array would measure the traversal and not the tool. The
+     * records here are, in order: an isolated indel; a PAIR ten bases apart, which any spacing above
+     * ten removes; a SNP between them, which survives its neighbours being dropped; a RUN of three
+     * indels, which the buffer loses whole because it measures the next one against an indel it has
+     * already thrown away; and a last indel a hundred bases past the run, which a spacing of 200
+     * takes with it and a spacing of 10 does not.
+     */
+    static String indelVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n");
+        final int[][] records = {
+                // position, kind: 0 is a deletion, 1 an insertion, 2 a snp
+                {1000, 0}, {2000, 1}, {2010, 0}, {2015, 2}, {3000, 1}, {3005, 0}, {3010, 1},
+                {3110, 0},
+        };
+        for (final int[] record : records) {
+            final String reference = record[1] == 0 ? "ACGT" : "A";
+            final String alternate = record[1] == 0 ? "A" : (record[1] == 1 ? "ACGT" : "C");
+            text.append("chr1\t").append(record[0]).append("\trs").append(record[0])
+                    .append('\t').append(reference).append('\t').append(alternate)
+                    .append("\t100\tPASS\t.\tGT\t0/1\n");
+        }
+        return text.toString();
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -810,6 +841,14 @@ public class MakeFixtures {
         queryNameSorted(dir.resolve("qname.bam"));
         umi(dir.resolve("umi.bam"));
         requalified(dir.resolve("requal.bam"));
+        // The indel VCF, INDEXED: a variant walker refuses `-L` over an input with no random
+        // access, so an unindexed one would answer a refusal on every interval row.
+        final Path indels = dir.resolve("indels.vcf");
+        Files.writeString(indels, indelVcf(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        indels, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("indels.vcf.idx"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.
