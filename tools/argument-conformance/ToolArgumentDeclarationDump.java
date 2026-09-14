@@ -261,6 +261,15 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.reference.CheckReferenceCompatibility());
         declarations("ComposeSTRTableFile",
                 new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile());
+        // A CHAIN, which is why the pair is this one: `CalculateMixingFractions` reads a VCF and
+        // the reads and writes a table of one fraction per sample, and
+        // `AnnotateVcfWithExpectedAlleleFraction` reads THAT table beside a VCF and writes the
+        // expected fraction into each record. The second tool's input is the first tool's output,
+        // so the corpus can carry a table the reference itself produced.
+        declarations("CalculateMixingFractions",
+                new org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions());
+        declarations("AnnotateVcfWithExpectedAlleleFraction",
+                new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithExpectedAlleleFraction());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
