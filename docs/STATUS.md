@@ -151,7 +151,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** |
-| `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | not measured |
+| `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | t=2, 20/20 rows (100%) |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | not measured |
 | `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
 | `CondenseDepthEvidence` | unclassified | oracle-backed | condense-depth-evidence | 1 | not measured |
