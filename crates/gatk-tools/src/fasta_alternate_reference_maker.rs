@@ -246,14 +246,46 @@ pub fn run(
     arguments: &AlternateArguments,
     samples: &[String],
 ) -> Result<FastaOutputs, AlternateError> {
-    check_arguments(arguments, samples).map_err(AlternateError::Argument)?;
+    let resolved =
+        reference_walker::traversal_intervals(intervals, &reference_walker::dictionary(reference))
+            .map_err(|error| AlternateError::Maker(MakerError::Traversal(error)))?;
+    run_over(
+        reference,
+        &resolved,
+        bases_per_line,
+        variants,
+        arguments,
+        samples,
+    )
+}
 
+/// The same run over intervals somebody else resolved.
+///
+/// It exists for the reason [`crate::fasta_reference_maker::run_over`] does: a command line
+/// resolves `-L` against the BEST available dictionary, which a `--sequence-dictionary` outranks
+/// the reference in, and the traversal then queries the FASTA with what that produced.
+pub fn run_over(
+    reference: &mut ReferenceFileSource,
+    intervals: &[SimpleInterval],
+    bases_per_line: usize,
+    variants: &[VariantContext],
+    arguments: &AlternateArguments,
+    samples: &[String],
+) -> Result<FastaOutputs, AlternateError> {
+    // `onTraversalStart` calls `super.onTraversalStart()` FIRST, and the maker's builds the
+    // writer. So a width the writer refuses is refused before either of this tool's own checks,
+    // and -- the other way round -- a run refused by those checks has already opened its three
+    // files and leaves them behind.
     let mut writer = FastaReferenceWriter::new(bases_per_line, true)
         .map_err(|error| AlternateError::Maker(MakerError::Writer(error)))?;
 
+    check_arguments(arguments, samples).map_err(AlternateError::Argument)?;
+
     let applied =
-        reference_walker::traverse(reference, intervals, |locus: &SimpleInterval| locus.clone())
-            .map_err(|error| AlternateError::Maker(MakerError::Traversal(error)))?;
+        reference_walker::traverse_intervals(reference, intervals, |locus: &SimpleInterval| {
+            locus.clone()
+        })
+        .map_err(|error| AlternateError::Maker(MakerError::Traversal(error)))?;
 
     let mut deletion_bases_remaining = 0i32;
     let mut count = 0usize;

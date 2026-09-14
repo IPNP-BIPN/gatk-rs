@@ -2587,6 +2587,168 @@ fn fasta_maker_error(error: gatk_tools::fasta_reference_maker::MakerError) -> Th
     }
 }
 
+/// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
+///
+/// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves
+/// against the best available dictionary, which a `--sequence-dictionary` outranks the reference
+/// in, and the traversal then queries the FASTA. What this tool adds is read before the traversal
+/// and in the reference's own order:
+///
+///   - `super.onTraversalStart()` builds the writer, so a `--line-width` the writer refuses is
+///     refused before either check below and leaves no files at all;
+///   - `--snp-mask-priority` without `--snp-mask` is a `CommandLineException`, thrown by the tool
+///     rather than by the parser;
+///   - `--use-iupac-sample` is checked against the DRIVING variants' header samples, so a sample
+///     that appears in no record still passes.
+///
+/// Both of those refusals happen after the writer exists, which is why they leave the same three
+/// empty files a refused traversal does.
+///
+/// The two feature inputs are read whole rather than queried. htsjdk's `FeatureDataSource` queries
+/// them by interval and therefore wants an index; nothing in this tool's array reaches an
+/// unindexed one, so the refusal that would produce is not modelled here rather than guessed at.
+pub fn fasta_alternate_reference_maker(parser: &Parser) -> Outcome {
+    let _ = resolve_read_filters(parser, "FastaAlternateReferenceMaker")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    // `--variant` is a scalar `FeatureInput` here, as it is on every variant walker.
+    let variant = argument(parser, "variant").ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+
+    let (variants, samples) = feature_variants(&variant)?;
+    let mask = match argument(parser, "snp-mask") {
+        Some(path) => Some(feature_variants(&path)?.0),
+        None => None,
+    };
+
+    let mut source =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let master = master_dictionary(parser)?;
+    let own = gatk_tools::reference_walker::dictionary(&source);
+    let best = master.unwrap_or(own);
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => parameters.intervals,
+        None => best
+            .sequences
+            .iter()
+            .map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+                    .expect("a contig length is at least one")
+            })
+            .collect(),
+    };
+
+    let width = number_or(
+        parser,
+        "line-width",
+        gatk_tools::fasta_reference_maker::DEFAULT_LINE_WIDTH as i32,
+    )
+    .max(0) as usize;
+
+    let arguments = gatk_tools::fasta_alternate_reference_maker::AlternateArguments {
+        mask: mask.as_deref(),
+        mask_priority: flag(parser, "snp-mask-priority"),
+        iupac_sample: argument(parser, "use-iupac-sample"),
+    };
+
+    // The writer is built in `onTraversalStart` and closed in `closeTool`, so every refusal after
+    // it exists still leaves a FASTA, a `.fai` and a dictionary of nothing but its `@HD` line.
+    let refused = |error| -> Thrown {
+        match gatk_tools::fasta_reference_maker::empty_outputs(width) {
+            Ok(empty) => {
+                let _ = write_outputs(&output, &empty);
+                alternate_maker_error(error)
+            }
+            // The width itself is what the writer refused, and that happens before any file is
+            // opened: `FastaReferenceWriterBuilder.build` checks it first for exactly that reason.
+            Err(failure) => alternate_maker_error(
+                gatk_tools::fasta_alternate_reference_maker::AlternateError::Maker(failure),
+            ),
+        }
+    };
+    let outputs = gatk_tools::fasta_alternate_reference_maker::run_over(
+        &mut source,
+        &intervals,
+        width,
+        &variants,
+        &arguments,
+        &samples,
+    )
+    .map_err(refused)?;
+
+    write_outputs(&output, &outputs)?;
+    Ok(None)
+}
+
+/// A `FeatureInput<VariantContext>`: the file's records and the samples its header declares.
+///
+/// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec
+/// claims is the same refusal `IndexFeatureFile` gives.
+fn feature_variants(
+    path: &str,
+) -> Result<(Vec<htsjdk_vcf::variant::VariantContext>, Vec<String>), Thrown> {
+    if gatk_tools::feature_codec::codec_for(path).is_none() {
+        return Err(Thrown::user(
+            index_feature_file::Refusal::NoSuitableCodecs {
+                path: path.to_string(),
+            }
+            .message(),
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: path.to_string(),
+            }
+            .message(),
+        )
+    })?;
+    let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    gatk_tools::read_walker_refusal::SAM_FORMAT,
+                    format!("{path} is not a block compressed file"),
+                )
+            })?
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+    Ok((file.records, file.header.samples))
+}
+
+/// What `FastaAlternateReferenceMaker` refused with, told apart by whose refusal it is.
+fn alternate_maker_error(
+    error: gatk_tools::fasta_alternate_reference_maker::AlternateError,
+) -> Thrown {
+    match error {
+        // The tool's own two checks, one of which Barclay's exception class names even though the
+        // parser accepted the command line.
+        gatk_tools::fasta_alternate_reference_maker::AlternateError::Argument(argument) => Thrown {
+            failure: Failure::User,
+            exception: argument.java_class(),
+            message: Some(argument.message()),
+        },
+        gatk_tools::fasta_alternate_reference_maker::AlternateError::Maker(maker) => {
+            fasta_maker_error(maker)
+        }
+    }
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
