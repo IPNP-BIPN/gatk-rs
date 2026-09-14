@@ -328,3 +328,93 @@ pub fn write_table(table: &Table) -> String {
     }
     out
 }
+
+/// `writeTableBySequenceName`, which is `--display-sequences-by-name`.
+///
+/// The names come out in the order the table met them, which is `tableBySequenceName`'s: a
+/// `LinkedHashMap`, so insertion order, and the insertion runs reference by reference and, inside
+/// one reference, in the dictionary's own order. What is under each name is a `HashSet<TableRow>`,
+/// and there this port stops short of the reference: `TableRow.hashCode` is `Objects.hash(md5)`,
+/// so the set's iteration order is a `java.util.HashSet`'s over a hash this repository has not
+/// measured. A name that reaches more than one row is therefore printed here in the TABLE's row
+/// order, which is the reference's answer only when the set holds one row.
+///
+/// That case is the whole of `--only-display-differing-sequences`, which prints exactly the names
+/// with more than one row, so the flag's `true` value is where the gap lives. It is declared
+/// rather than guessed: no row of this tool's covering array reaches it, because the corpus's two
+/// references share no sequence name.
+pub fn write_by_sequence_name(
+    table: &Table,
+    references: &[Reference],
+    only_differing: bool,
+) -> String {
+    let mut out = String::from("*********************************************************\n");
+    out.push_str("Name \tMD5 \tReference\n");
+    for name in sequence_names(references) {
+        let rows: Vec<&Row> = table
+            .rows
+            .iter()
+            .filter(|row| {
+                row.cells
+                    .iter()
+                    .any(|cell| cell.as_deref() == Some(name.as_str()))
+            })
+            .collect();
+        if only_differing && rows.len() <= 1 {
+            continue;
+        }
+        out.push_str(&name);
+        for row in rows {
+            out.push_str("\n\t");
+            out.push_str(&row.md5);
+            out.push('\t');
+            // `entries[i].getColumnValue().equals(sequenceName)`: only the references that carry
+            // the name under THIS md5 are named, so a row prints one column per matching cell.
+            for index in 0..row.cells.len() {
+                if row.cells[index].as_deref() == Some(name.as_str()) {
+                    out.push_str(&table.columns[index + 2]);
+                    out.push('\t');
+                }
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// `getAllSequenceNames`, in `tableBySequenceName`'s insertion order.
+///
+/// A name is met when its record is read, which is reference by reference and, inside one
+/// reference, in the dictionary's own order. That is not the table's row order: a sequence a
+/// later reference shares with an earlier one sits at the earlier row's position.
+pub fn sequence_names(references: &[Reference]) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for reference in references {
+        for sequence in &reference.sequences {
+            if !names.contains(&sequence.name) {
+                names.push(sequence.name.clone());
+            }
+        }
+    }
+    names
+}
+
+/// `ReferenceUtils.calculateMD5`: every base upper-cased, and the digest printed as a
+/// `BigInteger` left-padded to thirty-two characters rather than as fixed-width hex.
+///
+/// The two agree on every digest whose leading bytes are non-zero and differ on the rest, which is
+/// why the padding is written out rather than left to a formatter.
+pub fn calculate_md5(bases: &[u8]) -> String {
+    use md5::Digest;
+    let mut digest = md5::Md5::new();
+    for base in bases {
+        digest.update([base.to_ascii_uppercase()]);
+    }
+    let bytes = digest.finalize();
+    let hash = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let trimmed = hash.trim_start_matches('0');
+    format!("{:0>32}", trimmed)
+}
