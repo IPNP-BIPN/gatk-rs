@@ -199,6 +199,16 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.fasta.FastaAlternateReferenceMaker());
         declarations("CompareReferences",
                 new org.broadinstitute.hellbender.tools.reference.CompareReferences());
+        // Two more REFERENCE utilities, and each brings a shape the dump has not carried.
+        // `CheckReferenceCompatibility` takes the reads and a VCF as the things to CHECK a
+        // reference against, so its required argument is not the reference at all, and it refuses
+        // a command line that names both. `ComposeSTRTableFile` is a DRAGstr tool: it writes a
+        // binary table beside a reference and declares the sampling arguments that decide what
+        // goes in it.
+        declarations("CheckReferenceCompatibility",
+                new org.broadinstitute.hellbender.tools.reference.CheckReferenceCompatibility());
+        declarations("ComposeSTRTableFile",
+                new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
