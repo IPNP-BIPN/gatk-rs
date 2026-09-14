@@ -720,7 +720,62 @@
         "the tool."
       ]
     },
-    "FastaReferenceMaker": {
+    "FastaAlternateReferenceMaker": {
+   "$why": [
+    "indexed.vcf is the corpus's het SNP file with a sample1 column, which is what --use-iupac-sample",
+    "reads, and indels.vcf carries the deletions and insertions that make the tool's own state",
+    "visible: a simple deletion sets a counter that removes the bases AFTER the record rather than",
+    "at it, so a row over that file and a row over the other one do not differ merely in which base",
+    "is substituted. Both are indexed, which every FeatureInput needs.",
+    "--snp-mask takes population.vcf, whose records sit on the reads and carry no sample columns at",
+    "all, and indexed.vcf, whose records sit where the called variants do. The second value is the",
+    "one that makes --snp-mask-priority observable: the flag is not 'prefer the mask', it is 'look",
+    "at the mask first', and the two orders differ only where a mask record and a call are at the",
+    "same locus.",
+    "--use-iupac-sample carries a sample the VCFs declare and one they do not, which gives the",
+    "argument a domain rather than a constant. The refusal the second value names is NOT what these",
+    "rows measure: every row carrying it is refused earlier, by the read-filter conflict, by",
+    "--max-variants-per-shard's range or by an interval the input does not hold, because a row",
+    "carries every argument in the domain at once. The refusal itself, and the three files it still",
+    "leaves behind, are measured by the tool's own suite. The same is true of",
+    "--snp-mask-priority without --snp-mask: no row can reach it, because every row has a mask.",
+    "--line-width is 60 and 7 for the reason FastaReferenceMaker's is: a width that divides the",
+    "interval and one that does not."
+   ],
+   "--variant": [
+    "/work/fixtures/indexed.vcf",
+    "/work/fixtures/indels.vcf"
+   ],
+   "--snp-mask": [
+    "/work/fixtures/population.vcf",
+    "/work/fixtures/indexed.vcf"
+   ],
+   "--use-iupac-sample": [
+    "sample1",
+    "nosuchsample"
+   ],
+   "--output": [
+    "/work/out/alternate.fasta",
+    "/work/out/alternate2.fasta"
+   ],
+   "--line-width": [
+    "60",
+    "7"
+   ],
+   "--intervals": [
+    "chr1:1-6000",
+    "chr1:50000-60000"
+   ],
+   "--input": [
+    "/work/fixtures/reads.bam",
+    "/work/fixtures/reads2.bam"
+   ],
+   "--read-index": [
+    "/work/fixtures/reads.bai",
+    "/work/fixtures/reads2.bai"
+   ]
+  },
+  "FastaReferenceMaker": {
       "--input": [
         "/work/fixtures/reads.bam",
         "/work/fixtures/reads2.bam"
