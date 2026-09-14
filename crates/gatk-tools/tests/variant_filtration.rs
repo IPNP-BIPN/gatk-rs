@@ -65,7 +65,14 @@ fn parse_record(line: &str) -> Record {
         .split(';')
         .filter(|entry| !entry.is_empty() && *entry != ".")
         .filter_map(|entry| entry.split_once('='))
-        .map(|(key, value)| (key.to_string(), value.to_string()))
+        // The text of the INFO column, which is what htsjdk's codec leaves in the attribute map
+        // and therefore what the reference's context hands JEXL.
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                gatk_engine::jexl::Value::Str(value.to_string()),
+            )
+        })
         .collect();
     let format: Vec<&str> = field[8].split(':').collect();
     let genotypes = field[9..]
@@ -80,7 +87,10 @@ fn parse_record(line: &str) -> Record {
                         filters = value.split(';').map(|name| name.to_string()).collect();
                     }
                 } else {
-                    fields.insert(key.to_string(), value.to_string());
+                    fields.insert(
+                        key.to_string(),
+                        gatk_engine::jexl::Value::Str(value.to_string()),
+                    );
                 }
             }
             GenotypeFields { fields, filters }

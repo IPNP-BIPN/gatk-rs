@@ -41,7 +41,10 @@ fn contexts(text: &str) -> Vec<(String, Context)> {
         // `null` is the row for a tag the read does not carry, and an absent key is exactly what
         // makes the identifier throw.
         if value != "null" {
-            context.insert(tag.to_string(), value.to_string());
+            context.insert(
+                tag.to_string(),
+                gatk_engine::jexl::Value::Str(value.to_string()),
+            );
         }
     }
     order
