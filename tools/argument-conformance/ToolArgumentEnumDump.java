@@ -191,6 +191,14 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.validation.RemoveNearbyIndels());
         declarations("UpdateVCFSequenceDictionary",
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.UpdateVCFSequenceDictionary());
+        // Two REFERENCE utilities, for the reason the declaration dump gives: the first has a
+        // second `FeatureInput` and a check the TOOL makes, and the second takes a list of
+        // references. `CompareReferences` also brings `MD5CalculationMode` and
+        // `BaseComparisonMode`, two enums no argument declared here points at.
+        declarations("FastaAlternateReferenceMaker",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.FastaAlternateReferenceMaker());
+        declarations("CompareReferences",
+                new org.broadinstitute.hellbender.tools.reference.CompareReferences());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
