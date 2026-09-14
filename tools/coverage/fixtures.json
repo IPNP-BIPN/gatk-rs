@@ -720,7 +720,40 @@
         "the tool."
       ]
     },
-    "FastaReferenceMaker": {
+    "CheckReferenceCompatibility": {
+   "$why": [
+    "--input carries md5header.bam and reads.bam, which is the whole point of this tool's array:",
+    "one property of the input decides the algorithm. md5header.bam is the corpus's only reads",
+    "file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through",
+    "CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says",
+    "so in every summary it writes.",
+    "--references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied",
+    "from, and other.fasta, which shares no contig with either input and whose hand-written dict",
+    "has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT",
+    "refusal that a reference with no M5 produces once the input has one.",
+    "--variant is held out. The tool refuses a command line naming both a BAM and a VCF, and every",
+    "row carries every argument in the domain, so an array holding both would measure that one",
+    "refusal twenty times. The VCF path is measured by the tool's suite, which has five VCF runs",
+    "including one whose M5 is a lie.",
+    "--read-index is held out: it is counted against the reads inputs and refuses on a mismatch,",
+    "which is a refusal the read walkers' arrays already measure."
+   ],
+   "--input": [
+    "/work/fixtures/md5header.bam",
+    "/work/fixtures/reads.bam"
+   ],
+   "--references-to-compare": [
+    "/work/fixtures/reference.fasta",
+    "/work/fixtures/other.fasta"
+   ],
+   "--output": [
+    "/work/out/compatibility.table",
+    "/work/out/compatibility2.table"
+   ],
+   "--variant": [],
+   "--read-index": []
+  },
+  "FastaReferenceMaker": {
       "--input": [
         "/work/fixtures/reads.bam",
         "/work/fixtures/reads2.bam"
