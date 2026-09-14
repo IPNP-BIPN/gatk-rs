@@ -291,6 +291,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetPileupSummaries" => Some(run_get_pileup_summaries),
         "UnmarkDuplicates" => Some(run_unmark_duplicates),
         "FastaReferenceMaker" => Some(run_fasta_reference_maker),
+        "CheckReferenceCompatibility" => Some(run_check_reference_compatibility),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -437,6 +438,10 @@ fn run_collect_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_fasta_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::fasta_reference_maker(&parsed("FastaReferenceMaker", args)?)
+}
+
+fn run_check_reference_compatibility(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::check_reference_compatibility(&parsed("CheckReferenceCompatibility", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -2587,6 +2587,231 @@ fn fasta_maker_error(error: gatk_tools::fasta_reference_maker::MakerError) -> Th
     }
 }
 
+/// `CheckReferenceCompatibility.traverse`: one BAM or one VCF checked against several references.
+///
+/// The tool's required argument is not the reference. What it checks is the INPUT, and
+/// `initializeSequenceDictionaryForInput` refuses a command line naming both a BAM and a VCF, a
+/// second reads input, or neither -- the last of those AFTER the dictionaries have been read,
+/// which is why an unreadable reference is refused before an empty command line is.
+///
+/// One property of the input decides the whole algorithm: with an MD5 on every sequence the
+/// comparison is `CompareReferences`' table, and without one it is name and length alone. A VCF
+/// never reaches the first path, because `VCFContigHeaderLine.getSAMSequenceRecord` drops `M5`.
+pub fn check_reference_compatibility(parser: &Parser) -> Outcome {
+    use gatk_tools::check_reference_compatibility as check;
+    use gatk_tools::compare_references as compare;
+
+    let _ = resolve_read_filters(parser, "CheckReferenceCompatibility")?;
+    let reads = arguments(parser, "input");
+    let vcf = argument(parser, "variant");
+    let references = arguments(parser, "references-to-compare");
+    if references.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument references-to-compare was missing: Argument 'references-to-compare' is required",
+        ));
+    }
+
+    // `GATKTool.onStartup` opens the inputs and resolves `-L` against the best available
+    // dictionary BEFORE `onTraversalStart` makes this tool's own checks, and the order is
+    // observable: a `--sequence-dictionary` outranks everything, so an interval this tool would
+    // never traverse is refused before the input pair is even looked at.
+    let query_records = match reads.first() {
+        Some(path) => reads_dictionary(parser, path, reads.len())?,
+        None => Vec::new(),
+    };
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let best = master.or(reference).unwrap_or_else(|| SamHeader {
+        sequences: query_records.clone(),
+        ..SamHeader::default()
+    });
+    let _ = interval_arguments(parser, &best)?;
+
+    // The first two refusals come before anything is read; the third comes after.
+    if !reads.is_empty() && vcf.is_some() {
+        return Err(input_refusal(check::InputError::BothBamAndVcf));
+    }
+    if reads.len() > 1 {
+        return Err(input_refusal(check::InputError::ManyReadInputs));
+    }
+
+    let (query_name, query) = if let Some(path) = reads.first() {
+        (file_name(path), query_records)
+    } else if let Some(path) = &vcf {
+        let text = feature_text(path)?;
+        // A VCF's dictionary is its `##contig` lines, and the record htsjdk builds from one
+        // carries no `M5` whatever the line says.
+        (file_name(path), vcf_dictionary(&text).sequences)
+    } else {
+        (String::new(), Vec::new())
+    };
+
+    let mut dictionaries = Vec::new();
+    for path in &references {
+        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let text = std::fs::read_to_string(&dictionary)
+            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        dictionaries.push((
+            file_name(path),
+            htsjdk_bam::reader::parse_header_text(&text).sequences,
+        ));
+    }
+
+    if reads.is_empty() && vcf.is_none() {
+        return Err(input_refusal(check::InputError::NoInput));
+    }
+
+    let md5_of = |records: &[htsjdk_bam::header::SequenceRecord]| -> Vec<Option<String>> {
+        records
+            .iter()
+            .map(|record| record.attributes.get("M5").map(str::to_string))
+            .collect()
+    };
+    let records: Vec<check::Record> = if check::md5s_present(&md5_of(&query)) {
+        // `new ReferenceSequenceTable(dictionaries)` forces USE_DICT, so a REFERENCE with no `M5`
+        // refuses the run even though the input has one on every sequence.
+        let as_reference = |name: &String, records: &[htsjdk_bam::header::SequenceRecord]| {
+            compare::Reference {
+                column: name.clone(),
+                sequences: records
+                    .iter()
+                    .map(|record| compare::Sequence {
+                        name: record.name.clone(),
+                        length: record.length as i64,
+                        md5: record.attributes.get("M5").map(str::to_string),
+                        // Never read: the mode is USE_DICT and every sequence has its `M5`.
+                        calculated_md5: String::new(),
+                    })
+                    .collect(),
+            }
+        };
+        let mut all = vec![as_reference(&query_name, &query)];
+        for (name, records) in &dictionaries {
+            all.push(as_reference(name, records));
+        }
+        // `TableError::message()` already carries `UserException$BadInput`'s own prefix.
+        let table = compare::build(&all, compare::Md5Mode::UseDict).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(error.message()),
+        })?;
+        // `compareAgainstKeyReference`: the pairs the key is the first half of, which are the ones
+        // `compare_all` generates first because the key is index zero.
+        let pairs = compare::compare_all(&table, &all).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(error.message()),
+        })?;
+        pairs
+            .iter()
+            .take(dictionaries.len())
+            .enumerate()
+            .map(|(index, pair)| {
+                check::evaluate_with_md5(pair, &missing_sequences(&query, &dictionaries[index].1))
+            })
+            .collect()
+    } else {
+        dictionaries
+            .iter()
+            // `!entry.getValue().equals(queryDictionary)`: a reference whose dictionary IS the
+            // input's produces no row at all.
+            .filter(|(_, records)| records != &query)
+            .map(|(name, records)| {
+                let status = match gatk_tools::sequence_dictionary::compare(records, &query, false)
+                {
+                    gatk_tools::sequence_dictionary::Compatibility::Identical => {
+                        check::DictionaryCompatibility::Identical
+                    }
+                    gatk_tools::sequence_dictionary::Compatibility::Superset => {
+                        check::DictionaryCompatibility::Superset
+                    }
+                    other => check::DictionaryCompatibility::Other(other.name()),
+                };
+                check::evaluate_without_md5(
+                    name,
+                    &query_name,
+                    status,
+                    &missing_sequences(&query, records),
+                )
+            })
+            .collect()
+    };
+
+    let rendered = check::write_table(&query_name, &records);
+    match argument(parser, "output") {
+        Some(path) => write_file(&path, rendered.as_bytes())?,
+        None => print!("{rendered}"),
+    }
+    Ok(None)
+}
+
+/// A feature file's text, decompressed when it is block compressed.
+///
+/// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec
+/// claims is the refusal `IndexFeatureFile` gives.
+fn feature_text(path: &str) -> Result<String, Thrown> {
+    if gatk_tools::feature_codec::codec_for(path).is_none() {
+        return Err(Thrown::user(
+            index_feature_file::Refusal::NoSuitableCodecs {
+                path: path.to_string(),
+            }
+            .message(),
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: path.to_string(),
+            }
+            .message(),
+        )
+    })?;
+    if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    gatk_tools::read_walker_refusal::SAM_FORMAT,
+                    format!("{path} is not a block compressed file"),
+                )
+            })
+    } else {
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+/// `getMissingSequencesIfSubset`: the reference's sequence names the input does not carry, in the
+/// reference's own order.
+fn missing_sequences(
+    query: &[htsjdk_bam::header::SequenceRecord],
+    reference: &[htsjdk_bam::header::SequenceRecord],
+) -> Vec<String> {
+    reference
+        .iter()
+        .filter(|record| !query.iter().any(|other| other.name == record.name))
+        .map(|record| record.name.clone())
+        .collect()
+}
+
+/// The file's name, which is what every message in this tool prints rather than the path.
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// `initializeSequenceDictionaryForInput`'s refusals, which are `UserException$BadInput` and whose
+/// messages the port already carries with the prefix.
+fn input_refusal(error: gatk_tools::check_reference_compatibility::InputError) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(error.message()),
+    }
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
