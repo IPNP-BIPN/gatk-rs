@@ -76,7 +76,7 @@ use htsjdk_bam::tag::{Tag, TagValue};
 
 use gatk_engine::reads::{ReadsDataSource, ReadsError};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, write_records_with, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK TransferReadTags";
@@ -201,6 +201,28 @@ pub fn transfer_read_tags(
     read_tags: &[String],
     options: &Options,
 ) -> RunResult {
+    transfer_read_tags_with(
+        aligned,
+        unmapped,
+        read_tags,
+        options,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run, with the block compression the command line chose.
+///
+/// `GATKConfig` writes at level TWO through Intel's deflater, and a tool that wrote at htsjdk's own
+/// default would produce a file with the same records and different bytes.
+pub fn transfer_read_tags_with(
+    aligned: &ReadsDataSource,
+    unmapped: &ReadsDataSource,
+    read_tags: &[String],
+    options: &Options,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
     if read_tags.is_empty() {
         return Ok(Err(TransferError::NoReadTags));
     }
@@ -221,7 +243,13 @@ pub fn transfer_read_tags(
         // "Input data contains no reads. Output will also contain no reads." is a warning, and the
         // empty output is written anyway.
         let header = header_for_sam_writer(aligned.header(), TOOL_NAME, options);
-        return Ok(Ok(write_records(&header, &[], false)?));
+        return Ok(Ok(write_records_with(
+            &header,
+            &[],
+            false,
+            level,
+            deflater,
+        )?));
     }
 
     let mut records = Vec::with_capacity(aligned_reads.len());
@@ -278,7 +306,9 @@ pub fn transfer_read_tags(
     let header = header_for_sam_writer(aligned.header(), TOOL_NAME, options);
     // No index: the output is queryname sorted and there is nothing to index, whatever
     // `--create-output-bam-index` says.
-    Ok(Ok(write_records(&header, &records, false)?))
+    Ok(Ok(write_records_with(
+        &header, &records, false, level, deflater,
+    )?))
 }
 
 #[cfg(test)]

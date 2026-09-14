@@ -57,6 +57,14 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.CompareIntervalLists());
         usage("PrintBGZFBlockInformation",
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
+        // Undocumented as well, and a read walker, so this one's usage carries the plugin
+        // arguments the two above it do not.
+        usage("AddOriginalAlignmentTags",
+                new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
+        // Undocumented as well, and the shortest namespace of the four: fifteen arguments, none of
+        // them a walker's.
+        usage("PrintFileDiagnostics",
+                new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
         usage("CreateHadoopBamSplittingIndex",
                 new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
     }

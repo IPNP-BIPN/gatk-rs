@@ -1,863 +1,1691 @@
 {
- "$comment": [
-  "The values this repository is willing to pass for arguments the inventory cannot give a",
-  "domain to, plus the arguments it refuses to vary and why.",
-  "",
-  "Paths point inside the oracle container, where MakeFixtures.java writes the corpus. They are",
-  "not committed files: the corpus is rebuilt from the program on every run, which keeps it",
-  "deterministic and keeps binary fixtures out of the tree.",
-  "",
-  "Adding a value here widens a covering array. Adding an exclusion narrows it, and the reason",
-  "is required, because an exclusion is the one thing in this file that can hide a difference.",
-  "",
-  "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
-  "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
-  "kept and both sides are compared on the refusal rather than on an output.",
-  "",
-  "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
-  "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
-  "that reproduces a report.",
-  "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
-  "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
-  "refusals are rows rather than exclusions.",
-  "",
-  "`--variant` takes an INDEXED VCF and an unindexed one. A feature walker refuses `-L` against",
-  "an input with no random access, so a list with only the unindexed file would compare two",
-  "refusals on every interval row and never reach a traversal; and dropping the unindexed one",
-  "would lose that refusal, which is behaviour too.",
-  "",
-  "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
-  "a count. A `.idx` there would measure nothing but a file name.",
-  "",
-  "`--use-jdk-deflater` used to be excluded here, on the ground that these tools write nothing",
-  "compressed. That stopped being true when IndexFeatureFile learned to write a tabix index: a",
-  ".tbi is a BGZF file, and the deflater decides its bytes. The argument is a boolean with a",
-  "domain of its own, so it needs no fixture; what it needed was for the exclusion to be read",
-  "again after the tool changed.",
-  "",
-  "`--reference` takes two FASTAs, each with the .fai and .dict beside it that GATK requires: one",
-  "on the corpus's own contig and one on a contig it does not carry. The reference dictionary",
-  "takes part in the validation and outranks the reads' in the best-available chain, so the",
-  "second value is a refusal and the first is not.",
-  "",
-  "`GatherVcfsCloud` holds `--create-output-variant-index` at FALSE, and the reason is the",
-  "measurement rather than the port. A Tribble index records the last-modified time of the file",
-  "it indexes, and here that file is the tool's own OUTPUT: the two sides write their own copy at",
-  "their own moment, so the two indexes differ in eight bytes of clock and the row measures when",
-  "the run happened. The port builds the index byte for byte otherwise -- checked against the",
-  "reference's own on one input -- and every other tool indexes a file both sides were GIVEN.",
-  "",
-  "`--read-index` takes two paths that both exist, because what the argument decides is not",
-  "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
-  "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
-  "number of reads inputs before the contents are read at all.",
-  "",
-  "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
-  "shares nothing with it. The MASTER dictionary is validated against every other one before the",
-  "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
-  "",
-  "Four arguments are here with a SECOND value and no expectation that they change anything:",
-  "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
-  "excluded as having one value, which meant the array covered it by holding it at its default",
-  "and could not have noticed if it mattered. A row that varies them and gets the same answer on",
-  "both sides is a claim; a row that never varied them was not.",
-  "",
-  "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
-  "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
-  "having one value, and a free-form string with no default is excluded for having none. With no",
-  "values they were covered by being absent, which is the one setting that cannot disagree.",
-  "",
-  "The three read-filter arguments are here for the same reason. `--inverted-read-filter` names",
-  "filters that are neither a tool default nor a value of `--read-filter`: inverting a default is",
-  "refused outright, and inverting a filter the same row enables is refused too, so an overlap",
-  "would spend rows on refusals the unit suite already covers. And",
-  "`--disable-read-filter` names WellformedReadFilter, which IS the default, so the row actually",
-  "removes a filter rather than warning about one that was never there. Both take a second value",
-  "because one is no domain at all: an argument with a single value is covered by being present",
-  "or absent, which the generator excludes for the same reason it excludes a lone default."
- ],
- "$per_tool": [
-  "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
-  "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
-  "",
-  "`CreateHadoopBamSplittingIndex` declares its own `--input` and `--output`: the shared input",
-  "list carries three feature files this tool refuses by EXTENSION before it opens anything, so",
-  "an array built from it would measure one refusal four times. Two values are enough to have the",
-  "refusal and the index both.",
-  "",
-  "It takes TWO names for the same reason every other argument here does: one value is covered by",
-  "being present or absent, and the second is what lets a row notice that the tool writes where it",
-  "was told to.",
-  "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
-  "lives here because the generator does.",
-  "",
-  "See tools/coverage/README.md.",
-  "",
-  "`reads2.bam` is the second BAM, and the reason it exists is that an argument with ONE fixture",
-  "value is held at it: the row carries it, no row varies it, and nothing can notice whether it",
-  "matters. Every read-taking tool therefore names two BAMs. They differ in the three ways the",
-  "corpus needs: a different record count, positions on the other side of both interval fixtures,",
-  "and two records the default read filters disagree about (a leading-deletion cigar that",
-  "`GoodCigarReadFilter` refuses, and an unmapped record that `MappedReadFilter` removes).",
-  "`recal2.table` and `reads2.bai` follow it, so `--bqsr-recal-file` and `--read-index` have a",
-  "value that belongs to the input in the row and a value that belongs to the other one.",
-  "",
-  "The read tools name their own `--intervals` as well, and the reason is `distinct_outputs`",
-  "rather than acceptance: the shared `chr1:1-1000` holds two of the first BAM's reads and the",
-  "exclusion fixture removes one of them, so every accepted row answered 0 or 1 and an array of",
-  "twenty rows observed two outputs. `chr1:1-6000` spans all eight reads of `reads.bam` and three",
-  "of `reads2.bam`, and `chr1:50000-60000` spans none of the first and two of the second, which is",
-  "what makes a padding, an exclusion or a read filter visible as a different number.",
-  "",
-  "`CountVariants` names its own `--input` for a reason the other tools do not have: it is a",
-  "VARIANT walker, so `--input` is the optional READS beside the driving variants, and the shared",
-  "list carries three feature files. A row that pairs one of those with a `--read-index` is",
-  "refused by htsjdk before the tool runs (`Cannot use index file with textual SAM file`), which",
-  "was fourteen of its thirty-one rows measuring one refusal. Two BAMs and the indexes that belong",
-  "to them turn those rows into traversals whose reads dictionary is compared against the",
-  "features', which is what the tool actually does with them.",
-  "",
-  "`CountBases` and `FlagStat` take `CountReads`' values verbatim, which is the archetype paying",
-  "for itself: the three declare the same seventy arguments and read the same files, so the",
-  "fixtures that made one measurable make all three.",
-  "",
-  "`CountBasesInReference` names the two BAMs even though a reference walker never opens them:",
-  "the standard read arguments are its inheritance, so a row pairing a `--read-index` with the",
-  "shared list's feature files is refused by htsjdk before the tool runs, and eleven of its",
-  "twenty-three rows measured that one refusal. It names the read walkers' intervals for the",
-  "same reason the others do: the corpus's reference carries the same contig.",
-  "",
-  "`SplitIntervals` writes a DIRECTORY, so its `--output` values are two directory names the run",
-  "creates rather than two files. Its own five arguments carry two values each: a scatter count",
-  "of one and of three, a minimum contig size that keeps both contigs and one that drops the",
-  "second, and the two halves of a file name.",
-  "",
-  "`--interval-file-prefix` carries two NON-EMPTY names, and the tool's own default is the empty",
-  "string: a covering array writes every argument as `--name value`, so an empty value leaves the",
-  "next token to be read as a positional argument and the row is refused before the tool runs.",
-  "",
-  "`Pileup` takes the read walkers' corpus because it IS a read walker's startup with a different",
-  "traversal after it. `PreprocessIntervals` opens no reads and still DECLARES them, so it takes",
-  "the two BAMs for the same reason `CountBasesInReference` does: a row pairing a `--read-index`",
-  "with the shared list's feature files is refused by htsjdk before the tool runs. Its own two",
-  "arguments, `--bin-length` and `--padding`, are what decide the bins it writes.",
-  "",
-  "`IllegalArgumentException`s: the merging rule must be OVERLAPPING_ONLY and the interval padding",
-  "must be zero, because the tool bins and pads by its own `--bin-length` and `--padding` instead.",
-  "Each is held at the one value the tool accepts; varying them measured that refusal on nine of",
-  "twenty-one rows and nothing else.",
-  "",
-  "`PreprocessIntervals` refuses FOUR of the standard interval arguments in its own",
-  "`IllegalArgumentException`s -- the set rule must be UNION, the exclusion padding and the",
-  "interval padding must be zero, and the merging rule must be OVERLAPPING_ONLY -- because it bins",
-  "reproduces each refusal, so a row that carries one measures behaviour rather than a gap.",
-  "",
-  "and each is HELD at the value the tool accepts. Varying them measured the refusal on twenty of",
-  "twenty-one rows and left ONE distinct output, which is an array that covers its arguments",
-  "without testing them; held, the same array runs nine accepted rows over four outputs. The",
-  "refusals are the runner's and are reproduced -- they are simply not what these rows spend",
-  "themselves on.",
-  "",
-  "`PrintDistantMates` and `GetSampleName` take the read walkers' corpus unchanged, which is what",
-  "the archetype is for: the first writes a BAM like `PrintReads` and the second reads a header",
-  "and nothing else, and both open the same files by the same arguments.",
-  "",
-  "`PrintDistantMates` names `pairs.bam` first, and it is the only tool that needs it: every",
-  "record's mate is read, and the other BAMs are unpaired, so the REFERENCE answered `Cannot get",
-  "mate information for an unpaired read` on eight of its rows. The second value is one of those",
-  "unpaired BAMs, which keeps that refusal in the array rather than losing it.",
-  "",
-  "`CompareIntervalLists` names `--L` and `--L2`, which are ITS OWN scalars rather than the",
-  "engine's interval collection: two values each, so the array sees the same list compared with",
-  "itself and a shorter one compared with a longer, which are the three verdicts the tool has.",
-  "",
-  "`CompareIntervalLists` writes NO FILE: its verdict is a line on standard output or an",
-  "exception, and the corpus records the output files plus the first error line. So its accepted",
-  "rows all read as the empty output and `distinct_outputs` is 1 by construction rather than for",
-  "want of fixtures -- what the array measures for this tool is which of the three verdicts each",
-  "row reaches, and two of them are exceptions the corpus does record.",
-  "",
-  "`AnnotateIntervals` holds the same four interval arguments `PreprocessIntervals` holds, and for",
-  "the same reason: both call `validateIntervalArgumentCollection`, and varying them measures that",
-  "refusal instead of the table the tool writes.",
-  "",
-  "`CheckPileup` takes `Pileup`'s corpus -- one locus walker's startup is the other's -- plus the",
-  "two mpileup files it compares against: `truth.pileup` is the REFERENCE's own `Pileup` output",
-  "converted to samtools' six columns, so it agrees with the traversal at every locus, and",
-  "`wrong.pileup` disagrees at the first, which is the difference between a run that validates and",
-  "a run that is refused.",
-  "",
-  "It HOLDS `--max-depth-per-sample` at zero, which is the one hold in this file that names a gap",
-  "in the port rather than a refusal in the tool: any value above zero asks for the locus",
-  "iterator's leveling downsampler, which the port does not carry, so the row would compare a",
-  "traversal against the port's own limitation message. `Pileup` varies the same argument and",
-  "measures nothing by it -- every one of its rows carrying two is refused earlier, for a",
-  "dictionary the reads do not match -- so the argument has never actually been measured here.",
-  "gatk-rs#1102 is the downsampler; when it lands both tools can vary this again.",
-  "",
-  "`FastaReferenceMaker` takes `CountBasesInReference`'s corpus, which is the reference walker's:",
-  "the reads it declares are never opened and are there so that a `--read-index` paired with a",
-  "feature file is refused by htsjdk rather than measured. Its own `--line-width` carries the",
-  "writer's default and a width narrow enough to wrap the corpus's intervals more than once, which",
-  "is what makes the argument visible in the FASTA rather than only present.",
-  "",
-  "`GetPileupSummaries` needs a POPULATION vcf, which the corpus did not have: the tool refuses a",
-  "file whose header declares no `AF` before its first locus, so an array built on `reads.vcf`",
-  "would have measured that one refusal on every row. `population.vcf` carries the field and sits",
-  "on the reads of `reads.bam`, one record per read, with frequencies straddling the default",
-  "window and a triallelic site the tool skips whatever its frequency is. `indexed.vcf` is the",
-  "second value, which keeps the header refusal in the array rather than losing it. It holds",
-  "`--max-depth-per-sample` at zero for the same reason `CheckPileup` does (gatk-rs#1102).",
-  "",
-  "`CalculateContamination` reads the table `GetPileupSummaries` writes, and the corpus therefore",
-  "carries two of those tables produced by the REFERENCE itself rather than written by hand: the",
-  "chain is the point, so the second tool is measured on a table the first really writes. The",
-  "second table, over `reads2.bam`, is what gives `--matched-normal` a value that is not the",
-  "input, which is the argument that decides whether the genotyping model is rebuilt.",
-  "",
-  "`PrintReadsHeader` takes the read walkers' corpus unchanged: it opens the reads for their",
-  "header and asks for no record.",
-  "",
-  "`UnmarkDuplicates` takes the read walkers' corpus unchanged: it writes a BAM like `PrintReads`",
-  "and differs from it only in the flag bit it clears.",
-  "",
-  "`CollectReadCounts` HOLDS `--format` at TSV, and that is the second hold naming a gap in the",
-  "port rather than a refusal in the tool: the tool's own default is HDF5, which is a file format",
-  "this port does not write at all (gatk-rs#1107). It holds the same four interval arguments",
-  "`PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
-  "`validateIntervalArgumentCollection`."
- ],
- "values": {
-  "--input": [
-   "/work/fixtures/reads.vcf",
-   "/work/fixtures/regions.bed",
-   "/work/fixtures/reads.vcf.gz",
-   "/work/fixtures/reads.bam"
+  "$comment": [
+    "The values this repository is willing to pass for arguments the inventory cannot give a",
+    "domain to, plus the arguments it refuses to vary and why.",
+    "",
+    "Paths point inside the oracle container, where MakeFixtures.java writes the corpus. They are",
+    "not committed files: the corpus is rebuilt from the program on every run, which keeps it",
+    "deterministic and keeps binary fixtures out of the tree.",
+    "",
+    "Adding a value here widens a covering array. Adding an exclusion narrows it, and the reason",
+    "is required, because an exclusion is the one thing in this file that can hide a difference.",
+    "",
+    "There is no constraint forbidding a block-compressed input with a `.idx` output. The reference",
+    "REFUSES that pair by name, and a refusal is behaviour a port has to reproduce, so the row is",
+    "kept and both sides are compared on the refusal rather than on an output.",
+    "",
+    "`--bgzf-file` takes a block-compressed file and a plain one: the second is a refusal the",
+    "reference makes by name, and a row that reproduces a refusal is as much of the claim as a row",
+    "that reproduces a report.",
+    "`--input` carries the BAM as well as the three feature files: it is one argument name on two",
+    "kinds of tool, and a read walker refuses a VCF the way IndexFeatureFile refuses a BAM, so both",
+    "refusals are rows rather than exclusions.",
+    "",
+    "`--variant` takes an INDEXED VCF and an unindexed one. A feature walker refuses `-L` against",
+    "an input with no random access, so a list with only the unindexed file would compare two",
+    "refusals on every interval row and never reach a traversal; and dropping the unindexed one",
+    "would lose that refusal, which is behaviour too.",
+    "",
+    "`CountVariants` overrides `--output`: the shared list is an index's name, and this tool writes",
+    "a count. A `.idx` there would measure nothing but a file name.",
+    "",
+    "`--use-jdk-deflater` used to be excluded here, on the ground that these tools write nothing",
+    "compressed. That stopped being true when IndexFeatureFile learned to write a tabix index: a",
+    ".tbi is a BGZF file, and the deflater decides its bytes. The argument is a boolean with a",
+    "domain of its own, so it needs no fixture; what it needed was for the exclusion to be read",
+    "again after the tool changed.",
+    "",
+    "`--reference` takes two FASTAs, each with the .fai and .dict beside it that GATK requires: one",
+    "on the corpus's own contig and one on a contig it does not carry. The reference dictionary",
+    "takes part in the validation and outranks the reads' in the best-available chain, so the",
+    "second value is a refusal and the first is not.",
+    "",
+    "`GatherVcfsCloud` holds `--create-output-variant-index` at FALSE, and the reason is the",
+    "measurement rather than the port. A Tribble index records the last-modified time of the file",
+    "it indexes, and here that file is the tool's own OUTPUT: the two sides write their own copy at",
+    "their own moment, so the two indexes differ in eight bytes of clock and the row measures when",
+    "the run happened. The port builds the index byte for byte otherwise -- checked against the",
+    "reference's own on one input -- and every other tool indexes a file both sides were GIVEN.",
+    "",
+    "`--read-index` takes two paths that both exist, because what the argument decides is not",
+    "whether the file is there: an index handed to an input that is neither a BAM nor a CRAM is",
+    "refused by htsjdk's text-SAM branch whatever it contains, and the count is checked against the",
+    "number of reads inputs before the contents are read at all.",
+    "",
+    "`--sequence-dictionary` takes two: one that agrees with the corpus's contig and one that",
+    "shares nothing with it. The MASTER dictionary is validated against every other one before the",
+    "traversal, so the second value is a refusal and the first is not, and both are behaviour.",
+    "",
+    "Four arguments are here with a SECOND value and no expectation that they change anything:",
+    "`--tmp-dir`, the two cloud prefetch buffers and `--seconds-between-progress-updates`. Each was",
+    "excluded as having one value, which meant the array covered it by holding it at its default",
+    "and could not have noticed if it mattered. A row that varies them and gets the same answer on",
+    "both sides is a claim; a row that never varied them was not.",
+    "",
+    "`--exclude-intervals` and the two paddings are here because the four arguments beside `-L` in",
+    "IntervalArgumentCollection had no domain at all: an int with only its default is excluded as",
+    "having one value, and a free-form string with no default is excluded for having none. With no",
+    "values they were covered by being absent, which is the one setting that cannot disagree.",
+    "",
+    "The three read-filter arguments are here for the same reason. `--inverted-read-filter` names",
+    "filters that are neither a tool default nor a value of `--read-filter`: inverting a default is",
+    "refused outright, and inverting a filter the same row enables is refused too, so an overlap",
+    "would spend rows on refusals the unit suite already covers. And",
+    "`--disable-read-filter` names WellformedReadFilter, which IS the default, so the row actually",
+    "removes a filter rather than warning about one that was never there. Both take a second value",
+    "because one is no domain at all: an argument with a single value is covered by being present",
+    "or absent, which the generator excludes for the same reason it excludes a lone default."
   ],
-  "--output": [
-   "/work/out/index.idx",
-   "/work/out/index.tbi"
+  "$per_tool": [
+    "A tool whose `--INPUT` is not the kind of file the shared value names declares its own here,",
+    "as `\"per_tool\": { \"<Tool>\": { \"--INPUT\": [...] } }`. The override replaces the shared list",
+    "",
+    "`CreateHadoopBamSplittingIndex` declares its own `--input` and `--output`: the shared input",
+    "list carries three feature files this tool refuses by EXTENSION before it opens anything, so",
+    "an array built from it would measure one refusal four times. Two values are enough to have the",
+    "refusal and the index both.",
+    "",
+    "It takes TWO names for the same reason every other argument here does: one value is covered by",
+    "being present or absent, and the second is what lets a row notice that the tool writes where it",
+    "was told to.",
+    "for that tool only. This repository has no such tool yet; picard-rs does, and the mechanism",
+    "lives here because the generator does.",
+    "",
+    "See tools/coverage/README.md.",
+    "",
+    "`reads2.bam` is the second BAM, and the reason it exists is that an argument with ONE fixture",
+    "value is held at it: the row carries it, no row varies it, and nothing can notice whether it",
+    "matters. Every read-taking tool therefore names two BAMs. They differ in the three ways the",
+    "corpus needs: a different record count, positions on the other side of both interval fixtures,",
+    "and two records the default read filters disagree about (a leading-deletion cigar that",
+    "`GoodCigarReadFilter` refuses, and an unmapped record that `MappedReadFilter` removes).",
+    "`recal2.table` and `reads2.bai` follow it, so `--bqsr-recal-file` and `--read-index` have a",
+    "value that belongs to the input in the row and a value that belongs to the other one.",
+    "",
+    "The read tools name their own `--intervals` as well, and the reason is `distinct_outputs`",
+    "rather than acceptance: the shared `chr1:1-1000` holds two of the first BAM's reads and the",
+    "exclusion fixture removes one of them, so every accepted row answered 0 or 1 and an array of",
+    "twenty rows observed two outputs. `chr1:1-6000` spans all eight reads of `reads.bam` and three",
+    "of `reads2.bam`, and `chr1:50000-60000` spans none of the first and two of the second, which is",
+    "what makes a padding, an exclusion or a read filter visible as a different number.",
+    "",
+    "`CountVariants` names its own `--input` for a reason the other tools do not have: it is a",
+    "VARIANT walker, so `--input` is the optional READS beside the driving variants, and the shared",
+    "list carries three feature files. A row that pairs one of those with a `--read-index` is",
+    "refused by htsjdk before the tool runs (`Cannot use index file with textual SAM file`), which",
+    "was fourteen of its thirty-one rows measuring one refusal. Two BAMs and the indexes that belong",
+    "to them turn those rows into traversals whose reads dictionary is compared against the",
+    "features', which is what the tool actually does with them.",
+    "",
+    "`CountBases` and `FlagStat` take `CountReads`' values verbatim, which is the archetype paying",
+    "for itself: the three declare the same seventy arguments and read the same files, so the",
+    "fixtures that made one measurable make all three.",
+    "",
+    "`CountBasesInReference` names the two BAMs even though a reference walker never opens them:",
+    "the standard read arguments are its inheritance, so a row pairing a `--read-index` with the",
+    "shared list's feature files is refused by htsjdk before the tool runs, and eleven of its",
+    "twenty-three rows measured that one refusal. It names the read walkers' intervals for the",
+    "same reason the others do: the corpus's reference carries the same contig.",
+    "",
+    "`SplitIntervals` writes a DIRECTORY, so its `--output` values are two directory names the run",
+    "creates rather than two files. Its own five arguments carry two values each: a scatter count",
+    "of one and of three, a minimum contig size that keeps both contigs and one that drops the",
+    "second, and the two halves of a file name.",
+    "",
+    "`--interval-file-prefix` carries two NON-EMPTY names, and the tool's own default is the empty",
+    "string: a covering array writes every argument as `--name value`, so an empty value leaves the",
+    "next token to be read as a positional argument and the row is refused before the tool runs.",
+    "",
+    "`Pileup` takes the read walkers' corpus because it IS a read walker's startup with a different",
+    "traversal after it. `PreprocessIntervals` opens no reads and still DECLARES them, so it takes",
+    "the two BAMs for the same reason `CountBasesInReference` does: a row pairing a `--read-index`",
+    "with the shared list's feature files is refused by htsjdk before the tool runs. Its own two",
+    "arguments, `--bin-length` and `--padding`, are what decide the bins it writes.",
+    "",
+    "`IllegalArgumentException`s: the merging rule must be OVERLAPPING_ONLY and the interval padding",
+    "must be zero, because the tool bins and pads by its own `--bin-length` and `--padding` instead.",
+    "Each is held at the one value the tool accepts; varying them measured that refusal on nine of",
+    "twenty-one rows and nothing else.",
+    "",
+    "`PreprocessIntervals` refuses FOUR of the standard interval arguments in its own",
+    "`IllegalArgumentException`s -- the set rule must be UNION, the exclusion padding and the",
+    "interval padding must be zero, and the merging rule must be OVERLAPPING_ONLY -- because it bins",
+    "reproduces each refusal, so a row that carries one measures behaviour rather than a gap.",
+    "",
+    "and each is HELD at the value the tool accepts. Varying them measured the refusal on twenty of",
+    "twenty-one rows and left ONE distinct output, which is an array that covers its arguments",
+    "without testing them; held, the same array runs nine accepted rows over four outputs. The",
+    "refusals are the runner's and are reproduced -- they are simply not what these rows spend",
+    "themselves on.",
+    "",
+    "`PrintDistantMates` and `GetSampleName` take the read walkers' corpus unchanged, which is what",
+    "the archetype is for: the first writes a BAM like `PrintReads` and the second reads a header",
+    "and nothing else, and both open the same files by the same arguments.",
+    "",
+    "`PrintDistantMates` names `pairs.bam` first, and it is the only tool that needs it: every",
+    "record's mate is read, and the other BAMs are unpaired, so the REFERENCE answered `Cannot get",
+    "mate information for an unpaired read` on eight of its rows. The second value is one of those",
+    "unpaired BAMs, which keeps that refusal in the array rather than losing it.",
+    "",
+    "`CompareIntervalLists` names `--L` and `--L2`, which are ITS OWN scalars rather than the",
+    "engine's interval collection: two values each, so the array sees the same list compared with",
+    "itself and a shorter one compared with a longer, which are the three verdicts the tool has.",
+    "",
+    "`CompareIntervalLists` writes NO FILE: its verdict is a line on standard output or an",
+    "exception, and the corpus records the output files plus the first error line. So its accepted",
+    "rows all read as the empty output and `distinct_outputs` is 1 by construction rather than for",
+    "want of fixtures -- what the array measures for this tool is which of the three verdicts each",
+    "row reaches, and two of them are exceptions the corpus does record.",
+    "",
+    "`AnnotateIntervals` holds the same four interval arguments `PreprocessIntervals` holds, and for",
+    "the same reason: both call `validateIntervalArgumentCollection`, and varying them measures that",
+    "refusal instead of the table the tool writes.",
+    "",
+    "`CheckPileup` takes `Pileup`'s corpus -- one locus walker's startup is the other's -- plus the",
+    "two mpileup files it compares against: `truth.pileup` is the REFERENCE's own `Pileup` output",
+    "converted to samtools' six columns, so it agrees with the traversal at every locus, and",
+    "`wrong.pileup` disagrees at the first, which is the difference between a run that validates and",
+    "a run that is refused.",
+    "",
+    "It HOLDS `--max-depth-per-sample` at zero, which is the one hold in this file that names a gap",
+    "in the port rather than a refusal in the tool: any value above zero asks for the locus",
+    "iterator's leveling downsampler, which the port does not carry, so the row would compare a",
+    "traversal against the port's own limitation message. `Pileup` varies the same argument and",
+    "measures nothing by it -- every one of its rows carrying two is refused earlier, for a",
+    "dictionary the reads do not match -- so the argument has never actually been measured here.",
+    "gatk-rs#1102 is the downsampler; when it lands both tools can vary this again.",
+    "",
+    "`FastaReferenceMaker` takes `CountBasesInReference`'s corpus, which is the reference walker's:",
+    "the reads it declares are never opened and are there so that a `--read-index` paired with a",
+    "feature file is refused by htsjdk rather than measured. Its own `--line-width` carries the",
+    "writer's default and a width narrow enough to wrap the corpus's intervals more than once, which",
+    "is what makes the argument visible in the FASTA rather than only present.",
+    "",
+    "`GetPileupSummaries` needs a POPULATION vcf, which the corpus did not have: the tool refuses a",
+    "file whose header declares no `AF` before its first locus, so an array built on `reads.vcf`",
+    "would have measured that one refusal on every row. `population.vcf` carries the field and sits",
+    "on the reads of `reads.bam`, one record per read, with frequencies straddling the default",
+    "window and a triallelic site the tool skips whatever its frequency is. `indexed.vcf` is the",
+    "second value, which keeps the header refusal in the array rather than losing it. It holds",
+    "`--max-depth-per-sample` at zero for the same reason `CheckPileup` does (gatk-rs#1102).",
+    "",
+    "`CalculateContamination` reads the table `GetPileupSummaries` writes, and the corpus therefore",
+    "carries two of those tables produced by the REFERENCE itself rather than written by hand: the",
+    "chain is the point, so the second tool is measured on a table the first really writes. The",
+    "second table, over `reads2.bam`, is what gives `--matched-normal` a value that is not the",
+    "input, which is the argument that decides whether the genotyping model is rebuilt.",
+    "",
+    "`PrintReadsHeader` takes the read walkers' corpus unchanged: it opens the reads for their",
+    "header and asks for no record.",
+    "",
+    "`UnmarkDuplicates` takes the read walkers' corpus unchanged: it writes a BAM like `PrintReads`",
+    "and differs from it only in the flag bit it clears.",
+    "",
+    "`CollectReadCounts` HOLDS `--format` at TSV, and that is the second hold naming a gap in the",
+    "port rather than a refusal in the tool: the tool's own default is HDF5, which is a file format",
+    "this port does not write at all (gatk-rs#1107). It holds the same four interval arguments",
+    "`PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
+    "`validateIntervalArgumentCollection`."
   ],
-  "--tmp-dir": [
-   "/work/tmp",
-   "/work/tmp2"
-  ],
-  "--cloud-prefetch-buffer": [
-   "40",
-   "0"
-  ],
-  "--cloud-index-prefetch-buffer": [
-   "-1",
-   "0"
-  ],
-  "--seconds-between-progress-updates": [
-   "10.0",
-   "60.0"
-  ],
-  "--bgzf-file": [
-   "/work/fixtures/reads.vcf.gz",
-   "/work/fixtures/reads.vcf"
-  ],
-  "--intervals": [
-   "chr1:1-1000",
-   "chr1:50000-60000"
-  ],
-  "--variant": [
-   "/work/fixtures/indexed.vcf",
-   "/work/fixtures/reads.vcf"
-  ],
-  "--exclude-intervals": [
-   "chr1:1-500",
-   "chr1:400-600"
-  ],
-  "--interval-padding": [
-   "0",
-   "100"
-  ],
-  "--interval-exclusion-padding": [
-   "0",
-   "50"
-  ],
-  "--read-filter": [
-   "GoodCigarReadFilter",
-   "MappedReadFilter"
-  ],
-  "--disable-read-filter": [
-   "WellformedReadFilter",
-   "MappedReadFilter"
-  ],
-  "--inverted-read-filter": [
-   "FirstOfPairReadFilter",
-   "PrimaryLineReadFilter"
-  ],
-  "--reference": [
-   "/work/fixtures/reference.fasta",
-   "/work/fixtures/other.fasta"
-  ],
-  "--read-index": [
-   "/work/fixtures/reads.bai",
-   "/work/fixtures/indexed.vcf.idx"
-  ],
-  "--bqsr-recal-file": [
-   "/work/fixtures/recal.table"
-  ],
-  "--sequence-dictionary": [
-   "/work/fixtures/matching.dict",
-   "/work/fixtures/other.dict"
-  ],
-  "--global-qscore-prior": [
-   "-1.0",
-   "20.0"
-  ],
-  "--splitting-index-granularity": [
-   "4096",
-   "1024"
-  ],
-  "--progress-logger-frequency": [
-   "10000",
-   "1000"
-  ],
-  "--static-quantized-quals": [
-   "10",
-   "30"
-  ],
-  "--interval-file-prefix": [
-   "shard",
-   "part"
-  ],
-  "--bin-length": [
-   "1000",
-   "500"
-  ],
-  "--padding": [
-   "250",
-   "0"
-  ],
-  "--max-depth-per-sample": [
-   "0",
-   "2"
-  ],
-  "--feature-query-lookahead": [
-   "1000000",
-   "500000"
-  ]
- },
- "per_tool": {
-  "ApplyBQSR": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--output": [
-    "/work/out/recalibrated.bam",
-    "/work/out/other.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--bqsr-recal-file": [
-    "/work/fixtures/recal.table",
-    "/work/fixtures/recal2.table"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ]
+  "values": {
+    "--input": [
+      "/work/fixtures/reads.vcf",
+      "/work/fixtures/regions.bed",
+      "/work/fixtures/reads.vcf.gz",
+      "/work/fixtures/reads.bam"
+    ],
+    "--output": [
+      "/work/out/index.idx",
+      "/work/out/index.tbi"
+    ],
+    "--tmp-dir": [
+      "/work/tmp",
+      "/work/tmp2"
+    ],
+    "--cloud-prefetch-buffer": [
+      "40",
+      "0"
+    ],
+    "--cloud-index-prefetch-buffer": [
+      "-1",
+      "0"
+    ],
+    "--seconds-between-progress-updates": [
+      "10.0",
+      "60.0"
+    ],
+    "--bgzf-file": [
+      "/work/fixtures/reads.vcf.gz",
+      "/work/fixtures/reads.vcf"
+    ],
+    "--intervals": [
+      "chr1:1-1000",
+      "chr1:50000-60000"
+    ],
+    "--variant": [
+      "/work/fixtures/indexed.vcf",
+      "/work/fixtures/reads.vcf"
+    ],
+    "--exclude-intervals": [
+      "chr1:1-500",
+      "chr1:400-600"
+    ],
+    "--interval-padding": [
+      "0",
+      "100"
+    ],
+    "--interval-exclusion-padding": [
+      "0",
+      "50"
+    ],
+    "--read-filter": [
+      "GoodCigarReadFilter",
+      "MappedReadFilter"
+    ],
+    "--disable-read-filter": [
+      "WellformedReadFilter",
+      "MappedReadFilter"
+    ],
+    "--inverted-read-filter": [
+      "FirstOfPairReadFilter",
+      "PrimaryLineReadFilter"
+    ],
+    "--reference": [
+      "/work/fixtures/reference.fasta",
+      "/work/fixtures/other.fasta"
+    ],
+    "--read-index": [
+      "/work/fixtures/reads.bai",
+      "/work/fixtures/indexed.vcf.idx"
+    ],
+    "--bqsr-recal-file": [
+      "/work/fixtures/recal.table"
+    ],
+    "--sequence-dictionary": [
+      "/work/fixtures/matching.dict",
+      "/work/fixtures/other.dict"
+    ],
+    "--global-qscore-prior": [
+      "-1.0",
+      "20.0"
+    ],
+    "--splitting-index-granularity": [
+      "4096",
+      "1024"
+    ],
+    "--progress-logger-frequency": [
+      "10000",
+      "1000"
+    ],
+    "--static-quantized-quals": [
+      "10",
+      "30"
+    ],
+    "--interval-file-prefix": [
+      "shard",
+      "part"
+    ],
+    "--bin-length": [
+      "1000",
+      "500"
+    ],
+    "--padding": [
+      "250",
+      "0"
+    ],
+    "--max-depth-per-sample": [
+      "0",
+      "2"
+    ],
+    "--feature-query-lookahead": [
+      "1000000",
+      "500000"
+    ]
   },
-  "GatherVcfsCloud": {
-   "--create-output-variant-index": [
-    "false"
-   ],
-   "--input": [
-    "/work/fixtures/reads.vcf",
-    "/work/fixtures/indexed.vcf"
-   ],
-   "--output": [
-    "/work/out/gathered.vcf",
-    "/work/out/gathered.vcf.gz"
-   ]
+  "per_tool": {
+    "ApplyBQSR": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--output": [
+        "/work/out/recalibrated.bam",
+        "/work/out/other.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--bqsr-recal-file": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ]
+    },
+    "GatherVcfsCloud": {
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--input": [
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/gathered.vcf",
+        "/work/out/gathered.vcf.gz"
+      ]
+    },
+    "PrintReads": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/out.bam",
+        "/work/out/other.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ]
+    },
+    "CreateHadoopBamSplittingIndex": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/reads.bam.sbi",
+        "/work/out/elsewhere.sbi"
+      ]
+    },
+    "CountVariants": {
+      "--output": [
+        "/work/out/count.txt",
+        "/work/out/count2.txt"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ]
+    },
+    "CountReads": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ]
+    },
+    "CountBases": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/countbases.txt",
+        "/work/out/countbases2.txt"
+      ]
+    },
+    "FlagStat": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/flagstat.txt",
+        "/work/out/flagstat2.txt"
+      ]
+    },
+    "CountBasesInReference": {
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/bases.txt",
+        "/work/out/bases2.txt"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ]
+    },
+    "SplitIntervals": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/split",
+        "/work/out/split2"
+      ],
+      "--scatter-count": [
+        "1",
+        "3"
+      ],
+      "--min-contig-size": [
+        "0",
+        "50000"
+      ],
+      "--interval-file-num-digits": [
+        "4",
+        "2"
+      ],
+      "--extension": [
+        "-scattered.interval_list",
+        ".list"
+      ]
+    },
+    "Pileup": {
+      "--input": [
+        "/work/fixtures/deep.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/deep.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/pileup.txt",
+        "/work/out/pileup2.txt"
+      ],
+      "$why": [
+        "deep.bam is the only file in this corpus with a stack deep enough for --max-depth-per-sample to",
+        "thin: eight reads at 1005 and four at 1105, each with a different base, so a thinned column is",
+        "visible in the output rather than merely smaller. reads.bam beside it has a depth of one.",
+        "--max-variants-per-shard is held at 0, for the reason CallableLoci holds it: its other value is",
+        "refused by the parser and a locus walker never reads it.",
+        "The constraints below are what make the thinning observable at all (#1135). A t=2 array",
+        "guarantees the pair (deep.bam, target 2) appears once; it does not guarantee that the row it",
+        "lands on runs, and the first measurement put it on a row whose dictionary makes the interval",
+        "invalid. The clauses keep the maskers off the rows that carry a target above zero."
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "PreprocessIntervals": {
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/bins.interval_list",
+        "/work/out/bins2.interval_list"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--interval-set-rule": [
+        "UNION"
+      ],
+      "--interval-exclusion-padding": [
+        "0"
+      ],
+      "--interval-padding": [
+        "0"
+      ],
+      "--interval-merging-rule": [
+        "OVERLAPPING_ONLY"
+      ]
+    },
+    "GetSampleName": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/sample.txt",
+        "/work/out/sample2.txt"
+      ]
+    },
+    "PrintDistantMates": {
+      "--input": [
+        "/work/fixtures/pairs.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/pairs.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/distant.bam",
+        "/work/out/distant2.bam"
+      ]
+    },
+    "FixMisencodedBaseQualityReads": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/fixed.bam",
+        "/work/out/fixed2.bam"
+      ]
+    },
+    "CompareIntervalLists": {
+      "--L": [
+        "chr1:1-6000",
+        "chr1:1-500"
+      ],
+      "--L2": [
+        "chr1:1-6000",
+        "chr1:1-500"
+      ]
+    },
+    "AnnotateIntervals": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/annotated.tsv",
+        "/work/out/annotated2.tsv"
+      ],
+      "--interval-set-rule": [
+        "UNION"
+      ],
+      "--interval-exclusion-padding": [
+        "0"
+      ],
+      "--interval-padding": [
+        "0"
+      ],
+      "--interval-merging-rule": [
+        "OVERLAPPING_ONLY"
+      ]
+    },
+    "CheckPileup": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/checked.txt",
+        "/work/out/checked2.txt"
+      ],
+      "--pileup": [
+        "/work/fixtures/truth.pileup",
+        "/work/fixtures/wrong.pileup"
+      ],
+      "$why": [
+        "--max-depth-per-sample is no longer held at zero: the locus iterator's reservoir and leveling",
+        "thin -- eight reads at one locus, where every other file here has a depth of one.",
+        "--max-depth-per-sample is no longer held at zero: the locus iterator's downsamplers are wired",
+        "in (#1102), so the argument is a value like any other here. Its DEPTH is measured on `Pileup`,",
+        "whose input can be deep.bam; this tool's is the file its truth pileup was built from, and a",
+        "pileup compared against a truth file for a different input measures the pairing rather than",
+        "the tool."
+      ]
+    },
+    "FastaReferenceMaker": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/made.fasta",
+        "/work/out/made2.fasta"
+      ],
+      "--line-width": [
+        "60",
+        "7"
+      ]
+    },
+    "GetPileupSummaries": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/summaries.table",
+        "/work/out/summaries2.table"
+      ],
+      "--variant": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--minimum-population-allele-frequency": [
+        "0.01",
+        "0.04"
+      ],
+      "--maximum-population-allele-frequency": [
+        "0.2",
+        "0.06"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ]
+    },
+    "CalculateContamination": {
+      "--input": [
+        "/work/fixtures/summaries.table",
+        "/work/fixtures/summaries2.table"
+      ],
+      "--output": [
+        "/work/out/contamination.table",
+        "/work/out/contamination2.table"
+      ],
+      "--matched-normal": [
+        "/work/fixtures/summaries2.table",
+        "/work/fixtures/summaries.table"
+      ],
+      "--tumor-segmentation": [
+        "/work/out/segments.table",
+        "/work/out/segments2.table"
+      ]
+    },
+    "PrintReadsHeader": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/header.txt",
+        "/work/out/header2.txt"
+      ]
+    },
+    "UnmarkDuplicates": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/unmarked.bam",
+        "/work/out/unmarked2.bam"
+      ]
+    },
+    "CollectReadCounts": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/counts.tsv",
+        "/work/out/counts2.tsv"
+      ],
+      "--format": [
+        "TSV"
+      ],
+      "--interval-set-rule": [
+        "UNION"
+      ],
+      "--interval-exclusion-padding": [
+        "0"
+      ],
+      "--interval-padding": [
+        "0"
+      ],
+      "--interval-merging-rule": [
+        "OVERLAPPING_ONLY"
+      ]
+    },
+    "RevertBaseQualityScores": {
+      "$why": [
+        "The tool aborts on the first read with no `OQ` rather than skipping it, so the two inputs",
+        "are the two answers: reads_oq.bam reverts every read and reads.bam is the refusal, naming",
+        "the read it stopped at. --output has two values for the same reason every read walker's",
+        "does: a single one is an argument no row can notice."
+      ],
+      "--input": [
+        "/work/fixtures/reads_oq.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads_oq.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/reverted.bam",
+        "/work/out/reverted2.bam"
+      ]
+    },
+    "AddOriginalAlignmentTags": {
+      "$why": [
+        "`getMateReferenceName` on an unpaired read throws, so the pairs file is the answer and the",
+        "unpaired one is the refusal -- htsjdk's `IllegalStateException` rather than the tool's own",
+        "exception, which is a different handler and a different exit status.",
+        "The three read-filter arguments below are held out. Each belongs to a filter that no row",
+        "selects -- --read-filter-tag-op to ReadTagValueFilter, --keep-reverse-strand-only to",
+        "ReadStrandFilter, --dont-require-soft-clips-both-ends to OverclippedReadFilter -- and the",
+        "reference refuses a command line that carries an argument whose filter is not among the",
+        "selected ones: `Argument \"/read-filter-tag-op\" is only valid when the argument",
+        "\"ReadTagValueFilter\" is specified`. With them in the array all twenty rows are that one",
+        "refusal and the array measures nothing. Which filter owns which argument, and what the",
+        "refusal costs, is measured by the filter-resolution and read-filter-catalogue suites."
+      ],
+      "--input": [
+        "/work/fixtures/pairs.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/pairs.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/tagged.bam",
+        "/work/out/tagged2.bam"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
+    },
+    "LeftAlignIndels": {
+      "$why": [
+        "indels.bam is the file the tool can do anything to: its reads carry a deletion and an",
+        "insertion of one whole repeat unit, which the ACGT reference lets walk left, next to a",
+        "single-element cigar and an unmapped read, which are the two branches that never reach",
+        "the call. reads.bam is every read at `10M`, so a row given it comes back unchanged, and",
+        "the pair is the difference between the tool running and the tool being a copy.",
+        "--reference has both fastas: other.fasta is a contig the reads do not carry, which is",
+        "the dictionary refusal rather than an empty answer."
+      ],
+      "--input": [
+        "/work/fixtures/indels.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/indels.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/left_aligned.bam",
+        "/work/out/left_aligned2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "DumpTabixIndex": {
+      "$why": [
+        "The three values of --tabix-index are the tool's three answers: reads.vcf.gz.tbi is a real",
+        "tabix index written by the reference's own IndexFeatureFile, reads.vcf is refused for its",
+        "NAME before anything is opened, and plain.tbi gets past the name and is not gzipped, which",
+        "fails inside java.util.zip and is the `ZipException` of the dump-tabix-index golden."
+      ],
+      "--tabix-index": [
+        "/work/fixtures/reads.vcf.gz.tbi",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/plain.tbi"
+      ],
+      "--output": [
+        "/work/out/tabix.txt",
+        "/work/out/tabix2.txt"
+      ]
+    },
+    "ReadAnonymizer": {
+      "$why": [
+        "indels.bam is the input that makes the tool do something visible: its reads carry",
+        "matches over a reference the bases disagree with, and an insertion and a deletion, which",
+        "are the cigar branches that copy rather than replace. reads.bam is every read at `10M`,",
+        "so the two inputs differ in what the anonymiser has to rebuild.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not, which is the",
+        "per-read query's refusal rather than an empty answer."
+      ],
+      "--input": [
+        "/work/fixtures/indels.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/indels.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/anonymised.bam",
+        "/work/out/anonymised2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "PrintFileDiagnostics": {
+      "$why": [
+        "The analyzer is chosen by the EXTENSION and nothing else, so the three values are the",
+        "three answers: reads.bai is a real index and the only branch this port carries,",
+        "reads.vcf is a name no analyzer claims, and plain.tbi is claimed by no analyzer either",
+        "-- the `.cram` and `.crai` branches read a container structure the port refuses in its",
+        "own words, so they are not in the array."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/diagnostics.txt",
+        "/work/out/diagnostics2.txt"
+      ]
+    },
+    "SplitReads": {
+      "$why": [
+        "groups.bam carries two read groups differing in sample and library, so each splitter",
+        "writes two files with different keys; reads.bam has one group, so the same row over it",
+        "writes one. --output is the output DIRECTORY itself, which is what this tool's argument",
+        "names: the file names are the tool's own, built from the input's base name and the key."
+      ],
+      "--input": [
+        "/work/fixtures/groups.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/groups.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out"
+      ]
+    },
+    "ClipReads": {
+      "$why": [
+        "--cycles-to-trim has a well formed range and a malformed one, which is the tool's own",
+        "`RuntimeException` and not the parser's: every bad spelling raises the same message.",
+        "-X is a sequence present in the corpus's reads and -XF the FASTA beside it, so the two",
+        "ways of naming a sequence to clip are both covered. --read names a read that exists, so",
+        "the row that sets it keeps one read and drops the rest.",
+        "groups.bam is the input whose qualities dip in the middle, which is what a quality trim",
+        "has to find."
+      ],
+      "--input": [
+        "/work/fixtures/groups.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/groups.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/clipped.bam",
+        "/work/out/clipped2.bam"
+      ],
+      "--output-statistics": [
+        "/work/out/clipped.stats"
+      ],
+      "--clip-sequence": [
+        "ACGTACGT"
+      ],
+      "--clip-sequences-file": [
+        "/work/fixtures/clip.fasta"
+      ],
+      "--cycles-to-trim": [
+        "1-5",
+        "1-"
+      ],
+      "--read": [
+        "HWI:1:FC:1:1:1:1"
+      ]
+    },
+    "SplitNCigarReads": {
+      "$why": [
+        "spliced.bam is the input the tool can split: its cigars carry one and two `N` elements",
+        "beside a read that has none, so a row over it produces more reads than it read. reads.bam",
+        "is every read at `10M`, which the tool copies, and the pair is the difference between the",
+        "split running and the traversal running.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not."
+      ],
+      "--input": [
+        "/work/fixtures/spliced.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/spliced.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/split.bam",
+        "/work/out/split2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "MethylationTypeCaller": {
+      "$why": [
+        "methyl.bam reads like bisulfite sequencing over the corpus's ACGT reference: forward",
+        "reads that kept their C and forward reads that read T, and the same pair on the reverse",
+        "strand for the G. A file of plain reads produces a VCF with no record at all, which is a",
+        "row that measures the header and nothing else.",
+        "--add-output-vcf-command-line is held at FALSE. Its true value adds a `##GATKCommandLine`",
+        "line carrying the run's own DATE, and the reference and the port run minutes apart, so",
+        "every row that set it would differ for a reason that is not the tool's. The suite's own",
+        "goldens turn it off for the same reason.",
+        "--create-output-variant-index is held at FALSE for a measured reason. The Tribble index a",
+        "tool writes for its OWN output records that file's last-modified time, so two runs of the",
+        "REFERENCE, minutes apart over the same inputs, produce two different index files: `cmp` on",
+        "them differs at byte 55, which is the timestamp, while the VCF beside them is identical. No",
+        "port can match a clock, and the argument is measured where an index is built from an input",
+        "that already exists, which is the index-feature-file suite."
+      ],
+      "--input": [
+        "/work/fixtures/methyl.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/methyl.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/methylation.vcf",
+        "/work/out/methylation2.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "BaseRecalibrator": {
+      "$why": [
+        "--known-sites has both formats GATK registers for it, naming the same loci: the",
+        "population VCF the corpus already carries and a BED beside it. The reference's own two",
+        "runs over them produce the same table, so the two values are comparable rather than",
+        "merely different.",
+        "--reference has both fastas: other.fasta carries a contig the reads do not."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/groups.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/groups.bai"
+      ],
+      "--known-sites": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/known.bed"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/recal.table",
+        "/work/out/recal2.table"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ]
+    },
+    "GtfToBed": {
+      "$why": [
+        "annotation.gtf is the gtf-to-bed golden's own annotation. The reference's Gencode codec",
+        "refuses anything less: a hand-written file of gene and transcript lines is `Unknown file is",
+        "malformed: Decoded feature is not valid: null`, because every transcript needs its exon line",
+        "and its type, name and havana attributes. It carries a gene whose transcript is WIDER than",
+        "its gene line, which is what makes a gene row take the transcript's span, and one gene on a",
+        "second contig.",
+        "--sequence-dictionary is the tool's own requirement rather than an engine argument: the rows",
+        "are sorted by the contig's index in it, so gtf.dict is the run that answers and the corpus's",
+        "matching.dict, which has chr1 and not chr2, is the comparator's refusal.",
+        "Four engine arguments are held out, and the first measurement is why: all twenty-three rows",
+        "refused. This tool WALKS the GTF, so `--intervals` asks for random access to a file the",
+        "corpus has no index for, and `--input` is reads, which this tool does not read at all: the",
+        "array was handing it the corpus's VCFs and BEDs as reads and pairing them with a BAM index."
+      ],
+      "--gtf-path": [
+        "/work/fixtures/annotation.gtf"
+      ],
+      "--output": [
+        "/work/out/annotation.bed",
+        "/work/out/annotation2.bed"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/gtf.dict",
+        "/work/fixtures/matching.dict"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": []
+    },
+    "CallableLoci": {
+      "$why": [
+        "deep.bam is the pileup this tool needs: every other single-sample file in the corpus has a",
+        "depth of ONE, and a depth of one reaches only two of the six states. Eight reads at 1005 and",
+        "four at 1105 reach CALLABLE at the default min-depth, EXCESSIVE_COVERAGE at a --max-depth",
+        "under the stack, and LOW_COVERAGE once --max-depth-per-sample thins the stack below the",
+        "threshold, which is the one place in this programme where a THINNED pileup is visible in an",
+        "output (#1135): the state depends on the count the leveller leaves, not on which reads it",
+        "kept, so the row is reproducible while the identity of the survivors is not.",
+        "reads.bam is the depth-one file beside it, so the pair covers a stack and a single read.",
+        "--intervals is narrow on purpose. emitEmptyLoci() is true, so a row reports a line per BASE",
+        "of its intervals and the whole contig would be a hundred thousand of them per row; the first",
+        "window holds both of deep.bam's stacks and the second holds no read at all, which is the",
+        "NO_COVERAGE run.",
+        "--max-depth, --min-depth-for-low-mapq and --max-fraction-of-reads-with-low-mapq carry values",
+        "because the inventory has none to invent: the first is an Integer with no bounds and no",
+        "default, and the other two have a default and nothing else, so all three were held at one",
+        "value and covered nothing. POOR_MAPPING_QUALITY needs the trio to agree, and it is reachable",
+        "here because --max-low-mapq's declared maximum is 255 and every read in the corpus is MAPQ 60.",
+        "REF_N is the one state no row reaches: both references in the corpus are ACGT repeats with no",
+        "N in them, and the state is measured by this tool's own golden instead.",
+        "The four arguments over [0, 255] carry IN-RANGE values, and the first measurement is why: the",
+        "generator offers one value outside each finite bound on purpose, and CallableLoci declares four",
+        "such arguments, so 38 of 45 rows were refused by the parser and seven reached the tool. The",
+        "out-of-range path is measured where it belongs, by the tool-argument-declarations suite and by",
+        "the propagation-order test that reads the FIRST such refusal off this very tool.",
+        "The values are chosen to reach the states rather than to sit at the default: --max-low-mapq 255",
+        "makes every read of the corpus low-mapping-quality, which is POOR_MAPPING_QUALITY when",
+        "--min-depth-for-low-mapq is 1; --min-mapping-quality 255 makes every read fail QC, which is",
+        "LOW_COVERAGE; and --min-depth 0 is what lets CALLABLE and EXCESSIVE_COVERAGE be told apart.",
+        "--max-variants-per-shard is held at 0. Its other value is -1, which the parser refuses, and a",
+        "locus walker never reads it: it shards a VARIANT traversal."
+      ],
+      "--input": [
+        "/work/fixtures/deep.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/deep.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1000-1120",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/callable.bed",
+        "/work/out/callable2.bed"
+      ],
+      "--summary": [
+        "/work/out/callable.summary",
+        "/work/out/callable2.summary"
+      ],
+      "--max-depth": [
+        "4",
+        "100"
+      ],
+      "--min-depth-for-low-mapq": [
+        "10",
+        "1"
+      ],
+      "--max-fraction-of-reads-with-low-mapq": [
+        "0.1",
+        "1.0"
+      ],
+      "--max-low-mapq": [
+        "1",
+        "255"
+      ],
+      "--min-mapping-quality": [
+        "10",
+        "255"
+      ],
+      "--min-base-quality": [
+        "20",
+        "0"
+      ],
+      "--min-depth": [
+        "4",
+        "0"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "ShiftFasta": {
+      "$why": [
+        "The tool overrides traverse() and loops over the reference's own dictionary, so the reference",
+        "is the input and the corpus's two are the two rows: reference.fasta is one contig of a",
+        "hundred thousand bases and other.fasta one of a thousand, which is a shift the chain file",
+        "records at both scales.",
+        "--shift-offset-list carries 100 and 0 for two different reasons. 100 shifts the contig; 0 is",
+        "BELOW the range shiftContig works in, so that contig is dropped from all four outputs at once",
+        "and the row measures a reference that comes out with no sequence in it. Both are lists of ONE",
+        "value and both references have ONE contig, so the size check passes; the refusal it carries is",
+        "measured by this tool's own golden, which is where a two-contig reference lives.",
+        "--interval-file-name is a base name and not a path: the tool appends .intervals and",
+        "..shifted.intervals to it, so the fixture names the stem and the row compares two files.",
+        "--line-width has a default and no bounds, so the inventory could not vary it; 7 breaks the",
+        "output's lines mid-repeat, which is what makes the writer's running count observable.",
+        "--input and --read-index are held out. This tool reads no reads at all, and the corpus's",
+        "shared values are VCFs and BEDs, so every row would have measured a reader refusal on a file",
+        "the tool never asks for."
+      ],
+      "--output": [
+        "/work/out/shifted.fasta",
+        "/work/out/shifted2.fasta"
+      ],
+      "--shift-back-output": [
+        "/work/out/shiftback.chain",
+        "/work/out/shiftback2.chain"
+      ],
+      "--interval-file-name": [
+        "/work/out/shift",
+        "/work/out/shift2"
+      ],
+      "--shift-offset-list": [
+        "100",
+        "0"
+      ],
+      "--line-width": [
+        "60",
+        "7"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "TransferReadTags": {
+      "$why": [
+        "qname.bam is the only QUERY-NAME sorted file in the corpus, and this tool refuses an aligned",
+        "file whose header does not say so; reads.bam is the coordinate-sorted value beside it, so the",
+        "argument has a row that traverses and a row that refuses.",
+        "umi.bam is the unmapped side: one pair per query name, every read carrying RX and none",
+        "carrying MI. reads.bam as the unmapped side is the other refusal, an aligned read whose name",
+        "the unmapped file does not carry, which is the tool's IllegalStateException.",
+        "--read-tags carries RX and MI for the same reason: the first is present on every unmapped read",
+        "and the second on none, and a missing value is refused by name.",
+        "--read-index is held out. Neither query-name sorted file can have an index, and the corpus's",
+        "coordinate indexes belong to other files, so every row carrying one would measure a reader",
+        "refusal rather than the tool."
+      ],
+      "--input": [
+        "/work/fixtures/qname.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--unmapped-sam": [
+        "/work/fixtures/umi.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-tags": [
+        "RX",
+        "MI"
+      ],
+      "--output": [
+        "/work/out/tagged.bam",
+        "/work/out/tagged2.bam"
+      ],
+      "--read-index": []
+    },
+    "PostProcessReadsForRSEM": {
+      "$why": [
+        "qname.bam holds the four answers passesRSEMFilter gives -- a proper pair of single-M reads",
+        "with a pair of secondary alignments beside it, a pair whose second read is unmapped, a pair",
+        "whose first read carries an insertion, and a first of pair with no second -- so a row's output",
+        "is the groups that survive rather than the file back again. reads.bam is coordinate-sorted,",
+        "which this tool refuses outright, so the argument has a row that traverses and a row that",
+        "refuses.",
+        "--read-index is held out for the reason it is held out of TransferReadTags: a query-name",
+        "sorted BAM has no index.",
+        "--inverted-read-filter is held out, and the first measurement is why: all nineteen rows were",
+        "REFUSED and not one of them reached the reordering. Inverting either filter the corpus offers",
+        "leaves a query-name group with no PRIMARY first-of-pair in it -- FirstOfPairReadFilter keeps the",
+        "second reads and PrimaryLineReadFilter keeps the secondary ones -- and the reference then",
+        "dereferences null inside the guard that exists because read1 may be null. That exception is the",
+        "tool's behaviour and is measured, in the module's own tests and against the golden; what an array",
+        "of nineteen refusals cannot measure is the argument surface it is for."
+      ],
+      "--input": [
+        "/work/fixtures/qname.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--output": [
+        "/work/out/rsem.bam",
+        "/work/out/rsem2.bam"
+      ],
+      "--read-index": [],
+      "--inverted-read-filter": []
+    },
+    "VariantsToTable": {
+      "$why": [
+        "population.vcf is the corpus's only VCF with an INFO field, and it has no genotype columns at",
+        "all; indexed.vcf is the other way round, one sample and a GT and no INFO. Between them every",
+        "branch of onTraversalStart is reachable: the default column set differs, a field asked for by",
+        "name is present in one file and missing in the other, and a genotype field asked for of a file",
+        "with no samples is the run that empties the sample set and refuses when nothing else was asked",
+        "for.",
+        "AF is the field to ask for because population.vcf's last record carries TWO values for it,",
+        "which is what --split-multi-allelic splits and what -ASF reads differently.",
+        "--input and --read-index are held out. This tool reads no reads, and the corpus's shared value",
+        "for --input is a VCF, which a reads source opens as a stream with no dictionary: the refusal",
+        "that produces is measured by CountVariants, which shares this startup."
+      ],
+      "--variant": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/table.tsv",
+        "/work/out/table2.tsv"
+      ],
+      "--fields": [
+        "AF",
+        "POS"
+      ],
+      "--genotype-fields": [
+        "GT",
+        "DP"
+      ],
+      "--asFieldsToTake": [
+        "AF"
+      ],
+      "--asGenotypeFieldsToTake": [
+        "GT"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CompareBaseQualities": {
+      "$why": [
+        "The two SAM files are POSITIONAL, so they cannot come out of the array at all: every assignment",
+        "there carries a name and these have none. They are held under $positional, which run_array.py",
+        "appends to every row.",
+        "The pair is reads.bam against requal.bam, which exists for this tool: the same eight reads under",
+        "the same NAMES with a different quality array. The first measurement paired reads.bam with",
+        "reads_oq.bam and every row refused, because the tool walks the two files in lockstep and gives up",
+        "as soon as two reads disagree by name -- `OQ:1:FC:1:1:1:1` against `HWI:1:FC:1:1:1:1` on the very",
+        "first record. With names that match, the matrix has off-diagonal entries: the tool returns 1",
+        "rather than 0, and --throw-on-diff turns that into a refusal.",
+        "--static-quantized-quals carries two values because --round-down-quantized means nothing without",
+        "it: the pair is what makes the quantization observable rather than held."
+      ],
+      "$positional": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/requal.bam"
+      ],
+      "--output": [
+        "/work/out/quals.txt",
+        "/work/out/quals2.txt"
+      ],
+      "--static-quantized-quals": [
+        "10",
+        "30"
+      ]
+    },
+    "RemoveNearbyIndels": {
+      "$why": [
+        "indels.vcf is the file this tool needs, and it is written for it: the corpus's other VCFs hold",
+        "SNPs alone, and a run over those emits every record whatever the spacing is. It carries pairs at",
+        "several distances, a run of three, and non-indels between them, so a spacing of 10 and one of",
+        "200 keep different sets.",
+        "--min-indel-spacing is REQUIRED on this tool, which is why it carries values here rather than",
+        "sitting at its declared default: a row without it is refused by the parser.",
+        "--input and --read-index are held out. This tool reads no reads, and the corpus's shared value",
+        "for --input is a VCF, whose refusal as a reads source is measured by CountVariants."
+      ],
+      "--variant": [
+        "/work/fixtures/indels.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--output": [
+        "/work/out/nearby.vcf",
+        "/work/out/nearby2.vcf"
+      ],
+      "--min-indel-spacing": [
+        "10",
+        "200"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "UpdateVCFSequenceDictionary": {
+      "$why": [
+        "--source-dictionary takes a dictionary out of four kinds of file, so it carries two of them: a",
+        "`.dict` and a BAM. matching.dict agrees with the corpus's contig and reads.bam carries the same",
+        "one in its header, which is what makes the two rows differ in the SOURCE rather than in the",
+        "answer.",
+        "indexed.vcf already declares a ##contig line, so every row needs --replace to get past",
+        "onTraversalStart; reads.vcf declares none, which is the case the tool exists for. The pair is",
+        "what makes the check observable.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false for the reason",
+        "MethylationTypeCaller holds them: the first writes the run's own DATE into the header, and the",
+        "second writes an index carrying the output file's last-modified time, so two runs minutes apart",
+        "differ for a reason that is not the tool's.",
+        "--input and --read-index are held out, as for RemoveNearbyIndels.",
+        "--sequence-dictionary is held out, and the first measurement is why: all twenty-four rows were",
+        "refused. Every row carries every argument in the domain, and this tool refuses the pair",
+        "--sequence-dictionary and --source-dictionary outright, so an array holding both measures that",
+        "one refusal and nothing else. The refusal itself is measured by the runner's own check and by",
+        "the golden; what the array is for is the four kinds of source and the records they accept."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--output": [
+        "/work/out/updated.vcf",
+        "/work/out/updated2.vcf"
+      ],
+      "--source-dictionary": [
+        "/work/fixtures/matching.dict",
+        "/work/fixtures/reads.bam"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--sequence-dictionary": []
+    },
+    "SelectVariants": {
+      "$why": [
+        "indexed.vcf is the corpus's one-sample VCF and population.vcf the one with an INFO field and no",
+        "samples at all, which is what makes the sample arguments and the JEXL expressions reach",
+        "different branches: -sn over a file with a sample subsets and rewrites, and the same argument",
+        "over a file with none is the refusal that names it.",
+        "the JEXL path is measured rather than merely present.",
+        "Six arguments are held out because this port refuses them rather than answering: --pedigree and",
+        "its two Mendelian flags, the two random fractions, --call-genotypes, and the two concordance",
+        "tracks. A row carrying one measures the port's own refusal, which is a message no golden holds",
+        "and which would be the same on every row that carries it.",
+        "--add-output-vcf-command-line is held at FALSE. Its ##GATKCommandLine line carries the run's own",
+        "wall-clock time, and the reference and the port run minutes apart.",
+        "--create-output-variant-index is held at FALSE for the reason every other variant writer holds",
+        "it: the index a tool builds for its own output records that file's last-modified time.",
+        "--input and --read-index are held out: this tool reads no reads, and the corpus's shared --input",
+        "value is a VCF, whose refusal as a reads source is measured by CountVariants.",
+        "command line, so `QUAL > 50` arrived as `--select QUAL` with the rest eaten by the shell. JEXL",
+        "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
+        "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
+        "and is now the port's.",
+        "context returns a typed value for QUAL and this port's returns the rendered string, so an",
+        "-select compares against a REAL literal rather than an integer one, and the reason is this",
+        "port's JEXL context rather than the tool: it returns the rendered string where the reference",
+        "returns a typed value, so an integer literal sends the comparison down Integer.parseInt and",
+        "refuses while a real literal takes the double path. Tracked on #1142; the fixtures take the",
+        "path both sides agree on."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/population.vcf"
+      ],
+      "--output": [
+        "/work/out/selected.vcf",
+        "/work/out/selected2.vcf"
+      ],
+      "--sample-name": [
+        "sample1",
+        "nosuchsample"
+      ],
+      "--select": [
+        "QUAL>50.0",
+        "QUAL>5000.0"
+      ],
+      "--pedigree": [],
+      "--mendelian-violation": [],
+      "--invert-mendelian-violation": [],
+      "--select-random-fraction": [],
+      "--remove-fraction-genotypes": [],
+      "--call-genotypes": [],
+      "--concordance": [],
+      "--discordance": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    }
   },
-  "PrintReads": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--output": [
-    "/work/out/out.bam",
-    "/work/out/other.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ]
-  },
-  "CreateHadoopBamSplittingIndex": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--output": [
-    "/work/out/reads.bam.sbi",
-    "/work/out/elsewhere.sbi"
-   ]
-  },
-  "CountVariants": {
-   "--output": [
-    "/work/out/count.txt",
-    "/work/out/count2.txt"
-   ],
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ]
-  },
-  "CountReads": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ]
-  },
-  "CountBases": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/countbases.txt",
-    "/work/out/countbases2.txt"
-   ]
-  },
-  "FlagStat": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/flagstat.txt",
-    "/work/out/flagstat2.txt"
-   ]
-  },
-  "CountBasesInReference": {
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/bases.txt",
-    "/work/out/bases2.txt"
-   ],
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ]
-  },
-  "SplitIntervals": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/split",
-    "/work/out/split2"
-   ],
-   "--scatter-count": [
-    "1",
-    "3"
-   ],
-   "--min-contig-size": [
-    "0",
-    "50000"
-   ],
-   "--interval-file-num-digits": [
-    "4",
-    "2"
-   ],
-   "--extension": [
-    "-scattered.interval_list",
-    ".list"
-   ]
-  },
-  "Pileup": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/pileup.txt",
-    "/work/out/pileup2.txt"
-   ]
-  },
-  "PreprocessIntervals": {
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/bins.interval_list",
-    "/work/out/bins2.interval_list"
-   ],
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--interval-set-rule": [
-    "UNION"
-   ],
-   "--interval-exclusion-padding": [
-    "0"
-   ],
-   "--interval-padding": [
-    "0"
-   ],
-   "--interval-merging-rule": [
-    "OVERLAPPING_ONLY"
-   ]
-  },
-  "GetSampleName": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/sample.txt",
-    "/work/out/sample2.txt"
-   ]
-  },
-  "PrintDistantMates": {
-   "--input": [
-    "/work/fixtures/pairs.bam",
-    "/work/fixtures/reads.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/pairs.bai",
-    "/work/fixtures/reads.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/distant.bam",
-    "/work/out/distant2.bam"
-   ]
-  },
-  "FixMisencodedBaseQualityReads": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam",
-    "/work/fixtures/reads.vcf"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/fixed.bam",
-    "/work/out/fixed2.bam"
-   ]
-  },
-  "CompareIntervalLists": {
-   "--L": [
-    "chr1:1-6000",
-    "chr1:1-500"
-   ],
-   "--L2": [
-    "chr1:1-6000",
-    "chr1:1-500"
-   ]
-  },
-  "AnnotateIntervals": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/annotated.tsv",
-    "/work/out/annotated2.tsv"
-   ],
-   "--interval-set-rule": [
-    "UNION"
-   ],
-   "--interval-exclusion-padding": [
-    "0"
-   ],
-   "--interval-padding": [
-    "0"
-   ],
-   "--interval-merging-rule": [
-    "OVERLAPPING_ONLY"
-   ]
-  },
-  "CheckPileup": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/checked.txt",
-    "/work/out/checked2.txt"
-   ],
-   "--pileup": [
-    "/work/fixtures/truth.pileup",
-    "/work/fixtures/wrong.pileup"
-   ],
-   "--max-depth-per-sample": [
-    "0"
-   ]
-  },
-  "FastaReferenceMaker": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/made.fasta",
-    "/work/out/made2.fasta"
-   ],
-   "--line-width": [
-    "60",
-    "7"
-   ]
-  },
-  "GetPileupSummaries": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/summaries.table",
-    "/work/out/summaries2.table"
-   ],
-   "--variant": [
-    "/work/fixtures/population.vcf",
-    "/work/fixtures/indexed.vcf"
-   ],
-   "--minimum-population-allele-frequency": [
-    "0.01",
-    "0.04"
-   ],
-   "--maximum-population-allele-frequency": [
-    "0.2",
-    "0.06"
-   ],
-   "--max-depth-per-sample": [
-    "0"
-   ]
-  },
-  "CalculateContamination": {
-   "--input": [
-    "/work/fixtures/summaries.table",
-    "/work/fixtures/summaries2.table"
-   ],
-   "--output": [
-    "/work/out/contamination.table",
-    "/work/out/contamination2.table"
-   ],
-   "--matched-normal": [
-    "/work/fixtures/summaries2.table",
-    "/work/fixtures/summaries.table"
-   ],
-   "--tumor-segmentation": [
-    "/work/out/segments.table",
-    "/work/out/segments2.table"
-   ]
-  },
-  "PrintReadsHeader": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/header.txt",
-    "/work/out/header2.txt"
-   ]
-  },
-  "UnmarkDuplicates": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/unmarked.bam",
-    "/work/out/unmarked2.bam"
-   ]
-  },
-  "CollectReadCounts": {
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--output": [
-    "/work/out/counts.tsv",
-    "/work/out/counts2.tsv"
-   ],
-   "--format": [
-    "TSV"
-   ],
-   "--interval-set-rule": [
-    "UNION"
-   ],
-   "--interval-exclusion-padding": [
-    "0"
-   ],
-   "--interval-padding": [
-    "0"
-   ],
-   "--interval-merging-rule": [
-    "OVERLAPPING_ONLY"
-   ]
+  "constraints": [
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--input": "/work/fixtures/reads.bam"
+      },
+      "why": "A depth of one cannot be thinned, so this pair measures the argument without observing it."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--intervals": "chr1:50000-60000"
+      },
+      "why": "No read of the corpus lies in that window, so the pileup is empty whatever the target is."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--sequence-dictionary": "/work/fixtures/other.dict"
+      },
+      "why": "The master dictionary carries chrOther alone, so every interval over chr1 is refused before the traversal."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--reference": "/work/fixtures/other.fasta"
+      },
+      "why": "The reference carries chrOther alone, which the locus walker refuses for the same reason."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--inverted-read-filter": "PrimaryLineReadFilter"
+      },
+      "why": "Inverted, it keeps only the non-primary reads, and the corpus has none: the pileup is empty."
+    },
+    {
+      "tools": [
+        "Pileup"
+      ],
+      "forbid": {
+        "--max-depth-per-sample": "2",
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    }
+  ],
+  "exclude": {
+    "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
+    "--version": "prints the version and returns, same reason",
+    "--showHidden": "changes the usage text only",
+    "--QUIET": "suppresses the log on stderr, and what is compared is stdout and the output file",
+    "--verbosity": "log level on stderr, same reason",
+    "--use-jdk-inflater": "chooses an inflater, and the input is read the same way either way",
+    "--gcs-max-retries": "reaches nothing without a cloud path in the row",
+    "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
+    "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
+    "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+    "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite",
+    "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal",
+    "--mappability-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal",
+    "--segmental-duplication-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal"
   }
- },
- "constraints": [],
- "exclude": {
-  "--help": "prints the usage and returns; the row would measure the argument parser rather than the tool",
-  "--version": "prints the version and returns, same reason",
-  "--showHidden": "changes the usage text only",
-  "--QUIET": "suppresses the log on stderr, and what is compared is stdout and the output file",
-  "--verbosity": "log level on stderr, same reason",
-  "--use-jdk-inflater": "chooses an inflater, and the input is read the same way either way",
-  "--gcs-max-retries": "reaches nothing without a cloud path in the row",
-  "--gcs-project-for-requester-pays": "reaches nothing without a cloud path in the row",
-  "--gatk-config-file": "a configuration file the corpus does not carry; varying it would measure the config loader",
-  "--arguments_file": "expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
-  "--quantize-quals": "mutually exclusive with BOTH static-quantized-quals and round-down-quantized, and a covering array assigns every argument in every row: Barclay's mutex fires on an argument being SET, so even --round-down-quantized false refuses the row. Holding this one at its default is what lets the other two be varied, which is two covered arguments rather than one. The mutex message is measured by the mutex-target-names suite",
-  "--metadata": "a feature source the Pileup runner does not open: it refuses the argument rather than answering without the column it asks for, so a row carrying one would measure the refusal",
-  "--mappability-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal",
-  "--segmental-duplication-track": "a feature file the AnnotateIntervals runner does not open: it refuses the argument rather than writing a table without the column it asks for, so a row carrying one measures the refusal"
- }
 }

@@ -1,0 +1,186 @@
+{
+  "tool": "PrintFileDiagnostics",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 15,
+  "arguments_in_array": 4,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "File",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--count-limit",
+      "type": "Long",
+      "reason": "only one value available (default)",
+      "held_at": "1000",
+      "source": "default"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "Integer",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "Boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 6,
+  "tuples_total": 24,
+  "tuples_covered": 24,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bai",
+        "--output=/work/out/diagnostics.txt",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bai",
+        "--output=/work/out/diagnostics2.txt",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--input": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/diagnostics.txt",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--input": "fixture[1]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.vcf",
+        "--output=/work/out/diagnostics2.txt",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--input": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bai",
+        "--output=/work/out/diagnostics.txt",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--input": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--input=/work/fixtures/reads.bai",
+        "--output=/work/out/diagnostics2.txt",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    }
+  ]
+}

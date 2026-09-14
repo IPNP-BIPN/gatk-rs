@@ -27,6 +27,23 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 ARG_LINE = re.compile(r"^--(?P<name>[A-Za-z0-9_.\-]+)(?:,(?P<short>-[A-Za-z0-9_\-]+))?\s+<(?P<type>[^>]+)>\s*(?P<rest>.*)$")
 DEFAULT_VALUE = re.compile(r"Default value:\s*(?P<v>.+?)\.(?:\s|$)")
 POSSIBLE_VALUES = re.compile(r"Possible values:\s*\{(?P<v>[^}]*)\}")
+# A `ClpEnum`'s members, which Barclay prints ONE PER LINE with their documentation instead of the
+# brace-delimited list a plain enum gets:
+#
+#     --MODE <Mode>   Which reads ... Default value: ALL. ALL (Check all reads.)
+#                     PRIMARY_ONLY (Check primary alignments.)
+#
+# Eight arguments are rendered this way and came back with no members at all, so the covering
+# arrays held them at their default and observed one code path (#1120). The name is upper case with
+# underscores, which is what tells a member from a word of the documentation it is followed by.
+DOCUMENTED_MEMBER = re.compile(r"(?<![A-Za-z0-9_])(?P<name>[A-Z][A-Z0-9_]*)\s+\(")
+# What follows the default and is NOT a member. The mutex sentence names its targets in the same
+# shape a documented member is printed in -- `SECOND_INPUT (SI)` -- and reading those as members put
+# `--MATRIX_OUTPUT: ["SECOND_INPUT"]` in the inventory, which is not an enum at all. The collection
+# sentence is here for the same reason: boilerplate after the default rather than a value.
+NOT_MEMBERS = re.compile(
+    r"Cannot be used in conjunction with|This argument may be specified|"
+    r"The --\S+ argument|Required\.")
 LIST_ENTRY = re.compile(r"^ {4}([A-Za-z][A-Za-z0-9]*)\s")
 
 
@@ -70,6 +87,20 @@ def parse_help(text):
         members = None
         if pv:
             members = [x.strip() for x in pv.group("v").split(",") if x.strip()]
+        elif dv is not None:
+            # A documented enum prints its members after the default rather than in a list. Only
+            # the text AFTER `Default value: X.` is read, and only up to the first boilerplate
+            # sentence, so neither an upper-case word of the description nor a mutex target can be
+            # mistaken for a member. A repeated name is kept once, in the rendering's order.
+            tail = blob[dv.end():]
+            boilerplate = NOT_MEMBERS.search(tail)
+            if boilerplate:
+                tail = tail[: boilerplate.start()]
+            found = []
+            for name in DOCUMENTED_MEMBER.findall(tail):
+                if name not in found:
+                    found.append(name)
+            members = found or None
         current["default"] = default
         current["enum_members"] = members
         args.append(current)
@@ -138,14 +169,69 @@ def resolve_class(by_simple_name, name):
     return package, fqn, ("picard" if fqn.startswith("picard.") else "gatk")
 
 
+def refresh_undocumented(a, inv):
+    """Re-read the usage of every tool the inventory already holds as undocumented.
+
+    The merge in [`main`] is a ONE-WAY step: it looks for tools the inventory is missing and marks
+    everything it was handed as documented, so running it twice recovers nothing and mislabels the
+    43 it recovered the first time. A fix to `parse_help` therefore had no way to reach the
+    inventory, which is how eight arguments kept `enum_members: null` long after the rendering they
+    are printed in was understood (#1120).
+
+    This is the other direction: the tools are the ones already recorded with `documented: false`,
+    their arguments are read again from the same `--help` the first pass read, and nothing else in
+    the file is touched. Idempotent by construction, so a run's diff is exactly what the parser has
+    learned since the last one.
+    """
+    undocumented = [t for t in inv["tools"] if not t.get("documented", True)]
+    print(f"refreshing {len(undocumented)} undocumented tools")
+    changed = 0
+    for index, tool in enumerate(undocumented, 1):
+        parsed = parse_help(run(a.jar, [], [tool["name"], "--help"]))
+        if not parsed:
+            print(f"  [{index}/{len(undocumented)}] {tool['name']}: NO ARGUMENTS PARSED, kept")
+            continue
+        if parsed != tool["arguments"]:
+            changed += 1
+            gained = sum(
+                1
+                for argument in parsed
+                if argument.get("enum_members")
+                and not next(
+                    (
+                        existing.get("enum_members")
+                        for existing in tool["arguments"]
+                        if existing["name"] == argument["name"]
+                    ),
+                    None,
+                )
+            )
+            print(f"  [{index}/{len(undocumented)}] {tool['name']}: changed, "
+                  f"{gained} argument(s) gained members")
+            tool["arguments"] = parsed
+    inv["counts"]["arguments"] = sum(len(t["arguments"]) for t in inv["tools"])
+    out = a.out or a.inventory
+    out.write_text(json.dumps(inv, indent=2))
+    print(f"refreshed: {changed} tool(s) changed, arguments={inv['counts']['arguments']} -> {out}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("jar", type=pathlib.Path)
     ap.add_argument("inventory", type=pathlib.Path)
     ap.add_argument("-o", "--out", type=pathlib.Path)
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-read the usage of the tools already recorded as undocumented, and replace their "
+             "arguments, rather than looking for tools the inventory is missing",
+    )
     a = ap.parse_args()
 
     inv = json.loads(a.inventory.read_text())
+    if a.refresh:
+        refresh_undocumented(a, inv)
+        return
     documented = {t["name"]: t for t in inv["tools"]}
     cli = cli_tool_names(a.jar)
 

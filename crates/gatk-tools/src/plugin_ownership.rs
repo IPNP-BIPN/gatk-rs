@@ -269,6 +269,42 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "GoodCigarReadFilter",
             "WellformedReadFilter",
         ]),
+        // `BaseRecalibrator.getDefaultReadFilters` does not call super either, and the reference
+        // NAMES the chain on its way out: "0 read(s) filtered by: MappingQualityNotZeroReadFilter"
+        // and the six after it, in this order, with the wellformed filter last. Measured on a run
+        // over the corpus's reads.bam, where the eighth read is a duplicate and the reference
+        // reports "1 read(s) filtered by: NotDuplicateReadFilter" -- a port with no defaults at all
+        // counted that read and its recalibration table carried nine observations too many.
+        "BaseRecalibrator" => Some(&[
+            "MappingQualityNotZeroReadFilter",
+            "MappingQualityAvailableReadFilter",
+            "MappedReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "WellformedReadFilter",
+        ]),
+        // `CallableLoci.getDefaultReadFilters` does not call super and carries the GATK3 chain: six
+        // filters in this order, with the wellformed one FOURTH rather than first or last. That
+        // position is observable, because it is the order `--disable-read-filter` lists and the
+        // order a counting summary reports.
+        "CallableLoci" => Some(&[
+            "GoodCigarReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "WellformedReadFilter",
+            "PrimaryLineReadFilter",
+            "MappedReadFilter",
+        ]),
+        // `PostProcessReadsForRSEM.getDefaultReadFilters` is a SINGLETON that is not the walker's:
+        // `NOT_SUPPLEMENTARY_ALIGNMENT` alone, with no wellformed filter at all, so a malformed read
+        // reaches the tool and a supplementary one never does.
+        "PostProcessReadsForRSEM" => Some(&["NotSupplementaryAlignmentReadFilter"]),
+        // `TransferReadTags` overrides no filter, so its default is `GATKTool`'s own wellformed one.
+        // It is declared here rather than left to the fallback because the tool APPLIES NONE of it:
+        // `traverse()` iterates the data source directly, so the chain is selected, listed by
+        // `--disable-read-filter`, and never consulted.
+        "TransferReadTags" => Some(&["WellformedReadFilter"]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",
@@ -276,6 +312,22 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "NotDuplicateReadFilter",
             "MappingQualityReadFilter",
         ]),
+        _ => None,
+    }
+}
+
+/// `@PositionalArguments(minElements, maxElements)`, for the tools that declare one.
+///
+/// A positional argument is not a named one: the declarations golden is
+/// `getNamedArgumentDefinitions`, which does not carry it, and the usage prints it under the
+/// placeholder `[NA - Positional]`. The pair of counts is what the parser needs, and what it says
+/// when a command line breaks either of them is measured by the tool-argument-declarations suite:
+/// too few is a `MissingArgument` naming "Positional Argument", too many is a plain
+/// `CommandLineException`.
+pub fn positional_arguments(tool: &str) -> Option<(usize, usize)> {
+    match tool {
+        // `CompareBaseQualities` takes the two SAM files it compares this way, and exactly two.
+        "CompareBaseQualities" => Some((2, 2)),
         _ => None,
     }
 }

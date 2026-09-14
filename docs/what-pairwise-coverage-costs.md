@@ -12,8 +12,13 @@ Every tool in the inventory, t=2, arrays verified tuple by tuple:
 
 | value policy | oracle runs | arguments in the arrays | excluded |
 |---|---:|---:|---:|
-| `strict` | **19,437** | 6,312 of 13,130 (48%) | 6,818 |
-| `perturb` | **21,918** | 8,674 of 13,130 (66%) | 4,456 |
+| `strict` | **19,454** | 6,320 of 13,130 (48%) | 6,810 |
+| `perturb` | **21,923** | 8,682 of 13,130 (66%) | 4,448 |
+
+Both totals moved by a few rows when the inventory learned to read a documented enum's members
+(#1120): eight arguments that had no domain at all now have one, so eight arguments left the
+excluded column and the arrays that hold them grew. Nothing else about the sizing changed, and the
+median did not move.
 
 Median tool: **19 rows**. The distribution is very long-tailed: `VCFComparator` alone needs 3,102,
 because `--read-filter` has 56 members and `--annotation` has 55, and pairwise over two domains

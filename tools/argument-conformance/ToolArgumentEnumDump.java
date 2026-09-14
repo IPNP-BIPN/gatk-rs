@@ -131,6 +131,66 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.coverage.CallableLoci());
         declarations("ShiftFasta",
                 new org.broadinstitute.hellbender.tools.walkers.fasta.ShiftFasta());
+        declarations("RevertBaseQualityScores",
+                new org.broadinstitute.hellbender.tools.walkers.RevertBaseQualityScores());
+        declarations("AddOriginalAlignmentTags",
+                new org.broadinstitute.hellbender.tools.AddOriginalAlignmentTags());
+        // The next two. `LeftAlignIndels` is a read walker that needs a REFERENCE, which is the
+        // first required argument in this dump that is not the reads, and `DumpTabixIndex` is a
+        // tool that is no walker at all and whose whole namespace is fourteen arguments.
+        declarations("LeftAlignIndels",
+                new org.broadinstitute.hellbender.tools.LeftAlignIndels());
+        declarations("DumpTabixIndex",
+                new org.broadinstitute.hellbender.tools.DumpTabixIndex());
+        // The next two. `ReadAnonymizer` is a read walker that needs a reference AND rewrites the
+        // bases it reads, and `PrintFileDiagnostics` declares fifteen arguments and is no walker.
+        declarations("ReadAnonymizer",
+                new org.broadinstitute.hellbender.tools.walkers.ReadAnonymizer());
+        declarations("PrintFileDiagnostics",
+                new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
+        // The next two, and both write MORE than one output: `SplitReads` writes one file per
+        // key of up to three splitters, and `ClipReads` writes a statistics file beside its BAM.
+        declarations("SplitReads",
+                new org.broadinstitute.hellbender.tools.SplitReads());
+        declarations("ClipReads",
+                new org.broadinstitute.hellbender.tools.ClipReads());
+        // The next two, and both need a REFERENCE: `SplitNCigarReads` splits a read at every `N`
+        // and `MethylationTypeCaller` writes a VCF rather than reads.
+        declarations("SplitNCigarReads",
+                new org.broadinstitute.hellbender.tools.walkers.rnaseq.SplitNCigarReads());
+        declarations("MethylationTypeCaller",
+                new org.broadinstitute.hellbender.tools.walkers.MethylationTypeCaller());
+        // The next two. `BaseRecalibrator` writes a GATKReport rather than reads and takes a
+        // FeatureInput of known sites, and `GtfToBed` reads an annotation and writes a BED.
+        declarations("BaseRecalibrator",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.BaseRecalibrator());
+        declarations("GtfToBed",
+                new org.broadinstitute.hellbender.tools.walkers.conversion.GtfToBed());
+        // Two tools of the record-transform archetype that are no WALKERS: both extend `GATKTool`
+        // and override `traverse()`, so a second reads source is opened by hand and the engine's
+        // filter, transformer and interval machinery never runs. `TransferReadTags` walks two files
+        // in lockstep and copies tags from the unmapped one, and `PostProcessReadsForRSEM` reorders
+        // a query-name-sorted file into the pairs RSEM will read.
+        declarations("TransferReadTags",
+                new org.broadinstitute.hellbender.tools.walkers.qc.TransferReadTags());
+        declarations("PostProcessReadsForRSEM",
+                new org.broadinstitute.hellbender.tools.walkers.qc.PostProcessReadsForRSEM());
+        // A `VariantWalker` that writes a TABLE rather than a VCF, and a tool that is no GATK tool
+        // at all: `CompareBaseQualities` extends `PicardCommandLineProgram`, so its namespace is
+        // Picard's argument set and not the engine's, which nothing declared here has been.
+        declarations("VariantsToTable",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.VariantsToTable());
+        declarations("CompareBaseQualities",
+                new org.broadinstitute.hellbender.tools.validation.CompareBaseQualities());
+        // The first two tools here that WRITE a VCF, which is a writer this port has not used from a
+        // runner before. `RemoveNearbyIndels` buffers one indel at a time and drops any pair closer
+        // than a spacing; `UpdateVCFSequenceDictionary` replaces the header's dictionary and passes
+        // every record through, and its `--source-dictionary` is the first argument here that takes
+        // a dictionary from any of four file kinds.
+        declarations("RemoveNearbyIndels",
+                new org.broadinstitute.hellbender.tools.walkers.validation.RemoveNearbyIndels());
+        declarations("UpdateVCFSequenceDictionary",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.UpdateVCFSequenceDictionary());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

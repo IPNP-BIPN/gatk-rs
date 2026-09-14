@@ -7,12 +7,7 @@
     "It is not a byte-identity claim over the argument surface: an array covers PAIRS of argument",
     "values, and `distinct_outputs` says how many of those pairs the corpus can actually observe.",
     "A tool whose accepted rows all produce one output has an array that covers its arguments",
-    "without testing them.",
-    "",
-    "A tool whose array changed is REMOVED here rather than left at its old number, and the",
-    "dashboard prints `not measured` for it until CI runs the new array. The number has to come",
-    "from the run that produced it: an array with different rows and a share carried over from the",
-    "previous one is a claim about a file that no longer exists."
+    "without testing them."
   ],
   "tools": {
     "IndexFeatureFile": {
@@ -124,11 +119,11 @@
       "share": 1.0
     },
     "Pileup": {
-      "rows": 21,
-      "accepted": 10,
-      "rejected": 11,
-      "distinct_outputs": 3,
-      "matched": 21,
+      "rows": 18,
+      "accepted": 12,
+      "rejected": 6,
+      "distinct_outputs": 7,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },
@@ -187,11 +182,11 @@
       "share": 1.0
     },
     "CheckPileup": {
-      "rows": 20,
+      "rows": 21,
       "accepted": 10,
-      "rejected": 10,
-      "distinct_outputs": 5,
-      "matched": 20,
+      "rejected": 11,
+      "distinct_outputs": 3,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
@@ -246,6 +241,195 @@
       "rejected": 8,
       "distinct_outputs": 3,
       "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "RevertBaseQualityScores": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "AddOriginalAlignmentTags": {
+      "rows": 18,
+      "accepted": 10,
+      "rejected": 8,
+      "distinct_outputs": 10,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "LeftAlignIndels": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "DumpTabixIndex": {
+      "rows": 7,
+      "accepted": 3,
+      "rejected": 4,
+      "distinct_outputs": 2,
+      "matched": 7,
+      "t": 2,
+      "share": 1.0
+    },
+    "ReadAnonymizer": {
+      "rows": 22,
+      "accepted": 6,
+      "rejected": 16,
+      "distinct_outputs": 6,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintFileDiagnostics": {
+      "rows": 6,
+      "accepted": 4,
+      "rejected": 2,
+      "distinct_outputs": 2,
+      "matched": 6,
+      "t": 2,
+      "share": 1.0
+    },
+    "SplitReads": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 10,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "ClipReads": {
+      "rows": 24,
+      "accepted": 10,
+      "rejected": 14,
+      "distinct_outputs": 10,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "SplitNCigarReads": {
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 13,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "MethylationTypeCaller": {
+      "rows": 21,
+      "accepted": 11,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "BaseRecalibrator": {
+      "rows": 21,
+      "accepted": 8,
+      "rejected": 13,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "GtfToBed": {
+      "rows": 20,
+      "accepted": 10,
+      "rejected": 10,
+      "distinct_outputs": 3,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "CallableLoci": {
+      "rows": 18,
+      "accepted": 10,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "ShiftFasta": {
+      "rows": 21,
+      "accepted": 11,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "TransferReadTags": {
+      "rows": 19,
+      "accepted": 9,
+      "rejected": 10,
+      "distinct_outputs": 9,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "PostProcessReadsForRSEM": {
+      "rows": 20,
+      "accepted": 9,
+      "rejected": 11,
+      "distinct_outputs": 9,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "VariantsToTable": {
+      "rows": 23,
+      "accepted": 10,
+      "rejected": 13,
+      "distinct_outputs": 8,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "CompareBaseQualities": {
+      "rows": 11,
+      "accepted": 4,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "RemoveNearbyIndels": {
+      "rows": 24,
+      "accepted": 16,
+      "rejected": 8,
+      "distinct_outputs": 8,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "UpdateVCFSequenceDictionary": {
+      "rows": 24,
+      "accepted": 11,
+      "rejected": 13,
+      "distinct_outputs": 4,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "SelectVariants": {
+      "rows": 50,
+      "accepted": 30,
+      "rejected": 20,
+      "distinct_outputs": 6,
+      "matched": 50,
       "t": 2,
       "share": 1.0
     }

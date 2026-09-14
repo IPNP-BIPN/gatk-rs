@@ -202,6 +202,53 @@ pub fn read_anonymizer(
     write_records(&header, &anonymised, options.create_output_bam_index)
 }
 
+/// The same run against a reference SOURCE rather than one contig's bases, which is what a command
+/// line hands over, with the writer's compression named.
+///
+/// The window each read is anonymised against is the read's own span, and the walker builds it per
+/// read: a reference that does not carry the read's contig is refused HERE and not at startup, and
+/// the caller turns that into `MissingContigInSequenceDictionary` because the dictionary the
+/// message prints is the caller's to pretty-print.
+pub fn read_anonymizer_with(
+    source: &ReadsDataSource,
+    reference: &mut gatk_engine::reference::ReferenceFileSource,
+    arguments: &AnonymizerArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), ReadsError> {
+    let applied = crate::read_walker::traverse_with_reference(
+        source,
+        Some(reference),
+        &options.intervals,
+        false,
+        filter,
+    )?;
+    let mut anonymised = Vec::with_capacity(applied.len());
+    for mut entry in applied {
+        let bases = entry
+            .context
+            .bases(reference)
+            .map_err(|error| match error {
+                gatk_engine::context::ContextError::Reference(
+                    gatk_engine::reference::ReferenceError::UnknownContig(contig),
+                ) => ReadsError::ContigNotInDictionary(contig),
+                other => ReadsError::Malformed(format!("{other:?}")),
+            })?;
+        entry.read = anonymize_read(&entry.read, &bases, arguments);
+        anonymised.push(entry.read);
+    }
+    let header = header_for_sam_writer(source.header(), TOOL_NAME, options);
+    crate::sam_output::write_records_with(
+        &header,
+        &anonymised,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -23,6 +23,7 @@
 pub mod command_line;
 pub mod definitions;
 pub mod runners;
+pub mod variant_bridge;
 
 use gatk_tools::main_entry::{self, Failure, Route, Stream, Thrown};
 
@@ -296,6 +297,27 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CompareIntervalLists" => Some(run_compare_interval_lists),
         "FixMisencodedBaseQualityReads" => Some(run_fix_misencoded_base_quality_reads),
         "AnnotateIntervals" => Some(run_annotate_intervals),
+        "RevertBaseQualityScores" => Some(run_revert_base_quality_scores),
+        "AddOriginalAlignmentTags" => Some(run_add_original_alignment_tags),
+        "LeftAlignIndels" => Some(run_left_align_indels),
+        "DumpTabixIndex" => Some(run_dump_tabix_index),
+        "ReadAnonymizer" => Some(run_read_anonymizer),
+        "PrintFileDiagnostics" => Some(run_print_file_diagnostics),
+        "SplitReads" => Some(run_split_reads),
+        "ClipReads" => Some(run_clip_reads),
+        "SplitNCigarReads" => Some(run_split_n_cigar_reads),
+        "MethylationTypeCaller" => Some(run_methylation_type_caller),
+        "BaseRecalibrator" => Some(run_base_recalibrator),
+        "GtfToBed" => Some(run_gtf_to_bed),
+        "CallableLoci" => Some(run_callable_loci),
+        "ShiftFasta" => Some(run_shift_fasta),
+        "TransferReadTags" => Some(run_transfer_read_tags),
+        "PostProcessReadsForRSEM" => Some(run_post_process_reads_for_rsem),
+        "VariantsToTable" => Some(run_variants_to_table),
+        "CompareBaseQualities" => Some(run_compare_base_qualities),
+        "RemoveNearbyIndels" => Some(run_remove_nearby_indels),
+        "UpdateVCFSequenceDictionary" => Some(run_update_vcf_sequence_dictionary),
+        "SelectVariants" => Some(run_select_variants),
         _ => None,
     }
 }
@@ -307,6 +329,90 @@ fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_annotate_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::annotate_intervals(&parsed("AnnotateIntervals", args)?)
+}
+
+fn run_revert_base_quality_scores(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::revert_base_quality_scores(&parsed("RevertBaseQualityScores", args)?)
+}
+
+fn run_add_original_alignment_tags(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::add_original_alignment_tags(&parsed("AddOriginalAlignmentTags", args)?)
+}
+
+fn run_left_align_indels(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::left_align_indels(&parsed("LeftAlignIndels", args)?)
+}
+
+fn run_dump_tabix_index(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::dump_tabix_index(&parsed("DumpTabixIndex", args)?)
+}
+
+fn run_read_anonymizer(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::read_anonymizer(&parsed("ReadAnonymizer", args)?)
+}
+
+fn run_print_file_diagnostics(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_file_diagnostics(&parsed("PrintFileDiagnostics", args)?)
+}
+
+fn run_split_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_reads(&parsed("SplitReads", args)?)
+}
+
+fn run_clip_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::clip_reads(&parsed("ClipReads", args)?)
+}
+
+fn run_split_n_cigar_reads(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_n_cigar_reads(&parsed("SplitNCigarReads", args)?)
+}
+
+fn run_methylation_type_caller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::methylation_type_caller(&parsed("MethylationTypeCaller", args)?)
+}
+
+fn run_base_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::base_recalibrator(&parsed("BaseRecalibrator", args)?)
+}
+
+fn run_gtf_to_bed(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gtf_to_bed(&parsed("GtfToBed", args)?)
+}
+
+fn run_callable_loci(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::callable_loci(&parsed("CallableLoci", args)?)
+}
+
+fn run_shift_fasta(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::shift_fasta(&parsed("ShiftFasta", args)?)
+}
+
+fn run_transfer_read_tags(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::transfer_read_tags(&parsed("TransferReadTags", args)?)
+}
+
+fn run_post_process_reads_for_rsem(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::post_process_reads_for_rsem(&parsed("PostProcessReadsForRSEM", args)?)
+}
+
+fn run_variants_to_table(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variants_to_table(&parsed("VariantsToTable", args)?)
+}
+
+fn run_compare_base_qualities(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::compare_base_qualities(&parsed("CompareBaseQualities", args)?)
+}
+
+fn run_remove_nearby_indels(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::remove_nearby_indels(&parsed("RemoveNearbyIndels", args)?)
+}
+
+fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::update_vcf_sequence_dictionary(&parsed("UpdateVCFSequenceDictionary", args)?)
+}
+
+fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::select_variants(&parsed("SelectVariants", args)?)
 }
 
 fn run_compare_interval_lists(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -435,6 +541,13 @@ fn parser_for(
     list: &'static [gatk_tools::tool_declarations::Declaration],
 ) -> gatk_barclay::Parser {
     let parser = gatk_barclay::Parser::new(definitions::definitions(list));
+    // `@PositionalArguments`, which one declared tool has: `CompareBaseQualities` takes exactly two
+    // SAM files that way. It is not part of the declarations golden, because
+    // `getNamedArgumentDefinitions` does not carry a positional argument at all.
+    let parser = match gatk_tools::plugin_ownership::positional_arguments(tool) {
+        None => parser,
+        Some((minimum, maximum)) => parser.with_positional_arguments(minimum, maximum),
+    };
     let parser = match gatk_tools::plugin_ownership::default_filters(tool) {
         None => parser,
         Some(defaults) => {

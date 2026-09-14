@@ -13,7 +13,7 @@
 //!  * **and the two refusals**, one from the traversal and one from the comparator.
 
 use gatk_corpus as corpus;
-use gatk_tools::gtf_to_bed::{run, EntryType, Feature, GtfError};
+use gatk_tools::gtf_to_bed::{run, Feature, GtfError};
 
 fn golden() -> String {
     corpus::read_golden(
@@ -58,56 +58,10 @@ fn dictionary(text: &str, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// One GTF attribute, quoted or bare.
-fn attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
-    attributes.split("; ").find_map(|entry| {
-        let entry = entry.trim().trim_end_matches(';');
-        let (name, value) = entry.split_once(' ')?;
-        if name == key {
-            Some(value.trim_matches('"'))
-        } else {
-            None
-        }
-    })
-}
-
 /// Every gene and transcript line of the GTF; the exons the tool walks past are dropped here.
 fn features(gtf: &str) -> Vec<Feature> {
-    gtf.lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let fields: Vec<&str> = line.split('\t').collect();
-            let kind = match fields[2] {
-                "gene" => EntryType::Gene,
-                "transcript" => EntryType::Transcript,
-                _ => return None,
-            };
-            let attributes = fields[8];
-            Some(Feature {
-                contig: fields[0].to_string(),
-                start: fields[3].parse().expect("a start"),
-                end: fields[4].parse().expect("an end"),
-                kind,
-                gene_id: attribute(attributes, "gene_id")
-                    .expect("a gene id")
-                    .to_string(),
-                transcript_id: attribute(attributes, "transcript_id")
-                    .unwrap_or("")
-                    .to_string(),
-                gene_name: attribute(attributes, "gene_name")
-                    .expect("a gene name")
-                    .to_string(),
-                tags: attributes
-                    .split("; ")
-                    .filter_map(|entry| {
-                        let entry = entry.trim().trim_end_matches(';');
-                        let (name, value) = entry.split_once(' ')?;
-                        (name == "tag").then(|| value.trim_matches('"').to_string())
-                    })
-                    .collect(),
-            })
-        })
-        .collect()
+    // The parser is the TOOL's, so the golden's own annotation is what covers it.
+    gatk_tools::gtf_to_bed::parse_features(gtf)
 }
 
 fn check(text: &str, label: &str, by_transcript: bool, use_basic: bool) {

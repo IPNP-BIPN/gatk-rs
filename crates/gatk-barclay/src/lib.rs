@@ -1260,6 +1260,15 @@ pub struct Parser {
     /// (#1070).
     #[allow(clippy::type_complexity)]
     plugin_validation: Option<Box<dyn Fn(&Parser) -> Result<(), Error>>>,
+    /// `@PositionalArguments(minElements, maxElements)`, when the tool declares one.
+    ///
+    /// A positional argument is not a NAMED one: `getNamedArgumentDefinitions` does not carry it,
+    /// the usage prints it under the placeholder `[NA - Positional]`, and its values arrive with no
+    /// name in front of them. What it needs from the parser is the pair of counts and the two
+    /// refusals they produce, both measured on `CompareBaseQualities`.
+    positional: Option<(usize, usize)>,
+    /// The positional values the last parse collected, in the order they were given.
+    positional_values: Vec<String>,
     /// `argumentsFilesLoadedAlready`.
     ///
     /// Parser state rather than per-call state, because the recursion is the same parser calling
@@ -1279,8 +1288,22 @@ impl Parser {
             plugin_resolution: None,
             default_plugins: Vec::new(),
             plugin_validation: None,
+            positional: None,
+            positional_values: Vec::new(),
             arguments_files_loaded_already: Vec::new(),
         }
+    }
+
+    /// `@PositionalArguments(minElements = ..., maxElements = ...)`, which a tool either has or
+    /// does not.
+    pub fn with_positional_arguments(mut self, minimum: usize, maximum: usize) -> Self {
+        self.positional = Some((minimum, maximum));
+        self
+    }
+
+    /// The positional values the parse collected, which is how a runner reads them.
+    pub fn positional_values(&self) -> &[String] {
+        &self.positional_values
     }
 
     /// The descriptor's own `validateAndResolvePlugins`, which runs after the plugin trim and
@@ -1335,6 +1358,85 @@ impl Parser {
             .position(|definition| definition.argument_aliases().contains(&alias))
     }
 
+    /// The order values are propagated in, which is a `java.util.HashMap`'s.
+    ///
+    /// `propagateParsedValues` walks `parsedArguments.asMap().keySet()`, and jopt-simple builds
+    /// that map by putting every recognized spec into a **plain `HashMap`**:
+    ///
+    /// ```text
+    /// 0: new  #34   // class java/util/HashMap
+    /// ...
+    /// 56: invokeinterface #184, 3  // InterfaceMethod java/util/Map.put
+    /// ```
+    ///
+    /// so the walk is in hash order over the specs and not in field order. It matters because a
+    /// value is range-checked as it is SET: a command line with two arguments out of range reports
+    /// whichever of them this order reaches first, and reports it in place of the other. Measured
+    /// on three pairs across two tools, in both command-line orders (#1128).
+    ///
+    /// Three pieces, each of them specified rather than incidental:
+    ///
+    ///   - the key's hash is `AbstractOptionSpec.hashCode()`, which is `options.hashCode()`, the
+    ///     `List<String>` hash of the spec's own option names -- the short one then the long one,
+    ///     which is [`Definition::argument_aliases`];
+    ///   - the insertion order is `recognizedSpecs.values()`, and `_recognizedOptions()` builds a
+    ///     `LinkedHashMap` over `trainingOrder`, so it is the order the options were registered in,
+    ///     which is field order. A spec registered under two aliases is put twice under the same
+    ///     key and enters the table once, at its first;
+    ///   - the table itself: sixteen buckets, doubling past three quarters full, the bucket chosen
+    ///     by the low bits of the mixed hash, and each bucket in insertion order.
+    ///
+    /// `gatk_engine::java_hash` carries the same layout for the engine's own `HashMap` orders and
+    /// is measured against the reference there. It is transcribed rather than shared because this
+    /// crate is a port of a SEPARATE library and carries no dependencies. A bucket that grows past
+    /// eight entries is treeified by the reference and ordered by hash rather than by insertion;
+    /// nothing here reaches that, and this keeps insertion order if it ever does.
+    fn propagation_order(&self) -> Vec<usize> {
+        // `List.hashCode`: `31 * h + e.hashCode()` from one, and `String.hashCode` over UTF-16.
+        let string_hash = |text: &str| -> i32 {
+            let mut hash: i32 = 0;
+            for unit in text.encode_utf16() {
+                hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
+            }
+            hash
+        };
+        let spec_hash = |definition: &Definition| -> i32 {
+            jopt_option_names(&definition.argument_aliases())
+                .iter()
+                .fold(1i32, |hash, alias| {
+                    hash.wrapping_mul(31).wrapping_add(string_hash(alias))
+                })
+        };
+
+        let mut capacity: usize = 16;
+        let mut table: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
+        let mut size: usize = 0;
+        for (index, definition) in self.definitions.iter().enumerate() {
+            let hash = spec_hash(definition);
+            let mixed = hash ^ ((hash as u32) >> 16) as i32;
+            let bucket = ((capacity - 1) as u32 & mixed as u32) as usize;
+            table[bucket].push((index, hash));
+            size += 1;
+            if size > capacity * 3 / 4 {
+                capacity *= 2;
+                let mut resized: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
+                for entries in table.into_iter() {
+                    for (entry, entry_hash) in entries {
+                        let mixed = entry_hash ^ ((entry_hash as u32) >> 16) as i32;
+                        let to = ((capacity - 1) as u32 & mixed as u32) as usize;
+                        resized[to].push((entry, entry_hash));
+                    }
+                }
+                table = resized;
+            }
+        }
+        table
+            .into_iter()
+            .flatten()
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     /// `parseArguments(messageStream, args)`.
     ///
     /// Three phases, in this order, because the order decides which error a doubly-wrong command
@@ -1376,11 +1478,10 @@ impl Parser {
             return self.parse_arguments_with(&borrowed, files);
         }
 
-        // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`: the map is over
-        // the specs as they were registered, which is field order, and `has` filters it to the
-        // ones actually given. So values are propagated in **declaration** order, not in the order
-        // the user wrote them.
-        for index in 0..self.definitions.len() {
+        // `for (final OptionSpec<?> optSpec : parsedArguments.asMap().keySet())`, and `has`
+        // filters it to the ones actually given. The map is NOT in field order: see
+        // [`Parser::propagation_order`].
+        for index in self.propagation_order() {
             let Some(values) = parsed.iter().find(|(i, _)| *i == index).map(|(_, v)| v) else {
                 continue;
             };
@@ -1388,7 +1489,24 @@ impl Parser {
             self.definitions[index].set_argument_values(values, append, &surrogates, files)?;
         }
 
-        if !positionals.is_empty() {
+        // A tool that DECLARES positional arguments takes them, and refuses two counts: fewer than
+        // the minimum is a `MissingArgument` naming "Positional Argument", and more than the maximum
+        // is a plain `CommandLineException`. Both messages are measured on `CompareBaseQualities`,
+        // whose pair of SAM files arrive this way.
+        if let Some((minimum, maximum)) = self.positional {
+            if positionals.len() > maximum {
+                return Err(Error::command_line(format!(
+                    "No more than {maximum} positional arguments may be specified."
+                )));
+            }
+            if positionals.len() < minimum {
+                return Err(Error::missing_argument(
+                    "Positional Argument",
+                    &format!("At least {minimum} positional arguments must be specified."),
+                ));
+            }
+            self.positional_values = positionals;
+        } else if !positionals.is_empty() {
             // `stringValues.stream().collect(Collectors.joining("{", ",", "}"))`. The three
             // arguments of `joining` are (delimiter, prefix, suffix), so this is a delimiter of
             // `{`, a prefix of `,` and a suffix of `}`: one value renders as `,maybe}` and two as
@@ -1717,6 +1835,40 @@ impl Parser {
             .find(|definition| definition.long_name() == long_name)
             .map(|definition| &definition.value)
     }
+}
+
+/// `AbstractOptionSpec.arrangeOptions`, which is what the spec's own `options()` list holds.
+///
+/// jopt-simple does not keep the names it was handed. A spec with more than one name is split into
+/// the ONE-CHARACTER names and the rest, **each half sorted**, and the short half comes first. The
+/// hash that decides [`Parser::propagation_order`] is that list's, so the sort is not cosmetic:
+/// `CallableLoci` declares `--max-low-mapq` as `{mlmq, max-low-mapq}` and neither name is one
+/// character, so the pair is stored as `[max-low-mapq, mlmq]` and hashes to a different bucket than
+/// the order the annotation gives. Measured on eight rows of that tool's covering array, where the
+/// reference reports `max-low-mapq` out of range and the port reported whichever other argument the
+/// unsorted hash reached first.
+///
+/// A single name is returned untouched, which is the reference's own early exit.
+fn jopt_option_names<'a>(aliases: &[&'a str]) -> Vec<&'a str> {
+    if aliases.len() == 1 {
+        return aliases.to_vec();
+    }
+    let mut short: Vec<&str> = aliases
+        .iter()
+        .copied()
+        .filter(|name| name.encode_utf16().count() == 1)
+        .collect();
+    let mut long: Vec<&str> = aliases
+        .iter()
+        .copied()
+        .filter(|name| name.encode_utf16().count() != 1)
+        .collect();
+    // `Collections.sort`, which for strings is `compareTo`: UTF-16 code unit order, and for the
+    // ASCII these names are made of that is byte order.
+    short.sort_unstable();
+    long.sort_unstable();
+    short.extend(long);
+    short
 }
 
 /// `detectAndRejectHybridSyntax`: an option **name** may not contain `=`.

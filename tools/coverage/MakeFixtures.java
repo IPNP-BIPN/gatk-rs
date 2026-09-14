@@ -30,6 +30,37 @@ import java.util.List;
 
 public class MakeFixtures {
 
+    /**
+     * A VCF of INDELS at measured distances, which is what `RemoveNearbyIndels` needs.
+     *
+     * Every other VCF in this corpus holds SNPs alone, and a run over one of those emits every
+     * record whatever the spacing is: the array would measure the traversal and not the tool. The
+     * records here are, in order: an isolated indel; a PAIR ten bases apart, which any spacing above
+     * ten removes; a SNP between them, which survives its neighbours being dropped; a RUN of three
+     * indels, which the buffer loses whole because it measures the next one against an indel it has
+     * already thrown away; and a last indel a hundred bases past the run, which a spacing of 200
+     * takes with it and a spacing of 10 does not.
+     */
+    static String indelVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n");
+        final int[][] records = {
+                // position, kind: 0 is a deletion, 1 an insertion, 2 a snp
+                {1000, 0}, {2000, 1}, {2010, 0}, {2015, 2}, {3000, 1}, {3005, 0}, {3010, 1},
+                {3110, 0},
+        };
+        for (final int[] record : records) {
+            final String reference = record[1] == 0 ? "ACGT" : "A";
+            final String alternate = record[1] == 0 ? "A" : (record[1] == 1 ? "ACGT" : "C");
+            text.append("chr1\t").append(record[0]).append("\trs").append(record[0])
+                    .append('\t').append(reference).append('\t').append(alternate)
+                    .append("\t100\tPASS\t.\tGT\t0/1\n");
+        }
+        return text.toString();
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -114,6 +145,301 @@ public class MakeFixtures {
     }
 
     /**
+     * A coordinate-sorted BAM whose reads carry `N` in their cigars, which is what
+     * `SplitNCigarReads` splits on, and one whose cigar has none.
+     *
+     * A read with k `N` elements becomes k+1 reads, so a file of plain `10M` reads comes out of
+     * the tool unchanged and measures the traversal rather than the split. The `N` here is ten
+     * bases of reference between two matched sections, which is a splice a reference of repeats
+     * still supports.
+     */
+    static void spliced(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final String[] cigars = {"4M10N6M", "3M5N3M5N4M", "10M"};
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < cigars.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(5 + index * 700);
+                record.setCigarString(cigars[index]);
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM that reads like bisulfite sequencing over the corpus's reference.
+     *
+     * The reference is `ACGT` repeated, so a C sits at every fourth base and a G beside it. The
+     * tool counts, at a reference C, the FORWARD reads that kept the C against those that read T,
+     * and at a reference G the REVERSE reads that kept the G against those that read A. Both
+     * strands are here and both conversions, so the array has records to compare rather than an
+     * empty VCF: four forward reads of which two are converted, and four reverse reads of which
+     * two are.
+     */
+    static void methylation(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final boolean reverse = index >= 4;
+                final boolean converted = index % 4 >= 2;
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                // Every row of the array excludes an interval near the start of the contig, so
+                // reads placed there are filtered out and the tool writes a header and no record.
+                // 1005 is in phase with the ACGT repeat and outside both excluded ranges.
+                record.setAlignmentStart(1005);
+                record.setCigarString("12M");
+                record.setMappingQuality(60);
+                // The reference from position 1005 is ACGTACGTACGT. A converted forward read reads
+                // T where the reference has C, and a converted reverse read reads A where it has G.
+                final String bases;
+                if (!converted) {
+                    bases = "ACGTACGTACGT";
+                } else if (reverse) {
+                    bases = "ACATACATACAT";
+                } else {
+                    bases = "ATGTATGTATGT";
+                }
+                record.setReadString(bases);
+                record.setBaseQualityString("IIIIIIIIIIII");
+                record.setReadNegativeStrandFlag(reverse);
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM whose reads PILE UP: eight of them at one locus, four at the next.
+     *
+     * `--max-depth-per-sample` thins a pileup deeper than its target, and every other file in this
+     * corpus has a depth of one, so the argument decided nothing and could not be measured. Eight
+     * at one position is deep enough for the reservoir to draw and the leveller to level at any
+     * target the array uses.
+     *
+     * The bases differ read by read, which is what makes a thinned pileup VISIBLE: eight identical
+     * reads would print the same column whichever four survived.
+     */
+    static void deep(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            final String[] bases = {
+                    "ACGTACGTAC", "ACGTACGTAG", "ACGTACGTAT", "ACGTACGTAA",
+                    "CCGTACGTAC", "GCGTACGTAC", "TCGTACGTAC", "ACGTACGTCC",
+            };
+            for (int index = 0; index < bases.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                // Eight at 1005 and four more at 1105, so a run sees one deep locus and one that is
+                // deep for half as long: the leveller's plan depends on the stacks it is given.
+                record.setAlignmentStart(index < 8 ? 1005 : 1105);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString(bases[index]);
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+            for (int index = 0; index < 4; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:2:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(1105);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString(bases[index]);
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM with TWO read groups, differing in sample and in library.
+     *
+     * `SplitReads` writes one file per key, so a file with a single read group is one file
+     * whichever splitter is asked for, and an array over it would compare one output to itself.
+     * Two groups make `--split-sample`, `--split-read-group` and `--split-library-name` each
+     * produce two files, and their keys differ from one another.
+     */
+    static void twoGroups(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {
+                {"rg1", "sample1", "lib1"}, {"rg2", "sample2", "lib2"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary(group[2]);
+            record.setPlatformUnit("unit1");
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 6; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("II##IIII##");
+                record.setAttribute("RG", index % 2 == 0 ? "rg1" : "rg2");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM whose reads carry INDELS inside the reference's repeat, which is
+     * what `LeftAlignIndels` needs to move anything.
+     *
+     * The reference this corpus carries is `ACGT` repeated, so an indel of a whole four-base unit
+     * can walk left through the repeat: a deletion that reaches the front of the read's window is
+     * DROPPED and the read moves right by the bases it removed, and an insertion that reaches it
+     * is kept where it is. Both branches are here, next to the two kinds of read that never reach
+     * the call at all: one whose cigar is a single element, and an unmapped one.
+     *
+     * A file of plain `10M` reads would leave every row of the array with the input unchanged,
+     * which is an array that measures the traversal and not the tool.
+     */
+    static void indels(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        // Position 5 is an `A`, so a read starting there is in phase with the repeat and an indel
+        // of one whole unit leaves the alignment just as good four bases to the left.
+        final String[][] reads = {
+                {"4M4D6M", "ACGTACGTAC"},
+                {"4M4I6M", "ACGTACGTACGTAC"},
+                {"10M", "ACGTACGTAC"},
+        };
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < reads.length; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(5 + index * 700);
+                record.setCigarString(reads[index][0]);
+                record.setMappingQuality(60);
+                record.setReadString(reads[index][1]);
+                record.setBaseQualityString("I".repeat(reads[index][1].length()));
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+            final SAMRecord unmapped = new SAMRecord(header);
+            unmapped.setReadName("HWI:1:FC:1:1:9:9");
+            unmapped.setReadUnmappedFlag(true);
+            unmapped.setReadString("ACGTACGTAC");
+            unmapped.setBaseQualityString("IIIIIIIIII");
+            unmapped.setAttribute("RG", "rg1");
+            writer.addAlignment(unmapped);
+        }
+    }
+
+    /**
+     * A coordinate-sorted BAM whose every read carries `OQ`, which is what
+     * `RevertBaseQualityScores` needs to do anything at all.
+     *
+     * That tool ABORTS on the first read without the tag rather than skipping it, so a corpus
+     * holding only `reads.bam` measures the refusal and nothing else. Here every read has one, and
+     * the original qualities DIFFER from the current ones -- `2` against `I`, which is quality two
+     * against forty -- so a row that reverts is a different file rather than the same one.
+     */
+    static void bamWithOriginalQualities(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg4");
+        group.setSample("sample4");
+        group.setLibrary("lib4");
+        group.setPlatformUnit("unit4");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 6; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("OQ:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setFlags(0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(150 + index * 800);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                // The original qualities the tool restores, and they are not the current ones.
+                record.setAttribute("OQ", "##########");
+                record.setAttribute("RG", "rg4");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A second coordinate-sorted BAM, so that `--input` has two values rather than one.
      *
      * An argument with a single fixture value is held at it and no row can notice whether it
@@ -175,6 +501,174 @@ public class MakeFixtures {
      * the second pair straddles most of the contig, and the third is a pair whose mate is
      * unmapped.
      */
+    /**
+     * A QUERY-NAME sorted BAM of pairs, which is what the two tools that are no walkers require.
+     *
+     * `PostProcessReadsForRSEM` refuses anything else outright, and `TransferReadTags` refuses an
+     * aligned file whose header does not say `SO:queryname`, so every other BAM in this corpus
+     * reaches one line of either tool and stops. The four groups here are the four answers
+     * `passesRSEMFilter` gives:
+     *
+     *   - `PAIR:1` is a proper pair of single-`M` reads, which passes, and it carries a pair of
+     *     SECONDARY alignments whose mate positions point at each other, which is the one shape
+     *     `groupSecondaryReads` keeps;
+     *   - `PAIR:2`'s second read is unmapped, which is the `notBothMapped` count;
+     *   - `PAIR:3`'s first read has an insertion in its cigar, which is the `unsupportedCigar`
+     *     count: RSEM takes one `M` element and nothing else;
+     *   - and `PAIR:4` is a first-of-pair with no second, which warns and is dropped.
+     *
+     * A group holding only a SECOND-of-pair is deliberately absent: it dereferences null in the
+     * reference and would end every row of both arrays at the same line.
+     *
+     * There is no index. A queryname-sorted BAM cannot have one, which is also why the writer is
+     * not asked for it here.
+     */
+    static void queryNameSorted(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, bam.toFile())) {
+            // PAIR:1, the group that passes: two primaries and two secondaries.
+            writer.addAlignment(mate(header, "PAIR:1", 100, 300, "10M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:1", 500, 700, "10M", true, true, false));
+            writer.addAlignment(mate(header, "PAIR:1", 300, 100, "10M", false, false, false));
+            writer.addAlignment(mate(header, "PAIR:1", 700, 500, "10M", false, true, false));
+            // PAIR:2, whose second read is unmapped.
+            writer.addAlignment(mate(header, "PAIR:2", 1000, 1200, "10M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:2", 1200, 1000, "10M", false, false, true));
+            // PAIR:3, whose first read carries an insertion.
+            writer.addAlignment(mate(header, "PAIR:3", 2000, 2200, "5M1I4M", true, false, false));
+            writer.addAlignment(mate(header, "PAIR:3", 2200, 2000, "10M", false, false, false));
+            // PAIR:4, a first of pair with no second.
+            writer.addAlignment(mate(header, "PAIR:4", 3000, 3200, "10M", true, false, false));
+        }
+    }
+
+    /** One record of {@link #queryNameSorted}, with the flags the group it belongs to needs. */
+    static SAMRecord mate(final SAMFileHeader header, final String name, final int start,
+                          final int mateStart, final String cigar, final boolean first,
+                          final boolean secondary, final boolean unmapped) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString("ACGTACGTAC");
+        record.setBaseQualityString("IIIIIIIIII");
+        record.setAttribute("RG", "rg1");
+        record.setReadPairedFlag(true);
+        record.setFirstOfPairFlag(first);
+        record.setSecondOfPairFlag(!first);
+        if (unmapped) {
+            record.setReadUnmappedFlag(true);
+            record.setMateReferenceName("chr1");
+            record.setMateAlignmentStart(mateStart);
+            return record;
+        }
+        record.setReferenceName("chr1");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(60);
+        record.setMateReferenceName("chr1");
+        record.setMateAlignmentStart(mateStart);
+        record.setProperPairFlag(!secondary);
+        record.setSecondaryAlignment(secondary);
+        return record;
+    }
+
+    /**
+     * The unmapped, query-name sorted file `TransferReadTags` copies tags FROM.
+     *
+     * One record per query name of {@link #queryNameSorted}, each carrying `RX` and none carrying
+     * `MI`: the tool asks for the tags named on its command line and refuses a read whose value is
+     * absent, so the pair of tag names is a row that answers and a row that refuses.
+     *
+     * The names are a SUPERSET of the aligned file's on purpose. The traversal plays this file
+     * forward until it catches up with the aligned read, so a name here that the aligned file does
+     * not carry is skipped, while the reverse is the tool's `IllegalStateException`.
+     */
+    static void umi(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, bam.toFile())) {
+            final String[] names = {"PAIR:1", "PAIR:2", "PAIR:3", "PAIR:4", "PAIR:5"};
+            for (final String name : names) {
+                for (final boolean first : new boolean[] {true, false}) {
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(name);
+                    record.setReadUnmappedFlag(true);
+                    record.setMateUnmappedFlag(true);
+                    record.setReadPairedFlag(true);
+                    record.setFirstOfPairFlag(first);
+                    record.setSecondOfPairFlag(!first);
+                    record.setReadString("ACGTACGTAC");
+                    record.setBaseQualityString("IIIIIIIIII");
+                    record.setAttribute("RG", "rg1");
+                    record.setAttribute("RX", "ACG-TGC");
+                    writer.addAlignment(record);
+                }
+            }
+        }
+    }
+
+    /**
+     * `reads.bam`'s eight reads, at the same positions and under the same NAMES, with a different
+     * quality array.
+     *
+     * `CompareBaseQualities` walks two files in lockstep and refuses the pair as soon as two reads
+     * disagree by name, so a comparison needs two files that hold the same reads. Every other pair
+     * in this corpus differs by name on the first record, which is one refusal on every row and no
+     * comparison at all. The qualities here are `I` where reads.bam has `I` on six bases and `#` on
+     * four, so the matrix has off-diagonal entries: the tool returns 1 rather than 0, and
+     * `--throw-on-diff` turns that into a refusal.
+     */
+    static void requalified(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setFlags(index == 7 ? 0x400 : 0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIII####");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     static void pairs(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -280,9 +774,81 @@ public class MakeFixtures {
                      new BlockCompressedOutputStream(dir.resolve("reads.vcf.gz").toFile())) {
             out.write(vcf().getBytes(StandardCharsets.UTF_8));
         }
+        // The tabix index of that block-compressed VCF, which is the only `.tbi` in the corpus and
+        // the only thing `DumpTabixIndex` can be given that it does not refuse. It is written by
+        // the reference's own `IndexFeatureFile` rather than here, so what the array reads is an
+        // index GATK produced.
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("reads.vcf.gz").toString()});
+        // A file NAMED like a tabix index and not gzipped at all. `DumpTabixIndex` checks the name
+        // before it opens anything, so a `.vcf` handed to it is refused for its name and never
+        // reaches the gzip layer; this one gets past the name and fails inside `java.util.zip`,
+        // which is the second of the two refusals in the dump-tabix-index golden.
+        Files.writeString(dir.resolve("plain.tbi"), vcf(), StandardCharsets.UTF_8);
+        // The known sites `BaseRecalibrator` reads, as a BED naming the same loci the population
+        // VCF does. Both formats are registered for that argument and the reference's own two runs
+        // over them produce the same table, so the pair is what makes the argument's two values
+        // comparable rather than merely different.
+        final StringBuilder bed = new StringBuilder();
+        for (int position = 100; position <= 4300; position += 700) {
+            // A BED is half-open and zero-based, so the same one-based locus starts one lower.
+            bed.append("chr1\t").append(position - 1).append('\t').append(position).append('\n');
+        }
+        Files.writeString(dir.resolve("known.bed"), bed.toString(), StandardCharsets.UTF_8);
+        // Indexed, because `--known-sites` is QUERIED by interval: an unindexed file is refused
+        // with `must support random access to enable queries by interval`, and a corpus that
+        // carried one would compare two refusals rather than two tables.
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("known.bed").toString()});
+        // The annotation `GtfToBed` reads, which is the gtf-to-bed golden's own: the
+        // reference's Gencode codec refuses anything less than a full one -- a hand-written
+        // file of gene and transcript lines is `Decoded feature is not valid: null`, because
+        // every transcript needs its exon line and its type, name and havana attributes.
+        Files.writeString(dir.resolve("annotation.gtf"),
+                "chr1\tHAVANA\tgene\t100\t200\t.\t+\t.\tgene_id \"GENE_B.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t50\t250\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B1.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B1.1\"; level 2; tag \"basic\"; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t50\t250\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B1.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B1.1\"; exon_number 1; exon_id \"TX_B1.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\ttranscript\t120\t180\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B2.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B2.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t120\t180\t.\t+\t.\tgene_id \"GENE_B.1\"; transcript_id \"TX_B2.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TX_B2.1\"; exon_number 1; exon_id \"TX_B2.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\tgene\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; transcript_id \"TX_A1.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TX_A1.1\"; level 2; tag \"basic\"; tag \"basic\"; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t300\t400\t.\t+\t.\tgene_id \"GENE_A.1\"; transcript_id \"TX_A1.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TX_A1.1\"; exon_number 1; exon_id \"TX_A1.1.1\"; level 2;\n"
+                        + "chr1\tHAVANA\tgene\t300\t400\t.\t+\t.\tgene_id \"GENE_C.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\ttranscript\t300\t500\t.\t+\t.\tgene_id \"GENE_C.1\"; transcript_id \"TX_C1.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; transcript_type \"protein_coding\"; transcript_name \"TX_C1.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr1\tHAVANA\texon\t300\t500\t.\t+\t.\tgene_id \"GENE_C.1\"; transcript_id \"TX_C1.1\"; gene_type \"protein_coding\"; gene_name \"gamma\"; transcript_type \"protein_coding\"; transcript_name \"TX_C1.1\"; exon_number 1; exon_id \"TX_C1.1.1\"; level 2;\n"
+                        + "chr2\tHAVANA\tgene\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr2\tHAVANA\ttranscript\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; transcript_id \"TX_D1.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; transcript_type \"protein_coding\"; transcript_name \"TX_D1.1\"; level 2; havana_gene \"OTTHUMG00000000001.1\";\n"
+                        + "chr2\tHAVANA\texon\t10\t20\t.\t+\t.\tgene_id \"GENE_D.1\"; transcript_id \"TX_D1.1\"; gene_type \"protein_coding\"; gene_name \"delta\"; transcript_type \"protein_coding\"; transcript_name \"TX_D1.1\"; exon_number 1; exon_id \"TX_D1.1.1\"; level 2;\n",
+                StandardCharsets.UTF_8);
+        // The dictionary that annotation is sorted by, which is the golden's: both contigs,
+        // so the corpus's own matching.dict is the value that refuses the chr2 gene.
+        Files.writeString(dir.resolve("gtf.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:1040\n@SQ\tSN:chr2\tLN:1040\n",
+                StandardCharsets.UTF_8);
         bam(dir.resolve("reads.bam"));
         bamTwo(dir.resolve("reads2.bam"));
+        bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
+        indels(dir.resolve("indels.bam"));
+        twoGroups(dir.resolve("groups.bam"));
+        deep(dir.resolve("deep.bam"));
+        spliced(dir.resolve("spliced.bam"));
+        methylation(dir.resolve("methyl.bam"));
+        // The `-XF` file `ClipReads` reads: a FASTA of sequences to clip, which is a different
+        // argument from `-X` and takes its names from the records rather than numbering them.
+        Files.writeString(dir.resolve("clip.fasta"),
+                ">adapterOne\nACGTACGT\n>adapterTwo\nTTTTGGGG\n", StandardCharsets.UTF_8);
         pairs(dir.resolve("pairs.bam"));
+        queryNameSorted(dir.resolve("qname.bam"));
+        umi(dir.resolve("umi.bam"));
+        requalified(dir.resolve("requal.bam"));
+        // The indel VCF, INDEXED: a variant walker refuses `-L` over an input with no random
+        // access, so an unindexed one would answer a refusal on every interval row.
+        final Path indels = dir.resolve("indels.vcf");
+        Files.writeString(indels, indelVcf(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        indels, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("indels.vcf.idx"));
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.

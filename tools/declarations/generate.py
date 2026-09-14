@@ -145,16 +145,30 @@ def cross_check(tool, entries):
     documented argument has to be in the declarations, with the same `required` and the same
     default. The declarations hold more, because the usage text does not print the common and
     advanced ones.
+
+    One kind of argument reads differently in the two, and the difference is a fact about the
+    reference rather than a disagreement: an argument owned by a plugin descriptor is declared
+    `required` because it is required once its filter is selected, and the usage text prints it as
+    optional because selecting the filter is itself optional. AddOriginalAlignmentTags is the first
+    declared tool whose usage text prints any of them, and all twelve read that way. So `required`
+    is compared for the tool's own arguments only.
     """
     inventory = json.loads(INVENTORY.read_text())
     documented = next(t for t in inventory["tools"] if t["name"] == tool)["arguments"]
     by_name = {entry["long_name"]: entry for entry in entries}
     for argument in documented:
         name = argument["name"].lstrip("-")
+        # A POSITIONAL argument is not a named one. Barclay prints it in the usage under the
+        # placeholder `[NA - Positional]`, and `getNamedArgumentDefinitions` does not carry it at
+        # all, so the two readings disagree by design. CompareBaseQualities is the first declared
+        # tool that has one; what its parser says about the count is measured by the
+        # tool-argument-declarations suite's own parse cases instead.
+        if name == "[NA - Positional]":
+            continue
         entry = by_name.get(name)
         if entry is None:
             sys.exit(f"{tool}: the usage text documents --{name} and the parser does not declare it")
-        if entry["required"] != bool(argument["required"]):
+        if entry["controlled_by"] is None and entry["required"] != bool(argument["required"]):
             sys.exit(f"{tool}: --{name} is required in one reading and not the other")
         written = argument.get("default")
         if written is None:
@@ -174,7 +188,13 @@ def cross_check(tool, entries):
         )
     # The usage text never prints MORE than the parser declares. It prints fewer for a walker,
     # whose plugin descriptors and standard collections it leaves out, and exactly as many for a
-    # tool that has neither: IndexFeatureFile is 14 of 14.
+    # tool that has neither: IndexFeatureFile is 14 of 14. A POSITIONAL argument is the one thing
+    # the usage prints that no named declaration answers, so it is not counted on either side.
+    documented = [
+        argument
+        for argument in documented
+        if argument["name"].lstrip("-") != "[NA - Positional]"
+    ]
     if len(documented) > len(entries):
         sys.exit(f"{tool}: the usage text prints {len(documented)} of {len(entries)} declarations")
     return len(documented)
@@ -342,6 +362,7 @@ def main():
             parsed.append({
                 "long_name": long_name,
                 "required": required == "required",
+                "controlled_by": None if plugin == "none" else plugin,
                 "default": None if default == "null" else default,
             })
             entries.append(

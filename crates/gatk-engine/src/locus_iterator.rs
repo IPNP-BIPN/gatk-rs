@@ -108,10 +108,16 @@ pub fn contexts_filtered<'a>(
     let mut pending: std::collections::VecDeque<&'a BamRecord> =
         reads.iter().filter(|read| filter(read)).collect();
     let mut out = Vec::new();
+    // The two streams the downsamplers draw from, and they are ONE EACH for the whole traversal.
+    // `Utils.getRandomGenerator()` and `Utils.getRandomDataGenerator()` are static, seeded once at
+    // class initialisation, and never reset between loci or samples: a generator built per locus
+    // would restart the sequence and produce a different pileup at every depth.
+    let mut random = crate::java_random::JavaRandom::gatk();
+    let mut leveling = crate::well19937c::Well19937c::gatk();
 
     // `readStates.hasNext()`: states in the system, or reads still to come.
     while !states.is_empty() || !pending.is_empty() {
-        states.collect_pending_reads(&mut pending, header)?;
+        states.collect_pending_reads(&mut pending, header, &mut random, &mut leveling)?;
 
         // `getLocation()`, which is null when nothing is in the system. The per-state loop below is
         // then empty, so the null never reaches a dereference.

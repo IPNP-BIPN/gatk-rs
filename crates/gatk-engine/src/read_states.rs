@@ -29,7 +29,10 @@
 //! the path every suite here exercises.
 
 use crate::alignment_state::{AlignmentStateMachine, MalformedRead};
+use crate::downsampling::{LevelingDownsampler, ReservoirDownsampler, SlotSource};
+use crate::java_random::JavaRandom;
 use crate::read_pileup::sample_name;
+use crate::well19937c::Well19937c;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
@@ -57,6 +60,8 @@ pub enum ReadStateError {
     Malformed(MalformedRead),
     /// Downsampling, which this port does not reproduce. See the module doc.
     DownsamplingUnsupported,
+    /// The leveling downsampler's permutation refused, which is a bug rather than a bad input.
+    DownsamplingFailed,
 }
 
 /// One read, and where its state machine currently sits.
@@ -68,11 +73,13 @@ pub struct ReadState<'a> {
     pub machine: AlignmentStateMachine<'a>,
 }
 
-/// `PerSampleReadStateManager` without the leveling downsampler.
+/// `PerSampleReadStateManager`, with the leveling downsampler it levels a deep sample with.
 #[derive(Default)]
 pub struct PerSampleReadStateManager<'a> {
     /// `readStatesByAlignmentStart`, in insertion order.
     pub states: Vec<ReadState<'a>>,
+    /// `downsamplingTarget`, which is `-1` when the run is not downsampling.
+    target: i32,
 }
 
 impl<'a> PerSampleReadStateManager<'a> {
@@ -86,12 +93,60 @@ impl<'a> PerSampleReadStateManager<'a> {
 
     /// `addStatesAtNextAlignmentStart`: append, and report how many were added.
     ///
-    /// With downsampling off this is exactly the count appended. With it on the reference subtracts
-    /// what the leveling downsampler discarded, which is the branch this port refuses.
-    pub fn add_states(&mut self, states: Vec<ReadState<'a>>) -> usize {
-        let added = states.len();
+    /// With downsampling off this is exactly the count appended. With it on, and only once the
+    /// sample is over its target, the states are GROUPED BY GENOME OFFSET and the groups go through
+    /// the leveling downsampler; what it discarded comes off the count, because the caller's total
+    /// is what decides when a locus is exhausted.
+    ///
+    /// The grouping is the reference's `groupByAlignmentStart`, which compares each state's offset
+    /// against the previous one's rather than sorting: a list that is not in offset order therefore
+    /// produces one group per run of equal offsets and not one per distinct offset.
+    pub fn add_states(
+        &mut self,
+        states: Vec<ReadState<'a>>,
+        rng: &mut Well19937c,
+    ) -> Result<usize, ReadStateError> {
+        if states.is_empty() {
+            return Ok(0);
+        }
+        let mut added = states.len();
         self.states.extend(states);
-        added
+        if self.target >= 0 && self.states.len() > self.target as usize {
+            let mut downsampler: LevelingDownsampler<ReadState<'a>> =
+                LevelingDownsampler::new(i64::from(self.target));
+            for group in self.group_by_alignment_start() {
+                downsampler.submit(group);
+            }
+            downsampler
+                .signal_end_of_input(rng)
+                .map_err(|_| ReadStateError::DownsamplingFailed)?;
+            added -= downsampler.discarded();
+            self.states = downsampler
+                .consume_finalized_items()
+                .into_iter()
+                .flatten()
+                .collect();
+        }
+        Ok(added)
+    }
+
+    /// `groupByAlignmentStart`, which takes the states out of the manager: the levelled groups are
+    /// what goes back in.
+    fn group_by_alignment_start(&mut self) -> Vec<Vec<ReadState<'a>>> {
+        let mut grouped: Vec<Vec<ReadState<'a>>> = Vec::new();
+        let mut last: Option<i32> = None;
+        for state in std::mem::take(&mut self.states) {
+            let offset = state.machine.genome_offset();
+            if last != Some(offset) {
+                grouped.push(Vec::new());
+                last = Some(offset);
+            }
+            grouped
+                .last_mut()
+                .expect("a group was just pushed")
+                .push(state);
+        }
+        grouped
     }
 
     /// `updateReadStates`: step every machine one reference base, and drop the ones that ran out.
@@ -126,6 +181,8 @@ pub struct ReadStateManager<'a> {
     /// hash map here would not.
     pub by_sample: Vec<PerSampleReadStateManager<'a>>,
     total_read_states: usize,
+    /// `LIBSDownsamplingInfo`, kept because both downsamplers are built from it.
+    info: DownsamplingInfo,
 }
 
 impl<'a> ReadStateManager<'a> {
@@ -133,17 +190,25 @@ impl<'a> ReadStateManager<'a> {
         samples: Vec<Option<String>>,
         info: DownsamplingInfo,
     ) -> Result<Self, ReadStateError> {
-        if info.performing {
-            return Err(ReadStateError::DownsamplingUnsupported);
-        }
+        // `LIBSDownsamplingInfo` decides both downsamplers: the per-sample manager levels its
+        // states down to the coverage, and the partitioner draws which reads enter at all.
+        let target = if info.performing {
+            info.to_coverage
+        } else {
+            -1
+        };
         let by_sample = samples
             .iter()
-            .map(|_| PerSampleReadStateManager::default())
+            .map(|_| PerSampleReadStateManager {
+                states: Vec::new(),
+                target,
+            })
             .collect();
         Ok(ReadStateManager {
             samples,
             by_sample,
             total_read_states: 0,
+            info,
         })
     }
 
@@ -180,6 +245,8 @@ impl<'a> ReadStateManager<'a> {
         &mut self,
         pending: &mut std::collections::VecDeque<&'a BamRecord>,
         header: &SamHeader,
+        random: &mut JavaRandom,
+        leveling: &mut Well19937c,
     ) -> Result<usize, ReadStateError> {
         let Some(next) = pending.front() else {
             return Ok(0);
@@ -191,8 +258,23 @@ impl<'a> ReadStateManager<'a> {
             (first.read.reference_index, first.machine.genome_position())
         };
 
-        // `SamplePartitioner`, with a pass-through downsampler: the reads are bucketed by sample
-        // in submission order and handed back in that order.
+        // `SamplePartitioner`: one downsampler per sample, and WHICH one is the whole of the
+        // difference. Off, it is a `PassThroughDownsampler` and every read bucketed is handed back
+        // in submission order. On, it is a `ReservoirDownsampler(toCoverage, true)`, whose draw is
+        // taken from the shared `Utils.getRandomGenerator()` for every read past the target and
+        // whose "expect few overflows" flag is what the second argument sets.
+        let mut reservoirs: Vec<Option<ReservoirDownsampler<'a, BamRecord>>> = self
+            .samples
+            .iter()
+            .map(|_| {
+                self.info.performing.then(|| {
+                    let mut downsampler =
+                        ReservoirDownsampler::new(self.info.to_coverage.max(1) as usize);
+                    downsampler.set_non_random_replacement_mode(false);
+                    downsampler
+                })
+            })
+            .collect();
         let mut buckets: Vec<Vec<&'a BamRecord>> =
             self.samples.iter().map(|_| Vec::new()).collect();
         while let Some(read) = pending.front() {
@@ -206,7 +288,20 @@ impl<'a> ReadStateManager<'a> {
                 .iter()
                 .position(|s| *s == sample)
                 .ok_or_else(|| ReadStateError::UndeclaredSample(sample.clone()))?;
-            buckets[index].push(read);
+            match &mut reservoirs[index] {
+                Some(downsampler) => {
+                    let mut slots = SlotSource::Random(random);
+                    downsampler.submit(read, &read.read_name, &mut slots);
+                }
+                None => buckets[index].push(read),
+            }
+        }
+        // `doneSubmittingReads` then `getReadsForSample`, in sample order.
+        for (index, reservoir) in reservoirs.iter_mut().enumerate() {
+            if let Some(downsampler) = reservoir {
+                downsampler.signal_end_of_input();
+                buckets[index] = downsampler.consume_finalized_items();
+            }
         }
 
         let mut admitted = 0;
@@ -225,7 +320,7 @@ impl<'a> ReadStateManager<'a> {
                     Err(error) => return Err(ReadStateError::Malformed(error)),
                 }
             }
-            admitted += self.by_sample[index].add_states(states);
+            admitted += self.by_sample[index].add_states(states, leveling)?;
         }
         self.total_read_states += admitted;
         Ok(admitted)

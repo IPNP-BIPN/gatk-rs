@@ -145416,7 +145416,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         }
       ]
     },
@@ -146376,7 +146382,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         },
         {
           "name": "--ambig-filter-bases",
@@ -146849,7 +146861,12 @@
           "max": null,
           "deprecated": false,
           "default": "ALL",
-          "enum_members": null
+          "enum_members": [
+            "ALL",
+            "PRIMARY_ONLY",
+            "PRIMARY_MAPPED_ONLY",
+            "PRIMARY_PROPER_PAIR_ONLY"
+          ]
         },
         {
           "name": "--OUTPUT",
@@ -152806,7 +152823,10 @@
           "max": null,
           "deprecated": false,
           "default": "CHECK_SAME_SAMPLE",
-          "enum_members": null
+          "enum_members": [
+            "CHECK_SAME_SAMPLE",
+            "CHECK_ALL_OTHERS"
+          ]
         },
         {
           "name": "--CROSSCHECK_SAMPLES",
@@ -157669,7 +157689,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         },
         {
           "name": "--ambig-filter-bases",
@@ -162588,7 +162614,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         },
         {
           "name": "--ambig-filter-bases",
@@ -169991,7 +170023,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         },
         {
           "name": "--dirichlet-keep-prior-in-count",
@@ -171355,7 +171393,13 @@
           "max": null,
           "deprecated": false,
           "default": null,
-          "enum_members": null
+          "enum_members": [
+            "STARTS_IN",
+            "ENDS_IN",
+            "OVERLAPS",
+            "CONTAINED",
+            "ANYWHERE"
+          ]
         },
         {
           "name": "--dirichlet-keep-prior-in-count",

@@ -52,7 +52,7 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_bam::tag::{Tag, TagValue};
 
-use crate::sam_output::{header_for_sam_writer, write_records, Options};
+use crate::sam_output::{header_for_sam_writer, Options};
 
 /// `GATKTool.getToolName()` for this tool.
 pub const TOOL_NAME: &str = "GATK SplitNCigarReads";
@@ -260,6 +260,28 @@ pub fn split_n_cigar_reads(
     filter: &dyn Fn(&BamRecord) -> bool,
     reference: ReferenceQuery<'_>,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), SplitToolError> {
+    split_n_cigar_reads_with(
+        source,
+        arguments,
+        options,
+        filter,
+        reference,
+        htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+        htsjdk_bgzf::Deflater::Jdk,
+    )
+}
+
+/// The same run with the writer's compression named, which is what a command line decides.
+#[allow(clippy::too_many_arguments)]
+pub fn split_n_cigar_reads_with(
+    source: &ReadsDataSource,
+    arguments: &SplitArguments,
+    options: &Options,
+    filter: &dyn Fn(&BamRecord) -> bool,
+    reference: ReferenceQuery<'_>,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), SplitToolError> {
     let header = source.header().clone();
     let raw = crate::read_walker::traverse(source, &options.intervals, &|_| true)
         .map_err(SplitToolError::Reads)?;
@@ -342,8 +364,14 @@ pub fn split_n_cigar_reads(
     // output file.
     let once = header_for_sam_writer(source.header(), TOOL_NAME, options);
     let out_header = header_for_sam_writer(&once, TOOL_NAME, options);
-    write_records(&out_header, &written, options.create_output_bam_index)
-        .map_err(SplitToolError::Reads)
+    crate::sam_output::write_records_with(
+        &out_header,
+        &written,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )
+    .map_err(SplitToolError::Reads)
 }
 
 /// What the tool as a whole can fail with.

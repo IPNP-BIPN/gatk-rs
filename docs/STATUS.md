@@ -121,7 +121,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ASEReadCounter` | locus-walker | oracle-backed | ase-read-counter | 1 | not measured |
 | `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | not measured |
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | not measured |
-| `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | not measured |
+| `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | t=2, 18/18 rows (100%) |
 | `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | not measured |
 | `AnalyzeSaturationMutagenesis` | locus-walker | oracle-backed | analyze-saturation-mutagenesis | 1 | not measured |
@@ -130,7 +130,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | not measured |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | not measured |
-| `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | not measured |
+| `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
@@ -139,17 +139,17 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
 | `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
-| `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | not measured |
-| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 20/20 rows (100%) |
+| `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | t=2, 18/18 rows (100%) |
+| `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 21/21 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
-| `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | not measured |
+| `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 17/17 rows (100%) |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | not measured |
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | not measured |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
-| `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | not measured |
+| `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) |
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | not measured |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | not measured |
@@ -167,7 +167,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
-| `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | not measured |
+| `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | not measured |
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | not measured |
@@ -199,56 +199,56 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | not measured |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | not measured |
-| `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | not measured |
+| `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | not measured |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | not measured |
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | not measured |
-| `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | not measured |
+| `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) |
 | `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | not measured |
 | `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | not measured |
 | `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | not measured |
 | `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |
 | `MergeMutect2CallsWithMC3` | unclassified | oracle-backed | merge-mutect2-mc3 | 1 | not measured |
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
-| `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | not measured |
+| `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | not measured |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy | 1 | not measured |
-| `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 21/21 rows (100%) |
-| `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | not measured |
+| `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) |
+| `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) |
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) |
-| `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | not measured |
+| `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | t=2, 6/6 rows (100%) |
 | `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
 | `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
-| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | not measured |
+| `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) |
 | `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | not measured |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | not measured |
-| `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | not measured |
-| `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | not measured |
+| `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) |
+| `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
 | `SVAnnotate` | sv-caller | oracle-backed | sv-annotate | 1 | not measured |
 | `SVCluster` | sv-caller | oracle-backed | sv-cluster | 1 | not measured |
 | `SVConcordance` | sv-caller | oracle-backed | sv-concordance | 1 | not measured |
 | `SVStratify` | sv-caller | oracle-backed | sv-stratify | 1 | not measured |
-| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | not measured |
-| `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | not measured |
+| `SelectVariants` | variant-transform | oracle-backed | select-variants-concordance, select-variants-filters, select-variants-header, select-variants-output, select-variants-samples, select-variants-subset, tool-argument-declarations, tool-argument-enums | 8 | t=2, 50/50 rows (100%) |
+| `ShiftFasta` | reference-utility | oracle-backed | shift-fasta | 1 | t=2, 21/21 rows (100%) |
 | `SiteDepthtoBAF` | sv-caller | oracle-backed | site-depth-to-baf | 1 | not measured |
 | `SplitCRAM` | unclassified | oracle-backed | split-cram | 1 | not measured |
 | `SplitIntervals` | interval-utility | oracle-backed | split-intervals | 1 | t=2, 25/25 rows (100%) |
-| `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | not measured |
-| `SplitReads` | record-transform | oracle-backed | split-reads | 1 | not measured |
+| `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) |
+| `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | not measured |
 | `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | not measured |
-| `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | not measured |
+| `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
-| `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | not measured |
+| `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) |
 | `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | not measured |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | not measured |
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | not measured |
@@ -256,7 +256,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
-| `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | not measured |
+| `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) |
 
 <details><summary>51 not started</summary>
 
