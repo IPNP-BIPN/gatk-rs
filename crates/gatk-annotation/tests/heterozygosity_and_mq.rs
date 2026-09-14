@@ -88,7 +88,7 @@ fn call_for(pls: &[i32]) -> Vec<Allele> {
 fn with_genotypes(alleles: Vec<Allele>, genotypes: Vec<Genotype>) -> VariantContext {
     let mut vc = VariantContext::new("chr1", START, alleles);
     vc.stop = START;
-    vc.genotypes = genotypes;
+    vc.genotypes = genotypes.into();
     vc
 }
 

@@ -256,7 +256,7 @@ pub fn filter_record(record: &VariantContext, thresholds: &Thresholds) -> Varian
     }
 
     let mut out = record.clone();
-    out.genotypes = genotypes;
+    out.genotypes = genotypes.into();
     filters.sort();
     // `passFilters()` for an empty set, which is `Some(empty)` here and prints PASS.
     out.filters = Some(filters);

@@ -65,9 +65,10 @@ argument schemas, branch names, and the differential test matrix.
 | `gatk-tools` | **`PrintReads`, byte-identical**: six output BAMs and their `.bai` indexes compared byte for byte against the pinned reference, under the JDK deflater. Plus the two traversals underneath: `ReadWalker`, 66 `apply` calls over 14 traversals, `IntervalWalker`, 25 `apply` calls over 24 argument combinations of `-L`, `-XL`, padding, set rule and merging rule, and `LocusWalker`, 217 `apply` calls over 8 traversals including the same interval run with and without `emitEmptyLoci` |
 | `gatk-engine` | intervals, the GATKRead adapter, `ReadUtils` coordinate mapping (872 probed positions), `CigarBuilder` and the clipping arithmetic (604 clips), `ReadClipper` in full, all 14 entry points (3,068 clipped reads), `ReferenceDataSource` (45 queries), `ReadsDataSource` (29 interval queries against a fixture BAM and its `.bai`), `ReferenceContext` (352 window answers), the interval argument pipeline behind `-L` and `-XL` (files and `unmapped` included), the Feature lookahead cache (20 queries at two lookahead settings), and the pileup floor every locus tool stands on: `AlignmentStateMachine` (244 stops over 26 cigars), `PileupElement` (217 elements, plus 231 `createPileupForReadAndOffset` calls including the offsets it refuses), `ReadPileup` (3 pileups and 24 overlap fixes), the sample partition and state advance (56 traversal steps), `LocusIteratorByState` itself (148 pileups over 12 argument settings), and the context iterators above it (99 contexts over 6 routes, empty loci included) |
 
-`gatk-engine` depends on `noodles` for indexed FASTA and `.bai` plumbing while porting and
-measuring what GATK and htsjdk do with what it returns; the rule that governs when a dependency
-replaces a port, and when it must not, is
+`gatk-engine` reaches an indexed FASTA and a `.bai` through `htsjdk-bam`, this programme's own
+port, and has no third-party reader of any file format left in it. It had two, both `noodles`,
+under a rule that says to depend where a format's bytes are unambiguous; the rule, and the
+measurement that took those two back, are
 [here](docs/when-a-dependency-is-cheaper-than-a-port.md).
 
 The read filters come first because they are stateless, touch no floating point, and every tool

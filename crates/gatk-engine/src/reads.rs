@@ -28,7 +28,7 @@
 //!
 //! # What is a dependency and what is a port
 //!
-//! The `.bai` bytes are parsed by [`noodles_bam::bai`], under the rule in
+//! The `.bai` bytes are parsed by [`htsjdk_bam::index::read_bai`], under the rule in
 //! `docs/when-a-dependency-is-cheaper-than-a-port.md`: a bin's chunk list is what the format
 //! says it is. Everything that decides *which records come back* is ported here: `regionToBins`,
 //! the linear-index minimum offset, `optimizeChunkList`, the interval optimisation and the
@@ -382,28 +382,36 @@ impl ReadsDataSource {
             .header
             .text;
 
-        let bai = noodles_bam::bai::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
-        let index = bai
-            .reference_sequences()
+        // The `.bai` is parsed by the port's own reader rather than by a dependency. It is the
+        // same file either way; what differs is who answers for it, and htsjdk-bam's `read_bai`
+        // is measured by the `textual-index` suite, which parses six `.bai` files and reprints
+        // each through `TextualBAMIndexWriter`'s format.
+        let bai_bytes = std::fs::read(bai).map_err(|e| ReadsError::Io(e.to_string()))?;
+        let parsed = htsjdk_bam::index::read_bai(&bai_bytes)
+            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        let index = parsed
+            .references
             .iter()
             .map(|reference| ReferenceIndex {
+                // The pseudo-bin is not a bin: `read_bai` keeps it as `metadata`, so the map here
+                // carries exactly the bins a query walks.
                 bins: reference
-                    .bins()
+                    .bins
                     .iter()
-                    .map(|(id, bin)| {
+                    .map(|bin| {
                         (
-                            *id,
-                            bin.chunks()
+                            bin.bin_number as usize,
+                            bin.chunks
                                 .iter()
                                 .map(|c| Chunk {
-                                    start: u64::from(c.start()),
-                                    end: u64::from(c.end()),
+                                    start: c.start,
+                                    end: c.end,
                                 })
                                 .collect(),
                         )
                     })
                     .collect(),
-                linear: reference.index().iter().map(|p| u64::from(*p)).collect(),
+                linear: reference.linear_index.clone(),
             })
             .collect();
 
