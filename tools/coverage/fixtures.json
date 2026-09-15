@@ -1180,6 +1180,108 @@
         "false"
       ]
     },
+    "CollectSVEvidence": {
+      "$why": [
+        "pairs.bam, whose reads are PAIRED: the discordant-pair and split-read evidence both need",
+        "a mate, and the corpus's plain reads.bam has none.",
+        "Every output name carries the extension its writer tests for, and ONE of them carries a",
+        "name that does not: each of the four writers refuses a file it could not read back, before",
+        "the traversal, and `--sd-file` is where that refusal is measured. Giving every argument a",
+        "bad value would have refused every row; giving none would have measured none.",
+        "--site-depth-locs-vcf carries the corpus's indexed VCF, whose records are biallelic SNVs:",
+        "the site-depth walk keeps those and steps past everything else.",
+        "--depth-evidence-intervals carries the corpus's BED, because the depth counts are per",
+        "interval and an interval file with no intervals is its own refusal.",
+        "--site-depth-min-mapq and --depth-evidence-min-mapq carry their two different defaults and",
+        "a value above them: the three floors are what let one read be counted for depth and not",
+        "for site depth.",
+        "--sequence-dictionary is pinned to the one that AGREES with the reads. The site-depth",
+        "writer asserts that the dictionary it was given and the BAM's are the same object, and",
+        "the corpus's other dictionary makes that an AssertionError rather than a user error."
+      ],
+      "--input": [
+        "/work/fixtures/pairs.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/pairs.bai"
+      ],
+      "--sample-name": [
+        "sample1"
+      ],
+      "--pe-file": [
+        "/work/out/evidence.pe.txt",
+        "/work/out/second.pe.txt"
+      ],
+      "--sr-file": [
+        "/work/out/evidence.sr.txt",
+        "/work/out/second.sr.txt"
+      ],
+      "--sd-file": [
+        "/work/out/evidence.sd.txt",
+        "/work/out/evidence.sd.wrong"
+      ],
+      "--depth-evidence-file": [
+        "/work/out/evidence.rd.txt",
+        "/work/out/second.rd.txt"
+      ],
+      "--site-depth-locs-vcf": [
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--depth-evidence-intervals": [
+        "/work/fixtures/regions.bed"
+      ],
+      "--site-depth-min-mapq": [
+        "30",
+        "60"
+      ],
+      "--depth-evidence-min-mapq": [
+        "0",
+        "60"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--sequence-dictionary": [
+        "/work/fixtures/matching.dict"
+      ]
+    },
+    "PrintReadCounts": {
+      "$why": [
+        "sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name",
+        "the codec recognises: `SimpleCountCodec.canDecode` tests for the extension `.counts.tsv`,",
+        "and the corpus's own `counts.tsv` does not have it, so it is the second value and the",
+        "no-suitable-codec refusal. A `.counts.tsv` carries its own SAM header, so the run never",
+        "consults --sequence-dictionary.",
+        "--input and --read-index are held out: this tool reads a feature file and no reads, and",
+        "the shared values pair a BAM index with a text table, which every row died on.",
+        "--output-prefix carries a directory prefix and the empty default, because the names this",
+        "tool chooses are the prefix and the sample glued together: with no prefix the files land",
+        "in the working directory, which the harness compares as the output.",
+        "--output-file-list carries a path and nothing: the file is written and closed BEFORE a",
+        "single record, so it exists even for a run that refuses.",
+        "--intervals and --exclude-intervals are held OUT. A feature file needs an index for a",
+        "bounded traversal and a text counts table has none, so every row that carried one measured",
+        "the random-access refusal rather than the rewrite."
+      ],
+      "--input-counts": [
+        "/work/fixtures/sv.counts.tsv",
+        "/work/fixtures/counts.tsv"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--output-prefix": [
+        "/work/out/printed.",
+        "/work/out/printed2."
+      ],
+      "--output-file-list": [
+        "/work/out/files.list",
+        "/work/out/files2.list"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": []
+    },
     "DenoiseReadCounts": {
       "$why": [
         "counts.tsv, written by the REFERENCE's own CollectReadCounts: this tool is the next link",

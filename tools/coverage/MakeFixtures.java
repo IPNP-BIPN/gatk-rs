@@ -1283,6 +1283,12 @@ public class MakeFixtures {
                         "--format", "TSV",
                         "--output", dir.resolve("counts.tsv").toString(),
                 });
+        // The same table under the name the SV codec recognises. `SimpleCountCodec.canDecode` tests
+        // for the extension `.counts.tsv`, and a file called exactly `counts.tsv` does not have it:
+        // `PrintReadCounts` refuses it for having no suitable codec, which is a name away from the
+        // file it was written to read.
+        Files.copy(dir.resolve("counts.tsv"), dir.resolve("sv.counts.tsv"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
