@@ -318,6 +318,15 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.ValidateVariants());
         declarations("LeftAlignAndTrimVariants",
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.LeftAlignAndTrimVariants());
+        // A gatherer and a downsampler, and neither is a walker. `GatherBQSRReports` merges the
+        // recalibration tables a scattered run wrote, which makes it the third CHAIN declared here:
+        // its input is what `BaseRecalibrator` writes. `DownsampleByDuplicateSet` reads a
+        // UMI-grouped BAM and keeps a FRACTION of the duplicate sets, drawn from the shared seeded
+        // generator, so the set it keeps depends on how many it has already seen.
+        declarations("GatherBQSRReports",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.GatherBQSRReports());
+        declarations("DownsampleByDuplicateSet",
+                new org.broadinstitute.hellbender.tools.walkers.consensus.DownsampleByDuplicateSet());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
