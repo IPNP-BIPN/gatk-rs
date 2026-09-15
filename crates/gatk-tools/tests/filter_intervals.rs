@@ -57,10 +57,17 @@ const COUNTS_TWO: [f64; 5] = [5.0, 60.0, 110.0, 160.0, 6000.0];
 
 const SEQUENCES: [(&str, i32); 1] = [("chr1", 1000)];
 
-fn sequences() -> Vec<(String, i32)> {
+fn sequences() -> Vec<gatk_tools::preprocess_intervals::Sequence> {
     SEQUENCES
         .iter()
-        .map(|(name, length)| (name.to_string(), *length))
+        .map(
+            |(name, length)| gatk_tools::preprocess_intervals::Sequence {
+                name: name.to_string(),
+                length: *length,
+                md5: None,
+                uri: None,
+            },
+        )
         .collect()
 }
 

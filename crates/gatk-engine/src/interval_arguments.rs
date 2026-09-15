@@ -83,6 +83,13 @@ pub enum IntervalArgumentError {
     },
     /// `-XL unmapped`, which the reference has never supported.
     UnmappedExcluded,
+    /// A query that named a FILE, refused by the branch that reads one.
+    ///
+    /// `parseIntervalArguments` tests for a Feature file and then for an interval file before it
+    /// parses anything as a locus, and both of those branches have refusals of their own that a
+    /// locus parser cannot produce. They are carried rather than flattened, because the class each
+    /// one raises is different and the `interval-file` golden measures the class.
+    File(crate::interval_args::IntervalArgumentError),
 }
 
 /// `List.toString` on a list of strings, which is what the messages embed.
@@ -103,6 +110,7 @@ impl IntervalArgumentError {
             IntervalArgumentError::UnmappedExcluded => {
                 "org.broadinstitute.hellbender.exceptions.UserException"
             }
+            IntervalArgumentError::File(error) => file_argument_class(error),
         }
     }
 
@@ -132,7 +140,54 @@ impl IntervalArgumentError {
             IntervalArgumentError::UnmappedExcluded => {
                 "-XL unmapped is not currently supported".to_string()
             }
+            IntervalArgumentError::File(error) => file_argument_message(error),
         }
+    }
+}
+
+/// The exception class the file branch of `-L` raises, which the `interval-file` golden measured
+/// case by case and [`crate::feature_intervals`] documents.
+fn file_argument_class(error: &crate::interval_args::IntervalArgumentError) -> &'static str {
+    use crate::interval_args::IntervalArgumentError as File;
+    match error {
+        File::IntervalFileEmpty | File::FeatureFileMalformed(_) => {
+            "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile"
+        }
+        File::IntervalFileMissing(_) | File::FileIsNeitherFeaturesNorIntervals(_) => {
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile"
+        }
+        File::LegacySemicolonSyntax(_) => {
+            "org.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue"
+        }
+        File::FeatureCodecRefused(_) => "htsjdk.tribble.TribbleException",
+        File::FeatureSourceFailed(_) => "org.broadinstitute.hellbender.exceptions.GATKException",
+        _ => "org.broadinstitute.hellbender.exceptions.UserException$MalformedGenomeLoc",
+    }
+}
+
+/// The message, where the reference's own wording is known.
+///
+/// The `interval-file` golden measures the CLASS of each refusal and not its text, so only the
+/// three the reference's source spells out in full are rendered here; the rest keep the port's own
+/// debug rendering rather than a text nothing has measured.
+fn file_argument_message(error: &crate::interval_args::IntervalArgumentError) -> String {
+    use crate::interval_args::IntervalArgumentError as File;
+    match error {
+        File::Parse(ParseError::UnknownContig(query)) => format!(
+            "Badly formed genome unclippedLoc: Query interval \"{query}\" is not valid for this \
+             input."
+        ),
+        File::MalformedGenomeLoc(locus) => format!(
+            "Badly formed genome unclippedLoc: Parameters to GenomeLocParser are incorrect: The \
+             stop position {locus} is larger than contig length"
+        ),
+        File::IntervalFileEmpty => "It contains no intervals.".to_string(),
+        File::LegacySemicolonSyntax(query) => format!(
+            "Argument -L {query} has a bad value: The legacy -L \"interval1;interval2\" syntax is \
+             no longer supported. Please use one -L argument for each interval or an interval file \
+             instead."
+        ),
+        other => format!("{other:?}"),
     }
 }
 
@@ -231,6 +286,30 @@ fn merge_by_set_operator(
     Ok(result)
 }
 
+/// `parseIntervalArguments` for one query: a file first, a locus only when it is not one.
+///
+/// The file branch is [`crate::interval_args::parse_interval_arguments`] with the codecs
+/// registered, which is where the Feature and interval-file readings live and where the
+/// `interval-file` suite measured them. It is reached only when the query IS one of those, so a
+/// locus string still takes the parse it always took, message for message.
+fn resolve_query(
+    query: &str,
+    header: &SamHeader,
+) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
+    let path = std::path::Path::new(query);
+    if path.exists() || crate::interval_args::has_gatk_interval_file_extension(query) {
+        return crate::interval_args::parse_interval_arguments(
+            query,
+            header,
+            &crate::feature_intervals::RegisteredCodecs,
+        )
+        .map_err(IntervalArgumentError::File);
+    }
+    Ok(vec![
+        parse_interval(query, header).map_err(IntervalArgumentError::Parse)?
+    ])
+}
+
 /// `loadIntervals` with a set rule and padding: resolve, pad, fold.
 fn load_with(
     queries: &[String],
@@ -241,8 +320,7 @@ fn load_with(
 ) -> Result<Vec<SimpleInterval>, IntervalArgumentError> {
     let mut accumulated: Vec<SimpleInterval> = Vec::new();
     for query in queries {
-        let mut resolved =
-            vec![parse_interval(query, header).map_err(IntervalArgumentError::Parse)?];
+        let mut resolved = resolve_query(query, header)?;
         if padding > 0 {
             // `getIntervalsWithFlanks` pads and then sorts and merges with ALL, whatever the
             // caller's merging rule is.

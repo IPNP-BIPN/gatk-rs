@@ -429,6 +429,45 @@ fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
     Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
 }
 
+/// `File.getAbsolutePath`: the working directory in front of a relative name, and nothing else.
+///
+/// Java does not normalise here, and the empty path is the working directory ITSELF rather than a
+/// trailing separator on it, which is what makes `--annotated-intervals=` print `/work`.
+fn java_absolute_path(path: &str) -> String {
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    let working = std::env::current_dir()
+        .map(|directory| directory.display().to_string())
+        .unwrap_or_default();
+    if path.is_empty() {
+        working
+    } else {
+        format!("{working}/{path}")
+    }
+}
+
+/// `IOUtils.canReadFile`, which every copy-number input passes through before it is opened.
+///
+/// Three messages of one exception, and the port can tell the first two apart: a path with no file
+/// at all, and a path that is a directory or a device. The unreadable-permissions case is the third
+/// and is not reached here, because a file this port cannot open reads as one it can stat.
+fn can_read_file(path: &str) -> Result<(), Thrown> {
+    let reason = match std::fs::metadata(path) {
+        Err(_) => "The input file does not exist.",
+        Ok(metadata) if !metadata.is_file() => "The input file is not a regular file",
+        Ok(_) => return Ok(()),
+    };
+    Err(Thrown {
+        failure: Failure::User,
+        exception: gatk_tools::read_walker_refusal::COULD_NOT_READ,
+        message: Some(format!(
+            "Couldn't read file {}. Error was: {reason}",
+            java_absolute_path(path)
+        )),
+    })
+}
+
 /// `validateDictionaries` against the master, which runs before the pairs that do not involve it.
 ///
 /// `requireSuperset` is `hasCramInput()`, which is false for every input this port opens, and the
@@ -3781,6 +3820,315 @@ pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
         &output,
         allelic::write(&sequences, &sample, &counts).as_bytes(),
     )?;
+    Ok(None)
+}
+
+/// One copy-number table as its reader sees it: the metadata, the column names, and the rows.
+///
+/// The header is kept rather than skipped because it IS the collection's sequence dictionary, and
+/// the columns are kept by name because the reader asks for them by name.
+struct Table {
+    header: SamHeader,
+    columns: Vec<String>,
+    body: Vec<Vec<String>>,
+}
+
+/// `FilterIntervals.doWork`: three filters over one shared mask, and the order is the arithmetic.
+///
+/// The second CHAIN here: the annotated intervals are what `AnnotateIntervals` writes and the
+/// counts are what `CollectReadCounts` writes, so the corpus carries both produced by the
+/// reference itself. The filtering is the port's, including the last thing it does and the easiest
+/// to miss: a contig left with a single surviving interval loses it, so a run that filters down to
+/// exactly one ends with none and is then refused for having nothing left.
+pub fn filter_intervals(parser: &Parser) -> Outcome {
+    use gatk_tools::filter_intervals as filtering;
+
+    let _ = resolve_read_filters(parser, "FilterIntervals")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`, which this tool makes
+    // like every other copy-number tool: it bins and pads by its own arguments and refuses the
+    // standard interval ones that would modify its input first. Measured on every row of this
+    // tool's array, where the reference refused at exit three and the port filtered.
+    validate_copy_number_intervals(parser)?;
+    let annotated = argument(parser, "annotated-intervals");
+    let counts_paths = arguments(parser, "input");
+
+    // A table of this shape is a SAM header, a column line and the rows; the columns are named and
+    // the reader asks for them by name, which is what `CollectAllelicCounts`' reader does too.
+    //
+    // `AbstractRecordCollection`'s constructor calls `IOUtils.canReadFile` before it opens
+    // anything, so a path that is not a file is refused by the CHECK rather than by the read, and
+    // the message names the file's absolute path. Measured on a row of this tool's array that
+    // passed `--annotated-intervals=` with no value, where the reference printed the working
+    // directory: "Couldn't read file /work. Error was: The input file does not exist."
+    let read_table = |path: &str| -> Result<Table, Thrown> {
+        can_read_file(path)?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        // The `@SQ` block at the head of the table is the collection's METADATA, which is the
+        // dictionary `-L` resolves against and the dictionary the output interval list carries.
+        // It is the file's own and not the reference's: this tool takes no `--reference`, and a
+        // run that resolved `-L` against an empty dictionary refused every interval as an unknown
+        // contig.
+        let header = htsjdk_bam::reader::parse_header_text(
+            &text
+                .lines()
+                .take_while(|line| line.starts_with('@'))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        );
+        let mut rows = text
+            .lines()
+            .filter(|line| !line.starts_with('@') && !line.trim().is_empty());
+        let columns: Vec<String> = rows
+            .next()
+            .unwrap_or_default()
+            .split('\t')
+            .map(str::to_string)
+            .collect();
+        let body = rows
+            .map(|line| line.split('\t').map(str::to_string).collect())
+            .collect();
+        Ok(Table {
+            header,
+            columns,
+            body,
+        })
+    };
+
+    // `validateArguments` runs before a single input is opened, and its order is observable: the
+    // missing-inputs refusal is a `UserException` at two, and the duplicate check under it is a
+    // `Utils.validateArg` at three.
+    if annotated.is_none() && counts_paths.is_empty() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(filtering::FilterError::NoInputs.message().to_string()),
+        });
+    }
+    let mut seen = std::collections::HashSet::new();
+    if !counts_paths.iter().all(|path| seen.insert(path.clone())) {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "List of input read-count files cannot contain duplicates.",
+        ));
+    }
+
+    let mut intervals: Vec<filtering::Interval> = Vec::new();
+    let mut annotations: Vec<(String, Vec<f64>)> = Vec::new();
+    // `metadata`, which is the FIRST input's dictionary: the annotated intervals when they were
+    // given, and the first counts file otherwise.
+    let mut metadata: Option<SamHeader> = None;
+    if let Some(path) = &annotated {
+        let Table {
+            header,
+            columns,
+            body: rows,
+        } = read_table(path)?;
+        metadata = Some(header);
+        for row in &rows {
+            intervals.push(filtering::Interval {
+                contig: row[0].clone(),
+                start: row[1].parse().unwrap_or_default(),
+                end: row[2].parse().unwrap_or_default(),
+            });
+        }
+        for (index, name) in columns.iter().enumerate().skip(3) {
+            annotations.push((
+                name.clone(),
+                rows.iter()
+                    .map(|row| {
+                        row.get(index)
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(f64::NAN)
+                    })
+                    .collect(),
+            ));
+        }
+    }
+
+    // Each counts file keeps its OWN intervals, because the matrix is built by looking each
+    // interval up per file rather than by position: a file whose rows are a different set is
+    // refused, and a file whose rows are a superset is subset down.
+    let mut counts_tables: Vec<(String, Vec<filtering::Interval>, Vec<f64>)> = Vec::new();
+    for path in &counts_paths {
+        let Table {
+            header, body: rows, ..
+        } = read_table(path)?;
+        if metadata.is_none() {
+            metadata = Some(header);
+        }
+        let file_intervals: Vec<filtering::Interval> = rows
+            .iter()
+            .map(|row| filtering::Interval {
+                contig: row[0].clone(),
+                start: row[1].parse().unwrap_or_default(),
+                end: row[2].parse().unwrap_or_default(),
+            })
+            .collect();
+        if intervals.is_empty() && annotated.is_none() {
+            intervals = file_intervals.clone();
+        }
+        counts_tables.push((
+            path.clone(),
+            file_intervals,
+            rows.iter()
+                .map(|row| row.get(3).and_then(|v| v.parse().ok()).unwrap_or(f64::NAN))
+                .collect(),
+        ));
+    }
+
+    // The three refusals are not the same KIND: the empty intersection is an
+    // `IllegalArgumentException` from `Utils.validateArg`, which leaves exit three, and the other
+    // two are `UserException`s at two. The port's own `java_class` says which is which.
+    let refuse = |error: filtering::FilterError| {
+        let class = error.java_class();
+        let message = error.message().to_string();
+        if class == "java.lang.IllegalArgumentException" {
+            Thrown::non_user(class, message)
+        } else {
+            Thrown {
+                failure: Failure::User,
+                exception: class,
+                message: Some(message),
+            }
+        }
+    };
+    if intervals.is_empty() {
+        return Err(refuse(filtering::FilterError::EmptyIntersection));
+    }
+
+    let dictionary = metadata.unwrap_or_default();
+    // The dictionary goes into the output list whole: `IntervalList` is built from the metadata's
+    // own `SAMSequenceDictionary`, so an `M5` the annotated intervals carried is written out with
+    // it. Measured on this tool's array, where the only differing byte was that field.
+    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| gatk_tools::preprocess_intervals::Sequence {
+            name: sequence.name.clone(),
+            length: sequence.length,
+            md5: sequence.attributes.get("M5").map(str::to_string),
+            uri: sequence.attributes.get("UR").map(str::to_string),
+        })
+        .collect();
+
+    // `ListUtils.intersection`, which is a LIST intersection and not a genomic one: an input bin
+    // survives only when a requested interval EQUALS it, so `-L chr1:1-7000` over four
+    // thousand-base bins intersects to nothing and the run is refused. Measured on every row of
+    // this tool's array, where the port read the window as containment and kept all four.
+    //
+    // With both kinds of input the intersection is taken TWICE, the annotated intervals first and
+    // the first counts file second, so a bin either side is missing is gone before any filter runs.
+    let requested = interval_arguments(parser, &dictionary)?.map(|parameters| parameters.intervals);
+    let kept: Vec<usize> = (0..intervals.len())
+        .filter(|&index| {
+            let interval = &intervals[index];
+            let asked = requested.as_ref().is_none_or(|windows| {
+                windows.iter().any(|window| {
+                    window.contig == interval.contig
+                        && window.start == interval.start
+                        && window.end == interval.end
+                })
+            });
+            let counted = annotated.is_none()
+                || counts_tables
+                    .first()
+                    .is_none_or(|(_, file, _)| file.contains(interval));
+            asked && counted
+        })
+        .collect();
+    if kept.is_empty() {
+        return Err(refuse(filtering::FilterError::EmptyIntersection));
+    }
+    intervals = kept.iter().map(|&index| intervals[index].clone()).collect();
+    for (_, values) in annotations.iter_mut() {
+        *values = kept.iter().map(|&index| values[index]).collect();
+    }
+
+    // `constructReadCountMatrix`: one row per file, each pulled out by INTERVAL and not by row
+    // number, and a file that does not carry every intersected interval is refused at three.
+    let mut counts: Vec<Vec<f64>> = Vec::new();
+    for (path, file_intervals, values) in &counts_tables {
+        let row: Vec<f64> = intervals
+            .iter()
+            .filter_map(|interval| {
+                file_intervals
+                    .iter()
+                    .position(|candidate| candidate == interval)
+                    .map(|index| values[index])
+            })
+            .collect();
+        if row.len() != intervals.len() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!(
+                    "Intervals for read-count file {path} do not contain all specified intervals."
+                ),
+            ));
+        }
+        counts.push(row);
+    }
+
+    let mut mask = vec![false; intervals.len()];
+    let bound = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    // The annotations run first and in the header's own order, because the mask is SHARED: an
+    // interval a GC filter failed is not in the population the count percentiles are taken over.
+    for (name, values) in &annotations {
+        let (minimum, maximum) = match name.as_str() {
+            "GC_CONTENT" => (
+                bound("minimum-gc-content", 0.1),
+                bound("maximum-gc-content", 0.9),
+            ),
+            "MAPPABILITY" => (
+                bound("minimum-mappability", 0.9),
+                bound("maximum-mappability", 1.0),
+            ),
+            "SEGMENTAL_DUPLICATION_CONTENT" => (
+                bound("minimum-segmental-duplication-content", 0.0),
+                bound("maximum-segmental-duplication-content", 0.5),
+            ),
+            _ => continue,
+        };
+        filtering::update_mask_by_annotation(&mut mask, values, minimum, maximum)
+            .map_err(refuse)?;
+    }
+    if !counts.is_empty() {
+        filtering::update_mask_by_low_counts(
+            &mut mask,
+            &counts,
+            number_or(parser, "low-count-filter-count-threshold", 5),
+            bound("low-count-filter-percentage-of-samples", 90.0),
+        )
+        .map_err(refuse)?;
+        filtering::update_mask_by_extreme_counts(
+            &mut mask,
+            &counts,
+            bound("extreme-count-filter-minimum-percentile", 1.0),
+            bound("extreme-count-filter-maximum-percentile", 99.0),
+            bound("extreme-count-filter-percentage-of-samples", 90.0),
+        )
+        .map_err(refuse)?;
+    }
+    let contigs: Vec<String> = intervals
+        .iter()
+        .map(|interval| interval.contig.clone())
+        .collect();
+    filtering::update_mask_by_solitary_intervals(&mut mask, &contigs).map_err(refuse)?;
+
+    let kept: Vec<filtering::Interval> = intervals
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !mask[*index])
+        .map(|(_, interval)| interval.clone())
+        .collect();
+    write_file(&output, filtering::write(&sequences, &kept).as_bytes())?;
     Ok(None)
 }
 
