@@ -531,6 +531,15 @@
       "matched": 40,
       "t": 2,
       "share": 1.0
+    },
+    "LeftAlignAndTrimVariants": {
+      "rows": 22,
+      "accepted": 14,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
