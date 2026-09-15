@@ -395,6 +395,74 @@ public class MakeFixtures {
      * Two groups make `--split-sample`, `--split-read-group` and `--split-library-name` each
      * produce two files, and their keys differ from one another.
      */
+    /**
+     * One coordinate-sorted BAM carrying TWO samples over the same locus, which is the shape
+     * `GetNormalArtifactData` reads: the split is by sample name and not by file.
+     *
+     * Six reads per sample, forty bases each, all starting at chr1:101 so that every read covers
+     * every locus of the window. Forty rather than ten because Mutect2's chain refuses a read
+     * shorter than thirty, and one start rather than six because a locus the normal does not reach
+     * has no alternate and produces nothing.
+     *
+     * Two sites carry an alternate, and they are different on purpose:
+     *
+     *   chr1:101  one normal read and two tumour reads carry `C`, so the tumour p-value is tiny,
+     *             the keep probability is all but one and the locus becomes a row;
+     *   chr1:121  one normal read carries `G` and no tumour read does, so the p-value is one, the
+     *             keep probability falls to its floor of 0.05, and whether the locus survives is
+     *             the seeded draw's answer rather than the counts'.
+     *
+     * Every other locus matches the reference in both samples, which is what leaves the table
+     * short enough to read.
+     */
+    static void tumorAndNormal(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {
+                {"rgn", "normal", "libn"}, {"rgt", "tumor", "libt"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary(group[2]);
+            record.setPlatformUnit("unit1");
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        // The reference repeats `ACGT`, and position 101 is an `A`, so a read of `ACGT` ten times
+        // over matches it base for base.
+        final String matching = "ACGT".repeat(10);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (final String[] read : new String[][] {
+                    {"n0", "rgn", matching},
+                    {"n1", "rgn", matching},
+                    {"n2", "rgn", matching},
+                    {"n3", "rgn", matching},
+                    {"n4", "rgn", "C" + matching.substring(1)},
+                    {"n5", "rgn", matching.substring(0, 20) + "G" + matching.substring(21)},
+                    {"t0", "rgt", matching},
+                    {"t1", "rgt", matching},
+                    {"t2", "rgt", matching},
+                    {"t3", "rgt", matching},
+                    {"t4", "rgt", "C" + matching.substring(1)},
+                    {"t5", "rgt", "C" + matching.substring(1)}}) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName(read[0]);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(101);
+                record.setCigarString("40M");
+                record.setMappingQuality(60);
+                record.setReadString(read[2]);
+                record.setBaseQualityString("I".repeat(40));
+                record.setAttribute("RG", read[1]);
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -918,6 +986,7 @@ public class MakeFixtures {
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
+        tumorAndNormal(dir.resolve("tumor_normal.bam"));
         deep(dir.resolve("deep.bam"));
         spliced(dir.resolve("spliced.bam"));
         methylation(dir.resolve("methyl.bam"));

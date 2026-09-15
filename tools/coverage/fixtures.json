@@ -953,6 +953,44 @@
         "0"
       ]
     },
+    "GetNormalArtifactData": {
+      "$why": [
+        "tumor_normal.bam, which is ONE file carrying two samples: the split this tool makes is by",
+        "sample name and not by input, so a tumour and a normal in one BAM is the shape a single",
+        "--input reads. Twelve reads of forty bases, all at chr1:101, because Mutect2's chain",
+        "refuses a read shorter than thirty and a locus the normal does not reach has no alternate.",
+        "--normal-sample names the sample that is the normal, and the two values are the two",
+        "samples: with `normal` the alternate is rare enough in the normal to be an artefact and a",
+        "row is written, and with `tumor` it is two reads of six, which is over the germline",
+        "threshold of a fifth, so the locus is dropped and the table is a header alone.",
+        "--error-prob moves the keep probability and nothing else, which is the column it writes.",
+        "--intervals keeps the shared window off the reads as its second value: a run that reaches",
+        "no locus draws no number at all, and the generator is shared across the whole traversal.",
+        "--max-depth-per-sample is held at zero for the reason CheckPileup holds it (gatk-rs#1102):",
+        "this port does not reproduce the downsampler's own random stream."
+      ],
+      "--input": [
+        "/work/fixtures/tumor_normal.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/tumor_normal.bai"
+      ],
+      "--normal-sample": [
+        "normal",
+        "tumor"
+      ],
+      "--output": [
+        "/work/out/artifact.table",
+        "/work/out/artifact2.table"
+      ],
+      "--error-prob": [
+        "0.001",
+        "0.1"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ]
+    },
     "FilterIntervals": {
       "$why": [
         "annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and",
