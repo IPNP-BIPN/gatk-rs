@@ -284,6 +284,20 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.coverage.DepthOfCoverage());
         declarations("CalculateGenotypePosteriors",
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.CalculateGenotypePosteriors());
+        // A denoiser and a validator. `DenoiseReadCounts` is the next link of the copy-number
+        // chain: it reads the counts `CollectReadCounts` writes and standardises them, and its
+        // panel of normals is an HDF5 file the corpus does not carry, so the argument that takes
+        // one is the measurable refusal. `ValidateBasicSomaticShortMutations` checks a callset
+        // against the pileups of a TUMOUR and a NORMAL at once, which makes it the second declared
+        // tool that drives two BAMs.
+        //
+        // `VariantAnnotator` was the first choice for the pair and cannot be declared: it carries
+        // no summary in the usage golden or the inventory, and the declaration generator refuses a
+        // tool it cannot document.
+        declarations("DenoiseReadCounts",
+                new org.broadinstitute.hellbender.tools.copynumber.DenoiseReadCounts());
+        declarations("ValidateBasicSomaticShortMutations",
+                new org.broadinstitute.hellbender.tools.walkers.validation.basicshortmutpileup.ValidateBasicSomaticShortMutations());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
