@@ -749,6 +749,40 @@
         "false"
       ]
     },
+    "AnnotateVcfWithBamDepth": {
+      "$why": [
+        "duo.vcf and reads.vcf for the variants, and the corpus's two BAMs for the depth. What this",
+        "tool counts is CONTAINMENT of the record's whole span rather than overlap, so a record at a",
+        "read's last base counts nothing and one inside it counts one.",
+        "--add-output-vcf-command-line is held at FALSE, and the reason is this tool's own rather",
+        "than the shared one: its default header lines DO reach the file, unlike its sibling's, and",
+        "the ##GATKCommandLine line carries the run's own wall-clock time.",
+        "--create-output-variant-index is held at FALSE for the reason every variant writer holds",
+        "it: the index records the output file's last-modified time."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--output": [
+        "/work/out/depth.vcf",
+        "/work/out/depth2.vcf"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
     "CalculateMixingFractions": {
       "$why": [
         "duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between the",
