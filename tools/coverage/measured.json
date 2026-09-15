@@ -450,6 +450,15 @@
       "matched": 23,
       "t": 2,
       "share": 1.0
+    },
+    "AnnotateVcfWithBamDepth": {
+      "rows": 23,
+      "accepted": 12,
+      "rejected": 11,
+      "distinct_outputs": 6,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
