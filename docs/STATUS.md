@@ -138,7 +138,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | not measured |
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | t=2, 23/23 rows (100%) |
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
-| `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
+| `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | t=2, 8/8 rows (100%) |
 | `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | t=2, 18/18 rows (100%) |
 | `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 21/21 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
@@ -168,7 +168,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | not measured |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) |
-| `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | not measured |
+| `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) |
 | `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | not measured |
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | not measured |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | not measured |
@@ -254,7 +254,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | not measured |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
-| `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
+| `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | t=2, 24/24 rows (100%) |
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) |
 

@@ -468,6 +468,33 @@
       "matched": 24,
       "t": 2,
       "share": 1.0
+    },
+    "EvaluateInfoFieldConcordance": {
+      "rows": 21,
+      "accepted": 8,
+      "rejected": 13,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CallCopyRatioSegments": {
+      "rows": 8,
+      "accepted": 5,
+      "rejected": 3,
+      "distinct_outputs": 3,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "VariantFiltration": {
+      "rows": 24,
+      "accepted": 5,
+      "rejected": 19,
+      "distinct_outputs": 5,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
