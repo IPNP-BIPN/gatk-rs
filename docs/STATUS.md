@@ -251,7 +251,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) |
 | `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | not measured |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | not measured |
-| `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | not measured |
+| `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | t=2, 24/24 rows (100%) |

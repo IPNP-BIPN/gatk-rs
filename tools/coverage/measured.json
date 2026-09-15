@@ -522,6 +522,15 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "ValidateVariants": {
+      "rows": 40,
+      "accepted": 32,
+      "rejected": 8,
+      "distinct_outputs": 1,
+      "matched": 40,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
