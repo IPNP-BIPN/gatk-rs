@@ -315,6 +315,18 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "ReadLengthReadFilter" {
+            // Mutect2's chain carries this one, and its two bounds are the TOOL's defaults rather
+            // than the filter's: thirty and `Integer.MAX_VALUE` where the filter alone would take
+            // one and the same maximum. The declaration supplies both, so the fallbacks here are
+            // only reached by a tool that declares neither.
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadLength {
+                    min: number_or(parser, "min-read-length", 1),
+                    max: number_or(parser, "max-read-length", i32::MAX),
+                },
+                filter.negated,
+            ));
         } else if name == "MateDistantReadFilter" {
             // `PrintDistantMates`' own default, and the one argument that decides what "distant"
             // means. The filter was ported; only this branch was missing, so a row that kept the
@@ -4129,6 +4141,105 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
         .map(|(_, interval)| interval.clone())
         .collect();
     write_file(&output, filtering::write(&sequences, &kept).as_bytes())?;
+    Ok(None)
+}
+
+/// `GetNormalArtifactData.apply`: one locus, two pileups of the same reads, and a seeded draw.
+///
+/// The first Mutect tool with a runner here, and the RNG is what makes it one: the whole traversal
+/// shares one `java.util.Random(47382911)`, drawn on once per CANDIDATE locus, so which loci reach
+/// the table depends on how many came before. The draw also happens BEFORE the last rejection
+/// rule, which is why a locus rejected for too much tumour support still consumes a number.
+///
+/// The split is by SAMPLE and not by file: `--normal-sample` names the samples whose reads are the
+/// normal, and everything else in the same pileup is the tumour. One input carrying two samples is
+/// therefore the shape this port reads, and the tool's own arithmetic lives in
+/// [`gatk_tools::get_normal_artifact_data`], where a golden already measures it.
+pub fn get_normal_artifact_data(parser: &Parser) -> Outcome {
+    use gatk_tools::get_normal_artifact_data as artifact;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GetNormalArtifactData")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let normal_samples = arguments(parser, "normal-sample");
+    let error_probability = scalar(parser, "error-prob")
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(artifact::DEFAULT_ERROR_PROBABILITY);
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let mut generator = gatk_engine::java_random::JavaRandom::gatk();
+    let mut rows = Vec::new();
+    for one in &applied {
+        // `ReadUtils.getSampleName` per element, against the list: a read with no read group has
+        // no sample, which is in neither list and therefore counts as tumour, exactly as the
+        // reference's `contains(null)` on a list of names does.
+        let is_normal = |element: &gatk_engine::pileup::PileupElement| {
+            gatk_engine::read_pileup::sample_name(element.read, &header)
+                .is_some_and(|sample| normal_samples.contains(&sample))
+        };
+        let normal = one.context.pileup.filtered(is_normal);
+        let tumor = one.context.pileup.filtered(|element| !is_normal(element));
+
+        let bases = reference
+            .query(
+                &one.context.contig,
+                one.context.position,
+                one.context.position,
+            )
+            .map_err(|error| match error {
+                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                    Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&reference_sequences)
+                    ))
+                }
+                other => Thrown::user(format!("{other:?}")),
+            })?;
+        let Some(base) = bases.first().copied() else {
+            continue;
+        };
+        if let artifact::Outcome::Kept(record) =
+            artifact::apply(&normal, &tumor, base, error_probability, || {
+                generator.next_double()
+            })
+        {
+            rows.push(*record);
+        }
+    }
+
+    write_file(&output, artifact::write(&rows).as_bytes())?;
     Ok(None)
 }
 
