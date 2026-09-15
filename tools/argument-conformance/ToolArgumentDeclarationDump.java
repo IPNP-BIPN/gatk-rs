@@ -299,6 +299,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.filters.VariantFiltration());
         declarations("CollectAllelicCounts",
                 new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCounts());
+        // A filter over intervals and a collector over two BAMs. `FilterIntervals` reads the
+        // annotated intervals `AnnotateIntervals` writes and the counts `CollectReadCounts` writes,
+        // which makes it the second CHAIN declared here; `GetNormalArtifactData` is the first
+        // Mutect tool of any kind, and it reads a tumour and a normal at once.
+        declarations("FilterIntervals",
+                new org.broadinstitute.hellbender.tools.copynumber.FilterIntervals());
+        declarations("GetNormalArtifactData",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
