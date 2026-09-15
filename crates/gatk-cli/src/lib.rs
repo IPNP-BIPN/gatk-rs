@@ -304,6 +304,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FilterIntervals" => Some(run_filter_intervals),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
+        "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -499,6 +500,10 @@ fn run_get_normal_artifact_data(args: &[String]) -> Result<Option<String>, Throw
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::validate_variants(&parsed("ValidateVariants", args)?)
+}
+
+fn run_left_align_and_trim_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::left_align_and_trim_variants(&parsed("LeftAlignAndTrimVariants", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
