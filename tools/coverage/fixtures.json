@@ -991,6 +991,54 @@
         "0"
       ]
     },
+    "ValidateVariants": {
+      "$why": [
+        "blocks.g.vcf, a GVCF of two reference blocks and a variant between them, all carrying",
+        "<NON_REF>. --validate-GVCF needs one, and it needs the blocks to stop short of the",
+        "interval: the coverage check counts every locus no record covers, so a file over",
+        "chr1:1-1000 under -L chr1:1-6000 is refused for the five thousand it leaves. The corpus's",
+        "plain VCF is the other value, and under --validate-GVCF every one of its records is",
+        "refused for having no <NON_REF> at all.",
+        "This tool writes NO file. Its whole answer is whether it threw and what it said, so every",
+        "accepted row here has an empty output and the distinct-output count is zero by",
+        "construction rather than by a weak corpus.",
+        "--dbsnp is held out: the ID check is the one validation this port does not carry, and a",
+        "dbSNP file in a row would measure a check that is not there. Without one the reference",
+        "skips it too, and says so in the log.",
+        "--intervals carries a window over the blocks and one past them, which is what moves the",
+        "coverage refusal between five thousand loci and ten thousand and one.",
+        "--do-not-validate-filtered-records is held OUT: it is mutex with --validate-GVCF and with",
+        "--fail-gvcf-on-overlap, every row sets every argument, and thirty-one of thirty-six rows",
+        "measured that one refusal. The side held is the one with the most partners, which leaves",
+        "the GVCF pair in the array.",
+        "--max-variants-per-shard carries two values inside its declared range: the generator steps",
+        "below zero and the parser refuses.",
+        "--input and --read-index carry the corpus's BAM and its index. The shared values pair a",
+        "VCF with a BAM index, which twenty-five of thirty-nine rows died on; a variant walker",
+        "still opens the reads a command line names, and with a real pair it is the dictionary",
+        "comparison that the rows measure instead."
+      ],
+      "--variant": [
+        "/work/fixtures/blocks.g.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--dbsnp": [],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--do-not-validate-filtered-records": [],
+      "--max-variants-per-shard": [
+        "0",
+        "1"
+      ]
+    },
     "FilterIntervals": {
       "$why": [
         "annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and",

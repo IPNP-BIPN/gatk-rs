@@ -1030,6 +1030,27 @@ public class MakeFixtures {
                         "--intervals", "chr1:1-6000",
                         "--output", dir.resolve("mixing.table").toString(),
                 });
+        // A GVCF: two reference BLOCKS with an `END` and a variant between them, all carrying
+        // `<NON_REF>`. `ValidateVariants --validate-GVCF` needs one, and it needs the blocks to
+        // stop short of the contig: the coverage check counts every locus no record covers, so a
+        // file over chr1:1-1000 and an interval of chr1:1-6000 leave a gap the message names.
+        // The reference bases are the corpus's own repeat, so the REF check passes on every row.
+        final Path blocks = dir.resolve("blocks.g.vcf");
+        Files.writeString(blocks,
+                "##fileformat=VCFv4.2\n"
+                        + "##contig=<ID=chr1,length=100000>\n"
+                        + "##ALT=<ID=NON_REF,Description=\"Represents any possible alternative allele\">\n"
+                        + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n"
+                        + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                        + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+                        + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=500\tGT\t0/0\n"
+                        + "chr1\t501\t.\tA\tC,<NON_REF>\t50\t.\t.\tGT\t0/1\n"
+                        + "chr1\t502\t.\tC\t<NON_REF>\t.\t.\tEND=1000\tGT\t0/0\n",
+                StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        blocks, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("blocks.g.vcf.idx"));
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
