@@ -441,6 +441,15 @@
       "matched": 23,
       "t": 2,
       "share": 1.0
+    },
+    "AnnotateVcfWithExpectedAlleleFraction": {
+      "rows": 23,
+      "accepted": 10,
+      "rejected": 13,
+      "distinct_outputs": 5,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
