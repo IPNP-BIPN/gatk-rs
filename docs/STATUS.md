@@ -143,7 +143,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CheckPileup` | reporting-walker | oracle-backed | check-pileup | 1 | t=2, 21/21 rows (100%) |
 | `CheckReferenceCompatibility` | reference-utility | oracle-backed | check-reference-compatibility | 1 | not measured |
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) |
-| `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | not measured |
+| `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | t=2, 19/19 rows (100%) |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 17/17 rows (100%) |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | not measured |
