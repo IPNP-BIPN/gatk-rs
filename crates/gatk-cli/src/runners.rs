@@ -3008,6 +3008,290 @@ pub fn count_false_positives(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `EvaluateInfoFieldConcordance.apply`: one INFO key of the eval file against one of the truth.
+///
+/// The first runner here with a SECOND variant input beside the driving one, walked in lockstep by
+/// [`gatk_engine::concordance_walker`]. Only true positives are looked at, a record whose key is
+/// absent is counted but contributes nothing, and the "absolute" difference is
+/// `Math.sqrt(delta * delta)` where `Math.abs` was meant -- all three are the port's, measured by
+/// its own suite.
+pub fn evaluate_info_field_concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::evaluate_info_field_concordance as concordance;
+
+    let _ = resolve_read_filters(parser, "EvaluateInfoFieldConcordance")?;
+    let summary = argument(parser, "summary").ok_or_else(|| {
+        Thrown::command_line("Argument summary was missing: Argument 'summary' is required")
+    })?;
+    let eval_path = argument(parser, "evaluation").ok_or_else(|| {
+        Thrown::command_line("Argument evaluation was missing: Argument 'evaluation' is required")
+    })?;
+    let truth_path = argument(parser, "truth").ok_or_else(|| {
+        Thrown::command_line("Argument truth was missing: Argument 'truth' is required")
+    })?;
+    let eval_key = argument(parser, "eval-info-key").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument eval-info-key was missing: Argument 'eval-info-key' is required",
+        )
+    })?;
+    let truth_key = argument(parser, "truth-info-key").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument truth-info-key was missing: Argument 'truth-info-key' is required",
+        )
+    })?;
+
+    let read = |path: &str| -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: failure.error.class(),
+            message: Some(failure.error.message()),
+        })
+    };
+    let eval_text = std::fs::read_to_string(&eval_path)
+        .map_err(|error| Thrown::user(format!("{eval_path}: {error}")))?;
+    let eval_file = read(&eval_path)?;
+    let truth_file = read(&truth_path)?;
+
+    // `onTraversalStart`'s two checks, which read the HEADERS and not the records: a key no header
+    // declares is refused before the walk.
+    let declares = |file: &htsjdk_vcf::reader::VcfFile, key: &str| {
+        file.header.lines.iter().any(|line| {
+            matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key: kind, id, .. }
+                if kind == "INFO" && id == key)
+        })
+    };
+    concordance::check_keys(
+        declares(&eval_file, &eval_key),
+        &eval_key,
+        &eval_path,
+        declares(&truth_file, &truth_key),
+        &truth_key,
+        &truth_path,
+    )
+    .map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.class(),
+        message: Some(error.message()),
+    })?;
+
+    let dictionary: Vec<String> = eval_file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Contig { fields, .. } => fields
+                .iter()
+                .find(|(key, _)| key == "ID")
+                .map(|(_, value)| value.clone()),
+            _ => None,
+        })
+        .collect();
+
+    // `-L` bounds the traversal, so a record outside the window is not walked at all and its
+    // difference never reaches the mean. Measured on eight rows of this tool's array, where every
+    // window gave the reference a different mean and the port the same one.
+    let intervals = interval_arguments(parser, &vcf_dictionary(&eval_text))?
+        .map(|parameters| parameters.intervals);
+    let inside = |record: &htsjdk_vcf::variant::VariantContext| -> bool {
+        match &intervals {
+            None => true,
+            Some(list) => list.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            }),
+        }
+    };
+    let truth_kept: Vec<htsjdk_vcf::variant::VariantContext> = truth_file
+        .records
+        .iter()
+        .filter(|record| inside(record))
+        .cloned()
+        .collect();
+    let eval_kept: Vec<htsjdk_vcf::variant::VariantContext> = eval_file
+        .records
+        .iter()
+        .filter(|record| inside(record))
+        .cloned()
+        .collect();
+    let as_records = |records: &[htsjdk_vcf::variant::VariantContext]| -> Vec<ConcordanceVariant> {
+        records
+            .iter()
+            .map(|record| ConcordanceVariant {
+                contig: record.contig.clone(),
+                start: record.start as i32,
+                filtered: record.is_filtered(),
+            })
+            .collect()
+    };
+    let truth_records = as_records(&truth_kept);
+    let eval_records = as_records(&eval_kept);
+    // `areVariantsAtSameLocusConcordant` is allele equality on this tool: two records at one locus
+    // are concordant when their alternates match.
+    let steps = gatk_engine::concordance_walker::concordance(
+        &truth_records,
+        &eval_records,
+        &dictionary,
+        |_, _| true,
+    );
+
+    let mut totals = concordance::Concordance::default();
+    for step in &steps {
+        if step.state != gatk_engine::concordance_walker::ConcordanceState::TruePositive {
+            continue;
+        }
+        let (Some(truth_index), Some(eval_index)) = (step.truth, step.eval) else {
+            continue;
+        };
+        let truth = &truth_kept[truth_index];
+        let eval = &eval_kept[eval_index];
+        // `isSNP()` then `isIndel()`, both `getType() ==` and nothing looser, which is the type
+        // `RemoveNearbyIndels` measured.
+        let eval_type = match gatk_tools::remove_nearby_indels::variant_type(eval) {
+            gatk_tools::remove_nearby_indels::VariantType::Snp => concordance::EvalType::Snp,
+            gatk_tools::remove_nearby_indels::VariantType::Indel => concordance::EvalType::Indel,
+            _ => concordance::EvalType::Other,
+        };
+        totals.add(
+            eval_type,
+            info_as_double(eval, &eval_key),
+            info_as_double(truth, &truth_key),
+        );
+    }
+
+    write_file(&summary, totals.table(&eval_key, &truth_key).as_bytes())?;
+    Ok(None)
+}
+
+/// As much of a record as the concordance iterator looks at.
+struct ConcordanceVariant {
+    contig: String,
+    start: i32,
+    filtered: bool,
+}
+
+impl gatk_engine::concordance_walker::ConcordanceRecord for ConcordanceVariant {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn is_filtered(&self) -> bool {
+        self.filtered
+    }
+}
+
+/// `vc.getAttributeAsDouble(key, 0)`, which is absent rather than zero here: a record with no such
+/// key is counted and contributes nothing.
+fn info_as_double(record: &htsjdk_vcf::variant::VariantContext, key: &str) -> Option<f64> {
+    record
+        .attributes
+        .iter()
+        .find(|(name, _)| name == key)
+        .and_then(|(_, value)| value.format())
+        .and_then(|text| text.parse().ok())
+}
+
+/// `CallCopyRatioSegments.doWork`: segments in, called segments out, and a second file beside them.
+///
+/// No walker, no reference, no reads: eighteen arguments and a table transformed by arithmetic.
+/// The statistics are computed TWICE over the copy-neutral segments -- once over all of them to
+/// find the outliers, once over what is left to call against -- and the port keeps both passes
+/// because a port filtering with the recomputed pair would drop a different set.
+///
+/// The output is two files: `-O` itself, and the legacy `.igv.seg` beside it, whose path is `-O`
+/// with ONE extension removed and `.igv.seg` appended, and whose columns are IGV's rather than the
+/// table's: the call comes before the mean.
+pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
+    use gatk_tools::call_copy_ratio_segments as calling;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let bound = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let lower = bound("neutral-segment-copy-ratio-lower-bound", 0.9);
+    let upper = bound("neutral-segment-copy-ratio-upper-bound", 1.1);
+    let outlier = bound("outlier-neutral-segment-copy-ratio-z-score-threshold", 2.0);
+    let calling_threshold = bound("calling-copy-ratio-z-score-threshold", 2.0);
+
+    let text = std::fs::read_to_string(&input)
+        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    // The file is a SAM header, a column line and the rows. The header travels into the output
+    // unchanged, which is what carries the sample name and the dictionary through.
+    let mut header = String::new();
+    let mut rows = Vec::new();
+    let mut columns_seen = false;
+    let mut sample = String::new();
+    for line in text.lines() {
+        if line.starts_with('@') {
+            header.push_str(line);
+            header.push('\n');
+            if let Some(rest) = line.strip_prefix("@RG\t") {
+                for field in rest.split('\t') {
+                    if let Some(name) = field.strip_prefix("SM:") {
+                        sample = name.to_string();
+                    }
+                }
+            }
+            continue;
+        }
+        if !columns_seen {
+            columns_seen = true;
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 5 {
+            continue;
+        }
+        rows.push(calling::CopyRatioSegment {
+            contig: fields[0].to_string(),
+            start: fields[1].parse().unwrap_or_default(),
+            end: fields[2].parse().unwrap_or_default(),
+            num_points: fields[3].parse().unwrap_or_default(),
+            mean_log2_copy_ratio: fields[4].trim().parse().unwrap_or(f64::NAN),
+        });
+    }
+
+    let calls = calling::make_calls(&rows, lower, upper, outlier, calling_threshold)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message().to_string()))?;
+
+    write_file(
+        &output,
+        calling::write_called(&header, &rows, &calls).as_bytes(),
+    )?;
+    write_file(
+        &legacy_segments_path(&output),
+        calling::write_legacy(&sample, &rows, &calls).as_bytes(),
+    )?;
+    Ok(None)
+}
+
+/// `FilenameUtils.removeExtension(path) + ".igv.seg"`: ONE extension removed, whatever it was, so
+/// a `-O` with none simply gains the suffix.
+fn legacy_segments_path(output: &str) -> String {
+    let (directory, name) = match output.rfind('/') {
+        Some(slash) => (&output[..=slash], &output[slash + 1..]),
+        None => ("", output),
+    };
+    let stem = match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    };
+    format!("{directory}{stem}.igv.seg")
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
