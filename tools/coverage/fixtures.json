@@ -953,6 +953,107 @@
         "0"
       ]
     },
+    "FilterIntervals": {
+      "$why": [
+        "annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and",
+        "CollectReadCounts over four windows of the corpus's contig. Four rather than one because",
+        "this tool removes a contig's only surviving interval: a table of one row filters to none",
+        "and the run is then refused for having nothing left.",
+        "The counts differ between windows (2, 2, 1 and 0), and the two low-count thresholds are the",
+        "two sides of them: 1 drops the empty window and 0 drops nothing. A threshold of five is",
+        "above every count the corpus carries, so every row holding it ended with an empty mask and",
+        "the array measured one refusal eleven times instead of the filters.",
+        "--annotated-intervals carries the table and NOTHING, because the tool accepts either input",
+        "alone and refuses a command line with neither: the empty value is that refusal.",
+        "--input and --read-index are held out of the shared values: this tool's --input is a COUNTS",
+        "table rather than reads, which is why it carries its own.",
+        "--intervals takes an interval LIST rather than a window, and that is the tool rather than",
+        "the fixture: the argument is REQUIRED, the intersection with the inputs is by list equality",
+        "rather than by overlap, and a contig left with one interval loses it. So a window naming a",
+        "single bin always ends with nothing, and only a file naming several can produce output.",
+        "The two files name four bins and two.",
+        "--exclude-intervals carries a window OFF the bins as well as one that cuts the first of",
+        "them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it,",
+        "and with every shared value clipping one, no row could produce a file at all.",
+        "The four other interval arguments are HELD at what a copy-number tool accepts: it bins and",
+        "pads by its own arguments and refuses the standard ones outright, so every row that varied",
+        "them measured one IllegalArgumentException. That refusal is the runner's own check and is",
+        "measured by the tools that share it.",
+        "The percentages, the percentiles and the two segmental-duplication bounds carry values",
+        "INSIDE their declared range. The generator takes a domain from the declaration's min and",
+        "max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused",
+        "by the parser and the array measured the range check rather than the three filters."
+      ],
+      "--annotated-intervals": [
+        "/work/fixtures/annotated.tsv",
+        ""
+      ],
+      "--input": [
+        "/work/fixtures/counts.tsv"
+      ],
+      "--output": [
+        "/work/out/filtered.interval_list",
+        "/work/out/filtered2.interval_list"
+      ],
+      "--minimum-gc-content": [
+        "0.1",
+        "0.6"
+      ],
+      "--exclude-intervals": [
+        "chr1:90000-91000",
+        "chr1:1-500"
+      ],
+      "--low-count-filter-count-threshold": [
+        "1",
+        "0"
+      ],
+      "--maximum-segmental-duplication-content": [
+        "0.5",
+        "1.0"
+      ],
+      "--minimum-segmental-duplication-content": [
+        "0.0"
+      ],
+      "--extreme-count-filter-percentage-of-samples": [
+        "90.0",
+        "10.0"
+      ],
+      "--low-count-filter-percentage-of-samples": [
+        "90.0"
+      ],
+      "--extreme-count-filter-minimum-percentile": [
+        "1.0"
+      ],
+      "--extreme-count-filter-maximum-percentile": [
+        "99.0"
+      ],
+      "--maximum-gc-content": [
+        "0.9"
+      ],
+      "--minimum-mappability": [
+        "0.9"
+      ],
+      "--maximum-mappability": [
+        "1.0"
+      ],
+      "--intervals": [
+        "/work/fixtures/bins.interval_list",
+        "/work/fixtures/bins2.interval_list"
+      ],
+      "--interval-merging-rule": [
+        "OVERLAPPING_ONLY"
+      ],
+      "--interval-set-rule": [
+        "UNION"
+      ],
+      "--interval-padding": [
+        "0"
+      ],
+      "--interval-exclusion-padding": [
+        "0"
+      ],
+      "--read-index": []
+    },
     "CountFalsePositives": {
       "$why": [
         "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",

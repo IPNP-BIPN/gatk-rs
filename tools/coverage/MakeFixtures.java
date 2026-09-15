@@ -1041,6 +1041,53 @@ public class MakeFixtures {
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", shifted.toString()});
 
+        // The bins as an interval LIST, which is the only way one `-L` value can name more than
+        // one of them. `FilterIntervals` intersects the requested intervals with its inputs' by
+        // list equality and then removes a contig's only survivor, so a window naming a single bin
+        // always ends with nothing: the file names four, and a second file names two.
+        Files.writeString(dir.resolve("bins.interval_list"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n"
+                        + "chr1\t1\t1000\t+\t.\n"
+                        + "chr1\t2001\t3000\t+\t.\n"
+                        + "chr1\t4001\t5000\t+\t.\n"
+                        + "chr1\t6001\t7000\t+\t.\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bins2.interval_list"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n"
+                        + "chr1\t1\t1000\t+\t.\n"
+                        + "chr1\t2001\t3000\t+\t.\n",
+                StandardCharsets.UTF_8);
+
+        // The two files `FilterIntervals` reads, produced by the REFERENCE's own tools: the
+        // annotated intervals `AnnotateIntervals` writes and the counts `CollectReadCounts` writes.
+        // Both need the copy-number interval rule, which is why they carry it here: those tools
+        // refuse anything but OVERLAPPING_ONLY.
+        new org.broadinstitute.hellbender.tools.copynumber.AnnotateIntervals()
+                .instanceMain(new String[] {
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        // FOUR windows rather than one: `FilterIntervals` removes a contig's only
+                        // surviving interval, so a table of one row filters to none and the run is
+                        // then refused for having nothing left.
+                        "--intervals", "chr1:1-1000",
+                        "--intervals", "chr1:2001-3000",
+                        "--intervals", "chr1:4001-5000",
+                        "--intervals", "chr1:6001-7000",
+                        "--interval-merging-rule", "OVERLAPPING_ONLY",
+                        "--output", dir.resolve("annotated.tsv").toString(),
+                });
+        new org.broadinstitute.hellbender.tools.copynumber.CollectReadCounts()
+                .instanceMain(new String[] {
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        "--intervals", "chr1:1-1000",
+                        "--intervals", "chr1:2001-3000",
+                        "--intervals", "chr1:4001-5000",
+                        "--intervals", "chr1:6001-7000",
+                        "--interval-merging-rule", "OVERLAPPING_ONLY",
+                        "--format", "TSV",
+                        "--output", dir.resolve("counts.tsv").toString(),
+                });
+
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
         // other's input, so the second tool is measured on a table the first really writes rather
