@@ -218,6 +218,16 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions());
         declarations("AnnotateVcfWithExpectedAlleleFraction",
                 new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithExpectedAlleleFraction());
+        // The third and fourth of the validation walkers, and the pair completes a family. Both
+        // read a VCF; `AnnotateVcfWithBamDepth` also reads the reads and writes one Integer INFO
+        // field per record, and `CountFalsePositives` writes a TABLE of counts per variant type
+        // over a target territory that `-L` decides. The first is the sibling whose default tool
+        // header lines DO reach the file, which is what makes the pair with
+        // `AnnotateVcfWithExpectedAlleleFraction` worth having declared together.
+        declarations("AnnotateVcfWithBamDepth",
+                new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithBamDepth());
+        declarations("CountFalsePositives",
+                new org.broadinstitute.hellbender.tools.walkers.validation.CountFalsePositives());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
