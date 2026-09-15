@@ -291,6 +291,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetPileupSummaries" => Some(run_get_pileup_summaries),
         "UnmarkDuplicates" => Some(run_unmark_duplicates),
         "FastaReferenceMaker" => Some(run_fasta_reference_maker),
+        "AnnotateVcfWithExpectedAlleleFraction" => {
+            Some(run_annotate_vcf_with_expected_allele_fraction)
+        }
         "CalculateMixingFractions" => Some(run_calculate_mixing_fractions),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
@@ -438,6 +441,15 @@ fn run_collect_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_fasta_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::fasta_reference_maker(&parsed("FastaReferenceMaker", args)?)
+}
+
+fn run_annotate_vcf_with_expected_allele_fraction(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::annotate_vcf_with_expected_allele_fraction(&parsed(
+        "AnnotateVcfWithExpectedAlleleFraction",
+        args,
+    )?)
 }
 
 fn run_calculate_mixing_fractions(args: &[String]) -> Result<Option<String>, Thrown> {
