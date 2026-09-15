@@ -415,6 +415,21 @@ public class MakeFixtures {
      * Every other locus matches the reference in both samples, which is what leaves the table
      * short enough to read.
      */
+    /** The corpus reference's bases at a one-based position: `ACGT`, repeated. */
+    static String referenceBases(final int position, final int length) {
+        final StringBuilder bases = new StringBuilder();
+        for (int index = 0; index < length; index++) {
+            bases.append("ACGT".charAt((position + index - 1) % 4));
+        }
+        return bases.toString();
+    }
+
+    /** One heterozygous record of `shiftable.vcf`. */
+    static String shiftableRecord(final int position, final String reference, final String alternate) {
+        return String.format("chr1\t%d\t.\t%s\t%s\t100\tPASS\t.\tGT\t0/1%n", position, reference,
+                alternate).replace(System.lineSeparator(), "\n");
+    }
+
     static void tumorAndNormal(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1051,6 +1066,35 @@ public class MakeFixtures {
                         blocks, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("blocks.g.vcf.idx"));
+        // Indels that can MOVE. The corpus reference is `ACGT` repeated, so a deletion or an
+        // insertion of one whole repeat unit is equivalent at every offset of the repeat, and
+        // `LeftAlignAndTrimVariants` walks it left as far as its window allows. The corpus's own
+        // indels.vcf cannot show that: its alleles do not match the reference, so nothing moves and
+        // an array over it measures the traversal rather than the alignment.
+        //
+        // Five records, and each is a different branch: a deletion that walks, an insertion that
+        // walks, a second deletion close behind the first so that the distance to the record
+        // already written is what bounds it, a deletion longer than the default
+        // `--max-indel-length` which is written untouched and still bounds the next, and a SNV,
+        // which the alignment returns before it reads a base.
+        final StringBuilder shiftable = new StringBuilder();
+        shiftable.append("##fileformat=VCFv4.2\n")
+                .append("##contig=<ID=chr1,length=100000>\n")
+                .append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n");
+        shiftable.append(shiftableRecord(2005, referenceBases(2005, 5), referenceBases(2005, 1)));
+        shiftable.append(shiftableRecord(2020, referenceBases(2020, 1),
+                referenceBases(2020, 1) + referenceBases(2021, 4)));
+        shiftable.append(shiftableRecord(2024, referenceBases(2024, 5), referenceBases(2024, 1)));
+        shiftable.append(shiftableRecord(5000, referenceBases(5000, 301), referenceBases(5000, 1)));
+        shiftable.append(shiftableRecord(6000, referenceBases(6000, 1),
+                referenceBases(6000, 1).equals("A") ? "C" : "A"));
+        final Path shifts = dir.resolve("shiftable.vcf");
+        Files.writeString(shifts, shiftable.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        shifts, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("shiftable.vcf.idx"));
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(

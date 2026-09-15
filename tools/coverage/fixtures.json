@@ -991,6 +991,69 @@
         "0"
       ]
     },
+    "LeftAlignAndTrimVariants": {
+      "$why": [
+        "shiftable.vcf, whose indels are whole repeat units of the corpus reference and therefore",
+        "MOVE: with the default window every one of them walks a thousand bases left, and with a",
+        "window of one it walks one. The corpus's own indels.vcf is the second value and moves",
+        "nothing, because its alleles do not match the reference; an array over that file alone",
+        "measured the traversal rather than the alignment.",
+        "The five records are five branches: a deletion that walks, an insertion that walks, a",
+        "second deletion close behind the first so the distance to the record ALREADY WRITTEN is",
+        "what bounds it, a three-hundred-base deletion that is written untouched and still bounds",
+        "the next, and a SNV, which the alignment returns on before it reads a base.",
+        "--max-leading-bases carries the default and a window of one, which is the argument that",
+        "stops a record short of where the reference would put it. --max-indel-length carries the",
+        "default and a length below the corpus's own indels, which is what makes a record be",
+        "written untouched and still bound the next one.",
+        "--split-multi-allelics is in the array because the corpus's multi-allelic records have no",
+        "likelihoods: a record with PLs reaches the allele subsetting this port does not carry.",
+        "--input and --read-index carry the corpus's BAM and its index rather than the shared",
+        "values, which pair a VCF with a BAM index and refuse before the tool runs.",
+        "--max-variants-per-shard is held at zero: above it the reference writes one FILE per",
+        "shard, which is a writer this port does not carry, so every row above zero would measure",
+        "that refusal rather than the alignment.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every other variant writer holds them: the header line carries the run's own clock",
+        "and the index carries the output file's last-modified time, so two runs of the same row",
+        "differ in bytes that are not the tool's."
+      ],
+      "--variant": [
+        "/work/fixtures/shiftable.vcf",
+        "/work/fixtures/indels.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--output": [
+        "/work/out/aligned.vcf",
+        "/work/out/aligned2.vcf"
+      ],
+      "--max-leading-bases": [
+        "1000",
+        "1"
+      ],
+      "--max-indel-length": [
+        "200",
+        "1"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
     "ValidateVariants": {
       "$why": [
         "blocks.g.vcf, a GVCF of two reference blocks and a variant between them, all carrying",
