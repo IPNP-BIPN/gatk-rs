@@ -432,6 +432,33 @@
       "matched": 50,
       "t": 2,
       "share": 1.0
+    },
+    "CalculateMixingFractions": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnnotateVcfWithExpectedAlleleFraction": {
+      "rows": 23,
+      "accepted": 10,
+      "rejected": 13,
+      "distinct_outputs": 5,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnnotateVcfWithBamDepth": {
+      "rows": 23,
+      "accepted": 12,
+      "rejected": 11,
+      "distinct_outputs": 6,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
