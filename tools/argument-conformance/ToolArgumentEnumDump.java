@@ -238,6 +238,15 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.validation.EvaluateInfoFieldConcordance());
         declarations("CallCopyRatioSegments",
                 new org.broadinstitute.hellbender.tools.copynumber.CallCopyRatioSegments());
+        // A VCF transformed and a table collected, and both are bigger than anything declared here
+        // so far. `VariantFiltration` has SIXTY-ONE arguments and writes its filters into the
+        // FILTER column and into a genotype's FT; `CollectAllelicCounts` walks loci over a BAM and
+        // counts the reference and the alternate base at each site of an interval list, which is
+        // the first copy-number tool here that reads reads.
+        declarations("VariantFiltration",
+                new org.broadinstitute.hellbender.tools.walkers.filters.VariantFiltration());
+        declarations("CollectAllelicCounts",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCounts());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
