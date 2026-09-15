@@ -720,6 +720,43 @@
         "the tool."
       ]
     },
+    "CalculateMixingFractions": {
+      "$why": [
+        "duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between the",
+        "samples, and reads.vcf the other VCF a variant walker can open. Two samples is what makes",
+        "the table say anything: a bucket is divided by the SUM of every bucket's alt fraction, so a",
+        "one-sample file can only ever answer 1.0 or NaN, and the row ORDER is a HashMap's rather",
+        "than the header's.",
+        "--input carries the two BAMs, so the pileup at a site differs between rows rather than being",
+        "the same reads twice.",
+        "--intervals is where this tool's NaN lives: a run bounded away from the counted sites leaves",
+        "a sample uncounted, and since the normalizer is the SUM of every sample's alt fraction, one",
+        "empty bucket makes every row in the table NaN. The corpus's shared windows do exactly that,",
+        "because chr1:1-1000 holds only sample1's sites; this tool therefore carries its own two",
+        "windows, one over every site and one over the first three, which count 5/3 and 2/1 and",
+        "so answer with two different pairs of fractions."
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:1-2000"
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--output": [
+        "/work/out/fractions.table",
+        "/work/out/fractions2.table"
+      ]
+    },
     "FastaReferenceMaker": {
       "--input": [
         "/work/fixtures/reads.bam",

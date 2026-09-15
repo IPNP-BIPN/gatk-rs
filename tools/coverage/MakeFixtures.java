@@ -61,6 +61,39 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * A TWO-sample VCF whose records are singleton hets, alternating which sample carries them.
+     *
+     * `CalculateMixingFractions` fills one bucket per sample and then divides each bucket's alt
+     * fraction by the SUM of every sample's, so a one-sample file can only ever answer `1.0` or
+     * `NaN`. With two samples the table has two rows that add up, and their ORDER is a
+     * `HashMap`'s iteration order rather than the header's, which is the property the tool's own
+     * golden pins and which no command line could reach while the corpus had one sample.
+     */
+    static String duoVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\tsample2\n");
+        // The sites sit one base INTO each read rather than at its start. `reads.bam`'s reads are
+        // `ACGTACGTAC` beginning at 100, 800, and so on, so the base at the read's own start is the
+        // reference `A` and the base one further in is `C`, which is this file's alternate. A site
+        // at the start counts a total and no alt, every fraction is `0/0`, and the table is NaN
+        // whatever else the row says: the first version of this fixture did exactly that.
+        //
+        // The hets are dealt five to `sample1` and three to `sample2`, so the two mixing fractions
+        // are different numbers rather than one number twice.
+        final boolean[] toFirstSample = {true, true, false, true, false, true, false, true};
+        int index = 0;
+        for (int position = 101; position <= 5001; position += 700) {
+            text.append("chr1\t").append(position).append("\trs").append(position)
+                    .append("\tA\tC\t100\tPASS\t.\tGT\t")
+                    .append(toFirstSample[index] ? "0/1\t0/0" : "0/0\t0/1").append('\n');
+            index++;
+        }
+        return text.toString();
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -852,6 +885,14 @@ public class MakeFixtures {
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.
+        // The two-sample VCF, indexed for the same reason: a variant walker refuses `-L` over an
+        // input with no random access.
+        final Path duo = dir.resolve("duo.vcf");
+        Files.writeString(duo, duoVcf(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        duo, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("duo.vcf.idx"));
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
