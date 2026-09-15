@@ -254,7 +254,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | not measured |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
-| `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | not measured |
+| `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | t=2, 24/24 rows (100%) |
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) |
 
