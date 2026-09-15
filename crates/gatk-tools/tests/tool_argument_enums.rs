@@ -68,9 +68,21 @@ fn an_arguments_default_is_one_of_the_constants() {
             .unwrap_or_else(|| panic!("{tool}/{name}"));
         assert_eq!(declaration.type_name, type_name, "{tool}/{name}");
         let type_ = enum_type(type_name).unwrap_or_else(|| panic!("{type_name}"));
-        // An unset enum argument has no default at all; a set one holds a constant.
+        // An unset enum argument has no default at all; a set one holds a constant. A COLLECTION
+        // of them holds a list, rendered by `AbstractCollection.toString`: `DepthOfCoverage`'s
+        // `--partition-type` defaults to `[sample]`, which is one constant inside brackets and not
+        // a constant named `[sample]`.
         if default == "null" {
             assert_eq!(declaration.default, None, "{tool}/{name}");
+        } else if declaration.collection {
+            let inner = default
+                .strip_prefix('[')
+                .and_then(|text| text.strip_suffix(']'))
+                .unwrap_or_else(|| panic!("{tool}/{name}: a collection default is a list"));
+            for constant in inner.split(", ") {
+                assert!(type_.constants.contains(&constant), "{tool}/{name}");
+            }
+            assert_eq!(declaration.default, Some(default), "{tool}/{name}");
         } else {
             assert!(type_.constants.contains(&default), "{tool}/{name}");
             assert_eq!(declaration.default, Some(default), "{tool}/{name}");
