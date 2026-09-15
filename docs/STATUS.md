@@ -136,7 +136,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
 | `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | t=2, 8/8 rows (100%) |
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | not measured |
-| `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | not measured |
+| `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | t=2, 23/23 rows (100%) |
 | `CalibrateDragstrModel` | assembly-caller | oracle-backed | calibrate-dragstr-model | 1 | not measured |
 | `CallCopyRatioSegments` | cnv-segmentation | oracle-backed | call-copy-ratio-segments | 1 | not measured |
 | `CallableLoci` | locus-walker | oracle-backed | callable-loci | 1 | t=2, 18/18 rows (100%) |
