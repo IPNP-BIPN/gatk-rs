@@ -305,6 +305,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
+        "GatherBQSRReports" => Some(run_gather_bqsr_reports),
+        "Concordance" => Some(run_concordance),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -504,6 +506,14 @@ fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_left_align_and_trim_variants(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::left_align_and_trim_variants(&parsed("LeftAlignAndTrimVariants", args)?)
+}
+
+fn run_gather_bqsr_reports(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_bqsr_reports(&parsed("GatherBQSRReports", args)?)
+}
+
+fn run_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::concordance(&parsed("Concordance", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {

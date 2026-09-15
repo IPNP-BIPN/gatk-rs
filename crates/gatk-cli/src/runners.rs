@@ -4473,6 +4473,437 @@ fn split_refusal(error: gatk_engine::variant_context_utils::SplitError) -> Throw
     )
 }
 
+/// `GatherBQSRReports.doWork`: several recalibration reports summed into one.
+///
+/// A `CommandLineProgram` rather than a `GATKTool`, so there is no reference, no intervals and no
+/// read filters to resolve: the whole run is read the files, gather, write. What the gather does is
+/// [`gatk_tools::gather_bqsr_reports`], where a golden measures it; the runner's share is the
+/// order the files are read in, which is the order `--input` was given.
+pub fn gather_bqsr_reports(parser: &Parser) -> Outcome {
+    use gatk_tools::gather_bqsr_reports as gather;
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let mut texts = Vec::new();
+    for path in &inputs {
+        texts.push(std::fs::read_to_string(path).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: gatk_tools::read_walker_refusal::COULD_NOT_READ,
+            message: Some(format!(
+                "Couldn't read file {}. Error was: {error}",
+                java_absolute_path(path)
+            )),
+        })?);
+    }
+    let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
+    // `GATKException` is not a user error, which is what puts it at status three; the empty input
+    // list is an `IllegalArgumentException`, which is three as well.
+    let gathered = gather::gather(&borrowed)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    write_file(&output, gathered.as_bytes())?;
+    Ok(None)
+}
+
+/// One record of either side, as the concordance iterator reads it.
+struct ConcordanceLocus {
+    index: usize,
+    contig: String,
+    start: i32,
+    filtered: bool,
+}
+
+impl gatk_engine::concordance_walker::ConcordanceRecord for ConcordanceLocus {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn is_filtered(&self) -> bool {
+        self.filtered
+    }
+}
+
+/// `Concordance.apply`: a truth callset and an evaluation one walked together.
+///
+/// The first `AbstractConcordanceWalker` with a runner here, and what makes it one is that it
+/// drives TWO feature inputs at once: the iterator in [`gatk_engine::concordance_walker`] steps
+/// them by the dictionary's contig order, and every step is labelled with one of five states. The
+/// table those states become is [`gatk_tools::concordance`], where a golden measures it; the
+/// runner reads the files, applies the truth side's filter, and writes what the labels ask for.
+///
+/// The truth side has a filter of its own (`makeTruthVariantFilter`: not filtered, not symbolic)
+/// and the eval side has none, which is why a filtered eval record is a STATE rather than a
+/// dropped record.
+pub fn concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::concordance as conc;
+
+    let _ = resolve_read_filters(parser, "Concordance")?;
+    let truth_path = argument(parser, "truth").ok_or_else(|| {
+        Thrown::command_line("Argument truth was missing: Argument 'truth' is required")
+    })?;
+    // `--evaluation` is the long name and `-eval` the short one; the parser knows only the long
+    // one, and a runner that asked for the short one read nothing at all.
+    let eval_path = argument(parser, "evaluation").ok_or_else(|| {
+        Thrown::command_line("Argument evaluation was missing: Argument 'evaluation' is required")
+    })?;
+    let summary_path = argument(parser, "summary").ok_or_else(|| {
+        Thrown::command_line("Argument summary was missing: Argument 'summary' is required")
+    })?;
+
+    let read_vcf = |path: &str| -> Result<(String, htsjdk_vcf::reader::VcfFile), Thrown> {
+        let bytes = std::fs::read(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: path.to_string(),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok((text, file))
+    };
+    let (truth_text, truth_file) = read_vcf(&truth_path)?;
+    let (_, eval_file) = read_vcf(&eval_path)?;
+
+    // `validateSequenceDictionaries` still runs, and it is the ENGINE's: the master against the
+    // reads, the reference and the features, then the reference against the reads. Only the best
+    // available dictionary is this tool's own. Measured on a row whose `--sequence-dictionary`
+    // shares no contig with the BAM the command line named: the reference refused and the port
+    // walked.
+    let reads_inputs = arguments(parser, "input").len();
+    let reads_dictionaries: Vec<Vec<htsjdk_bam::header::SequenceRecord>> =
+        arguments(parser, "input")
+            .iter()
+            .map(|reads| reads_dictionary(parser, reads, reads_inputs))
+            .collect::<Result<_, _>>()?;
+    let features = vcf_dictionary(&truth_text);
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            for reads in &reads_dictionaries {
+                validate_against_master(master, "reads", reads)?;
+            }
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+            validate_against_master(master, "features", &features.sequences)?;
+        }
+        let compare = |left_name: &str,
+                       left: &[htsjdk_bam::header::SequenceRecord],
+                       right_name: &str,
+                       right: &[htsjdk_bam::header::SequenceRecord]|
+         -> Result<(), Thrown> {
+            gatk_tools::sequence_dictionary::validate(
+                left_name, left, right_name, right, false, false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })
+        };
+        if let Some(reference) = &reference {
+            for reads in &reads_dictionaries {
+                compare("reference", &reference.sequences, "reads", reads)?;
+            }
+            compare(
+                "reference",
+                &reference.sequences,
+                "features",
+                &features.sequences,
+            )?;
+        }
+        for reads in &reads_dictionaries {
+            compare("reads", reads, "features", &features.sequences)?;
+        }
+    }
+
+    // `AbstractConcordanceWalker.getBestAvailableSequenceDictionary` is FINAL and returns the
+    // TRUTH file's dictionary. Not the master, not the reference: a run whose
+    // `--sequence-dictionary` carries another contig entirely still resolves `-L chr1` against the
+    // truth file, and the comparator orders by the contig's index in that same dictionary.
+    // Measured on three rows of this tool's array, where the port refused the interval the
+    // reference walked.
+    let sequences: Vec<htsjdk_bam::header::SequenceRecord> =
+        vcf_dictionary(&truth_text).sequences.clone();
+
+    // The comparator orders by the contig's INDEX in that dictionary, so only the names matter to
+    // it; the lengths matter to `-L`, which validates against them.
+    let dictionary: Vec<String> = sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+
+    // `-L` bounds BOTH sides: the base class hands each file the same traversal parameters, so a
+    // window that ends before a call drops that call from the comparison entirely. Measured on a
+    // row whose window is chr1:1-6000 and whose eval file calls at 6001: the reference counted one
+    // false positive fewer.
+    let dictionary_header = SamHeader {
+        sequences: sequences.clone(),
+        ..SamHeader::default()
+    };
+    let intervals =
+        interval_arguments(parser, &dictionary_header)?.map(|parameters| parameters.intervals);
+    for (path, file) in [(&truth_path, &truth_file), (&eval_path, &eval_file)] {
+        let _ = file;
+        if intervals.is_some() && !has_feature_index(path) {
+            return Err(Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException",
+                message: Some(format!(
+                    "Input {path} must support random access to enable traversal by intervals. \
+                     If it's a file, please index it using the bundled tool IndexFeatureFile"
+                )),
+            });
+        }
+    }
+    let in_traversal = |contig: &str, start: i32, stop: i32| -> bool {
+        match &intervals {
+            None => true,
+            Some(windows) => windows.iter().any(|window| {
+                window.contig == contig && window.start <= stop && start <= window.end
+            }),
+        }
+    };
+
+    let is_symbolic_or_sv = |record: &htsjdk_vcf::variant::VariantContext| {
+        record.alleles[1..]
+            .iter()
+            .any(|allele| allele.is_symbolic() || allele.display_string().starts_with('<'))
+    };
+    // `makeTruthVariantFilter`, which the base class applies before the iterator sees a record.
+    let truth: Vec<ConcordanceLocus> = truth_file
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| {
+            in_traversal(&record.contig, record.start as i32, record.stop as i32)
+                && conc::truth_variant_filter(record.is_filtered(), is_symbolic_or_sv(record))
+        })
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+    let eval: Vec<ConcordanceLocus> = eval_file
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| in_traversal(&record.contig, record.start as i32, record.stop as i32))
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+
+    let alleles = |record: &htsjdk_vcf::variant::VariantContext| -> (String, Vec<String>) {
+        (
+            record
+                .alleles
+                .first()
+                .map(|allele| allele.display_string())
+                .unwrap_or_default(),
+            record.alleles[1..]
+                .iter()
+                .map(|allele| allele.display_string())
+                .collect(),
+        )
+    };
+    let steps =
+        gatk_engine::concordance_walker::concordance(&truth, &eval, &dictionary, |left, right| {
+            let (truth_reference, truth_alternates) = alleles(&truth_file.records[left.index]);
+            let (eval_reference, eval_alternates) = alleles(&eval_file.records[right.index]);
+            conc::variants_at_same_locus_are_concordant(
+                &truth_reference,
+                &truth_alternates,
+                &eval_reference,
+                &eval_alternates,
+            )
+        });
+
+    // One record per FILTER line of the EVAL header, whatever any record carries.
+    //
+    // A `##FILTER` line carries an ID and a description and no Number or Type, so the header model
+    // holds it as a STRUCTURED line rather than a compound one: reading only the compound ones
+    // found no filters at all, and the first filtered record then dereferenced a record that was
+    // never created.
+    let declared: Vec<String> = eval_file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Compound { key, id, .. } if key == "FILTER" => {
+                Some(id.clone())
+            }
+            htsjdk_vcf::header::HeaderLine::Structured { key, fields } if key == "FILTER" => fields
+                .iter()
+                .find(|(name, _)| name == "ID")
+                .map(|(_, value)| value.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut analysis = conc::FilterAnalysis::new(&declared);
+    let filter_analysis_path = argument(parser, "filter-analysis");
+
+    let mut summary = conc::Summary::default();
+    let mut annotated: std::collections::HashMap<
+        &'static str,
+        Vec<htsjdk_vcf::variant::VariantContext>,
+    > = std::collections::HashMap::new();
+    for step in &steps {
+        // `getTruthIfPresentElseEval().isSNP()`: the truth record decides the bucket when there is
+        // one, so a false positive is bucketed by the EVAL record and nothing else is.
+        let representative = match (step.truth, step.eval) {
+            (Some(index), _) => &truth_file.records[truth[index].index],
+            (None, Some(index)) => &eval_file.records[eval[index].index],
+            (None, None) => continue,
+        };
+        let is_snp = gatk_tools::remove_nearby_indels::variant_type(representative)
+            == gatk_tools::remove_nearby_indels::VariantType::Snp;
+        summary.add(step.state, is_snp);
+
+        if let Some(index) = step.eval {
+            let record = &eval_file.records[eval[index].index];
+            analysis
+                .apply(
+                    step.state,
+                    &record.filters.clone().unwrap_or_default(),
+                    filter_analysis_path.is_some(),
+                )
+                .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+        }
+
+        for (file, side) in conc::writes(step.state) {
+            let name = match file {
+                conc::AnnotatedVcf::TruePositivesAndFalseNegatives => {
+                    "true-positives-and-false-negatives"
+                }
+                conc::AnnotatedVcf::TruePositivesAndFalsePositives => {
+                    "true-positives-and-false-positives"
+                }
+                conc::AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives => {
+                    "filtered-true-negatives-and-false-negatives"
+                }
+            };
+            if argument(parser, name).is_none() {
+                continue;
+            }
+            let record = match side {
+                conc::Side::Truth => step
+                    .truth
+                    .map(|index| &truth_file.records[truth[index].index]),
+                conc::Side::Eval => step.eval.map(|index| &eval_file.records[eval[index].index]),
+            };
+            let Some(record) = record else {
+                continue;
+            };
+            // `annotateWithConcordanceState`: the state's abbreviation under `STATUS`, on a copy.
+            let mut copy = record.clone();
+            copy.attributes
+                .retain(|(key, _)| key != conc::TRUTH_STATUS_VCF_ATTRIBUTE);
+            copy.attributes.push((
+                conc::TRUTH_STATUS_VCF_ATTRIBUTE.to_string(),
+                htsjdk_vcf::variant::Value::Str(step.state.abbreviation().to_string()),
+            ));
+            annotated.entry(name).or_default().push(copy);
+        }
+    }
+
+    write_file(&summary_path, summary.table().as_bytes())?;
+    if let Some(path) = &filter_analysis_path {
+        let table = analysis
+            .table()
+            .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+        write_file(path, table.as_bytes())?;
+    }
+    for (name, side) in [
+        (
+            "true-positives-and-false-negatives",
+            conc::AnnotatedVcf::TruePositivesAndFalseNegatives,
+        ),
+        (
+            "true-positives-and-false-positives",
+            conc::AnnotatedVcf::TruePositivesAndFalsePositives,
+        ),
+        (
+            "filtered-true-negatives-and-false-negatives",
+            conc::AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives,
+        ),
+    ] {
+        let Some(path) = argument(parser, name) else {
+            continue;
+        };
+        // The header is the SIDE's own, with the STATUS line and the tool's default lines added.
+        let source = match side.header() {
+            conc::Side::Truth => &truth_file.header,
+            conc::Side::Eval => &eval_file.header,
+        };
+        let mut header = source.clone();
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: conc::TRUTH_STATUS_VCF_ATTRIBUTE.to_string(),
+            number: htsjdk_vcf::header::Cardinality::Fixed(1),
+            line_type: htsjdk_vcf::header::LineType::String,
+            description: "Truth status: TP/FP/FN for true positive/false positive/false negative."
+                .to_string(),
+            extra: Vec::new(),
+        });
+        if flag(parser, "add-output-vcf-command-line") {
+            header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                    key: "source".to_string(),
+                    value: "Concordance".to_string(),
+                });
+            if let Some(command_line) = command_line_header_line(parser, "Concordance") {
+                header.lines.push(command_line);
+            }
+        }
+        let mut records = annotated.remove(name).unwrap_or_default();
+        // `--sites-only-vcf-output` empties the sample set on the header and the genotypes on every
+        // record, the same way it does on every other tool here that writes a VCF.
+        if flag(parser, "sites-only-vcf-output") {
+            header.samples.clear();
+            for record in &mut records {
+                record.genotypes.clear();
+            }
+        }
+        let text = htsjdk_vcf::vcf_file::write_vcf(&header, &records).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+        write_variant_output(parser, &path, &text)?;
+    }
+    Ok(None)
+}
+
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
 fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
     use gatk_tools::remove_nearby_indels::VariantType;
