@@ -3674,6 +3674,116 @@ fn filtration_record(
     }
 }
 
+/// `CollectAllelicCounts.apply`: the reference and the alternate base counted at every locus.
+///
+/// The first copy-number runner here that reads READS. Three things are the port's and each is a
+/// decision the name does not show: the alternate count is `total - reference` rather than the
+/// alternate BASE's count, the minimum base quality is the collector's own threshold rather than a
+/// read filter, and a locus whose reference base is not one of `ACGT` produces no row at all
+/// instead of an empty one.
+pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::collect_allelic_counts as allelic;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectAllelicCounts")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // `ReadUtils.getSamplesFromHeader(...)`: the SM of the first read group, which is the column
+    // name the table carries.
+    let sample = header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
+            // POSITION of the interval rather than a row per pileup: a locus no read reaches is
+            // written with zero counts and an `N` alternate. Measured on this tool's array, where
+            // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
+            emit_empty_loci: true,
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    // The reference's own dictionary, which is what its refusal prints.
+    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
+    let mut counts = Vec::new();
+    for one in &applied {
+        // `referenceContext.getBase()`: the one base under the locus, upper-cased and with its
+        // IUPAC codes flattened like every other reference query in this engine.
+        let bases = reference
+            .query(
+                &one.context.contig,
+                one.context.position,
+                one.context.position,
+            )
+            .map_err(|error| match error {
+                // `MissingContigInSequenceDictionary`, raised by the reference query itself, and
+                // the dictionary it prints is the REFERENCE's. Measured on a row of this tool's
+                // array where the reads are on `chr1` and `--reference` carries `chrOther`.
+                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                    Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&reference_sequences)
+                    ))
+                }
+                other => Thrown::user(format!("{other:?}")),
+            })?;
+        let Some(base) = bases.first().copied() else {
+            continue;
+        };
+        if let Some(count) = allelic::collect_at_locus(
+            base,
+            &one.context.pileup,
+            &one.context.contig,
+            one.context.position,
+            minimum_base_quality,
+        ) {
+            counts.push(count);
+        }
+    }
+
+    let sequences: Vec<(String, i32)> = header
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    write_file(
+        &output,
+        allelic::write(&sequences, &sample, &counts).as_bytes(),
+    )?;
+    Ok(None)
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
