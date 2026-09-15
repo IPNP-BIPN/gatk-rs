@@ -53,6 +53,7 @@ pub fn value_class(type_name: &str) -> Option<ValueClass> {
         }),
         "Float" => Some(ValueClass::Float),
         "Long" => Some(ValueClass::Long),
+        "Byte" => Some(ValueClass::Byte),
         name => enum_type(name).map(|type_| ValueClass::Enum {
             simple_name: type_.name,
             constants: type_.constants,
@@ -93,6 +94,12 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
             .unwrap_or(Value::Null),
         ValueClass::Long => gatk_barclay::java_long(default)
             .map(Value::Int64)
+            .unwrap_or(Value::Null),
+        // A `Byte` default is an integer in the golden (`127`), and it is held as one: what makes
+        // it a byte is the range its constructor enforces, not the way it is stored.
+        ValueClass::Byte => default
+            .parse::<i8>()
+            .map(|value| Value::Int(i32::from(value)))
             .unwrap_or(Value::Null),
         ValueClass::Text | ValueClass::Tagged | ValueClass::Constructed { .. } => {
             Value::Str(default.to_string())

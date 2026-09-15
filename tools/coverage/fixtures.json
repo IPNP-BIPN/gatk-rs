@@ -1053,6 +1053,147 @@
         "0"
       ]
     },
+    "CalculateGenotypePosteriors": {
+      "$why": [
+        "duo.vcf is the driving callset and population.vcf the supporting one: the corpus already",
+        "carries a two-sample VCF and a panel with allele counts, which is exactly the pair this",
+        "tool was written for.",
+        "--num-reference-samples-if-no-call carries zero and a hundred. It is the argument that",
+        "decides what a site the panel does not carry gets: with zero and fewer than ten input",
+        "samples the prior is FLAT, so PP equals PL and PG is all zeros, and with a hundred it is a",
+        "pseudocount of two hundred reference chromosomes.",
+        "--default-to-allele-count and --discovered-allele-count-priors-off move where the counts",
+        "come from: AC rather than MLEAC, and the input's own samples in or out.",
+        "--pedigree is held out and --skip-family-priors is held TRUE: the family half is a second",
+        "algorithm this port does not carry, and every row that asked for it would measure that",
+        "refusal rather than the posteriors.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false, as on",
+        "every other variant writer here."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf"
+      ],
+      "--supporting-callsets": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/shifted.vcf"
+      ],
+      "--output": [
+        "/work/out/posteriors.vcf",
+        "/work/out/posteriors2.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "100"
+      ],
+      "--skip-family-priors": [
+        "true"
+      ],
+      "--pedigree": [],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "DepthOfCoverage": {
+      "$why": [
+        "A SMALL window, chr1:101-200, because every base of the interval is a row whether a read",
+        "reaches it or not: the corpus's usual chr1:1-6000 would make a corpus file of six thousand",
+        "rows per accepted row of the array.",
+        "The three table omissions are held at TRUE. The files they would write carry quantiles",
+        "computed in a partitioned data store this port does not carry, so the port refuses a run",
+        "that asks for them; holding them true is what makes the array measure the per-base table",
+        "rather than that refusal, and it narrows the claim to exactly that file.",
+        "--output-format is held at CSV and --partition-type at `sample` for the same reason: the",
+        "other format is a padded table and the other partitions are the read group, the library",
+        "and the centre, none of which this port writes.",
+        "--calculate-coverage-over-genes is held out: it writes a per-gene table that is not",
+        "written here either.",
+        "--min-base-quality and --max-base-quality carry values INSIDE the byte range. Outside it",
+        "the parser refuses two different ways, which the tool's own golden measures.",
+        "--include-deletions is held at FALSE: it adds a sixth column, D, to every base-count",
+        "field, and the ported counter has the five bases and no deletion slot, so the port refuses",
+        "the run rather than writing a table a column short.",
+        "--start, --stop and --nBins carry values inside their declared ranges, and",
+        "--exclude-intervals a window OFF the reads as well as one inside them. The generator steps",
+        "each numeric argument below its minimum and the shared exclusion covers the whole window,",
+        "so twenty-two of twenty-three rows measured a parser refusal rather than the counting."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:101-200",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/coverage",
+        "/work/out/coverage2"
+      ],
+      "--omit-locus-table": [
+        "true"
+      ],
+      "--omit-interval-statistics": [
+        "true"
+      ],
+      "--omit-per-sample-statistics": [
+        "true"
+      ],
+      "--min-base-quality": [
+        "0",
+        "20"
+      ],
+      "--max-base-quality": [
+        "127",
+        "40"
+      ],
+      "--output-format": [
+        "CSV"
+      ],
+      "--partition-type": [
+        "sample"
+      ],
+      "--start": [
+        "1",
+        "5"
+      ],
+      "--stop": [
+        "500",
+        "100"
+      ],
+      "--nBins": [
+        "499",
+        "99"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--exclude-intervals": [
+        "chr1:90000-91000",
+        "chr1:150-160"
+      ],
+      "--include-deletions": [
+        "false"
+      ],
+      "--calculate-coverage-over-genes": []
+    },
     "GatherBQSRReports": {
       "$why": [
         "recal.table and recal2.table, both written by the REFERENCE's own BaseRecalibrator over",

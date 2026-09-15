@@ -462,7 +462,11 @@ fn add_annotations(
 /// AN is the called chromosome count, AC the count per alternate and AF each of those over AN,
 /// and all three skip a FILTERED genotype: a genotype carrying FT is not a called one. AC and AF
 /// are removed outright where no alternate is left, which is what an ALT column of `.` means.
-fn calculate_chromosome_counts(variant: &mut Variant) {
+///
+/// Public because it is the ENGINE's and not this tool's: `CalculateGenotypePosteriors` calls it
+/// on every record before the priors are applied, so the counts the posteriors read are the
+/// recomputed ones rather than whatever the file carried.
+pub fn calculate_chromosome_counts(variant: &mut Variant) {
     if variant.genotypes.is_empty() {
         return;
     }

@@ -312,6 +312,15 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         "GetNormalArtifactData" => {
             Some(&crate::get_normal_artifact_data::STANDARD_MUTECT2_READ_FILTERS)
         }
+        // `DepthOfCoverage.getDefaultReadFilters` is the locus walker's two with two of its own
+        // between them, and the ORDER is the tool's: wellformed, not duplicate, not secondary, and
+        // only then mapped.
+        "DepthOfCoverage" => Some(&[
+            "WellformedReadFilter",
+            "NotDuplicateReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "MappedReadFilter",
+        ]),
         "CollectReadCounts" => Some(&[
             "WellformedReadFilter",
             "MappedReadFilter",

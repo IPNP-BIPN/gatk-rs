@@ -4904,6 +4904,531 @@ pub fn concordance(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `DepthOfCoverage.apply`: every base of every interval, counted per sample.
+///
+/// The first tool here that writes a FAMILY of files, and which of them appear is a function of the
+/// four `omit` arguments alone: no omission depends on whether the data would have filled the file.
+/// This port writes ONE of the seven, the per-base table, and refuses a command line that asks for
+/// any of the other six: their quantiles come from the partitioned data store, which is not ported,
+/// and a file of plausible numbers would be worse than a refusal.
+///
+/// What IS ported is what a row of that table holds: every base of the interval is a row whether a
+/// read reaches it or not, the partition is the SAMPLE rather than the read group, and
+/// `--min-base-quality` filters a BASE rather than a read.
+pub fn depth_of_coverage(parser: &Parser) -> Outcome {
+    use gatk_tools::depth_of_coverage as coverage;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "DepthOfCoverage")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // The two arguments whose values decide the FORMAT of what is written, held at their defaults.
+    if scalar(parser, "output-format").as_deref().unwrap_or("CSV") != "CSV" {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--output-format TABLE writes the per-base file as a padded table, which this port \
+             does not write yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let partitions = arguments(parser, "partition-type");
+    if !partitions.is_empty() && partitions != vec!["sample".to_string()] {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--partition-type beyond `sample` partitions the counts by read group, library or \
+             centre as well, which this port does not carry yet. This message is the port's own \
+             and not GATK's.",
+        ));
+    }
+    if argument(parser, "calculate-coverage-over-genes").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--calculate-coverage-over-genes writes a per-gene table this port does not write \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    let omissions = coverage::Omissions {
+        locus_table: flag(parser, "omit-locus-table"),
+        depth_output_at_each_base: flag(parser, "omit-depth-output-at-each-base"),
+        per_sample_statistics: flag(parser, "omit-per-sample-statistics"),
+        interval_statistics: flag(parser, "omit-interval-statistics"),
+    };
+    // The per-base file's suffix is the EMPTY one; every other suffix is a table this port does
+    // not compute.
+    let unported: Vec<&str> = coverage::written_suffixes(&omissions)
+        .into_iter()
+        .filter(|suffix| !suffix.is_empty())
+        .collect();
+    if !unported.is_empty() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "This run asks for {}, whose quantiles come from a partitioned data store this \
+                 port does not carry yet. Pass --omit-locus-table, --omit-interval-statistics and \
+                 --omit-per-sample-statistics. This message is the port's own and not GATK's.",
+                unported.join(", ")
+            ),
+        ));
+    }
+
+    // `calculateCoverageHistogramBinEndpoints`, which runs at startup and refuses the three
+    // binning arguments together rather than one at a time.
+    let (start, stop, bins) = (
+        number_or(parser, "start", 1),
+        number_or(parser, "stop", 500),
+        number_or(parser, "nBins", 499),
+    );
+    if bins > stop - start || start < 1 {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(
+                "Bad input: the start must be at least 1 and the number of bins may not exceed \
+                 stop - start"
+                    .to_string(),
+            ),
+        });
+    }
+
+    let minimum = number_or(parser, "min-base-quality", 0) as i64;
+    let maximum = number_or(parser, "max-base-quality", 127) as i64;
+    for (name, value) in [("min-base-quality", minimum), ("max-base-quality", maximum)] {
+        // Every one of the three is the PARSER's refusal, which is a `CommandLineException` and
+        // therefore status one, whichever side of the byte range the value fell out on.
+        coverage::check_base_quality(name, value)
+            .map_err(|error| Thrown::command_line(error.message()))?;
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+
+    // `ReadUtils.getSamplesFromHeader`: the distinct SM values, in the header's own order, which is
+    // the order the sample columns are written in.
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        if let Some(sample) = group.attributes.get("SM") {
+            if !samples.iter().any(|seen| seen == sample) {
+                samples.push(sample.to_string());
+            }
+        }
+    }
+    let sample_of = |record: &htsjdk_bam::record::BamRecord| -> String {
+        gatk_engine::read_pileup::sample_name(record, &header).unwrap_or_default()
+    };
+    let reads: Vec<coverage::Read> = records
+        .iter()
+        .filter_map(|record| {
+            contig_name(&header, record.reference_index).map(|contig| coverage::Read {
+                name: record.read_name.clone(),
+                sample: sample_of(record),
+                contig: contig.to_string(),
+                start: record.alignment_start,
+                bases: record.read_bases.clone(),
+                base_qualities: record
+                    .base_qualities
+                    .iter()
+                    .map(|quality| i32::from(*quality))
+                    .collect(),
+            })
+        })
+        .collect();
+
+    // The traversal still runs when no file will be written, and two refusals live inside it.
+    //
+    // The REFERENCE is asked for the bases under each interval, so a `--reference` that does not
+    // carry the interval's contig is refused here rather than at startup: measured on a row whose
+    // dictionary validation is turned off and whose reference is the corpus's other contig.
+    //
+    // And it is asked only when `--print-base-counts` is on: the base-count field is the one thing
+    // in this table that needs a reference base, so a run without it writes its rows whatever the
+    // reference carries and a run with it is refused. Both rows are in this tool's array.
+    if flag(parser, "print-base-counts") {
+        if let Some(path) = argument(parser, "reference") {
+            let mut reference =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+            for interval in &intervals {
+                if let Err(gatk_engine::reference::ReferenceError::UnknownContig(contig)) =
+                    reference.query(&interval.contig, interval.start, interval.start)
+                {
+                    return Err(Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&sequences)
+                    )));
+                }
+            }
+        }
+    }
+    // And `CoverageUtils.getBaseCounts` throws on the two fragment modes before it counts a base:
+    // the feature is disabled in the reference itself (gatk#6491), so the refusal is the answer.
+    // It comes AFTER the binning check and after the reference query, which is what two rows of
+    // this tool's array measure.
+    if matches!(
+        scalar(parser, "count-type").as_deref(),
+        Some("COUNT_FRAGMENTS") | Some("COUNT_FRAGMENTS_REQUIRE_SAME_BASE")
+    ) {
+        return Err(Thrown::non_user(
+            "java.lang.UnsupportedOperationException",
+            "Fragment based counting is currently unsupported",
+        ));
+    }
+    // `--include-deletions` adds a sixth column, `D`, to every base-count field and counts a
+    // deletion into it. The ported counter has the five bases and no deletion slot, so a run that
+    // asks for it would write a table one column short of the reference's.
+    if flag(parser, "include-deletions") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--include-deletions adds a D column to the base counts, which this port does not \
+             count yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // `--omit-depth-output-at-each-base` removes the per-base file, which is the only file this
+    // port writes: the run then writes nothing at all, and so does the reference once the other
+    // three omissions have taken their files away.
+    if omissions.depth_output_at_each_base {
+        return Ok(None);
+    }
+
+    let print_base_counts = flag(parser, "print-base-counts");
+    let mut text = coverage::per_locus_header(&samples, print_base_counts);
+    text.push('\n');
+    for interval in &intervals {
+        for locus in coverage::per_locus(
+            &reads,
+            &samples,
+            &interval.contig,
+            interval.start,
+            interval.end,
+            minimum as i32,
+            maximum as i32,
+        ) {
+            text.push_str(&coverage::per_locus_row(&locus, print_base_counts));
+            text.push('\n');
+        }
+    }
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// One record as the posteriors read it: the alleles, the counts in INFO, and the genotypes.
+fn posterior_record(
+    vc: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::calculate_genotype_posteriors::Record {
+    use gatk_tools::calculate_genotype_posteriors as posteriors;
+
+    let mut attributes = std::collections::BTreeMap::new();
+    for key in ["AC", "AN", "MLEAC"] {
+        if let Some((_, value)) = vc.attributes.iter().find(|(name, _)| name == key) {
+            if let Some(text) = value.format() {
+                attributes.insert(key.to_string(), text);
+            }
+        }
+    }
+    posteriors::Record {
+        id: vc.id.clone(),
+        start: vc.start as i32,
+        alleles: vc
+            .alleles
+            .iter()
+            .map(|allele| posteriors::Allele {
+                bases: allele.display_string(),
+                is_ref: allele.is_reference(),
+            })
+            .collect(),
+        attributes,
+        genotypes: vc
+            .genotypes
+            .iter()
+            .map(|genotype| posteriors::Genotype {
+                sample: genotype.sample_name.clone(),
+                alleles: genotype
+                    .alleles
+                    .iter()
+                    .filter_map(|allele| {
+                        vc.alleles.iter().position(|candidate| candidate == allele)
+                    })
+                    .collect(),
+                depth: genotype.dp,
+                likelihoods: genotype.pl.clone(),
+                posteriors: genotype
+                    .extended
+                    .iter()
+                    .find(|(key, _)| key == "PP")
+                    .and_then(|(_, value)| value.format())
+                    .map(|text| {
+                        text.split(',')
+                            .filter_map(|piece| piece.trim().parse().ok())
+                            .collect()
+                    }),
+            })
+            .collect(),
+    }
+}
+
+/// `CalculateGenotypePosteriors.apply`: likelihoods turned into posteriors under a prior built
+/// from allele counts.
+///
+/// Where the counts come from is the whole of the tool, and three arguments move it: a site no
+/// supporting callset carries falls back to the INPUT's own samples, but only when there are ten of
+/// them or `--num-reference-samples-if-no-call` was given, and `--ignore-input-samples` takes even
+/// that away. A site with no counts at all gets a FLAT prior, which is `PG` all zeros and `PP`
+/// equal to `PL`.
+///
+/// `calculateChromosomeCounts` runs on every record BEFORE the priors, so the counts the posteriors
+/// read are the recomputed ones rather than whatever the file carried.
+///
+/// The family half is a second algorithm (`FamilyLikelihoods`) that this port does not carry, so a
+/// command line with a `--pedigree` is refused rather than answered without it.
+pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
+    use gatk_tools::calculate_genotype_posteriors as posteriors;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "CalculateGenotypePosteriors")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if argument(parser, "pedigree").is_some() && !flag(parser, "skip-family-priors") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--pedigree asks for the family priors, a second algorithm this port does not carry \
+             yet. Pass --skip-family-priors. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    // Every supporting callset, read whole: `featureContext.getValues` asks each of them for the
+    // records at the driving record's locus, and only those with the SAME START are used.
+    let mut supporting: Vec<posteriors::Record> = Vec::new();
+    for path in arguments(parser, "supporting-callsets") {
+        let bytes = std::fs::read(&path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile { path: path.clone() }.message(),
+            )
+        })?;
+        let support_text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .unwrap_or_default()
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let support = htsjdk_vcf::reader::read_vcf(&support_text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        supporting.extend(support.records.iter().map(posterior_record));
+    }
+
+    let number = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let options = posteriors::Options {
+        snp_prior_dirichlet: number("global-prior-snp", 0.001),
+        indel_prior_dirichlet: number("global-prior-indel", 0.001),
+        use_input_samples_allele_counts: !flag(parser, "discovered-allele-count-priors-off"),
+        use_mleac: !flag(parser, "default-to-allele-count"),
+        ignore_input_samples_for_missing_resources: flag(parser, "ignore-input-samples"),
+        use_flat_priors_for_indels: flag(parser, "use-flat-priors-for-indels"),
+    };
+    let missing_reference_samples = number_or(parser, "num-reference-samples-if-no-call", 0);
+    let skip_population_priors = flag(parser, "skip-population-priors");
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let original = &file.records[located.index];
+        // `calculateChromosomeCounts(builder, false)` on every record, whatever the priors do next.
+        let mut bridged = crate::variant_bridge::to_engine(original);
+        gatk_tools::select_variants::calculate_chromosome_counts(&mut bridged.record.variant);
+        let mut vc = crate::variant_bridge::from_engine(original, &bridged.record);
+        if skip_population_priors {
+            written.push(vc);
+            continue;
+        }
+
+        let record = posterior_record(&vc);
+        let matching: Vec<posteriors::Record> = supporting
+            .iter()
+            .filter(|resource| resource.start == record.start)
+            .cloned()
+            .collect();
+        let answer = posteriors::calculate_posterior_probs(
+            &record,
+            &matching,
+            if matching.is_empty() {
+                missing_reference_samples
+            } else {
+                0
+            },
+            &options,
+        );
+
+        if let Some(prior) = &answer.prior {
+            vc.attributes.retain(|(key, _)| key != "PG");
+            vc.attributes.push((
+                "PG".to_string(),
+                htsjdk_vcf::variant::Value::Str(
+                    prior
+                        .iter()
+                        .map(|value| value.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ));
+        }
+        for called in &answer.genotypes {
+            let Some(genotype) = vc
+                .genotypes
+                .iter_mut()
+                .find(|genotype| genotype.sample_name == called.sample)
+            else {
+                continue;
+            };
+            genotype.alleles = called
+                .alleles
+                .iter()
+                .filter_map(|index| original.alleles.get(*index).cloned())
+                .collect();
+            if let Some(gq) = called.gq {
+                genotype.gq = Some(gq);
+            }
+            genotype.extended.retain(|(key, _)| key != "PP");
+            if let Some(values) = &called.posteriors {
+                genotype.extended.push((
+                    "PP".to_string(),
+                    htsjdk_vcf::variant::Value::Str(
+                        values
+                            .iter()
+                            .map(|value| value.to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                ));
+            }
+        }
+        written.push(vc);
+    }
+
+    // The two header lines the tool adds, plus the three the RECOMPUTATION needs: every record goes
+    // through `calculateChromosomeCounts`, so `AC`, `AF` and `AN` are written whether the input
+    // declared them or not. Measured on every accepted row of this tool's array, where the port
+    // wrote a count into a header that did not declare it.
+    let mut header = file.header.clone();
+    for key in ["AC", "AF", "AN"] {
+        header.lines.retain(|line| {
+            !matches!(
+                line,
+                htsjdk_vcf::header::HeaderLine::Compound { key: k, id, .. }
+                    if k == "INFO" && id == key
+            )
+        });
+        if let Some(standard) = htsjdk_vcf::standard_header_lines::standard_info_line(key) {
+            header.lines.push(standard);
+        }
+    }
+    for (key, id, number, line_type, description) in [
+        (
+            "INFO",
+            "PG",
+            htsjdk_vcf::header::Cardinality::G,
+            htsjdk_vcf::header::LineType::Integer,
+            "Genotype Likelihood Prior",
+        ),
+        (
+            "FORMAT",
+            "PP",
+            htsjdk_vcf::header::Cardinality::G,
+            htsjdk_vcf::header::LineType::Integer,
+            "Phred-scaled Posterior Genotype Probabilities",
+        ),
+    ] {
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+            key: key.to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        });
+    }
+    if flag(parser, "add-output-vcf-command-line") {
+        header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                key: "source".to_string(),
+                value: "CalculateGenotypePosteriors".to_string(),
+            });
+        if let Some(command_line) = command_line_header_line(parser, "CalculateGenotypePosteriors")
+        {
+            header.lines.push(command_line);
+        }
+    }
+    // And NOT `VcfUtils.updateHeaderContigLines`: this tool writes the input's own contig lines
+    // whatever `--reference` says, so a port that rebuilt them added an `assembly=` field and a
+    // `##reference` line the reference never writes. Measured on every accepted row here.
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    if flag(parser, "sites-only-vcf-output") {
+        header.samples.clear();
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
 fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
     use gatk_tools::remove_nearby_indels::VariantType;

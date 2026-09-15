@@ -149,10 +149,26 @@ impl Value {
 /// which is JDK source, and htsjdk-rs decision 0013 refused to transcribe it.
 pub fn java_double_to_string(value: f64) -> String {
     assert!(
-        value.is_finite() && (value == 0.0 || (1e-3..1e7).contains(&value.abs())),
-        "java_double_to_string is ported only for finite values Java prints without an exponent; \
-         {value} needs FloatingDecimal, which is not portable"
+        value.is_finite(),
+        "java_double_to_string is ported for finite values only; {value} is not one"
     );
+    // Outside `[1e-3, 1e7)` Java switches to `E` notation, and the DIGITS are chosen by the same
+    // rule as inside it: the shortest that distinguishes the value from its neighbours. Rust's
+    // `{:e}` picks those same digits, so the conversion is a reformatting rather than a second
+    // algorithm: give the mantissa a decimal point where it has none, upper-case the `E`, and keep
+    // the exponent's sign only when it is negative, which is what `Double.toString` prints.
+    // `CalculateGenotypePosteriors` declares `--de-novo-prior` with a default of `1.0E-6`, and a
+    // port that refused to render it could not build that tool's parser at all.
+    if value != 0.0 && !(1e-3..1e7).contains(&value.abs()) {
+        let rendered = format!("{value:e}");
+        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent from {:e}");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        return format!("{mantissa}E{exponent}");
+    }
     let rendered = format!("{value}");
     if rendered.contains('.') {
         rendered
@@ -189,6 +205,11 @@ pub enum ValueClass {
     /// grammar: `Long.valueOf` refuses a leading space where `Float.valueOf` trims one, and
     /// refuses a hexadecimal literal where the float takes `0x1p3`.
     Long,
+    /// A `Byte`, which is an `Integer` with a range the CONSTRUCTOR enforces rather than the
+    /// annotation: a value outside -128..127 fails as a construction and a value inside it but
+    /// outside the declared `minValue` fails as a range, so the same argument refuses two
+    /// different ways. `DepthOfCoverage`'s two base-quality arguments are declared this way.
+    Byte,
     /// A class built from a `String` by a constructor that accepts every string.
     ///
     /// `File`, `GATKPath` and `FeatureInput` are all of this shape: a bad path is not a bad value,
@@ -222,6 +243,7 @@ impl ValueClass {
             ValueClass::Enum { simple_name, .. } => simple_name,
             ValueClass::Float => "Float",
             ValueClass::Long => "Long",
+            ValueClass::Byte => "Byte",
             ValueClass::Constructed { simple_name, .. } => simple_name,
         }
     }
@@ -247,6 +269,16 @@ impl ValueClass {
                     &format!("Failure constructing 'Double' from the string '{text}'."),
                 )
             }),
+            ValueClass::Byte => text
+                .parse::<i8>()
+                .map(|value| Value::Int(i32::from(value)))
+                .map_err(|_| {
+                    Error::bad_argument_value_with_message(
+                        argument_name,
+                        text,
+                        &format!("Failure constructing 'Byte' from the string '{text}'."),
+                    )
+                }),
             ValueClass::Long => java_long(text).map(Value::Int64).ok_or_else(|| {
                 Error::bad_argument_value_with_message(
                     argument_name,
@@ -1918,4 +1950,25 @@ pub fn long_names(definitions: &[Definition]) -> BTreeSet<String> {
         .iter()
         .map(|definition| definition.long_name().to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod double_rendering_tests {
+    use super::java_double_to_string;
+
+    /// The seven values `Double.toString` was run on in the pinned container, and its answers.
+    #[test]
+    fn the_exponent_form_is_javas() {
+        for (value, expected) in [
+            (1.0e-6f64, "1.0E-6"),
+            (1.5e-7, "1.5E-7"),
+            (1e7, "1.0E7"),
+            (1.234e10, "1.234E10"),
+            (-2.5e-5, "-2.5E-5"),
+            (0.001, "0.001"),
+            (9999999.0, "9999999.0"),
+        ] {
+            assert_eq!(java_double_to_string(value), expected, "{value}");
+        }
+    }
 }
