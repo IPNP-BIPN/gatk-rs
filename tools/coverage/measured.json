@@ -558,6 +558,24 @@
       "matched": 16,
       "t": 2,
       "share": 1.0
+    },
+    "DepthOfCoverage": {
+      "rows": 20,
+      "accepted": 6,
+      "rejected": 14,
+      "distinct_outputs": 2,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "CalculateGenotypePosteriors": {
+      "rows": 23,
+      "accepted": 20,
+      "rejected": 3,
+      "distinct_outputs": 11,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
