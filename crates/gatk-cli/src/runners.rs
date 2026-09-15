@@ -5791,6 +5791,366 @@ pub fn validate_basic_somatic_short_mutations(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `PrintReadCounts.apply`: a depth-evidence or counts file rewritten for the CNV callers.
+///
+/// A `FeatureWalker`, and the two feature types it accepts disagree about what a header is: an
+/// `.rd.txt` carries one line of column names and NO dictionary, so the run needs
+/// `--sequence-dictionary` and refuses without one; a `.counts.tsv` carries a whole SAM header and
+/// never consults it. Which files come out, and what is in them when the run does not finish, is
+/// [`gatk_tools::print_read_counts`], where a golden measures it.
+pub fn print_read_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::print_read_counts as counts;
+
+    let _ = resolve_read_filters(parser, "PrintReadCounts")?;
+    let input = argument(parser, "input-counts").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument input-counts was missing: Argument 'input-counts' is required",
+        )
+    })?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    // `FeatureManager` asks every codec whether it can decode the path, and the two that matter
+    // here answer by EXTENSION: `.counts.tsv` for the simple counts and `.rd.txt` for the depth
+    // evidence. A file called `counts.tsv` has neither, so it is refused for having no codec
+    // rather than read as the table it holds. Measured on four rows of this tool's array.
+    if !(input.ends_with(".counts.tsv") || input.ends_with(".rd.txt")) {
+        return Err(Thrown::user(format!(
+            "Cannot read file://{} because no suitable codecs found",
+            java_absolute_path(&input)
+        )));
+    }
+    let text = std::fs::read_to_string(&input).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: input.clone(),
+            }
+            .message(),
+        )
+    })?;
+
+    // The two headers this tool accepts, told apart the way the codecs tell them apart: a SAM
+    // header begins with `@`, a depth header with its column names.
+    let parsed = if text.starts_with('@') {
+        let header = htsjdk_bam::reader::parse_header_text(
+            &text
+                .lines()
+                .take_while(|line| line.starts_with('@'))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        );
+        let records = text
+            .lines()
+            .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+            .skip(1)
+            .filter_map(|line| {
+                let columns: Vec<&str> = line.split('\t').collect();
+                (columns.len() >= 4).then(|| counts::SimpleCount {
+                    contig: columns[0].to_string(),
+                    start: columns[1].parse().unwrap_or_default(),
+                    end: columns[2].parse().unwrap_or_default(),
+                    count: columns[3].parse().unwrap_or_default(),
+                })
+            })
+            .collect();
+        counts::Input::Counts(counts::CountsFile { header, records })
+    } else {
+        let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+        let header = lines.next().unwrap_or_default();
+        counts::Input::Depth(counts::DepthFile {
+            samples: counts::depth_header_samples(header),
+            records: lines.filter_map(counts::decode_depth).collect(),
+        })
+    };
+
+    let dictionary = master_dictionary(parser)?.map(|header| header.sequences);
+    let intervals: Vec<counts::Interval> = arguments(parser, "intervals")
+        .iter()
+        .filter_map(|query| {
+            let (contig, range) = query.split_once(':')?;
+            let (start, end) = range.split_once('-')?;
+            Some(counts::Interval {
+                contig: contig.to_string(),
+                start: start.parse().ok()?,
+                end: end.parse().ok()?,
+            })
+        })
+        .collect();
+
+    let run = counts::run(
+        &parsed,
+        dictionary.as_deref(),
+        &prefix,
+        argument(parser, "output-file-list").as_deref(),
+        &intervals,
+    );
+    // A refused run still WROTE: the files the tool had opened before it threw are on disk, half a
+    // header and all, which is what the golden measures and why they are written before the
+    // refusal is raised.
+    for (path, contents) in run.disk.files() {
+        write_file(&path, contents.as_bytes())?;
+    }
+    if let Some(error) = &run.error {
+        // The class is borrowed from the error rather than a constant, so it is matched to one of
+        // the three the module can name: a `Thrown` holds a `&'static str`.
+        let class = match error.java_class() {
+            "org.broadinstitute.hellbender.exceptions.UserException" => {
+                "org.broadinstitute.hellbender.exceptions.UserException"
+            }
+            "java.lang.ArrayIndexOutOfBoundsException" => {
+                "java.lang.ArrayIndexOutOfBoundsException"
+            }
+            _ => "java.lang.IllegalArgumentException",
+        };
+        return Err(Thrown {
+            failure: if class == "org.broadinstitute.hellbender.exceptions.UserException" {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: class,
+            message: Some(error.message()),
+        });
+    }
+    Ok(None)
+}
+
+/// One read as the four SV evidence writers read it.
+fn sv_read(
+    record: &htsjdk_bam::record::BamRecord,
+    header: &SamHeader,
+) -> gatk_tools::collect_sv_evidence::Read {
+    let contig_of = |index: i32| -> Option<String> {
+        header
+            .sequences
+            .get(usize::try_from(index).ok()?)
+            .map(|sequence| sequence.name.clone())
+    };
+    gatk_tools::collect_sv_evidence::Read {
+        name: record.read_name.clone(),
+        contig_index: usize::try_from(record.reference_index).unwrap_or(usize::MAX),
+        contig: contig_of(record.reference_index).unwrap_or_default(),
+        start: record.alignment_start,
+        mapping_quality: i32::from(record.mapping_quality),
+        cigar: record
+            .cigar
+            .elements
+            .iter()
+            .map(|element| (element.op.to_char() as char, element.length as i32))
+            .collect(),
+        paired: record.flags & 0x1 != 0,
+        properly_paired: record.flags & 0x2 != 0,
+        mate_unmapped: record.flags & 0x8 != 0,
+        mate_contig_index: usize::try_from(record.mate_reference_index).ok(),
+        mate_contig: contig_of(record.mate_reference_index),
+        mate_start: Some(record.mate_alignment_start),
+        reverse_strand: record.flags & 0x10 != 0,
+        mate_reverse_strand: record.flags & 0x20 != 0,
+        supplementary: record.flags & 0x800 != 0,
+        secondary: record.flags & 0x100 != 0,
+        duplicate: record.flags & 0x400 != 0,
+        unmapped: record.flags & 0x4 != 0,
+        bases: record.read_bases.clone(),
+        base_qualities: record
+            .base_qualities
+            .iter()
+            .map(|quality| i32::from(*quality))
+            .collect(),
+    }
+}
+
+/// `CollectSVEvidence.apply`: one BAM walked once for four kinds of evidence.
+///
+/// Every tool with a runner here so far wrote one kind of thing; this one writes up to four, and
+/// each has its own rule for which read it will look at. What a read contributes is
+/// [`gatk_tools::collect_sv_evidence`], where a golden measures it; the runner opens the BAM, the
+/// sites and the intervals, and checks the file NAMES, which the reference does before it reads a
+/// record: a writer refuses a name it could not read back.
+pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
+    use gatk_tools::collect_sv_evidence as evidence;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectSVEvidence")?;
+    let _ = argument(parser, "sample-name").ok_or_else(|| {
+        Thrown::command_line("Argument sample-name was missing: Argument 'sample-name' is required")
+    })?;
+
+    let pair_file = argument(parser, "pe-file");
+    let split_file = argument(parser, "sr-file");
+    let site_file = argument(parser, "sd-file");
+    let depth_file = argument(parser, "depth-evidence-file");
+    if pair_file.is_none() && split_file.is_none() && site_file.is_none() && depth_file.is_none() {
+        return Err(Thrown::user(evidence::NO_OUTPUT_MESSAGE));
+    }
+    // Each writer tests the name it was given BEFORE the traversal, and refuses one it could not
+    // read back: the extensions are the codec's own.
+    for (kind, path, endings) in [
+        ("pe", &pair_file, [".pe.txt", ".pe.txt.gz", ".pe.bci"]),
+        ("sr", &split_file, [".sr.txt", ".sr.txt.gz", ".sr.bci"]),
+        ("sd", &site_file, [".sd.txt", ".sd.txt.gz", ".sd.bci"]),
+        ("rd", &depth_file, [".rd.txt", ".rd.txt.gz", ".rd.bci"]),
+    ] {
+        if let Some(name) = path {
+            if !endings.iter().any(|ending| name.ends_with(ending)) {
+                return Err(Thrown::user(evidence::bad_name_message(kind, name)));
+            }
+        }
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let reads: Vec<evidence::Read> = records
+        .iter()
+        .map(|record| sv_read(record, &header))
+        .collect();
+
+    if let Some(path) = &pair_file {
+        let mut text = String::new();
+        for pair in evidence::discordant_pairs(&reads) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\n",
+                pair.contig,
+                pair.position,
+                if pair.strand { "+" } else { "-" },
+                pair.mate_contig,
+                pair.mate_position,
+                if pair.mate_strand { "+" } else { "-" }
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &split_file {
+        let mut text = String::new();
+        for split in evidence::split_reads(&reads) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                split.contig,
+                split.position,
+                match split.side {
+                    evidence::Side::Left => "left",
+                    evidence::Side::Right => "right",
+                    evidence::Side::Middle => "middle",
+                },
+                split.count
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &site_file {
+        let sites = match argument(parser, "site-depth-locs-vcf") {
+            Some(vcf) => {
+                let text = std::fs::read_to_string(&vcf).map_err(|_| {
+                    Thrown::user(
+                        index_feature_file::Refusal::CouldNotReadInputFile { path: vcf.clone() }
+                            .message(),
+                    )
+                })?;
+                let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+                    failure: Failure::User,
+                    exception: "htsjdk.tribble.TribbleException",
+                    message: Some(failure.error.message()),
+                })?;
+                file.records
+                    .iter()
+                    .map(|record| evidence::Site {
+                        contig: record.contig.clone(),
+                        position: record.start as i32,
+                        reference: record.alleles[0].display_string(),
+                        alternates: record.alleles[1..]
+                            .iter()
+                            .map(|allele| allele.display_string())
+                            .collect(),
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        // Each row carries the SAMPLE between the position and the four counts: the file is read
+        // back per sample, so the name travels with every record rather than in a header.
+        let sample = argument(parser, "sample-name").unwrap_or_default();
+        let mut text = String::new();
+        for depth in evidence::site_depths(
+            &reads,
+            &sites,
+            number_or(
+                parser,
+                "site-depth-min-mapq",
+                evidence::DEFAULT_SITE_DEPTH_MIN_MAPQ,
+            ),
+            number_or(
+                parser,
+                "site-depth-min-baseq",
+                evidence::DEFAULT_SITE_DEPTH_MIN_BASEQ,
+            ),
+        ) {
+            text.push_str(&format!(
+                "{}\t{}\t{sample}\t{}\t{}\t{}\t{}\n",
+                depth.contig,
+                depth.position,
+                depth.counts[0],
+                depth.counts[1],
+                depth.counts[2],
+                depth.counts[3]
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &depth_file {
+        let windows: Vec<(String, i32, i32)> = match argument(parser, "depth-evidence-intervals") {
+            Some(list) => {
+                let text = std::fs::read_to_string(&list).map_err(|_| {
+                    Thrown::user(
+                        index_feature_file::Refusal::CouldNotReadInputFile { path: list.clone() }
+                            .message(),
+                    )
+                })?;
+                let parsed: Vec<(String, i32, i32)> = text
+                    .lines()
+                    .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+                    .filter_map(|line| {
+                        let columns: Vec<&str> = line.split('\t').collect();
+                        Some((
+                            columns.first()?.to_string(),
+                            columns.get(1)?.parse().ok()?,
+                            columns.get(2)?.parse().ok()?,
+                        ))
+                    })
+                    .collect();
+                if parsed.is_empty() {
+                    return Err(Thrown::user(evidence::empty_intervals_message(&list)));
+                }
+                parsed
+            }
+            None => Vec::new(),
+        };
+        // The depth file opens with a column line naming the sample, which is the one evidence
+        // file of the four that has a header at all.
+        let mut text = format!(
+            "#Chr\tStart\tEnd\t{}\n",
+            argument(parser, "sample-name").unwrap_or_default()
+        );
+        for depth in evidence::depth_evidence(
+            &reads,
+            &windows,
+            number_or(
+                parser,
+                "depth-evidence-min-mapq",
+                evidence::DEFAULT_DEPTH_EVIDENCE_MIN_MAPQ,
+            ),
+        ) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                depth.contig, depth.start, depth.end, depth.count
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    Ok(None)
+}
+
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
 fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
     use gatk_tools::remove_nearby_indels::VariantType;

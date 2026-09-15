@@ -311,6 +311,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateGenotypePosteriors" => Some(run_calculate_genotype_posteriors),
         "DenoiseReadCounts" => Some(run_denoise_read_counts),
         "ValidateBasicSomaticShortMutations" => Some(run_validate_basic_somatic_short_mutations),
+        "PrintReadCounts" => Some(run_print_read_counts),
+        "CollectSVEvidence" => Some(run_collect_sv_evidence),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -530,6 +532,14 @@ fn run_calculate_genotype_posteriors(args: &[String]) -> Result<Option<String>, 
 
 fn run_denoise_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::denoise_read_counts(&parsed("DenoiseReadCounts", args)?)
+}
+
+fn run_print_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_read_counts(&parsed("PrintReadCounts", args)?)
+}
+
+fn run_collect_sv_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_sv_evidence(&parsed("CollectSVEvidence", args)?)
 }
 
 fn run_validate_basic_somatic_short_mutations(args: &[String]) -> Result<Option<String>, Thrown> {
