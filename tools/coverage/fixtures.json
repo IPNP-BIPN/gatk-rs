@@ -1109,6 +1109,103 @@
         "0"
       ]
     },
+    "ValidateBasicSomaticShortMutations": {
+      "$why": [
+        "somatic.vcf against tumor_normal.bam: the discovery calls are at the two sites that BAM",
+        "carries an alternate at, and a third call carries no AD at all, which is the SKIPPED",
+        "judgment and the only one a callset without depths can produce.",
+        "--discovery-sample-name, --val-case-sample-name and --val-control-sample-name are the",
+        "three names the tool reads, and they are the corpus's own: the VCF's sample is `tumor`",
+        "and the BAM's two are `tumor` and `normal`. A name nothing carries leaves both pileups",
+        "empty, which is a different answer rather than a refusal.",
+        "--min-power and --max-validation-normal-count carry the defaults and a value either side",
+        "of them: the first decides whether an unvalidated call counted as powered, the second",
+        "whether the normal's own alternate reads make it an artefact.",
+        "--annotated-vcf and --summary each carry two paths, because the three files this tool can",
+        "write are the three answers it gives."
+      ],
+      "--variant": [
+        "/work/fixtures/somatic.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/tumor_normal.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/tumor_normal.bai"
+      ],
+      "--discovery-sample-name": [
+        "tumor"
+      ],
+      "--val-case-sample-name": [
+        "tumor"
+      ],
+      "--val-control-sample-name": [
+        "normal"
+      ],
+      "--output": [
+        "/work/out/validation.tsv",
+        "/work/out/validation2.tsv"
+      ],
+      "--annotated-vcf": [
+        "/work/out/annotated.vcf",
+        "/work/out/annotated2.vcf"
+      ],
+      "--summary": [
+        "/work/out/valsummary.tsv",
+        "/work/out/valsummary2.tsv"
+      ],
+      "--min-power": [
+        "0.9",
+        "0.1"
+      ],
+      "--max-validation-normal-count": [
+        "1",
+        "0"
+      ],
+      "--min-base-quality-cutoff": [
+        "20",
+        "0"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "DenoiseReadCounts": {
+      "$why": [
+        "counts.tsv, written by the REFERENCE's own CollectReadCounts: this tool is the next link",
+        "of that chain and reads exactly what it wrote.",
+        "--count-panel-of-normals and --annotated-intervals are held OUT. The first is an HDF5",
+        "panel and the second turns on the GC-bias correction; neither is written by this port, so",
+        "a row carrying either would measure the refusal rather than the standardisation.",
+        "--number-of-eigensamples is held out with them: it only means anything with a panel.",
+        "The two outputs carry two paths each, and a run with no panel writes the SAME bytes to",
+        "both: the denoised result is the standardised one when there is nothing to denoise with."
+      ],
+      "--input": [
+        "/work/fixtures/counts.tsv"
+      ],
+      "--standardized-copy-ratios": [
+        "/work/out/standardized.tsv",
+        "/work/out/standardized2.tsv"
+      ],
+      "--denoised-copy-ratios": [
+        "/work/out/denoised.tsv",
+        "/work/out/denoised2.tsv"
+      ],
+      "--count-panel-of-normals": [],
+      "--annotated-intervals": [],
+      "--number-of-eigensamples": []
+    },
     "DepthOfCoverage": {
       "$why": [
         "A SMALL window, chr1:101-200, because every base of the interval is a row whether a read",

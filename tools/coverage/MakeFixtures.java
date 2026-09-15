@@ -1139,6 +1139,24 @@ public class MakeFixtures {
                             htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                     .write(dir.resolve(pair[0] + ".idx"));
         }
+        // The discovery callset `ValidateBasicSomaticShortMutations` validates, written against
+        // `tumor_normal.bam`: the calls are at the two sites that BAM carries an alternate at, and
+        // the genotype carries the AD the validator needs. A call with no AD is SKIPPED, which is a
+        // judgment of its own and the only one a callset without depths can produce.
+        Files.writeString(dir.resolve("somatic.vcf"),
+                "##fileformat=VCFv4.2\n"
+                        + "##contig=<ID=chr1,length=100000>\n"
+                        + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                        + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                        + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ttumor\n"
+                        + "chr1\t101\t.\tA\tC\t50\tPASS\t.\tGT:AD\t0/1:4,2\n"
+                        + "chr1\t121\t.\tA\tG\t50\tPASS\t.\tGT:AD\t0/1:5,1\n"
+                        + "chr1\t141\t.\tA\tC\t50\tPASS\t.\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        dir.resolve("somatic.vcf"), new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("somatic.vcf.idx"));
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
