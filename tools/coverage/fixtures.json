@@ -991,6 +991,89 @@
         "0"
       ]
     },
+    "Concordance": {
+      "$why": [
+        "truth.vcf and calls.vcf, a pair built so that every one of the five concordance states",
+        "happens once: a call that agrees, a call with another alternate at a truth locus, a",
+        "FILTERED call at a truth locus, a truth record called nowhere, a filtered call away from",
+        "truth, and an unfiltered one. Without the last two the filter analysis has nothing to",
+        "count, and without the second the false positive and the false negative never coincide.",
+        "The filtered true negative carries TWO filters, so neither is unique to it: the",
+        "filter-analysis table counts uniqueness per RECORD rather than per filter.",
+        "The three annotated VCFs each carry two paths, because the file a state reaches is the",
+        "tool's own decision: a true positive is written to two of them, with the TRUTH record in",
+        "one and the EVAL record in the other.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE, as on",
+        "every other variant writer: one carries the run's clock and the other the output's",
+        "last-modified time."
+      ],
+      "--truth": [
+        "/work/fixtures/truth.vcf"
+      ],
+      "--evaluation": [
+        "/work/fixtures/calls.vcf"
+      ],
+      "--summary": [
+        "/work/out/summary.tsv",
+        "/work/out/summary2.tsv"
+      ],
+      "--filter-analysis": [
+        "/work/out/filters.tsv",
+        "/work/out/filters2.tsv"
+      ],
+      "--true-positives-and-false-negatives": [
+        "/work/out/tpfn.vcf",
+        "/work/out/tpfn2.vcf"
+      ],
+      "--true-positives-and-false-positives": [
+        "/work/out/tpfp.vcf",
+        "/work/out/tpfp2.vcf"
+      ],
+      "--filtered-true-negatives-and-false-negatives": [
+        "/work/out/ftnfn.vcf",
+        "/work/out/ftnfn2.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "GatherBQSRReports": {
+      "$why": [
+        "recal.table and recal2.table, both written by the REFERENCE's own BaseRecalibrator over",
+        "the corpus's two BAMs: the gather's input is another tool's output, which is what makes",
+        "this the third chain in the corpus.",
+        "Each row gathers ONE report, because a covering array assigns one value per argument and",
+        "--input is the only source. That is not a gather of nothing: the reduce still recomputes",
+        "the empirical qualities and the quantization at the first report's level count, so a",
+        "single-report row measures everything but the sum. The sum itself is measured by the",
+        "gather suite's golden, which carries the two-shard case.",
+        "--output carries two paths and nothing else: this tool has no other file to write."
+      ],
+      "--input": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table"
+      ],
+      "--output": [
+        "/work/out/gathered.table",
+        "/work/out/gathered2.table"
+      ]
+    },
     "LeftAlignAndTrimVariants": {
       "$why": [
         "shiftable.vcf, whose indels are whole repeat units of the corpus reference and therefore",

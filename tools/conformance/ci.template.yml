@@ -251,6 +251,8 @@ jobs:
             --tool GetNormalArtifactData \
             --tool ValidateVariants \
             --tool LeftAlignAndTrimVariants \
+            --tool GatherBQSRReports \
+            --tool Concordance \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

@@ -415,6 +415,13 @@ public class MakeFixtures {
      * Every other locus matches the reference in both samples, which is what leaves the table
      * short enough to read.
      */
+    /** One record of `truth.vcf` or `calls.vcf`. */
+    static String concordanceRecord(final int position, final String reference, final String alternate,
+                                    final String filter) {
+        return String.format("chr1\t%d\t.\t%s\t%s\t50\t%s\t.\tGT\t0/1%n", position, reference,
+                alternate, filter).replace(System.lineSeparator(), "\n");
+    }
+
     /** The corpus reference's bases at a one-based position: `ACGT`, repeated. */
     static String referenceBases(final int position, final int length) {
         final StringBuilder bases = new StringBuilder();
@@ -1095,6 +1102,43 @@ public class MakeFixtures {
                         shifts, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("shiftable.vcf.idx"));
+        // The pair `Concordance` walks: a truth callset and an evaluation of it, arranged so that
+        // every one of the five concordance states happens once.
+        //
+        //   chr1:1001  called and agreeing                       true positive
+        //   chr1:2001  called with another alternate             false positive AND false negative
+        //   chr1:3001  called at a truth locus and FILTERED      filtered false negative
+        //   chr1:4001  in truth and not called at all            false negative
+        //   chr1:5001  called nowhere near truth and FILTERED    filtered true negative
+        //   chr1:6001  called nowhere near truth, unfiltered     false positive
+        //
+        // The filtered true negative carries TWO filters, so neither of them is unique to it: the
+        // filter-analysis table counts uniqueness per RECORD, not per filter.
+        final String truthBody =
+                concordanceRecord(1001, "A", "C", ".")
+                        + concordanceRecord(2001, "A", "ACGT", ".")
+                        + concordanceRecord(3001, "A", "C", ".")
+                        + concordanceRecord(4001, "A", "C", ".");
+        final String evalBody =
+                concordanceRecord(1001, "A", "C", "PASS")
+                        + concordanceRecord(2001, "A", "AG", "PASS")
+                        + concordanceRecord(3001, "A", "C", "LOW_QUAL")
+                        + concordanceRecord(5001, "A", "C", "ARTIFACT;LOW_QUAL")
+                        + concordanceRecord(6001, "A", "C", "PASS");
+        final String vcfHeader = "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##FILTER=<ID=LOW_QUAL,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=ARTIFACT,Description=\"Artifact\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        for (final String[] pair : new String[][] {{"truth.vcf", truthBody}, {"calls.vcf", evalBody}}) {
+            final Path path = dir.resolve(pair[0]);
+            Files.writeString(path, vcfHeader + pair[1], StandardCharsets.UTF_8);
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(dir.resolve(pair[0] + ".idx"));
+        }
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
