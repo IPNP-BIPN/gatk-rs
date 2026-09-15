@@ -153,7 +153,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CompareIntervalLists` | unclassified | oracle-backed | compare-interval-lists | 1 | t=2, 7/7 rows (100%), **1 distinct output** |
 | `CompareReferences` | reference-utility | oracle-backed | compare-references | 1 | not measured |
 | `ComposeSTRTableFile` | reference-utility | oracle-backed | compose-str-table-file | 1 | not measured |
-| `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | not measured |
+| `Concordance` | variant-walker | oracle-backed | concordance-annotated-vcfs, concordance-filter-analysis, concordance-summary | 3 | t=2, 16/16 rows (100%) |
 | `CondenseDepthEvidence` | unclassified | oracle-backed | condense-depth-evidence | 1 | not measured |
 | `ConvertHeaderlessHadoopBamShardToBam` | record-transform | oracle-backed | convert-headerless-shard | 1 | not measured |
 | `CountBases` | locus-walker | oracle-backed | count-reads-and-bases, counting-walkers | 2 | t=2, 21/21 rows (100%) |
@@ -185,7 +185,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | not measured |
 | `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | not measured |
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
-| `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | not measured |
+| `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | t=2, 6/6 rows (100%) |
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | not measured |
