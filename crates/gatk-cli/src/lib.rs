@@ -303,6 +303,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CollectAllelicCounts" => Some(run_collect_allelic_counts),
         "FilterIntervals" => Some(run_filter_intervals),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
+        "ValidateVariants" => Some(run_validate_variants),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -494,6 +495,10 @@ fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_get_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::get_normal_artifact_data(&parsed("GetNormalArtifactData", args)?)
+}
+
+fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::validate_variants(&parsed("ValidateVariants", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {

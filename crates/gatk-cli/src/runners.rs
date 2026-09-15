@@ -4144,6 +4144,358 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// The name `VariantContext.Type` prints, which the two GVCF messages quote.
+fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
+    use gatk_tools::remove_nearby_indels::VariantType;
+    match kind {
+        VariantType::NoVariation => "NO_VARIATION",
+        VariantType::Snp => "SNP",
+        VariantType::Mnp => "MNP",
+        VariantType::Indel => "INDEL",
+        VariantType::Symbolic => "SYMBOLIC",
+        VariantType::Mixed => "MIXED",
+    }
+}
+
+/// One record as `ValidateVariants` reads it, which is less of it than a writer needs.
+///
+/// The attributes are SORTED, because the only place they are read is a message that prints them
+/// through a `TreeMap`, and the filters are the applied ones: a record that passed carries an empty
+/// list here whether its column said `PASS` or `.`.
+fn validation_record(
+    vc: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::validate_variants::Record {
+    let integers = |key: &str| -> Vec<i32> {
+        vc.attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .and_then(|(_, value)| value.format())
+            .map(|text| {
+                text.split(',')
+                    .filter_map(|piece| piece.trim().parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut attributes: Vec<(String, String)> = vc
+        .attributes
+        .iter()
+        .map(|(key, value)| (key.clone(), value.format().unwrap_or_default()))
+        .collect();
+    attributes.sort_by(|left, right| left.0.cmp(&right.0));
+
+    gatk_tools::validate_variants::Record {
+        contig: vc.contig.clone(),
+        start: vc.start as i32,
+        reference: vc
+            .alleles
+            .first()
+            .map(|allele| allele.display_string())
+            .unwrap_or_default(),
+        alternates: vc.alleles[1..]
+            .iter()
+            .map(|allele| allele.display_string())
+            .collect(),
+        filters: vc.filters.clone().unwrap_or_default(),
+        allele_counts: integers("AC"),
+        allele_number: integers("AN").first().copied(),
+        genotypes: vc
+            .genotypes
+            .iter()
+            .map(|genotype| {
+                genotype
+                    .alleles
+                    .iter()
+                    .map(|allele| {
+                        if allele.is_no_call() {
+                            None
+                        } else {
+                            vc.alleles.iter().position(|candidate| candidate == allele)
+                        }
+                    })
+                    .collect()
+            })
+            .collect(),
+        qual: if vc.has_log10_p_error() {
+            Some(vc.phred_scaled_qual())
+        } else {
+            None
+        },
+        variant_type: variant_context_type_name(gatk_tools::remove_nearby_indels::variant_type(vc))
+            .to_string(),
+        attributes,
+    }
+}
+
+/// `ValidateVariants.apply` and `onTraversalSuccess`: a VCF checked, and NOTHING written.
+///
+/// The only tool with a runner here whose whole output is its refusal. Three things it decides are
+/// the tool rather than the checks, and all three are measured:
+///
+///   * `--validation-type-to-exclude` is the argument that turns checks ON. With nothing excluded
+///     the run is `ALL`, which is what the inputs allow; exclude anything at all and the concrete
+///     set is built and the exclusions removed from it, so `REF` comes back and a run with no
+///     `--reference` is refused before a record is read;
+///   * `--validate-GVCF` excludes the allele check on its own account, which is what sends a plain
+///     GVCF run down that same branch;
+///   * `--warn-on-errors` turns every refusal into a log line, so the run SUCCEEDS and writes
+///     nothing, which is indistinguishable from a valid file except in the log.
+///
+/// The GVCF coverage check runs at the end over the whole traversal, and what it subtracts from is
+/// the interval argument when there is one and the whole dictionary when there is not.
+pub fn validate_variants(parser: &Parser) -> Outcome {
+    use gatk_tools::validate_variants as validate;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "ValidateVariants")?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    let mut types_to_exclude = Vec::new();
+    for name in arguments(parser, "validation-type-to-exclude") {
+        match validate::ValidationType::parse(&name) {
+            Some(kind) => types_to_exclude.push(kind),
+            // The parser refuses an unknown constant before the tool runs, so this is unreachable
+            // from a command line; a value that got here is the port's own failure to say so.
+            None => {
+                return Err(Thrown::non_user(
+                    PORT_FAILURE,
+                    format!("{name} is not a ValidationType this port knows."),
+                ))
+            }
+        }
+    }
+
+    let reference_path = argument(parser, "reference");
+    let validate_gvcf = flag(parser, "validate-GVCF");
+    let arguments = validate::Arguments {
+        types_to_exclude,
+        do_not_validate_filtered_records: flag(parser, "do-not-validate-filtered-records"),
+        warn_on_errors: flag(parser, "warn-on-errors"),
+        validate_gvcf,
+        has_reference: reference_path.is_some(),
+        has_dbsnp: argument(parser, "dbsnp").is_some(),
+    };
+
+    // `throwOrWarn`: with `--warn-on-errors` the message is logged and the traversal carries on, so
+    // every refusal below goes through this and a warning run ends at zero.
+    let refuse = |error: validate::ValidationError| -> Option<Thrown> {
+        if arguments.warn_on_errors {
+            return None;
+        }
+        Some(Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })
+    };
+
+    let types = match validate::types_to_apply(&arguments) {
+        Ok(types) => types,
+        Err(error) => match refuse(error) {
+            Some(thrown) => return Err(thrown),
+            // `calculateValidationTypesToApply` is called from `onTraversalStart`, where the warn
+            // path swallows nothing: the refusal is raised before `throwOrWarn` exists. Measured
+            // by the golden this module carries.
+            None => {
+                return Err(Thrown::user(
+                    validate::ValidationError::MissingReference.message(),
+                ))
+            }
+        },
+    };
+
+    let mut reference = match &reference_path {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    let mut order = validate::OrderCheck::new();
+    let mut covered: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
+    // The overlap watch, which is `--fail-gvcf-on-overlap`'s whole input. `previous` is the
+    // MERGED interval rather than the record's own, because that is what the reference compares
+    // against, and `overlapping` is overwritten on every hit: the message calls it the first
+    // overlapping interval and the assignment makes it the last.
+    let mut previous: Option<(gatk_engine::interval::SimpleInterval, bool)> = None;
+    let mut overlapping: Option<gatk_engine::interval::SimpleInterval> = None;
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let vc = &file.records[located.index];
+        let record = validation_record(vc);
+
+        if validate_gvcf {
+            if let Err(error) = order.check(&record) {
+                if let Some(thrown) = refuse(error) {
+                    return Err(thrown);
+                }
+            }
+            // The blocks a GVCF writes are adjacent rather than overlapping, so the reference
+            // merges an adjacent pair (margin ONE) into one interval before adding it, and counts
+            // an actually overlapping pair (margin ZERO) as an overlap. A reference block is a
+            // record whose only alternate is `<NON_REF>`, and only a pair with one of those in it
+            // is an overlap worth reporting.
+            let this_is_reference =
+                record.alternates.len() == 1 && record.alternates[0] == "<NON_REF>";
+            if let Some(interval) = gatk_engine::interval::SimpleInterval::new(
+                &vc.contig,
+                vc.start as i32,
+                vc.stop as i32,
+            ) {
+                let overlaps = |margin: i32| -> bool {
+                    match &previous {
+                        Some((before, _)) => {
+                            before.contig == interval.contig
+                                && before.start <= interval.end + margin
+                                && interval.start <= before.end + margin
+                        }
+                        None => false,
+                    }
+                };
+                if overlaps(0)
+                    && (previous.as_ref().is_some_and(|(_, was)| *was) || this_is_reference)
+                {
+                    overlapping = Some(interval.clone());
+                }
+                let merged = if overlaps(1) {
+                    let (before, _) = previous.as_ref().expect("a previous interval to overlap");
+                    gatk_engine::interval::SimpleInterval::new(
+                        &interval.contig,
+                        before.start,
+                        before.end.max(interval.end),
+                    )
+                    .unwrap_or_else(|| interval.clone())
+                } else {
+                    interval.clone()
+                };
+                covered.push(merged.clone());
+                previous = Some((merged, this_is_reference));
+            }
+        }
+
+        // `getRefBasesAtPosition(reader, contig, start, refLength)`: the reference under the whole
+        // reference allele, which is what the REF check compares against.
+        let observed = match &mut reference {
+            Some(source) => {
+                let length = record.reference.len() as i32;
+                let bases = source
+                    .query(&record.contig, record.start, record.start + length - 1)
+                    .map_err(|error| match error {
+                        // A reference that does not carry the record's contig is a refusal and not
+                        // a skipped check, and the dictionary it prints is the REFERENCE's.
+                        // Measured on a row of this tool's array where `--reference` is the
+                        // corpus's other contig and dictionary validation is turned off.
+                        gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                            Thrown::user(format!(
+                                "Contig {contig} not present in the sequence dictionary {}\n",
+                                gatk_tools::sequence_dictionary::pretty_print(
+                                    &gatk_tools::reference_walker::dictionary(source).sequences
+                                )
+                            ))
+                        }
+                        other => Thrown::user(format!("{other:?}")),
+                    })?;
+                Some(String::from_utf8_lossy(&bases).into_owned())
+            }
+            None => None,
+        };
+        if let Err(error) =
+            validate::validate_record(&record, &input, &types, observed.as_deref(), &arguments)
+        {
+            if let Some(thrown) = refuse(error) {
+                return Err(thrown);
+            }
+        }
+    }
+
+    if validate_gvcf {
+        // The whole region is the interval argument when there is one and the dictionary when there
+        // is not, and what is subtracted from it is the merged span of every record traversed.
+        let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+            Some(header) => header,
+            None => vcf_dictionary(&text),
+        };
+        let wanted = match intervals.as_deref() {
+            Some(given) if !given.is_empty() => given.to_vec(),
+            _ => gatk_engine::interval_args::whole_reference(&dictionary),
+        };
+        let uncovered =
+            gatk_engine::interval_args::subtract_regions(&wanted, &covered, &dictionary);
+        let loci: i64 = uncovered
+            .iter()
+            .map(|interval| i64::from(interval.end - interval.start + 1))
+            .sum();
+        if loci > 0 {
+            let first = &uncovered[0];
+            // `GenomeLoc.toString`, which collapses a one-base interval to a single position.
+            let rendered = if first.start == first.end {
+                format!("{}:{}", first.contig, first.start)
+            } else {
+                format!("{}:{}-{}", first.contig, first.start, first.end)
+            };
+            if let Some(thrown) = refuse(validate::ValidationError::NotCovering {
+                loci,
+                first_gap: rendered,
+            }) {
+                return Err(thrown);
+            }
+        }
+        // And the overlap, which is checked AFTER the coverage: a GVCF that both overlaps and
+        // leaves a gap is refused for the gap.
+        if flag(parser, "fail-gvcf-on-overlap") {
+            if let Some(interval) = &overlapping {
+                let message = format!(
+                    "This GVCF contained overlapping reference blocks.  The first overlapping \
+                     interval is {}:{}-{}",
+                    interval.contig, interval.start, interval.end
+                );
+                if !arguments.warn_on_errors {
+                    return Err(Thrown {
+                        failure: Failure::User,
+                        exception:
+                            "org.broadinstitute.hellbender.exceptions.UserException$ValidationFailure",
+                        message: Some(message),
+                    });
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// `GetNormalArtifactData.apply`: one locus, two pileups of the same reads, and a seeded draw.
 ///
 /// The first Mutect tool with a runner here, and the RNG is what makes it one: the whole traversal
