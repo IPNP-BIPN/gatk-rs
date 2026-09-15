@@ -4144,6 +4144,335 @@ pub fn filter_intervals(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `LeftAlignAndTrimVariants.apply`: each record split, trimmed, and walked left.
+///
+/// The tool three engine bricks were built for, and the runner's share of it is small: what is
+/// its own is the WINDOW, and the window is a function of the record before it. `lastVariant` is
+/// the record as WRITTEN, which has already moved left, so aligning one record frees the next; and
+/// a record skipped for being too long still becomes the bound the next one is measured against.
+/// Both live in [`gatk_tools::left_align_and_trim_variants`], where a golden measures them.
+///
+/// The header is the input's, merged with itself, plus the chromosome-count lines when the run
+/// splits: `addChromosomeCountsToHeader` is called on that branch alone, so a run that only
+/// trims writes the lines the input had.
+pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
+    use gatk_tools::left_align_and_trim_variants as align;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "LeftAlignAndTrimVariants")?;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    let arguments = align::Arguments {
+        dont_trim_alleles: flag(parser, "dont-trim-alleles"),
+        split_multiallelics: flag(parser, "split-multi-allelics"),
+        max_indel_size: number_or(parser, "max-indel-length", align::DEFAULT_MAX_INDEL_SIZE),
+        max_leading_bases: number_or(
+            parser,
+            "max-leading-bases",
+            align::DEFAULT_MAX_LEADING_BASES,
+        ),
+    };
+    let keep_original_counts = flag(parser, "keep-original-ac");
+    // A sharded output is a WRITER, not a transformation: the reference writes
+    // `out.shard_00000.vcf.gz` and one file per shard, which is a feature of its own rather than
+    // this tool's. Refusing says so; writing one file would be a different answer.
+    if number_or(parser, "max-variants-per-shard", 0) > 0 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--max-variants-per-shard writes one file per shard, which this port does not write \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // `createVCFHeaderLineList`: the input's own lines merged with themselves, the tool's default
+    // lines, and the count lines the splitting adds.
+    let (mut lines, _warnings) = htsjdk_vcf::merge::smart_merge_headers(
+        &[htsjdk_vcf::merge::Source {
+            header: &file.header,
+            version: None,
+        }],
+        true,
+    )
+    .unwrap_or_else(|_| (file.header.lines.clone(), Vec::new()));
+    if flag(parser, "add-output-vcf-command-line") {
+        lines.push(htsjdk_vcf::header::HeaderLine::Unstructured {
+            key: "source".to_string(),
+            value: "LeftAlignAndTrimVariants".to_string(),
+        });
+        if let Some(command_line) = command_line_header_line(parser, "LeftAlignAndTrimVariants") {
+            lines.push(command_line);
+        }
+    }
+    if keep_original_counts {
+        // `GATKVCFHeaderLines.getInfoLine` for the three keys the subsetter can set, which the
+        // header declares whether or not a record turns out to carry them.
+        for (id, number, line_type, description) in [
+            (
+                "AC_Orig",
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Integer,
+                "Original AC",
+            ),
+            (
+                "AF_Orig",
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Float,
+                "Original AF",
+            ),
+            (
+                "AN_Orig",
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::Integer,
+                "Original AN",
+            ),
+        ] {
+            lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            });
+        }
+    }
+    if arguments.split_multiallelics {
+        for key in ["AC", "AF", "AN"] {
+            lines.retain(|line| {
+                !matches!(
+                    line,
+                    htsjdk_vcf::header::HeaderLine::Compound { key: k, id, .. }
+                        if k == "INFO" && id == key
+                )
+            });
+            if let Some(standard) = htsjdk_vcf::standard_header_lines::standard_info_line(key) {
+                lines.push(standard);
+            }
+        }
+    }
+    // `VcfUtils.getSortedSampleSet`, which is the input's samples in their natural order.
+    //
+    // `--sites-only-vcf-output` empties the set here as well as on every record: the writer is
+    // built with no samples at all, so the output has no FORMAT column rather than a no-call in
+    // one. Measured on eight rows of this tool's array, where the port wrote `GT ./.`.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    let mut samples = if sites_only {
+        Vec::new()
+    } else {
+        file.header.samples.clone()
+    };
+    samples.sort();
+    let header =
+        update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })?;
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    // The whole contig, once per contig: the alignment indexes the reference by one-based position
+    // and walks LEFT from the record, so a slice around the record would have to be re-based.
+    let mut contigs: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    let mut last: Option<gatk_engine::variant_context_utils::Variant> = None;
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let original = &file.records[located.index];
+        let bridged = crate::variant_bridge::to_engine(original);
+
+        // The counts the subsetter would carry over are only reachable on a record that HAS them;
+        // the corpus has none, so the flag is the header's business alone. A record that carries
+        // one and is split would need the allele subsetting this port does not have.
+        if keep_original_counts
+            && arguments.split_multiallelics
+            && bridged
+                .record
+                .variant
+                .attributes
+                .iter()
+                .any(|(key, _)| key == "AC" || key == "AF" || key == "AN")
+        {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "--keep-original-ac over a record that carries AC asks the subsetter for the \
+                 counts it had, which this port does not carry yet. This message is the port's \
+                 own and not GATK's.",
+            ));
+        }
+
+        let pieces = if arguments.split_multiallelics {
+            if original
+                .genotypes
+                .iter()
+                .any(|genotype| genotype.extended.iter().any(|(key, _)| key == "AF"))
+            {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "A record whose genotypes carry AF is split by the SOMATIC splitter, which \
+                     this port does not carry yet. This message is the port's own and not GATK's.",
+                ));
+            }
+            gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
+                &bridged.record.variant,
+                false,
+            )
+            .map_err(split_refusal)?
+        } else {
+            vec![bridged.record.variant.clone()]
+        };
+
+        for piece in pieces {
+            if align::largest_indel_length(&piece) > arguments.max_indel_size {
+                // Written untouched, and it is still the record the next one is measured against.
+                written.push(crate::variant_bridge::from_engine(
+                    original,
+                    &gatk_tools::select_variants::Record {
+                        variant: piece.clone(),
+                        samples: file.header.samples.clone(),
+                    },
+                ));
+                last = Some(piece);
+                continue;
+            }
+            let distance = match &last {
+                Some(previous) if previous.contig == piece.contig => piece.start - previous.stop,
+                _ => i32::MAX,
+            };
+            let window = arguments.max_leading_bases.min(distance - 1);
+            // `leftAlignAndTrim` returns before it reads a base when the record is not an indel or
+            // the window is empty, so the reference is opened only where the alignment needs it.
+            // Measured on a row whose `--reference` carries another contig entirely and whose
+            // records are all SNVs or too long to align: the reference wrote the file.
+            let needs_reference = piece.is_indel() && window > 0;
+            if needs_reference && !contigs.contains_key(&piece.contig) {
+                let length = reference
+                    .sequences()
+                    .iter()
+                    .find(|(name, _)| *name == piece.contig)
+                    .map(|(_, length)| *length as i32)
+                    .unwrap_or(0);
+                // `ReferenceContext` over a contig the FASTA does not carry is the walker's own
+                // refusal, and it is the one `reference_traversal_error` renders. Measured on a
+                // row of this tool's array where `--reference` is the corpus's other contig.
+                if length == 0 {
+                    return Err(Thrown::user(format!(
+                        "Given reference file does not have data at the requested contig({})!",
+                        piece.contig
+                    )));
+                }
+                // ZERO-based: `leftAlignAndTrim` slices `[start - 1 .. stop]`, so the vector is
+                // the contig's bases with position one at index zero. A one-based vector with a
+                // pad in front shifted every comparison by a base, and the records moved one base
+                // left instead of the thousand the window allowed.
+                let mut bases: Vec<u8> = Vec::new();
+                if length > 0 {
+                    // The engine's own query, which upper-cases and flattens IUPAC exactly as
+                    // `ReferenceDataSource.of(path)` does for a `ReferenceContext`: the alignment
+                    // compares these bases against the record's alleles.
+                    bases.extend(
+                        reference
+                            .query(&piece.contig, 1, length)
+                            .map_err(|error| match error {
+                                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                                    Thrown::user(format!(
+                                        "Contig {contig} not present in the sequence dictionary {}\n",
+                                        gatk_tools::sequence_dictionary::pretty_print(
+                                            &gatk_tools::reference_walker::dictionary(&reference)
+                                                .sequences
+                                        )
+                                    ))
+                                }
+                                other => Thrown::user(format!("{other:?}")),
+                            })?,
+                    );
+                }
+                contigs.insert(piece.contig.clone(), bases);
+            }
+            let empty: Vec<u8> = Vec::new();
+            let bases = contigs.get(&piece.contig).unwrap_or(&empty);
+            let aligned = gatk_engine::variant_context_utils::left_align_and_trim(
+                &piece,
+                bases,
+                window,
+                !arguments.dont_trim_alleles,
+            )
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            written.push(crate::variant_bridge::from_engine(
+                original,
+                &gatk_tools::select_variants::Record {
+                    variant: aligned.clone(),
+                    samples: file.header.samples.clone(),
+                },
+            ));
+            last = Some(aligned);
+        }
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    if sites_only {
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
+/// What the biallelic splitter refuses: the trimming underneath, or the genotype combinatorics.
+///
+/// Both are `GATKException`s in the reference rather than user errors, which is what makes them
+/// status three.
+fn split_refusal(error: gatk_engine::variant_context_utils::SplitError) -> Thrown {
+    Thrown::non_user(
+        "org.broadinstitute.hellbender.exceptions.GATKException",
+        error.message(),
+    )
+}
+
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
 fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
     use gatk_tools::remove_nearby_indels::VariantType;
@@ -7489,7 +7818,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             info_annotations_to_drop: output_arguments.info_annotations_to_drop.clone(),
             genotype_annotations_to_drop: output_arguments.genotype_annotations_to_drop.clone(),
             add_output_vcf_command_line: flag(parser, "add-output-vcf-command-line"),
-            tool_command_line: command_line_header_line(parser),
+            tool_command_line: command_line_header_line(parser, "SelectVariants"),
             samples: if sites_only {
                 Vec::new()
             } else {
@@ -7883,17 +8212,17 @@ fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
 /// version this port claims. The fourth is the run's own wall-clock time, which is why the header
 /// construction takes this as an input rather than building it: a golden of a file carrying it
 /// would move on every run, and the `select-variants-header` suite elides it for that reason.
-fn command_line_header_line(parser: &Parser) -> Option<htsjdk_vcf::header::HeaderLine> {
+fn command_line_header_line(parser: &Parser, tool: &str) -> Option<htsjdk_vcf::header::HeaderLine> {
     if !flag(parser, "add-output-vcf-command-line") {
         return None;
     }
     Some(htsjdk_vcf::header::HeaderLine::Structured {
         key: "GATKCommandLine".to_string(),
         fields: vec![
-            ("ID".to_string(), "SelectVariants".to_string()),
+            ("ID".to_string(), tool.to_string()),
             (
                 "CommandLine".to_string(),
-                crate::command_line::expanded("SelectVariants", parser),
+                crate::command_line::expanded(tool, parser),
             ),
             ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
             ("Date".to_string(), display_date_time()),
