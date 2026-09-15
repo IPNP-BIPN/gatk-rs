@@ -893,6 +893,17 @@ public class MakeFixtures {
                         duo, new htsjdk.variant.vcf.VCFCodec(),
                         htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
                 .write(dir.resolve("duo.vcf.idx"));
+        // The mixing fractions `AnnotateVcfWithExpectedAlleleFraction` reads, produced by the
+        // REFERENCE's own `CalculateMixingFractions` over the two-sample VCF and the corpus's
+        // reads. The chain is the point: one tool's output is the other's input, so the second is
+        // measured on a table the first really writes.
+        new org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions()
+                .instanceMain(new String[] {
+                        "--variant", dir.resolve("duo.vcf").toString(),
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--intervals", "chr1:1-6000",
+                        "--output", dir.resolve("mixing.table").toString(),
+                });
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(

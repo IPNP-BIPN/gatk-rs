@@ -720,6 +720,35 @@
         "the tool."
       ]
     },
+    "AnnotateVcfWithExpectedAlleleFraction": {
+      "$why": [
+        "The other half of the chain: --mixing-fractions takes the table CalculateMixingFractions",
+        "wrote over duo.vcf, produced by the REFERENCE in the corpus build, and a table naming a",
+        "sample the VCF does not have. The second value is this tool's NullPointerException, which",
+        "is what a missing sample really produces: the fractions are looked up by name into a map",
+        "and the miss is unboxed.",
+        "--variant carries duo.vcf, whose two samples are what the annotation multiplies, and",
+        "reads.vcf, which declares no sample at all.",
+        "--read-index and --input are held out: this tool reads no reads."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--mixing-fractions": [
+        "/work/fixtures/mixing.table",
+        "/work/fixtures/summaries.table"
+      ],
+      "--output": [
+        "/work/out/expected.vcf",
+        "/work/out/expected2.vcf"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
     "CalculateMixingFractions": {
       "$why": [
         "duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between the",
