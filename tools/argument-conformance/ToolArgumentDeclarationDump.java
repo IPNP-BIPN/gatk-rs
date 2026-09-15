@@ -307,6 +307,17 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.copynumber.FilterIntervals());
         declarations("GetNormalArtifactData",
                 new org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData());
+        // A validator and a normaliser, both over a VCF. `ValidateVariants` writes NOTHING: its
+        // whole answer is whether it threw and what it said, and its `--validation-type-to-exclude`
+        // brings the `ValidationType` enum, which nothing declared here points at. Its GVCF mode is
+        // three checks rather than one, the last of which runs at the end of the traversal.
+        // `LeftAlignAndTrimVariants` writes a VCF and is the first declared tool that can SPLIT a
+        // record into several: `--split-multi-allelics` turns one multi-allelic line into one per
+        // alternate, each trimmed on its own.
+        declarations("ValidateVariants",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.ValidateVariants());
+        declarations("LeftAlignAndTrimVariants",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.LeftAlignAndTrimVariants());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
