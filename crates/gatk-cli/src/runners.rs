@@ -3292,6 +3292,388 @@ fn legacy_segments_path(output: &str) -> String {
     format!("{directory}{stem}.igv.seg")
 }
 
+/// `VariantFiltration.apply`: JEXL over the record, JEXL over each genotype, and a mask beside
+/// them.
+///
+/// The largest namespace declared here, eighty-nine arguments, and the filtering itself is the
+/// port's: the FILTER column is sorted where a filter was applied, a genotype's FT is `PASS` when
+/// the record has an FT column at all, and the cluster window looks at the SNPs around a record
+/// rather than at the record.
+pub fn variant_filtration(parser: &Parser) -> Outcome {
+    use gatk_tools::variant_filtration as filtration;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "VariantFiltration")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+
+    // `filterExpressions` and `filterNames` are read in step: the nth expression carries the nth
+    // name, and a name list shorter than the expression list is the parser's refusal rather than
+    // this tool's.
+    let compile = |expressions: Vec<String>,
+                   names: Vec<String>|
+     -> Result<Vec<filtration::MatchExp>, Thrown> {
+        expressions
+            .iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let name = names.get(index).cloned().unwrap_or_default();
+                filtration::MatchExp::new(&name, text).map_err(|error| {
+                    Thrown::user(format!("Invalid JEXL expression detected: {error:?}"))
+                })
+            })
+            .collect()
+    };
+    let site = compile(
+        arguments(parser, "filter-expression"),
+        arguments(parser, "filter-name"),
+    )?;
+    let genotype = compile(
+        arguments(parser, "genotype-filter-expression"),
+        arguments(parser, "genotype-filter-name"),
+    )?;
+
+    // `--mask` is a feature file read whole: what the tool asks of it is where its features are,
+    // and a BED and a VCF answer that the same way.
+
+    let flag_of = |name: &str| flag(parser, name);
+    let tool_arguments = filtration::Arguments {
+        cluster_size: number_or(parser, "cluster-size", 3),
+        cluster_window: number_or(parser, "cluster-window-size", 0),
+        mask_name: argument(parser, "mask-name").unwrap_or_else(|| "Mask".to_string()),
+        filter_records_not_in_mask: flag_of("filter-not-in-mask"),
+        invert_filter_expression: flag_of("invert-filter-expression"),
+        invert_genotype_filter_expression: flag_of("invert-genotype-filter-expression"),
+        missing_values_evaluate_as_failing: flag_of("missing-values-evaluate-as-failing"),
+        invalidate_previous_filters: flag_of("invalidate-previous-filters"),
+        set_filtered_genotypes_to_no_call: flag_of("set-filtered-genotype-to-no-call"),
+        mask_extension: number_or(parser, "mask-extension", 0),
+    };
+
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    let kept: Vec<htsjdk_vcf::variant::VariantContext> = file
+        .records
+        .iter()
+        .filter(|record| match spans {
+            None => true,
+            Some(list) => list.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            }),
+        })
+        .cloned()
+        .collect();
+
+    // `FeatureDataSource` asks the mask for its index at the FIRST query, so a traversal that
+    // reaches no record never asks. The refusal below is conditioned on that.
+    let queries_the_mask = !kept.is_empty();
+    let mask_path = argument(parser, "mask");
+    let mask: Vec<(String, i32, i32)> = match &mask_path {
+        None => Vec::new(),
+        Some(path) => {
+            // The mask is QUERIED by interval, and `FeatureDataSource` asks for the index at the
+            // first query rather than at startup: a bounded traversal that reaches no record never
+            // queries and never refuses. Measured on rows of this tool's array where `-L` names a
+            // window the file has no record in, and the reference read the unindexed BED happily.
+            if !has_feature_index(path) && queries_the_mask {
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable queries by interval. If \
+                     it's a file, please index it using the bundled tool IndexFeatureFile"
+                )));
+            }
+            let text = std::fs::read_to_string(path)
+                .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+            if path.ends_with(".bed") {
+                text.lines()
+                    .filter_map(|line| {
+                        htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
+                            .ok()
+                            .flatten()
+                    })
+                    .map(|feature| (feature.contig, feature.start, feature.end))
+                    .collect()
+            } else {
+                htsjdk_vcf::reader::read_vcf(&text)
+                    .map(|masked| {
+                        masked
+                            .records
+                            .iter()
+                            .map(|record| {
+                                (
+                                    record.contig.clone(),
+                                    record.start as i32,
+                                    record.stop as i32,
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+        }
+    };
+
+    let records: Vec<filtration::Record> = kept.iter().map(filtration_record).collect();
+    let filtered = filtration::filter_records(&records, &site, &genotype, &mask, &tool_arguments);
+
+    let mut written = kept.clone();
+    for (index, record) in written.iter_mut().enumerate() {
+        let rendered = filtration::rendered_filters(&filtered[index]);
+        record.filters = match rendered.as_str() {
+            "." => None,
+            "PASS" => Some(Vec::new()),
+            names => Some(names.split(';').map(str::to_string).collect()),
+        };
+        for sample in 0..record.genotypes.len() {
+            if let Some(ft) = filtration::rendered_genotype_filter(&filtered[index], sample) {
+                record.genotypes[sample].filters = Some(ft);
+            }
+            if filtered[index]
+                .no_called
+                .get(sample)
+                .copied()
+                .unwrap_or(false)
+            {
+                record.genotypes[sample].alleles = Vec::new();
+            }
+        }
+    }
+
+    // The header gains one `##FILTER` line per filter this run can apply, in the reference's own
+    // order: the clustered-SNP name first when the window is open, then the site expressions, then
+    // the genotype ones, then the mask. An inverted expression describes itself as `Inverse of:`.
+    let mut filter_lines: Vec<(String, String)> = Vec::new();
+    if tool_arguments.cluster_window > 0 {
+        filter_lines.push((
+            "SnpCluster".to_string(),
+            "SNPs found in clusters".to_string(),
+        ));
+    }
+    let described = |text: &str, inverted: bool| -> String {
+        if inverted {
+            format!("Inverse of: {text}")
+        } else {
+            text.to_string()
+        }
+    };
+    for (index, expression) in arguments(parser, "filter-expression").iter().enumerate() {
+        if let Some(name) = arguments(parser, "filter-name").get(index) {
+            filter_lines.push((
+                name.clone(),
+                described(expression, tool_arguments.invert_filter_expression),
+            ));
+        }
+    }
+    // `possiblyInvertFilterExpression` reads `invertFilterExpression` and nothing else, and BOTH
+    // loops call it: a genotype filter's DESCRIPTION is inverted by the site flag even though its
+    // decision is inverted by the genotype one. Measured on this tool's array.
+    for (index, expression) in arguments(parser, "genotype-filter-expression")
+        .iter()
+        .enumerate()
+    {
+        if let Some(name) = arguments(parser, "genotype-filter-name").get(index) {
+            filter_lines.push((
+                name.clone(),
+                described(expression, tool_arguments.invert_filter_expression),
+            ));
+        }
+    }
+    if mask_path.is_some() {
+        let description = argument(parser, "mask-description").unwrap_or_else(|| {
+            if tool_arguments.filter_records_not_in_mask {
+                "Doesn't overlap a user-input mask".to_string()
+            } else {
+                "Overlaps a user-input mask".to_string()
+            }
+        });
+        filter_lines.push((tool_arguments.mask_name.clone(), description));
+    }
+    // `VCFStandardHeaderLines.getFormatLine(FT)` when any genotype expression was given, the
+    // chromosome counts when filtered genotypes become no-calls, and the allele-specific status
+    // line when that mode is on. All three are the ENGINE's lines rather than the tool's filters.
+    let mut compound: Vec<(
+        &str,
+        &str,
+        htsjdk_vcf::header::Cardinality,
+        htsjdk_vcf::header::LineType,
+        &str,
+    )> = Vec::new();
+    if !arguments(parser, "genotype-filter-expression").is_empty() {
+        compound.push((
+            "FORMAT",
+            "FT",
+            htsjdk_vcf::header::Cardinality::Unbounded,
+            htsjdk_vcf::header::LineType::String,
+            "Genotype-level filter",
+        ));
+    }
+    if tool_arguments.set_filtered_genotypes_to_no_call {
+        compound.push((
+            "INFO",
+            "AC",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::Integer,
+            "Allele count in genotypes, for each ALT allele, in the same order as listed",
+        ));
+        compound.push((
+            "INFO",
+            "AF",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::Float,
+            "Allele Frequency, for each ALT allele, in the same order as listed",
+        ));
+        compound.push((
+            "INFO",
+            "AN",
+            htsjdk_vcf::header::Cardinality::Fixed(1),
+            htsjdk_vcf::header::LineType::Integer,
+            "Total number of alleles in called genotypes",
+        ));
+    }
+    if flag(parser, "apply-allele-specific-filters") {
+        compound.push((
+            "INFO",
+            "AS_FilterStatus",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::String,
+            "Filter status for each allele, as assessed by ApplyVQSR. Note that the VCF filter \
+             field will reflect the most lenient/sensitive status across all alleles.",
+        ));
+    }
+    // The header is a `HashSet` of LINES: an identical line collapses and a line with the same ID
+    // and a different description does NOT, so a file already declaring `AF` ends up with two
+    // `##INFO=<ID=AF,...>` lines. Measured on a row of this tool's array.
+    for (kind, id, number, line_type, description) in compound {
+        let declared = file.header.lines.iter().any(|line| {
+            matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id: found, description: text, .. }
+                if key == kind && found == id && text == description)
+        });
+        if !declared {
+            file.header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Compound {
+                    key: kind.to_string(),
+                    id: id.to_string(),
+                    number,
+                    line_type,
+                    description: description.to_string(),
+                    extra: Vec::new(),
+                });
+        }
+    }
+
+    for (name, description) in filter_lines {
+        let declared = file.header.lines.iter().any(
+            |line| matches!(line, htsjdk_vcf::header::HeaderLine::Filter { id, .. } if id == &name),
+        );
+        if !declared {
+            file.header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Filter {
+                    id: name,
+                    description,
+                });
+        }
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut file.header, &mut written);
+    let rendered =
+        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
+/// A record as the filtering reads it: the INFO map, the genotype fields and the FILTER column.
+fn filtration_record(
+    record: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::variant_filtration::Record {
+    use gatk_tools::variant_filtration as filtration;
+    // `VariantJEXLContext`'s fixed names come FIRST and the INFO attributes after them, because an
+    // expression says `QUAL > 50` and no INFO field is called QUAL. A context of attributes alone
+    // refuses the expression as an unknown variable, which reads as "the filter did not match":
+    // measured on rows of this tool's array, where the reference applied the site filter and the
+    // port applied only the mask.
+    let mut info: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    info.insert("CHROM".to_string(), record.contig.clone());
+    info.insert("POS".to_string(), record.start.to_string());
+    info.insert(
+        "QUAL".to_string(),
+        gatk_engine::tsv_table::java_double_to_string(-10.0 * record.log10_p_error),
+    );
+    info.insert("N_ALLELES".to_string(), record.alleles.len().to_string());
+    let filtered = record
+        .filters
+        .as_ref()
+        .is_some_and(|filters| !filters.is_empty());
+    info.insert(
+        "FILTER".to_string(),
+        if filtered { "1" } else { "0" }.to_string(),
+    );
+    for (key, value) in &record.attributes {
+        if let Some(text) = value.format() {
+            info.insert(key.clone(), text);
+        }
+    }
+    for filter in record.filters.iter().flatten() {
+        info.entry(filter.clone())
+            .or_insert_with(|| "1".to_string());
+    }
+    let genotypes = record
+        .genotypes
+        .iter()
+        .map(|genotype| filtration::GenotypeFields {
+            fields: genotype
+                .extended
+                .iter()
+                .filter_map(|(key, value)| value.format().map(|text| (key.clone(), text)))
+                .collect(),
+            filters: genotype
+                .filters
+                .as_ref()
+                .filter(|text| *text != "PASS" && *text != ".")
+                .map(|text| text.split(';').map(str::to_string).collect())
+                .unwrap_or_default(),
+        })
+        .collect();
+    filtration::Record {
+        contig: record.contig.clone(),
+        start: record.start as i32,
+        stop: record.stop as i32,
+        is_snp: gatk_tools::remove_nearby_indels::variant_type(record)
+            == gatk_tools::remove_nearby_indels::VariantType::Snp,
+        filters: record.filters.clone(),
+        info,
+        genotypes,
+    }
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's

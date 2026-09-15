@@ -299,6 +299,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountFalsePositives" => Some(run_count_false_positives),
         "EvaluateInfoFieldConcordance" => Some(run_evaluate_info_field_concordance),
         "CallCopyRatioSegments" => Some(run_call_copy_ratio_segments),
+        "VariantFiltration" => Some(run_variant_filtration),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -474,6 +475,10 @@ fn run_evaluate_info_field_concordance(args: &[String]) -> Result<Option<String>
 
 fn run_call_copy_ratio_segments(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::call_copy_ratio_segments(&parsed("CallCopyRatioSegments", args)?)
+}
+
+fn run_variant_filtration(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_filtration(&parsed("VariantFiltration", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
