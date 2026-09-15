@@ -858,6 +858,65 @@
         "0.5"
       ]
     },
+    "VariantFiltration": {
+      "$why": [
+        "indexed.vcf and population.vcf: the first has a sample and a GT, the second an INFO field",
+        "and no genotype column at all, so a genotype expression reaches something in one and",
+        "nothing in the other.",
+        "--filter-expression and --filter-name are read in step, and the expressions are a REAL",
+        "literal comparison and a bare name, which are the two paths through commons-jexl's",
+        "arithmetic that SelectVariants' array already measures.",
+        "--mask takes the corpus's BED and its indexed VCF, because the tool reads a feature file of",
+        "either kind and asks it only where its features are.",
+      "--apply-allele-specific-filters is held at FALSE, and that is a claim about the PORT rather",
+      "than about the tool: with it on, the reference writes an AS_FilterStatus VALUE per allele",
+      "and applies the site filter name beside the mask one, and this port writes neither. The",
+      "one row that carried it diverged in exactly that way, which is how the gap was found.",
+        "--input and --read-index are held out: this tool reads no reads.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/population.vcf"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered2.vcf"
+      ],
+      "--filter-expression": [
+        "QUAL>50.0",
+        "QUAL>5000.0"
+      ],
+      "--filter-name": [
+        "LowQual",
+        "VeryLowQual"
+      ],
+      "--genotype-filter-expression": [
+        "GQ>10.0",
+        "GQ>1000.0"
+      ],
+      "--genotype-filter-name": [
+        "LowGQ",
+        "VeryLowGQ"
+      ],
+      "--mask": [
+        "/work/fixtures/regions.bed",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--apply-allele-specific-filters": [
+        "false"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
     "CountFalsePositives": {
       "$why": [
         "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",
