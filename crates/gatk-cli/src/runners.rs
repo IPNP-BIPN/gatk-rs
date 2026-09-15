@@ -2949,6 +2949,65 @@ pub fn annotate_vcf_with_bam_depth(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `CountFalsePositives.doWork`: two counters, a denominator and a six-column table.
+///
+/// The first tool here whose answer depends on the SIZE of the interval argument rather than on
+/// which records it selects: the denominator is the merged intervals' bases, so two overlapping
+/// `-L` arguments contribute their union once. `requiresIntervals()` is true, so a run without
+/// `-L` is refused by the parser and never reaches this.
+///
+/// The counting is the port's, and the `snp` column is not what its name says: `isIndel()` is
+/// `getType() == INDEL` and nothing looser, so an MNP, a symbolic allele and a record with no
+/// alternate all land in the other bucket.
+pub fn count_false_positives(parser: &Parser) -> Outcome {
+    use gatk_tools::count_false_positives as counting;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CountFalsePositives")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let resolved = intervals.unwrap_or_default();
+    let selected: Vec<htsjdk_vcf::variant::VariantContext> = file
+        .records
+        .iter()
+        .filter(|record| {
+            resolved.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            })
+        })
+        .cloned()
+        .collect();
+
+    let counts = counting::count(&selected);
+    let territory = counting::target_territory(&resolved);
+    let id = counting::id_from_path(&input);
+    write_file(&output, counting::table(&id, counts, territory).as_bytes())?;
+    Ok(None)
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's

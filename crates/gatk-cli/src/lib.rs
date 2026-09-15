@@ -296,6 +296,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         }
         "CalculateMixingFractions" => Some(run_calculate_mixing_fractions),
         "AnnotateVcfWithBamDepth" => Some(run_annotate_vcf_with_bam_depth),
+        "CountFalsePositives" => Some(run_count_false_positives),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -459,6 +460,10 @@ fn run_calculate_mixing_fractions(args: &[String]) -> Result<Option<String>, Thr
 
 fn run_annotate_vcf_with_bam_depth(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::annotate_vcf_with_bam_depth(&parsed("AnnotateVcfWithBamDepth", args)?)
+}
+
+fn run_count_false_positives(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_false_positives(&parsed("CountFalsePositives", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
