@@ -175,7 +175,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | t=2, 21/21 rows (100%) |
 | `FilterAlignmentArtifacts` | variant-transform | oracle-backed | filter-alignment-artifacts | 1 | not measured |
 | `FilterFuncotations` | variant-walker | oracle-backed | filter-funcotations | 1 | not measured |
-| `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | not measured |
+| `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | t=2, 11/11 rows (100%) |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | not measured |
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | not measured |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) |
