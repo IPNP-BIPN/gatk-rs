@@ -513,6 +513,15 @@
       "matched": 11,
       "t": 2,
       "share": 1.0
+    },
+    "GetNormalArtifactData": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 3,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
