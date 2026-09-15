@@ -318,6 +318,15 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.ValidateVariants());
         declarations("LeftAlignAndTrimVariants",
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.LeftAlignAndTrimVariants());
+        // A gatherer and a comparator, and neither is an ordinary walker. `GatherBQSRReports`
+        // merges the recalibration tables a scattered run wrote, which makes it the third CHAIN
+        // declared here: its input is what `BaseRecalibrator` writes. `Concordance` is the first
+        // `AbstractConcordanceWalker` declared here, and it drives TWO variant files at once: the
+        // truth and the evaluation, matched variant by variant.
+        declarations("GatherBQSRReports",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.GatherBQSRReports());
+        declarations("Concordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.Concordance());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
