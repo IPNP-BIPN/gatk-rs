@@ -504,6 +504,15 @@
       "matched": 19,
       "t": 2,
       "share": 1.0
+    },
+    "FilterIntervals": {
+      "rows": 11,
+      "accepted": 6,
+      "rejected": 5,
+      "distinct_outputs": 3,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
