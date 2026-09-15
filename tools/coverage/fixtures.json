@@ -917,6 +917,42 @@
         "false"
       ]
     },
+    "CollectAllelicCounts": {
+      "$why": [
+        "The read walkers' corpus, and the tool's own three knobs beside it. --minimum-base-quality",
+        "is the COLLECTOR's threshold rather than a read filter, so a base below it is dropped from",
+        "the counts while its read stays in the pileup: the two values are the default and one high",
+        "enough to empty every count.",
+        "--max-depth-per-sample is held at zero for the reason CheckPileup holds it: this port's",
+        "locus iterator has no downsampler, and a positive value is refused rather than answered",
+        "(gatk-rs#1102).",
+        "--intervals carries the window the reads are in and one they are not, which is the",
+        "difference between a table of rows and a table of none."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/allelic.tsv",
+        "/work/out/allelic2.tsv"
+      ],
+      "--minimum-base-quality": [
+        "20",
+        "60"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ]
+    },
     "CountFalsePositives": {
       "$why": [
         "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",
