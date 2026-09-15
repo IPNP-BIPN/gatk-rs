@@ -280,6 +280,16 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithBamDepth());
         declarations("CountFalsePositives",
                 new org.broadinstitute.hellbender.tools.walkers.validation.CountFalsePositives());
+        // Two tools whose answer is a TABLE built from a traversal rather than a transformed file.
+        // `EvaluateInfoFieldConcordance` reads one INFO key out of each of TWO VCFs, which makes it
+        // the first tool declared here with a second variant input beside the driving one, and
+        // `CallCopyRatioSegments` is the first copy-number tool: it reads segments, computes a
+        // length-weighted mean and deviation over the copy-neutral ones TWICE, and calls each
+        // segment against the second pair.
+        declarations("EvaluateInfoFieldConcordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.EvaluateInfoFieldConcordance());
+        declarations("CallCopyRatioSegments",
+                new org.broadinstitute.hellbender.tools.copynumber.CallCopyRatioSegments());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
