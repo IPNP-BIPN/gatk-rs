@@ -275,6 +275,15 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.bqsr.GatherBQSRReports());
         declarations("Concordance",
                 new org.broadinstitute.hellbender.tools.walkers.validation.Concordance());
+        // A coverage walker and a genotype refiner. `DepthOfCoverage` is the first declared tool
+        // that writes a DIRECTORY of tables rather than one file, and it partitions its counts by
+        // sample, read group and library at once. `CalculateGenotypePosteriors` reads a supporting
+        // callset beside its own and rewrites every genotype's likelihoods, which makes it the
+        // fourth CHAIN declared here: the corpus's population VCF is the support.
+        declarations("DepthOfCoverage",
+                new org.broadinstitute.hellbender.tools.walkers.coverage.DepthOfCoverage());
+        declarations("CalculateGenotypePosteriors",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.CalculateGenotypePosteriors());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
