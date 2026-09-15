@@ -783,6 +783,32 @@
         "false"
       ]
     },
+    "CountFalsePositives": {
+      "$why": [
+        "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",
+        "is how many records the window holds rather than which bucket they fall into. The snp and",
+        "indel split itself is measured by the tool's suite, which has the MNP and the symbolic",
+        "allele this corpus does not carry.",
+        "--intervals is the DENOMINATOR here and not only a filter: the table's rate is the count",
+        "divided by the merged intervals' bases, so two windows of different sizes give two",
+        "different rates over the same records. That is the property no other tool's array has.",
+        "--input and --read-index are held out: this tool reads no reads."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/duo.vcf"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:1-2000"
+      ],
+      "--output": [
+        "/work/out/falsepositives.table",
+        "/work/out/falsepositives2.table"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
     "CalculateMixingFractions": {
       "$why": [
         "duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between the",
