@@ -5429,6 +5429,368 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `DenoiseReadCounts.doWork`, in the branch with no panel: the counts standardised.
+///
+/// The next link of the copy-number chain, and the shortest: read the counts `CollectReadCounts`
+/// wrote, take them to fractional coverage, divide by the sample median, take the log, and subtract
+/// the median of THAT. Two files come out and they are the same file, because a run with no panel
+/// has nothing to denoise with: `writeResult` is handed the standardised values twice.
+///
+/// The panel itself is HDF5 and the GC correction reads the annotated intervals' GC column; neither
+/// is written here, so both arguments are refused rather than ignored.
+pub fn denoise_read_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::denoise_read_counts as denoise;
+
+    if argument(parser, "count-panel-of-normals").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--count-panel-of-normals is an HDF5 panel this port does not read yet. This message \
+             is the port's own and not GATK's.",
+        ));
+    }
+    if argument(parser, "annotated-intervals").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--annotated-intervals turns on the GC-bias correction, which this port does not \
+             carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let standardized = argument(parser, "standardized-copy-ratios").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument standardized-copy-ratios was missing: Argument 'standardized-copy-ratios' \
+             is required",
+        )
+    })?;
+    let denoised = argument(parser, "denoised-copy-ratios").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument denoised-copy-ratios was missing: Argument 'denoised-copy-ratios' is required",
+        )
+    })?;
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+
+    can_read_file(&input)?;
+    let text = std::fs::read_to_string(&input)
+        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    // The `@SQ` block is the metadata, the `@RG`'s `SM` the sample, and the rows the counts.
+    let header = htsjdk_bam::reader::parse_header_text(
+        &text
+            .lines()
+            .take_while(|line| line.starts_with('@'))
+            .map(|line| format!("{line}\n"))
+            .collect::<String>(),
+    );
+    let sequences: Vec<(String, i32)> = header
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    let sample = header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+
+    let mut intervals: Vec<(String, i32, i32)> = Vec::new();
+    let mut counts: Vec<f64> = Vec::new();
+    for line in text
+        .lines()
+        .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+        .skip(1)
+    {
+        let columns: Vec<&str> = line.split('\t').collect();
+        if columns.len() < 4 {
+            continue;
+        }
+        intervals.push((
+            columns[0].to_string(),
+            columns[1].parse().unwrap_or_default(),
+            columns[2].parse().unwrap_or_default(),
+        ));
+        counts.push(columns[3].parse().unwrap_or(f64::NAN));
+    }
+
+    let values = denoise::standardize(&counts).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message().to_string()),
+    })?;
+    let table = denoise::write(&sequences, &sample, &intervals, &values);
+    // The same bytes twice: with no panel the denoised result IS the standardised one.
+    write_file(&standardized, table.as_bytes())?;
+    write_file(&denoised, table.as_bytes())?;
+    Ok(None)
+}
+
+/// `ValidateBasicSomaticShortMutations.apply`: a discovery call asked of a second pair of BAMs.
+///
+/// The second tool here that drives TWO samples of reads at once, and unlike `GetNormalArtifactData`
+/// it names them: `--val-case-sample-name` and `--val-control-sample-name` pick the pileups out of
+/// whatever `--input` holds, and `--discovery-sample-name` picks the genotype out of the VCF.
+///
+/// Three files can come out and each is optional but the first: the validation table, the annotated
+/// VCF and the summary. What decides a judgment is
+/// [`gatk_tools::validate_basic_somatic_short_mutations`], where a golden measures it.
+pub fn validate_basic_somatic_short_mutations(parser: &Parser) -> Outcome {
+    use gatk_tools::validate_basic_somatic_short_mutations as validate;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "ValidateBasicSomaticShortMutations")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let options = validate::Arguments {
+        discovery_sample: argument(parser, "discovery-sample-name").unwrap_or_default(),
+        validation_case_name: argument(parser, "val-case-sample-name").unwrap_or_default(),
+        validation_control_name: argument(parser, "val-control-sample-name").unwrap_or_default(),
+        min_power: scalar(parser, "min-power")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(validate::DEFAULT_MIN_POWER),
+        max_validation_normal_count: number_or(
+            parser,
+            "max-validation-normal-count",
+            validate::DEFAULT_MAX_VALIDATION_NORMAL_COUNT,
+        ),
+        min_bq_cutoff: number_or(
+            parser,
+            "min-base-quality-cutoff",
+            validate::DEFAULT_MIN_BQ_CUTOFF,
+        ),
+    };
+
+    // The reads of every `--input`, kept with the header they came from: the sample a read belongs
+    // to is its read group's, and the two names above pick which pileup a read lands in.
+    let resolved = resolve_read_filters(parser, "ValidateBasicSomaticShortMutations")?;
+    let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in arguments(parser, "input") {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let sample = gatk_engine::read_pileup::sample_name(&read, &header).unwrap_or_default();
+            reads.push((sample, read));
+        }
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+
+    let mut table: Vec<gatk_engine::basic_somatic_short_mutation_validator::BasicValidationResult> =
+        Vec::new();
+    let mut summary = gatk_tools::concordance::Summary::default();
+    let mut annotated: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let record = &file.records[located.index];
+        let Some(genotype) = record
+            .genotypes
+            .iter()
+            .find(|genotype| genotype.sample_name == options.discovery_sample)
+        else {
+            continue;
+        };
+        let allele =
+            |allele: &htsjdk_vcf::allele::Allele| gatk_engine::variant_context_utils::Allele {
+                bases: allele.display_string().into_bytes(),
+                is_reference: allele.is_reference(),
+            };
+        let validation_genotype =
+            gatk_engine::basic_somatic_short_mutation_validator::ValidationGenotype {
+                alleles: genotype.alleles.iter().map(allele).collect(),
+                ad: genotype.ad.clone(),
+                filters: genotype.filters.clone(),
+            };
+        // The pileup of one named sample at the record's START, which is the locus the validator
+        // counts at.
+        let pileup_of = |wanted: &str| -> Option<gatk_engine::read_pileup::ReadPileup<'_>> {
+            let elements: Vec<gatk_engine::pileup::PileupElement> = reads
+                .iter()
+                .filter(|(sample, _)| sample == wanted)
+                .filter_map(|(_, read)| {
+                    let offset = record.start as i32 - read.alignment_start;
+                    gatk_engine::pileup::PileupElement::for_read_and_offset(read, offset)
+                })
+                .collect();
+            if elements.is_empty() {
+                None
+            } else {
+                Some(gatk_engine::read_pileup::ReadPileup::new(
+                    &record.contig,
+                    record.start as i32,
+                    elements,
+                ))
+            }
+        };
+        let case = pileup_of(&options.validation_case_name);
+        let control = pileup_of(&options.validation_control_name);
+
+        let applied = validate::apply(
+            &record.contig,
+            record.start as i32,
+            record.stop as i32,
+            &allele(&record.alleles[0]),
+            &record.alleles[1..].iter().map(allele).collect::<Vec<_>>(),
+            &record.filters.clone().unwrap_or_default(),
+            &validation_genotype,
+            case.as_ref(),
+            control.as_ref(),
+            &options,
+        )
+        .map_err(|error| Thrown {
+            failure: match error {
+                validate::ToolError::NullResult => Failure::Other,
+                _ => Failure::User,
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+        let Some(applied) = applied else {
+            continue;
+        };
+        if let Some(result) = &applied.result {
+            table.push(result.clone());
+        }
+        validate::count_towards_summary(
+            &mut summary,
+            &applied,
+            gatk_tools::remove_nearby_indels::variant_type(record)
+                == gatk_tools::remove_nearby_indels::VariantType::Snp,
+        );
+        // The annotated record is the input's with the judgment in INFO; the genotypes travel with
+        // it, because the writer's header carries the input's samples.
+        let mut copy = record.clone();
+        copy.attributes.retain(|(key, _)| {
+            key != validate::JUDGMENT_KEY
+                && key != validate::POWER_KEY
+                && key != validate::VALIDATION_AD_KEY
+        });
+        copy.attributes.push((
+            validate::JUDGMENT_KEY.to_string(),
+            htsjdk_vcf::variant::Value::Str(applied.judgment.name().to_string()),
+        ));
+        if let (Some(power), Some((reference_count, alternate_count))) =
+            (applied.power, applied.validation_ad)
+        {
+            // `VCFEncoder`'s own rendering, which is three decimals for a double in this range:
+            // the port wrote the full `0.41258741258741227` where the reference wrote `0.413`.
+            copy.attributes.push((
+                validate::POWER_KEY.to_string(),
+                htsjdk_vcf::variant::Value::Str(htsjdk_vcf::variant::format_vcf_double(power)),
+            ));
+            copy.attributes.push((
+                validate::VALIDATION_AD_KEY.to_string(),
+                htsjdk_vcf::variant::Value::Str(format!("{reference_count},{alternate_count}")),
+            ));
+        }
+        annotated.push(copy);
+    }
+
+    write_file(
+        &output,
+        gatk_engine::basic_somatic_short_mutation_validator::write_table(&table).as_bytes(),
+    )?;
+    if let Some(path) = argument(parser, "summary") {
+        write_file(&path, summary.table().as_bytes())?;
+    }
+    if let Some(path) = argument(parser, "annotated-vcf") {
+        // `new VCFHeader(headerLines, inputHeader.getGenotypeSamples())`: the input's lines, the
+        // three this tool declares, the tool's default lines, and the input's OWN samples, so the
+        // annotated file keeps its genotype columns.
+        let mut header = file.header.clone();
+        for (id, number, line_type, description) in [
+            (
+                validate::JUDGMENT_KEY,
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::String,
+                "Validation judgment: validated, unvalidated, or skipped.",
+            ),
+            (
+                validate::POWER_KEY,
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::Float,
+                "Power to validate variant in validation bam.",
+            ),
+            (
+                validate::VALIDATION_AD_KEY,
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Integer,
+                "Ref and alt allele count in validation bam.",
+            ),
+        ] {
+            header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            });
+        }
+        if flag(parser, "add-output-vcf-command-line") {
+            header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                    key: "source".to_string(),
+                    value: "ValidateBasicSomaticShortMutations".to_string(),
+                });
+            if let Some(command_line) =
+                command_line_header_line(parser, "ValidateBasicSomaticShortMutations")
+            {
+                header.lines.push(command_line);
+            }
+        }
+        // `--sites-only-vcf-output` empties the sample set on the header and the genotypes on the
+        // records, the same way it does on every other writer here.
+        let mut records = annotated.clone();
+        if flag(parser, "sites-only-vcf-output") {
+            header.samples.clear();
+            for record in &mut records {
+                record.genotypes.clear();
+            }
+        }
+        let text = htsjdk_vcf::vcf_file::write_vcf(&header, &records).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+        write_variant_output(parser, &path, &text)?;
+    }
+    Ok(None)
+}
+
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
 fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
     use gatk_tools::remove_nearby_indels::VariantType;

@@ -309,6 +309,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "Concordance" => Some(run_concordance),
         "DepthOfCoverage" => Some(run_depth_of_coverage),
         "CalculateGenotypePosteriors" => Some(run_calculate_genotype_posteriors),
+        "DenoiseReadCounts" => Some(run_denoise_read_counts),
+        "ValidateBasicSomaticShortMutations" => Some(run_validate_basic_somatic_short_mutations),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -524,6 +526,17 @@ fn run_depth_of_coverage(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_calculate_genotype_posteriors(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::calculate_genotype_posteriors(&parsed("CalculateGenotypePosteriors", args)?)
+}
+
+fn run_denoise_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::denoise_read_counts(&parsed("DenoiseReadCounts", args)?)
+}
+
+fn run_validate_basic_somatic_short_mutations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::validate_basic_somatic_short_mutations(&parsed(
+        "ValidateBasicSomaticShortMutations",
+        args,
+    )?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
