@@ -298,6 +298,15 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.copynumber.DenoiseReadCounts());
         declarations("ValidateBasicSomaticShortMutations",
                 new org.broadinstitute.hellbender.tools.walkers.validation.basicshortmutpileup.ValidateBasicSomaticShortMutations());
+        // Two SV-adjacent collectors, and both write a FORMAT this table has not seen. `PrintReadCounts`
+        // rewrites a counts file into the SV pipeline's own shape, and `CollectSVEvidence` walks a
+        // BAM for the paired-end, split-read and depth evidence that pipeline consumes. Each takes
+        // a `--sample-name` of its own, which is the first argument here whose value has to agree
+        // with the reads rather than with a file.
+        declarations("PrintReadCounts",
+                new org.broadinstitute.hellbender.tools.sv.PrintReadCounts());
+        declarations("CollectSVEvidence",
+                new org.broadinstitute.hellbender.tools.walkers.sv.CollectSVEvidence());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
