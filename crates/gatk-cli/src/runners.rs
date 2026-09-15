@@ -2835,6 +2835,120 @@ pub fn annotate_vcf_with_expected_allele_fraction(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `AnnotateVcfWithBamDepth.apply`: one Integer INFO field per record, counted off the reads.
+///
+/// The sibling of [`annotate_vcf_with_expected_allele_fraction`], and the difference between them
+/// is two statements in the other order: this tool adds its default header lines to the set BEFORE
+/// the header is built from it, so `##source=` and `##GATKCommandLine` reach the file where the
+/// other tool's do not.
+///
+/// The count is the port's, and CONTAINMENT is the condition: a read counts when it holds the
+/// record's whole span, is not a duplicate, is mapped, passes vendor quality and is longer than
+/// one base.
+pub fn annotate_vcf_with_bam_depth(parser: &Parser) -> Outcome {
+    use gatk_tools::annotate_vcf_with_bam_depth as depth;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "AnnotateVcfWithBamDepth")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let resolved = resolve_read_filters(parser, "AnnotateVcfWithBamDepth")?;
+    let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in arguments(parser, "input") {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let sequences = source.header().sequences.clone();
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let contig = sequences
+                .get(read.reference_index as usize)
+                .map(|sequence| sequence.name.clone())
+                .unwrap_or_default();
+            reads.push((contig, read));
+        }
+    }
+
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for record in &file.records {
+        if let Some(spans) = spans {
+            let inside = spans.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            });
+            if !inside {
+                continue;
+            }
+        }
+        let at_site: Vec<depth::Read> = reads
+            .iter()
+            .map(|(contig, read)| depth::Read {
+                contig,
+                start: read.alignment_start,
+                // `getEnd()`: the start plus the cigar's reference length, less one.
+                end: read.alignment_start + read.cigar.reference_length() as i32 - 1,
+                flags: read.flags,
+            })
+            .collect();
+        written.push(depth::annotate(record, depth::bam_depth(&at_site, record)));
+    }
+
+    let declares = file.header.lines.iter().any(|line| {
+        matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id, .. }
+            if key == "INFO" && id == depth::BAM_DEPTH)
+    });
+    if !declares {
+        file.header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: depth::BAM_DEPTH.to_string(),
+                number: htsjdk_vcf::header::Cardinality::Fixed(1),
+                line_type: htsjdk_vcf::header::LineType::Integer,
+                description: "pooled bam depth".to_string(),
+                extra: Vec::new(),
+            });
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut file.header, &mut written);
+    let rendered =
+        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's

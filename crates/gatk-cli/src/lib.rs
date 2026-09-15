@@ -295,6 +295,7 @@ pub fn runner(name: &str) -> Option<Runner> {
             Some(run_annotate_vcf_with_expected_allele_fraction)
         }
         "CalculateMixingFractions" => Some(run_calculate_mixing_fractions),
+        "AnnotateVcfWithBamDepth" => Some(run_annotate_vcf_with_bam_depth),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -454,6 +455,10 @@ fn run_annotate_vcf_with_expected_allele_fraction(
 
 fn run_calculate_mixing_fractions(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::calculate_mixing_fractions(&parsed("CalculateMixingFractions", args)?)
+}
+
+fn run_annotate_vcf_with_bam_depth(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::annotate_vcf_with_bam_depth(&parsed("AnnotateVcfWithBamDepth", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
