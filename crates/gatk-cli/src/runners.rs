@@ -2587,6 +2587,122 @@ fn fasta_maker_error(error: gatk_tools::fasta_reference_maker::MakerError) -> Th
     }
 }
 
+/// `CalculateMixingFractions.apply`: one bucket per sample, filled at singleton het SNPs.
+///
+/// A variant walker that ALSO opens the reads, which is why its startup is both: the driving
+/// variants decide the traversal and the reads answer at each site. The counting itself is the
+/// port's, including the two things that make this tool's table what it is -- a bucket nothing was
+/// added to has an alt fraction of `0/0`, which is NaN, and the normalizer is the SUM of every
+/// bucket's fraction, so one uncounted sample makes every row NaN; and the rows come out in a
+/// `HashMap`'s iteration order, which is neither the header's nor alphabetical.
+pub fn calculate_mixing_fractions(parser: &Parser) -> Outcome {
+    use gatk_tools::calculate_mixing_fractions as mixing;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CalculateMixingFractions")?;
+    // `-L` is the traversal and the driving variants are queried by interval, so an input with no
+    // index is refused before a record is read. Measured on two rows of this tool's array, where
+    // the reference refused and the port answered with a table of NaN.
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+
+    // The reads, read once. The reference asks a `ReadsContext` at every site, which is the same
+    // set of records for a corpus this size; what it is not is the same WORK, and that difference
+    // is a speed question rather than an answer question.
+    let reads_paths = arguments(parser, "input");
+    // A variant walker's reads go through the READ FILTERS like any walker's, and the tool counts
+    // what survives them. Measured on two rows of this tool's array, where an inverted
+    // `PrimaryLineReadFilter` left the reference with no read to count and every fraction NaN
+    // while the port counted the lot.
+    let resolved = resolve_read_filters(parser, "CalculateMixingFractions")?;
+    // The records with the contig each one is on, because a read is filtered to the variant's
+    // contig by its reference INDEX and the index is the reads header's, not the VCF's.
+    let mut records: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in &reads_paths {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let sequences = source.header().sequences.clone();
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let contig = sequences
+                .get(read.reference_index as usize)
+                .map(|sequence| sequence.name.clone())
+                .unwrap_or_default();
+            records.push((contig, read));
+        }
+    }
+
+    let mut counts: std::collections::HashMap<String, mixing::AltAndTotalReadCounts> =
+        std::collections::HashMap::new();
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    for variant in &file.records {
+        // `-L` bounds the traversal, so a site outside it is never applied and its reads never
+        // counted -- which is one of the ways every row of the table becomes NaN.
+        if let Some(spans) = spans {
+            let inside = spans.iter().any(|interval| {
+                interval.contig == variant.contig
+                    && variant.start as i32 >= interval.start
+                    && variant.start as i32 <= interval.end
+            });
+            if !inside {
+                continue;
+            }
+        }
+        if !mixing::is_biallelic_singleton_het_snp(variant) {
+            continue;
+        }
+        let Some(sample) = mixing::variant_sample(variant) else {
+            continue;
+        };
+        let alternate = variant.alleles.iter().find(|allele| !allele.is_reference());
+        let Some(alt_base) = alternate
+            .map(|allele| allele.base_string())
+            .and_then(|bases| bases.as_bytes().first().copied())
+        else {
+            continue;
+        };
+        let at_site: Vec<htsjdk_bam::record::BamRecord> = records
+            .iter()
+            .filter(|(contig, _)| contig == &variant.contig)
+            .map(|(_, read)| read.clone())
+            .collect();
+        let site = mixing::site_counts(&at_site, variant.start as i32, alt_base);
+        let bucket = counts.entry(sample).or_default();
+        bucket.alt += site.alt;
+        bucket.total += site.total;
+    }
+
+    let rows = mixing::mixing_fractions(&file.header.samples, &counts)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    write_file(&output, mixing::table(&rows).as_bytes())?;
+    Ok(None)
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's
