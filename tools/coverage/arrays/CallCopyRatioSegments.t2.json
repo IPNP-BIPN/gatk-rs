@@ -1,0 +1,264 @@
+{
+  "tool": "CallCopyRatioSegments",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 18,
+  "arguments_in_array": 7,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--input",
+      "type": "File",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/segments.cr.seg",
+      "source": "fixture"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 8,
+  "tuples_total": 84,
+  "tuples_covered": 84,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[0]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[0]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=0.9",
+        "--neutral-segment-copy-ratio-upper-bound=1.1",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=2.0",
+        "--output=/work/out/called.seg",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[1]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[1]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[1]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=-0.1",
+        "--neutral-segment-copy-ratio-upper-bound=1.5",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=0.5",
+        "--output=/work/out/called2.seg",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[1]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[0]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[1]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=0.5",
+        "--neutral-segment-copy-ratio-lower-bound=0.9",
+        "--neutral-segment-copy-ratio-upper-bound=1.5",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=2.0",
+        "--output=/work/out/called2.seg",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[1]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[1]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[0]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=0.5",
+        "--neutral-segment-copy-ratio-lower-bound=-0.1",
+        "--neutral-segment-copy-ratio-upper-bound=1.1",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=0.5",
+        "--output=/work/out/called.seg",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[0]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[1]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=0.9",
+        "--neutral-segment-copy-ratio-upper-bound=1.5",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=0.5",
+        "--output=/work/out/called.seg",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[1]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[0]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=-0.1",
+        "--neutral-segment-copy-ratio-upper-bound=1.1",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=2.0",
+        "--output=/work/out/called.seg",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[0]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[0]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=0.9",
+        "--neutral-segment-copy-ratio-upper-bound=1.1",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=2.0",
+        "--output=/work/out/called2.seg",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--calling-copy-ratio-z-score-threshold": "fixture[0]",
+        "--neutral-segment-copy-ratio-lower-bound": "fixture[0]",
+        "--neutral-segment-copy-ratio-upper-bound": "fixture[0]",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--calling-copy-ratio-z-score-threshold=2.0",
+        "--neutral-segment-copy-ratio-lower-bound=0.9",
+        "--neutral-segment-copy-ratio-upper-bound=1.1",
+        "--outlier-neutral-segment-copy-ratio-z-score-threshold=2.0",
+        "--output=/work/out/called.seg",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    }
+  ]
+}

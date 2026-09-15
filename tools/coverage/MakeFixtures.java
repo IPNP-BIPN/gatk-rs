@@ -94,6 +94,36 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * A copy-ratio segment file, which is what `CallCopyRatioSegments` reads.
+     *
+     * Written by hand rather than produced by `ModelSegments`, which would need read counts and
+     * allelic counts this corpus does not carry. The format is htsjdk's SAM header, a column line
+     * and the rows, and the reference validates all three when it reads the file: a header without
+     * the `@RG` line's sample name, or a column line that is not this one, is refused there rather
+     * than accepted quietly.
+     *
+     * The segments straddle the copy-neutral window on purpose: two sit inside it, one is far
+     * below and one far above, so the calls are `0`, `-` and `+` rather than one letter repeated,
+     * and the length-weighted statistics have something to weigh.
+     */
+    static String copyRatioSegments() {
+        final StringBuilder text = new StringBuilder();
+        text.append("@HD\tVN:1.6\n");
+        text.append("@SQ\tSN:chr1\tLN:100000\n");
+        text.append("@RG\tID:GATKCopyNumber\tSM:sample1\n");
+        text.append("CONTIG\tSTART\tEND\tNUM_POINTS_COPY_RATIO\tMEAN_LOG2_COPY_RATIO\n");
+        final int[][] segments = {{1, 10000, 100}, {10001, 20000, 120}, {20001, 30000, 90},
+                {30001, 40000, 80}, {40001, 50000, 110}};
+        final double[] means = {0.01, -0.02, -1.5, 1.2, 0.03};
+        for (int index = 0; index < segments.length; index++) {
+            text.append("chr1\t").append(segments[index][0]).append('\t')
+                    .append(segments[index][1]).append('\t').append(segments[index][2])
+                    .append('\t').append(means[index]).append('\n');
+        }
+        return text.toString();
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -133,6 +163,31 @@ public class MakeFixtures {
             index++;
         }
         text.append("chr1\t5000\trs5000\tA\tC,G\t100\tPASS\tAF=0.05,0.03\n");
+        return text.toString();
+    }
+
+    /**
+     * `population.vcf` with every allele frequency moved, which is what gives
+     * `EvaluateInfoFieldConcordance` a difference to average.
+     *
+     * A file compared with itself produces a delta of zero at every true positive, so the mean and
+     * the standard deviation are zero whatever the arithmetic does: the first version of that
+     * tool's array had exactly that, and measured the walk rather than the numbers. The shift is
+     * not uniform, because a constant offset would make the standard deviation zero as well.
+     */
+    static String shiftedPopulationVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        final double[] frequencies = {0.01, 0.03, 0.04, 0.2, 0.1, 0.25, 0.02};
+        int index = 0;
+        for (int position = 100; position <= 4300; position += 700) {
+            text.append("chr1\t").append(position).append("\trs").append(position)
+                    .append("\tA\tC\t100\tPASS\tAF=").append(frequencies[index]).append('\n');
+            index++;
+        }
+        text.append("chr1\t5000\trs5000\tA\tC,G\t100\tPASS\tAF=0.07,0.01\n");
         return text.toString();
     }
 
@@ -887,6 +942,8 @@ public class MakeFixtures {
         // refusals on every interval row and never reach a traversal.
         // The two-sample VCF, indexed for the same reason: a variant walker refuses `-L` over an
         // input with no random access.
+        Files.writeString(dir.resolve("segments.cr.seg"), copyRatioSegments(),
+                StandardCharsets.UTF_8);
         final Path duo = dir.resolve("duo.vcf");
         Files.writeString(duo, duoVcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
@@ -977,6 +1034,13 @@ public class MakeFixtures {
         Files.writeString(population, populationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", population.toString()});
+        // The same population VCF with its frequencies moved, indexed like the rest: a feature
+        // input is queried by interval, so an unindexed one is refused before the traversal.
+        final Path shifted = dir.resolve("shifted.vcf");
+        Files.writeString(shifted, shiftedPopulationVcf(), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", shifted.toString()});
+
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
         // other's input, so the second tool is measured on a table the first really writes rather

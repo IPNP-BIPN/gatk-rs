@@ -783,6 +783,81 @@
         "false"
       ]
     },
+    "EvaluateInfoFieldConcordance": {
+      "$why": [
+        "shifted.vcf against population.vcf, and indexed.vcf against itself. shifted.vcf is the",
+        "population VCF with every allele frequency moved, and moved by DIFFERENT amounts: a file",
+        "compared with itself has a delta of zero at every true positive, so the mean and the",
+        "standard deviation are zero whatever the arithmetic does, and a constant offset would",
+        "leave the deviation zero as well. The first measurement was exactly that, two distinct",
+        "outputs over eight accepted rows.",
+        "identity case: every record is a true positive and every difference is zero, which is the",
+        "row that says the walk and the arithmetic agree. The second shares no INFO key, and the",
+        "refusal that produces is the check onTraversalStart makes against the HEADERS.",
+        "--eval-info-key and --truth-info-key carry AF, which population.vcf declares, and a key no",
+        "header declares. A key the header declares and no record carries would be a third case, and",
+        "the tool's own suite has it.",
+        "--input and --read-index are held out: this tool reads no reads."
+      ],
+      "--evaluation": [
+        "/work/fixtures/shifted.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--truth": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--eval-info-key": [
+        "AF",
+        "NOSUCHKEY"
+      ],
+      "--truth-info-key": [
+        "AF",
+        "NOSUCHKEY"
+      ],
+      "--summary": [
+        "/work/out/concordance.table",
+        "/work/out/concordance2.table"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CallCopyRatioSegments": {
+      "$why": [
+        "segments.cr.seg is the corpus's copy-ratio segment file, written by hand because",
+        "ModelSegments would need read counts and allelic counts this corpus does not carry. Its",
+        "five segments straddle the copy-neutral window, so the calls are 0, - and + rather than one",
+        "letter repeated.",
+        "The four bounds and thresholds are what this tool is: the neutral window decides which",
+        "segments the statistics are computed over, and the two z-score thresholds decide the",
+        "outliers and the calls. Each carries its default and a value that moves the answer, and one",
+        "of the lower bounds is NEGATIVE, which is the IllegalArgumentException the caller raises",
+        "before it looks at a segment."
+      ],
+      "--input": [
+        "/work/fixtures/segments.cr.seg"
+      ],
+      "--output": [
+        "/work/out/called.seg",
+        "/work/out/called2.seg"
+      ],
+      "--neutral-segment-copy-ratio-lower-bound": [
+        "0.9",
+        "-0.1"
+      ],
+      "--neutral-segment-copy-ratio-upper-bound": [
+        "1.1",
+        "1.5"
+      ],
+      "--outlier-neutral-segment-copy-ratio-z-score-threshold": [
+        "2.0",
+        "0.5"
+      ],
+      "--calling-copy-ratio-z-score-threshold": [
+        "2.0",
+        "0.5"
+      ]
+    },
     "CountFalsePositives": {
       "$why": [
         "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",
