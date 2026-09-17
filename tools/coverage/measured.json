@@ -576,6 +576,15 @@
       "matched": 23,
       "t": 2,
       "share": 1.0
+    },
+    "FastaAlternateReferenceMaker": {
+      "rows": 21,
+      "accepted": 9,
+      "rejected": 12,
+      "distinct_outputs": 7,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
     }
   }
 }

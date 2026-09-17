@@ -313,6 +313,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ValidateBasicSomaticShortMutations" => Some(run_validate_basic_somatic_short_mutations),
         "PrintReadCounts" => Some(run_print_read_counts),
         "CollectSVEvidence" => Some(run_collect_sv_evidence),
+        "FastaAlternateReferenceMaker" => Some(run_fasta_alternate_reference_maker),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -547,6 +548,10 @@ fn run_validate_basic_somatic_short_mutations(args: &[String]) -> Result<Option<
         "ValidateBasicSomaticShortMutations",
         args,
     )?)
+}
+
+fn run_fasta_alternate_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::fasta_alternate_reference_maker(&parsed("FastaAlternateReferenceMaker", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
