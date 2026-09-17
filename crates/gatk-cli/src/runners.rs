@@ -3671,30 +3671,38 @@ fn filtration_record(
     // refuses the expression as an unknown variable, which reads as "the filter did not match":
     // measured on rows of this tool's array, where the reference applied the site filter and the
     // port applied only the mask.
-    let mut info: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    info.insert("CHROM".to_string(), record.contig.clone());
-    info.insert("POS".to_string(), record.start.to_string());
+    // The values are the OBJECTS the reference's map hands JEXL rather than their text: `POS` is an
+    // `Integer`, `QUAL` a `Double` and `N_ALLELES` an `Integer`, which is what makes `QUAL > 50` an
+    // answer rather than a `NumberFormatException` (#1142). An INFO attribute is the `String` the
+    // codec decoded it to, and `FILTER` is text on both of its branches.
+    use gatk_engine::jexl::Value as JexlValue;
+    let mut info: filtration::Context = filtration::Context::new();
+    info.insert("CHROM".to_string(), JexlValue::Str(record.contig.clone()));
+    info.insert("POS".to_string(), JexlValue::Int(record.start as i32));
     info.insert(
         "QUAL".to_string(),
-        gatk_engine::tsv_table::java_double_to_string(-10.0 * record.log10_p_error),
+        JexlValue::Double(-10.0 * record.log10_p_error),
     );
-    info.insert("N_ALLELES".to_string(), record.alleles.len().to_string());
+    info.insert(
+        "N_ALLELES".to_string(),
+        JexlValue::Int(record.alleles.len() as i32),
+    );
     let filtered = record
         .filters
         .as_ref()
         .is_some_and(|filters| !filters.is_empty());
     info.insert(
         "FILTER".to_string(),
-        if filtered { "1" } else { "0" }.to_string(),
+        JexlValue::Str(if filtered { "1" } else { "0" }.to_string()),
     );
     for (key, value) in &record.attributes {
         if let Some(text) = value.format() {
-            info.insert(key.clone(), text);
+            info.insert(key.clone(), JexlValue::Str(text));
         }
     }
     for filter in record.filters.iter().flatten() {
         info.entry(filter.clone())
-            .or_insert_with(|| "1".to_string());
+            .or_insert_with(|| JexlValue::Str("1".to_string()));
     }
     let genotypes = record
         .genotypes
@@ -3703,7 +3711,11 @@ fn filtration_record(
             fields: genotype
                 .extended
                 .iter()
-                .filter_map(|(key, value)| value.format().map(|text| (key.clone(), text)))
+                .filter_map(|(key, value)| {
+                    value
+                        .format()
+                        .map(|text| (key.clone(), JexlValue::Str(text)))
+                })
                 .collect(),
             filters: genotype
                 .filters
