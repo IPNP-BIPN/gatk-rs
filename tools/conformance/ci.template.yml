@@ -239,6 +239,7 @@ jobs:
             --tool VariantsToTable --tool CompareBaseQualities \
             --tool RemoveNearbyIndels --tool UpdateVCFSequenceDictionary \
             --tool SelectVariants \
+            --tool CheckReferenceCompatibility \
             --tool CalculateMixingFractions \
             --tool AnnotateVcfWithExpectedAlleleFraction \
             --tool AnnotateVcfWithBamDepth \

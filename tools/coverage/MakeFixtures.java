@@ -233,6 +233,47 @@ public class MakeFixtures {
     }
 
     /**
+     * The same BAM, with an `M5` on its one `@SQ` line taken from `reference.fasta`'s own
+     * dictionary.
+     *
+     * `CheckReferenceCompatibility` takes one of two paths depending on a single property of its
+     * input: with an MD5 on EVERY sequence it compares bases through `CompareReferences`' table,
+     * and without one it compares names and lengths alone and says so in every summary. No BAM in
+     * this corpus carries an M5, so without this one the first path is unreachable from a command
+     * line, and adding it to `reads.bam` would change a header that several goldens print.
+     */
+    static void md5Bam(final Path bam, final Path reference) {
+        final SAMFileHeader header = new SAMFileHeader();
+        // The reference's own `.dict`, M5 included, which is what makes this BAM's dictionary
+        // agree with `reference.fasta` base for base rather than by name alone.
+        header.setSequenceDictionary(htsjdk.samtools.reference.ReferenceSequenceFileFactory
+                .getReferenceSequenceFile(reference).getSequenceDictionary());
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
      * A coordinate-sorted BAM whose reads carry `N` in their cigars, which is what
      * `SplitNCigarReads` splits on, and one whose cigar has none.
      *
@@ -1208,6 +1249,10 @@ public class MakeFixtures {
             }
             renamed.startSequence("chrRenamed").appendBases(bases.toString());
         }
+        // The reads again, under `reference.fasta`'s own dictionary: the one input in this corpus
+        // whose `@SQ` line carries an M5, which is the only way a command line reaches
+        // `CheckReferenceCompatibility`'s MD5 path.
+        md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is

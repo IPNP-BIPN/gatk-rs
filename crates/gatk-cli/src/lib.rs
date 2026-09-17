@@ -291,6 +291,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetPileupSummaries" => Some(run_get_pileup_summaries),
         "UnmarkDuplicates" => Some(run_unmark_duplicates),
         "FastaReferenceMaker" => Some(run_fasta_reference_maker),
+        "CheckReferenceCompatibility" => Some(run_check_reference_compatibility),
         "AnnotateVcfWithExpectedAlleleFraction" => {
             Some(run_annotate_vcf_with_expected_allele_fraction)
         }
@@ -557,6 +558,10 @@ fn run_fasta_alternate_reference_maker(args: &[String]) -> Result<Option<String>
 
 fn run_compare_references(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::compare_references(&parsed("CompareReferences", args)?)
+}
+
+fn run_check_reference_compatibility(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::check_reference_compatibility(&parsed("CheckReferenceCompatibility", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
