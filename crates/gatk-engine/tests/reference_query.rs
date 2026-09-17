@@ -3,7 +3,7 @@
 //! The fixture travels in the golden: the FASTA and its `.fai` are written back to a temporary
 //! directory and queried, so the port reads exactly the bytes the reference read.
 //!
-//! What this measures is not the FASTA reader, which is `noodles`, but GATK's transformation of
+//! What this measures is not the FASTA reader, which is `htsjdk-bam`'s own, but GATK's transformation of
 //! what it returns: every query is upper-cased and every IUPAC code becomes `N`. The fixture is
 //! built to make both visible, with a soft-masked line and a line of ambiguity codes.
 

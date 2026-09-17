@@ -39,6 +39,7 @@ use gatk_engine::reference::{ReferenceError, ReferenceFileSource};
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
+use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 use htsjdk_vcf::variant::{Value, VariantContext};
 
@@ -275,7 +276,7 @@ pub fn apply(
         ),
     ];
     // `vcb.noGenotypes()`. The encoder still writes a `./.` column for every sample of the header.
-    variant.genotypes = Vec::new().into();
+    variant.genotypes = GenotypesContext::default();
     Ok(Some(variant))
 }
 

@@ -1,9 +1,14 @@
 # When a dependency is cheaper than a port, and when it is not
 
-`gatk-engine` depends on `noodles-fasta` for indexed FASTA access and on `noodles-bam` for parsing
-the `.bai`. These are the first third-party implementations of a file format in this programme,
-and the rule they establish is worth stating once, because applying it wrongly would quietly
-weaken every claim downstream.
+`gatk-engine` had two third-party readers of a file format: `noodles-fasta` for indexed FASTA
+access and `noodles-bam` for parsing the `.bai`. They were the first in this programme, and the
+rule they established is worth stating once, because applying it wrongly would quietly weaken
+every claim downstream.
+
+Both are gone. The engine now reaches a FASTA and a `.bai` through `htsjdk-bam`, this programme's
+own port, and no third-party implementation of a file format is left in any of the three
+repositories. The rule below still stands; the two applications of it did not survive being
+measured, and that is the more useful half of this document.
 
 ## The rule
 
@@ -11,8 +16,7 @@ weaken every claim downstream.
 
 A `.fai` index is five numbers a line, and seeking to `offset + (position / line_bases) *
 line_width + (position % line_bases)` has one right answer. Two implementations of that either
-agree or one of them is broken, and the conformance suite says which. Porting htsjdk's copy of it a
-second time buys no measurable property.
+agree or one of them is broken, and the conformance suite says which.
 
 What a GATK tool actually sees is a different question, and it is not the file's bytes.
 `CachingIndexedFastaSequenceFile` defaults to `preserveCase = false` and `preserveIUPAC = false`,
@@ -25,20 +29,42 @@ so every query comes back upper-cased with every IUPAC ambiguity code replaced b
 | `ACGTRYKMSWBD` | `ACGTNNNNNNNN` |
 
 Soft-masking is erased and ambiguity codes are flattened. A port that returned what any FASTA
-reader gives, `noodles` included, would differ from the reference at every soft-masked or ambiguous
-position in a genome, and those are not rare: roughly half of the human reference is soft-masked.
+reader gives would differ from the reference at every soft-masked or ambiguous position in a
+genome, and those are not rare: roughly half of the human reference is soft-masked. That half of
+the split was right and has not changed: the transformation is ported here and measured against
+the reference's own answers.
 
-So the dependency provides the plumbing and the transformation on top of it is ported and measured.
-The suite compares the *whole* answer, which is what makes the split safe: if `noodles` and htsjdk
-ever disagree about a line boundary, an offset or an edge, the golden fails and the difference gets
-ported rather than inherited.
+## Why the FASTA half was taken back
+
+The premise that failed is "the bytes are unambiguous". A query is not answered by reading bases
+until the right ones arrive: `getSubsequenceAt` **seeks**. The first base's byte offset is computed
+from the `.fai`'s bases-per-line and bytes-per-line columns, and every line boundary the query
+crosses is a jump over a terminator whose length is the difference between those two columns.
+Nothing ever looks for a newline. A CRLF file is therefore read correctly only because the index
+says the terminator is two bytes, and a `.fai` that disagrees with its own file is read wrongly and
+silently.
+
+That is not a hypothesis. The first version of htsjdk-rs's suite wrote the `.fai` by hand, got the
+CRLF offset one byte wrong, and the oracle answered `chr1:6-7` with a terminator byte among the
+bases, reported as an answer and not as an error. So the file's bytes do not determine the answer;
+the index's arithmetic does, and that arithmetic is htsjdk's. A reader that scans for newlines
+agrees on every well-formed file and disagrees on the rest, which is the shape of divergence this
+programme exists to refuse.
+
+Two of the bounds are htsjdk's own and one of them looks wrong: the malformed-query test is
+`start > stop + 1`, so an **empty** query is legal and answers with no bases, while `start > stop`
+by two is refused. Past the end of a contig is refused by the *index*, so it is the `.fai`'s size
+column that decides and not the file's length.
+
+The measurement lives in htsjdk-rs's `indexed-fasta` suite: sixteen answered queries and three
+refusals over three files, with the `.fai` written by `FastaSequenceIndexCreator` and carried in
+the golden, so the creator's arithmetic is pinned together with the reader's.
 
 ## The second application: the `.bai`
 
-`ReadsDataSource` splits the same way, and the line falls in a place worth naming. The `.bai`
-bytes are parsed by `noodles-bam`: a bin's chunk list is what the format says it is. Everything
-that decides *which records come back* is ported into `crates/gatk-engine/src/reads.rs`, because
-each of those is htsjdk's or GATK's and not the format's:
+`ReadsDataSource` splits the same way, and the line falls in a place worth naming. Everything that
+decides *which records come back* is ported into `crates/gatk-engine/src/reads.rs`, because each of
+those is htsjdk's or GATK's and not the format's:
 
 | ported | why it is not plumbing |
 |---|---|
@@ -56,15 +82,25 @@ interval and be invisible to every query. A generic "does this record overlap th
 would drop them silently, and a caller counting reads over a region would be wrong by however many
 half-mapped pairs the region holds.
 
+The parse underneath them was the part a dependency answered for, and a bin's chunk list really is
+what the format says it is: this half was not taken back on correctness. It was taken back on
+price. `noodles-bam` dragged `noodles-sam` and `rayon` into the build for what was, here, a `.bai`
+parser; `htsjdk_bam::index::read_bai` was already written and already measured, by the
+`textual-index` suite, which parses six `.bai` files and reprints each one through
+`TextualBAMIndexWriter`'s format. Dropping both dependencies removes 43 packages from
+`Cargo.lock`, and the reader that answers is now the one whose write side is compared byte for
+byte.
+
 Records are decompressed by `htsjdk-bgzf` and decoded by `htsjdk-bam`, this programme's own ports,
-rather than by `noodles-bam`'s reader: what a record *is* is htsjdk's decision, and that is the
-"reading is itself a decision" case below.
+because what a record *is* is htsjdk's decision, and that is the "reading is itself a decision"
+case below.
 
 ## Where this does not apply
 
 - **The write path.** Byte-identity lives there: which deflate level, which tag integer width,
   which order. htsjdk-rs ports those, and a dependency would replace a measured property with a
-  hope. `noodles` is not on the write path of any of the three repositories.
+  hope. No third-party format implementation is on the read or the write path of any of the three
+  repositories.
 - **Formats whose reading is itself a decision.** htsjdk's SAM reader refuses `RNAME is not
   specified but flags indicate mapped`; its BAM tag codec picks integer widths from the *value*
   rather than the declared type. A reader that accepts more, or normalises differently, silently
@@ -76,18 +112,16 @@ rather than by `noodles-bam`'s reader: what a record *is* is htsjdk's decision, 
 
 ## Pinning
 
-`noodles-fasta = "=0.61.0"` and `noodles-bam = "=0.92.0"`, exact versions rather than caret ranges.
-A byte-identity claim cannot float its dependencies: a patch release that changed an edge case
-would change the port's answers with nothing in the diff to show for it. The same rule as
-`rev = "..."` for the two sibling repositories.
-
-`noodles-bam` drags `noodles-sam` and `rayon` into the build for what is, here, a `.bai` parser.
-That is a build cost and not a correctness one, and it is the honest place to note that the day
-this crate needs anything else from `noodles-bam` the answer is still no: its record reader is on
-the wrong side of the line above.
+The two that existed were pinned as `noodles-fasta = "=0.66.0"` and `noodles-bam = "=0.94.0"`,
+exact versions rather than caret ranges, and the next one would be too. A byte-identity claim
+cannot float its dependencies: a patch release that changed an edge case would change the port's
+answers with nothing in the diff to show for it. That is the same rule as `rev = "..."` for the two
+sibling repositories, which is how `htsjdk-bam` itself arrives here.
 
 ## Licence
 
-`noodles` is MIT, `gatk-rs` is Apache 2.0, and MIT is compatible with inclusion in an Apache-2.0
-work. `tools/audit/provenance.py` checks ported *symbols*, which a dependency is not; this document
-is the record for the dependency itself.
+`noodles` is MIT and `gatk-rs` is Apache 2.0, which was compatible while it lasted.
+`tools/audit/provenance.py` checks ported *symbols*, which a dependency is not, so a document like
+this one is the only record a dependency leaves. That is a further reason to prefer the port where
+the choice is close: a port is audited by a gate, and a dependency is audited by whoever remembers
+to read the file.

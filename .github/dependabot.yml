@@ -32,16 +32,13 @@ updates:
       timezone: Etc/UTC
     open-pull-requests-limit: 5
     groups:
-      # noodles parses the .fai and the .bai, so a bump of it can move bytes a golden pins. It
-      # gets its own pull request rather than a line inside somebody else's.
-      noodles:
-        patterns:
-          - "noodles-*"
+      # One group, because there is one kind of dependency left here: no crate in this tree
+      # implements a file format. `noodles-*` had a group of its own while it parsed the .fai and
+      # the .bai, where a bump could move bytes a golden pins; the engine reads both through
+      # htsjdk-bam now, and the group went with the dependency.
       cargo:
         patterns:
           - "*"
-        exclude-patterns:
-          - "noodles-*"
         update-types:
           - minor
           - patch
