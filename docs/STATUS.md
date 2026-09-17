@@ -146,7 +146,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | t=2, 19/19 rows (100%) |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | not measured |
 | `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 17/17 rows (100%) |
-| `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | not measured |
+| `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | t=2, 20/20 rows (100%) |
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | not measured |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | not measured |
 | `CompareBaseQualities` | reporting-walker | oracle-backed | compare-base-qualities | 1 | t=2, 11/11 rows (100%) |
@@ -164,7 +164,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CreateHadoopBamSplittingIndex` | unclassified | oracle-backed | splitting-index | 1 | t=2, 11/11 rows (100%) |
 | `CreateReadCountPanelOfNormals` | cnv-segmentation | oracle-backed | create-read-count-panel-of-normals | 1 | not measured |
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
-| `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | not measured |
+| `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) |
 | `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) |
@@ -223,7 +223,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintBGZFBlockInformation` | unclassified | oracle-backed | print-bgzf-block-information | 1 | t=2, 6/6 rows (100%) |
 | `PrintDistantMates` | record-transform | oracle-backed | print-distant-mates | 1 | t=2, 19/19 rows (100%) |
 | `PrintFileDiagnostics` | unclassified | oracle-backed | print-file-diagnostics | 1 | t=2, 6/6 rows (100%) |
-| `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | not measured |
+| `PrintReadCounts` | sv-caller | oracle-backed | print-read-counts | 1 | t=2, 17/17 rows (100%) |
 | `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | not measured |
@@ -250,7 +250,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) |
 | `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | not measured |
-| `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | not measured |
+| `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | t=2, 22/22 rows (100%) |
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | not measured |
