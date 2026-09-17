@@ -359,6 +359,17 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.sv.PrintReadCounts());
         declarations("CollectSVEvidence",
                 new org.broadinstitute.hellbender.tools.walkers.sv.CollectSVEvidence());
+        // Two builders from the PathSeq subsystem, neither of them Spark despite the package they
+        // sit in. `PathSeqBuildKmers` writes the host reference's k-mer set, and it carries an
+        // argument whose legal values are narrower than its declared bounds: `--kmer-size` is 1 to
+        // 31 to the parser and must be ODD to the tool, which a declaration cannot say.
+        // `PathSeqBuildReferenceTaxonomy` declares TWO optional catalogue inputs and requires one
+        // of them, so "At least one of --refseq-catalog or --genbank-catalog must be specified" is
+        // a refusal the parser never raises.
+        declarations("PathSeqBuildKmers",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildKmers());
+        declarations("PathSeqBuildReferenceTaxonomy",
+                new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildReferenceTaxonomy());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
