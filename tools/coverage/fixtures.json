@@ -2630,6 +2630,48 @@
         "/work/fixtures/reads.bai",
         "/work/fixtures/reads2.bai"
       ]
+    },
+    "CompareReferences": {
+      "$why": [
+        "--references-to-compare carries other.fasta, which --reference also carries, and",
+        "renamed.fasta, which is other.fasta's bases under another contig name.",
+        "renamed.fasta exists because the first measurement had distinct_outputs=1: every accepted row",
+        "produced the same table, since reference.fasta and other.fasta share no sequence and the only",
+        "other pairing was a reference with itself. renamed.fasta shares other.fasta's MD5 under",
+        "another name, which is the DIFFER_IN_SEQUENCE_NAMES answer and a second table. It also keeps",
+        "the dictionary its writer produced, M5 included, where other.dict is written by hand for",
+        "--sequence-dictionary and carries none: that is why a USE_DICT row over other.fasta is",
+        "refused and one over renamed.fasta is not.",
+        "Two rows do give both arguments the same path, and what the reference does there is not what",
+        "the array measures: the references are held in a map keyed by path, so one entry survives, no",
+        "pair is generated and the tool reads pair zero of an empty list. Both rows are refused before",
+        "that, by --max-variants-per-shard's range and by an interval the reference does not hold, so",
+        "the IndexOutOfBoundsException is measured by the tool's suite and reproduced by the runner",
+        "rather than covered here.",
+        "--base-comparison is held at NO_BASE_COMPARISON and --base-comparison-output is held out with",
+        "it. FULL_ALIGNMENT shells out to mummer, which the oracle image does not carry, and",
+        "FIND_SNPS_ONLY compares bases into a directory this port does not write yet: a row carrying",
+        "either would measure a refusal of the port's own.",
+        "--input and --read-index are held out. This tool reads no reads, and the shared --input value",
+        "is a VCF whose refusal as a reads source is measured by CountVariants.",
+        "--sequence-dictionary is held out. It is the master dictionary, which the engine validates",
+        "against the reference, and that validation is measured by the tools that traverse."
+      ],
+      "--references-to-compare": [
+        "/work/fixtures/other.fasta",
+        "/work/fixtures/renamed.fasta"
+      ],
+      "--output": [
+        "/work/out/references.table",
+        "/work/out/references2.table"
+      ],
+      "--base-comparison": [
+        "NO_BASE_COMPARISON"
+      ],
+      "--base-comparison-output": [],
+      "--input": [],
+      "--read-index": [],
+      "--sequence-dictionary": []
     }
   },
   "constraints": [

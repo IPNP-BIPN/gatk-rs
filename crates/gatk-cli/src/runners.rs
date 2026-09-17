@@ -6776,6 +6776,206 @@ fn alternate_maker_error(
     }
 }
 
+/// `CompareReferences.traverse`, which is a `GATKTool` that overrides the traversal entirely.
+///
+/// The engine's reference is the FIRST column and `--references-to-compare` the rest, in a
+/// `LinkedHashMap` keyed by path: the same path twice is ONE entry, which is how a reference
+/// compared with itself produces no pair at all and the tool then walks off the empty list.
+/// That `IndexOutOfBoundsException` is the reference's answer and it is reproduced here.
+///
+/// The output is split: the table goes to `--output`, or to stdout when there is none, and the
+/// analysis always goes to stdout behind a line of asterisks.
+pub fn compare_references(parser: &Parser) -> Outcome {
+    use gatk_tools::compare_references as compare;
+
+    let _ = resolve_read_filters(parser, "CompareReferences")?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let others = arguments(parser, "references-to-compare");
+    if others.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument references-to-compare was missing: Argument 'references-to-compare' is required",
+        ));
+    }
+
+    // `GATKTool.onStartup` resolves the intervals against the best available dictionary before any
+    // tool code runs, and this tool then ignores them: `traverse()` is its own. What survives is
+    // the refusal, so an interval on a contig the reference does not carry is refused here exactly
+    // as it is on a tool that traverses.
+    let dictionary = reference_dictionary(parser)?.unwrap_or_else(SamHeader::default);
+    let master = master_dictionary(parser)?;
+    let best = master.unwrap_or(dictionary);
+    let _ = interval_arguments(parser, &best)?;
+
+    // The enums arrive as their constant names, and `scalar` is what reads one: `argument` reads
+    // the `Tagged` and `Str` values a path or a string argument holds, and an enum is neither.
+    let mode = match scalar(parser, "md5-calculation-mode").as_deref() {
+        Some("USE_DICT") => compare::Md5Mode::UseDict,
+        Some("ALWAYS_RECALCULATE") => compare::Md5Mode::AlwaysRecalculate,
+        _ => compare::Md5Mode::RecalculateIfMissing,
+    };
+    let base_comparison =
+        scalar(parser, "base-comparison").unwrap_or_else(|| "NO_BASE_COMPARISON".to_string());
+
+    // `LinkedHashMap.put`: the engine's reference first, then the others, and a path already in
+    // the map keeps its position and adds no column.
+    let mut paths: Vec<String> = vec![reference];
+    for path in others {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+
+    // `onTraversalStart`, in its own order: the directory before the count.
+    if base_comparison != "NO_BASE_COMPARISON" {
+        let directory = argument(parser, "base-comparison-output");
+        match &directory {
+            None => {
+                return Err(could_not_create_output_file(
+                    "null",
+                    &format!(
+                        "Output directory not provided but required in -base-comparison {base_comparison} mode."
+                    ),
+                ))
+            }
+            Some(path) if !std::path::Path::new(path).exists() => {
+                return Err(could_not_create_output_file(
+                    path,
+                    "Output directory non-existent.",
+                ))
+            }
+            Some(_) => {}
+        }
+        if paths.len() != 2 {
+            return Err(bad_input(
+                "Base comparison modes can only be run on 2 references.".to_string(),
+            ));
+        }
+    }
+
+    let references = compare_references_read(&paths, mode)?;
+    let table = compare::build(&references, mode).map_err(compare_table_error)?;
+
+    let rendered = compare::write_table(&table);
+    let mut stdout = String::new();
+    match argument(parser, "output") {
+        Some(path) => write_file(&path, rendered.as_bytes())?,
+        None => stdout.push_str(&rendered),
+    }
+    if flag(parser, "display-sequences-by-name") {
+        stdout.push_str(&compare::write_by_sequence_name(
+            &table,
+            &references,
+            flag(parser, "display-only-differing-sequences"),
+        ));
+    }
+
+    let pairs = compare::compare_all(&table, &references).map_err(compare_table_error)?;
+    stdout.push_str("*********************************************************\n");
+    for pair in &pairs {
+        stdout.push_str(&pair.rendered());
+        stdout.push('\n');
+    }
+    // Everything above is printed as it is produced, so a refusal below it keeps what came before,
+    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool.
+    print!("{stdout}");
+    // `referencePairs.get(0)` is read before the switch on the base-comparison mode, so a run with
+    // one reference dies here having already printed everything above.
+    if pairs.is_empty() {
+        return Err(Thrown::non_user(
+            "java.lang.IndexOutOfBoundsException",
+            "Index 0 out of bounds for length 0",
+        ));
+    }
+    // FULL_ALIGNMENT runs mummer, which no row of this tool's array reaches: the mode's two
+    // non-default constants are held out of the fixtures for that reason.
+    Ok(None)
+}
+
+/// Each reference as the table reads it: the file's NAME as the column, and its `.dict`.
+///
+/// The MD5 is recalculated only where the mode asks for it, which is what keeps `USE_DICT` from
+/// reading a base at all. The recalculation is NOT the tool's own reference query: it is
+/// `ReferenceUtils.calculateMD5`, which opens the FASTA with `preserveCase` and `preserveIUPAC`
+/// both on and then upper-cases each byte, so a soft-masked base counts and an ambiguity code is
+/// not flattened to `N`.
+fn compare_references_read(
+    paths: &[String],
+    mode: gatk_tools::compare_references::Md5Mode,
+) -> Result<Vec<gatk_tools::compare_references::Reference>, Thrown> {
+    use gatk_tools::compare_references as compare;
+
+    let mut references = Vec::new();
+    for path in paths {
+        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let text = std::fs::read_to_string(&dictionary)
+            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        let header = htsjdk_bam::reader::parse_header_text(&text);
+        let column = std::path::Path::new(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+
+        let mut fasta: Option<htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>> = None;
+        let mut sequences = Vec::new();
+        for record in &header.sequences {
+            let md5 = record.attributes.get("M5").map(str::to_string);
+            let recalculate = match mode {
+                compare::Md5Mode::AlwaysRecalculate => true,
+                compare::Md5Mode::RecalculateIfMissing => md5.as_deref().is_none_or(str::is_empty),
+                compare::Md5Mode::UseDict => false,
+            };
+            let calculated = if recalculate {
+                if fasta.is_none() {
+                    fasta = Some(
+                        htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(path))
+                            .map_err(|error| Thrown::user(error.message()))?,
+                    );
+                }
+                let reader = fasta.as_mut().expect("the FASTA opened just above");
+                let bases = reader
+                    .query(&record.name, 1, record.length as i64)
+                    .map_err(|error| Thrown::user(error.message()))?;
+                compare::calculate_md5(&bases)
+            } else {
+                // Never read in this mode, and the reference has not opened the file either.
+                String::new()
+            };
+            sequences.push(compare::Sequence {
+                name: record.name.clone(),
+                length: record.length as i64,
+                md5,
+                calculated_md5: calculated,
+            });
+        }
+        references.push(compare::Reference { column, sequences });
+    }
+    Ok(references)
+}
+
+/// `UserException.CouldNotCreateOutputFile`, whose message names the file first.
+fn could_not_create_output_file(path: &str, reason: &str) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception:
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
+        message: Some(format!("Could not create file {path}. {reason}")),
+    }
+}
+
+/// What the table refused. Its `message()` already carries `UserException$BadInput`'s own
+/// `Bad input: ` prefix, so this does not add a second one.
+fn compare_table_error(error: gatk_tools::compare_references::TableError) -> Thrown {
+    // The class is written out rather than taken from `java_class()`, which borrows the error:
+    // both of that enum's variants are the same exception, and the port says so.
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(error.message()),
+    }
+}
+
 /// `CollectReadCounts.apply`, which counts one read into the interval its START falls in.
 ///
 /// A read walker whose traversal is `CountReads`', and three things around it that are the tool's

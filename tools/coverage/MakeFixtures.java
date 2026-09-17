@@ -1191,6 +1191,23 @@ public class MakeFixtures {
             }
             other.startSequence("chrOther").appendBases(bases.toString());
         }
+        // The same bases as `other.fasta` under a different contig name. `CompareReferences` keys
+        // its table by the sequence's MD5 and not by its name, so this reference and that one land
+        // on ONE row carrying two names, which is the DIFFER_IN_SEQUENCE_NAMES answer. Without it
+        // every accepted row of that tool's array produced the same table: the pair
+        // reference/other has nothing in common, and a reference compared with itself is refused.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter renamed =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("renamed.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 1000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            renamed.startSequence("chrRenamed").appendBases(bases.toString());
+        }
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is
