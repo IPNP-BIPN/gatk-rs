@@ -433,6 +433,15 @@
       "t": 2,
       "share": 1.0
     },
+    "CheckReferenceCompatibility": {
+      "rows": 20,
+      "accepted": 9,
+      "rejected": 11,
+      "distinct_outputs": 3,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
     "CalculateMixingFractions": {
       "rows": 23,
       "accepted": 13,
@@ -577,6 +586,42 @@
       "t": 2,
       "share": 1.0
     },
+    "DenoiseReadCounts": {
+      "rows": 6,
+      "accepted": 6,
+      "rejected": 0,
+      "distinct_outputs": 4,
+      "matched": 6,
+      "t": 2,
+      "share": 1.0
+    },
+    "ValidateBasicSomaticShortMutations": {
+      "rows": 22,
+      "accepted": 19,
+      "rejected": 3,
+      "distinct_outputs": 11,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintReadCounts": {
+      "rows": 17,
+      "accepted": 10,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectSVEvidence": {
+      "rows": 20,
+      "accepted": 11,
+      "rejected": 9,
+      "distinct_outputs": 5,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
     "FastaAlternateReferenceMaker": {
       "rows": 21,
       "accepted": 9,
@@ -590,15 +635,6 @@
       "rows": 20,
       "accepted": 6,
       "rejected": 14,
-      "distinct_outputs": 3,
-      "matched": 20,
-      "t": 2,
-      "share": 1.0
-    },
-    "CheckReferenceCompatibility": {
-      "rows": 20,
-      "accepted": 9,
-      "rejected": 11,
       "distinct_outputs": 3,
       "matched": 20,
       "t": 2,
