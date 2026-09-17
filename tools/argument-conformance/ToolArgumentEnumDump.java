@@ -199,6 +199,114 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.fasta.FastaAlternateReferenceMaker());
         declarations("CompareReferences",
                 new org.broadinstitute.hellbender.tools.reference.CompareReferences());
+        // Two more REFERENCE utilities, and each brings a shape the dump has not carried.
+        // `CheckReferenceCompatibility` takes the reads and a VCF as the things to CHECK a
+        // reference against, so its required argument is not the reference at all, and it refuses
+        // a command line that names both. `ComposeSTRTableFile` is a DRAGstr tool: it writes a
+        // binary table beside a reference and declares the sampling arguments that decide what
+        // goes in it.
+        declarations("CheckReferenceCompatibility",
+                new org.broadinstitute.hellbender.tools.reference.CheckReferenceCompatibility());
+        declarations("ComposeSTRTableFile",
+                new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile());
+        // A CHAIN, which is why the pair is this one: `CalculateMixingFractions` reads a VCF and
+        // the reads and writes a table of one fraction per sample, and
+        // `AnnotateVcfWithExpectedAlleleFraction` reads THAT table beside a VCF and writes the
+        // expected fraction into each record. The second tool's input is the first tool's output,
+        // so the corpus can carry a table the reference itself produced.
+        declarations("CalculateMixingFractions",
+                new org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions());
+        declarations("AnnotateVcfWithExpectedAlleleFraction",
+                new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithExpectedAlleleFraction());
+        // The third and fourth of the validation walkers, and the pair completes a family. Both
+        // read a VCF; `AnnotateVcfWithBamDepth` also reads the reads and writes one Integer INFO
+        // field per record, and `CountFalsePositives` writes a TABLE of counts per variant type
+        // over a target territory that `-L` decides. The first is the sibling whose default tool
+        // header lines DO reach the file, which is what makes the pair with
+        // `AnnotateVcfWithExpectedAlleleFraction` worth having declared together.
+        declarations("AnnotateVcfWithBamDepth",
+                new org.broadinstitute.hellbender.tools.walkers.validation.AnnotateVcfWithBamDepth());
+        declarations("CountFalsePositives",
+                new org.broadinstitute.hellbender.tools.walkers.validation.CountFalsePositives());
+        // Two tools whose answer is a TABLE built from a traversal rather than a transformed file.
+        // `EvaluateInfoFieldConcordance` reads one INFO key out of each of TWO VCFs, which makes it
+        // the first tool declared here with a second variant input beside the driving one, and
+        // `CallCopyRatioSegments` is the first copy-number tool: it reads segments, computes a
+        // length-weighted mean and deviation over the copy-neutral ones TWICE, and calls each
+        // segment against the second pair.
+        declarations("EvaluateInfoFieldConcordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.EvaluateInfoFieldConcordance());
+        declarations("CallCopyRatioSegments",
+                new org.broadinstitute.hellbender.tools.copynumber.CallCopyRatioSegments());
+        // A VCF transformed and a table collected, and both are bigger than anything declared here
+        // so far. `VariantFiltration` has SIXTY-ONE arguments and writes its filters into the
+        // FILTER column and into a genotype's FT; `CollectAllelicCounts` walks loci over a BAM and
+        // counts the reference and the alternate base at each site of an interval list, which is
+        // the first copy-number tool here that reads reads.
+        declarations("VariantFiltration",
+                new org.broadinstitute.hellbender.tools.walkers.filters.VariantFiltration());
+        declarations("CollectAllelicCounts",
+                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCounts());
+        // A filter over intervals and a collector over two BAMs. `FilterIntervals` reads the
+        // annotated intervals `AnnotateIntervals` writes and the counts `CollectReadCounts` writes,
+        // which makes it the second CHAIN declared here; `GetNormalArtifactData` is the first
+        // Mutect tool of any kind, and it reads a tumour and a normal at once.
+        declarations("FilterIntervals",
+                new org.broadinstitute.hellbender.tools.copynumber.FilterIntervals());
+        declarations("GetNormalArtifactData",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData());
+        // A validator and a normaliser, both over a VCF. `ValidateVariants` writes NOTHING: its
+        // whole answer is whether it threw and what it said, and its `--validation-type-to-exclude`
+        // brings the `ValidationType` enum, which nothing declared here points at. Its GVCF mode is
+        // three checks rather than one, the last of which runs at the end of the traversal.
+        // `LeftAlignAndTrimVariants` writes a VCF and is the first declared tool that can SPLIT a
+        // record into several: `--split-multi-allelics` turns one multi-allelic line into one per
+        // alternate, each trimmed on its own.
+        declarations("ValidateVariants",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.ValidateVariants());
+        declarations("LeftAlignAndTrimVariants",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.LeftAlignAndTrimVariants());
+        // A gatherer and a comparator, and neither is an ordinary walker. `GatherBQSRReports`
+        // merges the recalibration tables a scattered run wrote, which makes it the third CHAIN
+        // declared here: its input is what `BaseRecalibrator` writes. `Concordance` is the first
+        // `AbstractConcordanceWalker` declared here, and it drives TWO variant files at once: the
+        // truth and the evaluation, matched variant by variant.
+        declarations("GatherBQSRReports",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.GatherBQSRReports());
+        declarations("Concordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.Concordance());
+        // A coverage walker and a genotype refiner. `DepthOfCoverage` is the first declared tool
+        // that writes a DIRECTORY of tables rather than one file, and it partitions its counts by
+        // sample, read group and library at once. `CalculateGenotypePosteriors` reads a supporting
+        // callset beside its own and rewrites every genotype's likelihoods, which makes it the
+        // fourth CHAIN declared here: the corpus's population VCF is the support.
+        declarations("DepthOfCoverage",
+                new org.broadinstitute.hellbender.tools.walkers.coverage.DepthOfCoverage());
+        declarations("CalculateGenotypePosteriors",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.CalculateGenotypePosteriors());
+        // A denoiser and a validator. `DenoiseReadCounts` is the next link of the copy-number
+        // chain: it reads the counts `CollectReadCounts` writes and standardises them, and its
+        // panel of normals is an HDF5 file the corpus does not carry, so the argument that takes
+        // one is the measurable refusal. `ValidateBasicSomaticShortMutations` checks a callset
+        // against the pileups of a TUMOUR and a NORMAL at once, which makes it the second declared
+        // tool that drives two BAMs.
+        //
+        // `VariantAnnotator` was the first choice for the pair and cannot be declared: it carries
+        // no summary in the usage golden or the inventory, and the declaration generator refuses a
+        // tool it cannot document.
+        declarations("DenoiseReadCounts",
+                new org.broadinstitute.hellbender.tools.copynumber.DenoiseReadCounts());
+        declarations("ValidateBasicSomaticShortMutations",
+                new org.broadinstitute.hellbender.tools.walkers.validation.basicshortmutpileup.ValidateBasicSomaticShortMutations());
+        // Two SV-adjacent collectors, and both write a FORMAT this table has not seen. `PrintReadCounts`
+        // rewrites a counts file into the SV pipeline's own shape, and `CollectSVEvidence` walks a
+        // BAM for the paired-end, split-read and depth evidence that pipeline consumes. Each takes
+        // a `--sample-name` of its own, which is the first argument here whose value has to agree
+        // with the reads rather than with a file.
+        declarations("PrintReadCounts",
+                new org.broadinstitute.hellbender.tools.sv.PrintReadCounts());
+        declarations("CollectSVEvidence",
+                new org.broadinstitute.hellbender.tools.walkers.sv.CollectSVEvidence());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

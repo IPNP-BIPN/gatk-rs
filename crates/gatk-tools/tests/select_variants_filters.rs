@@ -119,7 +119,14 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
                         .map(|ft| vec![("FT".to_string(), ft.clone())])
                         .unwrap_or_default(),
                 });
-                genotype_fields.push(by_key);
+                genotype_fields.push(
+                    by_key
+                        .iter()
+                        .map(|(key, value)| {
+                            (key.clone(), gatk_engine::jexl::Value::Str(value.clone()))
+                        })
+                        .collect(),
+                );
             }
             let mut attributes = Vec::new();
             let mut info = HashMap::new();
@@ -134,7 +141,7 @@ fn input(text: &str) -> (Vec<String>, Vec<(Record, FilterRecord)>) {
                     } else {
                         value.to_string()
                     };
-                    info.insert(key.to_string(), rendered);
+                    info.insert(key.to_string(), gatk_engine::jexl::Value::Str(rendered));
                 }
             }
             let filters = match field[6] {

@@ -433,12 +433,174 @@
       "t": 2,
       "share": 1.0
     },
+    "CalculateMixingFractions": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 4,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnnotateVcfWithExpectedAlleleFraction": {
+      "rows": 23,
+      "accepted": 10,
+      "rejected": 13,
+      "distinct_outputs": 5,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnnotateVcfWithBamDepth": {
+      "rows": 23,
+      "accepted": 12,
+      "rejected": 11,
+      "distinct_outputs": 6,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "CountFalsePositives": {
+      "rows": 24,
+      "accepted": 17,
+      "rejected": 7,
+      "distinct_outputs": 11,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "EvaluateInfoFieldConcordance": {
+      "rows": 21,
+      "accepted": 8,
+      "rejected": 13,
+      "distinct_outputs": 3,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CallCopyRatioSegments": {
+      "rows": 8,
+      "accepted": 5,
+      "rejected": 3,
+      "distinct_outputs": 3,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "VariantFiltration": {
+      "rows": 24,
+      "accepted": 5,
+      "rejected": 19,
+      "distinct_outputs": 5,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectAllelicCounts": {
+      "rows": 19,
+      "accepted": 9,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterIntervals": {
+      "rows": 11,
+      "accepted": 6,
+      "rejected": 5,
+      "distinct_outputs": 3,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "GetNormalArtifactData": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 3,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "ValidateVariants": {
+      "rows": 40,
+      "accepted": 32,
+      "rejected": 8,
+      "distinct_outputs": 1,
+      "matched": 40,
+      "t": 2,
+      "share": 1.0
+    },
+    "LeftAlignAndTrimVariants": {
+      "rows": 22,
+      "accepted": 14,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherBQSRReports": {
+      "rows": 6,
+      "accepted": 6,
+      "rejected": 0,
+      "distinct_outputs": 4,
+      "matched": 6,
+      "t": 2,
+      "share": 1.0
+    },
+    "Concordance": {
+      "rows": 16,
+      "accepted": 12,
+      "rejected": 4,
+      "distinct_outputs": 9,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "DepthOfCoverage": {
+      "rows": 20,
+      "accepted": 6,
+      "rejected": 14,
+      "distinct_outputs": 2,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "CalculateGenotypePosteriors": {
+      "rows": 23,
+      "accepted": 20,
+      "rejected": 3,
+      "distinct_outputs": 11,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
     "FastaAlternateReferenceMaker": {
       "rows": 21,
       "accepted": 9,
       "rejected": 12,
       "distinct_outputs": 7,
       "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "CompareReferences": {
+      "rows": 20,
+      "accepted": 6,
+      "rejected": 14,
+      "distinct_outputs": 3,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "CheckReferenceCompatibility": {
+      "rows": 20,
+      "accepted": 9,
+      "rejected": 11,
+      "distinct_outputs": 3,
+      "matched": 20,
       "t": 2,
       "share": 1.0
     }

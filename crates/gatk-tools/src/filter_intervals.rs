@@ -243,18 +243,13 @@ pub struct Interval {
 
 /// The Picard interval list: a SAM header, then five tab-separated columns per interval.
 ///
-/// The fourth column is the strand, always `+`, and the fifth is the name, always `.`. Neither
-/// carries information here; both are the format's.
-pub fn write(sequences: &[(String, i32)], intervals: &[Interval]) -> String {
-    let mut text = String::from("@HD\tVN:1.6\n");
-    for (name, length) in sequences {
-        text.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
-    }
-    for interval in intervals {
-        text.push_str(&format!(
-            "{}\t{}\t{}\t+\t.\n",
-            interval.contig, interval.start, interval.end
-        ));
-    }
-    text
+/// `PreprocessIntervals` writes the same list from the same struct, and so does this tool: the
+/// dictionary is the input collection's METADATA, copied field for field. A port that rebuilt the
+/// `@SQ` line from a name and a length alone dropped the `M5` the annotated intervals carried,
+/// which is a differing byte in an otherwise identical file.
+pub fn write(
+    sequences: &[crate::preprocess_intervals::Sequence],
+    intervals: &[Interval],
+) -> String {
+    crate::preprocess_intervals::write_list(sequences, intervals)
 }

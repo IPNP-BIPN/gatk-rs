@@ -462,7 +462,11 @@ fn add_annotations(
 /// AN is the called chromosome count, AC the count per alternate and AF each of those over AN,
 /// and all three skip a FILTERED genotype: a genotype carrying FT is not a called one. AC and AF
 /// are removed outright where no alternate is left, which is what an ALT column of `.` means.
-fn calculate_chromosome_counts(variant: &mut Variant) {
+///
+/// Public because it is the ENGINE's and not this tool's: `CalculateGenotypePosteriors` calls it
+/// on every record before the priors are applied, so the counts the posteriors read are the
+/// recomputed ones rather than whatever the file carried.
+pub fn calculate_chromosome_counts(variant: &mut Variant) {
     if variant.genotypes.is_empty() {
         return;
     }
@@ -724,13 +728,14 @@ pub struct FilterRecord {
     pub id: String,
     /// The FILTER column: empty for `.` or `PASS`, the names otherwise.
     pub filters: Vec<String>,
-    /// The INFO fields as an expression reads them, which is the decoded value's `toString`. A
-    /// `Number=A` field decodes to a list, so its value here is `[2]` or `[1, 1]`, and nothing
+    /// The names an expression reads, TYPED as `VariantJEXLContext` hands them over: `POS` is an
+    /// `Integer`, `QUAL` a `Double`, an INFO attribute the `String` htsjdk's codec decoded it to.
+    /// A `Number=A` field decodes to a list, so its value here is `[2]` or `[1, 1]`, and nothing
     /// numeric compares against that: an expression over a per-allele annotation is a refusal
     /// rather than a false, which is what the golden holds.
-    pub info: std::collections::HashMap<String, String>,
+    pub info: gatk_engine::jexl::Context,
     /// Per sample, the fields a genotype expression reads.
-    pub genotype_fields: Vec<std::collections::HashMap<String, String>>,
+    pub genotype_fields: Vec<gatk_engine::jexl::Context>,
 }
 
 /// `applyFirstRoundOfFiltering` plus the two genotype-count gates, which run before the subset.

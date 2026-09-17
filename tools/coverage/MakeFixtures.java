@@ -61,6 +61,69 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * A TWO-sample VCF whose records are singleton hets, alternating which sample carries them.
+     *
+     * `CalculateMixingFractions` fills one bucket per sample and then divides each bucket's alt
+     * fraction by the SUM of every sample's, so a one-sample file can only ever answer `1.0` or
+     * `NaN`. With two samples the table has two rows that add up, and their ORDER is a
+     * `HashMap`'s iteration order rather than the header's, which is the property the tool's own
+     * golden pins and which no command line could reach while the corpus had one sample.
+     */
+    static String duoVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\tsample2\n");
+        // The sites sit one base INTO each read rather than at its start. `reads.bam`'s reads are
+        // `ACGTACGTAC` beginning at 100, 800, and so on, so the base at the read's own start is the
+        // reference `A` and the base one further in is `C`, which is this file's alternate. A site
+        // at the start counts a total and no alt, every fraction is `0/0`, and the table is NaN
+        // whatever else the row says: the first version of this fixture did exactly that.
+        //
+        // The hets are dealt five to `sample1` and three to `sample2`, so the two mixing fractions
+        // are different numbers rather than one number twice.
+        final boolean[] toFirstSample = {true, true, false, true, false, true, false, true};
+        int index = 0;
+        for (int position = 101; position <= 5001; position += 700) {
+            text.append("chr1\t").append(position).append("\trs").append(position)
+                    .append("\tA\tC\t100\tPASS\t.\tGT\t")
+                    .append(toFirstSample[index] ? "0/1\t0/0" : "0/0\t0/1").append('\n');
+            index++;
+        }
+        return text.toString();
+    }
+
+    /**
+     * A copy-ratio segment file, which is what `CallCopyRatioSegments` reads.
+     *
+     * Written by hand rather than produced by `ModelSegments`, which would need read counts and
+     * allelic counts this corpus does not carry. The format is htsjdk's SAM header, a column line
+     * and the rows, and the reference validates all three when it reads the file: a header without
+     * the `@RG` line's sample name, or a column line that is not this one, is refused there rather
+     * than accepted quietly.
+     *
+     * The segments straddle the copy-neutral window on purpose: two sit inside it, one is far
+     * below and one far above, so the calls are `0`, `-` and `+` rather than one letter repeated,
+     * and the length-weighted statistics have something to weigh.
+     */
+    static String copyRatioSegments() {
+        final StringBuilder text = new StringBuilder();
+        text.append("@HD\tVN:1.6\n");
+        text.append("@SQ\tSN:chr1\tLN:100000\n");
+        text.append("@RG\tID:GATKCopyNumber\tSM:sample1\n");
+        text.append("CONTIG\tSTART\tEND\tNUM_POINTS_COPY_RATIO\tMEAN_LOG2_COPY_RATIO\n");
+        final int[][] segments = {{1, 10000, 100}, {10001, 20000, 120}, {20001, 30000, 90},
+                {30001, 40000, 80}, {40001, 50000, 110}};
+        final double[] means = {0.01, -0.02, -1.5, 1.2, 0.03};
+        for (int index = 0; index < segments.length; index++) {
+            text.append("chr1\t").append(segments[index][0]).append('\t')
+                    .append(segments[index][1]).append('\t').append(segments[index][2])
+                    .append('\t').append(means[index]).append('\n');
+        }
+        return text.toString();
+    }
+
     static String vcf() {
         final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
         text.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
@@ -103,6 +166,31 @@ public class MakeFixtures {
         return text.toString();
     }
 
+    /**
+     * `population.vcf` with every allele frequency moved, which is what gives
+     * `EvaluateInfoFieldConcordance` a difference to average.
+     *
+     * A file compared with itself produces a delta of zero at every true positive, so the mean and
+     * the standard deviation are zero whatever the arithmetic does: the first version of that
+     * tool's array had exactly that, and measured the walk rather than the numbers. The shift is
+     * not uniform, because a constant offset would make the standard deviation zero as well.
+     */
+    static String shiftedPopulationVcf() {
+        final StringBuilder text = new StringBuilder("##fileformat=VCFv4.2\n");
+        text.append("##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n");
+        text.append("##contig=<ID=chr1,length=100000>\n");
+        text.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        final double[] frequencies = {0.01, 0.03, 0.04, 0.2, 0.1, 0.25, 0.02};
+        int index = 0;
+        for (int position = 100; position <= 4300; position += 700) {
+            text.append("chr1\t").append(position).append("\trs").append(position)
+                    .append("\tA\tC\t100\tPASS\tAF=").append(frequencies[index]).append('\n');
+            index++;
+        }
+        text.append("chr1\t5000\trs5000\tA\tC,G\t100\tPASS\tAF=0.07,0.01\n");
+        return text.toString();
+    }
+
     static String bed() {
         final StringBuilder text = new StringBuilder();
         for (int start = 100; start <= 5000; start += 700) {
@@ -132,6 +220,47 @@ public class MakeFixtures {
                 final SAMRecord record = new SAMRecord(header);
                 record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
                 record.setFlags(index == 7 ? 0x400 : 0);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(100 + index * 700);
+                record.setCigarString("10M");
+                record.setMappingQuality(60);
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                record.setAttribute("RG", "rg1");
+                writer.addAlignment(record);
+            }
+        }
+    }
+
+    /**
+     * The same BAM, with an `M5` on its one `@SQ` line taken from `reference.fasta`'s own
+     * dictionary.
+     *
+     * `CheckReferenceCompatibility` takes one of two paths depending on a single property of its
+     * input: with an MD5 on EVERY sequence it compares bases through `CompareReferences`' table,
+     * and without one it compares names and lengths alone and says so in every summary. No BAM in
+     * this corpus carries an M5, so without this one the first path is unreachable from a command
+     * line, and adding it to `reads.bam` would change a header that several goldens print.
+     */
+    static void md5Bam(final Path bam, final Path reference) {
+        final SAMFileHeader header = new SAMFileHeader();
+        // The reference's own `.dict`, M5 included, which is what makes this BAM's dictionary
+        // agree with `reference.fasta` base for base rather than by name alone.
+        header.setSequenceDictionary(htsjdk.samtools.reference.ReferenceSequenceFileFactory
+                .getReferenceSequenceFile(reference).getSequenceDictionary());
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setLibrary("lib1");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (int index = 0; index < 8; index++) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("HWI:1:FC:1:1:" + (index + 1) + ":" + (index + 1));
                 record.setReferenceName("chr1");
                 record.setAlignmentStart(100 + index * 700);
                 record.setCigarString("10M");
@@ -307,6 +436,96 @@ public class MakeFixtures {
      * Two groups make `--split-sample`, `--split-read-group` and `--split-library-name` each
      * produce two files, and their keys differ from one another.
      */
+    /**
+     * One coordinate-sorted BAM carrying TWO samples over the same locus, which is the shape
+     * `GetNormalArtifactData` reads: the split is by sample name and not by file.
+     *
+     * Six reads per sample, forty bases each, all starting at chr1:101 so that every read covers
+     * every locus of the window. Forty rather than ten because Mutect2's chain refuses a read
+     * shorter than thirty, and one start rather than six because a locus the normal does not reach
+     * has no alternate and produces nothing.
+     *
+     * Two sites carry an alternate, and they are different on purpose:
+     *
+     *   chr1:101  one normal read and two tumour reads carry `C`, so the tumour p-value is tiny,
+     *             the keep probability is all but one and the locus becomes a row;
+     *   chr1:121  one normal read carries `G` and no tumour read does, so the p-value is one, the
+     *             keep probability falls to its floor of 0.05, and whether the locus survives is
+     *             the seeded draw's answer rather than the counts'.
+     *
+     * Every other locus matches the reference in both samples, which is what leaves the table
+     * short enough to read.
+     */
+    /** One record of `truth.vcf` or `calls.vcf`. */
+    static String concordanceRecord(final int position, final String reference, final String alternate,
+                                    final String filter) {
+        return String.format("chr1\t%d\t.\t%s\t%s\t50\t%s\t.\tGT\t0/1%n", position, reference,
+                alternate, filter).replace(System.lineSeparator(), "\n");
+    }
+
+    /** The corpus reference's bases at a one-based position: `ACGT`, repeated. */
+    static String referenceBases(final int position, final int length) {
+        final StringBuilder bases = new StringBuilder();
+        for (int index = 0; index < length; index++) {
+            bases.append("ACGT".charAt((position + index - 1) % 4));
+        }
+        return bases.toString();
+    }
+
+    /** One heterozygous record of `shiftable.vcf`. */
+    static String shiftableRecord(final int position, final String reference, final String alternate) {
+        return String.format("chr1\t%d\t.\t%s\t%s\t100\tPASS\t.\tGT\t0/1%n", position, reference,
+                alternate).replace(System.lineSeparator(), "\n");
+    }
+
+    static void tumorAndNormal(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {
+                {"rgn", "normal", "libn"}, {"rgt", "tumor", "libt"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary(group[2]);
+            record.setPlatformUnit("unit1");
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        // The reference repeats `ACGT`, and position 101 is an `A`, so a read of `ACGT` ten times
+        // over matches it base for base.
+        final String matching = "ACGT".repeat(10);
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            for (final String[] read : new String[][] {
+                    {"n0", "rgn", matching},
+                    {"n1", "rgn", matching},
+                    {"n2", "rgn", matching},
+                    {"n3", "rgn", matching},
+                    {"n4", "rgn", "C" + matching.substring(1)},
+                    {"n5", "rgn", matching.substring(0, 20) + "G" + matching.substring(21)},
+                    {"t0", "rgt", matching},
+                    {"t1", "rgt", matching},
+                    {"t2", "rgt", matching},
+                    {"t3", "rgt", matching},
+                    {"t4", "rgt", "C" + matching.substring(1)},
+                    {"t5", "rgt", "C" + matching.substring(1)}}) {
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName(read[0]);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(101);
+                record.setCigarString("40M");
+                record.setMappingQuality(60);
+                record.setReadString(read[2]);
+                record.setBaseQualityString("I".repeat(40));
+                record.setAttribute("RG", read[1]);
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -830,6 +1049,7 @@ public class MakeFixtures {
         bamWithOriginalQualities(dir.resolve("reads_oq.bam"));
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
+        tumorAndNormal(dir.resolve("tumor_normal.bam"));
         deep(dir.resolve("deep.bam"));
         spliced(dir.resolve("spliced.bam"));
         methylation(dir.resolve("methyl.bam"));
@@ -852,6 +1072,132 @@ public class MakeFixtures {
         // The same VCF with a Tribble index beside it. A feature walker refuses `-L` against an
         // input with no random access, so an array whose only VCF were unindexed would compare two
         // refusals on every interval row and never reach a traversal.
+        // The two-sample VCF, indexed for the same reason: a variant walker refuses `-L` over an
+        // input with no random access.
+        Files.writeString(dir.resolve("segments.cr.seg"), copyRatioSegments(),
+                StandardCharsets.UTF_8);
+        final Path duo = dir.resolve("duo.vcf");
+        Files.writeString(duo, duoVcf(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        duo, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("duo.vcf.idx"));
+        // The mixing fractions `AnnotateVcfWithExpectedAlleleFraction` reads, produced by the
+        // REFERENCE's own `CalculateMixingFractions` over the two-sample VCF and the corpus's
+        // reads. The chain is the point: one tool's output is the other's input, so the second is
+        // measured on a table the first really writes.
+        new org.broadinstitute.hellbender.tools.walkers.validation.CalculateMixingFractions()
+                .instanceMain(new String[] {
+                        "--variant", dir.resolve("duo.vcf").toString(),
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--intervals", "chr1:1-6000",
+                        "--output", dir.resolve("mixing.table").toString(),
+                });
+        // A GVCF: two reference BLOCKS with an `END` and a variant between them, all carrying
+        // `<NON_REF>`. `ValidateVariants --validate-GVCF` needs one, and it needs the blocks to
+        // stop short of the contig: the coverage check counts every locus no record covers, so a
+        // file over chr1:1-1000 and an interval of chr1:1-6000 leave a gap the message names.
+        // The reference bases are the corpus's own repeat, so the REF check passes on every row.
+        final Path blocks = dir.resolve("blocks.g.vcf");
+        Files.writeString(blocks,
+                "##fileformat=VCFv4.2\n"
+                        + "##contig=<ID=chr1,length=100000>\n"
+                        + "##ALT=<ID=NON_REF,Description=\"Represents any possible alternative allele\">\n"
+                        + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n"
+                        + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                        + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+                        + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=500\tGT\t0/0\n"
+                        + "chr1\t501\t.\tA\tC,<NON_REF>\t50\t.\t.\tGT\t0/1\n"
+                        + "chr1\t502\t.\tC\t<NON_REF>\t.\t.\tEND=1000\tGT\t0/0\n",
+                StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        blocks, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("blocks.g.vcf.idx"));
+        // Indels that can MOVE. The corpus reference is `ACGT` repeated, so a deletion or an
+        // insertion of one whole repeat unit is equivalent at every offset of the repeat, and
+        // `LeftAlignAndTrimVariants` walks it left as far as its window allows. The corpus's own
+        // indels.vcf cannot show that: its alleles do not match the reference, so nothing moves and
+        // an array over it measures the traversal rather than the alignment.
+        //
+        // Five records, and each is a different branch: a deletion that walks, an insertion that
+        // walks, a second deletion close behind the first so that the distance to the record
+        // already written is what bounds it, a deletion longer than the default
+        // `--max-indel-length` which is written untouched and still bounds the next, and a SNV,
+        // which the alignment returns before it reads a base.
+        final StringBuilder shiftable = new StringBuilder();
+        shiftable.append("##fileformat=VCFv4.2\n")
+                .append("##contig=<ID=chr1,length=100000>\n")
+                .append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n");
+        shiftable.append(shiftableRecord(2005, referenceBases(2005, 5), referenceBases(2005, 1)));
+        shiftable.append(shiftableRecord(2020, referenceBases(2020, 1),
+                referenceBases(2020, 1) + referenceBases(2021, 4)));
+        shiftable.append(shiftableRecord(2024, referenceBases(2024, 5), referenceBases(2024, 1)));
+        shiftable.append(shiftableRecord(5000, referenceBases(5000, 301), referenceBases(5000, 1)));
+        shiftable.append(shiftableRecord(6000, referenceBases(6000, 1),
+                referenceBases(6000, 1).equals("A") ? "C" : "A"));
+        final Path shifts = dir.resolve("shiftable.vcf");
+        Files.writeString(shifts, shiftable.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        shifts, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("shiftable.vcf.idx"));
+        // The pair `Concordance` walks: a truth callset and an evaluation of it, arranged so that
+        // every one of the five concordance states happens once.
+        //
+        //   chr1:1001  called and agreeing                       true positive
+        //   chr1:2001  called with another alternate             false positive AND false negative
+        //   chr1:3001  called at a truth locus and FILTERED      filtered false negative
+        //   chr1:4001  in truth and not called at all            false negative
+        //   chr1:5001  called nowhere near truth and FILTERED    filtered true negative
+        //   chr1:6001  called nowhere near truth, unfiltered     false positive
+        //
+        // The filtered true negative carries TWO filters, so neither of them is unique to it: the
+        // filter-analysis table counts uniqueness per RECORD, not per filter.
+        final String truthBody =
+                concordanceRecord(1001, "A", "C", ".")
+                        + concordanceRecord(2001, "A", "ACGT", ".")
+                        + concordanceRecord(3001, "A", "C", ".")
+                        + concordanceRecord(4001, "A", "C", ".");
+        final String evalBody =
+                concordanceRecord(1001, "A", "C", "PASS")
+                        + concordanceRecord(2001, "A", "AG", "PASS")
+                        + concordanceRecord(3001, "A", "C", "LOW_QUAL")
+                        + concordanceRecord(5001, "A", "C", "ARTIFACT;LOW_QUAL")
+                        + concordanceRecord(6001, "A", "C", "PASS");
+        final String vcfHeader = "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##FILTER=<ID=LOW_QUAL,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=ARTIFACT,Description=\"Artifact\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        for (final String[] pair : new String[][] {{"truth.vcf", truthBody}, {"calls.vcf", evalBody}}) {
+            final Path path = dir.resolve(pair[0]);
+            Files.writeString(path, vcfHeader + pair[1], StandardCharsets.UTF_8);
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(dir.resolve(pair[0] + ".idx"));
+        }
+        // The discovery callset `ValidateBasicSomaticShortMutations` validates, written against
+        // `tumor_normal.bam`: the calls are at the two sites that BAM carries an alternate at, and
+        // the genotype carries the AD the validator needs. A call with no AD is SKIPPED, which is a
+        // judgment of its own and the only one a callset without depths can produce.
+        Files.writeString(dir.resolve("somatic.vcf"),
+                "##fileformat=VCFv4.2\n"
+                        + "##contig=<ID=chr1,length=100000>\n"
+                        + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                        + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                        + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ttumor\n"
+                        + "chr1\t101\t.\tA\tC\t50\tPASS\t.\tGT:AD\t0/1:4,2\n"
+                        + "chr1\t121\t.\tA\tG\t50\tPASS\t.\tGT:AD\t0/1:5,1\n"
+                        + "chr1\t141\t.\tA\tC\t50\tPASS\t.\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        dir.resolve("somatic.vcf"), new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("somatic.vcf.idx"));
         final Path indexed = dir.resolve("indexed.vcf");
         Files.writeString(indexed, vcf(), StandardCharsets.UTF_8);
         htsjdk.tribble.index.IndexFactory.createDynamicIndex(
@@ -886,6 +1232,27 @@ public class MakeFixtures {
             }
             other.startSequence("chrOther").appendBases(bases.toString());
         }
+        // The same bases as `other.fasta` under a different contig name. `CompareReferences` keys
+        // its table by the sequence's MD5 and not by its name, so this reference and that one land
+        // on ONE row carrying two names, which is the DIFFER_IN_SEQUENCE_NAMES answer. Without it
+        // every accepted row of that tool's array produced the same table: the pair
+        // reference/other has nothing in common, and a reference compared with itself is refused.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter renamed =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("renamed.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 1000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            renamed.startSequence("chrRenamed").appendBases(bases.toString());
+        }
+        // The reads again, under `reference.fasta`'s own dictionary: the one input in this corpus
+        // whose `@SQ` line carries an M5, which is the only way a command line reaches
+        // `CheckReferenceCompatibility`'s MD5 path.
+        md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is
@@ -925,6 +1292,66 @@ public class MakeFixtures {
         Files.writeString(population, populationVcf(), StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", population.toString()});
+        // The same population VCF with its frequencies moved, indexed like the rest: a feature
+        // input is queried by interval, so an unindexed one is refused before the traversal.
+        final Path shifted = dir.resolve("shifted.vcf");
+        Files.writeString(shifted, shiftedPopulationVcf(), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", shifted.toString()});
+
+        // The bins as an interval LIST, which is the only way one `-L` value can name more than
+        // one of them. `FilterIntervals` intersects the requested intervals with its inputs' by
+        // list equality and then removes a contig's only survivor, so a window naming a single bin
+        // always ends with nothing: the file names four, and a second file names two.
+        Files.writeString(dir.resolve("bins.interval_list"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n"
+                        + "chr1\t1\t1000\t+\t.\n"
+                        + "chr1\t2001\t3000\t+\t.\n"
+                        + "chr1\t4001\t5000\t+\t.\n"
+                        + "chr1\t6001\t7000\t+\t.\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bins2.interval_list"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n"
+                        + "chr1\t1\t1000\t+\t.\n"
+                        + "chr1\t2001\t3000\t+\t.\n",
+                StandardCharsets.UTF_8);
+
+        // The two files `FilterIntervals` reads, produced by the REFERENCE's own tools: the
+        // annotated intervals `AnnotateIntervals` writes and the counts `CollectReadCounts` writes.
+        // Both need the copy-number interval rule, which is why they carry it here: those tools
+        // refuse anything but OVERLAPPING_ONLY.
+        new org.broadinstitute.hellbender.tools.copynumber.AnnotateIntervals()
+                .instanceMain(new String[] {
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        // FOUR windows rather than one: `FilterIntervals` removes a contig's only
+                        // surviving interval, so a table of one row filters to none and the run is
+                        // then refused for having nothing left.
+                        "--intervals", "chr1:1-1000",
+                        "--intervals", "chr1:2001-3000",
+                        "--intervals", "chr1:4001-5000",
+                        "--intervals", "chr1:6001-7000",
+                        "--interval-merging-rule", "OVERLAPPING_ONLY",
+                        "--output", dir.resolve("annotated.tsv").toString(),
+                });
+        new org.broadinstitute.hellbender.tools.copynumber.CollectReadCounts()
+                .instanceMain(new String[] {
+                        "--input", dir.resolve("reads.bam").toString(),
+                        "--reference", dir.resolve("reference.fasta").toString(),
+                        "--intervals", "chr1:1-1000",
+                        "--intervals", "chr1:2001-3000",
+                        "--intervals", "chr1:4001-5000",
+                        "--intervals", "chr1:6001-7000",
+                        "--interval-merging-rule", "OVERLAPPING_ONLY",
+                        "--format", "TSV",
+                        "--output", dir.resolve("counts.tsv").toString(),
+                });
+        // The same table under the name the SV codec recognises. `SimpleCountCodec.canDecode` tests
+        // for the extension `.counts.tsv`, and a file called exactly `counts.tsv` does not have it:
+        // `PrintReadCounts` refuses it for having no suitable codec, which is a name away from the
+        // file it was written to read.
+        Files.copy(dir.resolve("counts.tsv"), dir.resolve("sv.counts.tsv"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
         // other's input, so the second tool is measured on a table the first really writes rather

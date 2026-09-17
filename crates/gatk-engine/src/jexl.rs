@@ -690,7 +690,14 @@ pub fn create_expression(text: &str) -> Result<Expression, JexlError> {
 
 /// The attributes an expression can read. `get` returns `None` where the reference returns null,
 /// which is what makes an absent tag an error under `setLenient(false)` rather than a false.
-pub type Context = HashMap<String, String>;
+///
+/// The values are TYPED, because the reference's contexts are: `VariantJEXLContext` hands JEXL an
+/// `Integer` for `POS`, a `Double` for `QUAL` and a `String` for an INFO attribute, and the
+/// arithmetic that follows reads the class rather than the text. A context of strings agrees with
+/// the reference wherever both sides of a comparison are strings and diverges as soon as one is a
+/// literal: `QUAL > 50` takes `Integer.parseInt` against a `String` and raises, where a `Double`
+/// on the left compares (#1142).
+pub type Context = HashMap<String, Value>;
 
 impl Expression {
     /// `Expression.evaluate`.
@@ -709,7 +716,7 @@ fn evaluate(node: &Node, context: &Context) -> Result<Value, JexlError> {
         // the expression reads like. An absent tag can therefore never be tested for; only
         // `empty()` on a *present* one answers.
         Node::Identifier(name) => match context.get(name) {
-            Some(value) => Ok(Value::Str(value.clone())),
+            Some(value) => Ok(value.clone()),
             None => Err(JexlError::UndefinedVariable(name.clone())),
         },
         Node::Not(inner) => Ok(Value::Bool(!to_boolean(&evaluate(inner, context)?)?)),

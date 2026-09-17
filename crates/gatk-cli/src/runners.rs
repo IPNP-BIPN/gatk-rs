@@ -315,6 +315,18 @@ fn read_filter<'a>(
                 },
                 filter.negated,
             ));
+        } else if name == "ReadLengthReadFilter" {
+            // Mutect2's chain carries this one, and its two bounds are the TOOL's defaults rather
+            // than the filter's: thirty and `Integer.MAX_VALUE` where the filter alone would take
+            // one and the same maximum. The declaration supplies both, so the fallbacks here are
+            // only reached by a tool that declares neither.
+            parameterized.push((
+                gatk_readfilter::Parameterized::ReadLength {
+                    min: number_or(parser, "min-read-length", 1),
+                    max: number_or(parser, "max-read-length", i32::MAX),
+                },
+                filter.negated,
+            ));
         } else if name == "MateDistantReadFilter" {
             // `PrintDistantMates`' own default, and the one argument that decides what "distant"
             // means. The filter was ported; only this branch was missing, so a row that kept the
@@ -427,6 +439,45 @@ fn master_dictionary(parser: &Parser) -> Result<Option<SamHeader>, Thrown> {
     let text = std::fs::read_to_string(&path)
         .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false)))?;
     Ok(Some(htsjdk_bam::reader::parse_header_text(&text)))
+}
+
+/// `File.getAbsolutePath`: the working directory in front of a relative name, and nothing else.
+///
+/// Java does not normalise here, and the empty path is the working directory ITSELF rather than a
+/// trailing separator on it, which is what makes `--annotated-intervals=` print `/work`.
+fn java_absolute_path(path: &str) -> String {
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    let working = std::env::current_dir()
+        .map(|directory| directory.display().to_string())
+        .unwrap_or_default();
+    if path.is_empty() {
+        working
+    } else {
+        format!("{working}/{path}")
+    }
+}
+
+/// `IOUtils.canReadFile`, which every copy-number input passes through before it is opened.
+///
+/// Three messages of one exception, and the port can tell the first two apart: a path with no file
+/// at all, and a path that is a directory or a device. The unreadable-permissions case is the third
+/// and is not reached here, because a file this port cannot open reads as one it can stat.
+fn can_read_file(path: &str) -> Result<(), Thrown> {
+    let reason = match std::fs::metadata(path) {
+        Err(_) => "The input file does not exist.",
+        Ok(metadata) if !metadata.is_file() => "The input file is not a regular file",
+        Ok(_) => return Ok(()),
+    };
+    Err(Thrown {
+        failure: Failure::User,
+        exception: gatk_tools::read_walker_refusal::COULD_NOT_READ,
+        message: Some(format!(
+            "Couldn't read file {}. Error was: {reason}",
+            java_absolute_path(path)
+        )),
+    })
 }
 
 /// `validateDictionaries` against the master, which runs before the pairs that do not involve it.
@@ -2587,6 +2638,4207 @@ fn fasta_maker_error(error: gatk_tools::fasta_reference_maker::MakerError) -> Th
     }
 }
 
+/// `CheckReferenceCompatibility.traverse`: one BAM or one VCF checked against several references.
+///
+/// The tool's required argument is not the reference. What it checks is the INPUT, and
+/// `initializeSequenceDictionaryForInput` refuses a command line naming both a BAM and a VCF, a
+/// second reads input, or neither -- the last of those AFTER the dictionaries have been read,
+/// which is why an unreadable reference is refused before an empty command line is.
+///
+/// One property of the input decides the whole algorithm: with an MD5 on every sequence the
+/// comparison is `CompareReferences`' table, and without one it is name and length alone. A VCF
+/// never reaches the first path, because `VCFContigHeaderLine.getSAMSequenceRecord` drops `M5`.
+pub fn check_reference_compatibility(parser: &Parser) -> Outcome {
+    use gatk_tools::check_reference_compatibility as check;
+    use gatk_tools::compare_references as compare;
+
+    let _ = resolve_read_filters(parser, "CheckReferenceCompatibility")?;
+    let reads = arguments(parser, "input");
+    let vcf = argument(parser, "variant");
+    let references = arguments(parser, "references-to-compare");
+    if references.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument references-to-compare was missing: Argument 'references-to-compare' is required",
+        ));
+    }
+
+    // `GATKTool.onStartup` opens the inputs and resolves `-L` against the best available
+    // dictionary BEFORE `onTraversalStart` makes this tool's own checks, and the order is
+    // observable: a `--sequence-dictionary` outranks everything, so an interval this tool would
+    // never traverse is refused before the input pair is even looked at.
+    let query_records = match reads.first() {
+        Some(path) => reads_dictionary(parser, path, reads.len())?,
+        None => Vec::new(),
+    };
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let best = master.or(reference).unwrap_or_else(|| SamHeader {
+        sequences: query_records.clone(),
+        ..SamHeader::default()
+    });
+    let _ = interval_arguments(parser, &best)?;
+
+    // The first two refusals come before anything is read; the third comes after.
+    if !reads.is_empty() && vcf.is_some() {
+        return Err(input_refusal(check::InputError::BothBamAndVcf));
+    }
+    if reads.len() > 1 {
+        return Err(input_refusal(check::InputError::ManyReadInputs));
+    }
+
+    let (query_name, query) = if let Some(path) = reads.first() {
+        (file_name(path), query_records)
+    } else if let Some(path) = &vcf {
+        let text = feature_text(path)?;
+        // A VCF's dictionary is its `##contig` lines, and the record htsjdk builds from one
+        // carries no `M5` whatever the line says.
+        (file_name(path), vcf_dictionary(&text).sequences)
+    } else {
+        (String::new(), Vec::new())
+    };
+
+    let mut dictionaries = Vec::new();
+    for path in &references {
+        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let text = std::fs::read_to_string(&dictionary)
+            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        dictionaries.push((
+            file_name(path),
+            htsjdk_bam::reader::parse_header_text(&text).sequences,
+        ));
+    }
+
+    if reads.is_empty() && vcf.is_none() {
+        return Err(input_refusal(check::InputError::NoInput));
+    }
+
+    let md5_of = |records: &[htsjdk_bam::header::SequenceRecord]| -> Vec<Option<String>> {
+        records
+            .iter()
+            .map(|record| record.attributes.get("M5").map(str::to_string))
+            .collect()
+    };
+    let records: Vec<check::Record> = if check::md5s_present(&md5_of(&query)) {
+        // `new ReferenceSequenceTable(dictionaries)` forces USE_DICT, so a REFERENCE with no `M5`
+        // refuses the run even though the input has one on every sequence.
+        let as_reference = |name: &String, records: &[htsjdk_bam::header::SequenceRecord]| {
+            compare::Reference {
+                column: name.clone(),
+                sequences: records
+                    .iter()
+                    .map(|record| compare::Sequence {
+                        name: record.name.clone(),
+                        length: record.length as i64,
+                        md5: record.attributes.get("M5").map(str::to_string),
+                        // Never read: the mode is USE_DICT and every sequence has its `M5`.
+                        calculated_md5: String::new(),
+                    })
+                    .collect(),
+            }
+        };
+        let mut all = vec![as_reference(&query_name, &query)];
+        for (name, records) in &dictionaries {
+            all.push(as_reference(name, records));
+        }
+        // `TableError::message()` already carries `UserException$BadInput`'s own prefix.
+        let table = compare::build(&all, compare::Md5Mode::UseDict).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(error.message()),
+        })?;
+        // `compareAgainstKeyReference`: the pairs the key is the first half of, which are the ones
+        // `compare_all` generates first because the key is index zero.
+        let pairs = compare::compare_all(&table, &all).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(error.message()),
+        })?;
+        pairs
+            .iter()
+            .take(dictionaries.len())
+            .enumerate()
+            .map(|(index, pair)| {
+                check::evaluate_with_md5(pair, &missing_sequences(&query, &dictionaries[index].1))
+            })
+            .collect()
+    } else {
+        dictionaries
+            .iter()
+            // `!entry.getValue().equals(queryDictionary)`: a reference whose dictionary IS the
+            // input's produces no row at all.
+            .filter(|(_, records)| records != &query)
+            .map(|(name, records)| {
+                let status = match gatk_tools::sequence_dictionary::compare(records, &query, false)
+                {
+                    gatk_tools::sequence_dictionary::Compatibility::Identical => {
+                        check::DictionaryCompatibility::Identical
+                    }
+                    gatk_tools::sequence_dictionary::Compatibility::Superset => {
+                        check::DictionaryCompatibility::Superset
+                    }
+                    other => check::DictionaryCompatibility::Other(other.name()),
+                };
+                check::evaluate_without_md5(
+                    name,
+                    &query_name,
+                    status,
+                    &missing_sequences(&query, records),
+                )
+            })
+            .collect()
+    };
+
+    let rendered = check::write_table(&query_name, &records);
+    match argument(parser, "output") {
+        Some(path) => write_file(&path, rendered.as_bytes())?,
+        None => print!("{rendered}"),
+    }
+    Ok(None)
+}
+
+/// A feature file's text, decompressed when it is block compressed.
+///
+/// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec
+/// claims is the refusal `IndexFeatureFile` gives.
+fn feature_text(path: &str) -> Result<String, Thrown> {
+    if gatk_tools::feature_codec::codec_for(path).is_none() {
+        return Err(Thrown::user(
+            index_feature_file::Refusal::NoSuitableCodecs {
+                path: path.to_string(),
+            }
+            .message(),
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: path.to_string(),
+            }
+            .message(),
+        )
+    })?;
+    if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+        htsjdk_bgzf::read::decompress_all(&bytes)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    gatk_tools::read_walker_refusal::SAM_FORMAT,
+                    format!("{path} is not a block compressed file"),
+                )
+            })
+    } else {
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+/// `getMissingSequencesIfSubset`: the reference's sequence names the input does not carry, in the
+/// reference's own order.
+fn missing_sequences(
+    query: &[htsjdk_bam::header::SequenceRecord],
+    reference: &[htsjdk_bam::header::SequenceRecord],
+) -> Vec<String> {
+    reference
+        .iter()
+        .filter(|record| !query.iter().any(|other| other.name == record.name))
+        .map(|record| record.name.clone())
+        .collect()
+}
+
+/// The file's name, which is what every message in this tool prints rather than the path.
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// `initializeSequenceDictionaryForInput`'s refusals, which are `UserException$BadInput` and whose
+/// messages the port already carries with the prefix.
+fn input_refusal(error: gatk_tools::check_reference_compatibility::InputError) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(error.message()),
+    }
+}
+
+/// `CalculateMixingFractions.apply`: one bucket per sample, filled at singleton het SNPs.
+///
+/// A variant walker that ALSO opens the reads, which is why its startup is both: the driving
+/// variants decide the traversal and the reads answer at each site. The counting itself is the
+/// port's, including the two things that make this tool's table what it is -- a bucket nothing was
+/// added to has an alt fraction of `0/0`, which is NaN, and the normalizer is the SUM of every
+/// bucket's fraction, so one uncounted sample makes every row NaN; and the rows come out in a
+/// `HashMap`'s iteration order, which is neither the header's nor alphabetical.
+pub fn calculate_mixing_fractions(parser: &Parser) -> Outcome {
+    use gatk_tools::calculate_mixing_fractions as mixing;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CalculateMixingFractions")?;
+    // `-L` is the traversal and the driving variants are queried by interval, so an input with no
+    // index is refused before a record is read. Measured on two rows of this tool's array, where
+    // the reference refused and the port answered with a table of NaN.
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+
+    // The reads, read once. The reference asks a `ReadsContext` at every site, which is the same
+    // set of records for a corpus this size; what it is not is the same WORK, and that difference
+    // is a speed question rather than an answer question.
+    let reads_paths = arguments(parser, "input");
+    // A variant walker's reads go through the READ FILTERS like any walker's, and the tool counts
+    // what survives them. Measured on two rows of this tool's array, where an inverted
+    // `PrimaryLineReadFilter` left the reference with no read to count and every fraction NaN
+    // while the port counted the lot.
+    let resolved = resolve_read_filters(parser, "CalculateMixingFractions")?;
+    // The records with the contig each one is on, because a read is filtered to the variant's
+    // contig by its reference INDEX and the index is the reads header's, not the VCF's.
+    let mut records: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in &reads_paths {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let sequences = source.header().sequences.clone();
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let contig = sequences
+                .get(read.reference_index as usize)
+                .map(|sequence| sequence.name.clone())
+                .unwrap_or_default();
+            records.push((contig, read));
+        }
+    }
+
+    let mut counts: std::collections::HashMap<String, mixing::AltAndTotalReadCounts> =
+        std::collections::HashMap::new();
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    for variant in &file.records {
+        // `-L` bounds the traversal, so a site outside it is never applied and its reads never
+        // counted -- which is one of the ways every row of the table becomes NaN.
+        if let Some(spans) = spans {
+            let inside = spans.iter().any(|interval| {
+                interval.contig == variant.contig
+                    && variant.start as i32 >= interval.start
+                    && variant.start as i32 <= interval.end
+            });
+            if !inside {
+                continue;
+            }
+        }
+        if !mixing::is_biallelic_singleton_het_snp(variant) {
+            continue;
+        }
+        let Some(sample) = mixing::variant_sample(variant) else {
+            continue;
+        };
+        let alternate = variant.alleles.iter().find(|allele| !allele.is_reference());
+        let Some(alt_base) = alternate
+            .map(|allele| allele.base_string())
+            .and_then(|bases| bases.as_bytes().first().copied())
+        else {
+            continue;
+        };
+        let at_site: Vec<htsjdk_bam::record::BamRecord> = records
+            .iter()
+            .filter(|(contig, _)| contig == &variant.contig)
+            .map(|(_, read)| read.clone())
+            .collect();
+        let site = mixing::site_counts(&at_site, variant.start as i32, alt_base);
+        let bucket = counts.entry(sample).or_default();
+        bucket.alt += site.alt;
+        bucket.total += site.total;
+    }
+
+    let rows = mixing::mixing_fractions(&file.header.samples, &counts)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+    write_file(&output, mixing::table(&rows).as_bytes())?;
+    Ok(None)
+}
+
+/// `AnnotateVcfWithExpectedAlleleFraction.apply`: one Float INFO field per record.
+///
+/// The arithmetic is the port's, and its two surprises are the point of the tool: the weights come
+/// from the record's genotypes in the VCF's COLUMN order while the fractions come from
+/// `getSampleNamesInOrder()`, which is SORTED, and the two arrays are multiplied element by
+/// element; and the default tool header lines are added to the set AFTER the header was built from
+/// it, so this tool's output carries no `##source=` and no `##GATKCommandLine` where its sibling
+/// `AnnotateVcfWithBamDepth` carries both.
+pub fn annotate_vcf_with_expected_allele_fraction(parser: &Parser) -> Outcome {
+    use gatk_tools::annotate_vcf_with_expected_allele_fraction as expected;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "AnnotateVcfWithExpectedAlleleFraction")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let fractions_path = argument(parser, "mixing-fractions").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument mixing-fractions was missing: Argument 'mixing-fractions' is required",
+        )
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    // `MixingFraction.readMixingFractions`, which is a `TableReader`: comment lines first, then a
+    // column line, and a column the reader asks for by NAME. A table that is not this tool's is
+    // refused by the reader rather than misread, and the refusal is an `IllegalArgumentException`
+    // naming the column -- status three, not a user error. Measured on the row that hands this
+    // tool `GetPileupSummaries`' table, where the port read two of its columns as a sample and a
+    // fraction and refused for a reason of its own.
+    let table_text = std::fs::read_to_string(&fractions_path)
+        .map_err(|error| Thrown::user(format!("{fractions_path}: {error}")))?;
+    let mut rows = table_text
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty());
+    let columns: Vec<&str> = rows.next().unwrap_or_default().split('\t').collect();
+    let column = |name: &str| -> Result<usize, Thrown> {
+        columns
+            .iter()
+            .position(|found| *found == name)
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    "java.lang.IllegalArgumentException",
+                    format!("there is no such column: {name}"),
+                )
+            })
+    };
+    let sample_column = column("SAMPLE")?;
+    let fraction_column = column("MIXING_FRACTION")?;
+    let mut table: Vec<(String, f64)> = Vec::new();
+    for line in rows {
+        let fields: Vec<&str> = line.split('\t').collect();
+        let (Some(sample), Some(value)) = (fields.get(sample_column), fields.get(fraction_column))
+        else {
+            continue;
+        };
+        table.push((sample.to_string(), value.trim().parse().unwrap_or(f64::NAN)));
+    }
+
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let fractions =
+        expected::fractions_in_sample_order(&table, &file.header.samples).map_err(|error| {
+            Thrown {
+                failure: Failure::User,
+                exception: error.class(),
+                message: Some(error.message()),
+            }
+        })?;
+
+    for record in &mut file.records {
+        let value = expected::annotation(record, &fractions);
+        record.attributes.push((
+            expected::AF_EXP.to_string(),
+            htsjdk_vcf::variant::Value::Str(value),
+        ));
+    }
+
+    // The `AF_EXP` line, and nothing else: the tool's default lines never reach the file.
+    let declares_af_exp = file.header.lines.iter().any(|line| {
+        matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id, .. }
+            if key == "INFO" && id == expected::AF_EXP)
+    });
+    if !declares_af_exp {
+        file.header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: expected::AF_EXP.to_string(),
+                number: htsjdk_vcf::header::Cardinality::Fixed(1),
+                line_type: htsjdk_vcf::header::LineType::Float,
+                description: "expected allele fraction in pooled bam".to_string(),
+                extra: Vec::new(),
+            });
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = file
+        .records
+        .iter()
+        .filter(|record| keep(record))
+        .cloned()
+        .collect();
+    // `--sites-only-vcf-output` is the writer's, not the tool's: the samples leave the header and
+    // the genotypes leave every record. Measured on eleven rows of this tool's array, where the
+    // reference wrote a file with no FORMAT column and the port wrote the genotypes.
+    apply_sites_only(parser, &mut file.header, &mut written);
+    let rendered =
+        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
+/// `AnnotateVcfWithBamDepth.apply`: one Integer INFO field per record, counted off the reads.
+///
+/// The sibling of [`annotate_vcf_with_expected_allele_fraction`], and the difference between them
+/// is two statements in the other order: this tool adds its default header lines to the set BEFORE
+/// the header is built from it, so `##source=` and `##GATKCommandLine` reach the file where the
+/// other tool's do not.
+///
+/// The count is the port's, and CONTAINMENT is the condition: a read counts when it holds the
+/// record's whole span, is not a duplicate, is mapped, passes vendor quality and is longer than
+/// one base.
+pub fn annotate_vcf_with_bam_depth(parser: &Parser) -> Outcome {
+    use gatk_tools::annotate_vcf_with_bam_depth as depth;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "AnnotateVcfWithBamDepth")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let resolved = resolve_read_filters(parser, "AnnotateVcfWithBamDepth")?;
+    let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in arguments(parser, "input") {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let sequences = source.header().sequences.clone();
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let contig = sequences
+                .get(read.reference_index as usize)
+                .map(|sequence| sequence.name.clone())
+                .unwrap_or_default();
+            reads.push((contig, read));
+        }
+    }
+
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for record in &file.records {
+        if let Some(spans) = spans {
+            let inside = spans.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            });
+            if !inside {
+                continue;
+            }
+        }
+        let at_site: Vec<depth::Read> = reads
+            .iter()
+            .map(|(contig, read)| depth::Read {
+                contig,
+                start: read.alignment_start,
+                // `getEnd()`: the start plus the cigar's reference length, less one.
+                end: read.alignment_start + read.cigar.reference_length() as i32 - 1,
+                flags: read.flags,
+            })
+            .collect();
+        written.push(depth::annotate(record, depth::bam_depth(&at_site, record)));
+    }
+
+    let declares = file.header.lines.iter().any(|line| {
+        matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id, .. }
+            if key == "INFO" && id == depth::BAM_DEPTH)
+    });
+    if !declares {
+        file.header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: depth::BAM_DEPTH.to_string(),
+                number: htsjdk_vcf::header::Cardinality::Fixed(1),
+                line_type: htsjdk_vcf::header::LineType::Integer,
+                description: "pooled bam depth".to_string(),
+                extra: Vec::new(),
+            });
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut file.header, &mut written);
+    let rendered =
+        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
+/// `CountFalsePositives.doWork`: two counters, a denominator and a six-column table.
+///
+/// The first tool here whose answer depends on the SIZE of the interval argument rather than on
+/// which records it selects: the denominator is the merged intervals' bases, so two overlapping
+/// `-L` arguments contribute their union once. `requiresIntervals()` is true, so a run without
+/// `-L` is refused by the parser and never reaches this.
+///
+/// The counting is the port's, and the `snp` column is not what its name says: `isIndel()` is
+/// `getType() == INDEL` and nothing looser, so an MNP, a symbolic allele and a record with no
+/// alternate all land in the other bucket.
+pub fn count_false_positives(parser: &Parser) -> Outcome {
+    use gatk_tools::count_false_positives as counting;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CountFalsePositives")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let resolved = intervals.unwrap_or_default();
+    let selected: Vec<htsjdk_vcf::variant::VariantContext> = file
+        .records
+        .iter()
+        .filter(|record| {
+            resolved.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            })
+        })
+        .cloned()
+        .collect();
+
+    let counts = counting::count(&selected);
+    let territory = counting::target_territory(&resolved);
+    let id = counting::id_from_path(&input);
+    write_file(&output, counting::table(&id, counts, territory).as_bytes())?;
+    Ok(None)
+}
+
+/// `EvaluateInfoFieldConcordance.apply`: one INFO key of the eval file against one of the truth.
+///
+/// The first runner here with a SECOND variant input beside the driving one, walked in lockstep by
+/// [`gatk_engine::concordance_walker`]. Only true positives are looked at, a record whose key is
+/// absent is counted but contributes nothing, and the "absolute" difference is
+/// `Math.sqrt(delta * delta)` where `Math.abs` was meant -- all three are the port's, measured by
+/// its own suite.
+pub fn evaluate_info_field_concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::evaluate_info_field_concordance as concordance;
+
+    let _ = resolve_read_filters(parser, "EvaluateInfoFieldConcordance")?;
+    let summary = argument(parser, "summary").ok_or_else(|| {
+        Thrown::command_line("Argument summary was missing: Argument 'summary' is required")
+    })?;
+    let eval_path = argument(parser, "evaluation").ok_or_else(|| {
+        Thrown::command_line("Argument evaluation was missing: Argument 'evaluation' is required")
+    })?;
+    let truth_path = argument(parser, "truth").ok_or_else(|| {
+        Thrown::command_line("Argument truth was missing: Argument 'truth' is required")
+    })?;
+    let eval_key = argument(parser, "eval-info-key").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument eval-info-key was missing: Argument 'eval-info-key' is required",
+        )
+    })?;
+    let truth_key = argument(parser, "truth-info-key").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument truth-info-key was missing: Argument 'truth-info-key' is required",
+        )
+    })?;
+
+    let read = |path: &str| -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: failure.error.class(),
+            message: Some(failure.error.message()),
+        })
+    };
+    let eval_text = std::fs::read_to_string(&eval_path)
+        .map_err(|error| Thrown::user(format!("{eval_path}: {error}")))?;
+    let eval_file = read(&eval_path)?;
+    let truth_file = read(&truth_path)?;
+
+    // `onTraversalStart`'s two checks, which read the HEADERS and not the records: a key no header
+    // declares is refused before the walk.
+    let declares = |file: &htsjdk_vcf::reader::VcfFile, key: &str| {
+        file.header.lines.iter().any(|line| {
+            matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key: kind, id, .. }
+                if kind == "INFO" && id == key)
+        })
+    };
+    concordance::check_keys(
+        declares(&eval_file, &eval_key),
+        &eval_key,
+        &eval_path,
+        declares(&truth_file, &truth_key),
+        &truth_key,
+        &truth_path,
+    )
+    .map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.class(),
+        message: Some(error.message()),
+    })?;
+
+    let dictionary: Vec<String> = eval_file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Contig { fields, .. } => fields
+                .iter()
+                .find(|(key, _)| key == "ID")
+                .map(|(_, value)| value.clone()),
+            _ => None,
+        })
+        .collect();
+
+    // `-L` bounds the traversal, so a record outside the window is not walked at all and its
+    // difference never reaches the mean. Measured on eight rows of this tool's array, where every
+    // window gave the reference a different mean and the port the same one.
+    let intervals = interval_arguments(parser, &vcf_dictionary(&eval_text))?
+        .map(|parameters| parameters.intervals);
+    let inside = |record: &htsjdk_vcf::variant::VariantContext| -> bool {
+        match &intervals {
+            None => true,
+            Some(list) => list.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            }),
+        }
+    };
+    let truth_kept: Vec<htsjdk_vcf::variant::VariantContext> = truth_file
+        .records
+        .iter()
+        .filter(|record| inside(record))
+        .cloned()
+        .collect();
+    let eval_kept: Vec<htsjdk_vcf::variant::VariantContext> = eval_file
+        .records
+        .iter()
+        .filter(|record| inside(record))
+        .cloned()
+        .collect();
+    let as_records = |records: &[htsjdk_vcf::variant::VariantContext]| -> Vec<ConcordanceVariant> {
+        records
+            .iter()
+            .map(|record| ConcordanceVariant {
+                contig: record.contig.clone(),
+                start: record.start as i32,
+                filtered: record.is_filtered(),
+            })
+            .collect()
+    };
+    let truth_records = as_records(&truth_kept);
+    let eval_records = as_records(&eval_kept);
+    // `areVariantsAtSameLocusConcordant` is allele equality on this tool: two records at one locus
+    // are concordant when their alternates match.
+    let steps = gatk_engine::concordance_walker::concordance(
+        &truth_records,
+        &eval_records,
+        &dictionary,
+        |_, _| true,
+    );
+
+    let mut totals = concordance::Concordance::default();
+    for step in &steps {
+        if step.state != gatk_engine::concordance_walker::ConcordanceState::TruePositive {
+            continue;
+        }
+        let (Some(truth_index), Some(eval_index)) = (step.truth, step.eval) else {
+            continue;
+        };
+        let truth = &truth_kept[truth_index];
+        let eval = &eval_kept[eval_index];
+        // `isSNP()` then `isIndel()`, both `getType() ==` and nothing looser, which is the type
+        // `RemoveNearbyIndels` measured.
+        let eval_type = match gatk_tools::remove_nearby_indels::variant_type(eval) {
+            gatk_tools::remove_nearby_indels::VariantType::Snp => concordance::EvalType::Snp,
+            gatk_tools::remove_nearby_indels::VariantType::Indel => concordance::EvalType::Indel,
+            _ => concordance::EvalType::Other,
+        };
+        totals.add(
+            eval_type,
+            info_as_double(eval, &eval_key),
+            info_as_double(truth, &truth_key),
+        );
+    }
+
+    write_file(&summary, totals.table(&eval_key, &truth_key).as_bytes())?;
+    Ok(None)
+}
+
+/// As much of a record as the concordance iterator looks at.
+struct ConcordanceVariant {
+    contig: String,
+    start: i32,
+    filtered: bool,
+}
+
+impl gatk_engine::concordance_walker::ConcordanceRecord for ConcordanceVariant {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn is_filtered(&self) -> bool {
+        self.filtered
+    }
+}
+
+/// `vc.getAttributeAsDouble(key, 0)`, which is absent rather than zero here: a record with no such
+/// key is counted and contributes nothing.
+fn info_as_double(record: &htsjdk_vcf::variant::VariantContext, key: &str) -> Option<f64> {
+    record
+        .attributes
+        .iter()
+        .find(|(name, _)| name == key)
+        .and_then(|(_, value)| value.format())
+        .and_then(|text| text.parse().ok())
+}
+
+/// `CallCopyRatioSegments.doWork`: segments in, called segments out, and a second file beside them.
+///
+/// No walker, no reference, no reads: eighteen arguments and a table transformed by arithmetic.
+/// The statistics are computed TWICE over the copy-neutral segments -- once over all of them to
+/// find the outliers, once over what is left to call against -- and the port keeps both passes
+/// because a port filtering with the recomputed pair would drop a different set.
+///
+/// The output is two files: `-O` itself, and the legacy `.igv.seg` beside it, whose path is `-O`
+/// with ONE extension removed and `.igv.seg` appended, and whose columns are IGV's rather than the
+/// table's: the call comes before the mean.
+pub fn call_copy_ratio_segments(parser: &Parser) -> Outcome {
+    use gatk_tools::call_copy_ratio_segments as calling;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let bound = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let lower = bound("neutral-segment-copy-ratio-lower-bound", 0.9);
+    let upper = bound("neutral-segment-copy-ratio-upper-bound", 1.1);
+    let outlier = bound("outlier-neutral-segment-copy-ratio-z-score-threshold", 2.0);
+    let calling_threshold = bound("calling-copy-ratio-z-score-threshold", 2.0);
+
+    let text = std::fs::read_to_string(&input)
+        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    // The file is a SAM header, a column line and the rows. The header travels into the output
+    // unchanged, which is what carries the sample name and the dictionary through.
+    let mut header = String::new();
+    let mut rows = Vec::new();
+    let mut columns_seen = false;
+    let mut sample = String::new();
+    for line in text.lines() {
+        if line.starts_with('@') {
+            header.push_str(line);
+            header.push('\n');
+            if let Some(rest) = line.strip_prefix("@RG\t") {
+                for field in rest.split('\t') {
+                    if let Some(name) = field.strip_prefix("SM:") {
+                        sample = name.to_string();
+                    }
+                }
+            }
+            continue;
+        }
+        if !columns_seen {
+            columns_seen = true;
+            continue;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 5 {
+            continue;
+        }
+        rows.push(calling::CopyRatioSegment {
+            contig: fields[0].to_string(),
+            start: fields[1].parse().unwrap_or_default(),
+            end: fields[2].parse().unwrap_or_default(),
+            num_points: fields[3].parse().unwrap_or_default(),
+            mean_log2_copy_ratio: fields[4].trim().parse().unwrap_or(f64::NAN),
+        });
+    }
+
+    let calls = calling::make_calls(&rows, lower, upper, outlier, calling_threshold)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message().to_string()))?;
+
+    write_file(
+        &output,
+        calling::write_called(&header, &rows, &calls).as_bytes(),
+    )?;
+    write_file(
+        &legacy_segments_path(&output),
+        calling::write_legacy(&sample, &rows, &calls).as_bytes(),
+    )?;
+    Ok(None)
+}
+
+/// `FilenameUtils.removeExtension(path) + ".igv.seg"`: ONE extension removed, whatever it was, so
+/// a `-O` with none simply gains the suffix.
+fn legacy_segments_path(output: &str) -> String {
+    let (directory, name) = match output.rfind('/') {
+        Some(slash) => (&output[..=slash], &output[slash + 1..]),
+        None => ("", output),
+    };
+    let stem = match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    };
+    format!("{directory}{stem}.igv.seg")
+}
+
+/// `VariantFiltration.apply`: JEXL over the record, JEXL over each genotype, and a mask beside
+/// them.
+///
+/// The largest namespace declared here, eighty-nine arguments, and the filtering itself is the
+/// port's: the FILTER column is sorted where a filter was applied, a genotype's FT is `PASS` when
+/// the record has an FT column at all, and the cluster window looks at the SNPs around a record
+/// rather than at the record.
+pub fn variant_filtration(parser: &Parser) -> Outcome {
+    use gatk_tools::variant_filtration as filtration;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "VariantFiltration")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let mut file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+
+    // `filterExpressions` and `filterNames` are read in step: the nth expression carries the nth
+    // name, and a name list shorter than the expression list is the parser's refusal rather than
+    // this tool's.
+    let compile = |expressions: Vec<String>,
+                   names: Vec<String>|
+     -> Result<Vec<filtration::MatchExp>, Thrown> {
+        expressions
+            .iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let name = names.get(index).cloned().unwrap_or_default();
+                filtration::MatchExp::new(&name, text).map_err(|error| {
+                    Thrown::user(format!("Invalid JEXL expression detected: {error:?}"))
+                })
+            })
+            .collect()
+    };
+    let site = compile(
+        arguments(parser, "filter-expression"),
+        arguments(parser, "filter-name"),
+    )?;
+    let genotype = compile(
+        arguments(parser, "genotype-filter-expression"),
+        arguments(parser, "genotype-filter-name"),
+    )?;
+
+    // `--mask` is a feature file read whole: what the tool asks of it is where its features are,
+    // and a BED and a VCF answer that the same way.
+
+    let flag_of = |name: &str| flag(parser, name);
+    let tool_arguments = filtration::Arguments {
+        cluster_size: number_or(parser, "cluster-size", 3),
+        cluster_window: number_or(parser, "cluster-window-size", 0),
+        mask_name: argument(parser, "mask-name").unwrap_or_else(|| "Mask".to_string()),
+        filter_records_not_in_mask: flag_of("filter-not-in-mask"),
+        invert_filter_expression: flag_of("invert-filter-expression"),
+        invert_genotype_filter_expression: flag_of("invert-genotype-filter-expression"),
+        missing_values_evaluate_as_failing: flag_of("missing-values-evaluate-as-failing"),
+        invalidate_previous_filters: flag_of("invalidate-previous-filters"),
+        set_filtered_genotypes_to_no_call: flag_of("set-filtered-genotype-to-no-call"),
+        mask_extension: number_or(parser, "mask-extension", 0),
+    };
+
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    let kept: Vec<htsjdk_vcf::variant::VariantContext> = file
+        .records
+        .iter()
+        .filter(|record| match spans {
+            None => true,
+            Some(list) => list.iter().any(|interval| {
+                interval.contig == record.contig
+                    && record.stop as i32 >= interval.start
+                    && record.start as i32 <= interval.end
+            }),
+        })
+        .cloned()
+        .collect();
+
+    // `FeatureDataSource` asks the mask for its index at the FIRST query, so a traversal that
+    // reaches no record never asks. The refusal below is conditioned on that.
+    let queries_the_mask = !kept.is_empty();
+    let mask_path = argument(parser, "mask");
+    let mask: Vec<(String, i32, i32)> = match &mask_path {
+        None => Vec::new(),
+        Some(path) => {
+            // The mask is QUERIED by interval, and `FeatureDataSource` asks for the index at the
+            // first query rather than at startup: a bounded traversal that reaches no record never
+            // queries and never refuses. Measured on rows of this tool's array where `-L` names a
+            // window the file has no record in, and the reference read the unindexed BED happily.
+            if !has_feature_index(path) && queries_the_mask {
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable queries by interval. If \
+                     it's a file, please index it using the bundled tool IndexFeatureFile"
+                )));
+            }
+            let text = std::fs::read_to_string(path)
+                .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+            if path.ends_with(".bed") {
+                text.lines()
+                    .filter_map(|line| {
+                        htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
+                            .ok()
+                            .flatten()
+                    })
+                    .map(|feature| (feature.contig, feature.start, feature.end))
+                    .collect()
+            } else {
+                htsjdk_vcf::reader::read_vcf(&text)
+                    .map(|masked| {
+                        masked
+                            .records
+                            .iter()
+                            .map(|record| {
+                                (
+                                    record.contig.clone(),
+                                    record.start as i32,
+                                    record.stop as i32,
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
+        }
+    };
+
+    let records: Vec<filtration::Record> = kept.iter().map(filtration_record).collect();
+    let filtered = filtration::filter_records(&records, &site, &genotype, &mask, &tool_arguments);
+
+    let mut written = kept.clone();
+    for (index, record) in written.iter_mut().enumerate() {
+        let rendered = filtration::rendered_filters(&filtered[index]);
+        record.filters = match rendered.as_str() {
+            "." => None,
+            "PASS" => Some(Vec::new()),
+            names => Some(names.split(';').map(str::to_string).collect()),
+        };
+        for sample in 0..record.genotypes.len() {
+            if let Some(ft) = filtration::rendered_genotype_filter(&filtered[index], sample) {
+                record.genotypes[sample].filters = Some(ft);
+            }
+            if filtered[index]
+                .no_called
+                .get(sample)
+                .copied()
+                .unwrap_or(false)
+            {
+                record.genotypes[sample].alleles = Vec::new();
+            }
+        }
+    }
+
+    // The header gains one `##FILTER` line per filter this run can apply, in the reference's own
+    // order: the clustered-SNP name first when the window is open, then the site expressions, then
+    // the genotype ones, then the mask. An inverted expression describes itself as `Inverse of:`.
+    let mut filter_lines: Vec<(String, String)> = Vec::new();
+    if tool_arguments.cluster_window > 0 {
+        filter_lines.push((
+            "SnpCluster".to_string(),
+            "SNPs found in clusters".to_string(),
+        ));
+    }
+    let described = |text: &str, inverted: bool| -> String {
+        if inverted {
+            format!("Inverse of: {text}")
+        } else {
+            text.to_string()
+        }
+    };
+    for (index, expression) in arguments(parser, "filter-expression").iter().enumerate() {
+        if let Some(name) = arguments(parser, "filter-name").get(index) {
+            filter_lines.push((
+                name.clone(),
+                described(expression, tool_arguments.invert_filter_expression),
+            ));
+        }
+    }
+    // `possiblyInvertFilterExpression` reads `invertFilterExpression` and nothing else, and BOTH
+    // loops call it: a genotype filter's DESCRIPTION is inverted by the site flag even though its
+    // decision is inverted by the genotype one. Measured on this tool's array.
+    for (index, expression) in arguments(parser, "genotype-filter-expression")
+        .iter()
+        .enumerate()
+    {
+        if let Some(name) = arguments(parser, "genotype-filter-name").get(index) {
+            filter_lines.push((
+                name.clone(),
+                described(expression, tool_arguments.invert_filter_expression),
+            ));
+        }
+    }
+    if mask_path.is_some() {
+        let description = argument(parser, "mask-description").unwrap_or_else(|| {
+            if tool_arguments.filter_records_not_in_mask {
+                "Doesn't overlap a user-input mask".to_string()
+            } else {
+                "Overlaps a user-input mask".to_string()
+            }
+        });
+        filter_lines.push((tool_arguments.mask_name.clone(), description));
+    }
+    // `VCFStandardHeaderLines.getFormatLine(FT)` when any genotype expression was given, the
+    // chromosome counts when filtered genotypes become no-calls, and the allele-specific status
+    // line when that mode is on. All three are the ENGINE's lines rather than the tool's filters.
+    let mut compound: Vec<(
+        &str,
+        &str,
+        htsjdk_vcf::header::Cardinality,
+        htsjdk_vcf::header::LineType,
+        &str,
+    )> = Vec::new();
+    if !arguments(parser, "genotype-filter-expression").is_empty() {
+        compound.push((
+            "FORMAT",
+            "FT",
+            htsjdk_vcf::header::Cardinality::Unbounded,
+            htsjdk_vcf::header::LineType::String,
+            "Genotype-level filter",
+        ));
+    }
+    if tool_arguments.set_filtered_genotypes_to_no_call {
+        compound.push((
+            "INFO",
+            "AC",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::Integer,
+            "Allele count in genotypes, for each ALT allele, in the same order as listed",
+        ));
+        compound.push((
+            "INFO",
+            "AF",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::Float,
+            "Allele Frequency, for each ALT allele, in the same order as listed",
+        ));
+        compound.push((
+            "INFO",
+            "AN",
+            htsjdk_vcf::header::Cardinality::Fixed(1),
+            htsjdk_vcf::header::LineType::Integer,
+            "Total number of alleles in called genotypes",
+        ));
+    }
+    if flag(parser, "apply-allele-specific-filters") {
+        compound.push((
+            "INFO",
+            "AS_FilterStatus",
+            htsjdk_vcf::header::Cardinality::A,
+            htsjdk_vcf::header::LineType::String,
+            "Filter status for each allele, as assessed by ApplyVQSR. Note that the VCF filter \
+             field will reflect the most lenient/sensitive status across all alleles.",
+        ));
+    }
+    // The header is a `HashSet` of LINES: an identical line collapses and a line with the same ID
+    // and a different description does NOT, so a file already declaring `AF` ends up with two
+    // `##INFO=<ID=AF,...>` lines. Measured on a row of this tool's array.
+    for (kind, id, number, line_type, description) in compound {
+        let declared = file.header.lines.iter().any(|line| {
+            matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id: found, description: text, .. }
+                if key == kind && found == id && text == description)
+        });
+        if !declared {
+            file.header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Compound {
+                    key: kind.to_string(),
+                    id: id.to_string(),
+                    number,
+                    line_type,
+                    description: description.to_string(),
+                    extra: Vec::new(),
+                });
+        }
+    }
+
+    for (name, description) in filter_lines {
+        let declared = file.header.lines.iter().any(
+            |line| matches!(line, htsjdk_vcf::header::HeaderLine::Filter { id, .. } if id == &name),
+        );
+        if !declared {
+            file.header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Filter {
+                    id: name,
+                    description,
+                });
+        }
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut file.header, &mut written);
+    let rendered =
+        htsjdk_vcf::vcf_file::write_vcf(&file.header, &written).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
+/// A record as the filtering reads it: the INFO map, the genotype fields and the FILTER column.
+fn filtration_record(
+    record: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::variant_filtration::Record {
+    use gatk_tools::variant_filtration as filtration;
+    // `VariantJEXLContext`'s fixed names come FIRST and the INFO attributes after them, because an
+    // expression says `QUAL > 50` and no INFO field is called QUAL. A context of attributes alone
+    // refuses the expression as an unknown variable, which reads as "the filter did not match":
+    // measured on rows of this tool's array, where the reference applied the site filter and the
+    // port applied only the mask.
+    // The values are the OBJECTS the reference's map hands JEXL rather than their text: `POS` is an
+    // `Integer`, `QUAL` a `Double` and `N_ALLELES` an `Integer`, which is what makes `QUAL > 50` an
+    // answer rather than a `NumberFormatException` (#1142). An INFO attribute is the `String` the
+    // codec decoded it to, and `FILTER` is text on both of its branches.
+    use gatk_engine::jexl::Value as JexlValue;
+    let mut info: filtration::Context = filtration::Context::new();
+    info.insert("CHROM".to_string(), JexlValue::Str(record.contig.clone()));
+    info.insert("POS".to_string(), JexlValue::Int(record.start as i32));
+    info.insert(
+        "QUAL".to_string(),
+        JexlValue::Double(-10.0 * record.log10_p_error),
+    );
+    info.insert(
+        "N_ALLELES".to_string(),
+        JexlValue::Int(record.alleles.len() as i32),
+    );
+    let filtered = record
+        .filters
+        .as_ref()
+        .is_some_and(|filters| !filters.is_empty());
+    info.insert(
+        "FILTER".to_string(),
+        JexlValue::Str(if filtered { "1" } else { "0" }.to_string()),
+    );
+    for (key, value) in &record.attributes {
+        if let Some(text) = value.format() {
+            info.insert(key.clone(), JexlValue::Str(text));
+        }
+    }
+    for filter in record.filters.iter().flatten() {
+        info.entry(filter.clone())
+            .or_insert_with(|| JexlValue::Str("1".to_string()));
+    }
+    let genotypes = record
+        .genotypes
+        .iter()
+        .map(|genotype| filtration::GenotypeFields {
+            fields: genotype
+                .extended
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .format()
+                        .map(|text| (key.clone(), JexlValue::Str(text)))
+                })
+                .collect(),
+            filters: genotype
+                .filters
+                .as_ref()
+                .filter(|text| *text != "PASS" && *text != ".")
+                .map(|text| text.split(';').map(str::to_string).collect())
+                .unwrap_or_default(),
+        })
+        .collect();
+    filtration::Record {
+        contig: record.contig.clone(),
+        start: record.start as i32,
+        stop: record.stop as i32,
+        is_snp: gatk_tools::remove_nearby_indels::variant_type(record)
+            == gatk_tools::remove_nearby_indels::VariantType::Snp,
+        filters: record.filters.clone(),
+        info,
+        genotypes,
+    }
+}
+
+/// `CollectAllelicCounts.apply`: the reference and the alternate base counted at every locus.
+///
+/// The first copy-number runner here that reads READS. Three things are the port's and each is a
+/// decision the name does not show: the alternate count is `total - reference` rather than the
+/// alternate BASE's count, the minimum base quality is the collector's own threshold rather than a
+/// read filter, and a locus whose reference base is not one of `ACGT` produces no row at all
+/// instead of an empty one.
+pub fn collect_allelic_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::collect_allelic_counts as allelic;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectAllelicCounts")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // `ReadUtils.getSamplesFromHeader(...)`: the SM of the first read group, which is the column
+    // name the table carries.
+    let sample = header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            // `emitEmptyLoci()` is TRUE on this tool, which is what makes the table a row per
+            // POSITION of the interval rather than a row per pileup: a locus no read reaches is
+            // written with zero counts and an `N` alternate. Measured on this tool's array, where
+            // the reference wrote 5,505 rows over `chr1:501-6000` and the port wrote seventy-five.
+            emit_empty_loci: true,
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    // The reference's own dictionary, which is what its refusal prints.
+    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let minimum_base_quality = number_or(parser, "minimum-base-quality", 20).max(0) as u8;
+    let mut counts = Vec::new();
+    for one in &applied {
+        // `referenceContext.getBase()`: the one base under the locus, upper-cased and with its
+        // IUPAC codes flattened like every other reference query in this engine.
+        let bases = reference
+            .query(
+                &one.context.contig,
+                one.context.position,
+                one.context.position,
+            )
+            .map_err(|error| match error {
+                // `MissingContigInSequenceDictionary`, raised by the reference query itself, and
+                // the dictionary it prints is the REFERENCE's. Measured on a row of this tool's
+                // array where the reads are on `chr1` and `--reference` carries `chrOther`.
+                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                    Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&reference_sequences)
+                    ))
+                }
+                other => Thrown::user(format!("{other:?}")),
+            })?;
+        let Some(base) = bases.first().copied() else {
+            continue;
+        };
+        if let Some(count) = allelic::collect_at_locus(
+            base,
+            &one.context.pileup,
+            &one.context.contig,
+            one.context.position,
+            minimum_base_quality,
+        ) {
+            counts.push(count);
+        }
+    }
+
+    let sequences: Vec<(String, i32)> = header
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    write_file(
+        &output,
+        allelic::write(&sequences, &sample, &counts).as_bytes(),
+    )?;
+    Ok(None)
+}
+
+/// One copy-number table as its reader sees it: the metadata, the column names, and the rows.
+///
+/// The header is kept rather than skipped because it IS the collection's sequence dictionary, and
+/// the columns are kept by name because the reader asks for them by name.
+struct Table {
+    header: SamHeader,
+    columns: Vec<String>,
+    body: Vec<Vec<String>>,
+}
+
+/// `FilterIntervals.doWork`: three filters over one shared mask, and the order is the arithmetic.
+///
+/// The second CHAIN here: the annotated intervals are what `AnnotateIntervals` writes and the
+/// counts are what `CollectReadCounts` writes, so the corpus carries both produced by the
+/// reference itself. The filtering is the port's, including the last thing it does and the easiest
+/// to miss: a contig left with a single surviving interval loses it, so a run that filters down to
+/// exactly one ends with none and is then refused for having nothing left.
+pub fn filter_intervals(parser: &Parser) -> Outcome {
+    use gatk_tools::filter_intervals as filtering;
+
+    let _ = resolve_read_filters(parser, "FilterIntervals")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // `CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection`, which this tool makes
+    // like every other copy-number tool: it bins and pads by its own arguments and refuses the
+    // standard interval ones that would modify its input first. Measured on every row of this
+    // tool's array, where the reference refused at exit three and the port filtered.
+    validate_copy_number_intervals(parser)?;
+    let annotated = argument(parser, "annotated-intervals");
+    let counts_paths = arguments(parser, "input");
+
+    // A table of this shape is a SAM header, a column line and the rows; the columns are named and
+    // the reader asks for them by name, which is what `CollectAllelicCounts`' reader does too.
+    //
+    // `AbstractRecordCollection`'s constructor calls `IOUtils.canReadFile` before it opens
+    // anything, so a path that is not a file is refused by the CHECK rather than by the read, and
+    // the message names the file's absolute path. Measured on a row of this tool's array that
+    // passed `--annotated-intervals=` with no value, where the reference printed the working
+    // directory: "Couldn't read file /work. Error was: The input file does not exist."
+    let read_table = |path: &str| -> Result<Table, Thrown> {
+        can_read_file(path)?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::user(format!("{path}: {error}")))?;
+        // The `@SQ` block at the head of the table is the collection's METADATA, which is the
+        // dictionary `-L` resolves against and the dictionary the output interval list carries.
+        // It is the file's own and not the reference's: this tool takes no `--reference`, and a
+        // run that resolved `-L` against an empty dictionary refused every interval as an unknown
+        // contig.
+        let header = htsjdk_bam::reader::parse_header_text(
+            &text
+                .lines()
+                .take_while(|line| line.starts_with('@'))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        );
+        let mut rows = text
+            .lines()
+            .filter(|line| !line.starts_with('@') && !line.trim().is_empty());
+        let columns: Vec<String> = rows
+            .next()
+            .unwrap_or_default()
+            .split('\t')
+            .map(str::to_string)
+            .collect();
+        let body = rows
+            .map(|line| line.split('\t').map(str::to_string).collect())
+            .collect();
+        Ok(Table {
+            header,
+            columns,
+            body,
+        })
+    };
+
+    // `validateArguments` runs before a single input is opened, and its order is observable: the
+    // missing-inputs refusal is a `UserException` at two, and the duplicate check under it is a
+    // `Utils.validateArg` at three.
+    if annotated.is_none() && counts_paths.is_empty() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(filtering::FilterError::NoInputs.message().to_string()),
+        });
+    }
+    let mut seen = std::collections::HashSet::new();
+    if !counts_paths.iter().all(|path| seen.insert(path.clone())) {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "List of input read-count files cannot contain duplicates.",
+        ));
+    }
+
+    let mut intervals: Vec<filtering::Interval> = Vec::new();
+    let mut annotations: Vec<(String, Vec<f64>)> = Vec::new();
+    // `metadata`, which is the FIRST input's dictionary: the annotated intervals when they were
+    // given, and the first counts file otherwise.
+    let mut metadata: Option<SamHeader> = None;
+    if let Some(path) = &annotated {
+        let Table {
+            header,
+            columns,
+            body: rows,
+        } = read_table(path)?;
+        metadata = Some(header);
+        for row in &rows {
+            intervals.push(filtering::Interval {
+                contig: row[0].clone(),
+                start: row[1].parse().unwrap_or_default(),
+                end: row[2].parse().unwrap_or_default(),
+            });
+        }
+        for (index, name) in columns.iter().enumerate().skip(3) {
+            annotations.push((
+                name.clone(),
+                rows.iter()
+                    .map(|row| {
+                        row.get(index)
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(f64::NAN)
+                    })
+                    .collect(),
+            ));
+        }
+    }
+
+    // Each counts file keeps its OWN intervals, because the matrix is built by looking each
+    // interval up per file rather than by position: a file whose rows are a different set is
+    // refused, and a file whose rows are a superset is subset down.
+    let mut counts_tables: Vec<(String, Vec<filtering::Interval>, Vec<f64>)> = Vec::new();
+    for path in &counts_paths {
+        let Table {
+            header, body: rows, ..
+        } = read_table(path)?;
+        if metadata.is_none() {
+            metadata = Some(header);
+        }
+        let file_intervals: Vec<filtering::Interval> = rows
+            .iter()
+            .map(|row| filtering::Interval {
+                contig: row[0].clone(),
+                start: row[1].parse().unwrap_or_default(),
+                end: row[2].parse().unwrap_or_default(),
+            })
+            .collect();
+        if intervals.is_empty() && annotated.is_none() {
+            intervals = file_intervals.clone();
+        }
+        counts_tables.push((
+            path.clone(),
+            file_intervals,
+            rows.iter()
+                .map(|row| row.get(3).and_then(|v| v.parse().ok()).unwrap_or(f64::NAN))
+                .collect(),
+        ));
+    }
+
+    // The three refusals are not the same KIND: the empty intersection is an
+    // `IllegalArgumentException` from `Utils.validateArg`, which leaves exit three, and the other
+    // two are `UserException`s at two. The port's own `java_class` says which is which.
+    let refuse = |error: filtering::FilterError| {
+        let class = error.java_class();
+        let message = error.message().to_string();
+        if class == "java.lang.IllegalArgumentException" {
+            Thrown::non_user(class, message)
+        } else {
+            Thrown {
+                failure: Failure::User,
+                exception: class,
+                message: Some(message),
+            }
+        }
+    };
+    if intervals.is_empty() {
+        return Err(refuse(filtering::FilterError::EmptyIntersection));
+    }
+
+    let dictionary = metadata.unwrap_or_default();
+    // The dictionary goes into the output list whole: `IntervalList` is built from the metadata's
+    // own `SAMSequenceDictionary`, so an `M5` the annotated intervals carried is written out with
+    // it. Measured on this tool's array, where the only differing byte was that field.
+    let sequences: Vec<gatk_tools::preprocess_intervals::Sequence> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| gatk_tools::preprocess_intervals::Sequence {
+            name: sequence.name.clone(),
+            length: sequence.length,
+            md5: sequence.attributes.get("M5").map(str::to_string),
+            uri: sequence.attributes.get("UR").map(str::to_string),
+        })
+        .collect();
+
+    // `ListUtils.intersection`, which is a LIST intersection and not a genomic one: an input bin
+    // survives only when a requested interval EQUALS it, so `-L chr1:1-7000` over four
+    // thousand-base bins intersects to nothing and the run is refused. Measured on every row of
+    // this tool's array, where the port read the window as containment and kept all four.
+    //
+    // With both kinds of input the intersection is taken TWICE, the annotated intervals first and
+    // the first counts file second, so a bin either side is missing is gone before any filter runs.
+    let requested = interval_arguments(parser, &dictionary)?.map(|parameters| parameters.intervals);
+    let kept: Vec<usize> = (0..intervals.len())
+        .filter(|&index| {
+            let interval = &intervals[index];
+            let asked = requested.as_ref().is_none_or(|windows| {
+                windows.iter().any(|window| {
+                    window.contig == interval.contig
+                        && window.start == interval.start
+                        && window.end == interval.end
+                })
+            });
+            let counted = annotated.is_none()
+                || counts_tables
+                    .first()
+                    .is_none_or(|(_, file, _)| file.contains(interval));
+            asked && counted
+        })
+        .collect();
+    if kept.is_empty() {
+        return Err(refuse(filtering::FilterError::EmptyIntersection));
+    }
+    intervals = kept.iter().map(|&index| intervals[index].clone()).collect();
+    for (_, values) in annotations.iter_mut() {
+        *values = kept.iter().map(|&index| values[index]).collect();
+    }
+
+    // `constructReadCountMatrix`: one row per file, each pulled out by INTERVAL and not by row
+    // number, and a file that does not carry every intersected interval is refused at three.
+    let mut counts: Vec<Vec<f64>> = Vec::new();
+    for (path, file_intervals, values) in &counts_tables {
+        let row: Vec<f64> = intervals
+            .iter()
+            .filter_map(|interval| {
+                file_intervals
+                    .iter()
+                    .position(|candidate| candidate == interval)
+                    .map(|index| values[index])
+            })
+            .collect();
+        if row.len() != intervals.len() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!(
+                    "Intervals for read-count file {path} do not contain all specified intervals."
+                ),
+            ));
+        }
+        counts.push(row);
+    }
+
+    let mut mask = vec![false; intervals.len()];
+    let bound = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    // The annotations run first and in the header's own order, because the mask is SHARED: an
+    // interval a GC filter failed is not in the population the count percentiles are taken over.
+    for (name, values) in &annotations {
+        let (minimum, maximum) = match name.as_str() {
+            "GC_CONTENT" => (
+                bound("minimum-gc-content", 0.1),
+                bound("maximum-gc-content", 0.9),
+            ),
+            "MAPPABILITY" => (
+                bound("minimum-mappability", 0.9),
+                bound("maximum-mappability", 1.0),
+            ),
+            "SEGMENTAL_DUPLICATION_CONTENT" => (
+                bound("minimum-segmental-duplication-content", 0.0),
+                bound("maximum-segmental-duplication-content", 0.5),
+            ),
+            _ => continue,
+        };
+        filtering::update_mask_by_annotation(&mut mask, values, minimum, maximum)
+            .map_err(refuse)?;
+    }
+    if !counts.is_empty() {
+        filtering::update_mask_by_low_counts(
+            &mut mask,
+            &counts,
+            number_or(parser, "low-count-filter-count-threshold", 5),
+            bound("low-count-filter-percentage-of-samples", 90.0),
+        )
+        .map_err(refuse)?;
+        filtering::update_mask_by_extreme_counts(
+            &mut mask,
+            &counts,
+            bound("extreme-count-filter-minimum-percentile", 1.0),
+            bound("extreme-count-filter-maximum-percentile", 99.0),
+            bound("extreme-count-filter-percentage-of-samples", 90.0),
+        )
+        .map_err(refuse)?;
+    }
+    let contigs: Vec<String> = intervals
+        .iter()
+        .map(|interval| interval.contig.clone())
+        .collect();
+    filtering::update_mask_by_solitary_intervals(&mut mask, &contigs).map_err(refuse)?;
+
+    let kept: Vec<filtering::Interval> = intervals
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !mask[*index])
+        .map(|(_, interval)| interval.clone())
+        .collect();
+    write_file(&output, filtering::write(&sequences, &kept).as_bytes())?;
+    Ok(None)
+}
+
+/// `LeftAlignAndTrimVariants.apply`: each record split, trimmed, and walked left.
+///
+/// The tool three engine bricks were built for, and the runner's share of it is small: what is
+/// its own is the WINDOW, and the window is a function of the record before it. `lastVariant` is
+/// the record as WRITTEN, which has already moved left, so aligning one record frees the next; and
+/// a record skipped for being too long still becomes the bound the next one is measured against.
+/// Both live in [`gatk_tools::left_align_and_trim_variants`], where a golden measures them.
+///
+/// The header is the input's, merged with itself, plus the chromosome-count lines when the run
+/// splits: `addChromosomeCountsToHeader` is called on that branch alone, so a run that only
+/// trims writes the lines the input had.
+pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
+    use gatk_tools::left_align_and_trim_variants as align;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "LeftAlignAndTrimVariants")?;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    let arguments = align::Arguments {
+        dont_trim_alleles: flag(parser, "dont-trim-alleles"),
+        split_multiallelics: flag(parser, "split-multi-allelics"),
+        max_indel_size: number_or(parser, "max-indel-length", align::DEFAULT_MAX_INDEL_SIZE),
+        max_leading_bases: number_or(
+            parser,
+            "max-leading-bases",
+            align::DEFAULT_MAX_LEADING_BASES,
+        ),
+    };
+    let keep_original_counts = flag(parser, "keep-original-ac");
+    // A sharded output is a WRITER, not a transformation: the reference writes
+    // `out.shard_00000.vcf.gz` and one file per shard, which is a feature of its own rather than
+    // this tool's. Refusing says so; writing one file would be a different answer.
+    if number_or(parser, "max-variants-per-shard", 0) > 0 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--max-variants-per-shard writes one file per shard, which this port does not write \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // `createVCFHeaderLineList`: the input's own lines merged with themselves, the tool's default
+    // lines, and the count lines the splitting adds.
+    let (mut lines, _warnings) = htsjdk_vcf::merge::smart_merge_headers(
+        &[htsjdk_vcf::merge::Source {
+            header: &file.header,
+            version: None,
+        }],
+        true,
+    )
+    .unwrap_or_else(|_| (file.header.lines.clone(), Vec::new()));
+    if flag(parser, "add-output-vcf-command-line") {
+        lines.push(htsjdk_vcf::header::HeaderLine::Unstructured {
+            key: "source".to_string(),
+            value: "LeftAlignAndTrimVariants".to_string(),
+        });
+        if let Some(command_line) = command_line_header_line(parser, "LeftAlignAndTrimVariants") {
+            lines.push(command_line);
+        }
+    }
+    if keep_original_counts {
+        // `GATKVCFHeaderLines.getInfoLine` for the three keys the subsetter can set, which the
+        // header declares whether or not a record turns out to carry them.
+        for (id, number, line_type, description) in [
+            (
+                "AC_Orig",
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Integer,
+                "Original AC",
+            ),
+            (
+                "AF_Orig",
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Float,
+                "Original AF",
+            ),
+            (
+                "AN_Orig",
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::Integer,
+                "Original AN",
+            ),
+        ] {
+            lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            });
+        }
+    }
+    if arguments.split_multiallelics {
+        for key in ["AC", "AF", "AN"] {
+            lines.retain(|line| {
+                !matches!(
+                    line,
+                    htsjdk_vcf::header::HeaderLine::Compound { key: k, id, .. }
+                        if k == "INFO" && id == key
+                )
+            });
+            if let Some(standard) = htsjdk_vcf::standard_header_lines::standard_info_line(key) {
+                lines.push(standard);
+            }
+        }
+    }
+    // `VcfUtils.getSortedSampleSet`, which is the input's samples in their natural order.
+    //
+    // `--sites-only-vcf-output` empties the set here as well as on every record: the writer is
+    // built with no samples at all, so the output has no FORMAT column rather than a no-call in
+    // one. Measured on eight rows of this tool's array, where the port wrote `GT ./.`.
+    let sites_only = flag(parser, "sites-only-vcf-output");
+    let mut samples = if sites_only {
+        Vec::new()
+    } else {
+        file.header.samples.clone()
+    };
+    samples.sort();
+    let header =
+        update_header_contig_lines(parser, htsjdk_vcf::header::VcfHeader { lines, samples })?;
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    // The whole contig, once per contig: the alignment indexes the reference by one-based position
+    // and walks LEFT from the record, so a slice around the record would have to be re-based.
+    let mut contigs: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    let mut last: Option<gatk_engine::variant_context_utils::Variant> = None;
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let original = &file.records[located.index];
+        let bridged = crate::variant_bridge::to_engine(original);
+
+        // The counts the subsetter would carry over are only reachable on a record that HAS them;
+        // the corpus has none, so the flag is the header's business alone. A record that carries
+        // one and is split would need the allele subsetting this port does not have.
+        if keep_original_counts
+            && arguments.split_multiallelics
+            && bridged
+                .record
+                .variant
+                .attributes
+                .iter()
+                .any(|(key, _)| key == "AC" || key == "AF" || key == "AN")
+        {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "--keep-original-ac over a record that carries AC asks the subsetter for the \
+                 counts it had, which this port does not carry yet. This message is the port's \
+                 own and not GATK's.",
+            ));
+        }
+
+        let pieces = if arguments.split_multiallelics {
+            if original
+                .genotypes
+                .iter()
+                .any(|genotype| genotype.extended.iter().any(|(key, _)| key == "AF"))
+            {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "A record whose genotypes carry AF is split by the SOMATIC splitter, which \
+                     this port does not carry yet. This message is the port's own and not GATK's.",
+                ));
+            }
+            gatk_engine::variant_context_utils::split_variant_context_to_biallelics(
+                &bridged.record.variant,
+                false,
+            )
+            .map_err(split_refusal)?
+        } else {
+            vec![bridged.record.variant.clone()]
+        };
+
+        for piece in pieces {
+            if align::largest_indel_length(&piece) > arguments.max_indel_size {
+                // Written untouched, and it is still the record the next one is measured against.
+                written.push(crate::variant_bridge::from_engine(
+                    original,
+                    &gatk_tools::select_variants::Record {
+                        variant: piece.clone(),
+                        samples: file.header.samples.clone(),
+                    },
+                ));
+                last = Some(piece);
+                continue;
+            }
+            let distance = match &last {
+                Some(previous) if previous.contig == piece.contig => piece.start - previous.stop,
+                _ => i32::MAX,
+            };
+            let window = arguments.max_leading_bases.min(distance - 1);
+            // `leftAlignAndTrim` returns before it reads a base when the record is not an indel or
+            // the window is empty, so the reference is opened only where the alignment needs it.
+            // Measured on a row whose `--reference` carries another contig entirely and whose
+            // records are all SNVs or too long to align: the reference wrote the file.
+            let needs_reference = piece.is_indel() && window > 0;
+            if needs_reference && !contigs.contains_key(&piece.contig) {
+                let length = reference
+                    .sequences()
+                    .iter()
+                    .find(|(name, _)| *name == piece.contig)
+                    .map(|(_, length)| *length as i32)
+                    .unwrap_or(0);
+                // `ReferenceContext` over a contig the FASTA does not carry is the walker's own
+                // refusal, and it is the one `reference_traversal_error` renders. Measured on a
+                // row of this tool's array where `--reference` is the corpus's other contig.
+                if length == 0 {
+                    return Err(Thrown::user(format!(
+                        "Given reference file does not have data at the requested contig({})!",
+                        piece.contig
+                    )));
+                }
+                // ZERO-based: `leftAlignAndTrim` slices `[start - 1 .. stop]`, so the vector is
+                // the contig's bases with position one at index zero. A one-based vector with a
+                // pad in front shifted every comparison by a base, and the records moved one base
+                // left instead of the thousand the window allowed.
+                let mut bases: Vec<u8> = Vec::new();
+                if length > 0 {
+                    // The engine's own query, which upper-cases and flattens IUPAC exactly as
+                    // `ReferenceDataSource.of(path)` does for a `ReferenceContext`: the alignment
+                    // compares these bases against the record's alleles.
+                    bases.extend(
+                        reference
+                            .query(&piece.contig, 1, length)
+                            .map_err(|error| match error {
+                                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                                    Thrown::user(format!(
+                                        "Contig {contig} not present in the sequence dictionary {}\n",
+                                        gatk_tools::sequence_dictionary::pretty_print(
+                                            &gatk_tools::reference_walker::dictionary(&reference)
+                                                .sequences
+                                        )
+                                    ))
+                                }
+                                other => Thrown::user(format!("{other:?}")),
+                            })?,
+                    );
+                }
+                contigs.insert(piece.contig.clone(), bases);
+            }
+            let empty: Vec<u8> = Vec::new();
+            let bases = contigs.get(&piece.contig).unwrap_or(&empty);
+            let aligned = gatk_engine::variant_context_utils::left_align_and_trim(
+                &piece,
+                bases,
+                window,
+                !arguments.dont_trim_alleles,
+            )
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            written.push(crate::variant_bridge::from_engine(
+                original,
+                &gatk_tools::select_variants::Record {
+                    variant: aligned.clone(),
+                    samples: file.header.samples.clone(),
+                },
+            ));
+            last = Some(aligned);
+        }
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    if sites_only {
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
+/// What the biallelic splitter refuses: the trimming underneath, or the genotype combinatorics.
+///
+/// Both are `GATKException`s in the reference rather than user errors, which is what makes them
+/// status three.
+fn split_refusal(error: gatk_engine::variant_context_utils::SplitError) -> Thrown {
+    Thrown::non_user(
+        "org.broadinstitute.hellbender.exceptions.GATKException",
+        error.message(),
+    )
+}
+
+/// `GatherBQSRReports.doWork`: several recalibration reports summed into one.
+///
+/// A `CommandLineProgram` rather than a `GATKTool`, so there is no reference, no intervals and no
+/// read filters to resolve: the whole run is read the files, gather, write. What the gather does is
+/// [`gatk_tools::gather_bqsr_reports`], where a golden measures it; the runner's share is the
+/// order the files are read in, which is the order `--input` was given.
+pub fn gather_bqsr_reports(parser: &Parser) -> Outcome {
+    use gatk_tools::gather_bqsr_reports as gather;
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let mut texts = Vec::new();
+    for path in &inputs {
+        texts.push(std::fs::read_to_string(path).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: gatk_tools::read_walker_refusal::COULD_NOT_READ,
+            message: Some(format!(
+                "Couldn't read file {}. Error was: {error}",
+                java_absolute_path(path)
+            )),
+        })?);
+    }
+    let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
+    // `GATKException` is not a user error, which is what puts it at status three; the empty input
+    // list is an `IllegalArgumentException`, which is three as well.
+    let gathered = gather::gather(&borrowed)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    write_file(&output, gathered.as_bytes())?;
+    Ok(None)
+}
+
+/// One record of either side, as the concordance iterator reads it.
+struct ConcordanceLocus {
+    index: usize,
+    contig: String,
+    start: i32,
+    filtered: bool,
+}
+
+impl gatk_engine::concordance_walker::ConcordanceRecord for ConcordanceLocus {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.start
+    }
+    fn is_filtered(&self) -> bool {
+        self.filtered
+    }
+}
+
+/// `Concordance.apply`: a truth callset and an evaluation one walked together.
+///
+/// The first `AbstractConcordanceWalker` with a runner here, and what makes it one is that it
+/// drives TWO feature inputs at once: the iterator in [`gatk_engine::concordance_walker`] steps
+/// them by the dictionary's contig order, and every step is labelled with one of five states. The
+/// table those states become is [`gatk_tools::concordance`], where a golden measures it; the
+/// runner reads the files, applies the truth side's filter, and writes what the labels ask for.
+///
+/// The truth side has a filter of its own (`makeTruthVariantFilter`: not filtered, not symbolic)
+/// and the eval side has none, which is why a filtered eval record is a STATE rather than a
+/// dropped record.
+pub fn concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::concordance as conc;
+
+    let _ = resolve_read_filters(parser, "Concordance")?;
+    let truth_path = argument(parser, "truth").ok_or_else(|| {
+        Thrown::command_line("Argument truth was missing: Argument 'truth' is required")
+    })?;
+    // `--evaluation` is the long name and `-eval` the short one; the parser knows only the long
+    // one, and a runner that asked for the short one read nothing at all.
+    let eval_path = argument(parser, "evaluation").ok_or_else(|| {
+        Thrown::command_line("Argument evaluation was missing: Argument 'evaluation' is required")
+    })?;
+    let summary_path = argument(parser, "summary").ok_or_else(|| {
+        Thrown::command_line("Argument summary was missing: Argument 'summary' is required")
+    })?;
+
+    let read_vcf = |path: &str| -> Result<(String, htsjdk_vcf::reader::VcfFile), Thrown> {
+        let bytes = std::fs::read(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: path.to_string(),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok((text, file))
+    };
+    let (truth_text, truth_file) = read_vcf(&truth_path)?;
+    let (_, eval_file) = read_vcf(&eval_path)?;
+
+    // `validateSequenceDictionaries` still runs, and it is the ENGINE's: the master against the
+    // reads, the reference and the features, then the reference against the reads. Only the best
+    // available dictionary is this tool's own. Measured on a row whose `--sequence-dictionary`
+    // shares no contig with the BAM the command line named: the reference refused and the port
+    // walked.
+    let reads_inputs = arguments(parser, "input").len();
+    let reads_dictionaries: Vec<Vec<htsjdk_bam::header::SequenceRecord>> =
+        arguments(parser, "input")
+            .iter()
+            .map(|reads| reads_dictionary(parser, reads, reads_inputs))
+            .collect::<Result<_, _>>()?;
+    let features = vcf_dictionary(&truth_text);
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            for reads in &reads_dictionaries {
+                validate_against_master(master, "reads", reads)?;
+            }
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+            validate_against_master(master, "features", &features.sequences)?;
+        }
+        let compare = |left_name: &str,
+                       left: &[htsjdk_bam::header::SequenceRecord],
+                       right_name: &str,
+                       right: &[htsjdk_bam::header::SequenceRecord]|
+         -> Result<(), Thrown> {
+            gatk_tools::sequence_dictionary::validate(
+                left_name, left, right_name, right, false, false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })
+        };
+        if let Some(reference) = &reference {
+            for reads in &reads_dictionaries {
+                compare("reference", &reference.sequences, "reads", reads)?;
+            }
+            compare(
+                "reference",
+                &reference.sequences,
+                "features",
+                &features.sequences,
+            )?;
+        }
+        for reads in &reads_dictionaries {
+            compare("reads", reads, "features", &features.sequences)?;
+        }
+    }
+
+    // `AbstractConcordanceWalker.getBestAvailableSequenceDictionary` is FINAL and returns the
+    // TRUTH file's dictionary. Not the master, not the reference: a run whose
+    // `--sequence-dictionary` carries another contig entirely still resolves `-L chr1` against the
+    // truth file, and the comparator orders by the contig's index in that same dictionary.
+    // Measured on three rows of this tool's array, where the port refused the interval the
+    // reference walked.
+    let sequences: Vec<htsjdk_bam::header::SequenceRecord> =
+        vcf_dictionary(&truth_text).sequences.clone();
+
+    // The comparator orders by the contig's INDEX in that dictionary, so only the names matter to
+    // it; the lengths matter to `-L`, which validates against them.
+    let dictionary: Vec<String> = sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+
+    // `-L` bounds BOTH sides: the base class hands each file the same traversal parameters, so a
+    // window that ends before a call drops that call from the comparison entirely. Measured on a
+    // row whose window is chr1:1-6000 and whose eval file calls at 6001: the reference counted one
+    // false positive fewer.
+    let dictionary_header = SamHeader {
+        sequences: sequences.clone(),
+        ..SamHeader::default()
+    };
+    let intervals =
+        interval_arguments(parser, &dictionary_header)?.map(|parameters| parameters.intervals);
+    for (path, file) in [(&truth_path, &truth_file), (&eval_path, &eval_file)] {
+        let _ = file;
+        if intervals.is_some() && !has_feature_index(path) {
+            return Err(Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException",
+                message: Some(format!(
+                    "Input {path} must support random access to enable traversal by intervals. \
+                     If it's a file, please index it using the bundled tool IndexFeatureFile"
+                )),
+            });
+        }
+    }
+    let in_traversal = |contig: &str, start: i32, stop: i32| -> bool {
+        match &intervals {
+            None => true,
+            Some(windows) => windows.iter().any(|window| {
+                window.contig == contig && window.start <= stop && start <= window.end
+            }),
+        }
+    };
+
+    let is_symbolic_or_sv = |record: &htsjdk_vcf::variant::VariantContext| {
+        record.alleles[1..]
+            .iter()
+            .any(|allele| allele.is_symbolic() || allele.display_string().starts_with('<'))
+    };
+    // `makeTruthVariantFilter`, which the base class applies before the iterator sees a record.
+    let truth: Vec<ConcordanceLocus> = truth_file
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| {
+            in_traversal(&record.contig, record.start as i32, record.stop as i32)
+                && conc::truth_variant_filter(record.is_filtered(), is_symbolic_or_sv(record))
+        })
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+    let eval: Vec<ConcordanceLocus> = eval_file
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| in_traversal(&record.contig, record.start as i32, record.stop as i32))
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+
+    let alleles = |record: &htsjdk_vcf::variant::VariantContext| -> (String, Vec<String>) {
+        (
+            record
+                .alleles
+                .first()
+                .map(|allele| allele.display_string())
+                .unwrap_or_default(),
+            record.alleles[1..]
+                .iter()
+                .map(|allele| allele.display_string())
+                .collect(),
+        )
+    };
+    let steps =
+        gatk_engine::concordance_walker::concordance(&truth, &eval, &dictionary, |left, right| {
+            let (truth_reference, truth_alternates) = alleles(&truth_file.records[left.index]);
+            let (eval_reference, eval_alternates) = alleles(&eval_file.records[right.index]);
+            conc::variants_at_same_locus_are_concordant(
+                &truth_reference,
+                &truth_alternates,
+                &eval_reference,
+                &eval_alternates,
+            )
+        });
+
+    // One record per FILTER line of the EVAL header, whatever any record carries.
+    //
+    // A `##FILTER` line carries an ID and a description and no Number or Type, so the header model
+    // holds it as a STRUCTURED line rather than a compound one: reading only the compound ones
+    // found no filters at all, and the first filtered record then dereferenced a record that was
+    // never created.
+    let declared: Vec<String> = eval_file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Compound { key, id, .. } if key == "FILTER" => {
+                Some(id.clone())
+            }
+            htsjdk_vcf::header::HeaderLine::Structured { key, fields } if key == "FILTER" => fields
+                .iter()
+                .find(|(name, _)| name == "ID")
+                .map(|(_, value)| value.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut analysis = conc::FilterAnalysis::new(&declared);
+    let filter_analysis_path = argument(parser, "filter-analysis");
+
+    let mut summary = conc::Summary::default();
+    let mut annotated: std::collections::HashMap<
+        &'static str,
+        Vec<htsjdk_vcf::variant::VariantContext>,
+    > = std::collections::HashMap::new();
+    for step in &steps {
+        // `getTruthIfPresentElseEval().isSNP()`: the truth record decides the bucket when there is
+        // one, so a false positive is bucketed by the EVAL record and nothing else is.
+        let representative = match (step.truth, step.eval) {
+            (Some(index), _) => &truth_file.records[truth[index].index],
+            (None, Some(index)) => &eval_file.records[eval[index].index],
+            (None, None) => continue,
+        };
+        let is_snp = gatk_tools::remove_nearby_indels::variant_type(representative)
+            == gatk_tools::remove_nearby_indels::VariantType::Snp;
+        summary.add(step.state, is_snp);
+
+        if let Some(index) = step.eval {
+            let record = &eval_file.records[eval[index].index];
+            analysis
+                .apply(
+                    step.state,
+                    &record.filters.clone().unwrap_or_default(),
+                    filter_analysis_path.is_some(),
+                )
+                .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+        }
+
+        for (file, side) in conc::writes(step.state) {
+            let name = match file {
+                conc::AnnotatedVcf::TruePositivesAndFalseNegatives => {
+                    "true-positives-and-false-negatives"
+                }
+                conc::AnnotatedVcf::TruePositivesAndFalsePositives => {
+                    "true-positives-and-false-positives"
+                }
+                conc::AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives => {
+                    "filtered-true-negatives-and-false-negatives"
+                }
+            };
+            if argument(parser, name).is_none() {
+                continue;
+            }
+            let record = match side {
+                conc::Side::Truth => step
+                    .truth
+                    .map(|index| &truth_file.records[truth[index].index]),
+                conc::Side::Eval => step.eval.map(|index| &eval_file.records[eval[index].index]),
+            };
+            let Some(record) = record else {
+                continue;
+            };
+            // `annotateWithConcordanceState`: the state's abbreviation under `STATUS`, on a copy.
+            let mut copy = record.clone();
+            copy.attributes
+                .retain(|(key, _)| key != conc::TRUTH_STATUS_VCF_ATTRIBUTE);
+            copy.attributes.push((
+                conc::TRUTH_STATUS_VCF_ATTRIBUTE.to_string(),
+                htsjdk_vcf::variant::Value::Str(step.state.abbreviation().to_string()),
+            ));
+            annotated.entry(name).or_default().push(copy);
+        }
+    }
+
+    write_file(&summary_path, summary.table().as_bytes())?;
+    if let Some(path) = &filter_analysis_path {
+        let table = analysis
+            .table()
+            .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+        write_file(path, table.as_bytes())?;
+    }
+    for (name, side) in [
+        (
+            "true-positives-and-false-negatives",
+            conc::AnnotatedVcf::TruePositivesAndFalseNegatives,
+        ),
+        (
+            "true-positives-and-false-positives",
+            conc::AnnotatedVcf::TruePositivesAndFalsePositives,
+        ),
+        (
+            "filtered-true-negatives-and-false-negatives",
+            conc::AnnotatedVcf::FilteredTrueNegativesAndFalseNegatives,
+        ),
+    ] {
+        let Some(path) = argument(parser, name) else {
+            continue;
+        };
+        // The header is the SIDE's own, with the STATUS line and the tool's default lines added.
+        let source = match side.header() {
+            conc::Side::Truth => &truth_file.header,
+            conc::Side::Eval => &eval_file.header,
+        };
+        let mut header = source.clone();
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: conc::TRUTH_STATUS_VCF_ATTRIBUTE.to_string(),
+            number: htsjdk_vcf::header::Cardinality::Fixed(1),
+            line_type: htsjdk_vcf::header::LineType::String,
+            description: "Truth status: TP/FP/FN for true positive/false positive/false negative."
+                .to_string(),
+            extra: Vec::new(),
+        });
+        if flag(parser, "add-output-vcf-command-line") {
+            header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                    key: "source".to_string(),
+                    value: "Concordance".to_string(),
+                });
+            if let Some(command_line) = command_line_header_line(parser, "Concordance") {
+                header.lines.push(command_line);
+            }
+        }
+        let mut records = annotated.remove(name).unwrap_or_default();
+        // `--sites-only-vcf-output` empties the sample set on the header and the genotypes on every
+        // record, the same way it does on every other tool here that writes a VCF.
+        if flag(parser, "sites-only-vcf-output") {
+            header.samples.clear();
+            for record in &mut records {
+                record.genotypes.clear();
+            }
+        }
+        let text = htsjdk_vcf::vcf_file::write_vcf(&header, &records).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+        write_variant_output(parser, &path, &text)?;
+    }
+    Ok(None)
+}
+
+/// `DepthOfCoverage.apply`: every base of every interval, counted per sample.
+///
+/// The first tool here that writes a FAMILY of files, and which of them appear is a function of the
+/// four `omit` arguments alone: no omission depends on whether the data would have filled the file.
+/// This port writes ONE of the seven, the per-base table, and refuses a command line that asks for
+/// any of the other six: their quantiles come from the partitioned data store, which is not ported,
+/// and a file of plausible numbers would be worse than a refusal.
+///
+/// What IS ported is what a row of that table holds: every base of the interval is a row whether a
+/// read reaches it or not, the partition is the SAMPLE rather than the read group, and
+/// `--min-base-quality` filters a BASE rather than a read.
+pub fn depth_of_coverage(parser: &Parser) -> Outcome {
+    use gatk_tools::depth_of_coverage as coverage;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "DepthOfCoverage")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // The two arguments whose values decide the FORMAT of what is written, held at their defaults.
+    if scalar(parser, "output-format").as_deref().unwrap_or("CSV") != "CSV" {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--output-format TABLE writes the per-base file as a padded table, which this port \
+             does not write yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let partitions = arguments(parser, "partition-type");
+    if !partitions.is_empty() && partitions != vec!["sample".to_string()] {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--partition-type beyond `sample` partitions the counts by read group, library or \
+             centre as well, which this port does not carry yet. This message is the port's own \
+             and not GATK's.",
+        ));
+    }
+    if argument(parser, "calculate-coverage-over-genes").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--calculate-coverage-over-genes writes a per-gene table this port does not write \
+             yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    let omissions = coverage::Omissions {
+        locus_table: flag(parser, "omit-locus-table"),
+        depth_output_at_each_base: flag(parser, "omit-depth-output-at-each-base"),
+        per_sample_statistics: flag(parser, "omit-per-sample-statistics"),
+        interval_statistics: flag(parser, "omit-interval-statistics"),
+    };
+    // The per-base file's suffix is the EMPTY one; every other suffix is a table this port does
+    // not compute.
+    let unported: Vec<&str> = coverage::written_suffixes(&omissions)
+        .into_iter()
+        .filter(|suffix| !suffix.is_empty())
+        .collect();
+    if !unported.is_empty() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "This run asks for {}, whose quantiles come from a partitioned data store this \
+                 port does not carry yet. Pass --omit-locus-table, --omit-interval-statistics and \
+                 --omit-per-sample-statistics. This message is the port's own and not GATK's.",
+                unported.join(", ")
+            ),
+        ));
+    }
+
+    // `calculateCoverageHistogramBinEndpoints`, which runs at startup and refuses the three
+    // binning arguments together rather than one at a time.
+    let (start, stop, bins) = (
+        number_or(parser, "start", 1),
+        number_or(parser, "stop", 500),
+        number_or(parser, "nBins", 499),
+    );
+    if bins > stop - start || start < 1 {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+            message: Some(
+                "Bad input: the start must be at least 1 and the number of bins may not exceed \
+                 stop - start"
+                    .to_string(),
+            ),
+        });
+    }
+
+    let minimum = number_or(parser, "min-base-quality", 0) as i64;
+    let maximum = number_or(parser, "max-base-quality", 127) as i64;
+    for (name, value) in [("min-base-quality", minimum), ("max-base-quality", maximum)] {
+        // Every one of the three is the PARSER's refusal, which is a `CommandLineException` and
+        // therefore status one, whichever side of the byte range the value fell out on.
+        coverage::check_base_quality(name, value)
+            .map_err(|error| Thrown::command_line(error.message()))?;
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+
+    // `ReadUtils.getSamplesFromHeader`: the distinct SM values, in the header's own order, which is
+    // the order the sample columns are written in.
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        if let Some(sample) = group.attributes.get("SM") {
+            if !samples.iter().any(|seen| seen == sample) {
+                samples.push(sample.to_string());
+            }
+        }
+    }
+    let sample_of = |record: &htsjdk_bam::record::BamRecord| -> String {
+        gatk_engine::read_pileup::sample_name(record, &header).unwrap_or_default()
+    };
+    let reads: Vec<coverage::Read> = records
+        .iter()
+        .filter_map(|record| {
+            contig_name(&header, record.reference_index).map(|contig| coverage::Read {
+                name: record.read_name.clone(),
+                sample: sample_of(record),
+                contig: contig.to_string(),
+                start: record.alignment_start,
+                bases: record.read_bases.clone(),
+                base_qualities: record
+                    .base_qualities
+                    .iter()
+                    .map(|quality| i32::from(*quality))
+                    .collect(),
+            })
+        })
+        .collect();
+
+    // The traversal still runs when no file will be written, and two refusals live inside it.
+    //
+    // The REFERENCE is asked for the bases under each interval, so a `--reference` that does not
+    // carry the interval's contig is refused here rather than at startup: measured on a row whose
+    // dictionary validation is turned off and whose reference is the corpus's other contig.
+    //
+    // And it is asked only when `--print-base-counts` is on: the base-count field is the one thing
+    // in this table that needs a reference base, so a run without it writes its rows whatever the
+    // reference carries and a run with it is refused. Both rows are in this tool's array.
+    if flag(parser, "print-base-counts") {
+        if let Some(path) = argument(parser, "reference") {
+            let mut reference =
+                gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+            for interval in &intervals {
+                if let Err(gatk_engine::reference::ReferenceError::UnknownContig(contig)) =
+                    reference.query(&interval.contig, interval.start, interval.start)
+                {
+                    return Err(Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&sequences)
+                    )));
+                }
+            }
+        }
+    }
+    // And `CoverageUtils.getBaseCounts` throws on the two fragment modes before it counts a base:
+    // the feature is disabled in the reference itself (gatk#6491), so the refusal is the answer.
+    // It comes AFTER the binning check and after the reference query, which is what two rows of
+    // this tool's array measure.
+    if matches!(
+        scalar(parser, "count-type").as_deref(),
+        Some("COUNT_FRAGMENTS") | Some("COUNT_FRAGMENTS_REQUIRE_SAME_BASE")
+    ) {
+        return Err(Thrown::non_user(
+            "java.lang.UnsupportedOperationException",
+            "Fragment based counting is currently unsupported",
+        ));
+    }
+    // `--include-deletions` adds a sixth column, `D`, to every base-count field and counts a
+    // deletion into it. The ported counter has the five bases and no deletion slot, so a run that
+    // asks for it would write a table one column short of the reference's.
+    if flag(parser, "include-deletions") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--include-deletions adds a D column to the base counts, which this port does not \
+             count yet. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    // `--omit-depth-output-at-each-base` removes the per-base file, which is the only file this
+    // port writes: the run then writes nothing at all, and so does the reference once the other
+    // three omissions have taken their files away.
+    if omissions.depth_output_at_each_base {
+        return Ok(None);
+    }
+
+    let print_base_counts = flag(parser, "print-base-counts");
+    let mut text = coverage::per_locus_header(&samples, print_base_counts);
+    text.push('\n');
+    for interval in &intervals {
+        for locus in coverage::per_locus(
+            &reads,
+            &samples,
+            &interval.contig,
+            interval.start,
+            interval.end,
+            minimum as i32,
+            maximum as i32,
+        ) {
+            text.push_str(&coverage::per_locus_row(&locus, print_base_counts));
+            text.push('\n');
+        }
+    }
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// One record as the posteriors read it: the alleles, the counts in INFO, and the genotypes.
+fn posterior_record(
+    vc: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::calculate_genotype_posteriors::Record {
+    use gatk_tools::calculate_genotype_posteriors as posteriors;
+
+    let mut attributes = std::collections::BTreeMap::new();
+    for key in ["AC", "AN", "MLEAC"] {
+        if let Some((_, value)) = vc.attributes.iter().find(|(name, _)| name == key) {
+            if let Some(text) = value.format() {
+                attributes.insert(key.to_string(), text);
+            }
+        }
+    }
+    posteriors::Record {
+        id: vc.id.clone(),
+        start: vc.start as i32,
+        alleles: vc
+            .alleles
+            .iter()
+            .map(|allele| posteriors::Allele {
+                bases: allele.display_string(),
+                is_ref: allele.is_reference(),
+            })
+            .collect(),
+        attributes,
+        genotypes: vc
+            .genotypes
+            .iter()
+            .map(|genotype| posteriors::Genotype {
+                sample: genotype.sample_name.clone(),
+                alleles: genotype
+                    .alleles
+                    .iter()
+                    .filter_map(|allele| {
+                        vc.alleles.iter().position(|candidate| candidate == allele)
+                    })
+                    .collect(),
+                depth: genotype.dp,
+                likelihoods: genotype.pl.clone(),
+                posteriors: genotype
+                    .extended
+                    .iter()
+                    .find(|(key, _)| key == "PP")
+                    .and_then(|(_, value)| value.format())
+                    .map(|text| {
+                        text.split(',')
+                            .filter_map(|piece| piece.trim().parse().ok())
+                            .collect()
+                    }),
+            })
+            .collect(),
+    }
+}
+
+/// `CalculateGenotypePosteriors.apply`: likelihoods turned into posteriors under a prior built
+/// from allele counts.
+///
+/// Where the counts come from is the whole of the tool, and three arguments move it: a site no
+/// supporting callset carries falls back to the INPUT's own samples, but only when there are ten of
+/// them or `--num-reference-samples-if-no-call` was given, and `--ignore-input-samples` takes even
+/// that away. A site with no counts at all gets a FLAT prior, which is `PG` all zeros and `PP`
+/// equal to `PL`.
+///
+/// `calculateChromosomeCounts` runs on every record BEFORE the priors, so the counts the posteriors
+/// read are the recomputed ones rather than whatever the file carried.
+///
+/// The family half is a second algorithm (`FamilyLikelihoods`) that this port does not carry, so a
+/// command line with a `--pedigree` is refused rather than answered without it.
+pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
+    use gatk_tools::calculate_genotype_posteriors as posteriors;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "CalculateGenotypePosteriors")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if argument(parser, "pedigree").is_some() && !flag(parser, "skip-family-priors") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--pedigree asks for the family priors, a second algorithm this port does not carry \
+             yet. Pass --skip-family-priors. This message is the port's own and not GATK's.",
+        ));
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    // Every supporting callset, read whole: `featureContext.getValues` asks each of them for the
+    // records at the driving record's locus, and only those with the SAME START are used.
+    let mut supporting: Vec<posteriors::Record> = Vec::new();
+    for path in arguments(parser, "supporting-callsets") {
+        let bytes = std::fs::read(&path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile { path: path.clone() }.message(),
+            )
+        })?;
+        let support_text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .unwrap_or_default()
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let support = htsjdk_vcf::reader::read_vcf(&support_text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        supporting.extend(support.records.iter().map(posterior_record));
+    }
+
+    let number = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let options = posteriors::Options {
+        snp_prior_dirichlet: number("global-prior-snp", 0.001),
+        indel_prior_dirichlet: number("global-prior-indel", 0.001),
+        use_input_samples_allele_counts: !flag(parser, "discovered-allele-count-priors-off"),
+        use_mleac: !flag(parser, "default-to-allele-count"),
+        ignore_input_samples_for_missing_resources: flag(parser, "ignore-input-samples"),
+        use_flat_priors_for_indels: flag(parser, "use-flat-priors-for-indels"),
+    };
+    let missing_reference_samples = number_or(parser, "num-reference-samples-if-no-call", 0);
+    let skip_population_priors = flag(parser, "skip-population-priors");
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let original = &file.records[located.index];
+        // `calculateChromosomeCounts(builder, false)` on every record, whatever the priors do next.
+        let mut bridged = crate::variant_bridge::to_engine(original);
+        gatk_tools::select_variants::calculate_chromosome_counts(&mut bridged.record.variant);
+        let mut vc = crate::variant_bridge::from_engine(original, &bridged.record);
+        if skip_population_priors {
+            written.push(vc);
+            continue;
+        }
+
+        let record = posterior_record(&vc);
+        let matching: Vec<posteriors::Record> = supporting
+            .iter()
+            .filter(|resource| resource.start == record.start)
+            .cloned()
+            .collect();
+        let answer = posteriors::calculate_posterior_probs(
+            &record,
+            &matching,
+            if matching.is_empty() {
+                missing_reference_samples
+            } else {
+                0
+            },
+            &options,
+        );
+
+        if let Some(prior) = &answer.prior {
+            vc.attributes.retain(|(key, _)| key != "PG");
+            vc.attributes.push((
+                "PG".to_string(),
+                htsjdk_vcf::variant::Value::Str(
+                    prior
+                        .iter()
+                        .map(|value| value.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ));
+        }
+        for called in &answer.genotypes {
+            let Some(genotype) = vc
+                .genotypes
+                .iter_mut()
+                .find(|genotype| genotype.sample_name == called.sample)
+            else {
+                continue;
+            };
+            genotype.alleles = called
+                .alleles
+                .iter()
+                .filter_map(|index| original.alleles.get(*index).cloned())
+                .collect();
+            if let Some(gq) = called.gq {
+                genotype.gq = Some(gq);
+            }
+            genotype.extended.retain(|(key, _)| key != "PP");
+            if let Some(values) = &called.posteriors {
+                genotype.extended.push((
+                    "PP".to_string(),
+                    htsjdk_vcf::variant::Value::Str(
+                        values
+                            .iter()
+                            .map(|value| value.to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                ));
+            }
+        }
+        written.push(vc);
+    }
+
+    // The two header lines the tool adds, plus the three the RECOMPUTATION needs: every record goes
+    // through `calculateChromosomeCounts`, so `AC`, `AF` and `AN` are written whether the input
+    // declared them or not. Measured on every accepted row of this tool's array, where the port
+    // wrote a count into a header that did not declare it.
+    let mut header = file.header.clone();
+    for key in ["AC", "AF", "AN"] {
+        header.lines.retain(|line| {
+            !matches!(
+                line,
+                htsjdk_vcf::header::HeaderLine::Compound { key: k, id, .. }
+                    if k == "INFO" && id == key
+            )
+        });
+        if let Some(standard) = htsjdk_vcf::standard_header_lines::standard_info_line(key) {
+            header.lines.push(standard);
+        }
+    }
+    for (key, id, number, line_type, description) in [
+        (
+            "INFO",
+            "PG",
+            htsjdk_vcf::header::Cardinality::G,
+            htsjdk_vcf::header::LineType::Integer,
+            "Genotype Likelihood Prior",
+        ),
+        (
+            "FORMAT",
+            "PP",
+            htsjdk_vcf::header::Cardinality::G,
+            htsjdk_vcf::header::LineType::Integer,
+            "Phred-scaled Posterior Genotype Probabilities",
+        ),
+    ] {
+        header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+            key: key.to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        });
+    }
+    if flag(parser, "add-output-vcf-command-line") {
+        header
+            .lines
+            .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                key: "source".to_string(),
+                value: "CalculateGenotypePosteriors".to_string(),
+            });
+        if let Some(command_line) = command_line_header_line(parser, "CalculateGenotypePosteriors")
+        {
+            header.lines.push(command_line);
+        }
+    }
+    // And NOT `VcfUtils.updateHeaderContigLines`: this tool writes the input's own contig lines
+    // whatever `--reference` says, so a port that rebuilt them added an `assembly=` field and a
+    // `##reference` line the reference never writes. Measured on every accepted row here.
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    if flag(parser, "sites-only-vcf-output") {
+        header.samples.clear();
+        for record in &mut written {
+            record.genotypes.clear();
+        }
+    }
+    let text = htsjdk_vcf::vcf_file::write_vcf(&header, &written).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!("{error:?}")),
+    })?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
+/// `DenoiseReadCounts.doWork`, in the branch with no panel: the counts standardised.
+///
+/// The next link of the copy-number chain, and the shortest: read the counts `CollectReadCounts`
+/// wrote, take them to fractional coverage, divide by the sample median, take the log, and subtract
+/// the median of THAT. Two files come out and they are the same file, because a run with no panel
+/// has nothing to denoise with: `writeResult` is handed the standardised values twice.
+///
+/// The panel itself is HDF5 and the GC correction reads the annotated intervals' GC column; neither
+/// is written here, so both arguments are refused rather than ignored.
+pub fn denoise_read_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::denoise_read_counts as denoise;
+
+    if argument(parser, "count-panel-of-normals").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--count-panel-of-normals is an HDF5 panel this port does not read yet. This message \
+             is the port's own and not GATK's.",
+        ));
+    }
+    if argument(parser, "annotated-intervals").is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--annotated-intervals turns on the GC-bias correction, which this port does not \
+             carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let standardized = argument(parser, "standardized-copy-ratios").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument standardized-copy-ratios was missing: Argument 'standardized-copy-ratios' \
+             is required",
+        )
+    })?;
+    let denoised = argument(parser, "denoised-copy-ratios").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument denoised-copy-ratios was missing: Argument 'denoised-copy-ratios' is required",
+        )
+    })?;
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+
+    can_read_file(&input)?;
+    let text = std::fs::read_to_string(&input)
+        .map_err(|error| Thrown::user(format!("{input}: {error}")))?;
+    // The `@SQ` block is the metadata, the `@RG`'s `SM` the sample, and the rows the counts.
+    let header = htsjdk_bam::reader::parse_header_text(
+        &text
+            .lines()
+            .take_while(|line| line.starts_with('@'))
+            .map(|line| format!("{line}\n"))
+            .collect::<String>(),
+    );
+    let sequences: Vec<(String, i32)> = header
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    let sample = header
+        .read_groups
+        .iter()
+        .find_map(|group| group.attributes.get("SM").map(str::to_string))
+        .unwrap_or_default();
+
+    let mut intervals: Vec<(String, i32, i32)> = Vec::new();
+    let mut counts: Vec<f64> = Vec::new();
+    for line in text
+        .lines()
+        .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+        .skip(1)
+    {
+        let columns: Vec<&str> = line.split('\t').collect();
+        if columns.len() < 4 {
+            continue;
+        }
+        intervals.push((
+            columns[0].to_string(),
+            columns[1].parse().unwrap_or_default(),
+            columns[2].parse().unwrap_or_default(),
+        ));
+        counts.push(columns[3].parse().unwrap_or(f64::NAN));
+    }
+
+    let values = denoise::standardize(&counts).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message().to_string()),
+    })?;
+    let table = denoise::write(&sequences, &sample, &intervals, &values);
+    // The same bytes twice: with no panel the denoised result IS the standardised one.
+    write_file(&standardized, table.as_bytes())?;
+    write_file(&denoised, table.as_bytes())?;
+    Ok(None)
+}
+
+/// `ValidateBasicSomaticShortMutations.apply`: a discovery call asked of a second pair of BAMs.
+///
+/// The second tool here that drives TWO samples of reads at once, and unlike `GetNormalArtifactData`
+/// it names them: `--val-case-sample-name` and `--val-control-sample-name` pick the pileups out of
+/// whatever `--input` holds, and `--discovery-sample-name` picks the genotype out of the VCF.
+///
+/// Three files can come out and each is optional but the first: the validation table, the annotated
+/// VCF and the summary. What decides a judgment is
+/// [`gatk_tools::validate_basic_somatic_short_mutations`], where a golden measures it.
+pub fn validate_basic_somatic_short_mutations(parser: &Parser) -> Outcome {
+    use gatk_tools::validate_basic_somatic_short_mutations as validate;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "ValidateBasicSomaticShortMutations")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(
+            gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                path: input.clone(),
+            }
+            .message(),
+        ));
+    }
+
+    let options = validate::Arguments {
+        discovery_sample: argument(parser, "discovery-sample-name").unwrap_or_default(),
+        validation_case_name: argument(parser, "val-case-sample-name").unwrap_or_default(),
+        validation_control_name: argument(parser, "val-control-sample-name").unwrap_or_default(),
+        min_power: scalar(parser, "min-power")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(validate::DEFAULT_MIN_POWER),
+        max_validation_normal_count: number_or(
+            parser,
+            "max-validation-normal-count",
+            validate::DEFAULT_MAX_VALIDATION_NORMAL_COUNT,
+        ),
+        min_bq_cutoff: number_or(
+            parser,
+            "min-base-quality-cutoff",
+            validate::DEFAULT_MIN_BQ_CUTOFF,
+        ),
+    };
+
+    // The reads of every `--input`, kept with the header they came from: the sample a read belongs
+    // to is its read group's, and the two names above pick which pileup a read lands in.
+    let resolved = resolve_read_filters(parser, "ValidateBasicSomaticShortMutations")?;
+    let mut reads: Vec<(String, htsjdk_bam::record::BamRecord)> = Vec::new();
+    for path in arguments(parser, "input") {
+        let source =
+            gatk_engine::reads::ReadsDataSource::open_unindexed(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let header = source.header().clone();
+        let filter = read_filter(parser, &resolved, &header)?;
+        for read in gatk_tools::read_walker::traverse(&source, &[], &filter)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?
+        {
+            let sample = gatk_engine::read_pileup::sample_name(&read, &header).unwrap_or_default();
+            reads.push((sample, read));
+        }
+    }
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+
+    let mut table: Vec<gatk_engine::basic_somatic_short_mutation_validator::BasicValidationResult> =
+        Vec::new();
+    let mut summary = gatk_tools::concordance::Summary::default();
+    let mut annotated: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let record = &file.records[located.index];
+        let Some(genotype) = record
+            .genotypes
+            .iter()
+            .find(|genotype| genotype.sample_name == options.discovery_sample)
+        else {
+            continue;
+        };
+        let allele =
+            |allele: &htsjdk_vcf::allele::Allele| gatk_engine::variant_context_utils::Allele {
+                bases: allele.display_string().into_bytes(),
+                is_reference: allele.is_reference(),
+            };
+        let validation_genotype =
+            gatk_engine::basic_somatic_short_mutation_validator::ValidationGenotype {
+                alleles: genotype.alleles.iter().map(allele).collect(),
+                ad: genotype.ad.clone(),
+                filters: genotype.filters.clone(),
+            };
+        // The pileup of one named sample at the record's START, which is the locus the validator
+        // counts at.
+        let pileup_of = |wanted: &str| -> Option<gatk_engine::read_pileup::ReadPileup<'_>> {
+            let elements: Vec<gatk_engine::pileup::PileupElement> = reads
+                .iter()
+                .filter(|(sample, _)| sample == wanted)
+                .filter_map(|(_, read)| {
+                    let offset = record.start as i32 - read.alignment_start;
+                    gatk_engine::pileup::PileupElement::for_read_and_offset(read, offset)
+                })
+                .collect();
+            if elements.is_empty() {
+                None
+            } else {
+                Some(gatk_engine::read_pileup::ReadPileup::new(
+                    &record.contig,
+                    record.start as i32,
+                    elements,
+                ))
+            }
+        };
+        let case = pileup_of(&options.validation_case_name);
+        let control = pileup_of(&options.validation_control_name);
+
+        let applied = validate::apply(
+            &record.contig,
+            record.start as i32,
+            record.stop as i32,
+            &allele(&record.alleles[0]),
+            &record.alleles[1..].iter().map(allele).collect::<Vec<_>>(),
+            &record.filters.clone().unwrap_or_default(),
+            &validation_genotype,
+            case.as_ref(),
+            control.as_ref(),
+            &options,
+        )
+        .map_err(|error| Thrown {
+            failure: match error {
+                validate::ToolError::NullResult => Failure::Other,
+                _ => Failure::User,
+            },
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+        let Some(applied) = applied else {
+            continue;
+        };
+        if let Some(result) = &applied.result {
+            table.push(result.clone());
+        }
+        validate::count_towards_summary(
+            &mut summary,
+            &applied,
+            gatk_tools::remove_nearby_indels::variant_type(record)
+                == gatk_tools::remove_nearby_indels::VariantType::Snp,
+        );
+        // The annotated record is the input's with the judgment in INFO; the genotypes travel with
+        // it, because the writer's header carries the input's samples.
+        let mut copy = record.clone();
+        copy.attributes.retain(|(key, _)| {
+            key != validate::JUDGMENT_KEY
+                && key != validate::POWER_KEY
+                && key != validate::VALIDATION_AD_KEY
+        });
+        copy.attributes.push((
+            validate::JUDGMENT_KEY.to_string(),
+            htsjdk_vcf::variant::Value::Str(applied.judgment.name().to_string()),
+        ));
+        if let (Some(power), Some((reference_count, alternate_count))) =
+            (applied.power, applied.validation_ad)
+        {
+            // `VCFEncoder`'s own rendering, which is three decimals for a double in this range:
+            // the port wrote the full `0.41258741258741227` where the reference wrote `0.413`.
+            copy.attributes.push((
+                validate::POWER_KEY.to_string(),
+                htsjdk_vcf::variant::Value::Str(htsjdk_vcf::variant::format_vcf_double(power)),
+            ));
+            copy.attributes.push((
+                validate::VALIDATION_AD_KEY.to_string(),
+                htsjdk_vcf::variant::Value::Str(format!("{reference_count},{alternate_count}")),
+            ));
+        }
+        annotated.push(copy);
+    }
+
+    write_file(
+        &output,
+        gatk_engine::basic_somatic_short_mutation_validator::write_table(&table).as_bytes(),
+    )?;
+    if let Some(path) = argument(parser, "summary") {
+        write_file(&path, summary.table().as_bytes())?;
+    }
+    if let Some(path) = argument(parser, "annotated-vcf") {
+        // `new VCFHeader(headerLines, inputHeader.getGenotypeSamples())`: the input's lines, the
+        // three this tool declares, the tool's default lines, and the input's OWN samples, so the
+        // annotated file keeps its genotype columns.
+        let mut header = file.header.clone();
+        for (id, number, line_type, description) in [
+            (
+                validate::JUDGMENT_KEY,
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::String,
+                "Validation judgment: validated, unvalidated, or skipped.",
+            ),
+            (
+                validate::POWER_KEY,
+                htsjdk_vcf::header::Cardinality::Fixed(1),
+                htsjdk_vcf::header::LineType::Float,
+                "Power to validate variant in validation bam.",
+            ),
+            (
+                validate::VALIDATION_AD_KEY,
+                htsjdk_vcf::header::Cardinality::A,
+                htsjdk_vcf::header::LineType::Integer,
+                "Ref and alt allele count in validation bam.",
+            ),
+        ] {
+            header.lines.push(htsjdk_vcf::header::HeaderLine::Compound {
+                key: "INFO".to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            });
+        }
+        if flag(parser, "add-output-vcf-command-line") {
+            header
+                .lines
+                .push(htsjdk_vcf::header::HeaderLine::Unstructured {
+                    key: "source".to_string(),
+                    value: "ValidateBasicSomaticShortMutations".to_string(),
+                });
+            if let Some(command_line) =
+                command_line_header_line(parser, "ValidateBasicSomaticShortMutations")
+            {
+                header.lines.push(command_line);
+            }
+        }
+        // `--sites-only-vcf-output` empties the sample set on the header and the genotypes on the
+        // records, the same way it does on every other writer here.
+        let mut records = annotated.clone();
+        if flag(parser, "sites-only-vcf-output") {
+            header.samples.clear();
+            for record in &mut records {
+                record.genotypes.clear();
+            }
+        }
+        let text = htsjdk_vcf::vcf_file::write_vcf(&header, &records).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!("{error:?}")),
+        })?;
+        write_variant_output(parser, &path, &text)?;
+    }
+    Ok(None)
+}
+
+/// `PrintReadCounts.apply`: a depth-evidence or counts file rewritten for the CNV callers.
+///
+/// A `FeatureWalker`, and the two feature types it accepts disagree about what a header is: an
+/// `.rd.txt` carries one line of column names and NO dictionary, so the run needs
+/// `--sequence-dictionary` and refuses without one; a `.counts.tsv` carries a whole SAM header and
+/// never consults it. Which files come out, and what is in them when the run does not finish, is
+/// [`gatk_tools::print_read_counts`], where a golden measures it.
+pub fn print_read_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::print_read_counts as counts;
+
+    let _ = resolve_read_filters(parser, "PrintReadCounts")?;
+    let input = argument(parser, "input-counts").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument input-counts was missing: Argument 'input-counts' is required",
+        )
+    })?;
+    let prefix = argument(parser, "output-prefix").unwrap_or_default();
+    // `FeatureManager` asks every codec whether it can decode the path, and the two that matter
+    // here answer by EXTENSION: `.counts.tsv` for the simple counts and `.rd.txt` for the depth
+    // evidence. A file called `counts.tsv` has neither, so it is refused for having no codec
+    // rather than read as the table it holds. Measured on four rows of this tool's array.
+    if !(input.ends_with(".counts.tsv") || input.ends_with(".rd.txt")) {
+        return Err(Thrown::user(format!(
+            "Cannot read file://{} because no suitable codecs found",
+            java_absolute_path(&input)
+        )));
+    }
+    let text = std::fs::read_to_string(&input).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: input.clone(),
+            }
+            .message(),
+        )
+    })?;
+
+    // The two headers this tool accepts, told apart the way the codecs tell them apart: a SAM
+    // header begins with `@`, a depth header with its column names.
+    let parsed = if text.starts_with('@') {
+        let header = htsjdk_bam::reader::parse_header_text(
+            &text
+                .lines()
+                .take_while(|line| line.starts_with('@'))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        );
+        let records = text
+            .lines()
+            .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+            .skip(1)
+            .filter_map(|line| {
+                let columns: Vec<&str> = line.split('\t').collect();
+                (columns.len() >= 4).then(|| counts::SimpleCount {
+                    contig: columns[0].to_string(),
+                    start: columns[1].parse().unwrap_or_default(),
+                    end: columns[2].parse().unwrap_or_default(),
+                    count: columns[3].parse().unwrap_or_default(),
+                })
+            })
+            .collect();
+        counts::Input::Counts(counts::CountsFile { header, records })
+    } else {
+        let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+        let header = lines.next().unwrap_or_default();
+        counts::Input::Depth(counts::DepthFile {
+            samples: counts::depth_header_samples(header),
+            records: lines.filter_map(counts::decode_depth).collect(),
+        })
+    };
+
+    let dictionary = master_dictionary(parser)?.map(|header| header.sequences);
+    let intervals: Vec<counts::Interval> = arguments(parser, "intervals")
+        .iter()
+        .filter_map(|query| {
+            let (contig, range) = query.split_once(':')?;
+            let (start, end) = range.split_once('-')?;
+            Some(counts::Interval {
+                contig: contig.to_string(),
+                start: start.parse().ok()?,
+                end: end.parse().ok()?,
+            })
+        })
+        .collect();
+
+    let run = counts::run(
+        &parsed,
+        dictionary.as_deref(),
+        &prefix,
+        argument(parser, "output-file-list").as_deref(),
+        &intervals,
+    );
+    // A refused run still WROTE: the files the tool had opened before it threw are on disk, half a
+    // header and all, which is what the golden measures and why they are written before the
+    // refusal is raised.
+    for (path, contents) in run.disk.files() {
+        write_file(&path, contents.as_bytes())?;
+    }
+    if let Some(error) = &run.error {
+        // The class is borrowed from the error rather than a constant, so it is matched to one of
+        // the three the module can name: a `Thrown` holds a `&'static str`.
+        let class = match error.java_class() {
+            "org.broadinstitute.hellbender.exceptions.UserException" => {
+                "org.broadinstitute.hellbender.exceptions.UserException"
+            }
+            "java.lang.ArrayIndexOutOfBoundsException" => {
+                "java.lang.ArrayIndexOutOfBoundsException"
+            }
+            _ => "java.lang.IllegalArgumentException",
+        };
+        return Err(Thrown {
+            failure: if class == "org.broadinstitute.hellbender.exceptions.UserException" {
+                Failure::User
+            } else {
+                Failure::Other
+            },
+            exception: class,
+            message: Some(error.message()),
+        });
+    }
+    Ok(None)
+}
+
+/// One read as the four SV evidence writers read it.
+fn sv_read(
+    record: &htsjdk_bam::record::BamRecord,
+    header: &SamHeader,
+) -> gatk_tools::collect_sv_evidence::Read {
+    let contig_of = |index: i32| -> Option<String> {
+        header
+            .sequences
+            .get(usize::try_from(index).ok()?)
+            .map(|sequence| sequence.name.clone())
+    };
+    gatk_tools::collect_sv_evidence::Read {
+        name: record.read_name.clone(),
+        contig_index: usize::try_from(record.reference_index).unwrap_or(usize::MAX),
+        contig: contig_of(record.reference_index).unwrap_or_default(),
+        start: record.alignment_start,
+        mapping_quality: i32::from(record.mapping_quality),
+        cigar: record
+            .cigar
+            .elements
+            .iter()
+            .map(|element| (element.op.to_char() as char, element.length as i32))
+            .collect(),
+        paired: record.flags & 0x1 != 0,
+        properly_paired: record.flags & 0x2 != 0,
+        mate_unmapped: record.flags & 0x8 != 0,
+        mate_contig_index: usize::try_from(record.mate_reference_index).ok(),
+        mate_contig: contig_of(record.mate_reference_index),
+        mate_start: Some(record.mate_alignment_start),
+        reverse_strand: record.flags & 0x10 != 0,
+        mate_reverse_strand: record.flags & 0x20 != 0,
+        supplementary: record.flags & 0x800 != 0,
+        secondary: record.flags & 0x100 != 0,
+        duplicate: record.flags & 0x400 != 0,
+        unmapped: record.flags & 0x4 != 0,
+        bases: record.read_bases.clone(),
+        base_qualities: record
+            .base_qualities
+            .iter()
+            .map(|quality| i32::from(*quality))
+            .collect(),
+    }
+}
+
+/// `CollectSVEvidence.apply`: one BAM walked once for four kinds of evidence.
+///
+/// Every tool with a runner here so far wrote one kind of thing; this one writes up to four, and
+/// each has its own rule for which read it will look at. What a read contributes is
+/// [`gatk_tools::collect_sv_evidence`], where a golden measures it; the runner opens the BAM, the
+/// sites and the intervals, and checks the file NAMES, which the reference does before it reads a
+/// record: a writer refuses a name it could not read back.
+pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
+    use gatk_tools::collect_sv_evidence as evidence;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectSVEvidence")?;
+    let _ = argument(parser, "sample-name").ok_or_else(|| {
+        Thrown::command_line("Argument sample-name was missing: Argument 'sample-name' is required")
+    })?;
+
+    let pair_file = argument(parser, "pe-file");
+    let split_file = argument(parser, "sr-file");
+    let site_file = argument(parser, "sd-file");
+    let depth_file = argument(parser, "depth-evidence-file");
+    if pair_file.is_none() && split_file.is_none() && site_file.is_none() && depth_file.is_none() {
+        return Err(Thrown::user(evidence::NO_OUTPUT_MESSAGE));
+    }
+    // Each writer tests the name it was given BEFORE the traversal, and refuses one it could not
+    // read back: the extensions are the codec's own.
+    for (kind, path, endings) in [
+        ("pe", &pair_file, [".pe.txt", ".pe.txt.gz", ".pe.bci"]),
+        ("sr", &split_file, [".sr.txt", ".sr.txt.gz", ".sr.bci"]),
+        ("sd", &site_file, [".sd.txt", ".sd.txt.gz", ".sd.bci"]),
+        ("rd", &depth_file, [".rd.txt", ".rd.txt.gz", ".rd.bci"]),
+    ] {
+        if let Some(name) = path {
+            if !endings.iter().any(|ending| name.ends_with(ending)) {
+                return Err(Thrown::user(evidence::bad_name_message(kind, name)));
+            }
+        }
+    }
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let reads: Vec<evidence::Read> = records
+        .iter()
+        .map(|record| sv_read(record, &header))
+        .collect();
+
+    if let Some(path) = &pair_file {
+        let mut text = String::new();
+        for pair in evidence::discordant_pairs(&reads) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\n",
+                pair.contig,
+                pair.position,
+                if pair.strand { "+" } else { "-" },
+                pair.mate_contig,
+                pair.mate_position,
+                if pair.mate_strand { "+" } else { "-" }
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &split_file {
+        let mut text = String::new();
+        for split in evidence::split_reads(&reads) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                split.contig,
+                split.position,
+                match split.side {
+                    evidence::Side::Left => "left",
+                    evidence::Side::Right => "right",
+                    evidence::Side::Middle => "middle",
+                },
+                split.count
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &site_file {
+        let sites = match argument(parser, "site-depth-locs-vcf") {
+            Some(vcf) => {
+                let text = std::fs::read_to_string(&vcf).map_err(|_| {
+                    Thrown::user(
+                        index_feature_file::Refusal::CouldNotReadInputFile { path: vcf.clone() }
+                            .message(),
+                    )
+                })?;
+                let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+                    failure: Failure::User,
+                    exception: "htsjdk.tribble.TribbleException",
+                    message: Some(failure.error.message()),
+                })?;
+                file.records
+                    .iter()
+                    .map(|record| evidence::Site {
+                        contig: record.contig.clone(),
+                        position: record.start as i32,
+                        reference: record.alleles[0].display_string(),
+                        alternates: record.alleles[1..]
+                            .iter()
+                            .map(|allele| allele.display_string())
+                            .collect(),
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        // Each row carries the SAMPLE between the position and the four counts: the file is read
+        // back per sample, so the name travels with every record rather than in a header.
+        let sample = argument(parser, "sample-name").unwrap_or_default();
+        let mut text = String::new();
+        for depth in evidence::site_depths(
+            &reads,
+            &sites,
+            number_or(
+                parser,
+                "site-depth-min-mapq",
+                evidence::DEFAULT_SITE_DEPTH_MIN_MAPQ,
+            ),
+            number_or(
+                parser,
+                "site-depth-min-baseq",
+                evidence::DEFAULT_SITE_DEPTH_MIN_BASEQ,
+            ),
+        ) {
+            text.push_str(&format!(
+                "{}\t{}\t{sample}\t{}\t{}\t{}\t{}\n",
+                depth.contig,
+                depth.position,
+                depth.counts[0],
+                depth.counts[1],
+                depth.counts[2],
+                depth.counts[3]
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    if let Some(path) = &depth_file {
+        let windows: Vec<(String, i32, i32)> = match argument(parser, "depth-evidence-intervals") {
+            Some(list) => {
+                let text = std::fs::read_to_string(&list).map_err(|_| {
+                    Thrown::user(
+                        index_feature_file::Refusal::CouldNotReadInputFile { path: list.clone() }
+                            .message(),
+                    )
+                })?;
+                let parsed: Vec<(String, i32, i32)> = text
+                    .lines()
+                    .filter(|line| !line.starts_with('@') && !line.trim().is_empty())
+                    .filter_map(|line| {
+                        let columns: Vec<&str> = line.split('\t').collect();
+                        Some((
+                            columns.first()?.to_string(),
+                            columns.get(1)?.parse().ok()?,
+                            columns.get(2)?.parse().ok()?,
+                        ))
+                    })
+                    .collect();
+                if parsed.is_empty() {
+                    return Err(Thrown::user(evidence::empty_intervals_message(&list)));
+                }
+                parsed
+            }
+            None => Vec::new(),
+        };
+        // The depth file opens with a column line naming the sample, which is the one evidence
+        // file of the four that has a header at all.
+        let mut text = format!(
+            "#Chr\tStart\tEnd\t{}\n",
+            argument(parser, "sample-name").unwrap_or_default()
+        );
+        for depth in evidence::depth_evidence(
+            &reads,
+            &windows,
+            number_or(
+                parser,
+                "depth-evidence-min-mapq",
+                evidence::DEFAULT_DEPTH_EVIDENCE_MIN_MAPQ,
+            ),
+        ) {
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                depth.contig, depth.start, depth.end, depth.count
+            ));
+        }
+        write_file(path, text.as_bytes())?;
+    }
+    Ok(None)
+}
+
+/// The name `VariantContext.Type` prints, which the two GVCF messages quote.
+fn variant_context_type_name(kind: gatk_tools::remove_nearby_indels::VariantType) -> &'static str {
+    use gatk_tools::remove_nearby_indels::VariantType;
+    match kind {
+        VariantType::NoVariation => "NO_VARIATION",
+        VariantType::Snp => "SNP",
+        VariantType::Mnp => "MNP",
+        VariantType::Indel => "INDEL",
+        VariantType::Symbolic => "SYMBOLIC",
+        VariantType::Mixed => "MIXED",
+    }
+}
+
+/// One record as `ValidateVariants` reads it, which is less of it than a writer needs.
+///
+/// The attributes are SORTED, because the only place they are read is a message that prints them
+/// through a `TreeMap`, and the filters are the applied ones: a record that passed carries an empty
+/// list here whether its column said `PASS` or `.`.
+fn validation_record(
+    vc: &htsjdk_vcf::variant::VariantContext,
+) -> gatk_tools::validate_variants::Record {
+    let integers = |key: &str| -> Vec<i32> {
+        vc.attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .and_then(|(_, value)| value.format())
+            .map(|text| {
+                text.split(',')
+                    .filter_map(|piece| piece.trim().parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut attributes: Vec<(String, String)> = vc
+        .attributes
+        .iter()
+        .map(|(key, value)| (key.clone(), value.format().unwrap_or_default()))
+        .collect();
+    attributes.sort_by(|left, right| left.0.cmp(&right.0));
+
+    gatk_tools::validate_variants::Record {
+        contig: vc.contig.clone(),
+        start: vc.start as i32,
+        reference: vc
+            .alleles
+            .first()
+            .map(|allele| allele.display_string())
+            .unwrap_or_default(),
+        alternates: vc.alleles[1..]
+            .iter()
+            .map(|allele| allele.display_string())
+            .collect(),
+        filters: vc.filters.clone().unwrap_or_default(),
+        allele_counts: integers("AC"),
+        allele_number: integers("AN").first().copied(),
+        genotypes: vc
+            .genotypes
+            .iter()
+            .map(|genotype| {
+                genotype
+                    .alleles
+                    .iter()
+                    .map(|allele| {
+                        if allele.is_no_call() {
+                            None
+                        } else {
+                            vc.alleles.iter().position(|candidate| candidate == allele)
+                        }
+                    })
+                    .collect()
+            })
+            .collect(),
+        qual: if vc.has_log10_p_error() {
+            Some(vc.phred_scaled_qual())
+        } else {
+            None
+        },
+        variant_type: variant_context_type_name(gatk_tools::remove_nearby_indels::variant_type(vc))
+            .to_string(),
+        attributes,
+    }
+}
+
+/// `ValidateVariants.apply` and `onTraversalSuccess`: a VCF checked, and NOTHING written.
+///
+/// The only tool with a runner here whose whole output is its refusal. Three things it decides are
+/// the tool rather than the checks, and all three are measured:
+///
+///   * `--validation-type-to-exclude` is the argument that turns checks ON. With nothing excluded
+///     the run is `ALL`, which is what the inputs allow; exclude anything at all and the concrete
+///     set is built and the exclusions removed from it, so `REF` comes back and a run with no
+///     `--reference` is refused before a record is read;
+///   * `--validate-GVCF` excludes the allele check on its own account, which is what sends a plain
+///     GVCF run down that same branch;
+///   * `--warn-on-errors` turns every refusal into a log line, so the run SUCCEEDS and writes
+///     nothing, which is indistinguishable from a valid file except in the log.
+///
+/// The GVCF coverage check runs at the end over the whole traversal, and what it subtracts from is
+/// the interval argument when there is one and the whole dictionary when there is not.
+pub fn validate_variants(parser: &Parser) -> Outcome {
+    use gatk_tools::validate_variants as validate;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        codec: _,
+        intervals,
+    } = variant_walker_startup(parser, "ValidateVariants")?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(failure.error.message()),
+    })?;
+
+    let mut types_to_exclude = Vec::new();
+    for name in arguments(parser, "validation-type-to-exclude") {
+        match validate::ValidationType::parse(&name) {
+            Some(kind) => types_to_exclude.push(kind),
+            // The parser refuses an unknown constant before the tool runs, so this is unreachable
+            // from a command line; a value that got here is the port's own failure to say so.
+            None => {
+                return Err(Thrown::non_user(
+                    PORT_FAILURE,
+                    format!("{name} is not a ValidationType this port knows."),
+                ))
+            }
+        }
+    }
+
+    let reference_path = argument(parser, "reference");
+    let validate_gvcf = flag(parser, "validate-GVCF");
+    let arguments = validate::Arguments {
+        types_to_exclude,
+        do_not_validate_filtered_records: flag(parser, "do-not-validate-filtered-records"),
+        warn_on_errors: flag(parser, "warn-on-errors"),
+        validate_gvcf,
+        has_reference: reference_path.is_some(),
+        has_dbsnp: argument(parser, "dbsnp").is_some(),
+    };
+
+    // `throwOrWarn`: with `--warn-on-errors` the message is logged and the traversal carries on, so
+    // every refusal below goes through this and a warning run ends at zero.
+    let refuse = |error: validate::ValidationError| -> Option<Thrown> {
+        if arguments.warn_on_errors {
+            return None;
+        }
+        Some(Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })
+    };
+
+    let types = match validate::types_to_apply(&arguments) {
+        Ok(types) => types,
+        Err(error) => match refuse(error) {
+            Some(thrown) => return Err(thrown),
+            // `calculateValidationTypesToApply` is called from `onTraversalStart`, where the warn
+            // path swallows nothing: the refusal is raised before `throwOrWarn` exists. Measured
+            // by the golden this module carries.
+            None => {
+                return Err(Thrown::user(
+                    validate::ValidationError::MissingReference.message(),
+                ))
+            }
+        },
+    };
+
+    let mut reference = match &reference_path {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+
+    let located: Vec<LocatedRecord> = file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| LocatedRecord {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
+        })
+        .collect();
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException",
+            message: Some(format!(
+                "Input {input} must support random access to enable traversal by intervals. \
+                 If it's a file, please index it using the bundled tool IndexFeatureFile"
+            )),
+        });
+    }
+
+    let mut order = validate::OrderCheck::new();
+    let mut covered: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
+    // The overlap watch, which is `--fail-gvcf-on-overlap`'s whole input. `previous` is the
+    // MERGED interval rather than the record's own, because that is what the reference compares
+    // against, and `overlapping` is overwritten on every hit: the message calls it the first
+    // overlapping interval and the assignment makes it the last.
+    let mut previous: Option<(gatk_engine::interval::SimpleInterval, bool)> = None;
+    let mut overlapping: Option<gatk_engine::interval::SimpleInterval> = None;
+    for located in gatk_engine::variant_source::traverse(&located, intervals.as_deref()) {
+        let vc = &file.records[located.index];
+        let record = validation_record(vc);
+
+        if validate_gvcf {
+            if let Err(error) = order.check(&record) {
+                if let Some(thrown) = refuse(error) {
+                    return Err(thrown);
+                }
+            }
+            // The blocks a GVCF writes are adjacent rather than overlapping, so the reference
+            // merges an adjacent pair (margin ONE) into one interval before adding it, and counts
+            // an actually overlapping pair (margin ZERO) as an overlap. A reference block is a
+            // record whose only alternate is `<NON_REF>`, and only a pair with one of those in it
+            // is an overlap worth reporting.
+            let this_is_reference =
+                record.alternates.len() == 1 && record.alternates[0] == "<NON_REF>";
+            if let Some(interval) = gatk_engine::interval::SimpleInterval::new(
+                &vc.contig,
+                vc.start as i32,
+                vc.stop as i32,
+            ) {
+                let overlaps = |margin: i32| -> bool {
+                    match &previous {
+                        Some((before, _)) => {
+                            before.contig == interval.contig
+                                && before.start <= interval.end + margin
+                                && interval.start <= before.end + margin
+                        }
+                        None => false,
+                    }
+                };
+                if overlaps(0)
+                    && (previous.as_ref().is_some_and(|(_, was)| *was) || this_is_reference)
+                {
+                    overlapping = Some(interval.clone());
+                }
+                let merged = if overlaps(1) {
+                    let (before, _) = previous.as_ref().expect("a previous interval to overlap");
+                    gatk_engine::interval::SimpleInterval::new(
+                        &interval.contig,
+                        before.start,
+                        before.end.max(interval.end),
+                    )
+                    .unwrap_or_else(|| interval.clone())
+                } else {
+                    interval.clone()
+                };
+                covered.push(merged.clone());
+                previous = Some((merged, this_is_reference));
+            }
+        }
+
+        // `getRefBasesAtPosition(reader, contig, start, refLength)`: the reference under the whole
+        // reference allele, which is what the REF check compares against.
+        let observed = match &mut reference {
+            Some(source) => {
+                let length = record.reference.len() as i32;
+                let bases = source
+                    .query(&record.contig, record.start, record.start + length - 1)
+                    .map_err(|error| match error {
+                        // A reference that does not carry the record's contig is a refusal and not
+                        // a skipped check, and the dictionary it prints is the REFERENCE's.
+                        // Measured on a row of this tool's array where `--reference` is the
+                        // corpus's other contig and dictionary validation is turned off.
+                        gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                            Thrown::user(format!(
+                                "Contig {contig} not present in the sequence dictionary {}\n",
+                                gatk_tools::sequence_dictionary::pretty_print(
+                                    &gatk_tools::reference_walker::dictionary(source).sequences
+                                )
+                            ))
+                        }
+                        other => Thrown::user(format!("{other:?}")),
+                    })?;
+                Some(String::from_utf8_lossy(&bases).into_owned())
+            }
+            None => None,
+        };
+        if let Err(error) =
+            validate::validate_record(&record, &input, &types, observed.as_deref(), &arguments)
+        {
+            if let Some(thrown) = refuse(error) {
+                return Err(thrown);
+            }
+        }
+    }
+
+    if validate_gvcf {
+        // The whole region is the interval argument when there is one and the dictionary when there
+        // is not, and what is subtracted from it is the merged span of every record traversed.
+        let dictionary = match master_dictionary(parser)?.or(reference_dictionary(parser)?) {
+            Some(header) => header,
+            None => vcf_dictionary(&text),
+        };
+        let wanted = match intervals.as_deref() {
+            Some(given) if !given.is_empty() => given.to_vec(),
+            _ => gatk_engine::interval_args::whole_reference(&dictionary),
+        };
+        let uncovered =
+            gatk_engine::interval_args::subtract_regions(&wanted, &covered, &dictionary);
+        let loci: i64 = uncovered
+            .iter()
+            .map(|interval| i64::from(interval.end - interval.start + 1))
+            .sum();
+        if loci > 0 {
+            let first = &uncovered[0];
+            // `GenomeLoc.toString`, which collapses a one-base interval to a single position.
+            let rendered = if first.start == first.end {
+                format!("{}:{}", first.contig, first.start)
+            } else {
+                format!("{}:{}-{}", first.contig, first.start, first.end)
+            };
+            if let Some(thrown) = refuse(validate::ValidationError::NotCovering {
+                loci,
+                first_gap: rendered,
+            }) {
+                return Err(thrown);
+            }
+        }
+        // And the overlap, which is checked AFTER the coverage: a GVCF that both overlaps and
+        // leaves a gap is refused for the gap.
+        if flag(parser, "fail-gvcf-on-overlap") {
+            if let Some(interval) = &overlapping {
+                let message = format!(
+                    "This GVCF contained overlapping reference blocks.  The first overlapping \
+                     interval is {}:{}-{}",
+                    interval.contig, interval.start, interval.end
+                );
+                if !arguments.warn_on_errors {
+                    return Err(Thrown {
+                        failure: Failure::User,
+                        exception:
+                            "org.broadinstitute.hellbender.exceptions.UserException$ValidationFailure",
+                        message: Some(message),
+                    });
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// `GetNormalArtifactData.apply`: one locus, two pileups of the same reads, and a seeded draw.
+///
+/// The first Mutect tool with a runner here, and the RNG is what makes it one: the whole traversal
+/// shares one `java.util.Random(47382911)`, drawn on once per CANDIDATE locus, so which loci reach
+/// the table depends on how many came before. The draw also happens BEFORE the last rejection
+/// rule, which is why a locus rejected for too much tumour support still consumes a number.
+///
+/// The split is by SAMPLE and not by file: `--normal-sample` names the samples whose reads are the
+/// normal, and everything else in the same pileup is the tumour. One input carrying two samples is
+/// therefore the shape this port reads, and the tool's own arithmetic lives in
+/// [`gatk_tools::get_normal_artifact_data`], where a golden already measures it.
+pub fn get_normal_artifact_data(parser: &Parser) -> Outcome {
+    use gatk_tools::get_normal_artifact_data as artifact;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GetNormalArtifactData")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let normal_samples = arguments(parser, "normal-sample");
+    let error_probability = scalar(parser, "error-prob")
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(artifact::DEFAULT_ERROR_PROBABILITY);
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    let reference_sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let mut generator = gatk_engine::java_random::JavaRandom::gatk();
+    let mut rows = Vec::new();
+    for one in &applied {
+        // `ReadUtils.getSampleName` per element, against the list: a read with no read group has
+        // no sample, which is in neither list and therefore counts as tumour, exactly as the
+        // reference's `contains(null)` on a list of names does.
+        let is_normal = |element: &gatk_engine::pileup::PileupElement| {
+            gatk_engine::read_pileup::sample_name(element.read, &header)
+                .is_some_and(|sample| normal_samples.contains(&sample))
+        };
+        let normal = one.context.pileup.filtered(is_normal);
+        let tumor = one.context.pileup.filtered(|element| !is_normal(element));
+
+        let bases = reference
+            .query(
+                &one.context.contig,
+                one.context.position,
+                one.context.position,
+            )
+            .map_err(|error| match error {
+                gatk_engine::reference::ReferenceError::UnknownContig(contig) => {
+                    Thrown::user(format!(
+                        "Contig {contig} not present in the sequence dictionary {}\n",
+                        gatk_tools::sequence_dictionary::pretty_print(&reference_sequences)
+                    ))
+                }
+                other => Thrown::user(format!("{other:?}")),
+            })?;
+        let Some(base) = bases.first().copied() else {
+            continue;
+        };
+        if let artifact::Outcome::Kept(record) =
+            artifact::apply(&normal, &tumor, base, error_probability, || {
+                generator.next_double()
+            })
+        {
+            rows.push(*record);
+        }
+    }
+
+    write_file(&output, artifact::write(&rows).as_bytes())?;
+    Ok(None)
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves
@@ -2746,6 +6998,206 @@ fn alternate_maker_error(
         gatk_tools::fasta_alternate_reference_maker::AlternateError::Maker(maker) => {
             fasta_maker_error(maker)
         }
+    }
+}
+
+/// `CompareReferences.traverse`, which is a `GATKTool` that overrides the traversal entirely.
+///
+/// The engine's reference is the FIRST column and `--references-to-compare` the rest, in a
+/// `LinkedHashMap` keyed by path: the same path twice is ONE entry, which is how a reference
+/// compared with itself produces no pair at all and the tool then walks off the empty list.
+/// That `IndexOutOfBoundsException` is the reference's answer and it is reproduced here.
+///
+/// The output is split: the table goes to `--output`, or to stdout when there is none, and the
+/// analysis always goes to stdout behind a line of asterisks.
+pub fn compare_references(parser: &Parser) -> Outcome {
+    use gatk_tools::compare_references as compare;
+
+    let _ = resolve_read_filters(parser, "CompareReferences")?;
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let others = arguments(parser, "references-to-compare");
+    if others.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument references-to-compare was missing: Argument 'references-to-compare' is required",
+        ));
+    }
+
+    // `GATKTool.onStartup` resolves the intervals against the best available dictionary before any
+    // tool code runs, and this tool then ignores them: `traverse()` is its own. What survives is
+    // the refusal, so an interval on a contig the reference does not carry is refused here exactly
+    // as it is on a tool that traverses.
+    let dictionary = reference_dictionary(parser)?.unwrap_or_else(SamHeader::default);
+    let master = master_dictionary(parser)?;
+    let best = master.unwrap_or(dictionary);
+    let _ = interval_arguments(parser, &best)?;
+
+    // The enums arrive as their constant names, and `scalar` is what reads one: `argument` reads
+    // the `Tagged` and `Str` values a path or a string argument holds, and an enum is neither.
+    let mode = match scalar(parser, "md5-calculation-mode").as_deref() {
+        Some("USE_DICT") => compare::Md5Mode::UseDict,
+        Some("ALWAYS_RECALCULATE") => compare::Md5Mode::AlwaysRecalculate,
+        _ => compare::Md5Mode::RecalculateIfMissing,
+    };
+    let base_comparison =
+        scalar(parser, "base-comparison").unwrap_or_else(|| "NO_BASE_COMPARISON".to_string());
+
+    // `LinkedHashMap.put`: the engine's reference first, then the others, and a path already in
+    // the map keeps its position and adds no column.
+    let mut paths: Vec<String> = vec![reference];
+    for path in others {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+
+    // `onTraversalStart`, in its own order: the directory before the count.
+    if base_comparison != "NO_BASE_COMPARISON" {
+        let directory = argument(parser, "base-comparison-output");
+        match &directory {
+            None => {
+                return Err(could_not_create_output_file(
+                    "null",
+                    &format!(
+                        "Output directory not provided but required in -base-comparison {base_comparison} mode."
+                    ),
+                ))
+            }
+            Some(path) if !std::path::Path::new(path).exists() => {
+                return Err(could_not_create_output_file(
+                    path,
+                    "Output directory non-existent.",
+                ))
+            }
+            Some(_) => {}
+        }
+        if paths.len() != 2 {
+            return Err(bad_input(
+                "Base comparison modes can only be run on 2 references.".to_string(),
+            ));
+        }
+    }
+
+    let references = compare_references_read(&paths, mode)?;
+    let table = compare::build(&references, mode).map_err(compare_table_error)?;
+
+    let rendered = compare::write_table(&table);
+    let mut stdout = String::new();
+    match argument(parser, "output") {
+        Some(path) => write_file(&path, rendered.as_bytes())?,
+        None => stdout.push_str(&rendered),
+    }
+    if flag(parser, "display-sequences-by-name") {
+        stdout.push_str(&compare::write_by_sequence_name(
+            &table,
+            &references,
+            flag(parser, "display-only-differing-sequences"),
+        ));
+    }
+
+    let pairs = compare::compare_all(&table, &references).map_err(compare_table_error)?;
+    stdout.push_str("*********************************************************\n");
+    for pair in &pairs {
+        stdout.push_str(&pair.rendered());
+        stdout.push('\n');
+    }
+    // Everything above is printed as it is produced, so a refusal below it keeps what came before,
+    // and `onTraversalSuccess` returns null: there is no `Tool returned:` line on this tool.
+    print!("{stdout}");
+    // `referencePairs.get(0)` is read before the switch on the base-comparison mode, so a run with
+    // one reference dies here having already printed everything above.
+    if pairs.is_empty() {
+        return Err(Thrown::non_user(
+            "java.lang.IndexOutOfBoundsException",
+            "Index 0 out of bounds for length 0",
+        ));
+    }
+    // FULL_ALIGNMENT runs mummer, which no row of this tool's array reaches: the mode's two
+    // non-default constants are held out of the fixtures for that reason.
+    Ok(None)
+}
+
+/// Each reference as the table reads it: the file's NAME as the column, and its `.dict`.
+///
+/// The MD5 is recalculated only where the mode asks for it, which is what keeps `USE_DICT` from
+/// reading a base at all. The recalculation is NOT the tool's own reference query: it is
+/// `ReferenceUtils.calculateMD5`, which opens the FASTA with `preserveCase` and `preserveIUPAC`
+/// both on and then upper-cases each byte, so a soft-masked base counts and an ambiguity code is
+/// not flattened to `N`.
+fn compare_references_read(
+    paths: &[String],
+    mode: gatk_tools::compare_references::Md5Mode,
+) -> Result<Vec<gatk_tools::compare_references::Reference>, Thrown> {
+    use gatk_tools::compare_references as compare;
+
+    let mut references = Vec::new();
+    for path in paths {
+        let dictionary = std::path::Path::new(path).with_extension("dict");
+        let text = std::fs::read_to_string(&dictionary)
+            .map_err(|_| Thrown::user(gatk_tools::read_walker_refusal::cannot_read(path, false)))?;
+        let header = htsjdk_bam::reader::parse_header_text(&text);
+        let column = std::path::Path::new(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+
+        let mut fasta: Option<htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>> = None;
+        let mut sequences = Vec::new();
+        for record in &header.sequences {
+            let md5 = record.attributes.get("M5").map(str::to_string);
+            let recalculate = match mode {
+                compare::Md5Mode::AlwaysRecalculate => true,
+                compare::Md5Mode::RecalculateIfMissing => md5.as_deref().is_none_or(str::is_empty),
+                compare::Md5Mode::UseDict => false,
+            };
+            let calculated = if recalculate {
+                if fasta.is_none() {
+                    fasta = Some(
+                        htsjdk_bam::fasta_index::IndexedFasta::open(std::path::Path::new(path))
+                            .map_err(|error| Thrown::user(error.message()))?,
+                    );
+                }
+                let reader = fasta.as_mut().expect("the FASTA opened just above");
+                let bases = reader
+                    .query(&record.name, 1, record.length as i64)
+                    .map_err(|error| Thrown::user(error.message()))?;
+                compare::calculate_md5(&bases)
+            } else {
+                // Never read in this mode, and the reference has not opened the file either.
+                String::new()
+            };
+            sequences.push(compare::Sequence {
+                name: record.name.clone(),
+                length: record.length as i64,
+                md5,
+                calculated_md5: calculated,
+            });
+        }
+        references.push(compare::Reference { column, sequences });
+    }
+    Ok(references)
+}
+
+/// `UserException.CouldNotCreateOutputFile`, whose message names the file first.
+fn could_not_create_output_file(path: &str, reason: &str) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception:
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
+        message: Some(format!("Could not create file {path}. {reason}")),
+    }
+}
+
+/// What the table refused. Its `message()` already carries `UserException$BadInput`'s own
+/// `Bad input: ` prefix, so this does not add a second one.
+fn compare_table_error(error: gatk_tools::compare_references::TableError) -> Thrown {
+    // The class is written out rather than taken from `java_class()`, which borrows the error:
+    // both of that enum's variants are the same exception, and the port says so.
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(error.message()),
     }
 }
 
@@ -5643,7 +10095,7 @@ pub fn select_variants(parser: &Parser) -> Outcome {
             info_annotations_to_drop: output_arguments.info_annotations_to_drop.clone(),
             genotype_annotations_to_drop: output_arguments.genotype_annotations_to_drop.clone(),
             add_output_vcf_command_line: flag(parser, "add-output-vcf-command-line"),
-            tool_command_line: command_line_header_line(parser),
+            tool_command_line: command_line_header_line(parser, "SelectVariants"),
             samples: if sites_only {
                 Vec::new()
             } else {
@@ -6037,17 +10489,17 @@ fn select_variants_limits(parser: &Parser) -> Result<(), Thrown> {
 /// version this port claims. The fourth is the run's own wall-clock time, which is why the header
 /// construction takes this as an input rather than building it: a golden of a file carrying it
 /// would move on every run, and the `select-variants-header` suite elides it for that reason.
-fn command_line_header_line(parser: &Parser) -> Option<htsjdk_vcf::header::HeaderLine> {
+fn command_line_header_line(parser: &Parser, tool: &str) -> Option<htsjdk_vcf::header::HeaderLine> {
     if !flag(parser, "add-output-vcf-command-line") {
         return None;
     }
     Some(htsjdk_vcf::header::HeaderLine::Structured {
         key: "GATKCommandLine".to_string(),
         fields: vec![
-            ("ID".to_string(), "SelectVariants".to_string()),
+            ("ID".to_string(), tool.to_string()),
             (
                 "CommandLine".to_string(),
-                crate::command_line::expanded("SelectVariants", parser),
+                crate::command_line::expanded(tool, parser),
             ),
             ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
             ("Date".to_string(), display_date_time()),

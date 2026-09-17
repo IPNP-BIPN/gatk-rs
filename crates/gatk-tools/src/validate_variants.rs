@@ -24,12 +24,31 @@
 //! the end of the traversal, so the per-record checks fire first.
 
 /// The checks, as `ValidationType` names them.
+///
+/// `ALL` is a constant of the enum like the other four and is accepted by
+/// `--validation-type-to-exclude`, where it means "exclude everything": the concrete set with
+/// `ALL` removed from it is empty, so the run validates nothing at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationType {
+    All,
     Ref,
     Ids,
     Alleles,
     ChrCounts,
+}
+
+impl ValidationType {
+    /// The constant's own name, which is the spelling a command line uses.
+    pub fn parse(name: &str) -> Option<ValidationType> {
+        match name {
+            "ALL" => Some(ValidationType::All),
+            "REF" => Some(ValidationType::Ref),
+            "IDS" => Some(ValidationType::Ids),
+            "ALLELES" => Some(ValidationType::Alleles),
+            "CHR_COUNTS" => Some(ValidationType::ChrCounts),
+            _ => None,
+        }
+    }
 }
 
 /// `CONCRETE_TYPES`, in the enum's own order, which is what an exclusion is subtracted from.
@@ -136,6 +155,24 @@ impl ValidationError {
 /// Returns the refusal `ALL` cannot make: asking for `REF` with no reference is decided here,
 /// before any record is read, and it is reached by excluding anything at all.
 pub fn types_to_apply(arguments: &Arguments) -> Result<Vec<ValidationType>, ValidationError> {
+    // `--validate-GVCF` EXCLUDES the allele check, whatever the command line asked for: a GVCF's
+    // `<NON_REF>` is never called, so the check would fail on every record. The exclusion is added
+    // to the list rather than applied to the result, which is what makes a plain `--validate-GVCF`
+    // run take the concrete branch below instead of the `ALL` branch above, and therefore what
+    // makes it refuse when there is no reference.
+    let mut excluded = arguments.types_to_exclude.clone();
+    if arguments.validate_gvcf && !excluded.contains(&ValidationType::Alleles) {
+        excluded.push(ValidationType::Alleles);
+    }
+    // Excluding `ALL` excludes everything, and the concrete exclusions beside it are redundant
+    // rather than additive: the reference warns about them and returns an empty list.
+    if excluded.contains(&ValidationType::All) {
+        return Ok(Vec::new());
+    }
+    let arguments = &Arguments {
+        types_to_exclude: excluded,
+        ..arguments.clone()
+    };
     if arguments.types_to_exclude.is_empty() {
         // `ALL` on its own: the reference-base check runs only where there is a reference, and the
         // ID check only where there are IDs, so the set is decided by what the run has rather than
@@ -257,7 +294,9 @@ pub fn validate_record(
                     }
                 }
             }
-            ValidationType::Ids => {}
+            // Neither reaches a record: the ID check needs the dbSNP features the runner holds,
+            // and `ALL` is never in the applied set, which is concrete types only.
+            ValidationType::Ids | ValidationType::All => {}
         }
     }
     Ok(())

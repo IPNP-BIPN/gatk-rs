@@ -1,0 +1,470 @@
+{
+  "tool": "FilterIntervals",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 32,
+  "arguments_in_array": 10,
+  "arguments_excluded": 22,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--extreme-count-filter-maximum-percentile",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "99.0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--extreme-count-filter-minimum-percentile",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "1.0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--input",
+      "type": "List[File]",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/fixtures/counts.tsv",
+      "source": "fixture"
+    },
+    {
+      "argument": "--interval-exclusion-padding",
+      "type": "int",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--interval-merging-rule",
+      "type": "IntervalMergingRule",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "OVERLAPPING_ONLY",
+      "source": "fixture"
+    },
+    {
+      "argument": "--interval-padding",
+      "type": "int",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--interval-set-rule",
+      "type": "IntervalSetRule",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "UNION",
+      "source": "fixture"
+    },
+    {
+      "argument": "--low-count-filter-percentage-of-samples",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "90.0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--maximum-gc-content",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "0.9",
+      "source": "fixture"
+    },
+    {
+      "argument": "--maximum-mappability",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "1.0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--minimum-mappability",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "0.9",
+      "source": "fixture"
+    },
+    {
+      "argument": "--minimum-segmental-duplication-content",
+      "type": "double",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "0.0",
+      "source": "fixture"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 180,
+  "tuples_covered": 180,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[1]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[1]",
+        "--intervals": "fixture[1]",
+        "--low-count-filter-count-threshold": "fixture[1]",
+        "--maximum-segmental-duplication-content": "fixture[1]",
+        "--minimum-gc-content": "fixture[1]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:1-500",
+        "--extreme-count-filter-percentage-of-samples=10.0",
+        "--intervals=/work/fixtures/bins2.interval_list",
+        "--low-count-filter-count-threshold=0",
+        "--maximum-segmental-duplication-content=1.0",
+        "--minimum-gc-content=0.6",
+        "--output=/work/out/filtered2.interval_list",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--annotated-intervals": "fixture[1]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[1]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[1]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=10.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=0",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.6",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--annotated-intervals": "fixture[1]",
+        "--exclude-intervals": "fixture[1]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[1]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[1]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotated-intervals=",
+        "--exclude-intervals=chr1:1-500",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins2.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=1.0",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered2.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[1]",
+        "--intervals": "fixture[1]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=10.0",
+        "--intervals=/work/fixtures/bins2.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered2.interval_list",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[1]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[1]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:1-500",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.6",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[1]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[1]",
+        "--low-count-filter-count-threshold": "fixture[1]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:1-500",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins2.interval_list",
+        "--low-count-filter-count-threshold=0",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[1]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[1]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=10.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=1.0",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered2.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--annotated-intervals": "fixture[0]",
+        "--exclude-intervals": "fixture[0]",
+        "--extreme-count-filter-percentage-of-samples": "fixture[0]",
+        "--intervals": "fixture[0]",
+        "--low-count-filter-count-threshold": "fixture[0]",
+        "--maximum-segmental-duplication-content": "fixture[0]",
+        "--minimum-gc-content": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--annotated-intervals=/work/fixtures/annotated.tsv",
+        "--exclude-intervals=chr1:90000-91000",
+        "--extreme-count-filter-percentage-of-samples=90.0",
+        "--intervals=/work/fixtures/bins.interval_list",
+        "--low-count-filter-count-threshold=1",
+        "--maximum-segmental-duplication-content=0.5",
+        "--minimum-gc-content=0.1",
+        "--output=/work/out/filtered.interval_list",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    }
+  ]
+}

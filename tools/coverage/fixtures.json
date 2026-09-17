@@ -720,62 +720,976 @@
         "the tool."
       ]
     },
-    "FastaAlternateReferenceMaker": {
-   "$why": [
-    "indexed.vcf is the corpus's het SNP file with a sample1 column, which is what --use-iupac-sample",
-    "reads, and indels.vcf carries the deletions and insertions that make the tool's own state",
-    "visible: a simple deletion sets a counter that removes the bases AFTER the record rather than",
-    "at it, so a row over that file and a row over the other one do not differ merely in which base",
-    "is substituted. Both are indexed, which every FeatureInput needs.",
-    "--snp-mask takes population.vcf, whose records sit on the reads and carry no sample columns at",
-    "all, and indexed.vcf, whose records sit where the called variants do. The second value is the",
-    "one that makes --snp-mask-priority observable: the flag is not 'prefer the mask', it is 'look",
-    "at the mask first', and the two orders differ only where a mask record and a call are at the",
-    "same locus.",
-    "--use-iupac-sample carries a sample the VCFs declare and one they do not, which gives the",
-    "argument a domain rather than a constant. The refusal the second value names is NOT what these",
-    "rows measure: every row carrying it is refused earlier, by the read-filter conflict, by",
-    "--max-variants-per-shard's range or by an interval the input does not hold, because a row",
-    "carries every argument in the domain at once. The refusal itself, and the three files it still",
-    "leaves behind, are measured by the tool's own suite. The same is true of",
-    "--snp-mask-priority without --snp-mask: no row can reach it, because every row has a mask.",
-    "--line-width is 60 and 7 for the reason FastaReferenceMaker's is: a width that divides the",
-    "interval and one that does not."
-   ],
-   "--variant": [
-    "/work/fixtures/indexed.vcf",
-    "/work/fixtures/indels.vcf"
-   ],
-   "--snp-mask": [
-    "/work/fixtures/population.vcf",
-    "/work/fixtures/indexed.vcf"
-   ],
-   "--use-iupac-sample": [
-    "sample1",
-    "nosuchsample"
-   ],
-   "--output": [
-    "/work/out/alternate.fasta",
-    "/work/out/alternate2.fasta"
-   ],
-   "--line-width": [
-    "60",
-    "7"
-   ],
-   "--intervals": [
-    "chr1:1-6000",
-    "chr1:50000-60000"
-   ],
-   "--input": [
-    "/work/fixtures/reads.bam",
-    "/work/fixtures/reads2.bam"
-   ],
-   "--read-index": [
-    "/work/fixtures/reads.bai",
-    "/work/fixtures/reads2.bai"
-   ]
-  },
-  "FastaReferenceMaker": {
+    "AnnotateVcfWithExpectedAlleleFraction": {
+      "$why": [
+        "The other half of the chain: --mixing-fractions takes the table CalculateMixingFractions",
+        "wrote over duo.vcf, produced by the REFERENCE in the corpus build, and a table naming a",
+        "sample the VCF does not have. The second value is this tool's NullPointerException, which",
+        "is what a missing sample really produces: the fractions are looked up by name into a map",
+        "and the miss is unboxed.",
+        "--variant carries duo.vcf, whose two samples are what the annotation multiplies, and",
+        "reads.vcf, which declares no sample at all.",
+        "--read-index and --input are held out: this tool reads no reads."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--mixing-fractions": [
+        "/work/fixtures/mixing.table",
+        "/work/fixtures/summaries.table"
+      ],
+      "--output": [
+        "/work/out/expected.vcf",
+        "/work/out/expected2.vcf"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "AnnotateVcfWithBamDepth": {
+      "$why": [
+        "duo.vcf and reads.vcf for the variants, and the corpus's two BAMs for the depth. What this",
+        "tool counts is CONTAINMENT of the record's whole span rather than overlap, so a record at a",
+        "read's last base counts nothing and one inside it counts one.",
+        "--add-output-vcf-command-line is held at FALSE, and the reason is this tool's own rather",
+        "than the shared one: its default header lines DO reach the file, unlike its sibling's, and",
+        "the ##GATKCommandLine line carries the run's own wall-clock time.",
+        "--create-output-variant-index is held at FALSE for the reason every variant writer holds",
+        "it: the index records the output file's last-modified time."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--output": [
+        "/work/out/depth.vcf",
+        "/work/out/depth2.vcf"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "EvaluateInfoFieldConcordance": {
+      "$why": [
+        "shifted.vcf against population.vcf, and indexed.vcf against itself. shifted.vcf is the",
+        "population VCF with every allele frequency moved, and moved by DIFFERENT amounts: a file",
+        "compared with itself has a delta of zero at every true positive, so the mean and the",
+        "standard deviation are zero whatever the arithmetic does, and a constant offset would",
+        "leave the deviation zero as well. The first measurement was exactly that, two distinct",
+        "outputs over eight accepted rows.",
+        "identity case: every record is a true positive and every difference is zero, which is the",
+        "row that says the walk and the arithmetic agree. The second shares no INFO key, and the",
+        "refusal that produces is the check onTraversalStart makes against the HEADERS.",
+        "--eval-info-key and --truth-info-key carry AF, which population.vcf declares, and a key no",
+        "header declares. A key the header declares and no record carries would be a third case, and",
+        "the tool's own suite has it.",
+        "--input and --read-index are held out: this tool reads no reads."
+      ],
+      "--evaluation": [
+        "/work/fixtures/shifted.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--truth": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--eval-info-key": [
+        "AF",
+        "NOSUCHKEY"
+      ],
+      "--truth-info-key": [
+        "AF",
+        "NOSUCHKEY"
+      ],
+      "--summary": [
+        "/work/out/concordance.table",
+        "/work/out/concordance2.table"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CallCopyRatioSegments": {
+      "$why": [
+        "segments.cr.seg is the corpus's copy-ratio segment file, written by hand because",
+        "ModelSegments would need read counts and allelic counts this corpus does not carry. Its",
+        "five segments straddle the copy-neutral window, so the calls are 0, - and + rather than one",
+        "letter repeated.",
+        "The four bounds and thresholds are what this tool is: the neutral window decides which",
+        "segments the statistics are computed over, and the two z-score thresholds decide the",
+        "outliers and the calls. Each carries its default and a value that moves the answer, and one",
+        "of the lower bounds is NEGATIVE, which is the IllegalArgumentException the caller raises",
+        "before it looks at a segment."
+      ],
+      "--input": [
+        "/work/fixtures/segments.cr.seg"
+      ],
+      "--output": [
+        "/work/out/called.seg",
+        "/work/out/called2.seg"
+      ],
+      "--neutral-segment-copy-ratio-lower-bound": [
+        "0.9",
+        "-0.1"
+      ],
+      "--neutral-segment-copy-ratio-upper-bound": [
+        "1.1",
+        "1.5"
+      ],
+      "--outlier-neutral-segment-copy-ratio-z-score-threshold": [
+        "2.0",
+        "0.5"
+      ],
+      "--calling-copy-ratio-z-score-threshold": [
+        "2.0",
+        "0.5"
+      ]
+    },
+    "VariantFiltration": {
+      "$why": [
+        "indexed.vcf and population.vcf: the first has a sample and a GT, the second an INFO field",
+        "and no genotype column at all, so a genotype expression reaches something in one and",
+        "nothing in the other.",
+        "--filter-expression and --filter-name are read in step, and the expressions are a REAL",
+        "literal comparison and a bare name, which are the two paths through commons-jexl's",
+        "arithmetic that SelectVariants' array already measures.",
+        "--mask takes the corpus's BED and its indexed VCF, because the tool reads a feature file of",
+        "either kind and asks it only where its features are.",
+        "--apply-allele-specific-filters is held at FALSE, and that is a claim about the PORT rather",
+        "than about the tool: with it on, the reference writes an AS_FilterStatus VALUE per allele",
+        "and applies the site filter name beside the mask one, and this port writes neither. The",
+        "one row that carried it diverged in exactly that way, which is how the gap was found.",
+        "--input and --read-index are held out: this tool reads no reads.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/population.vcf"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered2.vcf"
+      ],
+      "--filter-expression": [
+        "QUAL>50.0",
+        "QUAL>5000.0"
+      ],
+      "--filter-name": [
+        "LowQual",
+        "VeryLowQual"
+      ],
+      "--genotype-filter-expression": [
+        "GQ>10.0",
+        "GQ>1000.0"
+      ],
+      "--genotype-filter-name": [
+        "LowGQ",
+        "VeryLowGQ"
+      ],
+      "--mask": [
+        "/work/fixtures/regions.bed",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--apply-allele-specific-filters": [
+        "false"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "CollectAllelicCounts": {
+      "$why": [
+        "The read walkers' corpus, and the tool's own three knobs beside it. --minimum-base-quality",
+        "is the COLLECTOR's threshold rather than a read filter, so a base below it is dropped from",
+        "the counts while its read stays in the pileup: the two values are the default and one high",
+        "enough to empty every count.",
+        "--max-depth-per-sample is held at zero for the reason CheckPileup holds it: this port's",
+        "locus iterator has no downsampler, and a positive value is refused rather than answered",
+        "(gatk-rs#1102).",
+        "--intervals carries the window the reads are in and one they are not, which is the",
+        "difference between a table of rows and a table of none."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/allelic.tsv",
+        "/work/out/allelic2.tsv"
+      ],
+      "--minimum-base-quality": [
+        "20",
+        "60"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ]
+    },
+    "GetNormalArtifactData": {
+      "$why": [
+        "tumor_normal.bam, which is ONE file carrying two samples: the split this tool makes is by",
+        "sample name and not by input, so a tumour and a normal in one BAM is the shape a single",
+        "--input reads. Twelve reads of forty bases, all at chr1:101, because Mutect2's chain",
+        "refuses a read shorter than thirty and a locus the normal does not reach has no alternate.",
+        "--normal-sample names the sample that is the normal, and the two values are the two",
+        "samples: with `normal` the alternate is rare enough in the normal to be an artefact and a",
+        "row is written, and with `tumor` it is two reads of six, which is over the germline",
+        "threshold of a fifth, so the locus is dropped and the table is a header alone.",
+        "--error-prob moves the keep probability and nothing else, which is the column it writes.",
+        "--intervals keeps the shared window off the reads as its second value: a run that reaches",
+        "no locus draws no number at all, and the generator is shared across the whole traversal.",
+        "--max-depth-per-sample is held at zero for the reason CheckPileup holds it (gatk-rs#1102):",
+        "this port does not reproduce the downsampler's own random stream."
+      ],
+      "--input": [
+        "/work/fixtures/tumor_normal.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/tumor_normal.bai"
+      ],
+      "--normal-sample": [
+        "normal",
+        "tumor"
+      ],
+      "--output": [
+        "/work/out/artifact.table",
+        "/work/out/artifact2.table"
+      ],
+      "--error-prob": [
+        "0.001",
+        "0.1"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ]
+    },
+    "Concordance": {
+      "$why": [
+        "truth.vcf and calls.vcf, a pair built so that every one of the five concordance states",
+        "happens once: a call that agrees, a call with another alternate at a truth locus, a",
+        "FILTERED call at a truth locus, a truth record called nowhere, a filtered call away from",
+        "truth, and an unfiltered one. Without the last two the filter analysis has nothing to",
+        "count, and without the second the false positive and the false negative never coincide.",
+        "The filtered true negative carries TWO filters, so neither is unique to it: the",
+        "filter-analysis table counts uniqueness per RECORD rather than per filter.",
+        "The three annotated VCFs each carry two paths, because the file a state reaches is the",
+        "tool's own decision: a true positive is written to two of them, with the TRUTH record in",
+        "one and the EVAL record in the other.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE, as on",
+        "every other variant writer: one carries the run's clock and the other the output's",
+        "last-modified time."
+      ],
+      "--truth": [
+        "/work/fixtures/truth.vcf"
+      ],
+      "--evaluation": [
+        "/work/fixtures/calls.vcf"
+      ],
+      "--summary": [
+        "/work/out/summary.tsv",
+        "/work/out/summary2.tsv"
+      ],
+      "--filter-analysis": [
+        "/work/out/filters.tsv",
+        "/work/out/filters2.tsv"
+      ],
+      "--true-positives-and-false-negatives": [
+        "/work/out/tpfn.vcf",
+        "/work/out/tpfn2.vcf"
+      ],
+      "--true-positives-and-false-positives": [
+        "/work/out/tpfp.vcf",
+        "/work/out/tpfp2.vcf"
+      ],
+      "--filtered-true-negatives-and-false-negatives": [
+        "/work/out/ftnfn.vcf",
+        "/work/out/ftnfn2.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "CalculateGenotypePosteriors": {
+      "$why": [
+        "duo.vcf is the driving callset and population.vcf the supporting one: the corpus already",
+        "carries a two-sample VCF and a panel with allele counts, which is exactly the pair this",
+        "tool was written for.",
+        "--num-reference-samples-if-no-call carries zero and a hundred. It is the argument that",
+        "decides what a site the panel does not carry gets: with zero and fewer than ten input",
+        "samples the prior is FLAT, so PP equals PL and PG is all zeros, and with a hundred it is a",
+        "pseudocount of two hundred reference chromosomes.",
+        "--default-to-allele-count and --discovered-allele-count-priors-off move where the counts",
+        "come from: AC rather than MLEAC, and the input's own samples in or out.",
+        "--pedigree is held out and --skip-family-priors is held TRUE: the family half is a second",
+        "algorithm this port does not carry, and every row that asked for it would measure that",
+        "refusal rather than the posteriors.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false, as on",
+        "every other variant writer here."
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf"
+      ],
+      "--supporting-callsets": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/shifted.vcf"
+      ],
+      "--output": [
+        "/work/out/posteriors.vcf",
+        "/work/out/posteriors2.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "100"
+      ],
+      "--skip-family-priors": [
+        "true"
+      ],
+      "--pedigree": [],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "ValidateBasicSomaticShortMutations": {
+      "$why": [
+        "somatic.vcf against tumor_normal.bam: the discovery calls are at the two sites that BAM",
+        "carries an alternate at, and a third call carries no AD at all, which is the SKIPPED",
+        "judgment and the only one a callset without depths can produce.",
+        "--discovery-sample-name, --val-case-sample-name and --val-control-sample-name are the",
+        "three names the tool reads, and they are the corpus's own: the VCF's sample is `tumor`",
+        "and the BAM's two are `tumor` and `normal`. A name nothing carries leaves both pileups",
+        "empty, which is a different answer rather than a refusal.",
+        "--min-power and --max-validation-normal-count carry the defaults and a value either side",
+        "of them: the first decides whether an unvalidated call counted as powered, the second",
+        "whether the normal's own alternate reads make it an artefact.",
+        "--annotated-vcf and --summary each carry two paths, because the three files this tool can",
+        "write are the three answers it gives."
+      ],
+      "--variant": [
+        "/work/fixtures/somatic.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/tumor_normal.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/tumor_normal.bai"
+      ],
+      "--discovery-sample-name": [
+        "tumor"
+      ],
+      "--val-case-sample-name": [
+        "tumor"
+      ],
+      "--val-control-sample-name": [
+        "normal"
+      ],
+      "--output": [
+        "/work/out/validation.tsv",
+        "/work/out/validation2.tsv"
+      ],
+      "--annotated-vcf": [
+        "/work/out/annotated.vcf",
+        "/work/out/annotated2.vcf"
+      ],
+      "--summary": [
+        "/work/out/valsummary.tsv",
+        "/work/out/valsummary2.tsv"
+      ],
+      "--min-power": [
+        "0.9",
+        "0.1"
+      ],
+      "--max-validation-normal-count": [
+        "1",
+        "0"
+      ],
+      "--min-base-quality-cutoff": [
+        "20",
+        "0"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "CollectSVEvidence": {
+      "$why": [
+        "pairs.bam, whose reads are PAIRED: the discordant-pair and split-read evidence both need",
+        "a mate, and the corpus's plain reads.bam has none.",
+        "Every output name carries the extension its writer tests for, and ONE of them carries a",
+        "name that does not: each of the four writers refuses a file it could not read back, before",
+        "the traversal, and `--sd-file` is where that refusal is measured. Giving every argument a",
+        "bad value would have refused every row; giving none would have measured none.",
+        "--site-depth-locs-vcf carries the corpus's indexed VCF, whose records are biallelic SNVs:",
+        "the site-depth walk keeps those and steps past everything else.",
+        "--depth-evidence-intervals carries the corpus's BED, because the depth counts are per",
+        "interval and an interval file with no intervals is its own refusal.",
+        "--site-depth-min-mapq and --depth-evidence-min-mapq carry their two different defaults and",
+        "a value above them: the three floors are what let one read be counted for depth and not",
+        "for site depth.",
+        "--sequence-dictionary is pinned to the one that AGREES with the reads. The site-depth",
+        "writer asserts that the dictionary it was given and the BAM's are the same object, and",
+        "the corpus's other dictionary makes that an AssertionError rather than a user error."
+      ],
+      "--input": [
+        "/work/fixtures/pairs.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/pairs.bai"
+      ],
+      "--sample-name": [
+        "sample1"
+      ],
+      "--pe-file": [
+        "/work/out/evidence.pe.txt",
+        "/work/out/second.pe.txt"
+      ],
+      "--sr-file": [
+        "/work/out/evidence.sr.txt",
+        "/work/out/second.sr.txt"
+      ],
+      "--sd-file": [
+        "/work/out/evidence.sd.txt",
+        "/work/out/evidence.sd.wrong"
+      ],
+      "--depth-evidence-file": [
+        "/work/out/evidence.rd.txt",
+        "/work/out/second.rd.txt"
+      ],
+      "--site-depth-locs-vcf": [
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--depth-evidence-intervals": [
+        "/work/fixtures/regions.bed"
+      ],
+      "--site-depth-min-mapq": [
+        "30",
+        "60"
+      ],
+      "--depth-evidence-min-mapq": [
+        "0",
+        "60"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--sequence-dictionary": [
+        "/work/fixtures/matching.dict"
+      ]
+    },
+    "PrintReadCounts": {
+      "$why": [
+        "sv.counts.tsv is the table the REFERENCE's own CollectReadCounts wrote, under the name",
+        "the codec recognises: `SimpleCountCodec.canDecode` tests for the extension `.counts.tsv`,",
+        "and the corpus's own `counts.tsv` does not have it, so it is the second value and the",
+        "no-suitable-codec refusal. A `.counts.tsv` carries its own SAM header, so the run never",
+        "consults --sequence-dictionary.",
+        "--input and --read-index are held out: this tool reads a feature file and no reads, and",
+        "the shared values pair a BAM index with a text table, which every row died on.",
+        "--output-prefix carries a directory prefix and the empty default, because the names this",
+        "tool chooses are the prefix and the sample glued together: with no prefix the files land",
+        "in the working directory, which the harness compares as the output.",
+        "--output-file-list carries a path and nothing: the file is written and closed BEFORE a",
+        "single record, so it exists even for a run that refuses.",
+        "--intervals and --exclude-intervals are held OUT. A feature file needs an index for a",
+        "bounded traversal and a text counts table has none, so every row that carried one measured",
+        "the random-access refusal rather than the rewrite."
+      ],
+      "--input-counts": [
+        "/work/fixtures/sv.counts.tsv",
+        "/work/fixtures/counts.tsv"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--output-prefix": [
+        "/work/out/printed.",
+        "/work/out/printed2."
+      ],
+      "--output-file-list": [
+        "/work/out/files.list",
+        "/work/out/files2.list"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": []
+    },
+    "DenoiseReadCounts": {
+      "$why": [
+        "counts.tsv, written by the REFERENCE's own CollectReadCounts: this tool is the next link",
+        "of that chain and reads exactly what it wrote.",
+        "--count-panel-of-normals and --annotated-intervals are held OUT. The first is an HDF5",
+        "panel and the second turns on the GC-bias correction; neither is written by this port, so",
+        "a row carrying either would measure the refusal rather than the standardisation.",
+        "--number-of-eigensamples is held out with them: it only means anything with a panel.",
+        "The two outputs carry two paths each, and a run with no panel writes the SAME bytes to",
+        "both: the denoised result is the standardised one when there is nothing to denoise with."
+      ],
+      "--input": [
+        "/work/fixtures/counts.tsv"
+      ],
+      "--standardized-copy-ratios": [
+        "/work/out/standardized.tsv",
+        "/work/out/standardized2.tsv"
+      ],
+      "--denoised-copy-ratios": [
+        "/work/out/denoised.tsv",
+        "/work/out/denoised2.tsv"
+      ],
+      "--count-panel-of-normals": [],
+      "--annotated-intervals": [],
+      "--number-of-eigensamples": []
+    },
+    "DepthOfCoverage": {
+      "$why": [
+        "A SMALL window, chr1:101-200, because every base of the interval is a row whether a read",
+        "reaches it or not: the corpus's usual chr1:1-6000 would make a corpus file of six thousand",
+        "rows per accepted row of the array.",
+        "The three table omissions are held at TRUE. The files they would write carry quantiles",
+        "computed in a partitioned data store this port does not carry, so the port refuses a run",
+        "that asks for them; holding them true is what makes the array measure the per-base table",
+        "rather than that refusal, and it narrows the claim to exactly that file.",
+        "--output-format is held at CSV and --partition-type at `sample` for the same reason: the",
+        "other format is a padded table and the other partitions are the read group, the library",
+        "and the centre, none of which this port writes.",
+        "--calculate-coverage-over-genes is held out: it writes a per-gene table that is not",
+        "written here either.",
+        "--min-base-quality and --max-base-quality carry values INSIDE the byte range. Outside it",
+        "the parser refuses two different ways, which the tool's own golden measures.",
+        "--include-deletions is held at FALSE: it adds a sixth column, D, to every base-count",
+        "field, and the ported counter has the five bases and no deletion slot, so the port refuses",
+        "the run rather than writing a table a column short.",
+        "--start, --stop and --nBins carry values inside their declared ranges, and",
+        "--exclude-intervals a window OFF the reads as well as one inside them. The generator steps",
+        "each numeric argument below its minimum and the shared exclusion covers the whole window,",
+        "so twenty-two of twenty-three rows measured a parser refusal rather than the counting."
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:101-200",
+        "chr1:50000-50010"
+      ],
+      "--output": [
+        "/work/out/coverage",
+        "/work/out/coverage2"
+      ],
+      "--omit-locus-table": [
+        "true"
+      ],
+      "--omit-interval-statistics": [
+        "true"
+      ],
+      "--omit-per-sample-statistics": [
+        "true"
+      ],
+      "--min-base-quality": [
+        "0",
+        "20"
+      ],
+      "--max-base-quality": [
+        "127",
+        "40"
+      ],
+      "--output-format": [
+        "CSV"
+      ],
+      "--partition-type": [
+        "sample"
+      ],
+      "--start": [
+        "1",
+        "5"
+      ],
+      "--stop": [
+        "500",
+        "100"
+      ],
+      "--nBins": [
+        "499",
+        "99"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--exclude-intervals": [
+        "chr1:90000-91000",
+        "chr1:150-160"
+      ],
+      "--include-deletions": [
+        "false"
+      ],
+      "--calculate-coverage-over-genes": []
+    },
+    "GatherBQSRReports": {
+      "$why": [
+        "recal.table and recal2.table, both written by the REFERENCE's own BaseRecalibrator over",
+        "the corpus's two BAMs: the gather's input is another tool's output, which is what makes",
+        "this the third chain in the corpus.",
+        "Each row gathers ONE report, because a covering array assigns one value per argument and",
+        "--input is the only source. That is not a gather of nothing: the reduce still recomputes",
+        "the empirical qualities and the quantization at the first report's level count, so a",
+        "single-report row measures everything but the sum. The sum itself is measured by the",
+        "gather suite's golden, which carries the two-shard case.",
+        "--output carries two paths and nothing else: this tool has no other file to write."
+      ],
+      "--input": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table"
+      ],
+      "--output": [
+        "/work/out/gathered.table",
+        "/work/out/gathered2.table"
+      ]
+    },
+    "LeftAlignAndTrimVariants": {
+      "$why": [
+        "shiftable.vcf, whose indels are whole repeat units of the corpus reference and therefore",
+        "MOVE: with the default window every one of them walks a thousand bases left, and with a",
+        "window of one it walks one. The corpus's own indels.vcf is the second value and moves",
+        "nothing, because its alleles do not match the reference; an array over that file alone",
+        "measured the traversal rather than the alignment.",
+        "The five records are five branches: a deletion that walks, an insertion that walks, a",
+        "second deletion close behind the first so the distance to the record ALREADY WRITTEN is",
+        "what bounds it, a three-hundred-base deletion that is written untouched and still bounds",
+        "the next, and a SNV, which the alignment returns on before it reads a base.",
+        "--max-leading-bases carries the default and a window of one, which is the argument that",
+        "stops a record short of where the reference would put it. --max-indel-length carries the",
+        "default and a length below the corpus's own indels, which is what makes a record be",
+        "written untouched and still bound the next one.",
+        "--split-multi-allelics is in the array because the corpus's multi-allelic records have no",
+        "likelihoods: a record with PLs reaches the allele subsetting this port does not carry.",
+        "--input and --read-index carry the corpus's BAM and its index rather than the shared",
+        "values, which pair a VCF with a BAM index and refuse before the tool runs.",
+        "--max-variants-per-shard is held at zero: above it the reference writes one FILE per",
+        "shard, which is a writer this port does not carry, so every row above zero would measure",
+        "that refusal rather than the alignment.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every other variant writer holds them: the header line carries the run's own clock",
+        "and the index carries the output file's last-modified time, so two runs of the same row",
+        "differ in bytes that are not the tool's."
+      ],
+      "--variant": [
+        "/work/fixtures/shiftable.vcf",
+        "/work/fixtures/indels.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--output": [
+        "/work/out/aligned.vcf",
+        "/work/out/aligned2.vcf"
+      ],
+      "--max-leading-bases": [
+        "1000",
+        "1"
+      ],
+      "--max-indel-length": [
+        "200",
+        "1"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "ValidateVariants": {
+      "$why": [
+        "blocks.g.vcf, a GVCF of two reference blocks and a variant between them, all carrying",
+        "<NON_REF>. --validate-GVCF needs one, and it needs the blocks to stop short of the",
+        "interval: the coverage check counts every locus no record covers, so a file over",
+        "chr1:1-1000 under -L chr1:1-6000 is refused for the five thousand it leaves. The corpus's",
+        "plain VCF is the other value, and under --validate-GVCF every one of its records is",
+        "refused for having no <NON_REF> at all.",
+        "This tool writes NO file. Its whole answer is whether it threw and what it said, so every",
+        "accepted row here has an empty output and the distinct-output count is zero by",
+        "construction rather than by a weak corpus.",
+        "--dbsnp is held out: the ID check is the one validation this port does not carry, and a",
+        "dbSNP file in a row would measure a check that is not there. Without one the reference",
+        "skips it too, and says so in the log.",
+        "--intervals carries a window over the blocks and one past them, which is what moves the",
+        "coverage refusal between five thousand loci and ten thousand and one.",
+        "--do-not-validate-filtered-records is held OUT: it is mutex with --validate-GVCF and with",
+        "--fail-gvcf-on-overlap, every row sets every argument, and thirty-one of thirty-six rows",
+        "measured that one refusal. The side held is the one with the most partners, which leaves",
+        "the GVCF pair in the array.",
+        "--max-variants-per-shard carries two values inside its declared range: the generator steps",
+        "below zero and the parser refuses.",
+        "--input and --read-index carry the corpus's BAM and its index. The shared values pair a",
+        "VCF with a BAM index, which twenty-five of thirty-nine rows died on; a variant walker",
+        "still opens the reads a command line names, and with a real pair it is the dictionary",
+        "comparison that the rows measure instead."
+      ],
+      "--variant": [
+        "/work/fixtures/blocks.g.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--dbsnp": [],
+      "--input": [
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai"
+      ],
+      "--do-not-validate-filtered-records": [],
+      "--max-variants-per-shard": [
+        "0",
+        "1"
+      ]
+    },
+    "FilterIntervals": {
+      "$why": [
+        "annotated.tsv and counts.tsv, both produced by the REFERENCE's own AnnotateIntervals and",
+        "CollectReadCounts over four windows of the corpus's contig. Four rather than one because",
+        "this tool removes a contig's only surviving interval: a table of one row filters to none",
+        "and the run is then refused for having nothing left.",
+        "The counts differ between windows (2, 2, 1 and 0), and the two low-count thresholds are the",
+        "two sides of them: 1 drops the empty window and 0 drops nothing. A threshold of five is",
+        "above every count the corpus carries, so every row holding it ended with an empty mask and",
+        "the array measured one refusal eleven times instead of the filters.",
+        "--annotated-intervals carries the table and NOTHING, because the tool accepts either input",
+        "alone and refuses a command line with neither: the empty value is that refusal.",
+        "--input and --read-index are held out of the shared values: this tool's --input is a COUNTS",
+        "table rather than reads, which is why it carries its own.",
+        "--intervals takes an interval LIST rather than a window, and that is the tool rather than",
+        "the fixture: the argument is REQUIRED, the intersection with the inputs is by list equality",
+        "rather than by overlap, and a contig left with one interval loses it. So a window naming a",
+        "single bin always ends with nothing, and only a file naming several can produce output.",
+        "The two files name four bins and two.",
+        "--exclude-intervals carries a window OFF the bins as well as one that cuts the first of",
+        "them, for the same reason: an exclusion that clips a bin does not shrink it, it deletes it,",
+        "and with every shared value clipping one, no row could produce a file at all.",
+        "The four other interval arguments are HELD at what a copy-number tool accepts: it bins and",
+        "pads by its own arguments and refuses the standard ones outright, so every row that varied",
+        "them measured one IllegalArgumentException. That refusal is the runner's own check and is",
+        "measured by the tools that share it.",
+        "The percentages, the percentiles and the two segmental-duplication bounds carry values",
+        "INSIDE their declared range. The generator takes a domain from the declaration's min and",
+        "max, and for these it produced -1.0 and 2.0: every one of the forty-nine rows was refused",
+        "by the parser and the array measured the range check rather than the three filters."
+      ],
+      "--annotated-intervals": [
+        "/work/fixtures/annotated.tsv",
+        ""
+      ],
+      "--input": [
+        "/work/fixtures/counts.tsv"
+      ],
+      "--output": [
+        "/work/out/filtered.interval_list",
+        "/work/out/filtered2.interval_list"
+      ],
+      "--minimum-gc-content": [
+        "0.1",
+        "0.6"
+      ],
+      "--exclude-intervals": [
+        "chr1:90000-91000",
+        "chr1:1-500"
+      ],
+      "--low-count-filter-count-threshold": [
+        "1",
+        "0"
+      ],
+      "--maximum-segmental-duplication-content": [
+        "0.5",
+        "1.0"
+      ],
+      "--minimum-segmental-duplication-content": [
+        "0.0"
+      ],
+      "--extreme-count-filter-percentage-of-samples": [
+        "90.0",
+        "10.0"
+      ],
+      "--low-count-filter-percentage-of-samples": [
+        "90.0"
+      ],
+      "--extreme-count-filter-minimum-percentile": [
+        "1.0"
+      ],
+      "--extreme-count-filter-maximum-percentile": [
+        "99.0"
+      ],
+      "--maximum-gc-content": [
+        "0.9"
+      ],
+      "--minimum-mappability": [
+        "0.9"
+      ],
+      "--maximum-mappability": [
+        "1.0"
+      ],
+      "--intervals": [
+        "/work/fixtures/bins.interval_list",
+        "/work/fixtures/bins2.interval_list"
+      ],
+      "--interval-merging-rule": [
+        "OVERLAPPING_ONLY"
+      ],
+      "--interval-set-rule": [
+        "UNION"
+      ],
+      "--interval-padding": [
+        "0"
+      ],
+      "--interval-exclusion-padding": [
+        "0"
+      ],
+      "--read-index": []
+    },
+    "CountFalsePositives": {
+      "$why": [
+        "indexed.vcf and duo.vcf, whose records are all unfiltered SNPs, so what the two values change",
+        "is how many records the window holds rather than which bucket they fall into. The snp and",
+        "indel split itself is measured by the tool's suite, which has the MNP and the symbolic",
+        "allele this corpus does not carry.",
+        "--intervals is the DENOMINATOR here and not only a filter: the table's rate is the count",
+        "divided by the merged intervals' bases, so two windows of different sizes give two",
+        "different rates over the same records. That is the property no other tool's array has.",
+        "--input and --read-index are held out: this tool reads no reads."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/duo.vcf"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:1-2000"
+      ],
+      "--output": [
+        "/work/out/falsepositives.table",
+        "/work/out/falsepositives2.table"
+      ],
+      "--input": [],
+      "--read-index": []
+    },
+    "CalculateMixingFractions": {
+      "$why": [
+        "duo.vcf is the corpus's TWO-sample VCF, whose singleton hets alternate between the",
+        "samples, and reads.vcf the other VCF a variant walker can open. Two samples is what makes",
+        "the table say anything: a bucket is divided by the SUM of every bucket's alt fraction, so a",
+        "one-sample file can only ever answer 1.0 or NaN, and the row ORDER is a HashMap's rather",
+        "than the header's.",
+        "--input carries the two BAMs, so the pileup at a site differs between rows rather than being",
+        "the same reads twice.",
+        "--intervals is where this tool's NaN lives: a run bounded away from the counted sites leaves",
+        "a sample uncounted, and since the normalizer is the SUM of every sample's alt fraction, one",
+        "empty bucket makes every row in the table NaN. The corpus's shared windows do exactly that,",
+        "because chr1:1-1000 holds only sample1's sites; this tool therefore carries its own two",
+        "windows, one over every site and one over the first three, which count 5/3 and 2/1 and",
+        "so answer with two different pairs of fractions."
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:1-2000"
+      ],
+      "--variant": [
+        "/work/fixtures/duo.vcf",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--output": [
+        "/work/out/fractions.table",
+        "/work/out/fractions2.table"
+      ]
+    },
+    "FastaReferenceMaker": {
       "--input": [
         "/work/fixtures/reads.bam",
         "/work/fixtures/reads2.bam"
@@ -1623,12 +2537,11 @@
         "reads the no-space form the same way, and the second value is the bare `QUAL`, which is a Double",
         "where the reference casts to Boolean: the ClassCastException that produces is the tool's answer",
         "and is now the port's.",
-        "context returns a typed value for QUAL and this port's returns the rendered string, so an",
-        "-select compares against a REAL literal rather than an integer one, and the reason is this",
-        "port's JEXL context rather than the tool: it returns the rendered string where the reference",
-        "returns a typed value, so an integer literal sends the comparison down Integer.parseInt and",
-        "refuses while a real literal takes the double path. Tracked on #1142; the fixtures take the",
-        "path both sides agree on."
+        "-select carries an INTEGER literal and a real one, which take two different paths",
+        "through commons-jexl's arithmetic: an integer literal sends the comparison down",
+        "Integer.parseInt and a real one down the double path. Both answer now that the context",
+        "is typed (#1142); before that the integer literal refused, because a rendered string",
+        "reached parseInt where the reference had a Double."
       ],
       "--variant": [
         "/work/fixtures/indexed.vcf",
@@ -1643,7 +2556,7 @@
         "nosuchsample"
       ],
       "--select": [
-        "QUAL>50.0",
+        "QUAL>50",
         "QUAL>5000.0"
       ],
       "--pedigree": [],
@@ -1662,6 +2575,136 @@
       "--create-output-variant-index": [
         "false"
       ]
+    },
+    "FastaAlternateReferenceMaker": {
+      "$why": [
+        "indexed.vcf is the corpus's het SNP file with a sample1 column, which is what --use-iupac-sample",
+        "reads, and indels.vcf carries the deletions and insertions that make the tool's own state",
+        "visible: a simple deletion sets a counter that removes the bases AFTER the record rather than",
+        "at it, so a row over that file and a row over the other one do not differ merely in which base",
+        "is substituted. Both are indexed, which every FeatureInput needs.",
+        "--snp-mask takes population.vcf, whose records sit on the reads and carry no sample columns at",
+        "all, and indexed.vcf, whose records sit where the called variants do. The second value is the",
+        "one that makes --snp-mask-priority observable: the flag is not 'prefer the mask', it is 'look",
+        "at the mask first', and the two orders differ only where a mask record and a call are at the",
+        "same locus.",
+        "--use-iupac-sample carries a sample the VCFs declare and one they do not, which gives the",
+        "argument a domain rather than a constant. The refusal the second value names is NOT what these",
+        "rows measure: every row carrying it is refused earlier, by the read-filter conflict, by",
+        "--max-variants-per-shard's range or by an interval the input does not hold, because a row",
+        "carries every argument in the domain at once. The refusal itself, and the three files it still",
+        "leaves behind, are measured by the tool's own suite. The same is true of",
+        "--snp-mask-priority without --snp-mask: no row can reach it, because every row has a mask.",
+        "--line-width is 60 and 7 for the reason FastaReferenceMaker's is: a width that divides the",
+        "interval and one that does not."
+      ],
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/indels.vcf"
+      ],
+      "--snp-mask": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/indexed.vcf"
+      ],
+      "--use-iupac-sample": [
+        "sample1",
+        "nosuchsample"
+      ],
+      "--output": [
+        "/work/out/alternate.fasta",
+        "/work/out/alternate2.fasta"
+      ],
+      "--line-width": [
+        "60",
+        "7"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ]
+    },
+    "CompareReferences": {
+      "$why": [
+        "--references-to-compare carries other.fasta, which --reference also carries, and",
+        "renamed.fasta, which is other.fasta's bases under another contig name.",
+        "renamed.fasta exists because the first measurement had distinct_outputs=1: every accepted row",
+        "produced the same table, since reference.fasta and other.fasta share no sequence and the only",
+        "other pairing was a reference with itself. renamed.fasta shares other.fasta's MD5 under",
+        "another name, which is the DIFFER_IN_SEQUENCE_NAMES answer and a second table. It also keeps",
+        "the dictionary its writer produced, M5 included, where other.dict is written by hand for",
+        "--sequence-dictionary and carries none: that is why a USE_DICT row over other.fasta is",
+        "refused and one over renamed.fasta is not.",
+        "Two rows do give both arguments the same path, and what the reference does there is not what",
+        "the array measures: the references are held in a map keyed by path, so one entry survives, no",
+        "pair is generated and the tool reads pair zero of an empty list. Both rows are refused before",
+        "that, by --max-variants-per-shard's range and by an interval the reference does not hold, so",
+        "the IndexOutOfBoundsException is measured by the tool's suite and reproduced by the runner",
+        "rather than covered here.",
+        "--base-comparison is held at NO_BASE_COMPARISON and --base-comparison-output is held out with",
+        "it. FULL_ALIGNMENT shells out to mummer, which the oracle image does not carry, and",
+        "FIND_SNPS_ONLY compares bases into a directory this port does not write yet: a row carrying",
+        "either would measure a refusal of the port's own.",
+        "--input and --read-index are held out. This tool reads no reads, and the shared --input value",
+        "is a VCF whose refusal as a reads source is measured by CountVariants.",
+        "--sequence-dictionary is held out. It is the master dictionary, which the engine validates",
+        "against the reference, and that validation is measured by the tools that traverse."
+      ],
+      "--references-to-compare": [
+        "/work/fixtures/other.fasta",
+        "/work/fixtures/renamed.fasta"
+      ],
+      "--output": [
+        "/work/out/references.table",
+        "/work/out/references2.table"
+      ],
+      "--base-comparison": [
+        "NO_BASE_COMPARISON"
+      ],
+      "--base-comparison-output": [],
+      "--input": [],
+      "--read-index": [],
+      "--sequence-dictionary": []
+    },
+    "CheckReferenceCompatibility": {
+      "$why": [
+        "--input carries md5header.bam and reads.bam, which is the whole point of this tool's array:",
+        "one property of the input decides the algorithm. md5header.bam is the corpus's only reads",
+        "file whose @SQ line carries an M5, so it takes the MD5 path and compares bases through",
+        "CompareReferences' table; reads.bam has none, so it compares names and lengths alone and says",
+        "so in every summary it writes.",
+        "--references-to-compare carries reference.fasta, whose dictionary md5header.bam's was copied",
+        "from, and other.fasta, which shares no contig with either input and whose hand-written dict",
+        "has no M5 at all. Between them the rows reach COMPATIBLE, NOT_COMPATIBLE and the USE_DICT",
+        "refusal that a reference with no M5 produces once the input has one.",
+        "--variant is held out. The tool refuses a command line naming both a BAM and a VCF, and every",
+        "row carries every argument in the domain, so an array holding both would measure that one",
+        "refusal twenty times. The VCF path is measured by the tool's suite, which has five VCF runs",
+        "including one whose M5 is a lie.",
+        "--read-index is held out: it is counted against the reads inputs and refuses on a mismatch,",
+        "which is a refusal the read walkers' arrays already measure."
+      ],
+      "--input": [
+        "/work/fixtures/md5header.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--references-to-compare": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ],
+      "--output": [
+        "/work/out/compatibility.table",
+        "/work/out/compatibility2.table"
+      ],
+      "--variant": [],
+      "--read-index": []
     }
   },
   "constraints": [

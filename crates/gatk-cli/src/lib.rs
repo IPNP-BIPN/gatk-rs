@@ -291,7 +291,31 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetPileupSummaries" => Some(run_get_pileup_summaries),
         "UnmarkDuplicates" => Some(run_unmark_duplicates),
         "FastaReferenceMaker" => Some(run_fasta_reference_maker),
+        "CheckReferenceCompatibility" => Some(run_check_reference_compatibility),
+        "AnnotateVcfWithExpectedAlleleFraction" => {
+            Some(run_annotate_vcf_with_expected_allele_fraction)
+        }
+        "CalculateMixingFractions" => Some(run_calculate_mixing_fractions),
+        "AnnotateVcfWithBamDepth" => Some(run_annotate_vcf_with_bam_depth),
+        "CountFalsePositives" => Some(run_count_false_positives),
+        "EvaluateInfoFieldConcordance" => Some(run_evaluate_info_field_concordance),
+        "CallCopyRatioSegments" => Some(run_call_copy_ratio_segments),
+        "VariantFiltration" => Some(run_variant_filtration),
+        "CollectAllelicCounts" => Some(run_collect_allelic_counts),
+        "FilterIntervals" => Some(run_filter_intervals),
+        "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
+        "ValidateVariants" => Some(run_validate_variants),
+        "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
+        "GatherBQSRReports" => Some(run_gather_bqsr_reports),
+        "Concordance" => Some(run_concordance),
+        "DepthOfCoverage" => Some(run_depth_of_coverage),
+        "CalculateGenotypePosteriors" => Some(run_calculate_genotype_posteriors),
+        "DenoiseReadCounts" => Some(run_denoise_read_counts),
+        "ValidateBasicSomaticShortMutations" => Some(run_validate_basic_somatic_short_mutations),
+        "PrintReadCounts" => Some(run_print_read_counts),
+        "CollectSVEvidence" => Some(run_collect_sv_evidence),
         "FastaAlternateReferenceMaker" => Some(run_fasta_alternate_reference_maker),
+        "CompareReferences" => Some(run_compare_references),
         "CollectReadCounts" => Some(run_collect_read_counts),
         "GetSampleName" => Some(run_get_sample_name),
         "PrintDistantMates" => Some(run_print_distant_mates),
@@ -440,8 +464,104 @@ fn run_fasta_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> 
     runners::fasta_reference_maker(&parsed("FastaReferenceMaker", args)?)
 }
 
+fn run_annotate_vcf_with_expected_allele_fraction(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::annotate_vcf_with_expected_allele_fraction(&parsed(
+        "AnnotateVcfWithExpectedAlleleFraction",
+        args,
+    )?)
+}
+
+fn run_calculate_mixing_fractions(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::calculate_mixing_fractions(&parsed("CalculateMixingFractions", args)?)
+}
+
+fn run_annotate_vcf_with_bam_depth(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::annotate_vcf_with_bam_depth(&parsed("AnnotateVcfWithBamDepth", args)?)
+}
+
+fn run_count_false_positives(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_false_positives(&parsed("CountFalsePositives", args)?)
+}
+
+fn run_evaluate_info_field_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::evaluate_info_field_concordance(&parsed("EvaluateInfoFieldConcordance", args)?)
+}
+
+fn run_call_copy_ratio_segments(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::call_copy_ratio_segments(&parsed("CallCopyRatioSegments", args)?)
+}
+
+fn run_variant_filtration(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_filtration(&parsed("VariantFiltration", args)?)
+}
+
+fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_allelic_counts(&parsed("CollectAllelicCounts", args)?)
+}
+
+fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_get_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::get_normal_artifact_data(&parsed("GetNormalArtifactData", args)?)
+}
+
+fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::validate_variants(&parsed("ValidateVariants", args)?)
+}
+
+fn run_left_align_and_trim_variants(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::left_align_and_trim_variants(&parsed("LeftAlignAndTrimVariants", args)?)
+}
+
+fn run_gather_bqsr_reports(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_bqsr_reports(&parsed("GatherBQSRReports", args)?)
+}
+
+fn run_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::concordance(&parsed("Concordance", args)?)
+}
+
+fn run_depth_of_coverage(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::depth_of_coverage(&parsed("DepthOfCoverage", args)?)
+}
+
+fn run_calculate_genotype_posteriors(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::calculate_genotype_posteriors(&parsed("CalculateGenotypePosteriors", args)?)
+}
+
+fn run_denoise_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::denoise_read_counts(&parsed("DenoiseReadCounts", args)?)
+}
+
+fn run_print_read_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_read_counts(&parsed("PrintReadCounts", args)?)
+}
+
+fn run_collect_sv_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_sv_evidence(&parsed("CollectSVEvidence", args)?)
+}
+
+fn run_validate_basic_somatic_short_mutations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::validate_basic_somatic_short_mutations(&parsed(
+        "ValidateBasicSomaticShortMutations",
+        args,
+    )?)
+}
+
 fn run_fasta_alternate_reference_maker(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::fasta_alternate_reference_maker(&parsed("FastaAlternateReferenceMaker", args)?)
+}
+
+fn run_compare_references(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::compare_references(&parsed("CompareReferences", args)?)
+}
+
+fn run_check_reference_compatibility(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::check_reference_compatibility(&parsed("CheckReferenceCompatibility", args)?)
 }
 
 fn run_get_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -1528,7 +1528,11 @@ pub mod jexl_filter {
         let mut context = Context::new();
         for name in names {
             if let Some(value) = attribute_as_string(read, name) {
-                context.insert(name.clone(), value);
+                // A read tag stays a STRING here, which is what `attribute_as_string` renders and
+                // what the golden's 186 evaluations were measured against. The typed context of
+                // #1142 is the VARIANT one: this filter's names are tags, and the reference hands
+                // JEXL the tag's own object, which for every tag the suite carries is text.
+                context.insert(name.clone(), Value::Str(value));
             }
         }
         context
