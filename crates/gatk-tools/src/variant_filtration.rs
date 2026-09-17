@@ -34,7 +34,6 @@
 //! are a brick of their own and nothing here pretends to them.
 
 use gatk_engine::jexl::{create_expression, Expression, JexlError, Value};
-use std::collections::HashMap;
 
 /// `FILTER_DELIMITER`, which is how an existing FT is split back into names.
 pub const FILTER_DELIMITER: char = ';';
@@ -58,10 +57,16 @@ impl MatchExp {
 
 /// The attributes an expression reads: the INFO fields, and a genotype's own fields when one is
 /// given.
-pub type Context = HashMap<String, String>;
+///
+/// Typed, for the reason [`gatk_engine::jexl::Context`] gives: the reference's context hands JEXL
+/// the object and not its text, and the arithmetic reads the class.
+pub type Context = gatk_engine::jexl::Context;
 
 /// As much of a record as the filtering reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Eq` is gone with the typed context: a JEXL value can be a `Double`, and a double is not
+/// totally ordered.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Record {
     pub contig: String,
     pub start: i32,
@@ -75,7 +80,7 @@ pub struct Record {
 }
 
 /// One sample's fields, as far as a genotype expression reads them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GenotypeFields {
     pub fields: Context,
     /// The FT the genotype arrived with, already split.
@@ -335,7 +340,12 @@ mod tests {
             filters: filters.map(|names| names.iter().map(|n| n.to_string()).collect()),
             info: info
                 .iter()
-                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .map(|(key, value)| {
+                    (
+                        key.to_string(),
+                        gatk_engine::jexl::Value::Str(value.to_string()),
+                    )
+                })
                 .collect(),
             genotypes: Vec::new(),
         }

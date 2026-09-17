@@ -26,8 +26,7 @@
 //! no-call is `None`. The list they index is the record's list AFTER the subset, which is why the
 //! write-back reads the alleles it is given rather than the ones the original carried.
 
-use std::collections::HashMap;
-
+use gatk_engine::jexl::{Context as JexlContext, Value as JexlValue};
 use gatk_engine::subset_alleles::Genotype as EngineGenotype;
 use gatk_engine::variant_context_utils::{Allele as EngineAllele, Variant};
 use gatk_tools::select_variants::{FilterRecord, Record};
@@ -124,34 +123,43 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
             // attributes, then a filter NAME that the record carries. The fixed names are why an
             // expression can say `QUAL > 50` at all: none of them is an INFO field, and a context
             // holding the attributes alone refuses the expression as an unknown variable.
-            let mut context: HashMap<String, String> = HashMap::new();
-            context.insert("CHROM".to_string(), vc.contig.clone());
-            context.insert("POS".to_string(), vc.start.to_string());
+            // The values are the OBJECTS the reference's map hands JEXL, not their text: `POS` is
+            // an `Integer`, `QUAL` a `Double`, `N_ALLELES` an `Integer`, and an INFO attribute the
+            // `String` htsjdk's codec decoded it to. That is what makes `QUAL > 50` an answer
+            // rather than a `NumberFormatException` (#1142).
+            let mut context: JexlContext = JexlContext::new();
+            context.insert("CHROM".to_string(), JexlValue::Str(vc.contig.clone()));
+            context.insert("POS".to_string(), JexlValue::Int(vc.start as i32));
             // `-10 * getLog10PError()`, which is the QUAL column back again. A record whose QUAL
             // was `.` carries no error, and `hasLog10PError()` is what the writer asks; the value
             // here is the number either way, because the context has no null.
             context.insert(
                 "QUAL".to_string(),
-                gatk_engine::tsv_table::java_double_to_string(-10.0 * vc.log10_p_error),
+                JexlValue::Double(-10.0 * vc.log10_p_error),
             );
-            context.insert("N_ALLELES".to_string(), vc.alleles.len().to_string());
+            context.insert(
+                "N_ALLELES".to_string(),
+                JexlValue::Int(vc.alleles.len() as i32),
+            );
             // `isFiltered() ? "1" : "0"`, which is what makes `FILTER == "1"` an expression.
             let filtered = vc
                 .filters
                 .as_ref()
                 .is_some_and(|filters| !filters.is_empty());
+            // `isFiltered() ? "1" : "0"`: a STRING on both branches, which is the one fixed name
+            // whose value is text rather than a number.
             context.insert(
                 "FILTER".to_string(),
-                if filtered { "1" } else { "0" }.to_string(),
+                JexlValue::Str(if filtered { "1" } else { "0" }.to_string()),
             );
             for (key, value) in &vc.attributes {
-                context.insert(key.clone(), rendered(value));
+                context.insert(key.clone(), JexlValue::Str(rendered(value)));
             }
             // A filter the record carries resolves to `"1"` under its own name.
             for filter in vc.filters.iter().flatten() {
                 context
                     .entry(filter.clone())
-                    .or_insert_with(|| "1".to_string());
+                    .or_insert_with(|| JexlValue::Str("1".to_string()));
             }
             context
         },
@@ -159,19 +167,22 @@ pub fn to_engine(vc: &VariantContext) -> Bridged {
             .genotypes
             .iter()
             .map(|genotype| {
-                let mut fields: HashMap<String, String> = genotype
+                let mut fields: JexlContext = genotype
                     .extended
                     .iter()
-                    .map(|(key, value)| (key.clone(), rendered(value)))
+                    .map(|(key, value)| (key.clone(), JexlValue::Str(rendered(value))))
                     .collect();
+                // `GenotypeJEXLContext`'s own map: `FT` is the filter text or `PASS`, and `GQ`
+                // is `getGQ()`, an `Integer`. `DP` is NOT in that map, so it resolves through the
+                // genotype's extended attributes, where the codec left it as text.
                 if let Some(filters) = &genotype.filters {
-                    fields.insert("FT".to_string(), filters.clone());
+                    fields.insert("FT".to_string(), JexlValue::Str(filters.clone()));
                 }
                 if let Some(gq) = genotype.gq {
-                    fields.insert("GQ".to_string(), gq.to_string());
+                    fields.insert("GQ".to_string(), JexlValue::Int(gq));
                 }
                 if let Some(dp) = genotype.dp {
-                    fields.insert("DP".to_string(), dp.to_string());
+                    fields.insert("DP".to_string(), JexlValue::Str(dp.to_string()));
                 }
                 fields
             })
