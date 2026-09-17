@@ -240,6 +240,17 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.PrintBGZFBlockInformation());
         declarations("CreateHadoopBamSplittingIndex",
                 new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
+        // Two REFERENCE utilities. `FastaAlternateReferenceMaker` is the maker with a VCF applied,
+        // and it declares TWO `FeatureInput`s: the driving variants and `--snp-mask`. The pair
+        // matters to the parser only in what it does not do, which is check them against each
+        // other: `--snp-mask-priority` without `--snp-mask` is refused by the TOOL, from
+        // `onTraversalStart`, so the command line that carries it parses cleanly.
+        // `CompareReferences` requires a LIST of references, `--references-to-compare`, where
+        // every tool declared here so far takes the one `--reference`.
+        declarations("FastaAlternateReferenceMaker",
+                new org.broadinstitute.hellbender.tools.walkers.fasta.FastaAlternateReferenceMaker());
+        declarations("CompareReferences",
+                new org.broadinstitute.hellbender.tools.reference.CompareReferences());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
