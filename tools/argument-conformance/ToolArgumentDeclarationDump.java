@@ -370,6 +370,18 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildKmers());
         declarations("PathSeqBuildReferenceTaxonomy",
                 new org.broadinstitute.hellbender.tools.spark.pathseq.PathSeqBuildReferenceTaxonomy());
+        // A structural-variant annotator and a shard converter, paired because each declares a
+        // shape the table has not held. `SVAnnotate` is a `VariantWalker` whose `--output` is
+        // OPTIONAL and whose absence means stdout, and its `--max-breakend-as-cnv-length` is
+        // declared `minValue = 0` with a default of `-1`: a default OUTSIDE its own range, which is
+        // legal because `isValueOutOfRange` runs on a value the command line SET and never on the
+        // default. `ConvertHeaderlessHadoopBamShardToBam` is the opposite shape, a
+        // `CommandLineProgram` whose three arguments are all required and all plain files, and the
+        // only declared tool that reads a header from one file and records from another.
+        declarations("SVAnnotate",
+                new org.broadinstitute.hellbender.tools.walkers.sv.SVAnnotate());
+        declarations("ConvertHeaderlessHadoopBamShardToBam",
+                new org.broadinstitute.hellbender.tools.ConvertHeaderlessHadoopBamShardToBam());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
