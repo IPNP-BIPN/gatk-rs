@@ -16,10 +16,15 @@
 //!
 //! # What is a dependency and what is a port
 //!
-//! The indexed-FASTA plumbing (`.fai` parsing, seeking to the right offset, skipping newlines)
-//! is [`noodles_fasta`]: it is one well-tested implementation of a file format whose bytes are
-//! unambiguous, and porting htsjdk's copy of it a second time would buy nothing measurable. The
-//! *semantics* above are ported and measured, because they are GATK's and not the format's.
+//! The indexed-FASTA plumbing (`.fai` parsing and the seek to the first base) is
+//! [`htsjdk_bam::fasta_index`], the port's own reader. It was `noodles-fasta` until the
+//! arithmetic was measured: `getSubsequenceAt` computes the byte offset from the `.fai`'s
+//! bases-per-line and bytes-per-line columns and never scans for a newline, so two readers of the
+//! format agree on a well-formed file and disagree on one whose index does not describe its own
+//! lines. htsjdk-rs's `indexed-fasta` suite holds that measurement: sixteen answered queries and
+//! three refusals over three files, one of them CRLF, which is read correctly only because the
+//! index says the terminator is two bytes. The *semantics* above are ported and measured here,
+//! because they are GATK's and not the format's.
 //!
 //! Where the two disagree is also declared rather than smoothed over: the reference throws for a
 //! query past the end of a contig, for `start > stop`, for a start below 1 and for an unknown
@@ -27,7 +32,7 @@
 
 use std::path::Path;
 
-use noodles_fasta as fasta;
+use htsjdk_bam::fasta_index::IndexedFasta;
 
 /// What the reference throws rather than returning bases.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,26 +47,19 @@ pub enum ReferenceError {
 
 /// `ReferenceFileSource`: an indexed FASTA queried by interval.
 pub struct ReferenceFileSource {
-    reader: fasta::io::IndexedReader<fasta::io::BufReader<std::fs::File>>,
+    reader: IndexedFasta<std::fs::File>,
     lengths: Vec<(String, usize)>,
 }
 
 impl ReferenceFileSource {
     /// Open a FASTA and its `.fai`.
     pub fn open(path: &Path) -> Result<ReferenceFileSource, ReferenceError> {
-        let reader = fasta::io::indexed_reader::Builder::default()
-            .build_from_path(path)
-            .map_err(|e| ReferenceError::Io(e.to_string()))?;
+        let reader = IndexedFasta::open(path).map_err(|e| ReferenceError::Io(e.message()))?;
         let lengths = reader
             .index()
-            .as_ref()
+            .entries
             .iter()
-            .map(|record| {
-                (
-                    String::from_utf8_lossy(record.name()).into_owned(),
-                    record.length() as usize,
-                )
-            })
+            .map(|entry| (entry.name.clone(), entry.size as usize))
             .collect();
         Ok(ReferenceFileSource { reader, lengths })
     }
@@ -99,14 +97,10 @@ impl ReferenceFileSource {
         if start < 1 || stop < start || stop as usize > length {
             return Err(ReferenceError::BadInterval);
         }
-        let region = format!("{contig}:{start}-{stop}")
-            .parse()
-            .map_err(|_| ReferenceError::BadInterval)?;
-        let record = self
+        let mut bases = self
             .reader
-            .query(&region)
-            .map_err(|e| ReferenceError::Io(e.to_string()))?;
-        let mut bases = record.sequence().as_ref().to_vec();
+            .query(contig, start as i64, stop as i64)
+            .map_err(|e| ReferenceError::Io(e.message()))?;
         upper_case_and_flatten_iupac(&mut bases);
         Ok(bases)
     }

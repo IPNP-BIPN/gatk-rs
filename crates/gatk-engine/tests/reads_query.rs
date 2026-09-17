@@ -7,7 +7,7 @@
 //! returns exactly what filtering every record in the file returns. The filter is the same code
 //! in both arms on purpose, so a wrong filter passes here and fails the oracle; what cannot pass
 //! here is a wrong chunk list, a cursor that loses a record spanning two BGZF blocks, or a query
-//! that reads a block it should have skipped. That is precisely the part where `noodles` parses
+//! that reads a block it should have skipped. That is precisely the part where `htsjdk-bam` parses
 //! the index and this crate interprets it.
 
 use gatk_engine::interval::SimpleInterval;
