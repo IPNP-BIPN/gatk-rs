@@ -118,6 +118,7 @@ pub mod multi_pass;
 pub mod mutect_gathers;
 pub mod numt_filter;
 pub mod pathseq_kmers;
+pub mod pathseq_kryo;
 pub mod pathseq_taxonomy;
 pub mod picard_gather_vcfs;
 pub mod picard_update_vcf_dictionary;
