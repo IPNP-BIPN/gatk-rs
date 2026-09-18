@@ -312,14 +312,7 @@ def enum_table():
     for line in text.split("\n"):
         if not line.startswith("enum\t"):
             continue
-        parts = line.split("\t", 3)
-        if len(parts) == 3:
-            # The same transition as the def rows: a golden measured before the binary name was
-            # dumped names the type once, and that one name is both the key and the printed name.
-            _, class_name, constants = parts
-            name = class_name
-        else:
-            _, class_name, name, constants = parts
+        _, class_name, name, constants = line.split("\t", 3)
         listed = ", ".join(f'"{constant}"' for constant in constants.split(","))
         written = ", ".join(
             f"({literal(constant)}, {literal(doc)})" for constant, doc in docs.get(class_name, []))
@@ -366,12 +359,6 @@ def main():
         for row in rows(text, "def", tool):
             index, body = row.split("\t", 1)
             fields = body.split("|")
-            # TRANSITIONAL, for one commit: the golden in the tree was measured before the dump
-            # carried the binary class name (IPNP-BIPN/gatk-rs#1179), and the freeze that follows
-            # this change is what makes the twentieth field the only shape. A nineteen-field row
-            # keeps the old behaviour exactly, ambiguity included, by joining on the simple name.
-            if len(fields) == 19:
-                fields = fields + [fields[5]]
             if len(fields) != 20:
                 sys.exit(f"{tool}: a def line has {len(fields)} fields and not 20")
             (long_name, aliases, required, collection, default, type_name, primitive, flag,
