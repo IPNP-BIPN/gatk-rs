@@ -60,6 +60,7 @@ pub mod java_random;
 pub mod java_regex;
 pub mod jexl;
 pub mod kernel_segmenter;
+pub mod kryo;
 pub mod locus_iterator;
 pub mod locus_shards;
 pub mod mann_whitney;
