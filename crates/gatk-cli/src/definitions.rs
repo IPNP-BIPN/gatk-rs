@@ -30,7 +30,11 @@ pub fn unconvertible(declaration: &Declaration) -> bool {
 }
 
 /// The `ValueClass` a declared type converts through, if it is one this port has measured.
-pub fn value_class(type_name: &str) -> Option<ValueClass> {
+///
+/// The scalar classes are matched by their simple name, which identifies them; an enum is matched
+/// by the BINARY one, because two GATK enums are called `Mode` and the simple name would hand one
+/// tool the other's constants (IPNP-BIPN/gatk-rs#1179).
+pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
     match type_name {
         "Integer" => Some(ValueClass::Integer),
         "Double" => Some(ValueClass::Double),
@@ -54,7 +58,7 @@ pub fn value_class(type_name: &str) -> Option<ValueClass> {
         "Float" => Some(ValueClass::Float),
         "Long" => Some(ValueClass::Long),
         "Byte" => Some(ValueClass::Byte),
-        name => enum_type(name).map(|type_| ValueClass::Enum {
+        _ => enum_type(type_class).map(|type_| ValueClass::Enum {
             simple_name: type_.name,
             constants: type_.constants,
         }),
@@ -109,7 +113,7 @@ pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
 
 /// One declaration as a definition, or nothing when its class is not one this port converts.
 pub fn definition(declaration: &Declaration) -> Option<Definition> {
-    let class = value_class(declaration.type_name)?;
+    let class = value_class(declaration.type_name, declaration.type_class)?;
     // `getArgumentAliases()` is the short name first and then the long one, so an argument with
     // two aliases has a short name and one with a single alias does not.
     let short_name = match declaration.aliases {

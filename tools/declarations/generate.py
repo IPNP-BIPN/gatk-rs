@@ -57,6 +57,10 @@ pub struct Declaration {
     /// The UNDERLYING field's class, which for a collection is its element class: `--input` is a
     /// `List<GATKPath>` and reports `GATKPath`, so the conversion is the element's.
     pub type_name: &'static str,
+    /// The same class by its BINARY name, which is what identifies it. Two GATK enums are called
+    /// `Mode` and only this tells them apart, so the enum table is joined on this and never on
+    /// `type_name` (IPNP-BIPN/gatk-rs#1179).
+    pub type_class: &'static str,
     /// Whether the field is a primitive, which is a separate question from the class: the class
     /// is boxed either way, and only the null check asks this one.
     pub primitive: bool,
@@ -92,6 +96,9 @@ pub struct Declaration {
 /// which case it is the documentation the usage text prints beside each constant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EnumType {
+    /// The BINARY class name, which is the key a declaration joins on.
+    pub class_name: &'static str,
+    /// The simple name, which is what a refusal prints.
     pub name: &'static str,
     pub constants: &'static [&'static str],
     pub docs: &'static [(&'static str, &'static str)],
@@ -298,19 +305,27 @@ def enum_table():
     docs = {}
     for line in text.split("\n"):
         if line.startswith("clp\t"):
-            _, name, body = line.split("\t", 2)
+            _, class_name, body = line.split("\t", 2)
             constant, doc = body.split("=", 1)
-            docs.setdefault(name, []).append((constant, doc))
+            docs.setdefault(class_name, []).append((constant, doc))
     entries = []
     for line in text.split("\n"):
         if not line.startswith("enum\t"):
             continue
-        _, name, constants = line.split("\t", 2)
+        parts = line.split("\t", 3)
+        if len(parts) == 3:
+            # The same transition as the def rows: a golden measured before the binary name was
+            # dumped names the type once, and that one name is both the key and the printed name.
+            _, class_name, constants = parts
+            name = class_name
+        else:
+            _, class_name, name, constants = parts
         listed = ", ".join(f'"{constant}"' for constant in constants.split(","))
         written = ", ".join(
-            f"({literal(constant)}, {literal(doc)})" for constant, doc in docs.get(name, []))
+            f"({literal(constant)}, {literal(doc)})" for constant, doc in docs.get(class_name, []))
         entries.append(
             "    EnumType {\n"
+            f'        class_name: "{class_name}",\n'
             f'        name: "{name}",\n'
             f"        constants: &[{listed}],\n"
             f"        docs: &[{written}],\n"
@@ -318,9 +333,12 @@ def enum_table():
     return (
         "/// The enum types the ported tools name, by type and not by tool.\n"
         "pub const ENUM_TYPES: &[EnumType] = &[\n" + "\n".join(entries) + "\n];\n\n"
-        "/// The type a declaration's `type_name` names, if it is an enum.\n"
-        "pub fn enum_type(name: &str) -> Option<&'static EnumType> {\n"
-        "    ENUM_TYPES.iter().find(|type_| type_.name == name)\n}\n"
+        "/// The type a declaration's `type_class` names, if it is an enum.\n"
+        "///\n"
+        "/// The BINARY name is the key. Two GATK enums are called `Mode` and a lookup by simple\n"
+        "/// name answers one of them for both, which is IPNP-BIPN/gatk-rs#1179.\n"
+        "pub fn enum_type(class_name: &str) -> Option<&'static EnumType> {\n"
+        "    ENUM_TYPES.iter().find(|type_| type_.class_name == class_name)\n}\n"
     )
 
 
@@ -348,11 +366,17 @@ def main():
         for row in rows(text, "def", tool):
             index, body = row.split("\t", 1)
             fields = body.split("|")
-            if len(fields) != 19:
-                sys.exit(f"{tool}: a def line has {len(fields)} fields and not 19")
+            # TRANSITIONAL, for one commit: the golden in the tree was measured before the dump
+            # carried the binary class name (IPNP-BIPN/gatk-rs#1179), and the freeze that follows
+            # this change is what makes the twentieth field the only shape. A nineteen-field row
+            # keeps the old behaviour exactly, ambiguity included, by joining on the simple name.
+            if len(fields) == 19:
+                fields = fields + [fields[5]]
+            if len(fields) != 20:
+                sys.exit(f"{tool}: a def line has {len(fields)} fields and not 20")
             (long_name, aliases, required, collection, default, type_name, primitive, flag,
              hidden, advanced, common, min_elements, max_elements, min_value, max_value,
-             min_recommended, max_recommended, mutex, plugin) = fields
+             min_recommended, max_recommended, mutex, plugin, type_class) = fields
             alias_list = ", ".join(f'"{a}"' for a in aliases.split(",") if a)
             default_literal = (
                 "None" if default == "null" else 'Some(%s)' % literal(default)
@@ -373,6 +397,7 @@ def main():
                 f"        collection: {'true' if collection == 'collection' else 'false'},\n"
                 f"        default: {default_literal},\n"
                 f'        type_name: "{type_name}",\n'
+                f'        type_class: "{type_class}",\n'
                 f"        primitive: {'true' if primitive == 'primitive' else 'false'},\n"
                 f"        flag: {'true' if flag == 'flag' else 'false'},\n"
                 f"        hidden: {'true' if hidden == 'hidden' else 'false'},\n"

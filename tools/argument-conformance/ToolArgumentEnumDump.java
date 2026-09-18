@@ -15,14 +15,16 @@
  *   - AN ENUM THAT IMPLEMENTS `ClpEnum` DOCUMENTS ITS CONSTANTS, and that documentation is part of
  *     the usage text rather than of the refusal, so the two are measured apart;
  *   - THE SAME TYPE APPEARS UNDER MORE THAN ONE TOOL and is one type, so the table is by type and
- *     the arguments point into it;
+ *     the arguments point into it -- by the BINARY class name, because two different GATK enums are
+ *     both called `Mode` and a table keyed by the simple name answers one of them for both
+ *     (IPNP-BIPN/gatk-rs#1179);
  *   - AND A DEFAULT IS ONE OF THE CONSTANTS, which is what makes an unset enum argument optional.
  *
  * Output:
  *
- *     enum\t<type>\t<constants, comma separated, in declaration order>
- *     clp\t<type>\t<constant>=<the documentation ClpEnum gives it, escaped>
- *     arg\t<tool>\t<long name>\t<type>|<default>
+ *     enum\t<binary class name>\t<simple name>\t<constants, comma separated, in declaration order>
+ *     clp\t<binary class name>\t<constant>=<the documentation ClpEnum gives it, escaped>
+ *     arg\t<tool>\t<long name>\t<binary class name>|<default>
  *     parse\t<tool>\t<case>\tok|E:<exception class>:<message>
  *
  * Usage: ToolArgumentEnumDump
@@ -339,7 +341,8 @@ public class ToolArgumentEnumDump {
             for (final Object constant : type.getEnumConstants()) {
                 constants.add(((Enum<?>) constant).name());
             }
-            System.out.printf("enum\t%s\t%s%n", name, String.join(",", constants));
+            System.out.printf("enum\t%s\t%s\t%s%n", name, type.getSimpleName(),
+                    String.join(",", constants));
             // A `ClpEnum` documents each of its constants, and that documentation is the usage
             // text's rather than the refusal's.
             if (CommandLineParser.ClpEnum.class.isAssignableFrom(type)) {
@@ -376,9 +379,15 @@ public class ToolArgumentEnumDump {
             if (!type.isEnum()) {
                 continue;
             }
-            types.putIfAbsent(type.getSimpleName(), type);
+            // Keyed by the BINARY name and not the simple one: GATK declares two enums called
+            // `Mode`, `VariantFilterMode`'s five constants and the VQSR collection's three, and
+            // `putIfAbsent` under a shared key keeps whichever tool was declared first while the
+            // other tool's argument then reads the wrong constants (IPNP-BIPN/gatk-rs#1179). The
+            // rows carry both names: the binary one is the join, the simple one is what a refusal
+            // prints.
+            types.putIfAbsent(type.getName(), type);
             args.append(String.format("arg\t%s\t%s\t%s|%s%n", tool, definition.getLongName(),
-                    type.getSimpleName(),
+                    type.getName(),
                     escape(String.valueOf(definition.getDefaultValueAsString()))));
         }
     }
