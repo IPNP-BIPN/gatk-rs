@@ -11,15 +11,18 @@
 //!    set on its last byte, and the length shape otherwise;
 //!  * **and a null string being one byte, which is how the length tells it from an empty one.**
 //!
+//!  * **and the k-mer file whole**: `LongHopscotchSet`'s table order under FNV-1a,
+//!    `LargeLongHopscotchSet`'s partitions, and the `PSKmerSet` `PathSeqBuildKmers` writes, byte
+//!    for byte against the reference's own.
+//!
 //! # What is NOT compared here yet
 //!
-//! The golden also carries the containers and the two whole objects: `LongHopscotchSet`,
-//! `LargeLongHopscotchSet`, `PSTree`, `PSKmerSet` and `PSTaxonomyDatabase`. Those bytes are the
-//! containers' own layouts -- a hopscotch table's iteration order under FNV-1a, and a `HashMap`'s
-//! over the accessions -- and the port does not carry them yet. They are measured so that the port
-//! has something to be right against; IPNP-BIPN/gatk-rs#1181 tracks the half that remains, and the
-//! rows are asserted here to be PRESENT so that a dump which stops producing them fails this suite
-//! rather than passing it quietly.
+//! The taxonomy half: `PSTree` and `PSTaxonomyDatabase`. Their bytes carry a `HashMap`'s iteration
+//! order -- over integer node ids in the first and over accession strings in the second -- which is
+//! the obligation `docs/an-unspecified-order-that-reaches-the-output.md` already describes and
+//! which this port does not meet yet. The rows are measured, and asserted here to be PRESENT, so a
+//! dump that stopped producing them would fail this suite rather than pass it quietly.
+//! IPNP-BIPN/gatk-rs#1181 tracks that half.
 
 use gatk_corpus as corpus;
 use gatk_engine::kryo::Output;
@@ -151,18 +154,79 @@ fn an_object_is_preceded_by_a_reference_marker() {
     );
 }
 
-/// The container rows exist and say what the port still owes, rather than being quietly absent.
+/// The containers, which the port now writes: the same bytes the reference's own tables produced.
 #[test]
-fn the_containers_are_measured_even_where_the_port_does_not_write_them_yet() {
+fn the_hopscotch_tables_land_where_the_reference_put_them() {
+    use gatk_engine::hopscotch::{LargeLongHopscotchSet, LongHopscotchSet};
+    use gatk_tools::pathseq_kryo;
+
+    const KMERS: [i64; 8] = [1, 2, 3, 17, 1024, 65535, 1_048_577, 123_456_789];
     let text = golden();
-    // The capacity a hopscotch table writes is the legal size ABOVE the one asked for, and the two
-    // cases here both land on 251, so their streams are the same bytes. That is the measurement,
-    // and a port that reproduces the requested capacity would be wrong.
+
+    let mut small = LongHopscotchSet::with_capacity(8);
+    for value in KMERS {
+        small.add(value);
+    }
     assert_eq!(
-        stream(&text, "hopscotch-eight"),
+        written(
+            |out| out.write_object(true, |inner| pathseq_kryo::write_hopscotch_set(
+                inner, &small
+            ))
+        ),
+        stream(&text, "hopscotch-eight")
+    );
+
+    // Asked for sixty-four, the table is the same 251 buckets, so the bytes are the same too.
+    let mut large = LongHopscotchSet::with_capacity(64);
+    for value in KMERS {
+        large.add(value);
+    }
+    assert_eq!(
+        written(
+            |out| out.write_object(true, |inner| pathseq_kryo::write_hopscotch_set(
+                inner, &large
+            ))
+        ),
         stream(&text, "hopscotch-sixty-four")
     );
-    assert!(stream(&text, "hopscotch-empty").starts_with("01000000fb"));
+
+    let empty = LongHopscotchSet::with_capacity(8);
+    assert_eq!(
+        written(
+            |out| out.write_object(true, |inner| pathseq_kryo::write_hopscotch_set(
+                inner, &empty
+            ))
+        ),
+        stream(&text, "hopscotch-empty")
+    );
+
+    let mut partitioned = LargeLongHopscotchSet::new(KMERS.len() as i64);
+    for value in KMERS {
+        partitioned.add(value);
+    }
+    assert_eq!(
+        written(
+            |out| out.write_object(true, |inner| pathseq_kryo::write_large_hopscotch_set(
+                inner,
+                &partitioned
+            ))
+        ),
+        stream(&text, "large-hopscotch")
+    );
+
+    // And the file itself: k of 31 under the mask the corpus uses.
+    let file = pathseq_kryo::kmer_set_file(31, 1_048_575, &partitioned);
+    let hex: String = file.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(hex, stream(&text, "kmer-set"));
+}
+
+/// The taxonomy rows say what the port still owes, rather than being quietly absent.
+#[test]
+fn the_taxonomy_is_measured_even_where_the_port_does_not_write_it_yet() {
+    let text = golden();
+    // The tree and the database are measured and not yet reproduced; a dump that stopped writing
+    // them would fail here.
+    assert!(!stream(&text, "tree-three-nodes").is_empty());
     // The same three accessions in the two map kinds do NOT produce the same bytes: the tool builds
     // a `HashMap`, so its iteration order reaches the file and a port owes that order too.
     assert_ne!(
