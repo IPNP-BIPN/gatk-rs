@@ -5418,6 +5418,30 @@
       ]
     },
     {
+      "id": "kryo-stream",
+      "status": "golden-pending",
+      "title": "the bytes Kryo writes for the two PathSeq outputs",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "PathSeqBuildKmers and PathSeqBuildReferenceTaxonomy write their whole answer through PSKmerUtils.writeKryoObject, which is `new Kryo()` and `kryo.writeObject(output, obj)`. tools/coverage/run_array.py compares a binary output by its sha256, so a runner that cannot produce Kryo's own bytes diverges on every accepted row and the array measures the serializer rather than the tool (IPNP-BIPN/gatk-rs#1181). The stream is therefore measured as an observable of the pinned container, the way docs/an-unspecified-order-that-reaches-the-output.md measures a HashSet's order, and not read out of Kryo's source. GATK pins Kryo `strictly [4,5)`, so this is Kryo 4's encoding. The cases climb a ladder -- Output's primitives, each container on its own, then the two objects a tool writes -- so a divergence names the rung. The two map cases are the second half of the problem stated as data: the same three accessions in a LinkedHashMap and in a HashMap, with the order each handed the serializer printed beside the bytes.",
+      "expect_contains": [
+        "stream\tint-zero=",
+        "stream\tstring-null=",
+        "stream\thopscotch-eight=",
+        "stream\tkmer-set=",
+        "stream\ttaxonomy-hash-map=",
+        "key\ttaxonomy-hash-map\t0=",
+        "node\ttree-three-nodes\t0="
+      ],
+      "cases": [
+        {
+          "dump": "KryoStreamDump",
+          "golden": null,
+          "why": "Seventeen writes through Output, five containers and three whole objects. The primitives pin what the serializers are built out of: writeInt is four bytes big-endian where writeInt(x, true) is a varint, writeLong is eight, and writeString is Kryo's own length-prefixed form with a one-byte null. The containers pin the table layout LongHopscotchSet writes -- the same eight k-mers at two capacities and an empty set -- and LargeLongHopscotchSet's count of partitions. The objects are what a runner has to produce: a PSKmerSet of k=31 under a mask, and a PSTaxonomyDatabase over three accessions, once in a LinkedHashMap so the bytes are Kryo's alone and once in a HashMap so the order that reaches the file is measured rather than assumed. No golden yet: this is the measurement commit, and the freeze follows from a real x86-64 runner."
+        }
+      ]
+    },
+    {
       "id": "pathseq-build-kmers",
       "status": "oracle-backed",
       "title": "a host reference turned into a k-mer set",
