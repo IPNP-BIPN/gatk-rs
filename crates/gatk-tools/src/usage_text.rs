@@ -244,7 +244,7 @@ pub fn entry_for_in(declaration: &Declaration, all: &[Declaration], tool: Option
         })
     });
     let constants = descriptor_values.or_else(|| {
-        crate::tool_declarations::enum_type(declaration.type_name).map(|type_| type_.constants)
+        crate::tool_declarations::enum_type(declaration.type_class).map(|type_| type_.constants)
     });
     let mutex: Vec<(&str, &str)> = declaration
         .mutex

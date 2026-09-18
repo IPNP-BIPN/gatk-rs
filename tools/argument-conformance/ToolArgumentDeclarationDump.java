@@ -460,6 +460,12 @@ public class ToolArgumentDeclarationDump {
             // The class the parser converts a value to is the UNDERLYING field's, which for a
             // collection is its element class and not the collection's own.
             final String type = definition.getUnderlyingFieldClass().getSimpleName();
+            // The same simple name belongs to more than one class: GATK declares two enums called
+            // `Mode`, the variant-output filter's and the VQSR one, and a table keyed by the simple
+            // name answers with whichever was seen first (IPNP-BIPN/gatk-rs#1179). The BINARY name
+            // is what identifies a class, nested ones included, so the declaration carries it and
+            // the enum table is joined on it.
+            final String typeClass = definition.getUnderlyingFieldClass().getName();
             final boolean primitive = definition.getUnderlyingField().getType().isPrimitive();
             // NOT sorted. The message a mutex violation prints joins this list in the order it
             // holds, and that order is neither alphabetical nor the annotation's: `quantize-quals`
@@ -470,7 +476,7 @@ public class ToolArgumentDeclarationDump {
             final List<String> mutex = new ArrayList<>(definition.getMutexTargetList());
             final Object plugin = definition.getDescriptorForControllingPlugin();
             System.out.printf(
-                    "def\t%s\t%d\t%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s%n",
+                    "def\t%s\t%d\t%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%s%n",
                     tool, i,
                     definition.getLongName(),
                     String.join(",", shorts),
@@ -490,7 +496,8 @@ public class ToolArgumentDeclarationDump {
                     String.valueOf(definition.getMinRecommendedValue()),
                     String.valueOf(definition.getMaxRecommendedValue()),
                     mutex.isEmpty() ? "none" : String.join(",", mutex),
-                    plugin == null ? "none" : plugin.getClass().getSimpleName());
+                    plugin == null ? "none" : plugin.getClass().getSimpleName(),
+                    typeClass);
             // The documentation is a line of its own: it is prose, and prose carries the pipe the
             // line above uses as its separator.
             System.out.printf("doc\t%s\t%d\t%s%n", tool, i,
