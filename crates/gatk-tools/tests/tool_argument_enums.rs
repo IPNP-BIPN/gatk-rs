@@ -38,15 +38,22 @@ fn the_constants_are_in_declaration_order() {
     let listed = rows(&text, "enum");
     assert_eq!(listed.len(), ENUM_TYPES.len());
     for row in listed {
-        let (name, constants) = row.split_once('\t').expect("a name and its constants");
-        let type_ = enum_type(name).unwrap_or_else(|| panic!("{name}"));
+        // A row names the class twice: by its BINARY name, which is the key, and by its simple
+        // name, which is what a refusal prints. Two GATK enums are called `Mode` and only the
+        // first tells them apart (#1179).
+        let mut parts = row.split('\t');
+        let class_name = parts.next().expect("a binary class name");
+        let name = parts.next().expect("a simple name");
+        let constants = parts.next().expect("the constants");
+        let type_ = enum_type(class_name).unwrap_or_else(|| panic!("{class_name}"));
+        assert_eq!(type_.name, name, "{class_name}");
         let written: Vec<&str> = constants.split(',').collect();
-        assert_eq!(type_.constants, written.as_slice(), "{name}");
+        assert_eq!(type_.constants, written.as_slice(), "{class_name}");
         // Declaration order, which is not the sorted one for most of them.
         let mut sorted = written.clone();
         sorted.sort_unstable();
         if name == "LogLevel" || name == "Mode" || name == "ValidationStringency" {
-            assert_ne!(type_.constants, sorted.as_slice(), "{name}");
+            assert_ne!(type_.constants, sorted.as_slice(), "{class_name}");
         }
     }
 }
@@ -60,14 +67,17 @@ fn an_arguments_default_is_one_of_the_constants() {
         let tool = parts.next().expect("a tool");
         let name = parts.next().expect("a long name");
         let body = parts.next().expect("a type and a default");
-        let (type_name, default) = body.split_once('|').expect("a type and a default");
+        let (type_class, default) = body.split_once('|').expect("a type and a default");
         let list = declarations(tool).unwrap_or_else(|| panic!("{tool}"));
         let declaration = list
             .iter()
             .find(|declaration| declaration.long_name == name)
             .unwrap_or_else(|| panic!("{tool}/{name}"));
-        assert_eq!(declaration.type_name, type_name, "{tool}/{name}");
-        let type_ = enum_type(type_name).unwrap_or_else(|| panic!("{type_name}"));
+        // The two goldens are joined on the BINARY name, and the declaration carries it beside the
+        // simple one the usage prints.
+        assert_eq!(declaration.type_class, type_class, "{tool}/{name}");
+        let type_ = enum_type(type_class).unwrap_or_else(|| panic!("{type_class}"));
+        assert_eq!(declaration.type_name, type_.name, "{tool}/{name}");
         // An unset enum argument has no default at all; a set one holds a constant. A COLLECTION
         // of them holds a list, rendered by `AbstractCollection.toString`: `DepthOfCoverage`'s
         // `--partition-type` defaults to `[sample]`, which is one constant inside brackets and not
@@ -103,7 +113,9 @@ fn a_clp_enum_documents_its_constants() {
         .filter(|type_| !type_.docs.is_empty())
         .map(|type_| type_.name)
         .collect();
-    assert_eq!(implementing, vec!["IntervalListScatterMode", "Mode"]);
+    // In the table's own order, which is the binary names sorted: `IntervalFilteringVcfWriter`
+    // comes before `picard.util.IntervalList`, where the simple names sorted the other way.
+    assert_eq!(implementing, vec!["Mode", "IntervalListScatterMode"]);
     let expected: usize = ENUM_TYPES
         .iter()
         .filter(|type_| !type_.docs.is_empty())
@@ -150,7 +162,8 @@ fn the_refusal_lists_every_constant() {
     let lower = outcome("lower-case");
     assert!(lower.contains("'union' is not a valid value"), "{lower}");
     // And the message lists the type's constants, in the table's own order.
-    let rule = enum_type("IntervalSetRule").expect("IntervalSetRule");
+    let rule =
+        enum_type("org.broadinstitute.hellbender.utils.IntervalSetRule").expect("IntervalSetRule");
     for constant in rule.constants {
         assert!(lower.contains(constant), "{lower}");
     }
@@ -161,7 +174,10 @@ fn the_refusal_lists_every_constant() {
     // A second type, so the shape is not one type's own.
     assert_eq!(outcome("a-stringency"), "ok");
     let stringency = outcome("not-a-stringency");
-    for constant in enum_type("ValidationStringency").expect("it").constants {
+    for constant in enum_type("htsjdk.samtools.ValidationStringency")
+        .expect("it")
+        .constants
+    {
         assert!(stringency.contains(constant), "{stringency}");
     }
     // The table is reachable from a declaration, which is what a parser needs.
@@ -169,5 +185,5 @@ fn the_refusal_lists_every_constant() {
         .iter()
         .find(|declaration| declaration.long_name == "interval-set-rule")
         .expect("the set rule");
-    assert!(enum_type(declaration.type_name).is_some());
+    assert!(enum_type(declaration.type_class).is_some());
 }
