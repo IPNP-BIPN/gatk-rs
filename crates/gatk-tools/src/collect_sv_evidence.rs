@@ -437,6 +437,42 @@ pub fn bad_name_message(kind: &str, filename: &str) -> String {
     )
 }
 
+/// How a writer lays out the file its name selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Encoding {
+    /// Tab-separated text, block compressed when the name says so.
+    Text { block_compressed: bool },
+    /// The binary container, `.bci`.
+    Bci,
+}
+
+/// `FileExtensions.BLOCK_COMPRESSED`, which `IOUtil.hasBlockCompressedExtension` tests.
+const BLOCK_COMPRESSED: [&str; 4] = [".gz", ".gzip", ".bgz", ".bgzf"];
+
+/// Which of the `kind` writer's two codecs claims `filename`, or `None` where neither does and the
+/// writer refuses it with [`bad_name_message`].
+///
+/// The writer asks the binary codec first: it lower-cases the name and tests `.<kind>.bci`. The text
+/// codec lower-cases it, strips ONE block-compressed extension, and tests `.<kind>.txt`, so
+/// `x.PE.TXT.BGZ` is block-compressed discordant pair evidence and `x.pe.bci.gz` is neither codec's.
+pub fn encoding(kind: &str, filename: &str) -> Option<Encoding> {
+    let lower = filename.to_lowercase();
+    if lower.ends_with(&format!(".{kind}.bci")) {
+        return Some(Encoding::Bci);
+    }
+    let block_compressed = BLOCK_COMPRESSED
+        .iter()
+        .any(|extension| lower.ends_with(extension));
+    let stripped = if block_compressed {
+        &lower[..lower.rfind('.').unwrap_or(lower.len())]
+    } else {
+        &lower[..]
+    };
+    stripped
+        .ends_with(&format!(".{kind}.txt"))
+        .then_some(Encoding::Text { block_compressed })
+}
+
 /// The message when the interval file holds nothing.
 pub fn empty_intervals_message(filename: &str) -> String {
     format!("{filename} contains no intervals.")

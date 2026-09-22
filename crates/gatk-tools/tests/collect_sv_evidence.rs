@@ -20,10 +20,10 @@
 use gatk_corpus as corpus;
 use gatk_tools::collect_sv_evidence::{
     bad_name_message, baf_sites, crashes_on_an_unpaired_read, depth_evidence, discordant_pairs,
-    empty_intervals_message, is_soft_clipped, site_depths, split_position, split_reads,
-    DepthEvidence, DiscordantPair, Read, Side, Site, SiteDepth, DEFAULT_DEPTH_EVIDENCE_MIN_MAPQ,
-    DEFAULT_SITE_DEPTH_MIN_BASEQ, DEFAULT_SITE_DEPTH_MIN_MAPQ, NO_OUTPUT_MESSAGE,
-    UNPAIRED_MATE_MESSAGE,
+    empty_intervals_message, encoding, is_soft_clipped, site_depths, split_position, split_reads,
+    DepthEvidence, DiscordantPair, Encoding, Read, Side, Site, SiteDepth,
+    DEFAULT_DEPTH_EVIDENCE_MIN_MAPQ, DEFAULT_SITE_DEPTH_MIN_BASEQ, DEFAULT_SITE_DEPTH_MIN_MAPQ,
+    NO_OUTPUT_MESSAGE, UNPAIRED_MATE_MESSAGE,
 };
 
 fn golden() -> String {
@@ -476,4 +476,35 @@ fn the_seven_refusals() {
         refusal(&text, "empty-intervals").1,
         empty_intervals_message("<dir>/empty.bed")
     );
+}
+
+/// Which codec a name selects is the codecs' `canDecode`, not a list of three endings: the runner
+/// writes only the plain text one and refuses the other two as the port's own limitation.
+#[test]
+fn a_name_selects_its_codec() {
+    let text = Encoding::Text {
+        block_compressed: false,
+    };
+    let compressed = Encoding::Text {
+        block_compressed: true,
+    };
+    for (kind, name, expected) in [
+        ("pe", "out/x.pe.txt", Some(text)),
+        ("pe", "out/x.PE.TXT", Some(text)),
+        ("sr", "x.sr.txt.gz", Some(compressed)),
+        ("sd", "x.SD.TXT.BGZ", Some(compressed)),
+        ("rd", "x.rd.txt.gzip", Some(compressed)),
+        ("rd", "x.rd.txt.bgzf", Some(compressed)),
+        ("pe", "x.pe.bci", Some(Encoding::Bci)),
+        ("sr", "x.SR.BCI", Some(Encoding::Bci)),
+        // One block-compressed extension is stripped, and only by the text codec.
+        ("pe", "x.pe.txt.gz.gz", None),
+        ("pe", "x.pe.bci.gz", None),
+        // Each writer answers for its own kind and no other.
+        ("pe", "x.sr.txt", None),
+        ("sd", "x.rd.bci", None),
+        ("rd", "wrong.txt", None),
+    ] {
+        assert_eq!(encoding(kind, name), expected, "{kind} {name}");
+    }
 }
