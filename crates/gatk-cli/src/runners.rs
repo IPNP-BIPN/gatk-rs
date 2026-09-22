@@ -11335,3 +11335,255 @@ pub fn print_sv_evidence(parser: &Parser) -> Outcome {
         }
     }
 }
+
+/// `SiteDepthtoBAF`: per-sample allele depths at a set of sites turned into B-allele fractions.
+///
+/// The arithmetic, the site iterator and the value's `DecimalFormat` are
+/// [`gatk_tools::site_depth_to_baf`], and the walk's order is
+/// [`gatk_engine::multi_feature_walker`], all oracle-backed. The runner adds the order the tool's
+/// files are opened in:
+///
+/// * **the depth files at startup**, then the dictionary, as for every `MultiFeatureWalker`. A
+///   `.sd.txt` has no header at all, so the dictionary is the master one or the reference's;
+/// * **then `onTraversalStart`**: the sites VCF is opened, its dictionary must be the walk's
+///   (`assertSameDictionary`), and only then is the output's name asked for a codec, refused when
+///   there is none or when it names another feature type;
+/// * **the sink writes no header**: a `.baf.txt` is records and nothing else.
+///
+/// Refusals of the port's own: a sites VCF whose dictionary differs from the walk's, since the
+/// reference raises an `AssertionError` whose message prints `SAMSequenceRecord.toString`; a sites
+/// VCF with no contig lines, whose missing dictionary the reference dereferences; a depth or BAF
+/// file that is block compressed or `.bci`; and a malformed depth file. A run refused mid-walk
+/// leaves the file the sink created, empty, since what the buffered writer had flushed is
+/// unmeasured.
+pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
+    use gatk_engine::multi_feature_walker as walker;
+    use gatk_tools::site_depth_to_baf as baf;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+    use std::io::Read;
+
+    let inputs = arguments(parser, "site-depth");
+    let sites_path = argument(parser, "baf-sites-vcf").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument baf-sites-vcf was missing: Argument 'baf-sites-vcf' is required",
+        )
+    })?;
+    let output = argument(parser, "baf-evidence-output").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument baf-evidence-output was missing: Argument 'baf-evidence-output' is required",
+        )
+    })?;
+    let double = |name: &str, default: f64| {
+        scalar(parser, name)
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(default)
+    };
+    let arguments = baf::Arguments {
+        max_std_dev: double("max-std", 0.2),
+        min_total_depth: number_or(parser, "min-total-depth", 10),
+        min_het_probability: double("min-het-probability", 0.5),
+    };
+    let user = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(message),
+    };
+    let limitation = |message: String| Thrown::non_user(PORT_LIMITATION, message);
+    let unreadable = |path: &str| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: java_absolute_path(path),
+            }
+            .message(),
+        )
+    };
+
+    let _ = resolve_read_filters(parser, "SiteDepthtoBAF")?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+
+    // `SiteDepthCodec.decode` over every line, a header included: it has none to skip.
+    let unsigned = |field: &str| field.parse::<u32>().map(|value| value as i32).ok();
+    let mut files: Vec<Vec<baf::SiteDepth>> = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input).map_err(|_| unreadable(input))?;
+        match codecs::find(input) {
+            Some(codecs::Codec {
+                feature_type: "SiteDepth",
+                encoding:
+                    Encoding::Text {
+                        block_compressed: false,
+                    },
+            }) => {}
+            _ => {
+                return Err(limitation(format!(
+                    "SiteDepthtoBAF reads {input}, and only plain-text site depth is ported"
+                )))
+            }
+        }
+        let mut records = Vec::new();
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            let columns: Vec<&str> = line.split('\t').collect();
+            let parsed = (columns.len() == 7)
+                .then(|| {
+                    Some(baf::SiteDepth {
+                        contig: columns[0].to_string(),
+                        position: unsigned(columns[1])?.wrapping_add(1),
+                        sample: columns[2].to_string(),
+                        counts: [
+                            unsigned(columns[3])?,
+                            unsigned(columns[4])?,
+                            unsigned(columns[5])?,
+                            unsigned(columns[6])?,
+                        ],
+                    })
+                })
+                .flatten();
+            match parsed {
+                Some(record) => records.push(record),
+                None => {
+                    return Err(limitation(format!(
+                        "{input} is a malformed site-depth file, which Tribble refuses"
+                    )))
+                }
+            }
+        }
+        files.push(records);
+    }
+
+    let lengths = |header: &Option<SamHeader>| {
+        header.as_ref().map(|header| {
+            header
+                .sequences
+                .iter()
+                .map(|record| (record.name.clone(), record.length as i64))
+                .collect::<Vec<_>>()
+        })
+    };
+    let master_lengths = lengths(&master);
+    let reference_lengths = lengths(&reference);
+    let source = |pairs: &Option<Vec<(String, i64)>>, name: &str| {
+        pairs.as_ref().map(|pairs| walker::DictSource {
+            contigs: pairs.iter().map(|(contig, _)| contig.clone()).collect(),
+            source: name.to_string(),
+        })
+    };
+    let dictionary = walker::choose_dictionary(
+        source(&master_lengths, "sequence-dictionary"),
+        source(&reference_lengths, "reference"),
+    )
+    .map_err(|error| user(error.message()))?;
+    // The chosen one is whichever `betterDictionary` kept, and it is the larger.
+    let chosen: Vec<(String, i64)> = [master_lengths, reference_lengths]
+        .into_iter()
+        .flatten()
+        .find(|pairs| {
+            pairs.iter().map(|(contig, _)| contig).collect::<Vec<_>>()
+                == dictionary.contigs.iter().collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // `onTraversalStart`: the sites VCF, then its dictionary against the walk's.
+    let raw = std::fs::read(&sites_path).map_err(|_| unreadable(&sites_path))?;
+    let text = if codecs::has_block_compressed_extension(&sites_path) {
+        let mut text = String::new();
+        flate2::read::MultiGzDecoder::new(raw.as_slice())
+            .read_to_string(&mut text)
+            .map_err(|_| limitation(format!("{sites_path} could not be inflated")))?;
+        text
+    } else {
+        String::from_utf8_lossy(&raw).into_owned()
+    };
+    let contigs: Vec<(String, i64)> = text
+        .lines()
+        .take_while(|line| line.starts_with("##"))
+        .filter_map(|line| line.strip_prefix("##contig=<"))
+        .filter_map(|fields| {
+            let fields = fields.trim_end_matches('>');
+            let mut id = None;
+            let mut length = 0i64;
+            for field in fields.split(',') {
+                match field.split_once('=') {
+                    Some(("ID", value)) => id = Some(value.to_string()),
+                    Some(("length", value)) => length = value.parse().unwrap_or(0),
+                    _ => {}
+                }
+            }
+            id.map(|id| (id, length))
+        })
+        .collect();
+    if contigs.is_empty() {
+        return Err(limitation(format!(
+            "{sites_path} declares no contigs, and the reference dereferences its null dictionary"
+        )));
+    }
+    if contigs != chosen {
+        return Err(limitation(format!(
+            "{sites_path}'s dictionary differs from the walk's, which the reference refuses with \
+             an AssertionError the port does not reproduce"
+        )));
+    }
+    match codecs::find(&output) {
+        None => return Err(user(codecs::no_output_codec(&output))),
+        Some(codec) if codec.feature_type != "BafEvidence" => {
+            return Err(user(format!(
+                "We're intending to write BafEvidence, but the feature type associated with the \
+                 output file expects features of type {}",
+                codec.feature_type
+            )))
+        }
+        Some(codecs::Codec {
+            encoding: Encoding::Text {
+                block_compressed: false,
+            },
+            ..
+        }) => {}
+        Some(_) => {
+            return Err(limitation(
+                "SiteDepthtoBAF writes a block-compressed or .bci file, which is not ported"
+                    .to_string(),
+            ))
+        }
+    }
+
+    let sites = baf::read_sites(&text);
+    let located: Vec<Vec<walker::Located>> = files
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| walker::Located {
+                    contig: record.contig.clone(),
+                    start: record.position,
+                    end: record.position,
+                    text: index.to_string(),
+                })
+                .collect()
+        })
+        .collect();
+    let empty = || write_file(&output, b"");
+    let walked = match walker::merge_with_sources(&located, &dictionary) {
+        Ok(walked) => walked,
+        Err(error) => {
+            empty()?;
+            return Err(user(error.message()));
+        }
+    };
+    let depths: Vec<baf::SiteDepth> = walked
+        .iter()
+        .map(|(input, feature)| {
+            files[*input][feature.text.parse::<usize>().expect("a record index")].clone()
+        })
+        .collect();
+    match baf::run(&depths, &sites, &arguments) {
+        Ok(written) => {
+            write_file(&output, baf::write(&written).as_bytes())?;
+            Ok(None)
+        }
+        Err(error) => {
+            empty()?;
+            Err(user(error.message()))
+        }
+    }
+}

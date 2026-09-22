@@ -307,6 +307,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PathSeqBuildKmers" => Some(run_path_seq_build_kmers),
         "CondenseDepthEvidence" => Some(run_condense_depth_evidence),
         "PrintSVEvidence" => Some(run_print_sv_evidence),
+        "SiteDepthtoBAF" => Some(run_site_depth_to_baf),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -507,6 +508,10 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_site_depth_to_baf(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::site_depth_to_baf(&parsed("SiteDepthtoBAF", args)?)
 }
 
 fn run_print_sv_evidence(args: &[String]) -> Result<Option<String>, Thrown> {
