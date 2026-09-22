@@ -416,6 +416,32 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegionsByAnnotation());
         declarations("TagGermlineEvents",
                 new org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents());
+        // Eleven walkers whose ports are oracle-backed: three variant filters, two Mutect
+        // mitochondrial filters, a read-orientation model, a funcotation filter, two concordance
+        // tools, an allele-frequency check, a duplicate-set downsampler and the example
+        // `MultiFeatureWalker`, whose walk the SV evidence tools already share.
+        declarations("FilterVariantTranches",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.FilterVariantTranches());
+        declarations("FilterFuncotations",
+                new org.broadinstitute.hellbender.tools.funcotator.FilterFuncotations());
+        declarations("LearnReadOrientationModel",
+                new org.broadinstitute.hellbender.tools.walkers.readorientation.LearnReadOrientationModel());
+        declarations("AlleleFrequencyQC",
+                new org.broadinstitute.hellbender.tools.walkers.varianteval.AlleleFrequencyQC());
+        declarations("CalculateAverageCombinedAnnotations",
+                new org.broadinstitute.hellbender.tools.CalculateAverageCombinedAnnotations());
+        declarations("DownsampleByDuplicateSet",
+                new org.broadinstitute.hellbender.tools.walkers.consensus.DownsampleByDuplicateSet());
+        declarations("ExampleMultiFeatureWalker",
+                new org.broadinstitute.hellbender.tools.examples.ExampleMultiFeatureWalker());
+        declarations("MTLowHeteroplasmyFilterTool",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.MTLowHeteroplasmyFilterTool());
+        declarations("MergeMutect2CallsWithMC3",
+                new org.broadinstitute.hellbender.tools.walkers.validation.MergeMutect2CallsWithMC3());
+        declarations("NuMTFilterTool",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NuMTFilterTool());
+        declarations("ReferenceBlockConcordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
