@@ -308,6 +308,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CondenseDepthEvidence" => Some(run_condense_depth_evidence),
         "PrintSVEvidence" => Some(run_print_sv_evidence),
         "SiteDepthtoBAF" => Some(run_site_depth_to_baf),
+        "MergeMutectStats" => Some(run_merge_mutect_stats),
+        "GatherPileupSummaries" => Some(run_gather_pileup_summaries),
+        "GatherNormalArtifactData" => Some(run_gather_normal_artifact_data),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -508,6 +511,18 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_merge_mutect_stats(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::merge_mutect_stats(&parsed("MergeMutectStats", args)?)
+}
+
+fn run_gather_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_pileup_summaries(&parsed("GatherPileupSummaries", args)?)
+}
+
+fn run_gather_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_normal_artifact_data(&parsed("GatherNormalArtifactData", args)?)
 }
 
 fn run_site_depth_to_baf(args: &[String]) -> Result<Option<String>, Thrown> {

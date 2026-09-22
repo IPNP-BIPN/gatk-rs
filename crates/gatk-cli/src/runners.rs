@@ -11587,3 +11587,159 @@ pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
         }
     }
 }
+
+/// The refusal each Mutect table reader raises for a file it cannot open: the `IOException` is
+/// caught and replaced, and the message names the file as the command line gave it.
+fn table_unreadable(path: &str) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!(
+            "Encountered an IO exception while reading from {path}."
+        )),
+    }
+}
+
+/// A gather's error, whose class is borrowed from the error: a `Thrown` holds a `&'static str`.
+fn gather_error(error: gatk_tools::mutect_gathers::GatherError) -> Thrown {
+    let class = error.java_class();
+    Thrown {
+        failure: if class.starts_with("org.broadinstitute.hellbender.exceptions.UserException") {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: class,
+        message: Some(error.message()),
+    }
+}
+
+/// `MergeMutectStats`: every shard's statistics summed.
+///
+/// The sum is [`gatk_tools::mutect_gathers::merge_stats`], where a golden measures it. The runner
+/// adds that `--stats` is a `LinkedHashSet<File>`, so a file named twice is read once, and that
+/// the files are all read before any statistic is checked: an unreadable shard is refused before
+/// an unknown statistic in an earlier one.
+pub fn merge_mutect_stats(parser: &Parser) -> Outcome {
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut paths: Vec<String> = Vec::new();
+    for path in arguments(parser, "stats") {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    let mut shards = Vec::new();
+    for path in &paths {
+        shards.push(std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?);
+    }
+    let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+    let merged = gatk_tools::mutect_gathers::merge_stats(&texts).map_err(gather_error)?;
+    write_file(&output, merged.as_bytes())?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `GatherPileupSummaries`: the non-empty shards sorted by their first record, then concatenated.
+///
+/// The gather is [`gatk_tools::mutect_gathers::gather_pileup_summaries`]. The runner adds what
+/// `onStartup` does first: `--sequence-dictionary` is loaded before any shard is read, and one
+/// without an `@SQ` line is refused as a malformed file named by its ABSOLUTE path, since
+/// `loadFastaDictionary(File)` rewraps it that way. The value `doWork` returns counts the shards
+/// kept, which is what the tool prints.
+pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
+    use gatk_engine::pileup_summary;
+
+    let dictionary_path = argument(parser, "sequence-dictionary").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument sequence-dictionary was missing: Argument 'sequence-dictionary' is required",
+        )
+    })?;
+    let output = argument(parser, "O")
+        .ok_or_else(|| Thrown::command_line("Argument O was missing: Argument 'O' is required"))?;
+    let inputs = arguments(parser, "I");
+    let text = std::fs::read_to_string(&dictionary_path).map_err(|_| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{dictionary_path} could not be read, and the reference's refusal carries the \
+                 message of an IOException the port does not reproduce"
+            ),
+        )
+    })?;
+    let header = htsjdk_bam::reader::parse_header_text(&text);
+    if header.sequences.is_empty() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile",
+            message: Some(format!(
+                "Unknown file is malformed: Could not read sequence dictionary from given fasta \
+                 file {}",
+                java_absolute_path(&dictionary_path)
+            )),
+        });
+    }
+    let dictionary: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|record| record.name.clone())
+        .collect();
+    let mut shards = Vec::new();
+    for path in &inputs {
+        shards.push((
+            std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?,
+            path.clone(),
+        ));
+    }
+    let pairs: Vec<(&str, &str)> = shards
+        .iter()
+        .map(|(text, path)| (text.as_str(), path.as_str()))
+        .collect();
+    let mut kept = 0;
+    for (text, source) in &pairs {
+        let (_, records) = pileup_summary::read_from_file(text, source).map_err(|error| {
+            gather_error(gatk_tools::mutect_gathers::GatherError::PileupSummary(
+                error,
+            ))
+        })?;
+        if !records.is_empty() {
+            kept += 1;
+        }
+    }
+    let gathered = gatk_tools::mutect_gathers::gather_pileup_summaries(&pairs, &dictionary)
+        .map_err(gather_error)?;
+    write_file(&output, gathered.as_bytes())?;
+    Ok(Some(format!("Successfully merged {kept} samples")))
+}
+
+/// `GatherNormalArtifactData`: every shard's records in the order given, under one header.
+///
+/// The concatenation is [`gatk_tools::mutect_gathers::gather_normal_artifact_data`]. The writer is
+/// opened before the first shard is read, so a run refused over an unreadable shard still leaves
+/// the file with its header and the records of the shards before it.
+pub fn gather_normal_artifact_data(parser: &Parser) -> Outcome {
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let inputs = arguments(parser, "input");
+    let mut shards = Vec::new();
+    for path in &inputs {
+        match std::fs::read_to_string(path) {
+            Ok(text) => shards.push(text),
+            Err(_) => {
+                let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+                write_file(
+                    &output,
+                    gatk_tools::mutect_gathers::gather_normal_artifact_data(&texts).as_bytes(),
+                )?;
+                return Err(table_unreadable(path));
+            }
+        }
+    }
+    let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+    write_file(
+        &output,
+        gatk_tools::mutect_gathers::gather_normal_artifact_data(&texts).as_bytes(),
+    )?;
+    Ok(Some("SUCCESS".to_string()))
+}
