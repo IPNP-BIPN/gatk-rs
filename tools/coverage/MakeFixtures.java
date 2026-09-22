@@ -1598,6 +1598,41 @@ public class MakeFixtures {
                         + "/work/fixtures/shard3.tranches\n",
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("levels.list"), "90.0\n99.0\n95.0\n", StandardCharsets.UTF_8);
+        // Mutect2-shaped calls for the mitochondrial filters: `AD` per allele, `AF` per alternate,
+        // and the `AS_FilterStatus` a filtered Mutect2 VCF carries, one entry per alternate. Five
+        // unfiltered sites sit below the low-heteroplasmy fraction of 0.1, which is past the
+        // default allowance of three; one filtered low site does not count; the multi-allelic
+        // record has one deep and one shallow alternate, so an allele filter splits it. The
+        // second file is the same calls without `AS_FilterStatus`, which the filters' merge
+        // refuses the moment anything is filtered.
+        final String mtHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=PASS,Description=\"All filters passed\">\n"
+                + "##FILTER=<ID=weak_evidence,Description=\"Mutation does not meet likelihood threshold\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=AF,Number=A,Type=Float,Description=\"Allele fractions\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AS_FilterStatus,Number=A,Type=String,Description=\"Filter status for each allele\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        final String[][] calls = {
+                {"100", "A", "C", "PASS", "SITE", "0/1", "190,10", "0.05"},
+                {"200", "C", "G", "PASS", "SITE", "0/1", "180,9", "0.048"},
+                {"300", "G", "T", "PASS", "SITE", "0/1", "150,40", "0.21"},
+                {"400", "T", "A", "PASS", "SITE", "0/1", "200,8", "0.038"},
+                {"500", "A", "G", "weak_evidence", "weak_evidence", "0/1", "300,5", "0.016"},
+                {"600", "C", "T", "PASS", "SITE", "0/1", "100,6", "0.057"},
+                {"700", "G", "A", "PASS", "SITE", "0/1", "120,7", "0.055"},
+                {"800", "T", "C,G", "PASS", "SITE|SITE", "0/1/2", "90,45,4", "0.33,0.03"}};
+        final StringBuilder mt = new StringBuilder(mtHeader);
+        final StringBuilder mtPlain = new StringBuilder(mtHeader);
+        for (final String[] call : calls) {
+            final String prefix = "chr1\t" + call[0] + "\t.\t" + call[1] + "\t" + call[2] + "\t.\t" + call[3] + "\t";
+            final String sample = "\tGT:AD:AF\t" + call[5] + ":" + call[6] + ":" + call[7] + "\n";
+            mt.append(prefix).append("AS_FilterStatus=").append(call[4]).append(sample);
+            mtPlain.append(prefix).append(".").append(sample);
+        }
+        Files.writeString(dir.resolve("mito.vcf"), mt.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("mito_plain.vcf"), mtPlain.toString(), StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

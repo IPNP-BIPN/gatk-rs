@@ -3173,6 +3173,52 @@
         "/work/out/gathered.tranches",
         "/work/out/gathered2.tranches"
       ]
+    },
+    "NuMTFilterTool": {
+      "$why": [
+        "--variant is mito.vcf, Mutect2-shaped calls with AD, AF and AS_FilterStatus, and",
+        "mito_plain.vcf, the same calls without AS_FilterStatus, which the filter's merge refuses as soon",
+        "as it filters anything: `lists are not the same size`. --autosomal-coverage is the default 0,",
+        "which leaves the cutoff at zero and the output unfiltered, and 30; --max-numt-autosomal-copies",
+        "is 4 and 1, so the Poisson's mean and therefore the cutoff move. --output is a VCF and a",
+        "block-compressed one. --create-output-variant-index is held at false for the reason every",
+        "variant writer holds it: the index records the output's last-modified time.",
+        "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and -L is held out.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--variant": [
+        "/work/fixtures/mito.vcf",
+        "/work/fixtures/mito_plain.vcf"
+      ],
+      "--autosomal-coverage": [
+        "0.0",
+        "30.0"
+      ],
+      "--max-numt-autosomal-copies": [
+        "4.0",
+        "1.0"
+      ],
+      "--output": [
+        "/work/out/numt.vcf",
+        "/work/out/numt.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
