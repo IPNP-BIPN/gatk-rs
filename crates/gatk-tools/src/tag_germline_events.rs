@@ -58,6 +58,8 @@ pub enum TagError {
     ThresholdOutOfRange,
     /// `validateNoOverlappingIntervals`, which names the region and then every overlap of it.
     OverlappingIntervals { first: String, second: String },
+    /// The dictionary sort, over a contig the dictionary lacks.
+    ContigNotInDictionary,
 }
 
 impl TagError {
@@ -88,6 +90,9 @@ impl TagError {
             }
             TagError::OverlappingIntervals { first, second } => {
                 format!("Bad input: Overlap detected in input:  {first} overlapped {second}")
+            }
+            TagError::ContigNotInDictionary => {
+                crate::annotated_interval::CollectionError::ContigNotInDictionary.message()
             }
         }
     }
@@ -218,6 +223,11 @@ pub fn tag_tumour_segments(
     }
     if !(0.0..=1.0).contains(&reciprocal_threshold) {
         return Err(TagError::ThresholdOutOfRange);
+    }
+    // The tumour is sorted first, and each sort refuses a contig the dictionary lacks.
+    for segments in [tumour, normal] {
+        crate::annotated_interval::check_sortable(segments, dictionary)
+            .map_err(|_| TagError::ContigNotInDictionary)?;
     }
     let mut tumour_segments = tumour.to_vec();
     let mut normal_segments = normal.to_vec();

@@ -11743,3 +11743,231 @@ pub fn gather_normal_artifact_data(parser: &Parser) -> Outcome {
     )?;
     Ok(Some("SUCCESS".to_string()))
 }
+
+/// `AnnotatedIntervalCollection.create`, up to the records: the file must be readable, then its
+/// NAME must be one the codec claims, then the codec reads it.
+///
+/// The codec claims `.seg`, `.maf` and `.maf.annotated` and nothing else, so a table named `.tsv`
+/// is refused as a file that could not be parsed, before a line of it is read. A reader error
+/// names the input by its URI, which is how tribble reports its source.
+pub(crate) fn annotated_intervals(
+    path: &str,
+) -> Result<gatk_tools::annotated_interval::AnnotatedIntervalCollection, Thrown> {
+    let uri = format!("file://{}", java_absolute_path(path));
+    let meta = std::fs::metadata(path);
+    let problem = match &meta {
+        Err(_) => Some("It doesn't exist."),
+        Ok(meta) if !meta.is_file() => Some("It isn't a regular file"),
+        Ok(_) => None,
+    };
+    if let Some(problem) = problem {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile",
+            message: Some(format!("Couldn't read file {uri}. Error was: {problem}")),
+        });
+    }
+    if !(path.ends_with(".seg") || path.ends_with(".maf") || path.ends_with(".maf.annotated")) {
+        return Err(bad_input(format!("Could not parse xsv file: {uri}")));
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+    gatk_tools::annotated_interval::read(&text).map_err(|error| Thrown {
+        failure: Failure::Other,
+        exception: error.java_class(),
+        message: Some(error.message_with_source(&uri)),
+    })
+}
+
+/// `getBestAvailableSequenceDictionary` for a tool that requires a reference: the master
+/// dictionary when one was given, the reference's otherwise.
+fn best_dictionary(parser: &Parser) -> Result<Vec<String>, Thrown> {
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    Ok(master
+        .or(reference)
+        .map(|header| {
+            header
+                .sequences
+                .iter()
+                .map(|record| record.name.clone())
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// `MergeAnnotatedRegions`: overlapping regions of a segment file merged.
+///
+/// The merge and the file format are [`gatk_tools::annotated_interval`], where a golden measures
+/// them. The runner adds the engine's startup before `traverse` reads the segments, and the
+/// reading itself, whose refusals depend on the file's name before its content.
+pub fn merge_annotated_regions(parser: &Parser) -> Outcome {
+    use gatk_tools::annotated_interval::{merge_regions, DEFAULT_SEPARATOR};
+
+    let segments = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let _ = resolve_read_filters(parser, "MergeAnnotatedRegions")?;
+    let dictionary = best_dictionary(parser)?;
+    let mut collection = annotated_intervals(&segments)?;
+    gatk_tools::annotated_interval::check_sortable(&collection.records, &dictionary)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    collection.records = merge_regions(&collection.records, &dictionary, DEFAULT_SEPARATOR);
+    write_file(&output, collection.write().as_bytes())?;
+    Ok(None)
+}
+
+/// `getBestAvailableSequenceDictionary` for a tool whose reference is optional: `None` where
+/// neither a master dictionary nor a reference was given.
+fn optional_best_dictionary(parser: &Parser) -> Result<Option<Vec<String>>, Thrown> {
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    Ok(master.or(reference).map(|header| {
+        header
+            .sequences
+            .iter()
+            .map(|record| record.name.clone())
+            .collect()
+    }))
+}
+
+/// `MergeAnnotatedRegionsByAnnotation`: neighbouring regions merged when they agree on the named
+/// annotations and lie within the distance.
+///
+/// The merge is [`gatk_tools::annotated_interval::merge_regions_by_annotation`]. The runner adds
+/// the three checks `traverse` makes, in its order: every named annotation is in the file (the
+/// missing ones listed in the iteration order of a `HashSet` of the names given), a dictionary is
+/// available, which with no reference here comes only from `--sequence-dictionary`, and the
+/// distance is not negative. The output is written from the first merged region's annotations, so
+/// a file of no regions is refused only then.
+pub fn merge_annotated_regions_by_annotation(parser: &Parser) -> Outcome {
+    use gatk_engine::java_hash::JavaHashMap;
+    use gatk_tools::annotated_interval::{
+        merge_regions_by_annotation, write_without_header, DEFAULT_SEPARATOR,
+    };
+
+    let segments = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let names = arguments(parser, "annotations-to-match");
+    let max_distance: i64 = scalar(parser, "max-merge-distance")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1_000_000);
+    let column =
+        |name: &str, default: &str| argument(parser, name).unwrap_or_else(|| default.to_string());
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+
+    let _ = resolve_read_filters(parser, "MergeAnnotatedRegionsByAnnotation")?;
+    let dictionary = optional_best_dictionary(parser)?;
+    let collection = annotated_intervals(&segments)?;
+    let mut wanted: JavaHashMap<String, ()> =
+        JavaHashMap::with_capacity(JavaHashMap::<String, ()>::copy_capacity(names.len()));
+    for name in &names {
+        wanted.insert(name.clone(), ());
+    }
+    let missing: Vec<String> = wanted
+        .keys()
+        .filter(|name| !collection.annotations.contains(name))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(illegal(format!(
+            "Input file did not have all of the specified annotations.  Missing annotations were: \
+             {}",
+            missing.join(", ")
+        )));
+    }
+    let dictionary = dictionary.ok_or_else(|| {
+        illegal(
+            "Sequence dictionary not available in the input file nor specified in a reference \
+             parameter.  Please specify a reference with the -R parameter for this input file."
+                .to_string(),
+        )
+    })?;
+    if max_distance < 0 {
+        return Err(illegal(
+            "Cannot have a negative value for distance.".to_string(),
+        ));
+    }
+    gatk_tools::annotated_interval::check_sortable(&collection.records, &dictionary)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let merged = merge_regions_by_annotation(
+        &collection.records,
+        &dictionary,
+        &names,
+        DEFAULT_SEPARATOR,
+        max_distance,
+    );
+    let text = write_without_header(
+        &merged,
+        &column("output-contig-column", "CONTIG"),
+        &column("output-start-column", "START"),
+        &column("output-end-column", "END"),
+    )
+    .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// `TagGermlineEvents`: tumour segments tagged where a called normal segment matches them.
+///
+/// The tagging is [`gatk_tools::tag_germline_events::tag_tumour_segments`], where a golden
+/// measures it and its refusals. The runner adds the engine's startup, both files read in
+/// `traverse` (the tumour first), and the output written from the tumour file's own header with
+/// `POSSIBLE_GERMLINE` sorted into its annotations.
+pub fn tag_germline_events(parser: &Parser) -> Outcome {
+    use gatk_tools::tag_germline_events::tag_tumour_segments;
+
+    let tumour_path = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let normal_path = argument(parser, "called-matched-normal-seg-file").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument called-matched-normal-seg-file was missing: Argument \
+             'called-matched-normal-seg-file' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let padding = number_or(parser, "endpoint-padding", 1000);
+    let call = argument(parser, "input-call-header").unwrap_or_else(|| "CALL".to_string());
+    let threshold: f64 = scalar(parser, "reciprocal-threshold")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.75);
+
+    let _ = resolve_read_filters(parser, "TagGermlineEvents")?;
+    let dictionary = best_dictionary(parser)?;
+    let mut tumour = annotated_intervals(&tumour_path)?;
+    let normal = annotated_intervals(&normal_path)?;
+    let tagged = tag_tumour_segments(
+        &tumour.records,
+        &normal.records,
+        &call,
+        &dictionary,
+        "POSSIBLE_GERMLINE",
+        padding,
+        threshold,
+    )
+    .map_err(|error| Thrown {
+        failure: if error.java_class().contains("UserException") {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+    tumour.records = tagged;
+    tumour.annotations.push("POSSIBLE_GERMLINE".to_string());
+    tumour.annotations.sort();
+    write_file(&output, tumour.write().as_bytes())?;
+    Ok(None)
+}
