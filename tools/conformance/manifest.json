@@ -6638,7 +6638,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6658,13 +6658,13 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 35772745546, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: seventy-eight declared tools, the declaration dump 11,968 lines and the enum dump 392. `CondenseDepthEvidence` is a `FeatureWalker` whose driving file is its own `--depth-evidence`; `PrintSVEvidence` and `SiteDepthtoBAF` are `MultiFeatureWalker`s. All three choose their output's format from its name."
+          "why": "Re-measured with `GatherTranches`, `GatherPileupSummaries`, `GatherNormalArtifactData`, `MergeMutectStats`, `CombineSegmentBreakpoints`, `MergeAnnotatedRegions`, `MergeAnnotatedRegionsByAnnotation` and `TagGermlineEvents` among the eighty-six declared tools, all table tools whose ports are oracle-backed."
         }
       ]
     },
     {
       "id": "usage-text",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the usage text Barclay renders, which is a rendering and not prose",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6680,7 +6680,7 @@
         {
           "dump": "UsageTextDump",
           "golden": "crates/gatk-tools/tests/data/usage_text.txt.gz",
-          "why": "Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
+          "why": "Re-measured with seven more UNDOCUMENTED tools, the gathers and copy-number utilities, whose summaries only this golden carries. Frozen from the candidate artefact of run 35772745546 with `CondenseDepthEvidence` and `PrintSVEvidence`, both UNDOCUMENTED, so this golden is the only place their summaries come from and the declarations generator refuses them without it. Re-measured with `PrintFileDiagnostics`, which is UNDOCUMENTED and prints an EXPERIMENTAL banner above its usage line, in the pinned container on a real x86-64 runner, as the candidate artefact of run 34332537404. Re-measured with `AddOriginalAlignmentTags`, which is UNDOCUMENTED and a read walker: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads one, and its usage is the first in this dump to print an EXPERIMENTAL banner above the usage line, which is why the summary is read from between the blank line and `Version:` and not from a fixed offset. In the pinned container on a real x86-64 runner, as the candidate artefact of run 34260197895. Re-measured with `CompareIntervalLists`, which is UNDOCUMENTED: the inventory carries a summary only for a documented tool, so this golden is where the declarations generator reads it. Three tools' whole usage text, its line count, and whether -h and --help agree."
         }
       ]
     },
@@ -6706,7 +6706,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6726,7 +6726,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 35772745546, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: seventy-eight declared tools, the declaration dump 11,968 lines and the enum dump 392. `CondenseDepthEvidence` is a `FeatureWalker` whose driving file is its own `--depth-evidence`; `PrintSVEvidence` and `SiteDepthtoBAF` are `MultiFeatureWalker`s. All three choose their output's format from its name."
+          "why": "Re-measured with `GatherTranches`, `GatherPileupSummaries`, `GatherNormalArtifactData`, `MergeMutectStats`, `CombineSegmentBreakpoints`, `MergeAnnotatedRegions`, `MergeAnnotatedRegionsByAnnotation` and `TagGermlineEvents` among the eighty-six declared tools, all table tools whose ports are oracle-backed."
         }
       ]
     },
