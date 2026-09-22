@@ -271,7 +271,16 @@ fn the_taxonomy_is_the_reference_s_bytes() {
         order,
         "the HashMap's order is the file's"
     );
-    let file = pathseq_kryo::taxonomy_database_file(&tree, &hashed).expect("a measured order");
-    let hex: String = file.iter().map(|byte| format!("{byte:02x}")).collect();
-    assert_eq!(hex, stream(&text, "taxonomy-hash-map"));
+    // Through a default `Kryo`, so with the marker the tool's own file does not carry.
+    hashed.check().expect("a measured order");
+    assert_eq!(
+        written(|out| out.write_object(true, |inner| {
+            pathseq_kryo::write_taxonomy_database(
+                inner,
+                &tree,
+                hashed.iter().collect::<Vec<_>>().into_iter(),
+            )
+        })),
+        stream(&text, "taxonomy-hash-map")
+    );
 }

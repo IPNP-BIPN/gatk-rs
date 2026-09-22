@@ -53,3 +53,14 @@ Two consequences follow for the rest of the programme:
    oracle-backed. The pair is the clearest statement of the rule this document exists for: read
    the specification when there is one, measure the oracle when there is not, and never read the
    GPL2 implementation either way.
+
+## The table, not just the order
+
+`hash_map_order` answers for a map filled once at the default capacity. `PathSeqBuildReferenceTaxonomy`
+sizes its maps at construction, copies them with `new HashSet<>(collection)`, and trims them, and
+each of those changes how many buckets the table has when it is read. So
+`crates/gatk-engine/src/java_hash.rs` also carries `JavaHashMap`, which keeps the table itself. The
+`pathseq-taxonomy-kryo` suite measures it the same way as the rest: eighteen probes, one per
+constructor and removal pattern the tool uses, each row carrying its own inputs, and six whole runs
+of the tool whose database file matches byte for byte. A bucket that grows to eight entries is
+still refused rather than guessed.

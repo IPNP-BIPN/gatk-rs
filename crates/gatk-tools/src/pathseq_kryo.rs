@@ -25,8 +25,10 @@
 //!
 //! # The taxonomy, outside in
 //!
-//! `PSTaxonomyDatabase` is written the same way, so it opens with `01` too, and then turns
-//! references OFF for everything it writes; nothing nested carries a marker. Then:
+//! `PSTaxonomyDatabase` is NOT written the same way: `writeTaxonomyDatabase` builds its own `Kryo`
+//! and turns references off before the first write, so the file carries no marker at all and opens
+//! with the root's string. Measured: every run in `pathseq-taxonomy-kryo` opens `8231`, where the
+//! hand-built case in `kryo-stream`, written through a default `Kryo`, opens `01`. Then:
 //!
 //! - **`PSTree`** writes its root as a STRING, the node count as a fixed int, and each node as its
 //!   id (a fixed int) followed by the node;
@@ -126,7 +128,7 @@ pub fn write_taxonomy_database<'a>(
     }
 }
 
-/// The whole file `PathSeqBuildReferenceTaxonomy` writes, reference marker included.
+/// The whole file `PathSeqBuildReferenceTaxonomy` writes, which has no reference marker.
 ///
 /// Refused if any table on the way crowded a bucket past what the probes measured.
 pub fn taxonomy_database_file(
@@ -137,7 +139,7 @@ pub fn taxonomy_database_file(
     map.check()?;
     let entries: Vec<(&String, &i32)> = map.iter().collect();
     let mut output = Output::new();
-    output.write_object(true, |inner| {
+    output.write_object(false, |inner| {
         write_taxonomy_database(inner, tree, entries.into_iter())
     });
     Ok(output.bytes().to_vec())
