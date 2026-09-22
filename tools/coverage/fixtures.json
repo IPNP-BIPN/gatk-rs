@@ -1188,6 +1188,8 @@
         "name that does not: each of the four writers refuses a file it could not read back, before",
         "the traversal, and `--sd-file` is where that refusal is measured. Giving every argument a",
         "bad value would have refused every row; giving none would have measured none.",
+        "Every accepted name is plain `.txt`, so the claim excludes block-compressed (`.txt.gz`)",
+        "and `.bci` outputs: the port refuses both as its own limitation, and no row measures them.",
         "--site-depth-locs-vcf carries the corpus's indexed VCF, whose records are biallelic SNVs:",
         "the site-depth walk keeps those and steps past everything else.",
         "--depth-evidence-intervals carries the corpus's BED, because the depth counts are per",

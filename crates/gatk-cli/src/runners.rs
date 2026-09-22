@@ -6222,16 +6222,38 @@ pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
         return Err(Thrown::user(evidence::NO_OUTPUT_MESSAGE));
     }
     // Each writer tests the name it was given BEFORE the traversal, and refuses one it could not
-    // read back: the extensions are the codec's own.
-    for (kind, path, endings) in [
-        ("pe", &pair_file, [".pe.txt", ".pe.txt.gz", ".pe.bci"]),
-        ("sr", &split_file, [".sr.txt", ".sr.txt.gz", ".sr.bci"]),
-        ("sd", &site_file, [".sd.txt", ".sd.txt.gz", ".sd.bci"]),
-        ("rd", &depth_file, [".rd.txt", ".rd.txt.gz", ".rd.bci"]),
-    ] {
+    // read back: which names it can is the codecs' own `canDecode`.
+    let outputs = [
+        ("pe", &pair_file),
+        ("sr", &split_file),
+        ("sd", &site_file),
+        ("rd", &depth_file),
+    ];
+    for (kind, path) in outputs {
         if let Some(name) = path {
-            if !endings.iter().any(|ending| name.ends_with(ending)) {
+            if evidence::encoding(kind, name).is_none() {
                 return Err(Thrown::user(evidence::bad_name_message(kind, name)));
+            }
+        }
+    }
+    // A name the codecs accept can still select a writer this port does not carry: GATK writes a
+    // block-compressed name through BGZF at `--compression-level` with a tabix index beside it,
+    // and a `.bci` name through the binary container. Only plain text is written below, so the
+    // other two refuse here, after every name was tested and before anything is written.
+    for (kind, path) in outputs {
+        if let Some(name) = path {
+            if evidence::encoding(kind, name)
+                != Some(evidence::Encoding::Text {
+                    block_compressed: false,
+                })
+            {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    format!(
+                        "{name} asks for block-compressed or .bci evidence, which this port does \
+                         not write yet. This message is the port's own and not GATK's."
+                    ),
+                ));
             }
         }
     }
