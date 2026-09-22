@@ -2839,6 +2839,59 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "PrintSVEvidence": {
+      "$why": [
+        "--evidence-file is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and",
+        "depth3: the second pair shares three bins, so the sort merger WIDENS them with bravo's counts,",
+        "and every other bin carries -1 for the samples its file does not have.",
+        "--sample-names is `null`, absent, so the union of the headers alphabetically, and samples.list: zulu twice,",
+        "bravo, and nobody, which no file carries. The set keeps zulu once, first; nobody is a column of",
+        "-1 rather than a refusal.",
+        "--sequence-dictionary is sv.dict, which names both contigs the depth files use, or absent;",
+        "--reference is reference.fasta, whose dictionary names chr1 alone, or absent. With both, the",
+        "master is the larger and wins; with the reference alone, chr2 is in no dictionary and the sort",
+        "merger's compareLocatables refuses it; with neither, the walker has no dictionary at all.",
+        "--output carries a mixed-case name, which the codec lower-cases, and --compression-level is 4",
+        "and 0, which a text output never reads. A block-compressed or .bci output, and any evidence",
+        "type but depth, are refusals of the port's own, so the claim is narrower by those.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--evidence-file": [
+        "/work/fixtures/depth.rd.txt",
+        "/work/fixtures/evidence.list"
+      ],
+      "--sample-names": [
+        "null",
+        "/work/fixtures/samples.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict",
+        "null"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "null"
+      ],
+      "--output": [
+        "/work/out/merged.rd.txt",
+        "/work/out/Merged.RD.TXT"
+      ],
+      "--compression-level": [
+        "4",
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
     }
   },
   "constraints": [

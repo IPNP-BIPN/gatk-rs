@@ -1373,6 +1373,26 @@ public class MakeFixtures {
         }
         depth2.append("chr2\t0\t50\t1\t2\t3\n");
         Files.writeString(dir.resolve("depth2.rd.txt"), depth2.toString(), StandardCharsets.UTF_8);
+        // For `PrintSVEvidence`: a third file naming one more sample at three of depth2's bins, so
+        // a row that merges the two widens those bins rather than interleaving them; the pair is
+        // named by a `.list`, which Barclay expands for a collection argument. A second `.list`
+        // names samples for `--sample-names`, one of them twice and one that no file carries. And
+        // a dictionary naming both contigs the depth files use, since the corpus's own name one.
+        Files.writeString(dir.resolve("depth3.rd.txt"),
+                "#Chr\tStart\tEnd\tbravo\n"
+                        + "chr1\t0\t50\t101\n"
+                        + "chr1\t100\t150\t102\n"
+                        + "chr2\t0\t50\t103\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("evidence.list"),
+                // The paths the ROWS see: the corpus is written here and read under /work/fixtures.
+                "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n@SQ\tSN:chr2\tLN:100000\n",
+                StandardCharsets.UTF_8);
 
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
