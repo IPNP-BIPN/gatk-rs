@@ -2745,6 +2745,46 @@
         "0",
         "500"
       ]
+    },
+    "PathSeqBuildKmers": {
+      "$why": [
+        "pathseq_kmers.fasta carries bases from a fixed pseudo-random sequence, an N run and a",
+        "lower-case stretch; pathseq.fasta repeats ACGT. The pair matters because a PERIODIC",
+        "reference has four distinct 31-mers whatever its length: every row over one wrote a set of",
+        "two entries and forty-two bytes, which measures the serializer and not the k-mers.",
+        "--output carries a name that already ends in .hss and one that does not, because writeKmerSet",
+        "appends the extension itself: the pair measures that rule rather than assuming it.",
+        "--kmer-size is 31 and 11, both ODD. An even size is refused inside the stream rather than by",
+        "the parser, and it is the pathseq-build-kmers suite that measures that refusal; an array row",
+        "holding it would measure the same IllegalArgumentException in every combination.",
+        "--kmer-mask masks nothing and masks two bases, and --kmer-spacing is 1 and 3, which changes",
+        "how many k-mers the set holds and therefore the capacity written into the file.",
+        "--bloom-false-positive-probability is held OUT of the rows: above zero the tool writes a",
+        "PSKmerBloomFilter, a container this port does not carry at all, so every row holding it would",
+        "measure that gap instead of the k-mers. The coverage claim is narrower by exactly that",
+        "argument, and the runner refuses it rather than writing the wrong file."
+      ],
+      "--reference": [
+        "/work/fixtures/pathseq_kmers.fasta",
+        "/work/fixtures/pathseq.fasta"
+      ],
+      "--output": [
+        "/work/out/kmers.hss",
+        "/work/out/kmers"
+      ],
+      "--kmer-size": [
+        "31",
+        "11"
+      ],
+      "--kmer-mask": [
+        "",
+        "5,6"
+      ],
+      "--kmer-spacing": [
+        "1",
+        "3"
+      ],
+      "--bloom-false-positive-probability": []
     }
   },
   "constraints": [
