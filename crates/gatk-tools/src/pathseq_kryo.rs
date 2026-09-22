@@ -1,8 +1,9 @@
-//! What `PathSeqBuildKmers` leaves on disk: a `PSKmerSet` through Kryo.
+//! What the two PathSeq builders leave on disk: a `PSKmerSet` and a `PSTaxonomyDatabase`, through
+//! Kryo.
 //!
-//! The arithmetic of the k-mer set is [`crate::pathseq_kmers`]; this is the file it becomes. Every
-//! rule here is the `kryo-stream` golden's, measured in the pinned container, and the encoding
-//! itself is [`gatk_engine::kryo`].
+//! The arithmetic is [`crate::pathseq_kmers`] and [`crate::pathseq_taxonomy`]; this is the file
+//! each becomes. Every rule here is the `kryo-stream` golden's, measured in the pinned container,
+//! and the encoding itself is [`gatk_engine::kryo`].
 //!
 //! # The shape, outside in
 //!
@@ -21,7 +22,26 @@
 //! a set asked for eight and one asked for sixty-four both write 251 and the same seventy-three
 //! bytes.
 
+//!
+//! # The taxonomy, outside in
+//!
+//! `PSTaxonomyDatabase` is written the same way, so it opens with `01` too, and then turns
+//! references OFF for everything it writes; nothing nested carries a marker. Then:
+//!
+//! - **`PSTree`** writes its root as a STRING, the node count as a fixed int, and each node as its
+//!   id (a fixed int) followed by the node;
+//! - **`PSTreeNode`** writes its name and its rank as strings, its parent as a fixed int, its length
+//!   as a fixed long, the number of children as a fixed int, and each child as a STRING;
+//! - **the database** then writes the map's size as a fixed int and each entry as two strings, the
+//!   contig name and the taxon id in decimal.
+//!
+//! Three of those are written in a `HashMap`'s order -- the nodes, each node's children and the map
+//! -- so the bytes are only as right as [`crate::pathseq_taxonomy`]'s tables, and a table whose
+//! order was never measured is refused here rather than written.
+
+use crate::pathseq_taxonomy::{PsTree, TreeNode};
 use gatk_engine::hopscotch::{LargeLongHopscotchSet, LongHopscotchSet};
+use gatk_engine::java_hash::{HashOrderError, JavaHashMap};
 use gatk_engine::kryo::Output;
 
 /// `LongHopscotchSet.Serializer.write`, without a reference marker of its own.
@@ -65,4 +85,60 @@ pub fn kmer_set_file(kmer_size: i32, kmer_mask: i64, set: &LargeLongHopscotchSet
         write_kmer_set(inner, kmer_size, kmer_mask, set)
     });
     output.bytes().to_vec()
+}
+
+/// `PSTreeNode.serialize`.
+pub fn write_tree_node(output: &mut Output, node: &TreeNode) {
+    output.write_string(node.name.as_deref());
+    output.write_string(node.rank.as_deref());
+    output.write_int(node.parent);
+    output.write_long(node.length);
+    output.write_int(node.children.len() as i32);
+    for child in node.children.keys() {
+        output.write_string(Some(&child.to_string()));
+    }
+}
+
+/// `PSTree.serialize`, whose nested nodes carry no marker because it turned references off.
+pub fn write_tree(output: &mut Output, tree: &PsTree) {
+    output.write_string(Some(&tree.root().to_string()));
+    output.write_int(tree.node_ids().len() as i32);
+    for (id, node) in tree.nodes() {
+        output.write_int(*id);
+        write_tree_node(output, node);
+    }
+}
+
+/// `PSTaxonomyDatabase.serialize`, over the map's entries in the order they are handed in.
+///
+/// The entries are an iterator rather than the map so that the `LinkedHashMap` case the golden
+/// measures, which pins the encoding apart from any order, is the same function.
+pub fn write_taxonomy_database<'a>(
+    output: &mut Output,
+    tree: &PsTree,
+    entries: impl ExactSizeIterator<Item = (&'a String, &'a i32)>,
+) {
+    write_tree(output, tree);
+    output.write_int(entries.len() as i32);
+    for (name, tax_id) in entries {
+        output.write_string(Some(name));
+        output.write_string(Some(&tax_id.to_string()));
+    }
+}
+
+/// The whole file `PathSeqBuildReferenceTaxonomy` writes, reference marker included.
+///
+/// Refused if any table on the way crowded a bucket past what the probes measured.
+pub fn taxonomy_database_file(
+    tree: &PsTree,
+    map: &JavaHashMap<String, i32>,
+) -> Result<Vec<u8>, HashOrderError> {
+    tree.check_order()?;
+    map.check()?;
+    let entries: Vec<(&String, &i32)> = map.iter().collect();
+    let mut output = Output::new();
+    output.write_object(true, |inner| {
+        write_taxonomy_database(inner, tree, entries.into_iter())
+    });
+    Ok(output.bytes().to_vec())
 }

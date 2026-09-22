@@ -15,14 +15,12 @@
 //!    `LargeLongHopscotchSet`'s partitions, and the `PSKmerSet` `PathSeqBuildKmers` writes, byte
 //!    for byte against the reference's own.
 //!
-//! # What is NOT compared here yet
+//!  * **and the taxonomy**: `PSTree`, its nodes and `PSTaxonomyDatabase`, over a map in insertion
+//!    order and over a `HashMap`, whose order the port's table reproduces.
 //!
-//! The taxonomy half: `PSTree` and `PSTaxonomyDatabase`. Their bytes carry a `HashMap`'s iteration
-//! order -- over integer node ids in the first and over accession strings in the second -- which is
-//! the obligation `docs/an-unspecified-order-that-reaches-the-output.md` already describes and
-//! which this port does not meet yet. The rows are measured, and asserted here to be PRESENT, so a
-//! dump that stopped producing them would fail this suite rather than pass it quietly.
-//! IPNP-BIPN/gatk-rs#1181 tracks that half.
+//! What this suite cannot say is whether that table is right for a tree the tool actually builds,
+//! with the capacities and removals `retainNodes` puts it through; `pathseq-taxonomy-kryo` measures
+//! that against whole runs (IPNP-BIPN/gatk-rs#1181).
 
 use gatk_corpus as corpus;
 use gatk_engine::kryo::Output;
@@ -220,27 +218,60 @@ fn the_hopscotch_tables_land_where_the_reference_put_them() {
     assert_eq!(hex, stream(&text, "kmer-set"));
 }
 
-/// The taxonomy rows say what the port still owes, rather than being quietly absent.
+/// The taxonomy the dump built by hand, which is `PSTree(1)` with two nodes under the root.
+fn three_node_tree() -> gatk_tools::pathseq_taxonomy::PsTree {
+    let mut tree = gatk_tools::pathseq_taxonomy::PsTree::new(1);
+    tree.add_node(2, "Bacteria", 1, 0, "superkingdom");
+    tree.add_node(3, "Escherichia coli", 2, 4_641_652, "species");
+    tree
+}
+
+/// The tree and the database, whose nested writes carry no marker of their own.
 #[test]
-fn the_taxonomy_is_measured_even_where_the_port_does_not_write_it_yet() {
+fn the_taxonomy_is_the_reference_s_bytes() {
+    use gatk_engine::java_hash::JavaHashMap;
+    use gatk_tools::pathseq_kryo;
+
     let text = golden();
-    // The tree and the database are measured and not yet reproduced; a dump that stopped writing
-    // them would fail here.
-    assert!(!stream(&text, "tree-three-nodes").is_empty());
-    // The same three accessions in the two map kinds do NOT produce the same bytes: the tool builds
-    // a `HashMap`, so its iteration order reaches the file and a port owes that order too.
-    assert_ne!(
-        stream(&text, "taxonomy-linked-map"),
-        stream(&text, "taxonomy-hash-map")
+    let tree = three_node_tree();
+    assert_eq!(
+        written(|out| out.write_object(true, |inner| pathseq_kryo::write_tree(inner, &tree))),
+        stream(&text, "tree-three-nodes")
     );
+
+    // In insertion order, which is what the `LinkedHashMap` case pins: the encoding alone.
+    let accessions = [
+        ("NC_000913.3".to_string(), 3),
+        ("NC_002695.2".to_string(), 3),
+        ("NZ_CP009273.1".to_string(), 2),
+    ];
+    assert_eq!(
+        written(|out| out.write_object(true, |inner| {
+            pathseq_kryo::write_taxonomy_database(
+                inner,
+                &tree,
+                accessions.iter().map(|(name, tax_id)| (name, tax_id)),
+            )
+        })),
+        stream(&text, "taxonomy-linked-map")
+    );
+
+    // The same three through a `HashMap`, whose order is the one the file carries.
+    let mut hashed = JavaHashMap::new();
+    for (name, tax_id) in &accessions {
+        hashed.insert(name.clone(), *tax_id);
+    }
     let order: Vec<&str> = text
         .lines()
         .filter(|line| line.starts_with("key\ttaxonomy-hash-map\t"))
         .map(|line| line.rsplit_once('=').expect("a key").1)
         .collect();
     assert_eq!(
+        hashed.keys().map(String::as_str).collect::<Vec<_>>(),
         order,
-        vec!["NZ_CP009273.1", "NC_000913.3", "NC_002695.2"],
         "the HashMap's order is the file's"
     );
+    let file = pathseq_kryo::taxonomy_database_file(&tree, &hashed).expect("a measured order");
+    let hex: String = file.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(hex, stream(&text, "taxonomy-hash-map"));
 }

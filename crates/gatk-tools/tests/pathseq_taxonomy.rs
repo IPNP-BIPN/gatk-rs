@@ -75,8 +75,10 @@ fn refusal(text: &str, label: &str) -> String {
 }
 
 fn ours(tree: &PsTree) -> Vec<(i32, String, i32, String, i64)> {
-    tree.node_ids()
-        .into_iter()
+    // The dump prints the tree sorted; the tree itself keeps its map's order.
+    let mut ids = tree.node_ids();
+    ids.sort_unstable();
+    ids.into_iter()
         .map(|id| {
             (
                 id,
@@ -119,6 +121,10 @@ fn check(
     )
     .expect("a database");
     assert_eq!(ours(&tree), tree_rows(text, label), "{label}: the tree");
+    let map: BTreeMap<String, i32> = map
+        .iter()
+        .map(|(name, tax_id)| (name.clone(), *tax_id))
+        .collect();
     assert_eq!(map, accession_rows(text, label), "{label}: the map");
 }
 
