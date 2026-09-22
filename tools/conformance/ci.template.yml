@@ -266,6 +266,7 @@ jobs:
             --tool PathSeqBuildKmers \
             --tool CondenseDepthEvidence \
             --tool PrintSVEvidence \
+            --tool SiteDepthtoBAF \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

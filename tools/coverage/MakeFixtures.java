@@ -1390,6 +1390,44 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
                 StandardCharsets.UTF_8);
+        // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,
+        // zero-based on disk, and two sites VCFs over the same loci, the second with every ref and
+        // alt swapped, so the same depths give each sample the other fraction. Each VCF also holds
+        // an indel between two sites, which `BAFSiteIterator` skips, and declares the two contigs
+        // `sv.dict` does, since the tool asserts the VCF's dictionary is the walk's. The depths are
+        // chosen so each threshold in the array keeps a different set: one site fails the
+        // chi-squared test, one has a total under 30, and one has samples far enough apart that a
+        // tight --max-std drops the whole locus.
+        final String sdA = "chr1\t99\ts1\t10\t12\t0\t0\n"
+                + "chr1\t199\ts1\t0\t0\t30\t2\n"
+                + "chr1\t299\ts1\t8\t0\t9\t0\n"
+                + "chr1\t399\ts1\t0\t40\t0\t35\n"
+                + "chr2\t99\ts1\t20\t0\t0\t21\n";
+        final String sdB = "chr1\t99\ts2\t14\t9\t0\t0\n"
+                + "chr1\t299\ts2\t11\t0\t12\t1\n"
+                + "chr1\t399\ts2\t0\t20\t0\t60\n"
+                + "chr2\t99\ts2\t30\t0\t0\t25\n";
+        Files.writeString(dir.resolve("depth.sd.txt"), sdA, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("depth2.sd.txt"), sdB, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sd.list"),
+                "/work/fixtures/depth.sd.txt\n/work/fixtures/depth2.sd.txt\n",
+                StandardCharsets.UTF_8);
+        final String[][] snps = {
+                {"chr1", "100", "A", "C"}, {"chr1", "150", "AC", "A"}, {"chr1", "200", "G", "T"},
+                {"chr1", "300", "A", "G"}, {"chr1", "400", "C", "T"}, {"chr2", "100", "A", "T"}};
+        for (final boolean swapped : new boolean[] {false, true}) {
+            final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n"
+                    + "##contig=<ID=chr1,length=100000>\n##contig=<ID=chr2,length=100000>\n"
+                    + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+            for (final String[] snp : snps) {
+                final boolean swap = swapped && snp[2].length() == 1;
+                vcf.append(snp[0]).append('\t').append(snp[1]).append("\t.\t")
+                        .append(swap ? snp[3] : snp[2]).append('\t')
+                        .append(swap ? snp[2] : snp[3]).append("\t.\t.\t.\n");
+            }
+            Files.writeString(dir.resolve(swapped ? "baf_sites2.vcf" : "baf_sites.vcf"),
+                    vcf.toString(), StandardCharsets.UTF_8);
+        }
         Files.writeString(dir.resolve("sv.dict"),
                 "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n@SQ\tSN:chr2\tLN:100000\n",
                 StandardCharsets.UTF_8);
