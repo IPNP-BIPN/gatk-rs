@@ -382,6 +382,19 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.sv.SVAnnotate());
         declarations("ConvertHeaderlessHadoopBamShardToBam",
                 new org.broadinstitute.hellbender.tools.ConvertHeaderlessHadoopBamShardToBam());
+        // Three structural-variant evidence tools, the rest of the family `CollectSVEvidence`
+        // writes and `PrintReadCounts` reads. `CondenseDepthEvidence` is a `FeatureWalker` whose
+        // driving file is an argument of its own, `--depth-evidence`, rather than the engine's
+        // `--feature-file`. `PrintSVEvidence` and `SiteDepthtoBAF` are `MultiFeatureWalker`s: the
+        // first takes any number of evidence files of one type and merges them, the second reads
+        // site depths and writes B-allele frequencies. All three choose their output's format from
+        // its NAME, so `--output` is a `GATKPath` whose extension is part of its value.
+        declarations("CondenseDepthEvidence",
+                new org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence());
+        declarations("PrintSVEvidence",
+                new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
+        declarations("SiteDepthtoBAF",
+                new org.broadinstitute.hellbender.tools.sv.SiteDepthtoBAF());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
