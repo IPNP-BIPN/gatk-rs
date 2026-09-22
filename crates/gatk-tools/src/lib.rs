@@ -161,6 +161,7 @@ pub mod structural_variant_discoverer;
 pub mod sv_annotate;
 pub mod sv_cluster;
 pub mod sv_concordance;
+pub mod sv_feature_codecs;
 pub mod sv_stratify;
 pub mod tag_germline_events;
 pub mod tool_declarations;

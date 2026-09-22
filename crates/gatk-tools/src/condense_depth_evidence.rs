@@ -61,16 +61,25 @@ impl Default for Arguments {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CondenseError {
     MinimumAboveMaximum,
+    /// No codec answers for the output's name, which `FeatureOutputCodecFinder.find` refuses.
+    NoOutputCodec {
+        path: String,
+    },
     /// The output's extension implies another feature type, which the message names.
     WrongOutputType {
         path: String,
         found: String,
     },
+    /// `MathUtils.addToArrayInPlace`, over two adjacent bins with different numbers of counts.
+    CountMismatch,
 }
 
 impl CondenseError {
-    pub fn java_class(&self) -> &str {
-        "org.broadinstitute.hellbender.exceptions.UserException"
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            CondenseError::CountMismatch => "java.lang.IllegalArgumentException",
+            _ => "org.broadinstitute.hellbender.exceptions.UserException",
+        }
     }
 
     pub fn message(&self) -> String {
@@ -78,10 +87,14 @@ impl CondenseError {
             CondenseError::MinimumAboveMaximum => {
                 "Minimum interval length exceeds maximum interval length.".to_string()
             }
+            CondenseError::NoOutputCodec { path } => {
+                crate::sv_feature_codecs::no_output_codec(path)
+            }
             CondenseError::WrongOutputType { path, found } => format!(
                 "Output file {path} implies Feature subtype {found}, but this tool expects to \
                  write DepthEvidence."
             ),
+            CondenseError::CountMismatch => "Arrays must have same length".to_string(),
         }
     }
 }
@@ -94,32 +107,17 @@ pub fn check_lengths(arguments: &Arguments) -> Result<(), CondenseError> {
     Ok(())
 }
 
-/// `FeatureOutputCodecFinder.find` for the extensions this tool can meet, which is the name and
-/// nothing else.
-pub fn output_feature_type(path: &str) -> Option<&'static str> {
-    let stripped = path.strip_suffix(".gz").unwrap_or(path);
-    if stripped.ends_with(".rd.txt") {
-        Some("DepthEvidence")
-    } else if stripped.ends_with(".baf.txt") {
-        Some("BafEvidence")
-    } else if stripped.ends_with(".sr.txt") {
-        Some("SplitReadEvidence")
-    } else if stripped.ends_with(".pe.txt") {
-        Some("DiscordantPairEvidence")
-    } else {
-        None
-    }
-}
-
-/// `onTraversalStart`'s second check.
+/// `onTraversalStart`'s second check, which is the finder's refusal and then the tool's.
 pub fn check_output(path: &str) -> Result<(), CondenseError> {
-    match output_feature_type(path) {
-        Some("DepthEvidence") => Ok(()),
-        Some(found) => Err(CondenseError::WrongOutputType {
+    match crate::sv_feature_codecs::find(path) {
+        Some(codec) if codec.feature_type == "DepthEvidence" => Ok(()),
+        Some(codec) => Err(CondenseError::WrongOutputType {
             path: path.to_string(),
-            found: found.to_string(),
+            found: codec.feature_type.to_string(),
         }),
-        None => Ok(()),
+        None => Err(CondenseError::NoOutputCodec {
+            path: path.to_string(),
+        }),
     }
 }
 
@@ -129,7 +127,13 @@ fn adjacent(left: &DepthEvidence, right: &DepthEvidence) -> bool {
 }
 
 /// `apply` over every record, then `onTraversalSuccess`: the records the sink was handed.
-pub fn condense(records: &[DepthEvidence], arguments: &Arguments) -> Vec<DepthEvidence> {
+///
+/// The counts are summed as Java ints, so a sum past `i32::MAX` wraps, and two adjacent bins with
+/// different numbers of counts are refused where they meet rather than widened.
+pub fn condense(
+    records: &[DepthEvidence],
+    arguments: &Arguments,
+) -> Result<Vec<DepthEvidence>, CondenseError> {
     let mut written = Vec::new();
     let mut accumulator: Option<DepthEvidence> = None;
     for record in records {
@@ -149,13 +153,15 @@ pub fn condense(records: &[DepthEvidence], arguments: &Arguments) -> Vec<DepthEv
             accumulator = Some(record.clone());
             continue;
         }
-        let mut counts = held.counts.clone();
-        for (index, count) in record.counts.iter().enumerate() {
-            match counts.get_mut(index) {
-                Some(slot) => *slot += count,
-                None => counts.push(*count),
-            }
+        if held.counts.len() != record.counts.len() {
+            return Err(CondenseError::CountMismatch);
         }
+        let counts = held
+            .counts
+            .iter()
+            .zip(&record.counts)
+            .map(|(left, right)| left.wrapping_add(*right))
+            .collect();
         accumulator = Some(DepthEvidence {
             contig: record.contig.clone(),
             start: held.start,
@@ -168,37 +174,56 @@ pub fn condense(records: &[DepthEvidence], arguments: &Arguments) -> Vec<DepthEv
             written.push(held);
         }
     }
-    written
+    Ok(written)
 }
 
-/// `DepthEvidenceCodec.decode` over a whole file: the header's sample names and the records.
-pub fn read(text: &str) -> (Vec<String>, Vec<DepthEvidence>) {
-    let mut samples = Vec::new();
+/// `DepthEvidenceCodec.readActualHeader` and then `decode` over every other line: the header's
+/// sample names and the records.
+///
+/// The header is the FIRST line whatever it holds, its columns after the third being the samples.
+/// Only a later line beginning `#Chr` is skipped; any other line is a record, and a count is
+/// `Integer.parseUnsignedInt`, so a value up to `2^32 - 1` is read and wraps to a negative int.
+///
+/// `Err` is a file the codec refuses, carrying what is wrong with it. The refusal the reference
+/// prints is Tribble's wrapping of the codec's exception, which names an iterator by its identity
+/// hash for a bad record, so it is described here rather than reproduced.
+pub fn read(text: &str) -> Result<(Vec<String>, Vec<DepthEvidence>), String> {
+    let mut lines = text.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| "the file has no header line".to_string())?;
+    let columns: Vec<&str> = header.split('\t').collect();
+    if columns.len() < 3 {
+        return Err(format!("the header has {} columns", columns.len()));
+    }
+    let samples = columns[3..].iter().map(|name| name.to_string()).collect();
+    let unsigned = |field: &str| {
+        field
+            .parse::<u32>()
+            .map(|value| value as i32)
+            .map_err(|_| format!("{field:?} is not an unsigned int"))
+    };
     let mut records = Vec::new();
-    for line in text.lines() {
-        if line.is_empty() {
+    for line in lines {
+        if line.starts_with("#Chr") {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        if line.starts_with("#Chr") {
-            samples = columns[3..].iter().map(|name| name.to_string()).collect();
-            continue;
-        }
-        if line.starts_with('#') || columns.len() < 3 {
-            continue;
+        if columns.len() < 3 {
+            return Err(format!("a record has {} columns", columns.len()));
         }
         records.push(DepthEvidence {
             contig: columns[0].to_string(),
             // Zero-based on disk, one-based here.
-            start: columns[1].parse::<i32>().expect("a start") + 1,
-            end: columns[2].parse().expect("an end"),
+            start: unsigned(columns[1])?.wrapping_add(1),
+            end: unsigned(columns[2])?,
             counts: columns[3..]
                 .iter()
-                .map(|count| count.parse().expect("a count"))
-                .collect(),
+                .map(|count| unsigned(count))
+                .collect::<Result<_, _>>()?,
         });
     }
-    (samples, records)
+    Ok((samples, records))
 }
 
 /// `DepthEvidenceCodec.encode` plus the header the sink writes first.

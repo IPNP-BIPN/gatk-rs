@@ -11011,3 +11011,124 @@ fn fasta_records(bytes: &[u8]) -> Vec<Vec<u8>> {
     }
     records
 }
+
+/// `CondenseDepthEvidence`: adjacent depth-evidence bins merged.
+///
+/// The merge is [`gatk_tools::condense_depth_evidence`], where a golden measures it. What the
+/// runner adds is the order the refusals come in, which is the engine's and then the tool's:
+///
+/// * **the input is opened at startup**, by `FeatureManager.getCodecForFile` once the master
+///   dictionary is loaded, so an unreadable file is refused before any argument of the tool's own
+///   is looked at;
+/// * **then `onTraversalStart`**: a minimum above the maximum, then no codec for the output's
+///   name, then a codec for another feature type;
+/// * **then the sink is opened and its header written**, from the input's sample names, before a
+///   single record is merged.
+///
+/// Three things are refusals of the port's own rather than GATK's. A block-compressed or binary
+/// OUTPUT is written through the GKL deflater and a tabix index or through the `.bci` container,
+/// none of which this runner carries. A block-compressed or binary INPUT is the same gap on the
+/// read side. And a malformed input is refused by Tribble wrapping the codec's exception, whose
+/// message names an iterator by its identity hash, so no byte of it can be reproduced.
+pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
+    use gatk_tools::condense_depth_evidence as condense;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let input = argument(parser, "depth-evidence").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument depth-evidence was missing: Argument 'depth-evidence' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let arguments = condense::Arguments {
+        max_interval_length: number_or(parser, "max-interval-size", 1000),
+        min_interval_length: number_or(parser, "min-interval-size", 0),
+    };
+    let refused = |error: condense::CondenseError| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(error.message()),
+    };
+
+    // The engine's own prelude, the one `PrintReadCounts` measured for the same base class: the
+    // read filters resolve while the command line is parsed, and `onStartup` loads a master
+    // dictionary before it opens anything else.
+    let _ = resolve_read_filters(parser, "CondenseDepthEvidence")?;
+    let _ = master_dictionary(parser)?;
+    // `getCodecForFile` tests that the path is readable before it asks a codec anything.
+    let bytes = std::fs::read(&input).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: java_absolute_path(&input),
+            }
+            .message(),
+        )
+    })?;
+    match codecs::find(&input) {
+        Some(codec) if codec.feature_type != "DepthEvidence" => {
+            return Err(Thrown::user(format!(
+                "File {input} contains features of the wrong type."
+            )));
+        }
+        Some(codecs::Codec {
+            encoding: Encoding::Text {
+                block_compressed: false,
+            },
+            ..
+        }) => {}
+        Some(_) => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "CondenseDepthEvidence reads a block-compressed or .bci depth-evidence file, \
+                 which is not ported",
+            ));
+        }
+        // Every other codec the engine knows would be asked here, and is not ported: the SV
+        // evidence codecs are the ones this tool can accept.
+        None => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "no SV evidence codec reads {input}, and the engine's others are not ported"
+                ),
+            ));
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let (samples, records) = condense::read(&text).map_err(|problem| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{input} is a malformed depth-evidence file ({problem}), which Tribble refuses"
+            ),
+        )
+    })?;
+
+    condense::check_lengths(&arguments).map_err(refused)?;
+    condense::check_output(&output).map_err(refused)?;
+    if codecs::find(&output).map(|codec| codec.encoding)
+        != Some(Encoding::Text {
+            block_compressed: false,
+        })
+    {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "CondenseDepthEvidence writes a block-compressed or .bci depth-evidence file, which is \
+             not ported",
+        ));
+    }
+    // A mismatch is raised inside `apply`, after the sink has written its header, and it is an
+    // `IllegalArgumentException` rather than a user error. What the half-written file then holds
+    // is the buffered writer's, which nothing has measured, so only the header is written here.
+    let merged = match condense::condense(&records, &arguments) {
+        Ok(merged) => merged,
+        Err(error) => {
+            write_file(&output, condense::write(&samples, &[]).as_bytes())?;
+            return Err(Thrown::non_user(error.java_class(), error.message()));
+        }
+    };
+    write_file(&output, condense::write(&samples, &merged).as_bytes())?;
+    Ok(None)
+}

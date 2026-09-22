@@ -101,22 +101,9 @@ impl PrintError {
     }
 }
 
-/// `FeatureOutputCodecFinder.find`, for the extensions this tool can meet.
+/// `FeatureOutputCodecFinder.find`: the feature type the name selects.
 pub fn output_feature_type(path: &str) -> Option<&'static str> {
-    let stripped = path.strip_suffix(".gz").unwrap_or(path);
-    if stripped.ends_with(".rd.txt") {
-        Some("DepthEvidence")
-    } else if stripped.ends_with(".baf.txt") {
-        Some("BafEvidence")
-    } else if stripped.ends_with(".sr.txt") {
-        Some("SplitReadEvidence")
-    } else if stripped.ends_with(".pe.txt") {
-        Some("DiscordantPairEvidence")
-    } else if stripped.ends_with(".sd.txt") {
-        Some("SiteDepth")
-    } else {
-        None
-    }
+    crate::sv_feature_codecs::find(path).map(|codec| codec.feature_type)
 }
 
 /// `onTraversalStart`'s two checks, in the order they fire. `inputs` are the input paths, all of
