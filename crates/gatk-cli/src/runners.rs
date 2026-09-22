@@ -10648,3 +10648,218 @@ fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(),
         )
     })
 }
+
+/// `PathSeqBuildReferenceTaxonomy.doWork`, with every file read in the order the tool opens it.
+///
+/// The port's arithmetic is [`gatk_tools::pathseq_taxonomy`] and its file is
+/// [`gatk_tools::pathseq_kryo::taxonomy_database_file`], both oracle-backed. What is here is the
+/// order the refusals come in, which is the order the tool touches its inputs: the catalog check
+/// before anything is opened, then the reference's dictionary, then the reference's names (a taxon
+/// id that is not a number is refused there), the RefSeq catalog, the GenBank one, `names.dmp`,
+/// `nodes.dmp`, the tree, and last the output. So each file is read only when the tool would have
+/// opened it, and a refusal from an earlier one is never masked by a missing later one.
+///
+/// A catalog is gunzipped only when its PATH ends in `.gz`, which is `makeReaderMaybeGzipped`'s
+/// rule: the bytes are not sniffed. A catalog that says `.gz` and is not gzip fails to open,
+/// and that refusal is the same one a missing file gets.
+pub fn path_seq_build_reference_taxonomy(parser: &Parser) -> Outcome {
+    use gatk_tools::pathseq_taxonomy::{self as taxonomy, CatalogFormat, TaxonomyError};
+
+    let refused = |error: TaxonomyError| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(error.message()),
+    };
+    let refseq = argument(parser, "refseq-catalog");
+    let genbank = argument(parser, "genbank-catalog");
+    if refseq.is_none() && genbank.is_none() {
+        return Err(refused(TaxonomyError::NoCatalog));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let tax_dump = argument(parser, "tax-dump").ok_or_else(|| {
+        Thrown::command_line("Argument tax-dump was missing: Argument 'tax-dump' is required")
+    })?;
+    let min_length: i64 = scalar(parser, "min-non-virus-contig-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+
+    let dictionary = reference_dictionary(parser)?.ok_or_else(|| {
+        bad_input(
+            "Reference sequence dictionary not found. Please build one using \
+             CreateSequenceDictionary."
+                .to_string(),
+        )
+    })?;
+    let contigs: Vec<(String, i64)> = dictionary
+        .sequences
+        .iter()
+        .map(|record| (record.name.clone(), record.length as i64))
+        .collect();
+
+    let mut properties = gatk_engine::java_hash::JavaHashMap::new();
+    let by_accession =
+        taxonomy::parse_reference_records(&contigs, &mut properties).map_err(refused)?;
+    let mut not_found = None;
+    if let Some(path) = &refseq {
+        let text = catalog_text(path)?;
+        not_found = Some(
+            taxonomy::parse_catalog(
+                &text,
+                CatalogFormat::RefSeq,
+                &by_accession,
+                &mut properties,
+                None,
+            )
+            .map_err(refused)?,
+        );
+    }
+    if let Some(path) = &genbank {
+        let text = catalog_text(path)?;
+        taxonomy::parse_catalog(
+            &text,
+            CatalogFormat::GenBank,
+            &by_accession,
+            &mut properties,
+            not_found.as_ref(),
+        )
+        .map_err(refused)?;
+    }
+    let names = tar_gz_entry(&tax_dump, "names.dmp")?;
+    taxonomy::parse_names(&names, &mut properties).map_err(refused)?;
+    let nodes = tar_gz_entry(&tax_dump, "nodes.dmp")?;
+    taxonomy::parse_nodes(&nodes, &mut properties).map_err(refused)?;
+
+    let tree = taxonomy::build_taxonomic_tree(&properties).map_err(refused)?;
+    taxonomy::remove_unused_tax_ids(&mut properties, &tree);
+    let map = taxonomy::build_accession_to_tax_id(&properties, &tree, min_length);
+    let file = gatk_tools::pathseq_kryo::taxonomy_database_file(&tree, &map).map_err(|error| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("a HashMap order this port has not measured: {error:?}"),
+        )
+    })?;
+    std::fs::write(&output, file).map_err(|_| Thrown {
+        failure: Failure::User,
+        exception:
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile",
+        message: Some("Could not serialize objects to file".to_string()),
+    })?;
+    Ok(None)
+}
+
+/// `getBufferedReaderGz`: the file, gunzipped when its name ends in `.gz`, as text.
+fn catalog_text(path: &str) -> Result<String, Thrown> {
+    let cannot_open = || bad_input(format!("Could not open file {path}"));
+    let bytes = std::fs::read(path).map_err(|_| cannot_open())?;
+    if !path.ends_with(".gz") {
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    }
+    // `GZIPInputStream` reads its header when it is constructed, inside the same `try`, so a file
+    // that is not gzip is refused as one that could not be opened.
+    if bytes.len() < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b {
+        return Err(cannot_open());
+    }
+    gunzip(&bytes).map_err(|_| Thrown::user("Error reading from catalog file".to_string()))
+}
+
+fn gunzip(bytes: &[u8]) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut text = Vec::new();
+    flate2::read::MultiGzDecoder::new(bytes).read_to_end(&mut text)?;
+    Ok(String::from_utf8_lossy(&text).into_owned())
+}
+
+/// `getBufferedReaderTarGz`: one entry of a gzipped tarball, found by walking its headers.
+fn tar_gz_entry(tar_path: &str, name: &str) -> Result<String, Thrown> {
+    let cannot_open = || {
+        bad_input(format!(
+            "Could not open compressed tarball file {name} in {tar_path}"
+        ))
+    };
+    let bytes = std::fs::read(tar_path).map_err(|_| cannot_open())?;
+    if bytes.len() < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b {
+        return Err(cannot_open());
+    }
+    let tar = {
+        use std::io::Read;
+        let mut out = Vec::new();
+        flate2::read::MultiGzDecoder::new(bytes.as_slice())
+            .read_to_end(&mut out)
+            .map_err(|_| cannot_open())?;
+        out
+    };
+    tar_entry(&tar, name)
+        .map(|entry| String::from_utf8_lossy(entry).into_owned())
+        .ok_or_else(|| bad_input(format!("Could not find file {name} in tarball {tar_path}")))
+}
+
+/// The data of the first entry named `name` in an uncompressed tar stream.
+///
+/// A ustar header is 512 bytes: the name in the first hundred, the size in octal at 124, the type
+/// at 156, and a ustar prefix at 345 that the name is joined to. A GNU `L` entry carries the NEXT
+/// entry's long name as its data, and a pax `x` entry may carry it as `path=`. An all-zero block
+/// ends the archive.
+fn tar_entry<'a>(tar: &'a [u8], name: &str) -> Option<&'a [u8]> {
+    let field = |block: &[u8], from: usize, to: usize| -> String {
+        let raw = &block[from..to];
+        let end = raw.iter().position(|byte| *byte == 0).unwrap_or(raw.len());
+        String::from_utf8_lossy(&raw[..end]).into_owned()
+    };
+    let mut offset = 0;
+    let mut long_name: Option<String> = None;
+    while offset + 512 <= tar.len() {
+        let block = &tar[offset..offset + 512];
+        if block.iter().all(|byte| *byte == 0) {
+            return None;
+        }
+        let size = if block[124] & 0x80 != 0 {
+            block[125..136]
+                .iter()
+                .fold(0usize, |acc, byte| (acc << 8) | *byte as usize)
+        } else {
+            usize::from_str_radix(field(block, 124, 136).trim(), 8).unwrap_or(0)
+        };
+        let data_start = offset + 512;
+        let data_end = (data_start + size).min(tar.len());
+        let data = &tar[data_start..data_end];
+        let next = data_start + size.div_ceil(512) * 512;
+        match block[156] {
+            b'L' => {
+                long_name = Some(field(data, 0, data.len()));
+            }
+            b'x' => {
+                let text = String::from_utf8_lossy(data);
+                for record in text.lines() {
+                    if let Some((_, rest)) = record.split_once(' ') {
+                        if let Some(path) = rest.strip_prefix("path=") {
+                            long_name = Some(path.to_string());
+                        }
+                    }
+                }
+            }
+            b'g' => {}
+            _ => {
+                let entry_name = long_name.take().unwrap_or_else(|| {
+                    let short = field(block, 0, 100);
+                    let prefix = if &block[257..262] == b"ustar" {
+                        field(block, 345, 500)
+                    } else {
+                        String::new()
+                    };
+                    if prefix.is_empty() {
+                        short
+                    } else {
+                        format!("{prefix}/{short}")
+                    }
+                });
+                if entry_name == name {
+                    return Some(data);
+                }
+            }
+        }
+        offset = next;
+    }
+    None
+}

@@ -303,6 +303,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantFiltration" => Some(run_variant_filtration),
         "CollectAllelicCounts" => Some(run_collect_allelic_counts),
         "FilterIntervals" => Some(run_filter_intervals),
+        "PathSeqBuildReferenceTaxonomy" => Some(run_path_seq_build_reference_taxonomy),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -503,6 +504,10 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_path_seq_build_reference_taxonomy(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::path_seq_build_reference_taxonomy(&parsed("PathSeqBuildReferenceTaxonomy", args)?)
 }
 
 fn run_get_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {

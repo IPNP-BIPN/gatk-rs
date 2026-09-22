@@ -17,6 +17,9 @@ gatk-barclay = { path = "../gatk-barclay" }
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
 gatk-tools = { path = "../gatk-tools" }
+# PathSeqBuildReferenceTaxonomy reads its catalogs through `GZIPInputStream` and its taxonomy
+# dump as a tar.gz, neither of which is BGZF.
+flate2 = "1"
 htsjdk-bam.workspace = true
 # The file plumbing under a runner: a block-compressed input is decompressed before the port's own
 # function is handed its text.

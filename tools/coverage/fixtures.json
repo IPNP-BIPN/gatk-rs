@@ -2705,6 +2705,46 @@
       ],
       "--variant": [],
       "--read-index": []
+    },
+    "PathSeqBuildReferenceTaxonomy": {
+      "$why": [
+        "pathseq.fasta names its contigs in every form the tool parses (ref|, taxid|, both, and a",
+        "plain first word), and pathseq2.fasta keeps only the two a taxon id places plus a third, so",
+        "a row holding it with no catalog that knows its accessions still has taxa to write.",
+        "The catalogs take `null` as their second value because the tool tests the FIELD for null:",
+        "`null` is the argument absent, which is the only way a row reaches one catalog alone, and",
+        "both absent is the refusal the parser never raises. An empty string would be a path, and",
+        "the tool would refuse to open it instead.",
+        "refseq.catalog.gz is gzipped and genbank.catalog is not, because the tool gunzips by the",
+        "file's NAME: the pair covers both sides of makeReaderMaybeGzipped.",
+        "taxdump2.tar.gz renames a species and puts a genus above it, so the two dumps write",
+        "different trees over the same contigs, and the minimum length is 0 and 500, the two sides",
+        "of the contigs' lengths (100 to 1000) where only non-viruses are dropped."
+      ],
+      "--reference": [
+        "/work/fixtures/pathseq.fasta",
+        "/work/fixtures/pathseq2.fasta"
+      ],
+      "--output": [
+        "/work/out/taxonomy.db",
+        "/work/out/taxonomy2.db"
+      ],
+      "--refseq-catalog": [
+        "/work/fixtures/refseq.catalog.gz",
+        "null"
+      ],
+      "--genbank-catalog": [
+        "/work/fixtures/genbank.catalog",
+        "null"
+      ],
+      "--tax-dump": [
+        "/work/fixtures/taxdump.tar.gz",
+        "/work/fixtures/taxdump2.tar.gz"
+      ],
+      "--min-non-virus-contig-length": [
+        "0",
+        "500"
+      ]
     }
   },
   "constraints": [
