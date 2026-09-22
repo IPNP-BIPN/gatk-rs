@@ -216,7 +216,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | not measured |
-| `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy | 1 | not measured |
+| `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | not measured |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) |
 | `PostProcessReadsForRSEM` | record-transform | oracle-backed | post-process-reads-for-rsem | 1 | t=2, 20/20 rows (100%) |
 | `PreprocessIntervals` | interval-utility | oracle-backed | preprocess-intervals | 1 | t=2, 20/20 rows (100%) |

@@ -2,8 +2,26 @@
 //! `PSTree` and `PSPathogenReferenceTaxonProperties` (GATK 4.6.2.0).
 //!
 //! The NCBI taxonomy dump and one or two accession catalogs turned into the tree PathSeq scores
-//! against, trimmed to the taxa the reference actually holds. The tool writes a Kryo serialisation,
-//! which is not what is ported: what is here is the tree it holds and the map beside it.
+//! against, trimmed to the taxa the reference actually holds. The tool writes a Kryo serialisation
+//! of the tree and the map beside it; the bytes are [`crate::pathseq_kryo`]'s.
+//!
+//! # Every map the file's order passes through is a `HashMap`
+//!
+//! The database carries its nodes, each node's children and the contig-to-taxon map in their
+//! maps' own iteration order, and those orders are set upstream: the order the properties map
+//! hands `addNode` its taxa decides where each node lands in the tree's map, and the order a
+//! taxon's contigs come out of ITS map decides the order they reach the output one. So every
+//! collection on that path is a [`JavaHashMap`], built with the constructor the reference uses,
+//! because the capacity a map was built with is part of its order:
+//!
+//! - the properties map and the output map are `new HashMap<>()`;
+//! - a taxon's contigs are `new HashMap<>(SVUtils.hashMapCapacity(1))`, which is TWO buckets;
+//! - `retainNodes` rebuilds the tree as `new HashMap<>(idsToKeep.size())` and every node's children
+//!   as `new HashSet<>(children)` before removing the ones it drops. It runs THREE times, the
+//!   middle one inside `checkStructure`, and each run re-sizes every table.
+//!
+//! Sets consulted only for membership (the reachable nodes, the relevant ones, the accessions not
+//! found) are ordinary sets: their order reaches nothing.
 //!
 //! # The map is keyed by the contig name, not by the accession
 //!
@@ -43,6 +61,7 @@
 //! reachable contig accounts for. A contig whose path holds the virus node, 10239, is never
 //! dropped whatever its length.
 
+use gatk_engine::java_hash::{HashOrderError, JavaHashMap};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// `PSTree.NULL_NODE`.
@@ -155,14 +174,27 @@ fn split_bars(text: &str) -> Vec<String> {
 }
 
 /// `PSPathogenReferenceTaxonProperties`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct TaxonProperties {
     pub name: Option<String>,
     pub rank: Option<String>,
     pub parent: i32,
     /// The running total, which `addAccession` adds to whether or not the name was already there.
     pub length: i64,
-    pub accessions: BTreeMap<String, i64>,
+    /// `new HashMap<>(SVUtils.hashMapCapacity(1))`, which asks for two buckets.
+    pub accessions: JavaHashMap<String, i64>,
+}
+
+impl Default for TaxonProperties {
+    fn default() -> Self {
+        TaxonProperties {
+            name: None,
+            rank: None,
+            parent: NULL_NODE,
+            length: 0,
+            accessions: JavaHashMap::with_capacity(2),
+        }
+    }
 }
 
 impl TaxonProperties {
@@ -179,38 +211,56 @@ impl TaxonProperties {
     }
 }
 
+/// `addReferenceAccessionToTaxon`: `putIfAbsent`, then the accession.
 fn add_reference_accession(
-    properties: &mut BTreeMap<i32, TaxonProperties>,
+    properties: &mut JavaHashMap<i32, TaxonProperties>,
     tax_id: i32,
     name: &str,
     length: i64,
 ) {
+    if !properties.contains_key(&tax_id) {
+        properties.insert(tax_id, TaxonProperties::default());
+    }
     properties
-        .entry(tax_id)
-        .or_default()
+        .get_mut(&tax_id)
+        .expect("just inserted")
         .add_accession(name, length);
 }
 
 /// One node of `PSTree`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct TreeNode {
     pub name: Option<String>,
     pub rank: Option<String>,
     pub parent: i32,
     pub length: i64,
-    pub children: BTreeSet<i32>,
+    /// A `HashSet<Integer>`, so its order is the file's.
+    pub children: JavaHashMap<i32, ()>,
+}
+
+impl TreeNode {
+    /// `PSTreeNode.copy`, whose children are `new HashSet<>(this.children)`.
+    fn copy(&self) -> TreeNode {
+        TreeNode {
+            name: self.name.clone(),
+            rank: self.rank.clone(),
+            parent: self.parent,
+            length: self.length,
+            children: JavaHashMap::copy_of(self.children.keys().collect::<Vec<_>>().into_iter()),
+        }
+    }
 }
 
 /// `PSTree`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PsTree {
     root: i32,
-    nodes: BTreeMap<i32, TreeNode>,
+    nodes: JavaHashMap<i32, TreeNode>,
 }
 
 impl PsTree {
     pub fn new(root: i32) -> Self {
-        let mut nodes = BTreeMap::new();
+        let mut nodes = JavaHashMap::new();
         nodes.insert(
             root,
             TreeNode {
@@ -218,7 +268,7 @@ impl PsTree {
                 rank: Some("root".to_string()),
                 parent: NULL_NODE,
                 length: 0,
-                children: BTreeSet::new(),
+                children: JavaHashMap::new(),
             },
         );
         PsTree { root, nodes }
@@ -226,16 +276,46 @@ impl PsTree {
 
     /// `addNode`, which creates a placeholder for a parent it has not seen.
     pub fn add_node(&mut self, id: i32, name: &str, parent: i32, length: i64, rank: &str) {
-        let node = self.nodes.entry(id).or_default();
+        if !self.nodes.contains_key(&id) {
+            self.nodes.insert(id, TreeNode::default());
+        }
+        let node = self.nodes.get_mut(&id).expect("just inserted");
         node.name = Some(name.to_string());
         node.parent = parent;
         node.length = length;
         node.rank = Some(rank.to_string());
-        self.nodes.entry(parent).or_default().children.insert(id);
+        if !self.nodes.contains_key(&parent) {
+            self.nodes.insert(parent, TreeNode::default());
+        }
+        self.nodes
+            .get_mut(&parent)
+            .expect("just inserted")
+            .children
+            .insert(id, ());
     }
 
+    /// `getNodeIDs`, in the tree map's own order.
     pub fn node_ids(&self) -> Vec<i32> {
         self.nodes.keys().copied().collect()
+    }
+
+    pub fn root(&self) -> i32 {
+        self.root
+    }
+
+    /// The nodes in the order the serializer writes them.
+    pub fn nodes(&self) -> impl Iterator<Item = (&i32, &TreeNode)> {
+        self.nodes.iter()
+    }
+
+    /// Whether every order this tree would write was measured: the node map's and each node's
+    /// children's.
+    pub fn check_order(&self) -> Result<(), HashOrderError> {
+        self.nodes.check()?;
+        for (_, node) in self.nodes.iter() {
+            node.children.check()?;
+        }
+        Ok(())
     }
 
     pub fn has_node(&self, id: i32) -> bool {
@@ -288,7 +368,7 @@ impl PsTree {
                 continue;
             }
             if let Some(node) = self.nodes.get(&id) {
-                queue.extend(node.children.iter().copied());
+                queue.extend(node.children.keys().copied());
             }
             visited.insert(id);
         }
@@ -309,14 +389,17 @@ impl PsTree {
     }
 
     /// `retainNodes`, which also cuts the pointers that would dangle.
+    ///
+    /// The new map is `new HashMap<>(idsToKeep.size())` filled in the old one's order, and every
+    /// node kept is a `copy()`, so each table is re-sized by what it holds now.
     pub fn retain_nodes(&mut self, keep: &BTreeSet<i32>) {
-        let mut kept: BTreeMap<i32, TreeNode> = BTreeMap::new();
-        for (id, node) in &self.nodes {
+        let mut kept: JavaHashMap<i32, TreeNode> = JavaHashMap::with_capacity(keep.len());
+        for (id, node) in self.nodes.iter() {
             if !keep.contains(id) {
                 continue;
             }
-            let mut copy = node.clone();
-            copy.children.retain(|child| keep.contains(child));
+            let mut copy = node.copy();
+            copy.children.retain(|child, _| keep.contains(child));
             if !keep.contains(&copy.parent) {
                 copy.parent = NULL_NODE;
             }
@@ -331,7 +414,7 @@ impl PsTree {
 #[allow(clippy::type_complexity)]
 pub fn parse_reference_records(
     records: &[(String, i64)],
-    properties: &mut BTreeMap<i32, TaxonProperties>,
+    properties: &mut JavaHashMap<i32, TaxonProperties>,
 ) -> Result<BTreeMap<String, (String, i64)>, TaxonomyError> {
     let mut by_accession = BTreeMap::new();
     for (name, length) in records {
@@ -391,7 +474,7 @@ pub fn parse_catalog(
     text: &str,
     format: CatalogFormat,
     by_accession: &BTreeMap<String, (String, i64)>,
-    properties: &mut BTreeMap<i32, TaxonProperties>,
+    properties: &mut JavaHashMap<i32, TaxonProperties>,
     not_found_in: Option<&BTreeSet<String>>,
 ) -> Result<BTreeSet<String>, TaxonomyError> {
     let mut not_found: BTreeSet<String> = match not_found_in {
@@ -448,7 +531,7 @@ fn split_with_limit(text: &str, separator: char, limit: usize) -> Vec<String> {
 /// `parseNamesFile`, which keeps only the scientific names.
 pub fn parse_names(
     text: &str,
-    properties: &mut BTreeMap<i32, TaxonProperties>,
+    properties: &mut JavaHashMap<i32, TaxonProperties>,
 ) -> Result<(), TaxonomyError> {
     for line in text.lines() {
         let tokens = split_bars(line);
@@ -476,7 +559,7 @@ pub fn parse_names(
 /// `parseNodesFile`, which returns the taxa it had never seen.
 pub fn parse_nodes(
     text: &str,
-    properties: &mut BTreeMap<i32, TaxonProperties>,
+    properties: &mut JavaHashMap<i32, TaxonProperties>,
 ) -> Result<Vec<i32>, TaxonomyError> {
     let mut not_found = Vec::new();
     for line in text.lines() {
@@ -490,11 +573,12 @@ pub fn parse_nodes(
         let tax_id = parse_taxon_id(&tokens[0])?;
         let parent = parse_taxon_id(&tokens[1])?;
         let rank = tokens[2].clone();
-        let node = properties.entry(tax_id).or_insert_with(|| {
+        if !properties.contains_key(&tax_id) {
             // A node the reference and the names file never mentioned is named after its id.
             not_found.push(tax_id);
-            TaxonProperties::named(&format!("tax_{tax_id}"))
-        });
+            properties.insert(tax_id, TaxonProperties::named(&format!("tax_{tax_id}")));
+        }
+        let node = properties.get_mut(&tax_id).expect("just inserted");
         node.rank = Some(rank);
         if tax_id != ROOT_ID {
             // The root's parent stays unset.
@@ -506,10 +590,10 @@ pub fn parse_nodes(
 
 /// `buildTaxonomicTree`.
 pub fn build_taxonomic_tree(
-    properties: &BTreeMap<i32, TaxonProperties>,
+    properties: &JavaHashMap<i32, TaxonProperties>,
 ) -> Result<PsTree, TaxonomyError> {
     let mut tree = PsTree::new(ROOT_ID);
-    for (tax_id, taxon) in properties {
+    for (tax_id, taxon) in properties.iter() {
         if *tax_id == ROOT_ID {
             continue;
         }
@@ -522,9 +606,12 @@ pub fn build_taxonomic_tree(
         }
     }
     tree.remove_unreachable_nodes();
+    // `checkStructure` finds nothing left to remove, but it removes it anyway, and that rebuild
+    // re-sizes every table.
+    tree.remove_unreachable_nodes();
 
     let mut relevant: BTreeSet<i32> = BTreeSet::new();
-    for (tax_id, taxon) in properties {
+    for (tax_id, taxon) in properties.iter() {
         if !taxon.accessions.is_empty() && tree.has_node(*tax_id) {
             relevant.extend(tree.path_of(*tax_id));
         }
@@ -537,21 +624,20 @@ pub fn build_taxonomic_tree(
 }
 
 /// `removeUnusedTaxIds`.
-pub fn remove_unused_tax_ids(properties: &mut BTreeMap<i32, TaxonProperties>, tree: &PsTree) {
-    let kept: BTreeSet<i32> = tree.node_ids().into_iter().collect();
-    properties.retain(|tax_id, _| kept.contains(tax_id));
+pub fn remove_unused_tax_ids(properties: &mut JavaHashMap<i32, TaxonProperties>, tree: &PsTree) {
+    properties.retain(|tax_id, _| tree.has_node(*tax_id));
 }
 
 /// `buildAccessionToTaxIdMap`, which is the map keyed by contig name.
 pub fn build_accession_to_tax_id(
-    properties: &BTreeMap<i32, TaxonProperties>,
+    properties: &JavaHashMap<i32, TaxonProperties>,
     tree: &PsTree,
     min_non_virus_contig_length: i64,
-) -> BTreeMap<String, i32> {
-    let mut map = BTreeMap::new();
-    for (tax_id, taxon) in properties {
+) -> JavaHashMap<String, i32> {
+    let mut map = JavaHashMap::new();
+    for (tax_id, taxon) in properties.iter() {
         let is_virus = tree.path_of(*tax_id).contains(&VIRUS_ID);
-        for (name, length) in &taxon.accessions {
+        for (name, length) in taxon.accessions.iter() {
             if is_virus || *length >= min_non_virus_contig_length {
                 map.insert(name.clone(), *tax_id);
             }
@@ -571,11 +657,11 @@ pub fn build(
     names: &str,
     nodes: &str,
     min_non_virus_contig_length: i64,
-) -> Result<(PsTree, BTreeMap<String, i32>, BTreeSet<String>), TaxonomyError> {
+) -> Result<(PsTree, JavaHashMap<String, i32>, BTreeSet<String>), TaxonomyError> {
     if refseq_catalog.is_none() && genbank_catalog.is_none() {
         return Err(TaxonomyError::NoCatalog);
     }
-    let mut properties: BTreeMap<i32, TaxonProperties> = BTreeMap::new();
+    let mut properties: JavaHashMap<i32, TaxonProperties> = JavaHashMap::new();
     let by_accession = parse_reference_records(contigs, &mut properties)?;
     let mut not_found: Option<BTreeSet<String>> = None;
     if let Some(text) = refseq_catalog {
