@@ -3219,6 +3219,49 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "MTLowHeteroplasmyFilterTool": {
+      "$why": [
+        "--variant is mito.vcf, whose five unfiltered sites below 0.1 are past the default allowance",
+        "of three, and mito_plain.vcf, the same calls without AS_FilterStatus, whose merge the filter",
+        "refuses once the file fails. --max-allowed-low-hets is 3 and 10, which the five sites do not",
+        "reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing:",
+        "the field is a private final with a constant initialiser, so javac folded every read of it.",
+        "--create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for",
+        "the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/mito.vcf",
+        "/work/fixtures/mito_plain.vcf"
+      ],
+      "--max-allowed-low-hets": [
+        "3",
+        "10"
+      ],
+      "--low-het-threshold": [
+        "0.1",
+        "0.6"
+      ],
+      "--output": [
+        "/work/out/lowhet.vcf",
+        "/work/out/lowhet.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
