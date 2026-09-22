@@ -394,64 +394,60 @@ jobs:
             suites: "split-cram collect-f1r2-counts filter-funcotations pathseq-build-reference-taxonomy kryo-stream"
           - group: oracle-backed
             index: "47/60"
-            slug: "pathseq-build-kmers-gtf-to-bed-compose-str-table-file-cram-issue-8768-detector-add-flow-base-quality"
-            suites: "pathseq-build-kmers gtf-to-bed compose-str-table-file cram-issue-8768-detector add-flow-base-quality"
+            slug: "pathseq-taxonomy-kryo-pathseq-build-kmers-gtf-to-bed-compose-str-table-file-cram-issue-8768-detector"
+            suites: "pathseq-taxonomy-kryo pathseq-build-kmers gtf-to-bed compose-str-table-file cram-issue-8768-detector"
           - group: oracle-backed
             index: "48/60"
-            slug: "gene-expression-evaluation-funcotator-data-source-downloader-sv-stratify-add-flow-snv-quality-calculate-genotype-posteriors"
-            suites: "gene-expression-evaluation funcotator-data-source-downloader sv-stratify add-flow-snv-quality calculate-genotype-posteriors"
+            slug: "add-flow-base-quality-gene-expression-evaluation-funcotator-data-source-downloader-sv-stratify-add-flow-snv-quality"
+            suites: "add-flow-base-quality gene-expression-evaluation funcotator-data-source-downloader sv-stratify add-flow-snv-quality"
           - group: oracle-backed
             index: "49/60"
-            slug: "family-priors-sv-cluster-grouped-sv-cluster-sv-concordance-sv-annotate"
-            suites: "family-priors sv-cluster grouped-sv-cluster sv-concordance sv-annotate"
+            slug: "calculate-genotype-posteriors-family-priors-sv-cluster-grouped-sv-cluster-sv-concordance"
+            suites: "calculate-genotype-posteriors family-priors sv-cluster grouped-sv-cluster sv-concordance"
           - group: oracle-backed
             index: "50/60"
-            slug: "joint-germline-cnv-segmentation-collect-sv-evidence-filter-alignment-artifacts-learn-read-orientation-model-brent-optimizer"
-            suites: "joint-germline-cnv-segmentation collect-sv-evidence filter-alignment-artifacts learn-read-orientation-model brent-optimizer"
+            slug: "sv-annotate-joint-germline-cnv-segmentation-collect-sv-evidence-filter-alignment-artifacts-learn-read-orientation-model"
+            suites: "sv-annotate joint-germline-cnv-segmentation collect-sv-evidence filter-alignment-artifacts learn-read-orientation-model"
           - group: oracle-backed
             index: "51/60"
-            slug: "create-somatic-panel-of-normals-ramped-haplotype-caller-series-stats-depth-of-coverage-vcf-comparator"
-            suites: "create-somatic-panel-of-normals ramped-haplotype-caller series-stats depth-of-coverage vcf-comparator"
+            slug: "brent-optimizer-create-somatic-panel-of-normals-ramped-haplotype-caller-series-stats-depth-of-coverage"
+            suites: "brent-optimizer create-somatic-panel-of-normals ramped-haplotype-caller series-stats depth-of-coverage"
           - group: oracle-backed
             index: "52/60"
-            slug: "variant-annotator-reblock-gvcf-combine-gvcfs-variant-eval-genotype-gvcfs"
-            suites: "variant-annotator reblock-gvcf combine-gvcfs variant-eval genotype-gvcfs"
+            slug: "vcf-comparator-variant-annotator-reblock-gvcf-combine-gvcfs-variant-eval"
+            suites: "vcf-comparator variant-annotator reblock-gvcf combine-gvcfs variant-eval"
           - group: oracle-backed
             index: "53/60"
-            slug: "structural-variant-discoverer-funcotate-segments-extract-variant-annotations-variant-recalibrator-haplotype-based-variant-recaller"
-            suites: "structural-variant-discoverer funcotate-segments extract-variant-annotations variant-recalibrator haplotype-based-variant-recaller"
+            slug: "genotype-gvcfs-structural-variant-discoverer-funcotate-segments-extract-variant-annotations-variant-recalibrator"
+            suites: "genotype-gvcfs structural-variant-discoverer funcotate-segments extract-variant-annotations variant-recalibrator"
           - group: oracle-backed
             index: "54/60"
-            slug: "flow-feature-mapper-flow-pairhmm-align-reads-to-haplotypes-calibrate-dragstr-model-analyze-saturation-mutagenesis-create-read-count-panel-of-normals"
-            suites: "flow-feature-mapper flow-pairhmm-align-reads-to-haplotypes calibrate-dragstr-model analyze-saturation-mutagenesis create-read-count-panel-of-normals"
+            slug: "haplotype-based-variant-recaller-flow-feature-mapper-flow-pairhmm-align-reads-to-haplotypes-calibrate-dragstr-model-analyze-saturation-mutagenesis"
+            suites: "haplotype-based-variant-recaller flow-feature-mapper flow-pairhmm-align-reads-to-haplotypes calibrate-dragstr-model analyze-saturation-mutagenesis"
           - group: oracle-backed
             index: "55/60"
-            slug: "ground-truth-reads-builder-ground-truth-scorer-gnarly-genotyper-model-segments-local-assembler"
-            suites: "ground-truth-reads-builder ground-truth-scorer gnarly-genotyper model-segments local-assembler"
+            slug: "create-read-count-panel-of-normals-ground-truth-reads-builder-ground-truth-scorer-gnarly-genotyper-model-segments"
+            suites: "create-read-count-panel-of-normals ground-truth-reads-builder ground-truth-scorer gnarly-genotyper model-segments"
           - group: oracle-backed
             index: "56/60"
-            slug: "funcotator-main-dispatch-main-catalogue-gatk-config-main-usage"
-            suites: "funcotator main-dispatch main-catalogue gatk-config main-usage"
+            slug: "local-assembler-funcotator-main-dispatch-main-catalogue-gatk-config"
+            suites: "local-assembler funcotator main-dispatch main-catalogue gatk-config"
           - group: oracle-backed
             index: "57/60"
-            slug: "sequence-dictionary-validation-interval-arguments-filter-resolution-expanded-command-line-main-non-user"
-            suites: "sequence-dictionary-validation interval-arguments filter-resolution expanded-command-line main-non-user"
+            slug: "main-usage-sequence-dictionary-validation-interval-arguments-filter-resolution-expanded-command-line"
+            suites: "main-usage sequence-dictionary-validation interval-arguments filter-resolution expanded-command-line"
           - group: oracle-backed
             index: "58/60"
-            slug: "main-entry-splitting-index-allele-frequency-qc-calculate-contamination-tool-argument-declarations"
-            suites: "main-entry splitting-index allele-frequency-qc calculate-contamination tool-argument-declarations"
+            slug: "main-non-user-main-entry-splitting-index-allele-frequency-qc-calculate-contamination"
+            suites: "main-non-user main-entry splitting-index allele-frequency-qc calculate-contamination"
           - group: oracle-backed
             index: "59/60"
-            slug: "usage-text-bwa-index-image-tool-argument-enums-tool-argument-value-classes-plugin-argument-ownership"
-            suites: "usage-text bwa-index-image tool-argument-enums tool-argument-value-classes plugin-argument-ownership"
+            slug: "tool-argument-declarations-usage-text-bwa-index-image-tool-argument-enums-tool-argument-value-classes"
+            suites: "tool-argument-declarations usage-text bwa-index-image tool-argument-enums tool-argument-value-classes"
           - group: oracle-backed
             index: "60/60"
-            slug: "read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals"
-            suites: "read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals"
-          - group: golden-pending
-            index: "1/1"
-            slug: "pathseq-taxonomy-kryo"
-            suites: "pathseq-taxonomy-kryo"
+            slug: "plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals"
+            suites: "plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals"
     steps:
       - uses: actions/checkout@v7
 

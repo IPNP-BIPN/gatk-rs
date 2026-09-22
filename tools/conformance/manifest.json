@@ -5437,28 +5437,21 @@
     },
     {
       "id": "pathseq-taxonomy-kryo",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "the taxonomy database PathSeqBuildReferenceTaxonomy writes, byte for byte",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "PathSeqBuildReferenceTaxonomy"
       ],
-      "why": "kryo-stream pins Kryo's encoding of a PSTaxonomyDatabase built by hand. What it cannot pin is the order the tool's own maps reach: the nodes, each node's children and the contig-to-taxon entries are written in HashMap iteration order, and that order depends on the table's size when it is iterated. The tool sizes maps at construction (new HashMap<>(n), and new HashMap<>(SVUtils.hashMapCapacity(1)) for a taxon's contigs, which is two buckets), copies them (PSTreeNode.copy is new HashSet<>(children)), trims them three times through retainNodes, the middle one inside checkStructure, and removes from the properties map with retainAll. HashMap's contract leaves that order unspecified, so it is measured here as an observable of the pinned container, the way docs/an-unspecified-order-that-reaches-the-output.md measures a HashSet's, and the port's JavaHashMap is the hypothesis this golden confirms or refutes (IPNP-BIPN/gatk-rs#1181). Two halves: probes that build one map per constructor the tool uses, insert, remove and print the order, each row carrying its own inputs; and whole runs of the tool whose .db file is printed as hex.",
-      "expect_contains": [
-        "probe\tfixture-taxa\tint\tdefault\t",
-        "probe\tcopy-twenty-trimmed\tint\tcopy\t",
-        "probe\tnames-sized-two\tstring\tsized:2\t",
-        "fixture\twide-nodes.dmp=",
-        "contig\twide\t0=",
-        "stream\tsmall-both-catalogs=",
-        "stream\twide-both-catalogs=",
-        "stream\twide-min-length-500="
-      ],
+      "why": "The port now writes the file PathSeqBuildReferenceTaxonomy writes, byte for byte, on all six runs. Frozen from the candidate artefact of run 35754529105. Two findings the measurement made. Every probe replayed through the port's JavaHashMap, so the table the file's order depends on -- allocation at the requested power of two, doubling past three quarters, no shrink on removal -- holds for every constructor the tool uses. And the file carries NO reference marker: writeTaxonomyDatabase builds its own Kryo and calls setReferences(false) before its first write, unlike PSKmerUtils.writeKryoObject, so the database opens with the root's string (8231) where kryo-stream's hand-built case, written through a default Kryo, opens with 01. kryo-stream pins Kryo's encoding of a PSTaxonomyDatabase built by hand. What it cannot pin is the order the tool's own maps reach: the nodes, each node's children and the contig-to-taxon entries are written in HashMap iteration order, and that order depends on the table's size when it is iterated. The tool sizes maps at construction (new HashMap<>(n), and new HashMap<>(SVUtils.hashMapCapacity(1)) for a taxon's contigs, which is two buckets), copies them (PSTreeNode.copy is new HashSet<>(children)), trims them three times through retainNodes, the middle one inside checkStructure, and removes from the properties map with retainAll. HashMap's contract leaves that order unspecified, so it is measured here as an observable of the pinned container, the way docs/an-unspecified-order-that-reaches-the-output.md measures a HashSet's, and the port's JavaHashMap is the hypothesis this golden confirms or refutes (IPNP-BIPN/gatk-rs#1181). Two halves: probes that build one map per constructor the tool uses, insert, remove and print the order, each row carrying its own inputs; and whole runs of the tool whose .db file is printed as hex.",
+      "compare": {
+        "mode": "lines"
+      },
       "cases": [
         {
           "dump": "PathSeqTaxonomyKryoDump",
-          "golden": null,
-          "why": "Eighteen probes and six runs. The probes cover the default table below and across both growth points, keys that share low bits, keys above 65535 whose high half decides the bucket, tables sized at one, two, three, seventeen and forty, new HashSet<>(list) with and without removals, a table grown to thirty and trimmed to three, and the same shapes over contig names. The runs are the small taxonomy pathseq-build-reference-taxonomy reads back, under both catalogs, a minimum length of five hundred and RefSeq alone, and a wide one of forty-nine taxa built to push every table past a growth point: twenty species under one genus, taxa holding three contigs, more than forty entries in the output map, a branch with no contigs trimmed away, and a subtree under an undeclared parent removed as unreachable. No golden yet: this is the measurement commit, and the freeze follows from a real x86-64 runner."
+          "golden": "crates/gatk-tools/tests/data/pathseq_taxonomy_kryo.txt.gz",
+          "why": "Eighteen probes and six runs. The probes cover the default table below and across both growth points, keys that share low bits, keys above 65535 whose high half decides the bucket, tables sized at one, two, three, seventeen and forty, new HashSet<>(list) with and without removals, a table grown to thirty and trimmed to three, and the same shapes over contig names. The runs are the small taxonomy pathseq-build-reference-taxonomy reads back, under both catalogs, a minimum length of five hundred and RefSeq alone, and a wide one of forty-nine taxa built to push every table past a growth point: twenty species under one genus, taxa holding three contigs, more than forty entries in the output map, a branch with no contigs trimmed away, and a subtree under an undeclared parent removed as unreachable. From the pinned container on a real x86-64 runner, published as the candidate-goldens artefact of run 35754529105."
         }
       ]
     },
