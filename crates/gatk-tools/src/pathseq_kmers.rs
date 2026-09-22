@@ -96,21 +96,27 @@ pub fn reverse_complement_long(value: u64) -> u64 {
 pub enum KmerError {
     /// `canonical`, which the tool reaches only once it is already streaming.
     EvenKmerSize,
-    /// `PSUtils.parseMask`.
+    /// `PSUtils.parseMask`, over an index that parsed.
     InvalidMaskIndex { index: String },
+    /// `Integer.parseInt`, over a field of the mask that is not an int.
+    NotAnInt { field: String },
     /// The container, when the reference produced no k-mer at all.
     EmptySet,
 }
 
 impl KmerError {
-    pub fn java_class(&self) -> &str {
-        "java.lang.IllegalArgumentException"
+    pub fn java_class(&self) -> &'static str {
+        match self {
+            KmerError::NotAnInt { .. } => "java.lang.NumberFormatException",
+            _ => "java.lang.IllegalArgumentException",
+        }
     }
 
     pub fn message(&self) -> String {
         match self {
             KmerError::EvenKmerSize => "Kmer length must be odd to canonicalize.".to_string(),
             KmerError::InvalidMaskIndex { index } => format!("Invalid kmer mask index: {index}"),
+            KmerError::NotAnInt { field } => format!("For input string: \"{field}\""),
             KmerError::EmptySet => "Number of elements must be greater than 0".to_string(),
         }
     }
@@ -174,18 +180,22 @@ pub fn get_mask(positions: &[u8], kmer_size: usize) -> Kmer {
 }
 
 /// `PSUtils.parseMask`, whose empty string is no mask at all.
+///
+/// Three things are Java's rather than the tool's: `String.split` drops TRAILING empty fields, so
+/// `"5,"` is one index and `","` is none; a field `Integer.parseInt` refuses is a
+/// `NumberFormatException` rather than the tool's own refusal; and the int is cast to a BYTE before
+/// it is checked, so `257` is index 1 while the message still quotes the field as written.
 pub fn parse_mask(argument: &str, kmer_size: usize) -> Result<Vec<u8>, KmerError> {
-    if argument.is_empty() {
-        return Ok(Vec::new());
+    let mut fields: Vec<&str> = argument.split(',').collect();
+    while fields.last() == Some(&"") {
+        fields.pop();
     }
     let mut positions = Vec::new();
-    for field in argument.split(',') {
-        let index = field
-            .parse::<i32>()
-            .map_err(|_| KmerError::InvalidMaskIndex {
-                index: field.to_string(),
-            })?;
-        if index < 0 || index >= kmer_size as i32 {
+    for field in fields {
+        let index = field.parse::<i32>().map_err(|_| KmerError::NotAnInt {
+            field: field.to_string(),
+        })? as i8;
+        if index < 0 || index as i32 >= kmer_size as i32 {
             return Err(KmerError::InvalidMaskIndex {
                 index: field.to_string(),
             });

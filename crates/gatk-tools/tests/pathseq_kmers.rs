@@ -140,6 +140,27 @@ fn a_mask_index_outside_the_kmer() {
     assert!(parse_mask("5", 5).is_err());
 }
 
+/// What `parseMask` inherits from `String.split`, `Integer.parseInt` and the cast to `byte`, read
+/// from the JDK rather than measured: the suite's refusals are the range check alone.
+#[test]
+fn the_mask_is_split_parsed_and_cast_as_java_does() {
+    assert_eq!(parse_mask("", 5), Ok(vec![]));
+    assert_eq!(parse_mask(",", 5), Ok(vec![]));
+    assert_eq!(parse_mask("1,3,,", 5), Ok(vec![1, 3]));
+    assert_eq!(parse_mask("257", 5), Ok(vec![1]));
+    assert_eq!(
+        parse_mask("128", 31),
+        Err(KmerError::InvalidMaskIndex {
+            index: "128".to_string()
+        })
+    );
+    let error = parse_mask(",1", 5).expect_err("an empty leading field");
+    assert_eq!(
+        format!("{}:{}", error.java_class(), error.message()),
+        "java.lang.NumberFormatException:For input string: \"\""
+    );
+}
+
 #[test]
 fn a_size_longer_than_every_contig_writes_nothing() {
     let text = golden();
