@@ -1511,6 +1511,61 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("odd_stats.list"),
                 "/work/fixtures/a.stats\n/work/fixtures/odd.stats\n", StandardCharsets.UTF_8);
+        // Segment files for the copy-number utilities, which the codec reads only under a `.seg`,
+        // `.maf` or `.maf.annotated` name: `regions.tsv` holds the same rows and is refused by
+        // its name alone. `regions.seg` is unsorted, overlaps itself in a chain, abuts, and has a
+        // chr2 row that a chr1-only dictionary sorts last; `regions2.seg` uses another spelling of
+        // the locatable columns and carries comments. `tumour.seg` and `normal.seg` are called
+        // segments: the normal amplification shares both breakpoints of one tumour segment within
+        // a few bases and reciprocally overlaps another, and its deletion matches nothing.
+        final String regions = "CONTIG\tSTART\tEND\tname\tvalue\tCALL\n"
+                + "chr1\t300\t400\tc\t1.5\t-\n"
+                + "chr1\t1\t100\ta\t0.5\t+\n"
+                + "chr1\t50\t150\tb\t0.5\t+\n"
+                + "chr1\t120\t200\tb\t0.7\t+\n"
+                + "chr1\t401\t500\td\t1.5\t-\n"
+                + "chr2\t1\t100\te\t2.0\t0\n";
+        Files.writeString(dir.resolve("regions.seg"), regions, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("regions.tsv"), regions, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("regions2.seg"),
+                "#a note\nChromosome\tStart_Position\tEnd_Position\tname\tCALL\n"
+                        + "chr1\t10\t60\tx\t+\n"
+                        + "chr1\t61\t90\ty\t+\n"
+                        + "chr1\t500\t900\tz\t-\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("annotations.list"), "CALL\nname\n", StandardCharsets.UTF_8);
+        // A reference naming both contigs the segment files use, for the tools that require one:
+        // under `reference.fasta` alone a file with a chr2 row is refused by the dictionary sort.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter both =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("two_contigs.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 30000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            both.startSequence("chr1").appendBases(bases.toString());
+            both.startSequence("chr2").appendBases(bases.toString());
+        }
+        Files.writeString(dir.resolve("tumour.seg"),
+                "CONTIG\tSTART\tEND\tCALL\tMEAN\n"
+                        + "chr1\t1\t1000\t+\t0.9\n"
+                        + "chr1\t1001\t5000\t0\t0.0\n"
+                        + "chr1\t5001\t8000\t+\t0.8\n"
+                        + "chr1\t8001\t9000\t-\t-0.9\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("normal.seg"),
+                "CONTIG\tSTART\tEND\tCALL\n"
+                        + "chr1\t5\t995\t+\n"
+                        + "chr1\t5200\t8100\t+\n"
+                        + "chr1\t20000\t21000\t-\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("normal2.seg"),
+                "CONTIG\tSTART\tEND\tCALL\n"
+                        + "chr1\t8001\t9000\t-\n",
+                StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

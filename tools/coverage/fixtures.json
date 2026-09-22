@@ -3008,6 +3008,145 @@
         "/work/out/artifacts.table",
         "/work/out/artifacts2.table"
       ]
+    },
+    "MergeAnnotatedRegions": {
+      "$why": [
+        "--segments is regions.seg, unsorted, chained and abutting, regions2.seg with another",
+        "spelling of the locatable columns and a comment, and regions.tsv, the same rows under a name",
+        "the codec does not claim, which is refused before a line is read. --reference is",
+        "two_contigs.fasta, naming chr1 and chr2, and reference.fasta, naming chr1 alone: a file of",
+        "two or more rows with a chr2 row is then refused by the dictionary sort's compareContigs.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/regions.seg",
+        "/work/fixtures/regions2.seg",
+        "/work/fixtures/regions.tsv"
+      ],
+      "--output": [
+        "/work/out/merged.seg",
+        "/work/out/merged2.seg"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "MergeAnnotatedRegionsByAnnotation": {
+      "$why": [
+        "--annotations-to-match is CALL, annotations.list naming CALL and name, and ABSENT, which",
+        "the file does not carry. --max-merge-distance is the default and 50, which splits the chain.",
+        "--reference is two_contigs.fasta and reference.fasta, as for MergeAnnotatedRegions. The",
+        "output's locatable column names are arguments.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/regions.seg",
+        "/work/fixtures/regions2.seg"
+      ],
+      "--annotations-to-match": [
+        "CALL",
+        "/work/fixtures/annotations.list",
+        "ABSENT"
+      ],
+      "--max-merge-distance": [
+        "1000000",
+        "50"
+      ],
+      "--output": [
+        "/work/out/merged.tsv",
+        "/work/out/merged2.tsv"
+      ],
+      "--output-contig-column": [
+        "CONTIG",
+        "chrom"
+      ],
+      "--output-start-column": [
+        "START",
+        "begin"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "TagGermlineEvents": {
+      "$why": [
+        "--segments is the called tumour segments and regions.seg, whose CALL column has a",
+        "neutral 0 and whose rows overlap, which the tagger refuses. --called-matched-normal-seg-file",
+        "is normal.seg, one amplification matching a tumour segment's breakpoints within a few bases",
+        "and one reciprocally overlapping another, and normal2.seg, a deletion matching exactly.",
+        "--endpoint-padding is the default and 2, which loses the breakpoint match; --reciprocal-threshold",
+        "is the default 0.75 and 0.95, which loses the overlap. --reference is two_contigs.fasta and",
+        "reference.fasta, whose missing chr2 refuses regions.seg once it gets past the overlap check.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/tumour.seg",
+        "/work/fixtures/regions.seg"
+      ],
+      "--called-matched-normal-seg-file": [
+        "/work/fixtures/normal.seg",
+        "/work/fixtures/normal2.seg"
+      ],
+      "--endpoint-padding": [
+        "1000",
+        "2"
+      ],
+      "--reciprocal-threshold": [
+        "0.75",
+        "0.95"
+      ],
+      "--output": [
+        "/work/out/tagged.seg",
+        "/work/out/tagged2.seg"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
