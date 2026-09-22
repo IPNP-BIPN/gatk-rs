@@ -272,6 +272,36 @@ pub fn merge(
         .collect())
 }
 
+/// What the walk hands over before it refuses: every feature up to the one whose replacement went
+/// backwards, which a tool that prints as it goes has already printed. The whole stream when the
+/// walk does not refuse.
+pub fn merge_prefix(inputs: &[Vec<Located>], dictionary: &DictSource) -> Vec<Located> {
+    let mut cursors: Vec<usize> = vec![0; inputs.len()];
+    let mut heap = JavaHeap::default();
+    for (index, input) in inputs.iter().enumerate() {
+        if let Some(feature) = input.first() {
+            cursors[index] = 1;
+            heap.push(entry_for(index, feature, dictionary));
+        }
+    }
+    let mut handed = Vec::new();
+    while let Some(entry) = heap.poll() {
+        let input = entry.input;
+        if let Some(feature) = inputs[input].get(cursors[input]) {
+            cursors[input] += 1;
+            let replacement = entry_for(input, feature, dictionary);
+            let compared = replacement.compare(&entry);
+            heap.push(replacement);
+            if compared == Ordering::Less {
+                // `next()` throws before it returns `entry`, so the entry is never handed over.
+                return handed;
+            }
+        }
+        handed.push(entry.feature);
+    }
+    handed
+}
+
 /// [`merge`], each feature paired with the index of the input it came from: `PQEntry.getHeader`,
 /// which is how a tool learns whose sample list a record is written against.
 pub fn merge_with_sources(

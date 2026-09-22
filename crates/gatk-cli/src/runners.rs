@@ -11163,7 +11163,7 @@ pub fn print_sv_evidence(parser: &Parser) -> Outcome {
     use gatk_tools::print_sv_evidence as print;
     use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
 
-    let inputs = arguments(parser, "evidence-file");
+    let inputs = distinct_feature_inputs(arguments(parser, "evidence-file"));
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -11362,7 +11362,7 @@ pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
     use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
     use std::io::Read;
 
-    let inputs = arguments(parser, "site-depth");
+    let inputs = distinct_feature_inputs(arguments(parser, "site-depth"));
     let sites_path = argument(parser, "baf-sites-vcf").ok_or_else(|| {
         Thrown::command_line(
             "Argument baf-sites-vcf was missing: Argument 'baf-sites-vcf' is required",
@@ -12336,4 +12336,124 @@ pub fn mt_low_heteroplasmy_filter_tool(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::user(format!("{error:?}")))?;
     write_variant_output(parser, &output, &out)?;
     Ok(None)
+}
+
+/// `FeatureManager`'s inputs: a `LinkedHashMap` keyed by `FeatureInput`, whose equality is the raw
+/// argument, so a file named twice, on the command line or through a `.list`, is one input, in
+/// the place it was first named.
+fn distinct_feature_inputs(values: Vec<String>) -> Vec<String> {
+    let mut distinct: Vec<String> = Vec::new();
+    for value in values {
+        if !distinct.contains(&value) {
+            distinct.push(value);
+        }
+    }
+    distinct
+}
+
+/// `ExampleMultiFeatureWalker`: every feature of every input, merged, printed as it is handed over.
+///
+/// The walk is [`gatk_engine::multi_feature_walker`], oracle-backed through this very tool. The
+/// runner adds its startup, which is the SV evidence tools' own (the inputs opened, then the
+/// dictionary chosen), and prints each feature's `toString` as the walk reaches it, so a walk
+/// refused part way has already printed what came before. Only depth evidence is read; any other
+/// feature type is a refusal of the port's own.
+pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
+    use gatk_engine::multi_feature_walker as walker;
+    use gatk_tools::condense_depth_evidence as depth;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+    use std::io::Write;
+
+    let inputs = distinct_feature_inputs(arguments(parser, "feature"));
+    let _ = resolve_read_filters(parser, "ExampleMultiFeatureWalker")?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let mut located: Vec<Vec<walker::Located>> = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: java_absolute_path(input),
+                }
+                .message(),
+            )
+        })?;
+        if codecs::find(input)
+            != Some(codecs::Codec {
+                feature_type: "DepthEvidence",
+                encoding: Encoding::Text {
+                    block_compressed: false,
+                },
+            })
+        {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!("ExampleMultiFeatureWalker reads {input}, and only plain-text depth evidence is ported"),
+            ));
+        }
+        let (_, records) = depth::read(&String::from_utf8_lossy(&bytes)).map_err(|problem| {
+            Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{input} is a malformed depth-evidence file ({problem}), which Tribble refuses"
+                ),
+            )
+        })?;
+        located.push(
+            records
+                .iter()
+                .map(|record| walker::Located {
+                    contig: record.contig.clone(),
+                    start: record.start,
+                    end: record.end,
+                    text: std::iter::once(format!(
+                        "{}\t{}\t{}",
+                        record.contig, record.start, record.end
+                    ))
+                    .chain(record.counts.iter().map(|count| count.to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\t"),
+                })
+                .collect(),
+        );
+    }
+    let source = |header: Option<SamHeader>, name: &str| {
+        header.map(|header| walker::DictSource {
+            contigs: header
+                .sequences
+                .iter()
+                .map(|record| record.name.clone())
+                .collect(),
+            source: name.to_string(),
+        })
+    };
+    let user = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(message),
+    };
+    let dictionary = walker::choose_dictionary(
+        source(master, "sequence-dictionary"),
+        source(reference, "reference"),
+    )
+    .map_err(|error| user(error.message()))?;
+    // The merge is computed whole, so what a refused walk had printed is the features the heap
+    // handed over before the one that went backwards: the prefix of the order up to the refusal.
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    match walker::merge(&located, &dictionary) {
+        Ok(features) => {
+            for feature in &features {
+                let _ = writeln!(out, "{}", feature.text);
+            }
+            Ok(None)
+        }
+        Err(error) => {
+            let printed = walker::merge_prefix(&located, &dictionary);
+            for feature in &printed {
+                let _ = writeln!(out, "{}", feature.text);
+            }
+            Err(user(error.message()))
+        }
+    }
 }
