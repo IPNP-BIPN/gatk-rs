@@ -639,6 +639,51 @@
       "matched": 20,
       "t": 2,
       "share": 1.0
+    },
+    "PathSeqBuildReferenceTaxonomy": {
+      "rows": 9,
+      "accepted": 8,
+      "rejected": 1,
+      "distinct_outputs": 7,
+      "matched": 9,
+      "t": 2,
+      "share": 1.0
+    },
+    "PathSeqBuildKmers": {
+      "rows": 8,
+      "accepted": 8,
+      "rejected": 0,
+      "distinct_outputs": 7,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "CondenseDepthEvidence": {
+      "rows": 18,
+      "accepted": 15,
+      "rejected": 3,
+      "distinct_outputs": 7,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintSVEvidence": {
+      "rows": 17,
+      "accepted": 10,
+      "rejected": 7,
+      "distinct_outputs": 4,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "SiteDepthtoBAF": {
+      "rows": 18,
+      "accepted": 15,
+      "rejected": 3,
+      "distinct_outputs": 6,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
