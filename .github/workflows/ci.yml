@@ -569,6 +569,7 @@ jobs:
             --tool CollectSVEvidence \
             --tool FastaAlternateReferenceMaker \
             --tool CompareReferences \
+            --tool PathSeqBuildReferenceTaxonomy \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

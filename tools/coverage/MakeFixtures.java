@@ -1367,6 +1367,95 @@ public class MakeFixtures {
                             "--output", dir.resolve(pair[1]).toString(),
                     });
         }
+        pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `PathSeqBuildReferenceTaxonomy` reads: a reference whose contig names carry every form
+     * the tool parses, a taxonomy dump as a tar.gz, and the two catalogs.
+     *
+     * The RefSeq catalog is gzipped and the GenBank one is NOT, because the tool gunzips a catalog
+     * by its NAME and not by its bytes: the pair covers both branches of `makeReaderMaybeGzipped`.
+     * The second reference drops the contigs only a catalog can place, so a row holding it and no
+     * GenBank catalog still has taxa, and the second dump renames a species and adds a genus, so
+     * the two dumps write different trees over the same contigs.
+     */
+    static void pathSeqTaxonomy(final Path dir) throws Exception {
+        final String[][] contigs = {
+                {"ref|NC_VIRUS.1|", "300"}, {"ref|NC_BACT.1|", "1000"}, {"ref|NC_SHORT.1|", "100"},
+                {"taxid|562|", "800"}, {"ACC_PLAIN.1", "900"}, {"gi|9|ref|NC_BOTH.1|taxid|11234|", "700"}};
+        pathSeqReference(dir.resolve("pathseq.fasta"), contigs);
+        pathSeqReference(dir.resolve("pathseq2.fasta"), new String[][] {
+                contigs[3], contigs[5], {"taxid|9606|", "600"}});
+
+        final String names = String.join("\n",
+                "1\t|\troot\t|\t\t|\tscientific name\t|",
+                "2\t|\tBacteria\t|\t\t|\tscientific name\t|",
+                "10239\t|\tViruses\t|\t\t|\tscientific name\t|",
+                "562\t|\tEscherichia coli\t|\t\t|\tscientific name\t|",
+                "11234\t|\tMeasles morbillivirus\t|\t\t|\tscientific name\t|",
+                "9606\t|\tHomo sapiens\t|\t\t|\tscientific name\t|",
+                "40674\t|\tMammalia\t|\t\t|\tscientific name\t|") + "\n";
+        final String nodes = String.join("\n",
+                "1\t|\t1\t|\tno rank\t|",
+                "2\t|\t1\t|\tsuperkingdom\t|",
+                "10239\t|\t1\t|\tsuperkingdom\t|",
+                "562\t|\t2\t|\tspecies\t|",
+                "11234\t|\t10239\t|\tspecies\t|",
+                "40674\t|\t1\t|\tclass\t|",
+                "9606\t|\t40674\t|\tspecies\t|") + "\n";
+        taxdump(dir.resolve("taxdump.tar.gz"), names, nodes);
+        taxdump(dir.resolve("taxdump2.tar.gz"),
+                names.replace("Escherichia coli", "Escherichia coli K-12")
+                        + "561\t|\tEscherichia\t|\t\t|\tscientific name\t|\n",
+                nodes.replace("562\t|\t2\t|", "562\t|\t561\t|")
+                        + "561\t|\t2\t|\tgenus\t|\n");
+
+        try (final OutputStream out = new java.util.zip.GZIPOutputStream(
+                Files.newOutputStream(dir.resolve("refseq.catalog.gz")))) {
+            out.write(String.join("\n",
+                    "11234\tsomething\tNC_VIRUS.1\tmore",
+                    "562\tsomething\tNC_BACT.1\tmore",
+                    "562\tsomething\tNC_SHORT.1\tmore").concat("\n")
+                    .getBytes(StandardCharsets.UTF_8));
+        }
+        Files.writeString(dir.resolve("genbank.catalog"),
+                "a\tACC_PLAIN.1\tc\td\te\tf\t9606\th\n", StandardCharsets.UTF_8);
+    }
+
+    static void pathSeqReference(final Path fasta, final String[][] contigs) throws Exception {
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(fasta)
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            for (final String[] contig : contigs) {
+                final StringBuilder bases = new StringBuilder();
+                for (int i = 0; i < Integer.parseInt(contig[1]); i++) {
+                    bases.append("ACGT".charAt(i % 4));
+                }
+                writer.startSequence(contig[0]).appendBases(bases.toString());
+            }
+        }
+    }
+
+    static void taxdump(final Path path, final String names, final String nodes) throws Exception {
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(Files.newOutputStream(path)))) {
+            for (final String[] entry : new String[][] {{"names.dmp", names}, {"nodes.dmp", nodes}}) {
+                final byte[] bytes = entry[1].getBytes(StandardCharsets.UTF_8);
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry header =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                header.setSize(bytes.length);
+                // A fixed time, so the tarball is the same bytes on every run.
+                header.setModTime(0L);
+                tar.putArchiveEntry(header);
+                tar.write(bytes);
+                tar.closeArchiveEntry();
+            }
+        }
     }
 }
