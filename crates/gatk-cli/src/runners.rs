@@ -11971,3 +11971,98 @@ pub fn tag_germline_events(parser: &Parser) -> Outcome {
     write_file(&output, tumour.write().as_bytes())?;
     Ok(None)
 }
+
+/// `GatherTranches`: the tranches of a scattered VQSR run pooled by VQSLOD and cut again at the
+/// requested sensitivities.
+///
+/// The pooling and the cut are [`gatk_tools::gather_tranches`], where a golden measures them. The
+/// runner adds `doWork`'s order: htsjdk's `assertFileIsReadable` over EVERY input before any is
+/// read, a `SAMException` naming the file by its URI; then each shard read in turn, a malformed
+/// one named by the path as the command line gave it, into an output already created; then the
+/// file written. `doWork` returns
+/// `0`, which the tool prints.
+pub fn gather_tranches(parser: &Parser) -> Outcome {
+    use gatk_engine::tranches::{Mode, TrancheError};
+    use gatk_tools::gather_tranches as tranches;
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mode = match scalar(parser, "mode").as_deref() {
+        Some("SNP") => Mode::Snp,
+        Some("INDEL") => Mode::Indel,
+        Some("BOTH") => Mode::Both,
+        _ => {
+            return Err(Thrown::command_line(
+                "Argument mode was missing: Argument 'mode' is required",
+            ))
+        }
+    };
+    let requested = arguments(parser, "truth-sensitivity-tranche");
+    let levels: Vec<f64> = if requested.is_empty() {
+        vec![100.0, 99.9, 99.0, 90.0]
+    } else {
+        requested
+            .iter()
+            .map(|value| value.parse().unwrap_or(f64::NAN))
+            .collect()
+    };
+
+    for input in &inputs {
+        let uri = format!("file://{}", java_absolute_path(input));
+        let problem = match std::fs::metadata(input) {
+            Err(_) => Some("Cannot read non-existent file: "),
+            Ok(meta) if meta.is_dir() => Some("Cannot read file because it is a directory: "),
+            Ok(_) => None,
+        };
+        if let Some(problem) = problem {
+            let uri = if problem.contains("directory") {
+                format!("{uri}/")
+            } else {
+                uri
+            };
+            return Err(Thrown::non_user(
+                "htsjdk.samtools.SAMException",
+                format!("{problem}{uri}"),
+            ));
+        }
+    }
+    // The output stream is opened before the first shard is read, so a refused shard leaves it
+    // created and empty.
+    write_file(&output, b"")?;
+    let mut all = Vec::new();
+    for input in &inputs {
+        let text = std::fs::read_to_string(input)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+        let shard = tranches::read_vqslod_tranches(&text).map_err(|mut error| {
+            // The reader was given text, so a malformed-file refusal is named here, by the path
+            // as the command line gave it: `MalformedFile(GATKPath, ...)` prints the raw string.
+            match &mut error {
+                TrancheError::HeaderLength { file, .. } | TrancheError::RowLength { file, .. } => {
+                    *file = input.clone()
+                }
+                _ => {}
+            }
+            let class = error.class();
+            Thrown {
+                failure: if class.contains("UserException") {
+                    Failure::User
+                } else {
+                    Failure::Other
+                },
+                exception: class,
+                message: Some(error.message()),
+            }
+        })?;
+        all.extend(shard);
+    }
+    let gathered = tranches::merge_and_convert(&all, &levels, mode);
+    let text = format!(
+        "{}{}",
+        tranches::print_header(),
+        tranches::tranches_string(&gathered)
+    );
+    write_file(&output, text.as_bytes())?;
+    Ok(Some("0".to_string()))
+}
