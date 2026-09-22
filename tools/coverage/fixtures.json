@@ -3295,6 +3295,44 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "CalculateAverageCombinedAnnotations": {
+      "$why": [
+        "--variant is summed.vcf, sites with RAW_GT_COUNT and two summed annotations (one site's",
+        "divisor zero, one missing a sum), and summed_missing.vcf, whose third site lacks RAW_GT_COUNT and",
+        "is refused where the walk reaches it, leaving the header and two records. --summed-annotation-to-",
+        "divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way",
+        "round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons",
+        "NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/summed.vcf",
+        "/work/fixtures/summed_missing.vcf"
+      ],
+      "--summed-annotation-to-divide": [
+        "/work/fixtures/sums_two.list",
+        "/work/fixtures/sums.list"
+      ],
+      "--output": [
+        "/work/out/averaged.vcf",
+        "/work/out/averaged.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

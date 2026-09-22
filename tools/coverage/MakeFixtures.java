@@ -1638,6 +1638,29 @@ public class MakeFixtures {
         }
         Files.writeString(dir.resolve("mito.vcf"), mt.toString(), StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("mito_plain.vcf"), mtPlain.toString(), StandardCharsets.UTF_8);
+        // For `CalculateAverageCombinedAnnotations`: sites as GenomicsDB leaves them, with
+        // `RAW_GT_COUNT` (hom-ref, het, hom-var) and two summed annotations. One site's divisor is
+        // zero, so it is written through untouched; one carries only one of the sums. The second
+        // file drops `RAW_GT_COUNT` from its third site, which the tool refuses where it reaches it.
+        final String sumsHeader = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=MQ_SUM,Number=1,Type=Float,Description=\"Summed mapping quality\">\n"
+                + "##INFO=<ID=QD_SUM,Number=1,Type=Float,Description=\"Summed quality by depth\">\n"
+                + "##INFO=<ID=RAW_GT_COUNT,Number=3,Type=Integer,Description=\"Genotype counts\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String[] sumsRows = {
+                "chr1\t100\t.\tA\tC\t50\tPASS\tMQ_SUM=180.0;QD_SUM=33.3;RAW_GT_COUNT=4,2,1\n",
+                "chr1\t200\t.\tC\tG\t50\tPASS\tMQ_SUM=60.0;QD_SUM=10.0;RAW_GT_COUNT=7,0,0\n",
+                "chr1\t300\t.\tG\tT\t50\tPASS\tQD_SUM=7.25;RAW_GT_COUNT=1,3,0\n",
+                "chr1\t400\t.\tT\tA\t50\tPASS\tMQ_SUM=240.5;QD_SUM=41.0;RAW_GT_COUNT=0,1,3\n"};
+        Files.writeString(dir.resolve("summed.vcf"), sumsHeader + String.join("", sumsRows),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("summed_missing.vcf"), sumsHeader + sumsRows[0] + sumsRows[1]
+                        + sumsRows[2].replace(";RAW_GT_COUNT=1,3,0", "") + sumsRows[3],
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sums.list"), "QD_SUM\nMQ_SUM\nABSENT_SUM\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sums_two.list"), "MQ_SUM\nQD_SUM\n", StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }
