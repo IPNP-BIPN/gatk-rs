@@ -266,6 +266,18 @@ pub fn merge(
     inputs: &[Vec<Located>],
     dictionary: &DictSource,
 ) -> Result<Vec<Located>, WalkerError> {
+    Ok(merge_with_sources(inputs, dictionary)?
+        .into_iter()
+        .map(|(_, feature)| feature)
+        .collect())
+}
+
+/// [`merge`], each feature paired with the index of the input it came from: `PQEntry.getHeader`,
+/// which is how a tool learns whose sample list a record is written against.
+pub fn merge_with_sources(
+    inputs: &[Vec<Located>],
+    dictionary: &DictSource,
+) -> Result<Vec<(usize, Located)>, WalkerError> {
     let mut cursors: Vec<usize> = vec![0; inputs.len()];
     let mut heap = JavaHeap::default();
     for (index, input) in inputs.iter().enumerate() {
@@ -292,7 +304,7 @@ pub fn merge(
                 });
             }
         }
-        written.push(entry.feature);
+        written.push((input, entry.feature));
     }
     Ok(written)
 }

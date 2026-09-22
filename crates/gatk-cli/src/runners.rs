@@ -11132,3 +11132,206 @@ pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
     write_file(&output, condense::write(&samples, &merged).as_bytes())?;
     Ok(None)
 }
+
+/// `PrintSVEvidence`, for depth evidence: several files merged into one, rewritten against one
+/// sample list.
+///
+/// The sample list and the sort merger are [`gatk_tools::print_sv_evidence`] and the walk's order
+/// is [`gatk_engine::multi_feature_walker`], both oracle-backed. What the runner adds is where each
+/// refusal comes from, which is `onStartup` before `onTraversalStart`:
+///
+/// * **every input is opened at startup**, by `getCodecForFile`, in the order the command line
+///   names them, after the read filters and the master dictionary;
+/// * **then the dictionary is chosen**, the master one against the reference's by
+///   `betterDictionary`. A depth-evidence header carries none, so a run given neither is refused
+///   with `No dictionary found`;
+/// * **then `onTraversalStart`**: no codec for the output's name, then an input of another type;
+/// * **then the walk**, whose refusals are mid-run: an input going backwards, a sample two files
+///   both report at one bin, and a contig the dictionary does not name, which the sort merger's
+///   `compareLocatables` refuses once there are two records to compare.
+///
+/// `--sample-names` is a `LinkedHashSet`, so a name given twice is one column, in the order it was
+/// first given.
+///
+/// Refusals of the port's own: any evidence type but depth, a block-compressed or `.bci` file on
+/// either side, and a malformed input. What a run that fails mid-walk leaves in its output is the
+/// buffered writer's, which nothing has measured: the runner writes the header the sink opened
+/// with and nothing after it.
+pub fn print_sv_evidence(parser: &Parser) -> Outcome {
+    use gatk_engine::multi_feature_walker as walker;
+    use gatk_tools::condense_depth_evidence as depth;
+    use gatk_tools::print_sv_evidence as print;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let inputs = arguments(parser, "evidence-file");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut requested: Vec<String> = Vec::new();
+    for name in arguments(parser, "sample-names") {
+        if !requested.contains(&name) {
+            requested.push(name);
+        }
+    }
+    let user = |exception: &'static str, message: String| Thrown {
+        failure: Failure::User,
+        exception,
+        message: Some(message),
+    };
+    let limitation = |message: String| Thrown::non_user(PORT_LIMITATION, message);
+
+    let _ = resolve_read_filters(parser, "PrintSVEvidence")?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+
+    let mut files = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: java_absolute_path(input),
+                }
+                .message(),
+            )
+        })?;
+        match codecs::find(input) {
+            Some(codecs::Codec {
+                feature_type: "DepthEvidence",
+                encoding:
+                    Encoding::Text {
+                        block_compressed: false,
+                    },
+            }) => {}
+            _ => {
+                return Err(limitation(format!(
+                    "PrintSVEvidence reads {input}, and only plain-text depth evidence is ported"
+                )))
+            }
+        }
+        let (samples, records) =
+            depth::read(&String::from_utf8_lossy(&bytes)).map_err(|problem| {
+                limitation(format!(
+                    "{input} is a malformed depth-evidence file ({problem}), which Tribble refuses"
+                ))
+            })?;
+        if records
+            .iter()
+            .any(|record| record.counts.len() != samples.len())
+        {
+            return Err(limitation(format!(
+                "{input} has records whose counts do not match its header, which the walk refuses \
+                 with an index out of bounds"
+            )));
+        }
+        files.push(print::EvidenceFile {
+            samples,
+            records: records
+                .into_iter()
+                .map(|record| print::DepthEvidence {
+                    contig: record.contig,
+                    start: record.start,
+                    end: record.end,
+                    counts: record.counts,
+                })
+                .collect(),
+        });
+    }
+
+    let source = |header: Option<SamHeader>, name: &str| {
+        header.map(|header| walker::DictSource {
+            contigs: header
+                .sequences
+                .iter()
+                .map(|record| record.name.clone())
+                .collect(),
+            source: name.to_string(),
+        })
+    };
+    let dictionary = walker::choose_dictionary(
+        source(master, "sequence-dictionary"),
+        source(reference, "reference"),
+    )
+    .map_err(|error| {
+        user(
+            "org.broadinstitute.hellbender.exceptions.UserException",
+            error.message(),
+        )
+    })?;
+
+    print::check_types(&output, &inputs).map_err(|error| {
+        user(
+            "org.broadinstitute.hellbender.exceptions.UserException",
+            error.message(),
+        )
+    })?;
+    if codecs::find(&output).map(|codec| codec.encoding)
+        != Some(Encoding::Text {
+            block_compressed: false,
+        })
+    {
+        return Err(limitation(
+            "PrintSVEvidence writes a block-compressed or .bci file, which is not ported"
+                .to_string(),
+        ));
+    }
+    let samples = print::sample_names(&requested, &files);
+
+    // The walk, each record carrying where it came from in `text`.
+    let located: Vec<Vec<walker::Located>> = files
+        .iter()
+        .map(|file| {
+            file.records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| walker::Located {
+                    contig: record.contig.clone(),
+                    start: record.start,
+                    end: record.end,
+                    text: index.to_string(),
+                })
+                .collect()
+        })
+        .collect();
+    let header_only = || write_file(&output, print::write(&samples, &[]).as_bytes());
+    let walked = match walker::merge_with_sources(&located, &dictionary) {
+        Ok(walked) => walked,
+        Err(error) => {
+            header_only()?;
+            return Err(user(
+                "org.broadinstitute.hellbender.exceptions.UserException",
+                error.message(),
+            ));
+        }
+    };
+    if walked.len() > 1
+        && walked
+            .iter()
+            .any(|(_, feature)| dictionary.sequence_index(&feature.contig) == -1)
+    {
+        header_only()?;
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Can't do comparison because Locatables' contigs not found in sequence dictionary",
+        ));
+    }
+    let merged: Vec<(usize, print::DepthEvidence)> = walked
+        .iter()
+        .map(|(input, feature)| {
+            let index: usize = feature.text.parse().expect("a record index");
+            (*input, files[*input].records[index].clone())
+        })
+        .collect();
+    match print::run(&files, &merged, &requested) {
+        Ok((samples, written)) => {
+            write_file(&output, print::write(&samples, &written).as_bytes())?;
+            Ok(None)
+        }
+        Err(error) => {
+            header_only()?;
+            Err(user(
+                "org.broadinstitute.hellbender.exceptions.UserException",
+                error.message(),
+            ))
+        }
+    }
+}

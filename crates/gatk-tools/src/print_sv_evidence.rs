@@ -145,6 +145,9 @@ pub fn sample_names(requested: &[String], files: &[EvidenceFile]) -> Vec<String>
 }
 
 /// `DepthEvidence.extractSamples`: one column per requested name, `-1` where the file has none.
+///
+/// `SVFeaturesHeader.getSampleIndex` is a `HashMap` filled in header order, so a name the header
+/// repeats answers with its LAST column.
 pub fn extract_samples(
     record: &DepthEvidence,
     file_samples: &[String],
@@ -157,7 +160,7 @@ pub fn extract_samples(
         counts: wanted
             .iter()
             .map(
-                |name| match file_samples.iter().position(|own| own == name) {
+                |name| match file_samples.iter().rposition(|own| own == name) {
                     Some(index) => record.counts[index],
                     None => MISSING_DATA,
                 },
