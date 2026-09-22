@@ -3262,6 +3262,39 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "ExampleMultiFeatureWalker": {
+      "$why": [
+        "--feature is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3:",
+        "two files sharing three bins, so the heap hands equal intervals over in its own order, and one",
+        "a file names twice. --sequence-dictionary is sv.dict or null and --reference reference.fasta or",
+        "null: both, one, or neither, the last refused as having no dictionary, and the reference alone",
+        "misreporting chr2 as an unsorted input after printing everything before it.",
+        "The engine's read arguments are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--feature": [
+        "/work/fixtures/depth.rd.txt",
+        "/work/fixtures/evidence.list",
+        "/work/fixtures/evidence_twice.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict",
+        "null"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "null"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

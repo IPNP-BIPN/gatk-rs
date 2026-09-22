@@ -1388,6 +1388,11 @@ public class MakeFixtures {
                 // The paths the ROWS see: the corpus is written here and read under /work/fixtures.
                 "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n",
                 StandardCharsets.UTF_8);
+        // The same pair with depth2 named twice, which `FeatureManager` keeps as one input.
+        Files.writeString(dir.resolve("evidence_twice.list"),
+                "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n"
+                        + "/work/fixtures/depth2.rd.txt\n",
+                StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
                 StandardCharsets.UTF_8);
         // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,
