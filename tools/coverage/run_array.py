@@ -152,7 +152,11 @@ def run_oracle(tool, row_args, workdir, positional=()):
         capture_output=True,
         text=True,
     )
-    return result.returncode, read_output(out_dir), first_error(result.stderr or result.stdout)
+    return (
+        result.returncode,
+        with_stdout(read_output(out_dir), result.stdout),
+        first_error(result.stderr or result.stdout),
+    )
 
 
 def read_output(out_dir):
@@ -223,7 +227,25 @@ def run_port(binary, tool, row_args, workdir, positional=()):
         capture_output=True,
         text=True,
     )
-    return result.returncode, read_output(out_dir), first_error(result.stderr or result.stdout)
+    return (
+        result.returncode,
+        with_stdout(read_output(out_dir), result.stdout),
+        first_error(result.stderr or result.stdout),
+    )
+
+
+def with_stdout(text, stdout):
+    """The row's files, then what the tool printed.
+
+    A tool whose answer is printed rather than written -- `CountReads`'s count, `FlagStat`'s
+    table, the features `ExampleMultiFeatureWalker` prints as it walks -- left NOTHING here before,
+    so every accepted row agreed with every other and the array measured its refusals alone. The
+    log goes to stderr and is not compared; stdout is the tool's.
+    """
+    if not stdout:
+        return text
+    printed = f"stdout: {stdout}"
+    return f"{text}\n{printed}" if text else printed
 
 
 def outcome(code, text, error):
