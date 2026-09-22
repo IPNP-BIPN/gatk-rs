@@ -50,6 +50,7 @@ pub mod germline_filter;
 pub mod haplotype;
 pub mod haplotype_filter;
 pub mod histogram;
+pub mod hopscotch;
 pub mod interval;
 pub mod interval_args;
 pub mod interval_arguments;
