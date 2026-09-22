@@ -395,6 +395,27 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
         declarations("SiteDepthtoBAF",
                 new org.broadinstitute.hellbender.tools.sv.SiteDepthtoBAF());
+        // Eight tools whose ports are oracle-backed and whose inputs are tables rather than reads.
+        // `GatherTranches` gathers VQSR tranches and declares `--mode`, the
+        // `VariantRecalibratorArgumentCollection$Mode` enum the class-name key was made for. The
+        // three Mutect gathers each concatenate or sum one kind of table. The four copy-number
+        // utilities rewrite segment and region files. All but `GatherTranches` are undocumented.
+        declarations("GatherTranches",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.GatherTranches());
+        declarations("GatherPileupSummaries",
+                new org.broadinstitute.hellbender.tools.walkers.contamination.GatherPileupSummaries());
+        declarations("GatherNormalArtifactData",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.GatherNormalArtifactData());
+        declarations("MergeMutectStats",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.MergeMutectStats());
+        declarations("CombineSegmentBreakpoints",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.CombineSegmentBreakpoints());
+        declarations("MergeAnnotatedRegions",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegions());
+        declarations("MergeAnnotatedRegionsByAnnotation",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegionsByAnnotation());
+        declarations("TagGermlineEvents",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});

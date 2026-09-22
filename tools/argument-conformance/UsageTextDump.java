@@ -75,6 +75,21 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence());
         usage("PrintSVEvidence",
                 new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
+        // Seven more undocumented tools, whose summaries only this golden carries.
+        usage("GatherPileupSummaries",
+                new org.broadinstitute.hellbender.tools.walkers.contamination.GatherPileupSummaries());
+        usage("GatherNormalArtifactData",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.GatherNormalArtifactData());
+        usage("MergeMutectStats",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.MergeMutectStats());
+        usage("CombineSegmentBreakpoints",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.CombineSegmentBreakpoints());
+        usage("MergeAnnotatedRegions",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegions());
+        usage("MergeAnnotatedRegionsByAnnotation",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegionsByAnnotation());
+        usage("TagGermlineEvents",
+                new org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */
