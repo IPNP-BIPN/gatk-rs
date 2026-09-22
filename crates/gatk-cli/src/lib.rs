@@ -315,6 +315,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "MergeAnnotatedRegionsByAnnotation" => Some(run_merge_annotated_regions_by_annotation),
         "TagGermlineEvents" => Some(run_tag_germline_events),
         "GatherTranches" => Some(run_gather_tranches),
+        "NuMTFilterTool" => Some(run_numt_filter_tool),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -515,6 +516,10 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_numt_filter_tool(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::numt_filter_tool(&parsed("NuMTFilterTool", args)?)
 }
 
 fn run_gather_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
