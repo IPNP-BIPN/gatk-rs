@@ -318,6 +318,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "NuMTFilterTool" => Some(run_numt_filter_tool),
         "MTLowHeteroplasmyFilterTool" => Some(run_mt_low_heteroplasmy_filter_tool),
         "ExampleMultiFeatureWalker" => Some(run_example_multi_feature_walker),
+        "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -518,6 +519,13 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::calculate_average_combined_annotations(&parsed(
+        "CalculateAverageCombinedAnnotations",
+        args,
+    )?)
 }
 
 fn run_example_multi_feature_walker(args: &[String]) -> Result<Option<String>, Thrown> {

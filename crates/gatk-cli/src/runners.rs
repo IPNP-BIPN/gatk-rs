@@ -12457,3 +12457,60 @@ pub fn example_multi_feature_walker(parser: &Parser) -> Outcome {
         }
     }
 }
+
+/// `CalculateAverageCombinedAnnotations`: GenomicsDB's summed annotations divided by the number of
+/// samples that carry a variant.
+///
+/// The header and the division are [`gatk_tools::calculate_average_combined_annotations`], where a
+/// golden measures them. The runner adds the walk and the writer: a record without `RAW_GT_COUNT`
+/// is refused where the walk reaches it, and `closeTool` closes the writer in a `finally`, so the
+/// file is left with the header and the records before it. A record the tool does not rebuild
+/// keeps its genotypes as the file wrote them.
+pub fn calculate_average_combined_annotations(parser: &Parser) -> Outcome {
+    use gatk_tools::calculate_average_combined_annotations as average;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CalculateAverageCombinedAnnotations")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let annotations = arguments(parser, "summed-annotation-to-divide");
+    let refused = |error: average::AverageError| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(error.message()),
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let mut header = average::header_with_averages(&file.header, &annotations).map_err(refused)?;
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut written = Vec::new();
+    let mut failure = None;
+    for record in kept {
+        match average::apply(record, &annotations) {
+            Ok(out) => {
+                if keep(&out) {
+                    written.push(out);
+                }
+            }
+            Err(error) => {
+                failure = Some(refused(error));
+                break;
+            }
+        }
+    }
+    apply_sites_only(parser, &mut header, &mut written);
+    let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    write_variant_output(parser, &output, &out)?;
+    match failure {
+        Some(thrown) => Err(thrown),
+        None => Ok(None),
+    }
+}
