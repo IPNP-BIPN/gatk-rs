@@ -11011,3 +11011,579 @@ fn fasta_records(bytes: &[u8]) -> Vec<Vec<u8>> {
     }
     records
 }
+
+/// `CondenseDepthEvidence`: adjacent depth-evidence bins merged.
+///
+/// The merge is [`gatk_tools::condense_depth_evidence`], where a golden measures it. What the
+/// runner adds is the order the refusals come in, which is the engine's and then the tool's:
+///
+/// * **the input is opened at startup**, by `FeatureManager.getCodecForFile` once the master
+///   dictionary is loaded, so an unreadable file is refused before any argument of the tool's own
+///   is looked at;
+/// * **then `onTraversalStart`**: a minimum above the maximum, then no codec for the output's
+///   name, then a codec for another feature type;
+/// * **then the sink is opened and its header written**, from the input's sample names, before a
+///   single record is merged.
+///
+/// Three things are refusals of the port's own rather than GATK's. A block-compressed or binary
+/// OUTPUT is written through the GKL deflater and a tabix index or through the `.bci` container,
+/// none of which this runner carries. A block-compressed or binary INPUT is the same gap on the
+/// read side. And a malformed input is refused by Tribble wrapping the codec's exception, whose
+/// message names an iterator by its identity hash, so no byte of it can be reproduced.
+pub fn condense_depth_evidence(parser: &Parser) -> Outcome {
+    use gatk_tools::condense_depth_evidence as condense;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let input = argument(parser, "depth-evidence").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument depth-evidence was missing: Argument 'depth-evidence' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let arguments = condense::Arguments {
+        max_interval_length: number_or(parser, "max-interval-size", 1000),
+        min_interval_length: number_or(parser, "min-interval-size", 0),
+    };
+    let refused = |error: condense::CondenseError| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(error.message()),
+    };
+
+    // The engine's own prelude, the one `PrintReadCounts` measured for the same base class: the
+    // read filters resolve while the command line is parsed, and `onStartup` loads a master
+    // dictionary before it opens anything else.
+    let _ = resolve_read_filters(parser, "CondenseDepthEvidence")?;
+    let _ = master_dictionary(parser)?;
+    // `getCodecForFile` tests that the path is readable before it asks a codec anything.
+    let bytes = std::fs::read(&input).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: java_absolute_path(&input),
+            }
+            .message(),
+        )
+    })?;
+    match codecs::find(&input) {
+        Some(codec) if codec.feature_type != "DepthEvidence" => {
+            return Err(Thrown::user(format!(
+                "File {input} contains features of the wrong type."
+            )));
+        }
+        Some(codecs::Codec {
+            encoding: Encoding::Text {
+                block_compressed: false,
+            },
+            ..
+        }) => {}
+        Some(_) => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "CondenseDepthEvidence reads a block-compressed or .bci depth-evidence file, \
+                 which is not ported",
+            ));
+        }
+        // Every other codec the engine knows would be asked here, and is not ported: the SV
+        // evidence codecs are the ones this tool can accept.
+        None => {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "no SV evidence codec reads {input}, and the engine's others are not ported"
+                ),
+            ));
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let (samples, records) = condense::read(&text).map_err(|problem| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{input} is a malformed depth-evidence file ({problem}), which Tribble refuses"
+            ),
+        )
+    })?;
+
+    condense::check_lengths(&arguments).map_err(refused)?;
+    condense::check_output(&output).map_err(refused)?;
+    if codecs::find(&output).map(|codec| codec.encoding)
+        != Some(Encoding::Text {
+            block_compressed: false,
+        })
+    {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "CondenseDepthEvidence writes a block-compressed or .bci depth-evidence file, which is \
+             not ported",
+        ));
+    }
+    // A mismatch is raised inside `apply`, after the sink has written its header, and it is an
+    // `IllegalArgumentException` rather than a user error. What the half-written file then holds
+    // is the buffered writer's, which nothing has measured, so only the header is written here.
+    let merged = match condense::condense(&records, &arguments) {
+        Ok(merged) => merged,
+        Err(error) => {
+            write_file(&output, condense::write(&samples, &[]).as_bytes())?;
+            return Err(Thrown::non_user(error.java_class(), error.message()));
+        }
+    };
+    write_file(&output, condense::write(&samples, &merged).as_bytes())?;
+    Ok(None)
+}
+
+/// `PrintSVEvidence`, for depth evidence: several files merged into one, rewritten against one
+/// sample list.
+///
+/// The sample list and the sort merger are [`gatk_tools::print_sv_evidence`] and the walk's order
+/// is [`gatk_engine::multi_feature_walker`], both oracle-backed. What the runner adds is where each
+/// refusal comes from, which is `onStartup` before `onTraversalStart`:
+///
+/// * **every input is opened at startup**, by `getCodecForFile`, in the order the command line
+///   names them, after the read filters and the master dictionary;
+/// * **then the dictionary is chosen**, the master one against the reference's by
+///   `betterDictionary`. A depth-evidence header carries none, so a run given neither is refused
+///   with `No dictionary found`;
+/// * **then `onTraversalStart`**: no codec for the output's name, then an input of another type;
+/// * **then the walk**, whose refusals are mid-run: an input going backwards, a sample two files
+///   both report at one bin, and a contig the dictionary does not name, which the sort merger's
+///   `compareLocatables` refuses once there are two records to compare.
+///
+/// `--sample-names` is a `LinkedHashSet`, so a name given twice is one column, in the order it was
+/// first given.
+///
+/// Refusals of the port's own: any evidence type but depth, a block-compressed or `.bci` file on
+/// either side, and a malformed input. What a run that fails mid-walk leaves in its output is the
+/// buffered writer's, which nothing has measured: the runner writes the header the sink opened
+/// with and nothing after it.
+pub fn print_sv_evidence(parser: &Parser) -> Outcome {
+    use gatk_engine::multi_feature_walker as walker;
+    use gatk_tools::condense_depth_evidence as depth;
+    use gatk_tools::print_sv_evidence as print;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+
+    let inputs = arguments(parser, "evidence-file");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut requested: Vec<String> = Vec::new();
+    for name in arguments(parser, "sample-names") {
+        if !requested.contains(&name) {
+            requested.push(name);
+        }
+    }
+    let user = |exception: &'static str, message: String| Thrown {
+        failure: Failure::User,
+        exception,
+        message: Some(message),
+    };
+    let limitation = |message: String| Thrown::non_user(PORT_LIMITATION, message);
+
+    let _ = resolve_read_filters(parser, "PrintSVEvidence")?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+
+    let mut files = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: java_absolute_path(input),
+                }
+                .message(),
+            )
+        })?;
+        match codecs::find(input) {
+            Some(codecs::Codec {
+                feature_type: "DepthEvidence",
+                encoding:
+                    Encoding::Text {
+                        block_compressed: false,
+                    },
+            }) => {}
+            _ => {
+                return Err(limitation(format!(
+                    "PrintSVEvidence reads {input}, and only plain-text depth evidence is ported"
+                )))
+            }
+        }
+        let (samples, records) =
+            depth::read(&String::from_utf8_lossy(&bytes)).map_err(|problem| {
+                limitation(format!(
+                    "{input} is a malformed depth-evidence file ({problem}), which Tribble refuses"
+                ))
+            })?;
+        if records
+            .iter()
+            .any(|record| record.counts.len() != samples.len())
+        {
+            return Err(limitation(format!(
+                "{input} has records whose counts do not match its header, which the walk refuses \
+                 with an index out of bounds"
+            )));
+        }
+        files.push(print::EvidenceFile {
+            samples,
+            records: records
+                .into_iter()
+                .map(|record| print::DepthEvidence {
+                    contig: record.contig,
+                    start: record.start,
+                    end: record.end,
+                    counts: record.counts,
+                })
+                .collect(),
+        });
+    }
+
+    let source = |header: Option<SamHeader>, name: &str| {
+        header.map(|header| walker::DictSource {
+            contigs: header
+                .sequences
+                .iter()
+                .map(|record| record.name.clone())
+                .collect(),
+            source: name.to_string(),
+        })
+    };
+    let dictionary = walker::choose_dictionary(
+        source(master, "sequence-dictionary"),
+        source(reference, "reference"),
+    )
+    .map_err(|error| {
+        user(
+            "org.broadinstitute.hellbender.exceptions.UserException",
+            error.message(),
+        )
+    })?;
+
+    print::check_types(&output, &inputs).map_err(|error| {
+        user(
+            "org.broadinstitute.hellbender.exceptions.UserException",
+            error.message(),
+        )
+    })?;
+    if codecs::find(&output).map(|codec| codec.encoding)
+        != Some(Encoding::Text {
+            block_compressed: false,
+        })
+    {
+        return Err(limitation(
+            "PrintSVEvidence writes a block-compressed or .bci file, which is not ported"
+                .to_string(),
+        ));
+    }
+    let samples = print::sample_names(&requested, &files);
+
+    // The walk, each record carrying where it came from in `text`.
+    let located: Vec<Vec<walker::Located>> = files
+        .iter()
+        .map(|file| {
+            file.records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| walker::Located {
+                    contig: record.contig.clone(),
+                    start: record.start,
+                    end: record.end,
+                    text: index.to_string(),
+                })
+                .collect()
+        })
+        .collect();
+    let header_only = || write_file(&output, print::write(&samples, &[]).as_bytes());
+    let walked = match walker::merge_with_sources(&located, &dictionary) {
+        Ok(walked) => walked,
+        Err(error) => {
+            header_only()?;
+            return Err(user(
+                "org.broadinstitute.hellbender.exceptions.UserException",
+                error.message(),
+            ));
+        }
+    };
+    if walked.len() > 1
+        && walked
+            .iter()
+            .any(|(_, feature)| dictionary.sequence_index(&feature.contig) == -1)
+    {
+        header_only()?;
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Can't do comparison because Locatables' contigs not found in sequence dictionary",
+        ));
+    }
+    let merged: Vec<(usize, print::DepthEvidence)> = walked
+        .iter()
+        .map(|(input, feature)| {
+            let index: usize = feature.text.parse().expect("a record index");
+            (*input, files[*input].records[index].clone())
+        })
+        .collect();
+    match print::run(&files, &merged, &requested) {
+        Ok((samples, written)) => {
+            write_file(&output, print::write(&samples, &written).as_bytes())?;
+            Ok(None)
+        }
+        Err(error) => {
+            header_only()?;
+            Err(user(
+                "org.broadinstitute.hellbender.exceptions.UserException",
+                error.message(),
+            ))
+        }
+    }
+}
+
+/// `SiteDepthtoBAF`: per-sample allele depths at a set of sites turned into B-allele fractions.
+///
+/// The arithmetic, the site iterator and the value's `DecimalFormat` are
+/// [`gatk_tools::site_depth_to_baf`], and the walk's order is
+/// [`gatk_engine::multi_feature_walker`], all oracle-backed. The runner adds the order the tool's
+/// files are opened in:
+///
+/// * **the depth files at startup**, then the dictionary, as for every `MultiFeatureWalker`. A
+///   `.sd.txt` has no header at all, so the dictionary is the master one or the reference's;
+/// * **then `onTraversalStart`**: the sites VCF is opened, its dictionary must be the walk's
+///   (`assertSameDictionary`), and only then is the output's name asked for a codec, refused when
+///   there is none or when it names another feature type;
+/// * **the sink writes no header**: a `.baf.txt` is records and nothing else.
+///
+/// Refusals of the port's own: a sites VCF whose dictionary differs from the walk's, since the
+/// reference raises an `AssertionError` whose message prints `SAMSequenceRecord.toString`; a sites
+/// VCF with no contig lines, whose missing dictionary the reference dereferences; a depth or BAF
+/// file that is block compressed or `.bci`; and a malformed depth file. A run refused mid-walk
+/// leaves the file the sink created, empty, since what the buffered writer had flushed is
+/// unmeasured.
+pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
+    use gatk_engine::multi_feature_walker as walker;
+    use gatk_tools::site_depth_to_baf as baf;
+    use gatk_tools::sv_feature_codecs::{self as codecs, Encoding};
+    use std::io::Read;
+
+    let inputs = arguments(parser, "site-depth");
+    let sites_path = argument(parser, "baf-sites-vcf").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument baf-sites-vcf was missing: Argument 'baf-sites-vcf' is required",
+        )
+    })?;
+    let output = argument(parser, "baf-evidence-output").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument baf-evidence-output was missing: Argument 'baf-evidence-output' is required",
+        )
+    })?;
+    let double = |name: &str, default: f64| {
+        scalar(parser, name)
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(default)
+    };
+    let arguments = baf::Arguments {
+        max_std_dev: double("max-std", 0.2),
+        min_total_depth: number_or(parser, "min-total-depth", 10),
+        min_het_probability: double("min-het-probability", 0.5),
+    };
+    let user = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(message),
+    };
+    let limitation = |message: String| Thrown::non_user(PORT_LIMITATION, message);
+    let unreadable = |path: &str| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: java_absolute_path(path),
+            }
+            .message(),
+        )
+    };
+
+    let _ = resolve_read_filters(parser, "SiteDepthtoBAF")?;
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+
+    // `SiteDepthCodec.decode` over every line, a header included: it has none to skip.
+    let unsigned = |field: &str| field.parse::<u32>().map(|value| value as i32).ok();
+    let mut files: Vec<Vec<baf::SiteDepth>> = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input).map_err(|_| unreadable(input))?;
+        match codecs::find(input) {
+            Some(codecs::Codec {
+                feature_type: "SiteDepth",
+                encoding:
+                    Encoding::Text {
+                        block_compressed: false,
+                    },
+            }) => {}
+            _ => {
+                return Err(limitation(format!(
+                    "SiteDepthtoBAF reads {input}, and only plain-text site depth is ported"
+                )))
+            }
+        }
+        let mut records = Vec::new();
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            let columns: Vec<&str> = line.split('\t').collect();
+            let parsed = (columns.len() == 7)
+                .then(|| {
+                    Some(baf::SiteDepth {
+                        contig: columns[0].to_string(),
+                        position: unsigned(columns[1])?.wrapping_add(1),
+                        sample: columns[2].to_string(),
+                        counts: [
+                            unsigned(columns[3])?,
+                            unsigned(columns[4])?,
+                            unsigned(columns[5])?,
+                            unsigned(columns[6])?,
+                        ],
+                    })
+                })
+                .flatten();
+            match parsed {
+                Some(record) => records.push(record),
+                None => {
+                    return Err(limitation(format!(
+                        "{input} is a malformed site-depth file, which Tribble refuses"
+                    )))
+                }
+            }
+        }
+        files.push(records);
+    }
+
+    let lengths = |header: &Option<SamHeader>| {
+        header.as_ref().map(|header| {
+            header
+                .sequences
+                .iter()
+                .map(|record| (record.name.clone(), record.length as i64))
+                .collect::<Vec<_>>()
+        })
+    };
+    let master_lengths = lengths(&master);
+    let reference_lengths = lengths(&reference);
+    let source = |pairs: &Option<Vec<(String, i64)>>, name: &str| {
+        pairs.as_ref().map(|pairs| walker::DictSource {
+            contigs: pairs.iter().map(|(contig, _)| contig.clone()).collect(),
+            source: name.to_string(),
+        })
+    };
+    let dictionary = walker::choose_dictionary(
+        source(&master_lengths, "sequence-dictionary"),
+        source(&reference_lengths, "reference"),
+    )
+    .map_err(|error| user(error.message()))?;
+    // The chosen one is whichever `betterDictionary` kept, and it is the larger.
+    let chosen: Vec<(String, i64)> = [master_lengths, reference_lengths]
+        .into_iter()
+        .flatten()
+        .find(|pairs| {
+            pairs.iter().map(|(contig, _)| contig).collect::<Vec<_>>()
+                == dictionary.contigs.iter().collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // `onTraversalStart`: the sites VCF, then its dictionary against the walk's.
+    let raw = std::fs::read(&sites_path).map_err(|_| unreadable(&sites_path))?;
+    let text = if codecs::has_block_compressed_extension(&sites_path) {
+        let mut text = String::new();
+        flate2::read::MultiGzDecoder::new(raw.as_slice())
+            .read_to_string(&mut text)
+            .map_err(|_| limitation(format!("{sites_path} could not be inflated")))?;
+        text
+    } else {
+        String::from_utf8_lossy(&raw).into_owned()
+    };
+    let contigs: Vec<(String, i64)> = text
+        .lines()
+        .take_while(|line| line.starts_with("##"))
+        .filter_map(|line| line.strip_prefix("##contig=<"))
+        .filter_map(|fields| {
+            let fields = fields.trim_end_matches('>');
+            let mut id = None;
+            let mut length = 0i64;
+            for field in fields.split(',') {
+                match field.split_once('=') {
+                    Some(("ID", value)) => id = Some(value.to_string()),
+                    Some(("length", value)) => length = value.parse().unwrap_or(0),
+                    _ => {}
+                }
+            }
+            id.map(|id| (id, length))
+        })
+        .collect();
+    if contigs.is_empty() {
+        return Err(limitation(format!(
+            "{sites_path} declares no contigs, and the reference dereferences its null dictionary"
+        )));
+    }
+    if contigs != chosen {
+        return Err(limitation(format!(
+            "{sites_path}'s dictionary differs from the walk's, which the reference refuses with \
+             an AssertionError the port does not reproduce"
+        )));
+    }
+    match codecs::find(&output) {
+        None => return Err(user(codecs::no_output_codec(&output))),
+        Some(codec) if codec.feature_type != "BafEvidence" => {
+            return Err(user(format!(
+                "We're intending to write BafEvidence, but the feature type associated with the \
+                 output file expects features of type {}",
+                codec.feature_type
+            )))
+        }
+        Some(codecs::Codec {
+            encoding: Encoding::Text {
+                block_compressed: false,
+            },
+            ..
+        }) => {}
+        Some(_) => {
+            return Err(limitation(
+                "SiteDepthtoBAF writes a block-compressed or .bci file, which is not ported"
+                    .to_string(),
+            ))
+        }
+    }
+
+    let sites = baf::read_sites(&text);
+    let located: Vec<Vec<walker::Located>> = files
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| walker::Located {
+                    contig: record.contig.clone(),
+                    start: record.position,
+                    end: record.position,
+                    text: index.to_string(),
+                })
+                .collect()
+        })
+        .collect();
+    let empty = || write_file(&output, b"");
+    let walked = match walker::merge_with_sources(&located, &dictionary) {
+        Ok(walked) => walked,
+        Err(error) => {
+            empty()?;
+            return Err(user(error.message()));
+        }
+    };
+    let depths: Vec<baf::SiteDepth> = walked
+        .iter()
+        .map(|(input, feature)| {
+            files[*input][feature.text.parse::<usize>().expect("a record index")].clone()
+        })
+        .collect();
+    match baf::run(&depths, &sites, &arguments) {
+        Ok(written) => {
+            write_file(&output, baf::write(&written).as_bytes())?;
+            Ok(None)
+        }
+        Err(error) => {
+            empty()?;
+            Err(user(error.message()))
+        }
+    }
+}

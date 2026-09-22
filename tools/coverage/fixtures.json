@@ -2787,6 +2787,172 @@
         "3"
       ],
       "--bloom-false-positive-probability": []
+    },
+    "CondenseDepthEvidence": {
+      "$why": [
+        "depth.rd.txt is ten adjacent hundred-base bins, a one-base gap, two more and a contig change;",
+        "depth2.rd.txt has three samples, fifty-base bins and a count above 2^31, which",
+        "Integer.parseUnsignedInt reads and the merge sums as a wrapped int. Two files of different",
+        "widths and bin sizes, so each maximum and minimum cuts them somewhere different.",
+        "--max-interval-size is the default 1000 and 250; --min-interval-size is 0 and 300. The pair",
+        "300 over 250 is the minimum-above-maximum refusal, and 300 under 1000 drops the short runs.",
+        "--output carries a lower-case name and one in mixed case: the codec lower-cases before it",
+        "tests the suffix, so Condensed.RD.TXT is depth evidence too.",
+        "--compression-level is 4 and 0, which a TEXT output never reads: the pair measures that it",
+        "changes nothing. A block-compressed or .bci output is a refusal of the port's own, so the",
+        "claim is narrower by those two formats.",
+        "--input and --read-index are held out, as for PrintReadCounts: this tool reads a feature file",
+        "and no reads. --intervals and --exclude-intervals are held out because a bounded feature",
+        "traversal needs an index and measures the random-access path rather than the merge.",
+        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends",
+        "are held out for the reason AddOriginalAlignmentTags gives: each belongs to a filter no row",
+        "selects, and the reference refuses the whole command line for it, so every row was that",
+        "one refusal and the first array accepted nothing."
+      ],
+      "--depth-evidence": [
+        "/work/fixtures/depth.rd.txt",
+        "/work/fixtures/depth2.rd.txt"
+      ],
+      "--output": [
+        "/work/out/condensed.rd.txt",
+        "/work/out/Condensed.RD.TXT"
+      ],
+      "--max-interval-size": [
+        "1000",
+        "250"
+      ],
+      "--min-interval-size": [
+        "0",
+        "300"
+      ],
+      "--compression-level": [
+        "4",
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
+    },
+    "PrintSVEvidence": {
+      "$why": [
+        "--evidence-file is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and",
+        "depth3: the second pair shares three bins, so the sort merger WIDENS them with bravo's counts,",
+        "and every other bin carries -1 for the samples its file does not have.",
+        "--sample-names is `null`, absent, so the union of the headers alphabetically, and samples.list: zulu twice,",
+        "bravo, and nobody, which no file carries. The set keeps zulu once, first; nobody is a column of",
+        "-1 rather than a refusal.",
+        "--sequence-dictionary is sv.dict, which names both contigs the depth files use, or absent;",
+        "--reference is reference.fasta, whose dictionary names chr1 alone, or absent. With both, the",
+        "master is the larger and wins; with the reference alone, chr2 is in no dictionary and the sort",
+        "merger's compareLocatables refuses it; with neither, the walker has no dictionary at all.",
+        "--output carries a mixed-case name, which the codec lower-cases, and --compression-level is 4",
+        "and 0, which a text output never reads. A block-compressed or .bci output, and any evidence",
+        "type but depth, are refusals of the port's own, so the claim is narrower by those.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--evidence-file": [
+        "/work/fixtures/depth.rd.txt",
+        "/work/fixtures/evidence.list"
+      ],
+      "--sample-names": [
+        "null",
+        "/work/fixtures/samples.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict",
+        "null"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "null"
+      ],
+      "--output": [
+        "/work/out/merged.rd.txt",
+        "/work/out/Merged.RD.TXT"
+      ],
+      "--compression-level": [
+        "4",
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
+    },
+    "SiteDepthtoBAF": {
+      "$why": [
+        "--site-depth is depth.sd.txt alone, one sample, or sd.list, which Barclay expands into both",
+        "files: two samples per locus, so the median shift and the deviation test have something to act",
+        "on, and a locus with one surviving sample is written as .50 whatever it measured.",
+        "--baf-sites-vcf is baf_sites.vcf and baf_sites2.vcf, the same loci with ref and alt swapped, so",
+        "the same depths give each sample the other fraction. Both hold an indel BAFSiteIterator skips.",
+        "--min-total-depth 10 and 30, --max-std 0.2 and 0.05, --min-het-probability 0.5 and 0.9: each",
+        "keeps a different set of the sites, since the depths are chosen to straddle each threshold.",
+        "--baf-evidence-output carries a mixed-case name, which the codec lower-cases.",
+        "--sequence-dictionary is held at sv.dict and --reference out: the tool asserts the sites VCF's",
+        "dictionary IS the walk's, and a mismatch is an AssertionError whose message the port does not",
+        "reproduce, so a row that varied either would measure that gap. --sample-names is held out: it",
+        "reaches only a .bci output, and a .bci or block-compressed output is a refusal of the port's own.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--site-depth": [
+        "/work/fixtures/depth.sd.txt",
+        "/work/fixtures/sd.list"
+      ],
+      "--baf-sites-vcf": [
+        "/work/fixtures/baf_sites.vcf",
+        "/work/fixtures/baf_sites2.vcf"
+      ],
+      "--min-total-depth": [
+        "10",
+        "30"
+      ],
+      "--max-std": [
+        "0.2",
+        "0.05"
+      ],
+      "--min-het-probability": [
+        "0.5",
+        "0.9"
+      ],
+      "--baf-evidence-output": [
+        "/work/out/sites.baf.txt",
+        "/work/out/Sites.BAF.TXT"
+      ],
+      "--compression-level": [
+        "4",
+        "0"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict"
+      ],
+      "--reference": [],
+      "--sample-names": [],
+      "--input": [],
+      "--read-index": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
     }
   },
   "constraints": [

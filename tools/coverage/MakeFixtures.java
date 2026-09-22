@@ -1352,6 +1352,86 @@ public class MakeFixtures {
         Files.copy(dir.resolve("counts.tsv"), dir.resolve("sv.counts.tsv"),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
+        // Two depth-evidence files for `CondenseDepthEvidence`, written in the codec's own layout:
+        // a header of column names and zero-based half-open bins. The first is a run of ten
+        // adjacent hundred-base bins, a one-base gap, two more, and a contig change, so every
+        // maximum and minimum in the array cuts it somewhere different. The second has three
+        // samples, fifty-base bins, and a count above 2^31, which `Integer.parseUnsignedInt` reads
+        // and the merge then sums as a wrapped int.
+        final StringBuilder depth = new StringBuilder("#Chr\tStart\tEnd\tsA\tsB\n");
+        for (int i = 0; i < 10; i++) {
+            depth.append(String.format("chr1\t%d\t%d\t%d\t%d%n", i * 100, (i + 1) * 100, i + 1, 100 - i));
+        }
+        depth.append("chr1\t1001\t1101\t11\t90\n");
+        depth.append("chr1\t1101\t1201\t12\t89\n");
+        depth.append("chr2\t1201\t1301\t13\t88\n");
+        Files.writeString(dir.resolve("depth.rd.txt"), depth.toString(), StandardCharsets.UTF_8);
+        final StringBuilder depth2 = new StringBuilder("#Chr\tStart\tEnd\tzulu\talpha\tmike\n");
+        for (int i = 0; i < 16; i++) {
+            depth2.append(String.format("chr1\t%d\t%d\t%d\t%d\t%s%n",
+                    i * 50, (i + 1) * 50, i, 2 * i, i == 3 ? "3000000000" : Integer.toString(7 * i)));
+        }
+        depth2.append("chr2\t0\t50\t1\t2\t3\n");
+        Files.writeString(dir.resolve("depth2.rd.txt"), depth2.toString(), StandardCharsets.UTF_8);
+        // For `PrintSVEvidence`: a third file naming one more sample at three of depth2's bins, so
+        // a row that merges the two widens those bins rather than interleaving them; the pair is
+        // named by a `.list`, which Barclay expands for a collection argument. A second `.list`
+        // names samples for `--sample-names`, one of them twice and one that no file carries. And
+        // a dictionary naming both contigs the depth files use, since the corpus's own name one.
+        Files.writeString(dir.resolve("depth3.rd.txt"),
+                "#Chr\tStart\tEnd\tbravo\n"
+                        + "chr1\t0\t50\t101\n"
+                        + "chr1\t100\t150\t102\n"
+                        + "chr2\t0\t50\t103\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("evidence.list"),
+                // The paths the ROWS see: the corpus is written here and read under /work/fixtures.
+                "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
+                StandardCharsets.UTF_8);
+        // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,
+        // zero-based on disk, and two sites VCFs over the same loci, the second with every ref and
+        // alt swapped, so the same depths give each sample the other fraction. Each VCF also holds
+        // an indel between two sites, which `BAFSiteIterator` skips, and declares the two contigs
+        // `sv.dict` does, since the tool asserts the VCF's dictionary is the walk's. The depths are
+        // chosen so each threshold in the array keeps a different set: one site fails the
+        // chi-squared test, one has a total under 30, and one has samples far enough apart that a
+        // tight --max-std drops the whole locus.
+        final String sdA = "chr1\t99\ts1\t10\t12\t0\t0\n"
+                + "chr1\t199\ts1\t0\t0\t30\t2\n"
+                + "chr1\t299\ts1\t8\t0\t9\t0\n"
+                + "chr1\t399\ts1\t0\t40\t0\t35\n"
+                + "chr2\t99\ts1\t20\t0\t0\t21\n";
+        final String sdB = "chr1\t99\ts2\t14\t9\t0\t0\n"
+                + "chr1\t299\ts2\t11\t0\t12\t1\n"
+                + "chr1\t399\ts2\t0\t20\t0\t60\n"
+                + "chr2\t99\ts2\t30\t0\t0\t25\n";
+        Files.writeString(dir.resolve("depth.sd.txt"), sdA, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("depth2.sd.txt"), sdB, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sd.list"),
+                "/work/fixtures/depth.sd.txt\n/work/fixtures/depth2.sd.txt\n",
+                StandardCharsets.UTF_8);
+        final String[][] snps = {
+                {"chr1", "100", "A", "C"}, {"chr1", "150", "AC", "A"}, {"chr1", "200", "G", "T"},
+                {"chr1", "300", "A", "G"}, {"chr1", "400", "C", "T"}, {"chr2", "100", "A", "T"}};
+        for (final boolean swapped : new boolean[] {false, true}) {
+            final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n"
+                    + "##contig=<ID=chr1,length=100000>\n##contig=<ID=chr2,length=100000>\n"
+                    + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+            for (final String[] snp : snps) {
+                final boolean swap = swapped && snp[2].length() == 1;
+                vcf.append(snp[0]).append('\t').append(snp[1]).append("\t.\t")
+                        .append(swap ? snp[3] : snp[2]).append('\t')
+                        .append(swap ? snp[2] : snp[3]).append("\t.\t.\t.\n");
+            }
+            Files.writeString(dir.resolve(swapped ? "baf_sites2.vcf" : "baf_sites.vcf"),
+                    vcf.toString(), StandardCharsets.UTF_8);
+        }
+        Files.writeString(dir.resolve("sv.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n@SQ\tSN:chr2\tLN:100000\n",
+                StandardCharsets.UTF_8);
+
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
         // other's input, so the second tool is measured on a table the first really writes rather

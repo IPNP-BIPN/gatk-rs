@@ -15,7 +15,7 @@
 
 use gatk_corpus as corpus;
 use gatk_tools::condense_depth_evidence::{
-    check_lengths, check_output, condense, read, write, Arguments, CondenseError,
+    check_lengths, check_output, condense, read, write, Arguments, CondenseError, DepthEvidence,
 };
 
 fn golden() -> String {
@@ -48,8 +48,11 @@ fn refusal(text: &str, label: &str) -> String {
 }
 
 fn run(text: &str, label: &str, arguments: &Arguments) -> String {
-    let (samples, records) = read(&value(text, "input", label));
-    write(&samples, &condense(&records, arguments))
+    let (samples, records) = read(&value(text, "input", label)).expect("a well-formed input");
+    write(
+        &samples,
+        &condense(&records, arguments).expect("adjacent bins of one width"),
+    )
 }
 
 #[test]
@@ -191,4 +194,32 @@ fn the_two_refusals_match_the_golden() {
         refusal(&text, "wrong-output-type")
     );
     assert_eq!(check_output("<dir>/condensed.rd.txt"), Ok(()));
+}
+
+/// What `apply` inherits from `MathUtils.addToArrayInPlace`, read from the source rather than
+/// measured: the golden's bins all carry two counts and none comes near `i32::MAX`.
+#[test]
+fn the_counts_are_summed_as_java_ints() {
+    let bin = |start: i32, counts: Vec<i32>| DepthEvidence {
+        contig: "chr1".to_string(),
+        start,
+        end: start + 99,
+        counts,
+    };
+    let wide = condense(
+        &[bin(1, vec![i32::MAX, 1]), bin(101, vec![1, 1])],
+        &Arguments::default(),
+    )
+    .expect("one width");
+    assert_eq!(wide[0].counts, vec![i32::MIN, 2]);
+    let error = condense(
+        &[bin(1, vec![1, 1]), bin(101, vec![1])],
+        &Arguments::default(),
+    )
+    .expect_err("two widths");
+    assert_eq!(error, CondenseError::CountMismatch);
+    assert_eq!(
+        format!("{}:{}", error.java_class(), error.message()),
+        "java.lang.IllegalArgumentException:Arrays must have same length"
+    );
 }

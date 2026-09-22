@@ -101,22 +101,9 @@ impl PrintError {
     }
 }
 
-/// `FeatureOutputCodecFinder.find`, for the extensions this tool can meet.
+/// `FeatureOutputCodecFinder.find`: the feature type the name selects.
 pub fn output_feature_type(path: &str) -> Option<&'static str> {
-    let stripped = path.strip_suffix(".gz").unwrap_or(path);
-    if stripped.ends_with(".rd.txt") {
-        Some("DepthEvidence")
-    } else if stripped.ends_with(".baf.txt") {
-        Some("BafEvidence")
-    } else if stripped.ends_with(".sr.txt") {
-        Some("SplitReadEvidence")
-    } else if stripped.ends_with(".pe.txt") {
-        Some("DiscordantPairEvidence")
-    } else if stripped.ends_with(".sd.txt") {
-        Some("SiteDepth")
-    } else {
-        None
-    }
+    crate::sv_feature_codecs::find(path).map(|codec| codec.feature_type)
 }
 
 /// `onTraversalStart`'s two checks, in the order they fire. `inputs` are the input paths, all of
@@ -158,6 +145,9 @@ pub fn sample_names(requested: &[String], files: &[EvidenceFile]) -> Vec<String>
 }
 
 /// `DepthEvidence.extractSamples`: one column per requested name, `-1` where the file has none.
+///
+/// `SVFeaturesHeader.getSampleIndex` is a `HashMap` filled in header order, so a name the header
+/// repeats answers with its LAST column.
 pub fn extract_samples(
     record: &DepthEvidence,
     file_samples: &[String],
@@ -170,7 +160,7 @@ pub fn extract_samples(
         counts: wanted
             .iter()
             .map(
-                |name| match file_samples.iter().position(|own| own == name) {
+                |name| match file_samples.iter().rposition(|own| own == name) {
                     Some(index) => record.counts[index],
                     None => MISSING_DATA,
                 },
