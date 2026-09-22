@@ -10885,3 +10885,129 @@ fn tar_entry<'a>(tar: &'a [u8], name: &str) -> Option<&'a [u8]> {
     }
     None
 }
+
+/// `PathSeqBuildKmers.doWork`, up to the file it writes.
+///
+/// The arithmetic is [`gatk_tools::pathseq_kmers`] and the file is
+/// [`gatk_tools::pathseq_kryo::kmer_set_file`], both oracle-backed. What the runner adds is what
+/// decides the TABLE the file carries, and it is not the set of k-mers:
+///
+/// * **the contigs are read in the file's own order**, because `getAllReferenceBases` collects them
+///   into a `LinkedHashMap` as `nextSequence` hands them over, and the bases are the file's bytes,
+///   neither upper-cased nor flattened;
+/// * **every k-mer is ADDED, duplicates included**, one contig's array after another, so the
+///   insertion order is the reference's own and a repeated k-mer is added again rather than
+///   skipped;
+/// * **the set is sized by that total**, `numLongs` counting duplicates, which is the capacity the
+///   file's first int reports.
+///
+/// **The reference is tested before the mask and read after it**: the constructor of
+/// `ReferenceFileSparkSource` refuses a path that does not exist, then `parseMask` runs, and only
+/// then are the bases loaded. A bad mask over a missing reference is therefore the reference's
+/// refusal, and a bad mask over a present one never waits for the file to be read.
+///
+/// The output name gains `.hss` when it does not already end in it, which is `writeKmerSet`'s own
+/// rule and not the caller's.
+///
+/// `--bloom-false-positive-probability` above zero writes a `PSKmerBloomFilter` instead, which is a
+/// container this port does not carry: that is a refusal of the port's own, not one of GATK's.
+pub fn path_seq_build_kmers(parser: &Parser) -> Outcome {
+    use gatk_engine::hopscotch::LargeLongHopscotchSet;
+    use gatk_tools::pathseq_kmers::{self, KmerError};
+
+    let refused = |error: KmerError| Thrown::non_user(error.java_class(), error.message());
+    let reference = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let kmer_size: usize = scalar(parser, "kmer-size")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(31);
+    let spacing: usize = scalar(parser, "kmer-spacing")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let bloom: f64 = scalar(parser, "bloom-false-positive-probability")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0);
+    let mask_argument = scalar(parser, "kmer-mask").unwrap_or_default();
+
+    // `ReferenceFileSparkSource`'s constructor, which runs before the mask is parsed and tests
+    // only that the path exists.
+    if !std::path::Path::new(&reference).exists() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$MissingReference",
+            message: Some(format!(
+                "The specified fasta file ({reference}) does not exist."
+            )),
+        });
+    }
+    let positions = pathseq_kmers::parse_mask(&mask_argument, kmer_size).map_err(refused)?;
+    let mask = pathseq_kmers::get_mask(&positions, kmer_size);
+
+    let bases = std::fs::read(&reference).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not read {reference}: {error}"))
+    })?;
+    if gatk_tools::read_walker_refusal::is_block_compressed(&bases) {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "PathSeqBuildKmers reads a block-compressed FASTA through its .gzi, which is not ported",
+        ));
+    }
+    let contigs = fasta_records(&bases);
+    let mut per_contig = Vec::new();
+    let mut total: i64 = 0;
+    for contig in &contigs {
+        let kmers =
+            pathseq_kmers::masked_kmers(contig, kmer_size, spacing, mask).map_err(refused)?;
+        total += kmers.len() as i64;
+        per_contig.push(kmers);
+    }
+    if bloom > 0.0 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "PathSeqBuildKmers writes a PSKmerBloomFilter for --bloom-false-positive-probability \
+             above zero, and the Bloom filter is not ported",
+        ));
+    }
+    if total == 0 {
+        // `LargeLongHopscotchSet` refuses to be built from nothing, and it is the container that
+        // refuses rather than the tool.
+        return Err(refused(KmerError::EmptySet));
+    }
+    let mut set = LargeLongHopscotchSet::new(total);
+    for kmers in &per_contig {
+        for value in kmers {
+            set.add(*value as i64);
+        }
+    }
+    let file = gatk_tools::pathseq_kryo::kmer_set_file(kmer_size as i32, mask.0 as i64, &set);
+    let name = if output.to_lowercase().ends_with(".hss") {
+        output.clone()
+    } else {
+        format!("{output}.hss")
+    };
+    std::fs::write(&name, file).map_err(|error| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {name}: {error}"))
+    })?;
+    Ok(None)
+}
+
+/// The bases of each record of a FASTA, in the file's order and as its own bytes.
+///
+/// `nextSequence` hands back what is written: a lower-case base stays lower-case and an IUPAC code
+/// stays itself, which is what `SVKmerizer` then refuses a window over.
+fn fasta_records(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let mut records: Vec<Vec<u8>> = Vec::new();
+    for line in bytes.split(|byte| *byte == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if line.first() == Some(&b'>') {
+            records.push(Vec::new());
+        } else if let Some(current) = records.last_mut() {
+            current.extend_from_slice(line);
+        }
+    }
+    records
+}

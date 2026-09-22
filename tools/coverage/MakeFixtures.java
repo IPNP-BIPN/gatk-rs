@@ -1386,6 +1386,7 @@ public class MakeFixtures {
                 {"ref|NC_VIRUS.1|", "300"}, {"ref|NC_BACT.1|", "1000"}, {"ref|NC_SHORT.1|", "100"},
                 {"taxid|562|", "800"}, {"ACC_PLAIN.1", "900"}, {"gi|9|ref|NC_BOTH.1|taxid|11234|", "700"}};
         pathSeqReference(dir.resolve("pathseq.fasta"), contigs);
+        pathSeqKmerReference(dir.resolve("pathseq_kmers.fasta"));
         pathSeqReference(dir.resolve("pathseq2.fasta"), new String[][] {
                 contigs[3], contigs[5], {"taxid|9606|", "600"}});
 
@@ -1422,6 +1423,44 @@ public class MakeFixtures {
         }
         Files.writeString(dir.resolve("genbank.catalog"),
                 "a\tACC_PLAIN.1\tc\td\te\tf\t9606\th\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * A reference whose bases are not periodic, which `PathSeqBuildKmers` needs.
+     *
+     * The corpus's other references repeat `ACGT`, and a periodic sequence has four distinct
+     * 31-mers whatever its length: every row of that tool's array wrote a set of two entries and
+     * forty-two bytes, which compares a serializer rather than a k-mer set. These bases come from
+     * a fixed linear congruential sequence, so they are varied and still the same on every run.
+     * One contig also carries a run of `N` and a lower-case stretch: a bad base costs a whole
+     * window, and a lower-case one is not upper-cased before it is read.
+     */
+    static void pathSeqKmerReference(final Path fasta) throws Exception {
+        final StringBuilder first = new StringBuilder();
+        long state = 12345L;
+        for (int i = 0; i < 2000; i++) {
+            state = state * 6364136223846793005L + 1442695040888963407L;
+            first.append("ACGT".charAt((int) ((state >>> 33) & 3)));
+        }
+        final StringBuilder second = new StringBuilder();
+        for (int i = 0; i < 400; i++) {
+            state = state * 6364136223846793005L + 1442695040888963407L;
+            second.append("ACGT".charAt((int) ((state >>> 33) & 3)));
+        }
+        second.append("NNNNNNNNNN");
+        for (int i = 0; i < 200; i++) {
+            state = state * 6364136223846793005L + 1442695040888963407L;
+            second.append("acgt".charAt((int) ((state >>> 33) & 3)));
+        }
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(fasta)
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            writer.startSequence("host_1").appendBases(first.toString());
+            writer.startSequence("host_2").appendBases(second.toString());
+        }
     }
 
     static void pathSeqReference(final Path fasta, final String[][] contigs) throws Exception {
