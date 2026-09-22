@@ -3333,6 +3333,61 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "FilterVariantTranches": {
+      "$why": [
+        "--variant is cnn.vcf: SNPs and indels scored in CNN_2D, one unscored, one already filtered.",
+        "--resource is snp_truth.vcf and truth.list, which adds indel_truth.vcf, whose deletion is spelled",
+        "with a longer reference so the match extends the shorter one. Without the indel resource the two",
+        "scored indels have nothing to match and the tool refuses. --snp-tranche is the default 99.95 and a",
+        ".list of 99.0, 90.0 and 99.0 again, deduplicated and sorted; --indel-tranche is 99.4 and 50.0.",
+        "--info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters",
+        "drops LowQual and its header line. The index and the output filtering mode are held for the",
+        "reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's",
+        "own time into the header, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/cnn.vcf"
+      ],
+      "--resource": [
+        "/work/fixtures/snp_truth.vcf",
+        "/work/fixtures/truth.list"
+      ],
+      "--snp-tranche": [
+        "99.95",
+        "/work/fixtures/snp_tranches.list"
+      ],
+      "--indel-tranche": [
+        "99.4",
+        "50.0"
+      ],
+      "--info-key": [
+        "CNN_2D",
+        "CNN_1D"
+      ],
+      "--output": [
+        "/work/out/tranched.vcf",
+        "/work/out/tranched.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

@@ -1661,6 +1661,49 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("sums.list"), "QD_SUM\nMQ_SUM\nABSENT_SUM\n",
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("sums_two.list"), "MQ_SUM\nQD_SUM\n", StandardCharsets.UTF_8);
+        // For `FilterVariantTranches`: calls scored in `CNN_2D`, one unscored, one already filtered,
+        // two indels, and resources that share their sites. The indel resource spells the deletion
+        // at 600 with one more reference base, so the match goes through `isAlleleInList`'s
+        // extension of the shorter reference; the second resource file carries the indels only.
+        final String cnnHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##INFO=<ID=CNN_2D,Number=1,Type=Float,Description=\"2D CNN score\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("cnn.vcf"), cnnHeader
+                + "chr1\t100\t.\tA\tC\t50\t.\tCNN_2D=2.5\n"
+                + "chr1\t200\t.\tC\tT\t50\t.\tCNN_2D=-1.0\n"
+                + "chr1\t300\t.\tG\tA\t50\tPASS\tCNN_2D=0.5\n"
+                + "chr1\t400\t.\tT\tG\t50\t.\tCNN_2D=1.8\n"
+                + "chr1\t500\t.\tA\tAT\t50\t.\tCNN_2D=-0.5\n"
+                + "chr1\t600\t.\tCTG\tC\t50\t.\tCNN_2D=1.2\n"
+                + "chr1\t700\t.\tG\tC\t50\t.\t.\n"
+                + "chr1\t800\t.\tT\tC\t50\tLowQual\tCNN_2D=-2.0\n",
+                StandardCharsets.UTF_8);
+        final String resourceHeader = "##fileformat=VCFv4.2\n##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("snp_truth.vcf"), resourceHeader
+                + "chr1\t100\t.\tA\tC\t.\t.\t.\n"
+                + "chr1\t200\t.\tC\tT\t.\t.\t.\n"
+                + "chr1\t300\t.\tG\tA,T\t.\t.\t.\n"
+                + "chr1\t400\t.\tT\tG\t.\t.\t.\n"
+                + "chr1\t500\t.\tA\tAT\t.\t.\t.\n"
+                + "chr1\t800\t.\tT\tA\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("indel_truth.vcf"), resourceHeader
+                + "chr1\t500\t.\tA\tAT\t.\t.\t.\n"
+                + "chr1\t600\t.\tCTGG\tCG\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        // A resource is queried by interval, which needs an index.
+        for (final String truth : new String[] {"snp_truth.vcf", "indel_truth.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(truth).toString()});
+        }
+        Files.writeString(dir.resolve("truth.list"),
+                "/work/fixtures/snp_truth.vcf\n/work/fixtures/indel_truth.vcf\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
+                StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }
