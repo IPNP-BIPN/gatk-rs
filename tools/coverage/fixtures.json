@@ -2953,6 +2953,61 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "MergeMutectStats": {
+      "$why": [
+        "--stats is one shard, stats.list naming a.stats, b.stats and a.stats again, which the tool's",
+        "LinkedHashSet reads once, and odd_stats.list, whose second shard carries a statistic the",
+        "aggregation map does not hold: the IllegalStateException the suite also measures. The sum is",
+        "a double written as one, so 1000.0 and 2.5E7 come back as 2.5001E7."
+      ],
+      "--stats": [
+        "/work/fixtures/a.stats",
+        "/work/fixtures/stats.list",
+        "/work/fixtures/odd_stats.list"
+      ],
+      "--output": [
+        "/work/out/merged.stats",
+        "/work/out/merged2.stats"
+      ]
+    },
+    "GatherPileupSummaries": {
+      "$why": [
+        "-I is the reference's summary of reads.bam above 2000, pileups.list naming it, an empty window",
+        "and the window below 2000 in that order, which the gather drops and then sorts by first",
+        "record, and mixed_pileups.list, whose second table names another sample, which it refuses.",
+        "--sequence-dictionary is matching.dict and",
+        "sv.dict, which both put chr1 first; the printed count of samples merged is part of the output."
+      ],
+      "--I": [
+        "/work/fixtures/summaries_b.table",
+        "/work/fixtures/pileups.list",
+        "/work/fixtures/mixed_pileups.list"
+      ],
+      "--O": [
+        "/work/out/gathered.table",
+        "/work/out/gathered2.table"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/matching.dict",
+        "/work/fixtures/sv.dict"
+      ]
+    },
+    "GatherNormalArtifactData": {
+      "$why": [
+        "--input is the reference's table with tumor_normal.bam's `normal` as the normal, and",
+        "artifacts.list naming a table in the writer's layout, the reference's header-only table for",
+        "`tumor`, and the `normal` one, since the gather concatenates in the order given with no sort",
+        "and no empty check."
+      ],
+      "--input": [
+        "/work/fixtures/artifact_normal.table",
+        "/work/fixtures/artifacts.list"
+      ],
+      "--output": [
+        "/work/out/artifacts.table",
+        "/work/out/artifacts2.table"
+      ]
     }
   },
   "constraints": [

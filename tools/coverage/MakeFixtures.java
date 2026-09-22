@@ -1447,6 +1447,70 @@ public class MakeFixtures {
                             "--output", dir.resolve(pair[1]).toString(),
                     });
         }
+        // The three Mutect gathers. `GatherPileupSummaries` gets the REFERENCE's own summaries of
+        // one sample over three windows: two holding sites and one holding none, named by a
+        // `.list` out of order, so the gather has to sort them by their first record and drop the
+        // empty one. The population's sites sit below 5000, so the windows split there. A second
+        // `.list` adds the first window again under another sample's name, which the gather
+        // refuses: the corpus's two BAMs carry the same sample, so the name is rewritten here.
+        for (final String[] window : new String[][] {
+                {"chr1:2001-60000", "summaries_b.table"}, {"chr1:1-2000", "summaries_a.table"},
+                {"chr1:90001-100000", "summaries_empty.table"}}) {
+            new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries()
+                    .instanceMain(new String[] {
+                            "--input", dir.resolve("reads.bam").toString(),
+                            "--variant", population.toString(),
+                            "--intervals", window[0],
+                            "--output", dir.resolve(window[1]).toString(),
+                    });
+        }
+        Files.writeString(dir.resolve("pileups.list"),
+                "/work/fixtures/summaries_b.table\n/work/fixtures/summaries_empty.table\n"
+                        + "/work/fixtures/summaries_a.table\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("summaries_other.table"),
+                Files.readString(dir.resolve("summaries_a.table"))
+                        .replace("SAMPLE=sample1", "SAMPLE=other"),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("mixed_pileups.list"),
+                "/work/fixtures/summaries_b.table\n/work/fixtures/summaries_other.table\n",
+                StandardCharsets.UTF_8);
+        // `GatherNormalArtifactData` gets the reference's own tables for each sample of
+        // `tumor_normal.bam` taken as the normal, so the two shards hold different records.
+        for (final String sample : new String[] {"normal", "tumor"}) {
+            new org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData()
+                    .instanceMain(new String[] {
+                            "--input", dir.resolve("tumor_normal.bam").toString(),
+                            "--reference", dir.resolve("reference.fasta").toString(),
+                            "--normal-sample", sample,
+                            "--output", dir.resolve("artifact_" + sample + ".table").toString(),
+                    });
+        }
+        // `tumor` as the normal finds nothing, so its table is a header alone. A third table in the
+        // writer's own layout (ints, a double as `Double.toString` writes it, the type's name)
+        // gives the gather two shards with records, so their order shows in the output.
+        Files.writeString(dir.resolve("artifact_extra.table"),
+                "normal_alt\tnormal_dp\ttumor_alt\ttumor_dp\tdownsampling\ttype\n"
+                        + "0\t10\t3\t12\t0.5\tSNV\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("artifacts.list"),
+                "/work/fixtures/artifact_extra.table\n/work/fixtures/artifact_tumor.table\n"
+                        + "/work/fixtures/artifact_normal.table\n",
+                StandardCharsets.UTF_8);
+        // `MergeMutectStats` reads the two-column table Mutect2 writes. The `.list` names one
+        // shard twice, which the tool's `LinkedHashSet` reads once, and the second `.list` adds a
+        // shard carrying a statistic the aggregation map does not hold.
+        Files.writeString(dir.resolve("a.stats"), "statistic\tvalue\ncallable\t1000.0\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("b.stats"), "statistic\tvalue\ncallable\t2.5E7\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("odd.stats"),
+                "statistic\tvalue\ncallable\t3.0\nrejected\t1.0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("stats.list"),
+                "/work/fixtures/a.stats\n/work/fixtures/b.stats\n/work/fixtures/a.stats\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("odd_stats.list"),
+                "/work/fixtures/a.stats\n/work/fixtures/odd.stats\n", StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }
