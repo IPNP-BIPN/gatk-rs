@@ -1566,6 +1566,38 @@ public class MakeFixtures {
                 "CONTIG\tSTART\tEND\tCALL\n"
                         + "chr1\t8001\t9000\t-\n",
                 StandardCharsets.UTF_8);
+        // Tranche shards for `GatherTranches`, in the VQSLOD layout of version 6: two shards at
+        // the same four levels, a third with a level the others lack, and one of version 5, which
+        // the reader refuses by its version line. A `.list` names the first three, and another
+        // names the requested sensitivities, out of order, since the tool sorts them in place.
+        final String trancheHeader = "# Variant quality score tranches file\n# Version number 6\n"
+                + "requestedVQSLOD,numKnown,numNovel,knownTiTv,novelTiTv,minVQSLod,filterName,model,"
+                + "accessibleTruthSites,callsAtTruthSites,truthSensitivity\n";
+        Files.writeString(dir.resolve("shard1.tranches"), trancheHeader
+                + "4.0000,100,20,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,500,0.5000\n"
+                + "2.0000,200,50,2.1000,1.6000,2.0000,VQSRTranche,SNP,1000,800,0.8000\n"
+                + "0.0000,300,90,2.2000,1.7000,0.0000,VQSRTranche,SNP,1000,950,0.9500\n"
+                + "-2.0000,400,150,2.3000,1.8000,-2.0000,VQSRTranche,SNP,1000,990,0.9900\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("shard2.tranches"), trancheHeader
+                + "4.0000,60,10,1.8000,1.4000,4.0000,VQSRTranche,SNP,1000,450,0.4500\n"
+                + "2.0000,130,30,1.9000,1.5000,2.0000,VQSRTranche,SNP,1000,780,0.7800\n"
+                + "0.0000,220,70,2.0000,1.6000,0.0000,VQSRTranche,SNP,1000,940,0.9400\n"
+                + "-2.0000,330,120,2.1000,1.7000,-2.0000,VQSRTranche,SNP,1000,985,0.9850\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("shard3.tranches"), trancheHeader
+                + "4.0000,10,2,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,400,0.4000\n"
+                + "1.0000,90,25,2.0000,1.5000,1.0000,VQSRTranche,SNP,1000,700,0.7000\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("old.tranches"),
+                trancheHeader.replace("Version number 6", "Version number 5")
+                        + "4.0000,10,2,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,400,0.4000\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("tranches.list"),
+                "/work/fixtures/shard1.tranches\n/work/fixtures/shard2.tranches\n"
+                        + "/work/fixtures/shard3.tranches\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("levels.list"), "90.0\n99.0\n95.0\n", StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

@@ -3147,6 +3147,32 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "GatherTranches": {
+      "$why": [
+        "--input is one shard, tranches.list naming three shards (two at the same four levels and",
+        "one with a level they lack, so the TreeMap pools them and the Ti/Tv of a pooled level is a ratio",
+        "of sums), and a shard of version 5, which the reader refuses. --truth-sensitivity-tranche is 99.0",
+        "alone and levels.list naming three levels out of order, which the tool sorts in place. --mode is",
+        "SNP and INDEL, which names the tranches' filters."
+      ],
+      "--input": [
+        "/work/fixtures/shard1.tranches",
+        "/work/fixtures/tranches.list",
+        "/work/fixtures/old.tranches"
+      ],
+      "--truth-sensitivity-tranche": [
+        "99.0",
+        "/work/fixtures/levels.list"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL"
+      ],
+      "--output": [
+        "/work/out/gathered.tranches",
+        "/work/out/gathered2.tranches"
+      ]
     }
   },
   "constraints": [
