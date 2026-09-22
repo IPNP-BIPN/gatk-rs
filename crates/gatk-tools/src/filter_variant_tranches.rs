@@ -89,9 +89,14 @@ impl FilterVariantTranchesError {
                 "Bad input: VCF contains no variants or no variants with INFO score key \"{key}\""
             ),
             FilterVariantTranchesError::NoOverlap => "Bad input: Neither SNP nor indel resource contains variants overlapping input.  Filtering cannot be performed.".to_string(),
-            FilterVariantTranchesError::NoResourceFor(what) => format!(
-                "Bad input: {what}s are present in input VCF, but cannot be filtered because no overlapping {what}s were found in the resources."
-            ),
+            // The reference writes the two sentences by hand, and the indel one opens with a capital:
+            // `Indels are present ... no overlapping indels were found`.
+            FilterVariantTranchesError::NoResourceFor(what) => {
+                let opening = if *what == "indel" { "Indel" } else { what };
+                format!(
+                    "Bad input: {opening}s are present in input VCF, but cannot be filtered because no overlapping {what}s were found in the resources."
+                )
+            }
         }
     }
 }
@@ -363,7 +368,7 @@ mod tests {
             cutoffs(&[5.0], &none, 5, 3, &[50.0], &[50.0], "SCORE")
                 .expect_err("snps only")
                 .message(),
-            "Bad input: indels are present in input VCF, but cannot be filtered because no overlapping indels were found in the resources."
+            "Bad input: Indels are present in input VCF, but cannot be filtered because no overlapping indels were found in the resources."
         );
     }
 

@@ -12150,9 +12150,7 @@ pub fn numt_filter_tool(parser: &Parser) -> Outcome {
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
     let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     let mut header = file.header.clone();
-    if !header.lines.iter().any(|line| {
-        matches!(line, htsjdk_vcf::header::HeaderLine::Filter { id, .. } if id == numt::FILTER_NAME)
-    }) {
+    if !header.has_filter_line(numt::FILTER_NAME) {
         header.lines.push(htsjdk_vcf::header::HeaderLine::Filter {
             id: numt::FILTER_NAME.to_string(),
             description: "Allele depth is below expected coverage of NuMT in autosome".to_string(),
@@ -12263,9 +12261,7 @@ pub fn mt_low_heteroplasmy_filter_tool(parser: &Parser) -> Outcome {
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
     let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
     let mut header = file.header.clone();
-    if !header.lines.iter().any(|line| {
-        matches!(line, htsjdk_vcf::header::HeaderLine::Filter { id, .. } if id == low_het::FILTER_NAME)
-    }) {
+    if !header.has_filter_line(low_het::FILTER_NAME) {
         header.lines.push(htsjdk_vcf::header::HeaderLine::Filter {
             id: low_het::FILTER_NAME.to_string(),
             description: "All low heteroplasmy sites are filtered when at least x low het sites \
@@ -12512,5 +12508,364 @@ pub fn calculate_average_combined_annotations(parser: &Parser) -> Outcome {
     match failure {
         Some(thrown) => Err(thrown),
         None => Ok(None),
+    }
+}
+
+/// `GATKVariantContextUtils.isAlleleInList`: whether an alternate of one record is among the
+/// alternates of another at the same start, once the shorter reference is extended to the longer.
+///
+/// Equal references compare the alternates as they are. Otherwise the longer reference is the
+/// common one (`determineReferenceAllele`), and the other record's alleles are EXTENDED by the
+/// bases the longer reference has past the shorter's length; two different references of one
+/// length are `Err`, which is the `IllegalStateException` the caller turns into its own refusal.
+fn is_allele_in_list(
+    reference: &str,
+    alternate: &str,
+    other_reference: &str,
+    other_alternates: &[String],
+) -> Result<bool, ()> {
+    let symbolic = |allele: &str| {
+        allele.starts_with('<') || allele.contains('[') || allele.contains(']') || allele == "*"
+    };
+    let extend = |allele: &str, tail: &str| {
+        if symbolic(allele) {
+            allele.to_string()
+        } else {
+            format!("{allele}{tail}")
+        }
+    };
+    if reference == other_reference {
+        return Ok(other_alternates.iter().any(|other| other == alternate));
+    }
+    if reference.len() == other_reference.len() {
+        return Err(());
+    }
+    if reference.len() > other_reference.len() {
+        let tail = &reference[other_reference.len()..];
+        Ok(other_alternates
+            .iter()
+            .any(|other| extend(other, tail) == alternate))
+    } else {
+        let tail = &other_reference[reference.len()..];
+        let extended = extend(alternate, tail);
+        Ok(other_alternates.contains(&extended))
+    }
+}
+
+/// `FilterVariantTranches`: a CNN-scored VCF filtered at the scores its own resource sites reach.
+///
+/// The cutoffs, the band names and the header lines are [`gatk_tools::filter_variant_tranches`],
+/// where a golden measures them. The runner adds the two passes over the input and what the
+/// resources contribute:
+///
+/// * **the tranches are validated first**, SNP then indel, then the writer is opened and the
+///   header written: every input line in sorted order, the FILTER lines dropped under
+///   `--invalidate-previous-filters`, a line per tranche band, the samples as a `TreeSet`, and the
+///   tool's default lines. An input without the score's INFO line is refused there;
+/// * **the first pass** counts the records carrying the score by type, and takes a record's OWN
+///   score once, at the first resource record overlapping it that shares its start and one of its
+///   alternates (`isAlleleInList`). A record that is not a SNP counts as an indel there;
+/// * **the second pass** sets the band on a filtered record and `PASS` on every record left with
+///   no filter, so a record that came in as `.` goes out as `PASS`.
+///
+/// A resource is queried by interval, so one without an index is refused at its first query. A
+/// refusal after the header leaves the file with the header alone, since `closeTool` closes the
+/// writer in a `finally`. A score written as a list is a `ClassCastException` in the reference and
+/// a refusal of the port's own here.
+pub fn filter_variant_tranches(parser: &Parser) -> Outcome {
+    use gatk_tools::filter_variant_tranches as tranches;
+    use gatk_tools::remove_nearby_indels::{variant_type, VariantType};
+    use htsjdk_vcf::variant::Value;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "FilterVariantTranches")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let info_key = argument(parser, "info-key").unwrap_or_else(|| "CNN_2D".to_string());
+    let remove_old_filters = flag(parser, "invalidate-previous-filters");
+    let doubles = |name: &str, default: f64| -> Vec<f64> {
+        let values = arguments(parser, name);
+        if values.is_empty() {
+            vec![default]
+        } else {
+            values
+                .iter()
+                .map(|value| value.parse().unwrap_or(f64::NAN))
+                .collect()
+        }
+    };
+    let refused = |error: tranches::FilterVariantTranchesError| {
+        let class = error.class();
+        Thrown {
+            failure: if class.contains("CommandLineException") {
+                Failure::CommandLine
+            } else {
+                Failure::User
+            },
+            exception: class,
+            message: Some(error.message()),
+        }
+    };
+    let bad_input_at = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!("Bad input: {message}")),
+    };
+
+    // The resources are feature inputs, opened at startup.
+    let mut resources = Vec::new();
+    for path in distinct_feature_inputs(arguments(parser, "resource")) {
+        let bytes = std::fs::read(&path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: java_absolute_path(&path),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            let mut inflated = String::new();
+            std::io::Read::read_to_string(
+                &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+                &mut inflated,
+            )
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+            inflated
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let file = htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+        resources.push((path.clone(), file.records));
+    }
+
+    let snp_tranches =
+        tranches::validate_tranches(&doubles("snp-tranche", 99.95)).map_err(refused)?;
+    let indel_tranches =
+        tranches::validate_tranches(&doubles("indel-tranche", 99.4)).map_err(refused)?;
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let mut header = file.header.clone();
+    let has_info_key = header.lines.iter().any(|line| {
+        matches!(line, htsjdk_vcf::header::HeaderLine::Compound { key, id, .. }
+            if key == "INFO" && *id == info_key)
+    });
+    let header_only = |header: &htsjdk_vcf::header::VcfHeader| -> Result<(), Thrown> {
+        let out = htsjdk_vcf::vcf_file::write_vcf(header, &[])
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        write_variant_output(parser, &output, &out)
+    };
+    if !has_info_key {
+        // The writer was opened first, and the header was never written: an empty file.
+        write_file(&output, b"")?;
+        return Err(refused(
+            tranches::FilterVariantTranchesError::InfoKeyNotInHeader(info_key.clone()),
+        ));
+    }
+    if remove_old_filters {
+        // A parsed FILTER line is `Structured`, a built one `Filter`: both go.
+        header.lines.retain(|line| match line {
+            htsjdk_vcf::header::HeaderLine::Filter { .. } => false,
+            htsjdk_vcf::header::HeaderLine::Structured { key, .. } => key != "FILTER",
+            _ => true,
+        });
+    }
+    for (class, levels) in [
+        (tranches::SNP_STRING, &snp_tranches),
+        ("INDEL", &indel_tranches),
+    ] {
+        for (id, description) in tranches::tranche_header_lines(&info_key, class, levels) {
+            if !header.has_filter_line(&id) {
+                header
+                    .lines
+                    .push(htsjdk_vcf::header::HeaderLine::Filter { id, description });
+            }
+        }
+    }
+    header.samples.sort();
+    header.lines.extend(default_tool_vcf_header_lines(
+        parser,
+        "FilterVariantTranches",
+    ));
+
+    let score_of = |record: &htsjdk_vcf::variant::VariantContext| -> Result<Option<f64>, Thrown> {
+        match record.attributes.iter().find(|(key, _)| *key == info_key) {
+            None => Ok(None),
+            Some((_, Value::List(_))) => Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!("the {info_key} score is a list, which the reference casts to a String"),
+            )),
+            Some((_, value)) => {
+                let text = value.format().unwrap_or_default();
+                text.parse::<f64>().map(Some).map_err(|_| {
+                    Thrown::non_user(
+                        "java.lang.NumberFormatException",
+                        format!("For input string: \"{text}\""),
+                    )
+                })
+            }
+        }
+    };
+
+    // The first pass.
+    let (mut scored_snps, mut scored_indels) = (0usize, 0usize);
+    let (mut snp_scores, mut indel_scores): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
+    for record in &kept {
+        let has_score = record.attributes.iter().any(|(key, _)| *key == info_key);
+        if !has_score {
+            continue;
+        }
+        let kind = variant_type(record);
+        match kind {
+            VariantType::Snp => scored_snps += 1,
+            VariantType::Indel => scored_indels += 1,
+            _ => {}
+        }
+        let reference = record.reference().display_string();
+        'resources: for (path, resource) in &resources {
+            // `FeatureDataSource` asks for the index at a source's FIRST query, which is the first
+            // scored record that reaches this resource.
+            if !has_feature_index(path) {
+                header_only(&header)?;
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable queries by interval. If \
+                     it's a file, please index it using the bundled tool IndexFeatureFile"
+                )));
+            }
+            for other in resource.iter().filter(|other| {
+                other.contig == record.contig
+                    && other.start <= record.stop
+                    && other.stop >= record.start
+            }) {
+                let other_reference = other.reference().display_string();
+                let other_alternates: Vec<String> = other
+                    .alternate_alleles()
+                    .iter()
+                    .map(|allele| allele.display_string())
+                    .collect();
+                for alternate in record.alternate_alleles() {
+                    let matched = record.start == other.start
+                        && match is_allele_in_list(
+                            &reference,
+                            &alternate.display_string(),
+                            &other_reference,
+                            &other_alternates,
+                        ) {
+                            Ok(matched) => matched,
+                            Err(()) => {
+                                header_only(&header)?;
+                                return Err(bad_input_at(format!(
+                                    "The provided variant file(s) have inconsistent references for the same position(s) at {}:{}, {} in input vs. {} in resource",
+                                    other.contig,
+                                    other.start,
+                                    java_allele(record.reference()),
+                                    java_allele(other.reference())
+                                )));
+                            }
+                        };
+                    if matched {
+                        let score = score_of(record)?.unwrap_or(f64::NAN);
+                        if kind == VariantType::Snp {
+                            snp_scores.push(score);
+                        } else {
+                            indel_scores.push(score);
+                        }
+                        break 'resources;
+                    }
+                }
+            }
+        }
+    }
+    let (snp_cutoffs, indel_cutoffs) = match tranches::cutoffs(
+        &snp_scores,
+        &indel_scores,
+        scored_snps,
+        scored_indels,
+        &snp_tranches,
+        &indel_tranches,
+        &info_key,
+    ) {
+        Ok(cutoffs) => cutoffs,
+        Err(error) => {
+            header_only(&header)?;
+            return Err(refused(error));
+        }
+    };
+
+    // The second pass.
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut written = Vec::new();
+    for original in &kept {
+        let mut record = (*original).clone();
+        if remove_old_filters {
+            record.filters = None;
+        }
+        if let Some(score) = score_of(&record)? {
+            let kind = variant_type(&record);
+            let band = if kind == VariantType::Snp
+                && !snp_cutoffs.is_empty()
+                && tranches::is_tranche_filtered(score, &snp_cutoffs)
+            {
+                Some(tranches::filter_string_from_score(
+                    &info_key,
+                    tranches::SNP_STRING,
+                    score,
+                    &snp_tranches,
+                    &snp_cutoffs,
+                ))
+            } else if kind == VariantType::Indel
+                && !indel_cutoffs.is_empty()
+                && tranches::is_tranche_filtered(score, &indel_cutoffs)
+            {
+                Some(tranches::filter_string_from_score(
+                    &info_key,
+                    "INDEL",
+                    score,
+                    &indel_tranches,
+                    &indel_cutoffs,
+                ))
+            } else {
+                None
+            };
+            if let Some(band) = band {
+                let mut filters = record.filters.clone().unwrap_or_default();
+                if !filters.contains(&band) {
+                    filters.push(band);
+                }
+                record.filters = Some(filters);
+            }
+        }
+        if record
+            .filters
+            .as_ref()
+            .is_none_or(|filters| filters.is_empty())
+        {
+            record.filters = Some(Vec::new());
+        }
+        if keep(&record) {
+            written.push(record);
+        }
+    }
+    apply_sites_only(parser, &mut header, &mut written);
+    let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    write_variant_output(parser, &output, &out)?;
+    Ok(None)
+}
+
+/// `Allele.toString()`: the bases, with a `*` after a reference allele.
+fn java_allele(allele: &htsjdk_vcf::allele::Allele) -> String {
+    let text = allele.display_string();
+    if allele.is_reference() {
+        format!("{text}*")
+    } else {
+        text
     }
 }
