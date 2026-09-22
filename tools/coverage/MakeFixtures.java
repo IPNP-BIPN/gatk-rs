@@ -1352,6 +1352,28 @@ public class MakeFixtures {
         Files.copy(dir.resolve("counts.tsv"), dir.resolve("sv.counts.tsv"),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
+        // Two depth-evidence files for `CondenseDepthEvidence`, written in the codec's own layout:
+        // a header of column names and zero-based half-open bins. The first is a run of ten
+        // adjacent hundred-base bins, a one-base gap, two more, and a contig change, so every
+        // maximum and minimum in the array cuts it somewhere different. The second has three
+        // samples, fifty-base bins, and a count above 2^31, which `Integer.parseUnsignedInt` reads
+        // and the merge then sums as a wrapped int.
+        final StringBuilder depth = new StringBuilder("#Chr\tStart\tEnd\tsA\tsB\n");
+        for (int i = 0; i < 10; i++) {
+            depth.append(String.format("chr1\t%d\t%d\t%d\t%d%n", i * 100, (i + 1) * 100, i + 1, 100 - i));
+        }
+        depth.append("chr1\t1001\t1101\t11\t90\n");
+        depth.append("chr1\t1101\t1201\t12\t89\n");
+        depth.append("chr2\t1201\t1301\t13\t88\n");
+        Files.writeString(dir.resolve("depth.rd.txt"), depth.toString(), StandardCharsets.UTF_8);
+        final StringBuilder depth2 = new StringBuilder("#Chr\tStart\tEnd\tzulu\talpha\tmike\n");
+        for (int i = 0; i < 16; i++) {
+            depth2.append(String.format("chr1\t%d\t%d\t%d\t%d\t%s%n",
+                    i * 50, (i + 1) * 50, i, 2 * i, i == 3 ? "3000000000" : Integer.toString(7 * i)));
+        }
+        depth2.append("chr2\t0\t50\t1\t2\t3\n");
+        Files.writeString(dir.resolve("depth2.rd.txt"), depth2.toString(), StandardCharsets.UTF_8);
+
         // The pileup summaries `CalculateContamination` reads, produced by the REFERENCE's own
         // `GetPileupSummaries` over the corpus. The chain is the point: one tool's output is the
         // other's input, so the second tool is measured on a table the first really writes rather
