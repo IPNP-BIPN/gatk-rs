@@ -67,6 +67,14 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.PrintFileDiagnostics());
         usage("CreateHadoopBamSplittingIndex",
                 new org.broadinstitute.hellbender.tools.spark.CreateHadoopBamSplittingIndex());
+        // Two structural-variant evidence tools, undocumented as well, which the declarations
+        // generator refuses without a summary. `CondenseDepthEvidence` is a `FeatureWalker` and
+        // `PrintSVEvidence` a `MultiFeatureWalker`, so neither usage carries the read walker's
+        // plugin arguments.
+        usage("CondenseDepthEvidence",
+                new org.broadinstitute.hellbender.tools.sv.CondenseDepthEvidence());
+        usage("PrintSVEvidence",
+                new org.broadinstitute.hellbender.tools.sv.PrintSVEvidence());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */

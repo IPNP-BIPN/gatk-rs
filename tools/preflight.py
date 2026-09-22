@@ -95,7 +95,7 @@ def main():
     suites = [s for s in arguments.suites.split(",") if s]
     if suites:
         step(f"oracle harness: {','.join(suites)}",
-             ["python3", "tools/conformance/run_suite.py", "--suites", ",".join(suites)])
+             ["python3", "tools/conformance/run_suite.py", "--suites", " ".join(suites)])
 
     print("\npreflight: every gate green")
 
