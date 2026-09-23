@@ -883,6 +883,87 @@
       "t": 2,
       "share": 1.0
     },
+    "AnalyzeCovariates": {
+      "rows": 11,
+      "accepted": 7,
+      "rejected": 4,
+      "distinct_outputs": 5,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "CollectF1R2Counts": {
+      "rows": 17,
+      "accepted": 16,
+      "rejected": 1,
+      "distinct_outputs": 9,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "CreateSomaticPanelOfNormals": {
+      "rows": 21,
+      "accepted": 14,
+      "rejected": 7,
+      "distinct_outputs": 5,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "SplitCRAM": {
+      "rows": 11,
+      "accepted": 5,
+      "rejected": 6,
+      "distinct_outputs": 4,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterMutectCalls": {
+      "rows": 24,
+      "accepted": 16,
+      "rejected": 8,
+      "distinct_outputs": 13,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "ComposeSTRTableFile": {
+      "rows": 22,
+      "accepted": 21,
+      "rejected": 1,
+      "distinct_outputs": 21,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "CalibrateDragstrModel": {
+      "rows": 20,
+      "accepted": 13,
+      "rejected": 7,
+      "distinct_outputs": 13,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "LearnReadOrientationModel": {
+      "rows": 8,
+      "accepted": 5,
+      "rejected": 3,
+      "distinct_outputs": 4,
+      "matched": 6,
+      "t": 2,
+      "share": 0.75
+    },
+    "GeneExpressionEvaluation": {
+      "rows": 19,
+      "accepted": 15,
+      "rejected": 4,
+      "distinct_outputs": 12,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,

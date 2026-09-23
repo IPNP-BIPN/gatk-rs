@@ -216,18 +216,59 @@ pub fn foreign_message(meta: &ContainerMeta) -> Option<String> {
     None
 }
 
+/// What the lazy analysis can refuse: a contig closed twice, or the stats of a container.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnalyseError<E> {
+    Duplicate(DuplicateBadContig),
+    Stats(E),
+}
+
 /// `doAnalysis`, over containers already read.
 pub fn analyse(
     containers: &[ContainerMeta],
     verbose: bool,
 ) -> Result<Analysis, DuplicateBadContig> {
+    analyse_with(containers, verbose, |index| {
+        Ok::<(i64, i64), ()>((containers[index].bases, containers[index].mismatches))
+    })
+    .map_err(|error| match error {
+        AnalyseError::Duplicate(duplicate) => duplicate,
+        AnalyseError::Stats(()) => unreachable!("the stats were given"),
+    })
+}
+
+/// `doAnalysis`, asking `stats` for a container's base and mismatch counts only when the reference
+/// asks for them: when the container is recorded and single-ref, which is where
+/// `analyzeContainerBaseMismatches` decodes its records. A container the walk never records is
+/// never decoded, and a foreign one stops the walk before its own records are read.
+pub fn analyse_with<E>(
+    containers: &[ContainerMeta],
+    verbose: bool,
+    mut stats: impl FnMut(usize) -> Result<(i64, i64), E>,
+) -> Result<Analysis, AnalyseError<E>> {
+    let mut record_at = |into: &mut Vec<ContainerStats>,
+                         is_bad: bool,
+                         index: usize,
+                         ordinal: i32|
+     -> Result<(), AnalyseError<E>> {
+        let meta = &containers[index];
+        if !meta.context.is_mapped_single_ref() {
+            return Ok(());
+        }
+        let (bases, mismatches) = stats(index).map_err(AnalyseError::Stats)?;
+        let mut measured = meta.clone();
+        measured.bases = bases;
+        measured.mismatches = mismatches;
+        record(into, is_bad, &measured, ordinal);
+        Ok(())
+    };
     let mut analysis = Analysis::default();
     let mut bad_for_contig: Vec<ContainerStats> = Vec::new();
     let mut ordinal = 0;
     let mut reported_good = 0;
     let mut previous: Option<(RefContext, i32)> = None;
 
-    for meta in containers {
+    for (index, meta) in containers.iter().enumerate() {
         ordinal += 1;
         if let Some(message) = foreign_message(meta) {
             analysis.foreign = Some(message);
@@ -236,7 +277,7 @@ pub fn analyse(
         match previous {
             // The first container of the whole file cannot be bad.
             None => {
-                record(&mut analysis.good, false, meta, ordinal);
+                record_at(&mut analysis.good, false, index, ordinal)?;
                 reported_good += 1;
             }
             Some((previous_context, previous_start)) => {
@@ -244,19 +285,21 @@ pub fn analyse(
                     if !bad_for_contig.is_empty() {
                         let key = previous_context.text();
                         if analysis.bad_contigs.iter().any(|(name, _)| name == &key) {
-                            return Err(DuplicateBadContig { contig: key });
+                            return Err(AnalyseError::Duplicate(DuplicateBadContig {
+                                contig: key,
+                            }));
                         }
                         analysis
                             .bad_contigs
                             .push((key, std::mem::take(&mut bad_for_contig)));
                     }
                     ordinal = 1;
-                    record(&mut analysis.good, false, meta, ordinal);
+                    record_at(&mut analysis.good, false, index, ordinal)?;
                     reported_good = 1;
                 } else if previous_context.is_mapped_single_ref() && previous_start == 1 {
-                    record(&mut bad_for_contig, true, meta, ordinal);
+                    record_at(&mut bad_for_contig, true, index, ordinal)?;
                 } else if verbose || reported_good < GOOD_CONTAINERS_PER_CONTIG {
-                    record(&mut analysis.good, false, meta, ordinal);
+                    record_at(&mut analysis.good, false, index, ordinal)?;
                     reported_good += 1;
                 }
             }

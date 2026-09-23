@@ -1,0 +1,349 @@
+{
+  "tool": "CRAMIssue8768Detector",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 19,
+  "arguments_in_array": 8,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--output",
+      "type": "GATKPath",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "/work/out/cram8768.txt",
+      "source": "fixture"
+    },
+    {
+      "argument": "--arguments_file",
+      "type": "File",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "Integer",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "Boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "Boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "Boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 126,
+  "tuples_covered": 126,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[0]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/issue8768.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[1]",
+        "--mismatch-rate-threshold": "fixture[1]",
+        "--output-tsv": "fixture[1]",
+        "--reference": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false",
+        "--verbose": "false"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/multislice.cram",
+        "--mismatch-rate-threshold=0.0",
+        "--output-tsv=null",
+        "--reference=/work/fixtures/reference.fasta",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false",
+        "--verbose=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[2]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[1]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "false"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/split.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=null",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true",
+        "--verbose=false"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--echo-to-stdout": "false",
+        "--input": "fixture[0]",
+        "--mismatch-rate-threshold": "fixture[1]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=false",
+        "--input=/work/fixtures/issue8768.cram",
+        "--mismatch-rate-threshold=0.0",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/reference.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--echo-to-stdout": "false",
+        "--input": "fixture[1]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=false",
+        "--input=/work/fixtures/multislice.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--echo-to-stdout": "false",
+        "--input": "fixture[2]",
+        "--mismatch-rate-threshold": "fixture[1]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--verbose": "false"
+      },
+      "arguments": [
+        "--echo-to-stdout=false",
+        "--input=/work/fixtures/split.cram",
+        "--mismatch-rate-threshold=0.0",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false",
+        "--verbose=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--echo-to-stdout": "false",
+        "--input": "fixture[0]",
+        "--mismatch-rate-threshold": "fixture[1]",
+        "--output-tsv": "fixture[1]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=false",
+        "--input=/work/fixtures/issue8768.cram",
+        "--mismatch-rate-threshold=0.0",
+        "--output-tsv=null",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[2]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/split.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/reference.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[0]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "false"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/issue8768.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true",
+        "--verbose=false"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[1]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/multislice.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true",
+        "--verbose=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--echo-to-stdout": "true",
+        "--input": "fixture[0]",
+        "--mismatch-rate-threshold": "fixture[0]",
+        "--output-tsv": "fixture[0]",
+        "--reference": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false",
+        "--verbose": "true"
+      },
+      "arguments": [
+        "--echo-to-stdout=true",
+        "--input=/work/fixtures/issue8768.cram",
+        "--mismatch-rate-threshold=0.05",
+        "--output-tsv=/work/out/cram8768.tsv",
+        "--reference=/work/fixtures/two_contigs.fasta",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false",
+        "--verbose=true"
+      ]
+    }
+  ]
+}
