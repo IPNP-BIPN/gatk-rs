@@ -720,6 +720,295 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * Calls for `FilterMutectCalls`, made by the reference's own Mutect2 so every INFO field and
+     * header line a real run carries is there, and its `.stats` beside them.
+     *
+     * The corpus's `reference.fasta` repeats `ACGT`, where every k-mer recurs and the assembler finds
+     * nothing, so these calls have a reference of their own: three thousand bases drawn from a
+     * seeded `java.util.Random`. The BAM holds a tumour and a normal sample over it, fifty-base reads
+     * tiled every
+     * five bases from 800 to 2150, one forward and one reverse per start and sample, so each site is
+     * about twenty reads deep in each sample. Six sites carry an alternate: at 1000 a clean somatic
+     * variant (two reads in five of the tumour), at 1200 a germline het in both samples, at 1400
+     * two tumour reads only, at 1600 an alternate on forward reads alone, at 1800 an alternate whose
+     * base quality is low, and at 1950 one near the reads' first bases.
+     */
+    static void mutectFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20260923L);
+        final StringBuilder sequence = new StringBuilder();
+        for (int i = 0; i < 3000; i++) {
+            sequence.append("ACGT".charAt(random.nextInt(4)));
+        }
+        final String referenceBases = sequence.toString();
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("mutect_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            reference.addSequence(new htsjdk.samtools.reference.ReferenceSequence("chr1", 0,
+                    referenceBases.getBytes(StandardCharsets.US_ASCII)));
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 3000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {{"rgT", "tumor"}, {"rgN", "normal"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary("lib" + group[1]);
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        final int[] sites = {1000, 1200, 1400, 1600, 1800, 1950};
+        final java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int start = 800; start <= 2150; start += 5) {
+            for (final String group : new String[] {"rgT", "rgN"}) {
+                final boolean tumor = group.equals("rgT");
+                for (final boolean reverse : new boolean[] {false, true}) {
+                    final StringBuilder bases = new StringBuilder();
+                    bases.append(referenceBases, start - 1, start + 49);
+                    final StringBuilder qualities = new StringBuilder("I".repeat(50));
+                    for (final int site : sites) {
+                        if (site < start || site >= start + 50) {
+                            continue;
+                        }
+                        final String key = group + site;
+                        final int count = seen.merge(key, 1, Integer::sum);
+                        final int offset = site - start;
+                        final boolean alt;
+                        switch (site) {
+                            case 1000: alt = tumor && count % 5 < 2; break;
+                            case 1200: alt = count % 2 == 0; break;
+                            case 1400: alt = tumor && (count == 3 || count == 7); break;
+                            case 1600: alt = tumor && !reverse && count % 3 == 0; break;
+                            case 1800: alt = tumor && count % 3 == 0; break;
+                            default: alt = tumor && offset < 6 && count % 2 == 0; break;
+                        }
+                        if (alt) {
+                            final char reference = bases.charAt(offset);
+                            bases.setCharAt(offset, "CGTA".charAt("ACGT".indexOf(reference)));
+                            if (site == 1800) {
+                                qualities.setCharAt(offset, '/');
+                            }
+                        }
+                    }
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(group + ":" + start + (reverse ? "r" : "f"));
+                    record.setReferenceName("chr1");
+                    record.setAlignmentStart(start);
+                    record.setCigarString("50M");
+                    record.setMappingQuality(60);
+                    record.setReadNegativeStrandFlag(reverse);
+                    record.setReadString(bases.toString());
+                    record.setBaseQualityString(qualities.toString());
+                    record.setAttribute("RG", group);
+                    records.add(record);
+                }
+            }
+        }
+        final Path bam = dir.resolve("mutect_tn.bam");
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        new org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2().instanceMain(new String[] {
+                "--input", bam.toString(),
+                "--reference", dir.resolve("mutect_ref.fasta").toString(),
+                "--tumor-sample", "tumor",
+                "--normal-sample", "normal",
+                "--intervals", "chr1:900-2100",
+                "--output", dir.resolve("mutect.vcf").toString(),
+        });
+        // The same calls with a stats table saying nothing was callable, which switches the
+        // empirical priors off.
+        // REPLACE_EXISTING because the conformance runner builds the corpus a second time into the
+        // same directory, and a plain copy refuses a target that is already there.
+        Files.copy(dir.resolve("mutect.vcf"), dir.resolve("mutect_nocallable.vcf"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("mutect.vcf.idx"), dir.resolve("mutect_nocallable.vcf.idx"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(dir.resolve("mutect_nocallable.vcf.stats"), "statistic\tvalue\ncallable\t0.0\n",
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * `CalibrateDragstrModel`'s inputs over `mutect_ref.fasta`: the STR table the reference's own
+     * `ComposeSTRTableFile` writes for it, and one sample's fifty-base reads tiled every three bases.
+     * A read whose middle holds a homopolymer of three or more carries, one read in four, a deletion
+     * of one of its bases and, one in seven, an insertion of one more; one read in five says its
+     * mapping quality in `XQ`, one in eleven is supplementary and one in thirteen maps at 10.
+     */
+    static void calibrationFixtures(final Path dir) throws Exception {
+        final Path reference = dir.resolve("mutect_ref.fasta");
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(reference)) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII);
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgD");
+        group.setSample("dragstr");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final List<SAMRecord> records = new ArrayList<>();
+        int index = 0;
+        for (int start = 1; start + 60 <= bases.length(); start += 3, index++) {
+            final String window = bases.substring(start - 1, start - 1 + 60);
+            // The first homopolymer of three or more that starts ten bases in and ends ten before
+            // the fiftieth.
+            int run = -1;
+            int runLength = 0;
+            for (int i = 10; i < 38 && run < 0; i++) {
+                int j = i;
+                while (j + 1 < 60 && window.charAt(j + 1) == window.charAt(i)) {
+                    j++;
+                }
+                if (j - i + 1 >= 3 && j < 40) {
+                    run = i;
+                    runLength = j - i + 1;
+                }
+            }
+            String read = window.substring(0, 50);
+            String cigar = "50M";
+            if (run >= 0 && index % 4 == 0) {
+                read = window.substring(0, run) + window.substring(run + 1, 51);
+                cigar = run + "M1D" + (50 - run) + "M";
+            } else if (run >= 0 && index % 7 == 0) {
+                read = window.substring(0, run) + window.charAt(run) + window.substring(run, 49);
+                cigar = run + "M1I" + (49 - run) + "M";
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("DRAG:" + index);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(cigar);
+            record.setMappingQuality(index % 13 == 0 ? 10 : 60);
+            record.setReadNegativeStrandFlag(index % 2 == 1);
+            record.setSupplementaryAlignmentFlag(index % 11 == 0);
+            record.setReadString(read);
+            record.setBaseQualityString("I".repeat(50));
+            record.setAttribute("RG", "rgD");
+            if (index % 5 == 0) {
+                record.setAttribute("XQ", 120);
+            }
+            records.add(record);
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("dragstr.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile().instanceMain(new String[] {
+                "--reference", reference.toString(),
+                "--output", dir.resolve("dragstr_str.zip").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile().instanceMain(new String[] {
+                "--reference", reference.toString(),
+                "--decimation", "NONE",
+                "--output", dir.resolve("dragstr_str_all.zip").toString(),
+        });
+    }
+
+    /**
+     * `GeneExpressionEvaluation`'s inputs over `mutect_ref.fasta`: an indexed gff3 of three genes
+     * (two stranded with an mRNA and two exons each, one unstranded that overlaps the second), a
+     * copy whose last gene has no `Name`, and a paired BAM of one sample. The pairs are fifty-base
+     * reads 150 apart with `MC` and `MQ` written; a pair starting between 256 and 295 is spliced
+     * across the first gene's intron, one in seven maps twice (`NH` 2), one in eleven maps at 5, and one in thirteen
+     * is a duplicate.
+     */
+    static void geneExpressionFixtures(final Path dir) throws Exception {
+        final String gff = "##gff-version 3\n"
+                + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
+                + "chr1\ttest\tmRNA\t100\t900\t.\t+\t.\tID=tx1;Parent=gene1\n"
+                + "chr1\ttest\texon\t100\t300\t.\t+\t.\tID=ex1;Parent=tx1\n"
+                + "chr1\ttest\texon\t501\t900\t.\t+\t.\tID=ex2;Parent=tx1\n"
+                + "chr1\ttest\tgene\t1200\t2000\t.\t-\t.\tID=gene2;Name=GeneTwo\n"
+                + "chr1\ttest\tmRNA\t1200\t2000\t.\t-\t.\tID=tx2;Parent=gene2\n"
+                + "chr1\ttest\texon\t1200\t1500\t.\t-\t.\tID=ex3;Parent=tx2\n"
+                + "chr1\ttest\tgene\t1400\t1600\t.\t.\t.\tID=gene3;Name=GeneThree\n"
+                + "chr1\ttest\texon\t1400\t1600\t.\t.\t.\tID=ex5;Parent=gene3\n"
+                + "chr1\ttest\texon\t1800\t2000\t.\t-\t.\tID=ex4;Parent=tx2\n";
+        final String noName = gff + "chr1\ttest\tgene\t2500\t2800\t.\t+\t.\tID=gene4\n"
+                + "chr1\ttest\texon\t2500\t2800\t.\t+\t.\tParent=gene4\n";
+        for (final String[] file : new String[][] {{"genes.gff3", gff}, {"genes_noname.gff3", noName}}) {
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, file[1], StandardCharsets.UTF_8);
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.tribble.gff.Gff3Codec())
+                    .write(dir.resolve(file[0] + ".idx"));
+        }
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII);
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgR");
+        group.setSample("rna");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final List<SAMRecord> records = new ArrayList<>();
+        int pair = 0;
+        for (int start = 60; start + 250 < bases.length(); start += 23, pair++) {
+            final boolean spliced = start >= 256 && start <= 295;
+            final String firstCigar = spliced ? (301 - start) + "M200N" + (50 - (301 - start)) + "M" : "50M";
+            final String firstRead = spliced
+                    ? bases.substring(start - 1, 300) + bases.substring(500, 500 + 50 - (301 - start))
+                    : bases.substring(start - 1, start - 1 + 50);
+            final int mateStart = spliced ? 560 : start + 150;
+            final String mateRead = bases.substring(mateStart - 1, mateStart - 1 + 50);
+            final int mq = pair % 11 == 0 ? 5 : 60;
+            final int end = mateStart + 49;
+            for (int k = 0; k < 2; k++) {
+                final boolean first = k == 0;
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("RNA:" + pair);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(first ? start : mateStart);
+                record.setCigarString(first ? firstCigar : "50M");
+                record.setReadString(first ? firstRead : mateRead);
+                record.setBaseQualityString("I".repeat(50));
+                record.setMappingQuality(mq);
+                record.setReadPairedFlag(true);
+                record.setProperPairFlag(true);
+                record.setFirstOfPairFlag(first);
+                record.setSecondOfPairFlag(!first);
+                record.setReadNegativeStrandFlag(!first);
+                record.setMateNegativeStrandFlag(first);
+                record.setMateReferenceName("chr1");
+                record.setMateAlignmentStart(first ? mateStart : start);
+                record.setInferredInsertSize(first ? end - start + 1 : -(end - start + 1));
+                record.setDuplicateReadFlag(pair % 13 == 0);
+                record.setAttribute("RG", "rgR");
+                record.setAttribute("MC", first ? "50M" : firstCigar);
+                record.setAttribute("MQ", mq);
+                if (pair % 7 == 0) {
+                    record.setAttribute("NH", 2);
+                }
+                records.add(record);
+            }
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("rna.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1571,6 +1860,26 @@ public class MakeFixtures {
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
+        mutectFixtures(dir);
+        calibrationFixtures(dir);
+        geneExpressionFixtures(dir);
+        // The archives `LearnReadOrientationModel` reads, written by the reference's own
+        // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
+        // archive, and the one-sample F1R2 corpus over the ACGT repeat.
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_tn.bam").toString(),
+                "--reference", dir.resolve("mutect_ref.fasta").toString(),
+                "--output", dir.resolve("f1r2_tn.tar.gz").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts().instanceMain(new String[] {
+                "--input", dir.resolve("f1r2.bam").toString(),
+                "--reference", dir.resolve("reference.fasta").toString(),
+                "--output", dir.resolve("f1r2_counts.tar.gz").toString(),
+        });
+        // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
+        // that keeps one site in two of every period-one repeat of length three.
+        Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",
+                StandardCharsets.UTF_8);
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is

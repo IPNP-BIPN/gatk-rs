@@ -295,6 +295,11 @@ jobs:
             --tool CollectF1R2Counts \
             --tool CreateSomaticPanelOfNormals \
             --tool SplitCRAM \
+            --tool FilterMutectCalls \
+            --tool ComposeSTRTableFile \
+            --tool CalibrateDragstrModel \
+            --tool LearnReadOrientationModel \
+            --tool GeneExpressionEvaluation \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

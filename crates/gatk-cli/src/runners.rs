@@ -291,11 +291,14 @@ fn read_filter<'a>(
 ) -> Result<Filter<'a>, Thrown> {
     let mut plain: Vec<(gatk_readfilter::ReadFilter, bool)> = Vec::new();
     let mut wellformed: Option<bool> = None;
+    let mut agrees_with_header: Option<bool> = None;
     let mut parameterized: Vec<(gatk_readfilter::Parameterized, bool)> = Vec::new();
     for filter in resolved {
         let name = filter.name.as_str();
         if name == "WellformedReadFilter" {
             wellformed = Some(filter.negated);
+        } else if name == "AlignmentAgreesWithHeaderReadFilter" {
+            agrees_with_header = Some(filter.negated);
         } else if let Some(plain_filter) = gatk_readfilter::by_name(name) {
             plain.push((plain_filter, filter.negated));
         } else if name == "MappingQualityReadFilter" {
@@ -347,6 +350,11 @@ fn read_filter<'a>(
         // the opposite of what the filter itself answers, on the same read.
         if let Some(negated) = wellformed {
             if gatk_readfilter::with_header::wellformed(read, header) == negated {
+                return false;
+            }
+        }
+        if let Some(negated) = agrees_with_header {
+            if gatk_readfilter::with_header::alignment_agrees_with_header(read, header) == negated {
                 return false;
             }
         }
@@ -610,6 +618,7 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "GetSampleName"
             | "TransferReadTags"
             | "PostProcessReadsForRSEM"
+            | "CalibrateDragstrModel"
     )
 }
 
@@ -7719,6 +7728,1622 @@ fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
     out.extend_from_slice(&crc.sum().to_le_bytes());
     out.extend_from_slice(&(data.len() as u32).to_le_bytes());
     out
+}
+
+/// `FilterMutectCalls`, a `MultiplePassVariantWalker` over Mutect2's calls.
+///
+/// The four passes, the filters and the two outputs' content are
+/// [`gatk_tools::filter_mutect_calls::run`]'s. What the runner adds is the translation both ways:
+///
+///   - each `VariantContext` becomes the `Record` the filters read, its genotypes told apart by the
+///     header's `##normal_sample` lines, every other sample being a tumour;
+///   - the header is rebuilt in `onTraversalStart` and written as soon as the writer exists, BEFORE
+///     the stats table is looked for, so a missing table is a `CouldNotReadInputFile` that leaves a
+///     VCF of nothing but its header;
+///   - and each output record is the input's with its FILTER replaced, `AS_FilterStatus` set and the
+///     phred-scaled posteriors the filters annotate, its genotypes written from the file.
+///
+/// The three inputs that bring a second model in, `--contamination-table`, `--tumor-segmentation`
+/// and `--ob-priors`, are refused rather than ignored.
+pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
+    use gatk_engine::accumulate_data::AccumulationAllele;
+    use gatk_engine::allele_filter::GenotypeData;
+    use gatk_engine::filtering_engine::{EngineArguments, Record};
+    use gatk_engine::mutect_filter_list::FilterArguments;
+    use gatk_engine::somatic_clustering_model::AlternateAllele;
+    use gatk_engine::threshold_calculator::Strategy;
+    use gatk_tools::filter_mutect_calls as fmc;
+    use htsjdk_vcf::header::HeaderLine;
+    use htsjdk_vcf::variant::Value;
+
+    for held in ["contamination-table", "tumor-segmentation", "ob-priors"] {
+        if !arguments(parser, held).is_empty() {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "FilterMutectCalls' --{held} is a second model this port does not read yet, \
+                     and a run that ignored it would filter differently. This message is the \
+                     port's own and not GATK's."
+                ),
+            ));
+        }
+    }
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "FilterMutectCalls")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let double = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(default)
+    };
+
+    let defaults = EngineArguments::default();
+    let list_defaults = FilterArguments::default();
+    let mut list = FilterArguments {
+        mitochondria: flag(parser, "mitochondria-mode"),
+        microbial: flag(parser, "microbial-mode"),
+        min_median_mapping_quality: number_or(
+            parser,
+            "min-median-mapping-quality",
+            list_defaults.min_median_mapping_quality,
+        ),
+        log_snv_prior: double("log-snv-prior", list_defaults.log_snv_prior),
+        log_indel_prior: double("log-indel-prior", list_defaults.log_indel_prior),
+        read_orientation_priors: false,
+    };
+    let min_median_mapping_quality = list.min_median_mapping_quality();
+    let engine = EngineArguments {
+        list,
+        min_median_base_quality: number_or(
+            parser,
+            "min-median-base-quality",
+            defaults.min_median_base_quality,
+        ),
+        min_median_mapping_quality,
+        long_indel_length: number_or(parser, "long-indel-length", defaults.long_indel_length),
+        unique_alt_read_count: number_or(
+            parser,
+            "unique-alt-read-count",
+            defaults.unique_alt_read_count,
+        ),
+        contamination_estimate: double("contamination-estimate", defaults.contamination_estimate),
+        min_reads_on_each_strand: number_or(
+            parser,
+            "min-reads-per-strand",
+            defaults.min_reads_on_each_strand,
+        ),
+        min_median_read_position: number_or(
+            parser,
+            "min-median-read-position",
+            defaults.min_median_read_position,
+        ),
+        min_af: double("min-allele-fraction", defaults.min_af),
+        normal_pileup_p_value_threshold: double(
+            "normal-p-value-threshold",
+            defaults.normal_pileup_p_value_threshold,
+        ),
+        n_ratio: double("max-n-ratio", defaults.n_ratio),
+        max_events_in_region: number_or(
+            parser,
+            "max-events-in-region",
+            defaults.max_events_in_region,
+        ),
+        max_events_in_haplotype: number_or(
+            parser,
+            "max-events-in-haplotype",
+            defaults.max_events_in_haplotype,
+        ),
+        num_alt_alleles_threshold: number_or(
+            parser,
+            "max-alt-allele-count",
+            defaults.num_alt_alleles_threshold as i32,
+        )
+        .max(0) as usize,
+        max_median_fragment_length_difference: number_or(
+            parser,
+            "max-median-fragment-length-difference",
+            defaults.max_median_fragment_length_difference,
+        ),
+        min_slippage_length: number_or(parser, "min-slippage-length", defaults.min_slippage_length),
+        slippage_rate: double("pcr-slippage-rate", defaults.slippage_rate),
+        max_distance_to_filtered_call_on_same_haplotype: number_or(
+            parser,
+            "distance-on-haplotype",
+            defaults.max_distance_to_filtered_call_on_same_haplotype,
+        ),
+    };
+    let tool_defaults = fmc::ToolArguments::default();
+    let strategy = match scalar(parser, "threshold-strategy").as_deref() {
+        Some("CONSTANT") => Strategy::Constant,
+        Some("FALSE_DISCOVERY_RATE") => Strategy::FalseDiscoveryRate,
+        _ => Strategy::OptimalFScore,
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+
+    // `onTraversalStart`'s header: the input's lines less `filtering_status`, a new
+    // `filtering_status`, the STRQ and AS_FilterStatus INFO lines, every Mutect FILTER line and the
+    // default tool lines, in one set the writer sorts.
+    let mut header = file.header.clone();
+    header.lines.retain(
+        |line| !matches!(line, HeaderLine::Unstructured { key, .. } if key == "filtering_status"),
+    );
+    let mut added: Vec<HeaderLine> = vec![HeaderLine::Unstructured {
+        key: "filtering_status".to_string(),
+        value: "These calls have been filtered by FilterMutectCalls to label false positives \
+                with a list of failed filters and true positives with PASS."
+            .to_string(),
+    }];
+    let parsed_line = |text: &str| -> Option<HeaderLine> {
+        htsjdk_vcf::reader::read_vcf(&format!(
+            "##fileformat=VCFv4.2\n##{text}\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+        ))
+        .ok()
+        .and_then(|parsed| {
+            parsed.header.lines.into_iter().find(
+                |line| !matches!(line, HeaderLine::Unstructured { key, .. } if key == "fileformat"),
+            )
+        })
+    };
+    for (_, line) in gatk_engine::mutect_filter_list::INFO_LINES {
+        added.extend(parsed_line(line));
+    }
+    for name in gatk_engine::mutect_filter_list::MUTECT_FILTER_NAMES {
+        if let Some(line) = gatk_engine::mutect_filter_list::filter_line(name) {
+            added.extend(parsed_line(&line));
+        }
+    }
+    added.extend(default_tool_vcf_header_lines(parser, "FilterMutectCalls"));
+    for line in added {
+        if !header.lines.contains(&line) {
+            header.lines.push(line);
+        }
+    }
+    let write_records = |records: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = records.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+
+    // `new File(statsTable == null ? drivingVariantFile + ".stats" : statsTable)`, looked for
+    // after the header is written.
+    let stats_path = argument(parser, "stats").unwrap_or_else(|| format!("{input}.stats"));
+    let Ok(stats) = std::fs::read_to_string(&stats_path) else {
+        write_records(&[])?;
+        let missing = fmc::MissingStatsTable { path: stats_path };
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: missing.class(),
+            message: Some(missing.message()),
+        });
+    };
+    // `MutectStats.readFromFile`, of which the clustering model reads `callable` alone.
+    let callable_sites = stats.lines().skip(1).find_map(|line| {
+        let mut fields = line.split('\t');
+        match (fields.next(), fields.next()) {
+            (Some("callable"), Some(value)) => value.trim().parse::<f64>().ok(),
+            _ => None,
+        }
+    });
+
+    let normal_samples: Vec<String> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Unstructured { key, value } if key == "normal_sample" => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let text_of = |value: &Value| value.format().unwrap_or_default();
+    let values_of = |value: &Value| -> Vec<String> {
+        match value {
+            Value::List(items) => items.iter().map(text_of).collect(),
+            other => text_of(other).split(',').map(str::to_string).collect(),
+        }
+    };
+    let info = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<String>> {
+        record
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| values_of(value))
+    };
+    let doubles = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<f64>> {
+        info(record, key).map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim().parse::<f64>().unwrap_or(0.0))
+                .collect()
+        })
+    };
+    let ints = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<i32>> {
+        info(record, key).map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim().parse::<i32>().unwrap_or(0))
+                .collect()
+        })
+    };
+
+    let mut records: Vec<Record> = Vec::new();
+    for variant in &kept {
+        variant.genotypes.decode();
+        let reference = variant.reference();
+        let reference_length = reference.len() as i32;
+        let alternates: Vec<AccumulationAllele> = variant
+            .alternate_alleles()
+            .iter()
+            .map(|allele| AccumulationAllele {
+                allele: AlternateAllele {
+                    length: if allele.is_symbolic() {
+                        0
+                    } else {
+                        allele.len() as i32
+                    },
+                    symbolic: allele.is_symbolic(),
+                },
+                non_ref: allele.display_string() == "<NON_REF>",
+            })
+            .collect();
+        // `getIndelLengths`, which answers only for an INDEL or MIXED record.
+        let kinds: Vec<&str> = variant
+            .alternate_alleles()
+            .iter()
+            .map(|allele| {
+                if allele.is_symbolic() {
+                    "SYMBOLIC"
+                } else if allele.len() == reference.len() {
+                    if allele.len() == 1 {
+                        "SNP"
+                    } else {
+                        "MNP"
+                    }
+                } else {
+                    "INDEL"
+                }
+            })
+            .collect();
+        let mixed = kinds.windows(2).any(|pair| pair[0] != pair[1]);
+        let indel_lengths = if mixed || kinds.first() == Some(&"INDEL") {
+            Some(
+                alternates
+                    .iter()
+                    .map(|alternate| alternate.allele.length - reference_length)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        let mut genotypes = Vec::new();
+        let mut allele_fractions = Vec::new();
+        let mut phasing = Vec::new();
+        for genotype in variant.genotypes.iter() {
+            genotypes.push(GenotypeData {
+                tumor: !normal_samples.contains(&genotype.sample_name),
+                allele_depths: genotype.ad.clone().unwrap_or_default(),
+                values: Vec::new(),
+            });
+            allele_fractions.push(
+                genotype
+                    .get("AF")
+                    .map(|value| {
+                        values_of(value)
+                            .iter()
+                            .map(|text| text.trim().parse::<f64>().unwrap_or(0.0))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+            let field = |key: &str| {
+                genotype
+                    .get(key)
+                    .map(text_of)
+                    .filter(|text| !text.is_empty() && text != ".")
+            };
+            phasing.push((field("PGT"), field("PID")));
+        }
+        let single_int = |key: &str| ints(variant, key).and_then(|values| values.first().copied());
+        records.push(Record {
+            start: variant.start as i32,
+            reference_length,
+            alternates,
+            genotypes,
+            allele_fractions,
+            phasing,
+            tumor_log_10_odds: doubles(variant, "TLOD"),
+            normal_artifact_log_10_odds: doubles(variant, "NALOD"),
+            normal_log_10_odds: doubles(variant, "NLOD"),
+            population_af: doubles(variant, "POPAF"),
+            median_base_quality: ints(variant, "MBQ"),
+            median_mapping_quality: ints(variant, "MMQ"),
+            median_fragment_length: ints(variant, "MFRL"),
+            median_read_position: ints(variant, "MPOS"),
+            unique_alt_read_count: ints(variant, "AS_UNIQ_ALT_READ_COUNT"),
+            strand_bias_table: info(variant, "AS_SB_TABLE").map(|values| values.join(",")),
+            n_count: single_int("NCount"),
+            event_count_in_region: single_int("ECNT"),
+            event_count_in_haplotype: single_int("ECNTH"),
+            repeats_per_allele: info(variant, "RPA"),
+            repeat_unit: info(variant, "RU").map(|values| values.join(",")),
+            in_panel_of_normals: variant.attributes.iter().any(|(key, _)| key == "PON"),
+            indel_lengths,
+        });
+    }
+
+    let arguments = fmc::ToolArguments {
+        engine,
+        strategy,
+        initial_posterior_threshold: double(
+            "initial-threshold",
+            tool_defaults.initial_posterior_threshold,
+        ),
+        max_false_discovery_rate: double(
+            "false-discovery-rate",
+            tool_defaults.max_false_discovery_rate,
+        ),
+        f_score_beta: double("f-score-beta", tool_defaults.f_score_beta),
+        callable_sites,
+        log_artifact_prior: double("log-artifact-prior", tool_defaults.log_artifact_prior),
+    };
+    let result = match fmc::run(&records, &arguments) {
+        Ok(result) => result,
+        Err(error) => {
+            write_records(&[])?;
+            return Err(Thrown::non_user(error.class, error.message));
+        }
+    };
+
+    let mut written = Vec::new();
+    for (variant, applied) in kept.iter().zip(&result.records) {
+        let mut out = (*variant).clone();
+        let mut filters = applied.filters.clone();
+        filters.sort();
+        filters.dedup();
+        out.filters = Some(filters);
+        out.attributes.retain(|(key, _)| key != "AS_FilterStatus");
+        out.attributes.push((
+            "AS_FilterStatus".to_string(),
+            Value::Str(applied.as_filter_status.clone()),
+        ));
+        for (key, quality) in &applied.annotations {
+            out.attributes.retain(|(name, _)| name != key);
+            out.attributes
+                .push((key.clone(), Value::Int(i64::from(*quality))));
+        }
+        written.push(out);
+    }
+    write_records(&written)?;
+    let stats_output = argument(parser, "filtering-stats")
+        .unwrap_or_else(|| format!("{output}.filteringStats.tsv"));
+    write_file(&stats_output, result.filtering_stats.as_bytes())?;
+    Ok(None)
+}
+
+/// `ComposeSTRTableFile`, a `GATKTool` that scans the reference for tandem repeats and writes a zip.
+///
+/// The scan and the decimation are [`gatk_tools::compose_str_table`]'s. What the runner adds is the
+/// zip `STRTableFileBuilder.store` writes: `reference.dict` (the best available dictionary, under an
+/// `@HD` line of its own), `decimation.txt`, `sites.bin` and `sites.idx`, `sites.txt` when asked for,
+/// and `summary.txt`, whose annotations carry the tool's command line.
+///
+/// The intervals are merged again under `ALL`, whatever `--interval-merging-rule` said, and are
+/// traversed contig by contig in the dictionary's order. The members are written stored rather
+/// than deflated and in name order; the covering array compares a zip member by member.
+pub fn compose_str_table_file(parser: &Parser) -> Outcome {
+    use gatk_tools::compose_str_table as str_table;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let spec = scalar(parser, "decimation").unwrap_or_else(|| "DEFAULT".to_string());
+    let table = if spec.eq_ignore_ascii_case("NONE") {
+        str_table::DecimationTable::none()
+    } else if spec.eq_ignore_ascii_case("DEFAULT") {
+        str_table::DecimationTable::default_table()
+    } else {
+        let text = std::fs::read_to_string(&spec)
+            .map_err(|_| Thrown::user(format!("Couldn't read file {spec}. Error was: {spec}")))?;
+        str_table::DecimationTable::parse(&text, &spec).map_err(|error| match error {
+            str_table::DecimationError::BadInput(message) => bad_input(message),
+        })?
+    };
+    let settings = str_table::Settings {
+        max_period: number_or(parser, "max-period", 8).max(1) as usize,
+        max_repeat: number_or(parser, "max-repeats", 20).max(1) as usize,
+    };
+
+    let _ = resolve_read_filters(parser, "ComposeSTRTableFile")?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `getBestAvailableSequenceDictionary`: the master one, else the reference's own `.dict`.
+    let dictionary = match master_dictionary(parser)? {
+        Some(master) => master,
+        None => reference_dictionary(parser)?.unwrap_or_default(),
+    };
+    let intervals = interval_arguments(parser, &dictionary)?.map(|parameters| parameters.intervals);
+
+    let mut contigs: Vec<(String, Vec<u8>)> = Vec::new();
+    for sequence in &dictionary.sequences {
+        let bases = reference
+            .query(&sequence.name, 1, sequence.length)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        contigs.push((sequence.name.clone(), bases));
+    }
+    // `sortAndMergeIntervals(..., IntervalMergingRule.ALL)`: overlapping and adjacent intervals
+    // become one, per contig.
+    let mut chosen: Vec<(String, i64, i64)> = Vec::new();
+    if let Some(intervals) = &intervals {
+        let mut sorted: Vec<(usize, i64, i64, String)> = intervals
+            .iter()
+            .filter_map(|interval| {
+                dictionary
+                    .sequences
+                    .iter()
+                    .position(|sequence| sequence.name == interval.contig)
+                    .map(|index| {
+                        (
+                            index,
+                            i64::from(interval.start),
+                            i64::from(interval.end),
+                            interval.contig.clone(),
+                        )
+                    })
+            })
+            .collect();
+        sorted.sort();
+        for (_, start, end, contig) in sorted {
+            match chosen.last_mut() {
+                Some((last_contig, _, last_end))
+                    if *last_contig == contig && start <= *last_end + 1 =>
+                {
+                    *last_end = (*last_end).max(end);
+                }
+                _ => chosen.push((contig, start, end)),
+            }
+        }
+    }
+    let scan = if intervals.is_some() && chosen.is_empty() {
+        str_table::Scan::default()
+    } else {
+        str_table::scan(&contigs, &chosen, settings, &table)
+    };
+
+    let names: Vec<String> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let dictionary_text = htsjdk_bam::header::SamHeader {
+        sequences: dictionary.sequences.clone(),
+        ..htsjdk_bam::header::SamHeader::default()
+    }
+    .encode_replacing_version();
+    let (sites, index) = str_table::sites_binary(&scan.emitted);
+    let annotations = vec![(
+        "commandLine".to_string(),
+        crate::command_line::expanded("ComposeSTRTableFile", parser),
+    )];
+    let summary = str_table::summary(
+        &scan,
+        settings,
+        &annotations,
+        &table,
+        gatk_barclay::java_double_to_string,
+    );
+    let mut members: Vec<(String, Vec<u8>)> = vec![
+        ("decimation.txt".to_string(), table.print().into_bytes()),
+        ("reference.dict".to_string(), dictionary_text.into_bytes()),
+        ("sites.bin".to_string(), sites),
+        ("sites.idx".to_string(), index),
+        ("summary.txt".to_string(), summary.into_bytes()),
+    ];
+    if flag(parser, "generate-sites-text-output") {
+        members.push((
+            "sites.txt".to_string(),
+            str_table::sites_text(&scan.emitted, &names).into_bytes(),
+        ));
+    }
+    members.sort_by(|left, right| left.0.cmp(&right.0));
+    write_file(&output, &stored_zip(&members))?;
+    Ok(None)
+}
+
+/// A zip of `members`, each stored rather than deflated: local headers, the central directory and
+/// its end record, with no time on any entry.
+fn stored_zip(members: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in members {
+        let offset = out.len() as u32;
+        let mut crc = flate2::Crc::new();
+        crc.update(data);
+        let crc = crc.sum();
+        let mut header = Vec::new();
+        header.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        header.extend_from_slice(&0u16.to_le_bytes()); // flags
+        header.extend_from_slice(&0u16.to_le_bytes()); // stored
+        header.extend_from_slice(&0u16.to_le_bytes()); // time
+        header.extend_from_slice(&0x21u16.to_le_bytes()); // date: 1980-01-01
+        header.extend_from_slice(&crc.to_le_bytes());
+        header.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        header.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        header.extend_from_slice(&0u16.to_le_bytes()); // extra
+        out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(data);
+        central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes()); // version made by
+        central.extend_from_slice(&header);
+        central.extend_from_slice(&0u16.to_le_bytes()); // comment
+        central.extend_from_slice(&0u16.to_le_bytes()); // disk
+        central.extend_from_slice(&0u16.to_le_bytes()); // internal attributes
+        central.extend_from_slice(&0u32.to_le_bytes()); // external attributes
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let central_offset = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&(members.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(members.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&central_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
+/// `CalibrateDragstrModel`, a `GATKTool` that piles the reads up over the STR table's sites and
+/// estimates the DRAGstr parameters from them.
+///
+/// The estimation and the file layout are [`gatk_tools::calibrate_dragstr_model`]'s. The runner
+/// adds the traversal the tool does itself, interval by interval: the sites whose START falls in
+/// the interval, in the table's order, and for each one the reads overlapping it that are neither
+/// unmapped, secondary nor QC-failed, with `XQ` read as the mapping quality. Then the downsampling by
+/// the table's decimation bits, the qualifying filter, and either the estimate or Illumina's
+/// defaults, which is decided by a minimum count per period and repeat length.
+///
+/// `--parallel` and `--threads` are refused: the parallel collection merges shards in an order the
+/// sequential one does not, and that order reaches both the estimate and the sites file.
+pub fn calibrate_dragstr_model(parser: &Parser) -> Outcome {
+    use gatk_tools::calibrate_dragstr_model as cdm;
+
+    if flag(parser, "parallel") || number_or(parser, "threads", 0) > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "CalibrateDragstrModel's parallel collection is not ported. This message is the \
+             port's own and not GATK's.",
+        ));
+    }
+    let bad_value = |name: &str, message: String| {
+        Thrown::command_line(format!("Argument {name} has a bad value: {message}"))
+    };
+    let sequence = |name: &str, default: &str| -> Result<(Vec<f64>, bool), Thrown> {
+        let text = scalar(parser, name).unwrap_or_else(|| default.to_string());
+        let set = scalar(parser, name).is_some();
+        cdm::double_sequence(&text)
+            .map(|values| (values, set))
+            .map_err(|message| bad_value(name, message))
+    };
+    let (gp, gp_set) = sequence("gp-values", "10:1.0:50")?;
+    let (api, api_set) = sequence("api-values", "0:1.0:40")?;
+    let (gop, _) = sequence("gop-values", "10:.25:50")?;
+    let parameters = cdm::HyperParameters {
+        phred_gp_values: gp,
+        phred_api_values: api,
+        phred_gop_values: gop,
+        het_to_hom_ratio: scalar(parser, "het-to-hom-ratio")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(2.0),
+        min_loci_count: number_or(parser, "min-loci-count", 50).max(0) as usize,
+        api_mono_threshold: f64::from(number_or(parser, "api-mono-threshold", 3)),
+        max_period: number_or(parser, "max-period", 8).max(1) as usize,
+        max_repeat_length: number_or(parser, "max-repeats", 20).max(1) as usize,
+    };
+    // `DragstrHyperParameters.validate`, an else-if chain: a GP sequence given on the command line
+    // is checked and nothing after it is.
+    let not_phred = |values: &[f64]| values.iter().find(|d| !d.is_finite() || **d < 0.0).copied();
+    if gp_set {
+        if let Some(d) = not_phred(&parameters.phred_gp_values) {
+            return Err(bad_value(
+                "gp-values",
+                format!(
+                    "Not a valid Phred value: {}",
+                    gatk_barclay::java_double_to_string(d)
+                ),
+            ));
+        }
+    } else if api_set {
+        if let Some(d) = not_phred(&parameters.phred_api_values) {
+            return Err(bad_value(
+                "api-values",
+                format!(
+                    "Not a valid Phred value: {}",
+                    gatk_barclay::java_double_to_string(d)
+                ),
+            ));
+        }
+    } else if !parameters.het_to_hom_ratio.is_finite() || parameters.het_to_hom_ratio <= 0.0 {
+        return Err(bad_value(
+            "het-to-hom-ratio",
+            format!(
+                "must be finite and greater than 0 but found {}",
+                gatk_barclay::java_double_to_string(parameters.het_to_hom_ratio)
+            ),
+        ));
+    } else if number_or(parser, "min-loci-count", 50) < 1 {
+        return Err(bad_value(
+            "min-loci-count",
+            format!(
+                "must be greater than 0 but found {}",
+                number_or(parser, "min-loci-count", 50)
+            ),
+        ));
+    }
+    let min_depth = number_or(parser, "minimum-depth", 10);
+    let padding = i64::from(number_or(parser, "pileup-padding", 5));
+    let min_mq = number_or(parser, "sampling-min-mq", 20);
+    let downsample_size = number_or(parser, "down-sample-size", 4096).max(0) as usize;
+    let force = flag(parser, "force-estimation");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let table_path = argument(parser, "str-table-path").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument str-table-path was missing: Argument 'str-table-path' is required",
+        )
+    })?;
+    let sites_output = scalar(parser, "debug-sites-output");
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = read_walker_startup(parser, "CalibrateDragstrModel")?;
+    // `getBestAvailableSequenceDictionary`: the master, else the reference, else the reads.
+    let dictionary: Vec<htsjdk_bam::header::SequenceRecord> = match master_dictionary(parser)? {
+        Some(master) => master.sequences,
+        None => match reference_dictionary(parser)? {
+            Some(reference) => reference.sequences,
+            None => header.sequences.clone(),
+        },
+    };
+    let read_groups: Vec<String> = header
+        .read_groups
+        .iter()
+        .map(|group| group.id.clone())
+        .collect();
+    let mut samples: Vec<Option<String>> = Vec::new();
+    for group in &header.read_groups {
+        let sample = group.attributes.get("SM").map(str::to_string);
+        if !samples.contains(&sample) {
+            samples.push(sample);
+        }
+    }
+    if samples.len() > 1 {
+        let names: Vec<String> = samples
+            .iter()
+            .map(|s| s.clone().unwrap_or_else(|| "null".to_string()))
+            .collect();
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "the input alignment(s) have more than one sample: {}",
+                names.join(", ")
+            ),
+        ));
+    }
+    let sample = samples.first().cloned().flatten();
+
+    // The sites file is opened before the table is.
+    let mut sites_lines: Vec<String> = Vec::new();
+    if let Some(path) = &sites_output {
+        write_file(path, b"")?;
+    }
+
+    let zip = std::fs::read(&table_path).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {table_path}. Error was: {table_path}"
+        ))
+    })?;
+    let members = read_zip(&zip).map_err(|message| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            message,
+        )
+    })?;
+    let member = |name: &str| -> Result<&Vec<u8>, Thrown> {
+        members.get(name).ok_or_else(|| {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!("str-table-file {table_path} is missing {name}"),
+            )
+        })
+    };
+    let table_dictionary =
+        htsjdk_bam::reader::parse_header_text(&String::from_utf8_lossy(member("reference.dict")?))
+            .sequences;
+    let decimation = gatk_tools::compose_str_table::DecimationTable::parse(
+        &String::from_utf8_lossy(member("decimation.txt")?),
+        "decimation.txt",
+    )
+    .map_err(|error| match error {
+        gatk_tools::compose_str_table::DecimationError::BadInput(message) => bad_input(message),
+    })?;
+    let sites = cdm::read_sites(member("sites.bin")?);
+
+    match gatk_tools::sequence_dictionary::compare(&dictionary, &table_dictionary, false) {
+        gatk_tools::sequence_dictionary::Compatibility::Identical
+        | gatk_tools::sequence_dictionary::Compatibility::Superset
+        | gatk_tools::sequence_dictionary::Compatibility::NonCanonicalHumanOrder
+        | gatk_tools::sequence_dictionary::Compatibility::OutOfOrder => {}
+        other => {
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "the reference and str-table sequence dictionary are incompatible: {}",
+                    other.name()
+                ),
+            ));
+        }
+    }
+
+    // `getTraversalIntervals`: the ones given, else every contig of the best dictionary.
+    let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        dictionary
+            .iter()
+            .filter_map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+            })
+            .collect()
+    } else {
+        intervals
+    };
+    let mut all = cdm::Stratified::new(parameters.max_period, parameters.max_repeat_length);
+    for interval in &traversal {
+        let Some(contig_index) = table_dictionary
+            .iter()
+            .position(|s| s.name == interval.contig)
+        else {
+            continue;
+        };
+        let contig_length = dictionary
+            .iter()
+            .find(|s| s.name == interval.contig)
+            .map_or(0, |s| i64::from(s.length));
+        let records =
+            gatk_tools::read_walker::traverse(&source, std::slice::from_ref(interval), &|_| true)
+                .map_err(reads_traversal_error)?;
+        let reads: Vec<cdm::PileRead> = records
+            .iter()
+            .filter(|read| {
+                read.flags & (0x4 | 0x100 | 0x200) == 0
+                    && read.alignment_start <= read.alignment_end()
+            })
+            .map(|read| {
+                let xq = match read.tags.get(htsjdk_bam::tag::Tag::new(b"XQ")) {
+                    Some(htsjdk_bam::tag::TagValue::Int(value)) => Some(*value as i32),
+                    _ => None,
+                };
+                cdm::PileRead {
+                    start: i64::from(read.alignment_start),
+                    end: i64::from(read.alignment_end()),
+                    mapping_quality: xq.unwrap_or(i32::from(read.mapping_quality)),
+                    supplementary: read.flags & 0x800 != 0,
+                    cigar: read
+                        .cigar
+                        .elements
+                        .iter()
+                        .map(|element| (element.op.to_char(), i64::from(element.length)))
+                        .collect(),
+                }
+            })
+            .collect();
+        for site in sites.iter().filter(|site| {
+            site.contig == contig_index as i32
+                && site.start >= i64::from(interval.start)
+                && site.start <= i64::from(interval.end)
+        }) {
+            let overlapping: Vec<&cdm::PileRead> = reads
+                .iter()
+                .filter(|read| read.start <= site.end() && read.end >= site.start)
+                .collect();
+            let case = cdm::collect(site, &overlapping, padding, contig_length);
+            all.add(case).map_err(|(index, length)| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!("Index {index} out of bounds for length {length}"),
+                )
+            })?;
+        }
+    }
+
+    // `downSample`, combination by combination.
+    let mut kept = cdm::Stratified::new(parameters.max_period, parameters.max_repeat_length);
+    for period in 1..=parameters.max_period {
+        for repeats in 1..=parameters.max_repeat_length {
+            let bit = decimation.decimation_bit(period, repeats).max(0) as usize;
+            let cell = all.cells[period - 1][repeats - 1].clone();
+            let survivors = cdm::downsample_cell(&cell, bit, downsample_size, &mut sites_lines)
+                .map_err(|(index, length)| {
+                    Thrown::non_user(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        format!("Index {index} out of bounds for length {length}"),
+                    )
+                })?;
+            for case in survivors {
+                let _ = kept.add(case);
+            }
+        }
+    }
+    let final_sites = kept.qualifying(min_depth, min_mq, 0);
+    if sites_output.is_some() {
+        for row in &kept.cells {
+            for cell in row {
+                for case in cell {
+                    let fate = if case.qualifies(min_depth, min_mq, 0) {
+                        "used"
+                    } else {
+                        "skipped"
+                    };
+                    sites_lines.push(case.line(fate));
+                }
+            }
+        }
+    }
+
+    // `isThereEnoughCases` answers true under `--force-estimation` whatever the counts, so the file
+    // says `estimated` and `estimatedByForce` is never written.
+    let enough = force
+        || cdm::enough_cases(
+            &final_sites,
+            parameters.max_period,
+            parameters.max_repeat_length,
+        );
+    let using_defaults = !enough && !force;
+    let annotations = vec![
+        (
+            "sample",
+            sample.unwrap_or_else(|| "<unspecified>".to_string()),
+        ),
+        (
+            "readGroups",
+            if read_groups.is_empty() {
+                "<unspecified>".to_string()
+            } else {
+                read_groups.join(", ")
+            },
+        ),
+        (
+            "estimatedOrDefaults",
+            if using_defaults {
+                "defaults"
+            } else if enough {
+                "estimated"
+            } else {
+                "estimatedByForce"
+            }
+            .to_string(),
+        ),
+        (
+            "commandLine",
+            crate::command_line::expanded("CalibrateDragstrModel", parser),
+        ),
+    ];
+    let text = if using_defaults {
+        cdm::params_file(&annotations, 20, &cdm::default_rows())
+    } else {
+        let rows = cdm::estimate(&parameters, &final_sites.as_cases());
+        cdm::params_file(&annotations, parameters.max_repeat_length, &rows)
+    };
+    if let Some(path) = &sites_output {
+        let mut body = sites_lines.join("\n");
+        if !sites_lines.is_empty() {
+            body.push('\n');
+        }
+        write_file(path, body.as_bytes())?;
+    }
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// The members of a zip, by name, from its central directory: stored or deflated.
+fn read_zip(bytes: &[u8]) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+    use std::io::Read;
+    let u16_at = |at: usize| -> Option<usize> {
+        bytes
+            .get(at..at + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
+    };
+    let u32_at = |at: usize| -> Option<usize> {
+        bytes
+            .get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let end = (0..bytes.len().saturating_sub(21))
+        .rev()
+        .find(|&at| u32_at(at) == Some(0x0605_4b50))
+        .ok_or_else(|| "not a zip file".to_string())?;
+    let count = u16_at(end + 10).ok_or("truncated zip")?;
+    let mut at = u32_at(end + 16).ok_or("truncated zip")?;
+    let mut members = std::collections::HashMap::new();
+    for _ in 0..count {
+        if u32_at(at) != Some(0x0201_4b50) {
+            return Err("a broken central directory".to_string());
+        }
+        let method = u16_at(at + 10).ok_or("truncated zip")?;
+        let compressed = u32_at(at + 20).ok_or("truncated zip")?;
+        let name_length = u16_at(at + 28).ok_or("truncated zip")?;
+        let extra_length = u16_at(at + 30).ok_or("truncated zip")?;
+        let comment_length = u16_at(at + 32).ok_or("truncated zip")?;
+        let local = u32_at(at + 42).ok_or("truncated zip")?;
+        let name = String::from_utf8_lossy(
+            bytes
+                .get(at + 46..at + 46 + name_length)
+                .ok_or("truncated zip")?,
+        )
+        .into_owned();
+        at += 46 + name_length + extra_length + comment_length;
+        let local_name = u16_at(local + 26).ok_or("truncated zip")?;
+        let local_extra = u16_at(local + 28).ok_or("truncated zip")?;
+        let data_start = local + 30 + local_name + local_extra;
+        let data = bytes
+            .get(data_start..data_start + compressed)
+            .ok_or("truncated zip")?;
+        let content = match method {
+            0 => data.to_vec(),
+            8 => {
+                let mut out = Vec::new();
+                flate2::read::DeflateDecoder::new(data)
+                    .read_to_end(&mut out)
+                    .map_err(|error| error.to_string())?;
+                out
+            }
+            other => return Err(format!("zip method {other} is not supported")),
+        };
+        members.insert(name, content);
+    }
+    Ok(members)
+}
+
+/// `LearnReadOrientationModel`, a `CommandLineProgram` over one or more `CollectF1R2Counts` archives.
+///
+/// The EM is [`gatk_tools::learn_read_orientation_model::learn_prior`]'s. The runner is the rest of
+/// `doWork`: every archive's reference and depth-one histograms summed per sample, its alt tables
+/// gathered per sample in input order, each canonical context combined with its reverse
+/// complement, and one prior table per sample written into a `.tar.gz`. A context is skipped, and
+/// keeps its flat prior with no examples, when its reference histogram is empty or it has no alt
+/// site of either strand.
+pub fn learn_read_orientation_model(parser: &Parser) -> Outcome {
+    use gatk_tools::learn_read_orientation_model as lrom;
+    use std::collections::{BTreeMap, HashMap};
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let absolute_output = java_absolute_path(&output);
+    if !absolute_output.ends_with(".tar.gz") {
+        return Err(Thrown::user(format!(
+            "Couldn't write file {absolute_output} because Output file must end in .tar.gz"
+        )));
+    }
+    let threshold = scalar(parser, "convergence-threshold")
+        .and_then(|text| text.parse::<f64>().ok())
+        .unwrap_or(1e-4);
+    let max_iterations = number_or(parser, "num-em-iterations", 20);
+    let max_depth = number_or(parser, "max-depth", 200);
+
+    // Every archive, extracted: the histograms by sample and the alt tables in input order.
+    type Histograms = LabelledHistograms;
+    let mut ref_by_sample: HashMap<String, Vec<Histograms>> = HashMap::new();
+    let mut alt_by_sample: HashMap<String, Vec<Histograms>> = HashMap::new();
+    let mut records_by_sample: HashMap<String, Vec<lrom::AltSite>> = HashMap::new();
+    let mut sample_order: Vec<String> = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+        let tar = {
+            use std::io::Read;
+            let mut out = Vec::new();
+            flate2::read::MultiGzDecoder::new(bytes.as_slice())
+                .read_to_end(&mut out)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+            out
+        };
+        let mut members = tar_members(&tar);
+        members.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, data) in members {
+            let text = String::from_utf8_lossy(&data).into_owned();
+            if name.ends_with(".ref_histogram") || name.ends_with(".alt_histogram") {
+                let (sample, histograms) = parse_metrics_histograms(&text);
+                let target = if name.ends_with(".ref_histogram") {
+                    &mut ref_by_sample
+                } else {
+                    &mut alt_by_sample
+                };
+                target.entry(sample).or_default().push(histograms);
+            } else if name.ends_with(".alt_table") {
+                let (sample, records) = parse_alt_table(&text);
+                if !sample_order.contains(&sample) {
+                    sample_order.push(sample.clone());
+                }
+                records_by_sample.entry(sample).or_default().extend(records);
+            }
+        }
+    }
+    // `sumHistogramsFromFiles`: the first file's histograms, the others added bin by bin.
+    let sum_files = |files: &[Histograms]| -> Histograms {
+        let mut sum = files.first().cloned().unwrap_or_default();
+        for other in files.iter().skip(1) {
+            for (label, bins) in other {
+                if let Some((_, target)) = sum.iter_mut().find(|(name, _)| name == label) {
+                    for (depth, count) in bins {
+                        *target.entry(*depth).or_insert(0.0) += count;
+                    }
+                }
+            }
+        }
+        sum
+    };
+
+    let canonical = lrom::canonical_kmers();
+    let order = gatk_tools::collect_f1r2_counts::ref_context_order();
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for sample in &sample_order {
+        let refs = sum_files(ref_by_sample.get(sample).map_or(&[][..], Vec::as_slice));
+        let alts = sum_files(alt_by_sample.get(sample).map_or(&[][..], Vec::as_slice));
+        let records = &records_by_sample[sample];
+        let mut priors: HashMap<String, lrom::Prior> = HashMap::new();
+        for context in &canonical {
+            let revcomp = lrom::reverse_complement(context);
+            let ref_bins = |label: &str| -> BTreeMap<i32, f64> {
+                refs.iter()
+                    .find(|(name, _)| name == label)
+                    .map(|(_, bins)| bins.clone())
+                    .unwrap_or_default()
+            };
+            // `combineRefHistogramWithRC`: the context's bins with the reverse complement's.
+            let mut combined: BTreeMap<i32, f64> =
+                (1..=max_depth).map(|depth| (depth, 0.0)).collect();
+            let forward = ref_bins(context);
+            let backward = ref_bins(&revcomp);
+            for (depth, count) in &forward {
+                *combined.entry(*depth).or_insert(0.0) +=
+                    count + backward.get(depth).unwrap_or(&0.0);
+            }
+            // `combineAltDepthOneHistogramWithRC`, alt bases in order, F1R2 before F2R1.
+            let mut combined_alts = Vec::new();
+            let middle = context.as_bytes()[1];
+            for alt in [lrom::Base::A, lrom::Base::C, lrom::Base::G, lrom::Base::T] {
+                if alt.name().as_bytes()[0] == middle {
+                    continue;
+                }
+                for f1r2 in [true, false] {
+                    let label = format!(
+                        "{context}_{}_{}",
+                        alt.name(),
+                        if f1r2 { "F1R2" } else { "F2R1" }
+                    );
+                    let other = format!(
+                        "{revcomp}_{}_{}",
+                        alt.complement().name(),
+                        if f1r2 { "F2R1" } else { "F1R2" }
+                    );
+                    let find = |label: &str| {
+                        alts.iter()
+                            .find(|(name, _)| name == label)
+                            .map(|(_, bins)| bins.clone())
+                            .unwrap_or_default()
+                    };
+                    let (a, b) = (find(&label), find(&other));
+                    let mut counts: BTreeMap<i32, f64> =
+                        (1..=max_depth).map(|depth| (depth, 0.0)).collect();
+                    for (depth, count) in &a {
+                        *counts.entry(*depth).or_insert(0.0) +=
+                            count + b.get(depth).unwrap_or(&0.0);
+                    }
+                    combined_alts.push(lrom::AltHistogram { alt, f1r2, counts });
+                }
+            }
+            // `mergeDesignMatrices`: the context's own records, then the reverse complement's
+            // turned around.
+            let mut design: Vec<lrom::AltSite> = records
+                .iter()
+                .filter(|r| &r.context == context)
+                .cloned()
+                .collect();
+            design.extend(
+                records
+                    .iter()
+                    .filter(|r| r.context == revcomp)
+                    .map(lrom::AltSite::reverse_complement),
+            );
+            let ref_sum: f64 = combined.values().sum();
+            if ref_sum == 0.0 || design.is_empty() {
+                continue;
+            }
+            let prior = lrom::learn_prior(
+                context,
+                &combined,
+                &combined_alts,
+                &design,
+                threshold,
+                max_iterations,
+                max_depth,
+            );
+            priors.insert(revcomp.clone(), prior.reverse_complement());
+            priors.insert(context.clone(), prior);
+        }
+        let columns = [
+            "context",
+            "rev_comp",
+            "f1r2_a",
+            "f1r2_c",
+            "f1r2_g",
+            "f1r2_t",
+            "f2r1_a",
+            "f2r1_c",
+            "f2r1_g",
+            "f2r1_t",
+            "hom_ref",
+            "germline_het",
+            "somatic_het",
+            "hom_var",
+            "num_examples",
+            "num_alt_examples",
+        ];
+        let rows: Vec<Vec<String>> = order
+            .iter()
+            .map(|kmer| {
+                let prior = priors.get(kmer).cloned().unwrap_or_else(|| {
+                    let middle = lrom::Base::from_byte(kmer.as_bytes()[1]).expect("a k-mer");
+                    lrom::Prior {
+                        context: kmer.clone(),
+                        pi: lrom::flat_prior(middle),
+                        examples: 0,
+                        alt_examples: 0,
+                    }
+                });
+                let mut row = vec![
+                    prior.context.clone(),
+                    lrom::reverse_complement(&prior.context),
+                ];
+                row.extend(
+                    prior
+                        .pi
+                        .iter()
+                        .map(|value| gatk_engine::tsv_table::java_double_to_string(*value)),
+                );
+                row.push(prior.examples.to_string());
+                row.push(prior.alt_examples.to_string());
+                row
+            })
+            .collect();
+        let text = gatk_engine::tsv_table::write_table(&columns, &rows, &[("SAMPLE", sample)]);
+        files.push((
+            format!(
+                "./{}.orientation_priors",
+                gatk_tools::get_sample_name::url_encode_utf8(sample)
+            ),
+            text.into_bytes(),
+        ));
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    write_file(&output, &tar_gz(&files))?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// Every regular entry of an uncompressed tar stream, by name, GNU long names followed.
+fn tar_members(tar: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let field = |block: &[u8], from: usize, to: usize| -> String {
+        let raw = &block[from..to];
+        let end = raw.iter().position(|byte| *byte == 0).unwrap_or(raw.len());
+        String::from_utf8_lossy(&raw[..end]).into_owned()
+    };
+    let mut out = Vec::new();
+    let mut offset = 0;
+    let mut long_name: Option<String> = None;
+    while offset + 512 <= tar.len() {
+        let block = &tar[offset..offset + 512];
+        if block.iter().all(|byte| *byte == 0) {
+            break;
+        }
+        let size = usize::from_str_radix(field(block, 124, 136).trim(), 8).unwrap_or(0);
+        let data_start = offset + 512;
+        let data = &tar[data_start..(data_start + size).min(tar.len())];
+        match block[156] {
+            b'L' => long_name = Some(field(data, 0, data.len())),
+            b'0' | 0 => {
+                let name = long_name.take().unwrap_or_else(|| field(block, 0, 100));
+                out.push((name, data.to_vec()));
+            }
+            _ => {}
+        }
+        offset = data_start + size.div_ceil(512) * 512;
+    }
+    out
+}
+
+/// Labelled histograms: each one's value label and its counts by bin.
+type LabelledHistograms = Vec<(String, std::collections::BTreeMap<i32, f64>)>;
+
+/// A Picard metrics file's first header, which is the sample, and its histograms by label.
+fn parse_metrics_histograms(text: &str) -> (String, LabelledHistograms) {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut sample = String::new();
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with("## htsjdk.samtools.metrics.StringHeader") {
+            sample = lines
+                .get(index + 1)
+                .and_then(|value| value.strip_prefix("# "))
+                .unwrap_or("")
+                .to_string();
+            break;
+        }
+    }
+    let mut histograms = Vec::new();
+    if let Some(start) = lines
+        .iter()
+        .position(|line| line.starts_with("## HISTOGRAM"))
+    {
+        if let Some(header) = lines.get(start + 1) {
+            let labels: Vec<&str> = header.split('\t').skip(1).collect();
+            histograms = labels
+                .iter()
+                .map(|label| (label.to_string(), std::collections::BTreeMap::new()))
+                .collect();
+            for line in lines.iter().skip(start + 2) {
+                if line.trim().is_empty() {
+                    break;
+                }
+                let mut cells = line.split('\t');
+                let Some(depth) = cells.next().and_then(|d| d.parse::<i32>().ok()) else {
+                    continue;
+                };
+                for (index, cell) in cells.enumerate() {
+                    if let (Some((_, bins)), Ok(value)) =
+                        (histograms.get_mut(index), cell.parse::<f64>())
+                    {
+                        bins.insert(depth, value);
+                    }
+                }
+            }
+        }
+    }
+    (sample, histograms)
+}
+
+/// An alt table's sample and rows.
+fn parse_alt_table(
+    text: &str,
+) -> (
+    String,
+    Vec<gatk_tools::learn_read_orientation_model::AltSite>,
+) {
+    let mut sample = String::new();
+    let mut rows = Vec::new();
+    let mut seen_header = false;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("#<METADATA>SAMPLE=") {
+            sample = rest.to_string();
+            continue;
+        }
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        if !seen_header {
+            seen_header = true;
+            continue;
+        }
+        let cells: Vec<&str> = line.split('\t').collect();
+        if cells.len() < 7 {
+            continue;
+        }
+        let number = |index: usize| cells[index].parse::<i32>().unwrap_or(0);
+        if let Some(alt) = gatk_tools::learn_read_orientation_model::Base::parse(cells[6]) {
+            rows.push(gatk_tools::learn_read_orientation_model::AltSite {
+                context: cells[0].to_string(),
+                ref_count: number(1),
+                alt_count: number(2),
+                ref_f1r2: number(3),
+                alt_f1r2: number(4),
+                alt,
+            });
+        }
+    }
+    (sample, rows)
+}
+
+/// `GeneExpressionEvaluation`, a read walker counting fragments over a gff3's features.
+///
+/// The counting is [`gatk_tools::gene_expression_evaluation::count`]'s. The runner is
+/// `onTraversalStart` and the traversal: the grouping features of the gff3 overlapping each
+/// traversal interval, each with the intervals of its descendants of the overlap types, keyed by
+/// the feature shrunk to its label attribute so that one found twice is one feature; then the
+/// reads through the tool's own ten default filters, the mapping quality one being the instance
+/// EQUAL multi-mapping drops to zero.
+pub fn gene_expression_evaluation(parser: &Parser) -> Outcome {
+    use gatk_tools::gene_expression_evaluation as gee;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GeneExpressionEvaluation")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let gff_path = argument(parser, "gff-file").ok_or_else(|| {
+        Thrown::command_line("Argument gff-file was missing: Argument 'gff-file' is required")
+    })?;
+    let label = match scalar(parser, "feature-label-key").as_deref() {
+        Some("ID") => gee::FeatureLabel::Id,
+        _ => gee::FeatureLabel::Name,
+    };
+    let multi_overlap_method = match scalar(parser, "multi-overlap-method").as_deref() {
+        Some("EQUAL") => gee::MultiOverlapMethod::Equal,
+        _ => gee::MultiOverlapMethod::Proportional,
+    };
+    let multi_map_method = match scalar(parser, "multi-map-method").as_deref() {
+        Some("EQUAL") => gee::MultiMapMethod::Equal,
+        _ => gee::MultiMapMethod::Ignore,
+    };
+    let read_strands = match scalar(parser, "read-strands").as_deref() {
+        Some("FORWARD_FORWARD") => gee::ReadStrands::ForwardForward,
+        Some("REVERSE_FORWARD") => gee::ReadStrands::ReverseForward,
+        Some("REVERSE_REVERSE") => gee::ReadStrands::ReverseReverse,
+        _ => gee::ReadStrands::ForwardReverse,
+    };
+    let grouping: Vec<String> = {
+        let given = arguments(parser, "grouping-type");
+        if given.is_empty() {
+            vec!["gene".to_string()]
+        } else {
+            given
+        }
+    };
+    let overlap: Vec<String> = {
+        let given = arguments(parser, "overlap-type");
+        if given.is_empty() {
+            vec!["exon".to_string()]
+        } else {
+            given
+        }
+    };
+    let minimum = number_or(parser, "minimum-mapping-quality", 10);
+    let settings = gee::Settings {
+        multi_overlap_method,
+        multi_map_method,
+        read_strands,
+        unspliced: flag(parser, "unspliced"),
+        feature_label: label,
+        minimum_mapping_quality: minimum,
+        filter_mapping_quality: false,
+    };
+    let effective_minimum = settings.effective_minimum_mapping_quality();
+
+    // `onTraversalStart`: the sample, one across every read group.
+    let mut sample: Option<String> = None;
+    for group in &header.read_groups {
+        let this = group.attributes.get("SM").map(str::to_string);
+        match &sample {
+            None => sample = this,
+            Some(first) => {
+                if this.as_deref() != Some(first.as_str()) {
+                    return Err(Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        "Cannot run GeneExpressionEvaluation on multi-sample bam.",
+                    ));
+                }
+            }
+        }
+    }
+    let dictionary: Vec<htsjdk_bam::header::SequenceRecord> = match master_dictionary(parser)? {
+        Some(master) => master.sequences,
+        None => match reference_dictionary(parser)? {
+            Some(reference) => reference.sequences,
+            None => header.sequences.clone(),
+        },
+    };
+    let all_intervals: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        dictionary
+            .iter()
+            .filter_map(|s| gatk_engine::interval::SimpleInterval::new(&s.name, 1, s.length))
+            .collect()
+    } else {
+        intervals.clone()
+    };
+
+    let text = {
+        let bytes = std::fs::read(&gff_path).map_err(|_| {
+            Thrown::user(format!(
+                "Couldn't read file {gff_path}. Error was: {gff_path}"
+            ))
+        })?;
+        if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+            gunzip(&bytes).map_err(|error| Thrown::non_user(PORT_FAILURE, error.to_string()))?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    };
+    let gff = gee::parse_gff3(&text).map_err(|message| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(message),
+    })?;
+    let mut features: Vec<gee::GroupingFeature> = Vec::new();
+    for interval in &all_intervals {
+        for (index, feature) in gff.iter().enumerate() {
+            let base = &feature.base;
+            if base.contig != interval.contig
+                || base.start > interval.end
+                || base.end < interval.start
+                || !grouping.contains(&base.kind)
+            {
+                continue;
+            }
+            let overlaps: Vec<gee::Interval> = gee::descendants(&gff, index)
+                .into_iter()
+                .filter(|child| overlap.contains(&gff[*child].base.kind))
+                .map(|child| gee::Interval {
+                    contig: gff[child].base.contig.clone(),
+                    start: gff[child].base.start,
+                    end: gff[child].base.end,
+                })
+                .collect();
+            // `shrinkBaseData`: only the label attribute survives.
+            let mut shrunk = base.clone();
+            shrunk.attributes.retain(|key, _| key == label.key());
+            if label.value(&shrunk).is_none() {
+                return Err(Thrown::user(format!(
+                    "no geneid field {} found in feature at {}:{}-{}",
+                    if label == gee::FeatureLabel::Id {
+                        "ID"
+                    } else {
+                        "NAME"
+                    },
+                    shrunk.contig,
+                    shrunk.start,
+                    shrunk.end
+                )));
+            }
+            match features.iter_mut().find(|known| known.base == shrunk) {
+                Some(known) => {
+                    for interval in overlaps {
+                        if !known.overlaps.contains(&interval) {
+                            known.overlaps.push(interval);
+                        }
+                    }
+                }
+                None => features.push(gee::GroupingFeature {
+                    base: shrunk,
+                    overlaps,
+                }),
+            }
+        }
+    }
+
+    // The tool's own filters, the mapping quality one with EQUAL's zero.
+    let mut plain_filters = filters.clone();
+    let mapping_quality = plain_filters
+        .iter()
+        .position(|filter| filter.name == "MappingQualityReadFilter")
+        .map(|index| plain_filters.remove(index));
+    let maximum =
+        scalar(parser, "maximum-mapping-quality").and_then(|text| text.parse::<i32>().ok());
+    let filter = read_filter(parser, &plain_filters, &header)?;
+    let keep = |read: &BamRecord| -> bool {
+        if !filter(read) {
+            return false;
+        }
+        match &mapping_quality {
+            None => true,
+            Some(resolved) => {
+                let mq = i32::from(read.mapping_quality);
+                let passes = mq >= effective_minimum && maximum.is_none_or(|max| mq <= max);
+                passes != resolved.negated
+            }
+        }
+    };
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &keep)
+        .map_err(reads_traversal_error)?;
+    let name_of = |index: i32| -> Option<String> {
+        header.sequences.get(index as usize).map(|s| s.name.clone())
+    };
+    let int_tag = |read: &BamRecord, tag: &[u8; 2]| -> Option<i32> {
+        match read.tags.get(htsjdk_bam::tag::Tag::new(tag)) {
+            Some(htsjdk_bam::tag::TagValue::Int(value)) => Some(*value as i32),
+            _ => None,
+        }
+    };
+    let blocks_of =
+        |cigar: &htsjdk_bam::cigar::Cigar, start: i32, contig: &str| -> Vec<gee::Interval> {
+            htsjdk_bam::alignment_block::alignment_blocks(cigar, start)
+                .into_iter()
+                .map(|block| gee::Interval {
+                    contig: contig.to_string(),
+                    start: block.reference_start,
+                    end: block.reference_start + block.length - 1,
+                })
+                .collect()
+        };
+    let reads: Vec<gee::Read> = records
+        .iter()
+        .map(|read| {
+            let contig = name_of(read.reference_index).unwrap_or_default();
+            let mate_contig = name_of(read.mate_reference_index);
+            let mate_blocks = match read.tags.get(htsjdk_bam::tag::Tag::new(b"MC")) {
+                Some(htsjdk_bam::tag::TagValue::Str(text)) => {
+                    htsjdk_bam::text_parse::parse_cigar(text).ok().map(|cigar| {
+                        blocks_of(
+                            &cigar,
+                            read.mate_alignment_start,
+                            mate_contig.as_deref().unwrap_or(""),
+                        )
+                    })
+                }
+                _ => None,
+            };
+            gee::Read {
+                name: read.read_name.clone(),
+                contig: contig.clone(),
+                start: read.alignment_start,
+                blocks: blocks_of(&read.cigar, read.alignment_start, &contig),
+                end: read.alignment_end(),
+                reverse: read.flags & 0x10 != 0,
+                paired: read.flags & 0x1 != 0,
+                proper_pair: read.flags & 0x2 != 0,
+                first_of_pair: read.flags & 0x1 != 0 && read.flags & 0x40 != 0,
+                mate_unmapped: read.flags & 0x8 != 0,
+                mate_contig,
+                mate_start: (read.mate_alignment_start > 0).then_some(read.mate_alignment_start),
+                mate_blocks,
+                mate_reverse: read.flags & 0x20 != 0,
+                mate_quality: int_tag(read, b"MQ"),
+                mapping_quality: i32::from(read.mapping_quality),
+                hits: int_tag(read, b"NH"),
+                fragment_length: read.inferred_insert_size,
+            }
+        })
+        .collect();
+    let coverages = gee::count(&features, &reads, &settings)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let inputs = arguments(parser, "input");
+    let text = gee::write_counts(
+        &features,
+        &coverages,
+        sample.as_deref().unwrap_or("null"),
+        label,
+        &inputs,
+        &gff_path,
+    );
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
 }
 
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.

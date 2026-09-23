@@ -58,6 +58,8 @@ pub struct ToolArguments {
     pub f_score_beta: f64,
     /// The `callable` value of the Mutect stats table, `None` when it says fewer than one.
     pub callable_sites: Option<f64>,
+    /// `--log-artifact-prior`, `initialLogPriorOfVariantVersusArtifact`.
+    pub log_artifact_prior: f64,
 }
 
 impl Default for ToolArguments {
@@ -69,6 +71,8 @@ impl Default for ToolArguments {
             max_false_discovery_rate: DEFAULT_MAX_FALSE_DISCOVERY_RATE,
             f_score_beta: DEFAULT_F_SCORE_BETA,
             callable_sites: None,
+            log_artifact_prior:
+                gatk_engine::mutect_engine::default_log_prior_of_variant_versus_artifact(),
         }
     }
 }
@@ -160,11 +164,31 @@ impl Answers {
     }
 }
 
+/// What a run refuses part way: the class and message of whatever the step under it threw.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunError {
+    pub class: &'static str,
+    pub message: String,
+}
+
+impl RunError {
+    fn new(class: &'static str, message: impl Into<String>) -> Self {
+        RunError {
+            class,
+            message: message.into(),
+        }
+    }
+}
+
 /// `FilterMutectCalls` end to end: four passes over the records, then the two outputs.
-pub fn run(records: &[Record], arguments: &ToolArguments) -> Output {
+pub fn run(records: &[Record], arguments: &ToolArguments) -> Result<Output, RunError> {
+    // `new SomaticClusteringModel(MTFAC, ...)`: the two priors as given, so the mitochondrial
+    // substitution happens inside, against the defaults.
     let priors = PriorArguments {
+        log_snv_prior: arguments.engine.list.log_snv_prior,
+        log_indel_prior: arguments.engine.list.log_indel_prior,
+        initial_log_prior_of_variant_versus_artifact: arguments.log_artifact_prior,
         mitochondria: arguments.engine.list.mitochondria,
-        ..PriorArguments::new()
     };
     let mut model = SomaticClusteringModel::new(priors, arguments.callable_sites);
     let mut haplotype = FilteredHaplotypeFilter::new(
@@ -188,6 +212,13 @@ pub fn run(records: &[Record], arguments: &ToolArguments) -> Output {
         statistics = Statistics::default();
         applied = Vec::new();
         for record in records {
+            // `accumulateData` returns before it asks a single filter when the record has no
+            // alternate but `<NON_REF>`.
+            if pass <= NUMBER_OF_LEARNING_PASSES
+                && record.alternates.iter().all(|alternate| alternate.non_ref)
+            {
+                continue;
+            }
             let answers = Answers {
                 engine: error_probabilities_by_filter(
                     &mut model,
@@ -196,7 +227,11 @@ pub fn run(records: &[Record], arguments: &ToolArguments) -> Output {
                     &arguments.engine,
                     record,
                 )
-                .expect("the golden's records are answerable"),
+                .map_err(|error| match error {
+                    gatk_engine::filtering_engine::EngineError::Filter { class, message } => {
+                        RunError::new(class, message)
+                    }
+                })?,
             };
             if pass <= NUMBER_OF_LEARNING_PASSES {
                 accumulate(
@@ -209,7 +244,8 @@ pub fn run(records: &[Record], arguments: &ToolArguments) -> Output {
                     arguments,
                 );
             } else {
-                let result = apply(&answers, record, threshold.threshold());
+                let result = apply(&answers, record, threshold.threshold())
+                    .map_err(|error| RunError::new(error.class(), error.message()))?;
                 statistics.record(&answers, &result, threshold.threshold());
                 applied.push(result);
             }
@@ -221,27 +257,27 @@ pub fn run(records: &[Record], arguments: &ToolArguments) -> Output {
                 haplotype.learn_parameters_and_clear_accumulated_data();
                 strand_learned = strand::learn_parameters(&strand_steps);
                 strand_steps.clear();
-                model
-                    .learn_and_clear_accumulated_data()
-                    .expect("the golden's data is learnable");
+                model.learn_and_clear_accumulated_data().map_err(|error| {
+                    RunError::new("java.lang.IllegalArgumentException", format!("{error:?}"))
+                })?;
                 threshold
                     .relearn()
-                    .expect("the golden's posteriors are learnable");
+                    .map_err(|error| RunError::new(error.class(), error.message()))?;
             }
             // The filters are frozen here on purpose: only the threshold moves.
             Some(AfterPassAction::LearnThresholdOnly) => {
                 threshold
                     .relearn()
-                    .expect("the golden's posteriors are learnable");
+                    .map_err(|error| RunError::new(error.class(), error.message()))?;
             }
             _ => {}
         }
     }
 
-    Output {
+    Ok(Output {
         filtering_stats: statistics.write(&applied, &threshold, &model),
         records: applied,
-    }
+    })
 }
 
 /// `accumulateData` plus the two filters that keep state of their own.
@@ -311,7 +347,11 @@ fn accumulate(
 }
 
 /// `applyFiltersAndAccumulateOutputStats`, without the statistics.
-fn apply(answers: &Answers, record: &Record, threshold: f64) -> AppliedRecord {
+fn apply(
+    answers: &Answers,
+    record: &Record,
+    threshold: f64,
+) -> Result<AppliedRecord, gatk_engine::apply_filters::ApplyError> {
     let applied: Vec<_> = answers
         .engine
         .iter()
@@ -327,7 +367,7 @@ fn apply(answers: &Answers, record: &Record, threshold: f64) -> AppliedRecord {
         })
         .collect();
     let alleles: Vec<_> = record.alternates.iter().map(|a| a.allele).collect();
-    apply_filters(&applied, &alleles, threshold).expect("the golden's records are applicable")
+    apply_filters(&applied, &alleles, threshold)
 }
 
 /// `requiredInfoAnnotations().stream().allMatch(vc::hasAttribute)`, for the filters that annotate.

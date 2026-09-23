@@ -55,6 +55,17 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
             simple_name: "File",
             taggable: false,
         }),
+        // `ComposeSTRTableFile`'s `--decimation`, built through its `String` constructor like a
+        // `File`, and no more taggable than one.
+        "STRDecimationTable" => Some(ValueClass::Constructed {
+            simple_name: "STRDecimationTable",
+            taggable: false,
+        }),
+        // `CalibrateDragstrModel`'s three `start:step:end` sequences, built the same way.
+        "DoubleSequence" => Some(ValueClass::Constructed {
+            simple_name: "DoubleSequence",
+            taggable: false,
+        }),
         "Float" => Some(ValueClass::Float),
         "Long" => Some(ValueClass::Long),
         "Byte" => Some(ValueClass::Byte),

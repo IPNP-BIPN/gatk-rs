@@ -219,6 +219,7 @@ fn defaults() -> Settings {
         unspliced: false,
         feature_label: FeatureLabel::Name,
         minimum_mapping_quality: 10,
+        filter_mapping_quality: true,
     }
 }
 

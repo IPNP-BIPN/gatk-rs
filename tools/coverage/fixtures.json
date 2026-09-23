@@ -4406,6 +4406,389 @@
         "2"
       ]
     },
+    "FilterMutectCalls": {
+      "$why": [
+        "mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four",
+        "calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read",
+        "one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it.",
+        "mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero.",
+        "--stats absent reads the table beside the VCF; a path to a missing file is refused after the",
+        "header is written. The model inputs the port does not read, --contamination-table,",
+        "--tumor-segmentation and --ob-priors, are held.",
+        "Every numeric threshold has its default first and a value that moves a call second."
+      ],
+      "--variant": [
+        "/work/fixtures/mutect.vcf",
+        "/work/fixtures/mutect_nocallable.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered.vcf.gz"
+      ],
+      "--stats": [
+        "null",
+        "/work/fixtures/mutect_nocallable.vcf.stats",
+        "/work/fixtures/missing.stats"
+      ],
+      "--filtering-stats": [
+        "null",
+        "/work/out/filtering.tsv"
+      ],
+      "--intervals": [
+        "chr1:1-3000",
+        "chr1:1300-2000"
+      ],
+      "--contamination-table": [],
+      "--tumor-segmentation": [],
+      "--orientation-bias-artifact-priors": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--contamination-estimate": [
+        "0.0",
+        "0.2"
+      ],
+      "--distance-on-haplotype": [
+        "100",
+        "0"
+      ],
+      "--f-score-beta": [
+        "1.0",
+        "3.0"
+      ],
+      "--false-discovery-rate": [
+        "0.05",
+        "0.5"
+      ],
+      "--initial-threshold": [
+        "0.1",
+        "0.9"
+      ],
+      "--log-artifact-prior": [
+        "-2.302585092994046",
+        "-0.5"
+      ],
+      "--log-indel-prior": [
+        "-16.11809565095832",
+        "-2.0"
+      ],
+      "--log-snv-prior": [
+        "-13.815510557964275",
+        "-2.0"
+      ],
+      "--long-indel-length": [
+        "5",
+        "1"
+      ],
+      "--max-alt-allele-count": [
+        "1",
+        "0"
+      ],
+      "--max-events-in-haplotype": [
+        "2",
+        "0"
+      ],
+      "--max-events-in-region": [
+        "3",
+        "0"
+      ],
+      "--max-median-fragment-length-difference": [
+        "10000",
+        "0"
+      ],
+      "--max-n-ratio": [
+        "Infinity",
+        "0.0"
+      ],
+      "--min-allele-fraction": [
+        "0.0",
+        "0.3"
+      ],
+      "--min-median-base-quality": [
+        "20",
+        "45"
+      ],
+      "--min-median-mapping-quality": [
+        "-1",
+        "70"
+      ],
+      "--min-median-read-position": [
+        "1",
+        "5"
+      ],
+      "--min-reads-per-strand": [
+        "0",
+        "1"
+      ],
+      "--min-slippage-length": [
+        "8",
+        "1"
+      ],
+      "--normal-p-value-threshold": [
+        "0.001",
+        "0.9"
+      ],
+      "--pcr-slippage-rate": [
+        "0.1",
+        "0.9"
+      ],
+      "--unique-alt-read-count": [
+        "0",
+        "5"
+      ]
+    },
+    "ComposeSTRTableFile": {
+      "$why": [
+        "mutect_ref.fasta is three thousand random bases, whose short tandem repeats are the ones",
+        "chance makes; two_contigs.fasta repeats ACGT on two contigs, so every site is one long period-4",
+        "repeat and the second contig's masks start at one. decimation.txt is a small matrix with a",
+        "comment and a blank line; DEFAULT and NONE are the two built-in tables.",
+        "--intervals absent scans every contig; the two windows cut the first one.",
+        "--max-period 2 and --max-repeats 3 cap what is found and what is counted."
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "/work/fixtures/two_contigs.fasta"
+      ],
+      "--output": [
+        "/work/out/str.zip"
+      ],
+      "--decimation": [
+        "DEFAULT",
+        "NONE",
+        "/work/fixtures/decimation.txt"
+      ],
+      "--max-period": [
+        "8",
+        "2"
+      ],
+      "--max-repeats": [
+        "20",
+        "3"
+      ],
+      "--generate-sites-text-output": [
+        "true",
+        "false"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:100-600",
+        "chr1:500-900"
+      ],
+      "--reference-sequence-buffer-size": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "CalibrateDragstrModel": {
+      "$why": [
+        "dragstr.bam is one sample's reads tiled over mutect_ref.fasta, some carrying a one-base",
+        "deletion or insertion in a homopolymer, some with XQ, some supplementary, some at MQ 10;",
+        "mutect_tn.bam has two samples, which the tool refuses. dragstr_str.zip and",
+        "dragstr_str_all.zip are the reference's own ComposeSTRTableFile over mutect_ref.fasta with",
+        "the default decimation and with none.",
+        "--force-estimation true estimates from what little data there is; false writes the defaults.",
+        "--max-period 2 is below the table's periods, which the reference indexes past.",
+        "--parallel and --threads are held: the parallel collection is not ported."
+      ],
+      "--input": [
+        "/work/fixtures/dragstr.bam",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--str-table-path": [
+        "/work/fixtures/dragstr_str.zip",
+        "/work/fixtures/dragstr_str_all.zip"
+      ],
+      "--output": [
+        "/work/out/dragstr_params.txt"
+      ],
+      "--debug-sites-output": [
+        "/work/out/dragstr_sites.txt",
+        "null"
+      ],
+      "--force-estimation": [
+        "true",
+        "false"
+      ],
+      "--minimum-depth": [
+        "10",
+        "3"
+      ],
+      "--pileup-padding": [
+        "5",
+        "0"
+      ],
+      "--sampling-min-mq": [
+        "20",
+        "50"
+      ],
+      "--down-sample-size": [
+        "4096",
+        "512"
+      ],
+      "--max-period": [
+        "8",
+        "2"
+      ],
+      "--max-repeats": [
+        "20",
+        "8"
+      ],
+      "--gp-values": [
+        "10:1.0:50",
+        "5:2.0:40"
+      ],
+      "--api-values": [
+        "0:1.0:40",
+        "0:5:40"
+      ],
+      "--gop-values": [
+        "10:.25:50",
+        "10:1:30"
+      ],
+      "--het-to-hom-ratio": [
+        "2.0",
+        "1.0"
+      ],
+      "--min-loci-count": [
+        "50",
+        "5"
+      ],
+      "--api-mono-threshold": [
+        "3",
+        "0"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:500-1500"
+      ],
+      "--parallel": [
+        "false"
+      ],
+      "--threads": [
+        "0"
+      ],
+      "--shard-size": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "LearnReadOrientationModel": {
+      "$why": [
+        "f1r2_tn.tar.gz is the reference's own CollectF1R2Counts over the Mutect tumour/normal BAM and",
+        "its random reference: two samples in one archive, each with alt sites in several contexts.",
+        "f1r2_counts.tar.gz is the one-sample F1R2 corpus over the ACGT repeat, whose few contexts",
+        "leave most priors flat. An output not ending in .tar.gz is refused first.",
+        "--num-em-iterations 1 stops the EM before it converges, and --max-depth 50 cuts the depth bins."
+      ],
+      "--input": [
+        "/work/fixtures/f1r2_tn.tar.gz",
+        "/work/fixtures/f1r2_counts.tar.gz"
+      ],
+      "--output": [
+        "/work/out/priors.tar.gz",
+        "/work/out/priors.tar"
+      ],
+      "--convergence-threshold": [
+        "1.0E-4",
+        "0.1"
+      ],
+      "--num-em-iterations": [
+        "20",
+        "1"
+      ],
+      "--max-depth": [
+        "200",
+        "50"
+      ]
+    },
+    "GeneExpressionEvaluation": {
+      "$why": [
+        "rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced",
+        "across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates.",
+        "genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping",
+        "the second; genes_noname.gff3 adds a gene with no Name, refused under the default label.",
+        "--read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts."
+      ],
+      "--input": [
+        "/work/fixtures/rna.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--gff-file": [
+        "/work/fixtures/genes.gff3",
+        "/work/fixtures/genes_noname.gff3"
+      ],
+      "--output": [
+        "/work/out/expression.tsv"
+      ],
+      "--grouping-type": [
+        "gene",
+        "mRNA"
+      ],
+      "--overlap-type": [
+        "exon",
+        "mRNA"
+      ],
+      "--feature-label-key": [
+        "NAME",
+        "ID"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:1-1000"
+      ],
+      "--minimum-mapping-quality": [
+        "10",
+        "0"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
     "VCFComparator": {
       "$why": [
         "Two pairs of inputs, each actual one difference away from its expected per site, in position",

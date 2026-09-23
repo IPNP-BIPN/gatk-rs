@@ -197,6 +197,9 @@ def read_output(out_dir):
         if name.endswith(".tar.gz"):
             parts.append(f"{name}: {tar_gz_members(raw)}")
             continue
+        if name.endswith(".zip"):
+            parts.append(f"{name}: {zip_members(raw)}")
+            continue
         try:
             parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
         except UnicodeDecodeError:
@@ -239,6 +242,32 @@ def tar_gz_members(raw):
             text = histogram_columns_sorted(text)
         rendered.append(f"[{member.name}: {text}]")
     return "TAR.GZ " + " ".join(rendered)
+
+
+def zip_members(raw):
+    """A zip output as its members, sorted by name, each as text where it is text.
+
+    `ZipUtils.zip` adds the files in `File.listFiles()` order and stamps each entry with the time
+    it was written, and `ZipOutputStream` deflates at a level no argument reaches: what the tool
+    decides is which members there are and what each holds, so that is what is compared.
+    """
+    import io
+    import zipfile
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as error:
+        digest = hashlib.sha256(raw).hexdigest()
+        return f"BINARY sha256={digest} bytes={len(raw)} (not a zip: {error})"
+    rendered = []
+    for name in sorted(archive.namelist()):
+        content = archive.read(name)
+        try:
+            text = without_start_time(content.decode("utf-8"))
+        except UnicodeDecodeError:
+            text = f"BINARY sha256={hashlib.sha256(content).hexdigest()} bytes={len(content)}"
+        rendered.append(f"[{name}: {text}]")
+    return "ZIP " + " ".join(rendered)
 
 
 def histogram_columns_sorted(text):
