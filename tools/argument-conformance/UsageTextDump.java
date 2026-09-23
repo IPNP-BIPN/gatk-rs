@@ -112,6 +112,15 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.VCFComparator());
         usage("VariantAnnotator",
                 new org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotator());
+        // Four more undocumented tools, from the fifth lot of declarations.
+        usage("AddFlowBaseQuality",
+                new org.broadinstitute.hellbender.tools.walkers.groundtruth.AddFlowBaseQuality());
+        usage("CRAMIssue8768Detector",
+                new org.broadinstitute.hellbender.tools.CRAMIssue8768Detector());
+        usage("CollectF1R2Counts",
+                new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts());
+        usage("SplitCRAM",
+                new org.broadinstitute.hellbender.tools.SplitCRAM());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */

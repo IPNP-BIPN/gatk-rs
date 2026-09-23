@@ -424,6 +424,67 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.variantutils.VCFComparator());
         declarations("VariantAnnotator",
                 new org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotator());
+        // Twenty-seven tools whose ports are oracle-backed and that no earlier lot declared: the flow
+        // tools, the BQSR plots, saturation mutagenesis, the BWA index image, the two CRAM
+        // utilities, the F1R2 counter, the panels of normals, the scalable-VQSR extractor, the
+        // alignment-artefact and Mutect filters, the funcotators and their downloader, the RNA
+        // expression counter, the ground-truth tools, two callers, the local assembler, the
+        // segment modeller, VariantEval and VariantRecalibrator. `StructuralVariantDiscoverer` is a
+        // Spark tool and waits for the Spark argument surface.
+        declarations("AddFlowBaseQuality",
+                new org.broadinstitute.hellbender.tools.walkers.groundtruth.AddFlowBaseQuality());
+        declarations("AddFlowSNVQuality",
+                new org.broadinstitute.hellbender.tools.walkers.featuremapping.AddFlowSNVQuality());
+        declarations("AnalyzeCovariates",
+                new org.broadinstitute.hellbender.tools.walkers.bqsr.AnalyzeCovariates());
+        declarations("AnalyzeSaturationMutagenesis",
+                new org.broadinstitute.hellbender.tools.AnalyzeSaturationMutagenesis());
+        declarations("BwaMemIndexImageCreator",
+                new org.broadinstitute.hellbender.tools.BwaMemIndexImageCreator());
+        declarations("CRAMIssue8768Detector",
+                new org.broadinstitute.hellbender.tools.CRAMIssue8768Detector());
+        declarations("CollectF1R2Counts",
+                new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts());
+        declarations("CreateReadCountPanelOfNormals",
+                new org.broadinstitute.hellbender.tools.copynumber.CreateReadCountPanelOfNormals());
+        declarations("CreateSomaticPanelOfNormals",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.CreateSomaticPanelOfNormals());
+        declarations("ExtractVariantAnnotations",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.scalable.ExtractVariantAnnotations());
+        declarations("FilterAlignmentArtifacts",
+                new org.broadinstitute.hellbender.tools.walkers.realignmentfilter.FilterAlignmentArtifacts());
+        declarations("FilterMutectCalls",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.FilterMutectCalls());
+        declarations("FlowFeatureMapper",
+                new org.broadinstitute.hellbender.tools.walkers.featuremapping.FlowFeatureMapper());
+        declarations("FlowPairHMMAlignReadsToHaplotypes",
+                new org.broadinstitute.hellbender.tools.walkers.featuremapping.FlowPairHMMAlignReadsToHaplotypes());
+        declarations("FuncotateSegments",
+                new org.broadinstitute.hellbender.tools.funcotator.FuncotateSegments());
+        declarations("Funcotator",
+                new org.broadinstitute.hellbender.tools.funcotator.Funcotator());
+        declarations("FuncotatorDataSourceDownloader",
+                new org.broadinstitute.hellbender.tools.funcotator.FuncotatorDataSourceDownloader());
+        declarations("GeneExpressionEvaluation",
+                new org.broadinstitute.hellbender.tools.walkers.rnaseq.GeneExpressionEvaluation());
+        declarations("GroundTruthReadsBuilder",
+                new org.broadinstitute.hellbender.tools.walkers.groundtruth.GroundTruthReadsBuilder());
+        declarations("GroundTruthScorer",
+                new org.broadinstitute.hellbender.tools.walkers.groundtruth.GroundTruthScorer());
+        declarations("HaplotypeBasedVariantRecaller",
+                new org.broadinstitute.hellbender.tools.walkers.variantrecalling.HaplotypeBasedVariantRecaller());
+        declarations("LocalAssembler",
+                new org.broadinstitute.hellbender.tools.LocalAssembler());
+        declarations("ModelSegments",
+                new org.broadinstitute.hellbender.tools.copynumber.ModelSegments());
+        declarations("RampedHaplotypeCaller",
+                new org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller());
+        declarations("SplitCRAM",
+                new org.broadinstitute.hellbender.tools.SplitCRAM());
+        declarations("VariantEval",
+                new org.broadinstitute.hellbender.tools.walkers.varianteval.VariantEval());
+        declarations("VariantRecalibrator",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibrator());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
