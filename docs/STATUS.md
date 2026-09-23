@@ -133,7 +133,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
-| `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | not measured |
+| `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | t=2, 16/16 rows (100%) |
 | `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | t=2, 8/8 rows (100%) |
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | t=2, 23/23 rows (100%) |
 | `CalculateMixingFractions` | variant-walker | oracle-backed | calculate-mixing-fractions | 1 | t=2, 23/23 rows (100%) |
@@ -166,10 +166,10 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `CreateSomaticPanelOfNormals` | variant-transform | oracle-backed | brent-optimizer, create-somatic-panel-of-normals | 2 | not measured |
 | `DenoiseReadCounts` | cnv-segmentation | oracle-backed | denoise-read-counts | 1 | t=2, 6/6 rows (100%) |
 | `DepthOfCoverage` | locus-walker | oracle-backed | depth-of-coverage | 1 | t=2, 20/20 rows (100%) |
-| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | not measured |
+| `DownsampleByDuplicateSet` | unclassified | oracle-backed | downsample-by-duplicate-set | 1 | t=2, 18/18 rows (100%) |
 | `DumpTabixIndex` | reporting-walker | oracle-backed | dump-tabix-index | 1 | t=2, 7/7 rows (100%) |
 | `EvaluateInfoFieldConcordance` | variant-walker | oracle-backed | evaluate-info-field-concordance | 1 | t=2, 21/21 rows (100%) |
-| `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | not measured |
+| `ExampleMultiFeatureWalker` | unclassified | oracle-backed | multi-feature-walker | 1 | t=2, 16/16 rows (100%) |
 | `ExtractVariantAnnotations` | variant-transform | oracle-backed | extract-variant-annotations | 1 | not measured |
 | `FastaAlternateReferenceMaker` | reference-utility | oracle-backed | fasta-alternate-reference-maker | 1 | t=2, 21/21 rows (100%) |
 | `FastaReferenceMaker` | reference-utility | oracle-backed | fasta-reference-maker | 1 | t=2, 21/21 rows (100%) |
@@ -177,7 +177,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterFuncotations` | variant-walker | oracle-backed | filter-funcotations | 1 | not measured |
 | `FilterIntervals` | cnv-segmentation | oracle-backed | filter-intervals | 1 | t=2, 11/11 rows (100%) |
 | `FilterMutectCalls` | variant-transform | oracle-backed | filter-mutect-calls | 1 | not measured |
-| `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | not measured |
+| `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | t=2, 15/15 rows (100%) |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) |
 | `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | not measured |
@@ -186,9 +186,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | not measured |
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | t=2, 6/6 rows (100%) |
-| `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
-| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
-| `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | not measured |
+| `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) |
+| `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) |
+| `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | not measured |
 | `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
@@ -207,14 +207,14 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `LeftAlignAndTrimVariants` | variant-transform | oracle-backed | left-align-and-trim-variants | 1 | t=2, 22/22 rows (100%) |
 | `LeftAlignIndels` | record-transform | oracle-backed | left-align-indels-tool | 1 | t=2, 19/19 rows (100%) |
 | `LocalAssembler` | locus-walker | oracle-backed | local-assembler | 1 | not measured |
-| `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | not measured |
-| `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | not measured |
-| `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | not measured |
+| `MTLowHeteroplasmyFilterTool` | unclassified | oracle-backed | mt-low-heteroplasmy | 1 | t=2, 15/15 rows (100%) |
+| `MergeAnnotatedRegions` | unclassified | oracle-backed | merge-annotated-regions | 1 | t=2, 18/18 rows (100%) |
+| `MergeAnnotatedRegionsByAnnotation` | unclassified | oracle-backed | merge-annotated-regions-by-annotation | 1 | t=2, 22/22 rows (100%) |
 | `MergeMutect2CallsWithMC3` | unclassified | oracle-backed | merge-mutect2-mc3 | 1 | not measured |
-| `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | not measured |
+| `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 7/7 rows (100%) |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | not measured |
-| `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | not measured |
+| `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) |
 | `Pileup` | locus-walker | oracle-backed | pileup-tool | 1 | t=2, 18/18 rows (100%) |
@@ -245,7 +245,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `SplitNCigarReads` | record-transform | oracle-backed | split-n-cigar-reads | 1 | t=2, 21/21 rows (100%) |
 | `SplitReads` | record-transform | oracle-backed | split-reads | 1 | t=2, 20/20 rows (100%) |
 | `StructuralVariantDiscoverer` | unclassified | oracle-backed | structural-variant-discoverer | 1 | not measured |
-| `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | not measured |
+| `TagGermlineEvents` | unclassified | oracle-backed | tag-germline-events | 1 | t=2, 17/17 rows (100%) |
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) |
