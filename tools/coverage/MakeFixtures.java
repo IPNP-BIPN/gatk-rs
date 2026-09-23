@@ -1771,6 +1771,19 @@ public class MakeFixtures {
         splitCram(dir);
         mutectFixtures(dir);
         calibrationFixtures(dir);
+        // The archives `LearnReadOrientationModel` reads, written by the reference's own
+        // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
+        // archive, and the one-sample F1R2 corpus over the ACGT repeat.
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts().instanceMain(new String[] {
+                "--input", dir.resolve("mutect_tn.bam").toString(),
+                "--reference", dir.resolve("mutect_ref.fasta").toString(),
+                "--output", dir.resolve("f1r2_tn.tar.gz").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts().instanceMain(new String[] {
+                "--input", dir.resolve("f1r2.bam").toString(),
+                "--reference", dir.resolve("reference.fasta").toString(),
+                "--output", dir.resolve("f1r2_counts.tar.gz").toString(),
+        });
         // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
         // that keeps one site in two of every period-one repeat of length three.
         Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",

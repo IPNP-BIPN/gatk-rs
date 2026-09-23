@@ -4707,6 +4707,35 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "LearnReadOrientationModel": {
+      "$why": [
+        "f1r2_tn.tar.gz is the reference's own CollectF1R2Counts over the Mutect tumour/normal BAM and",
+        "its random reference: two samples in one archive, each with alt sites in several contexts.",
+        "f1r2_counts.tar.gz is the one-sample F1R2 corpus over the ACGT repeat, whose few contexts",
+        "leave most priors flat. An output not ending in .tar.gz is refused first.",
+        "--num-em-iterations 1 stops the EM before it converges, and --max-depth 50 cuts the depth bins."
+      ],
+      "--input": [
+        "/work/fixtures/f1r2_tn.tar.gz",
+        "/work/fixtures/f1r2_counts.tar.gz"
+      ],
+      "--output": [
+        "/work/out/priors.tar.gz",
+        "/work/out/priors.tar"
+      ],
+      "--convergence-threshold": [
+        "1.0E-4",
+        "0.1"
+      ],
+      "--num-em-iterations": [
+        "20",
+        "1"
+      ],
+      "--max-depth": [
+        "200",
+        "50"
+      ]
     }
   },
   "constraints": [

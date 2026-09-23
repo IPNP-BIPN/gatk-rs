@@ -343,6 +343,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FilterMutectCalls" => Some(run_filter_mutect_calls),
         "ComposeSTRTableFile" => Some(run_compose_str_table_file),
         "CalibrateDragstrModel" => Some(run_calibrate_dragstr_model),
+        "LearnReadOrientationModel" => Some(run_learn_read_orientation_model),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -705,6 +706,10 @@ fn run_compose_str_table_file(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_calibrate_dragstr_model(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::calibrate_dragstr_model(&parsed("CalibrateDragstrModel", args)?)
+}
+
+fn run_learn_read_orientation_model(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::learn_read_orientation_model(&parsed("LearnReadOrientationModel", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -298,6 +298,7 @@ jobs:
             --tool FilterMutectCalls \
             --tool ComposeSTRTableFile \
             --tool CalibrateDragstrModel \
+            --tool LearnReadOrientationModel \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

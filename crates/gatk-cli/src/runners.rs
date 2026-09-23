@@ -8436,6 +8436,355 @@ fn read_zip(bytes: &[u8]) -> Result<std::collections::HashMap<String, Vec<u8>>, 
     Ok(members)
 }
 
+/// `LearnReadOrientationModel`, a `CommandLineProgram` over one or more `CollectF1R2Counts` archives.
+///
+/// The EM is [`gatk_tools::learn_read_orientation_model::learn_prior`]'s. The runner is the rest of
+/// `doWork`: every archive's reference and depth-one histograms summed per sample, its alt tables
+/// gathered per sample in input order, each canonical context combined with its reverse
+/// complement, and one prior table per sample written into a `.tar.gz`. A context is skipped, and
+/// keeps its flat prior with no examples, when its reference histogram is empty or it has no alt
+/// site of either strand.
+pub fn learn_read_orientation_model(parser: &Parser) -> Outcome {
+    use gatk_tools::learn_read_orientation_model as lrom;
+    use std::collections::{BTreeMap, HashMap};
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let absolute_output = java_absolute_path(&output);
+    if !absolute_output.ends_with(".tar.gz") {
+        return Err(Thrown::user(format!(
+            "Couldn't write file {absolute_output} because Output file must end in .tar.gz"
+        )));
+    }
+    let threshold = scalar(parser, "convergence-threshold")
+        .and_then(|text| text.parse::<f64>().ok())
+        .unwrap_or(1e-4);
+    let max_iterations = number_or(parser, "num-em-iterations", 20);
+    let max_depth = number_or(parser, "max-depth", 200);
+
+    // Every archive, extracted: the histograms by sample and the alt tables in input order.
+    type Histograms = LabelledHistograms;
+    let mut ref_by_sample: HashMap<String, Vec<Histograms>> = HashMap::new();
+    let mut alt_by_sample: HashMap<String, Vec<Histograms>> = HashMap::new();
+    let mut records_by_sample: HashMap<String, Vec<lrom::AltSite>> = HashMap::new();
+    let mut sample_order: Vec<String> = Vec::new();
+    for input in &inputs {
+        let bytes = std::fs::read(input)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+        let tar = {
+            use std::io::Read;
+            let mut out = Vec::new();
+            flate2::read::MultiGzDecoder::new(bytes.as_slice())
+                .read_to_end(&mut out)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+            out
+        };
+        let mut members = tar_members(&tar);
+        members.sort_by(|left, right| left.0.cmp(&right.0));
+        for (name, data) in members {
+            let text = String::from_utf8_lossy(&data).into_owned();
+            if name.ends_with(".ref_histogram") || name.ends_with(".alt_histogram") {
+                let (sample, histograms) = parse_metrics_histograms(&text);
+                let target = if name.ends_with(".ref_histogram") {
+                    &mut ref_by_sample
+                } else {
+                    &mut alt_by_sample
+                };
+                target.entry(sample).or_default().push(histograms);
+            } else if name.ends_with(".alt_table") {
+                let (sample, records) = parse_alt_table(&text);
+                if !sample_order.contains(&sample) {
+                    sample_order.push(sample.clone());
+                }
+                records_by_sample.entry(sample).or_default().extend(records);
+            }
+        }
+    }
+    // `sumHistogramsFromFiles`: the first file's histograms, the others added bin by bin.
+    let sum_files = |files: &[Histograms]| -> Histograms {
+        let mut sum = files.first().cloned().unwrap_or_default();
+        for other in files.iter().skip(1) {
+            for (label, bins) in other {
+                if let Some((_, target)) = sum.iter_mut().find(|(name, _)| name == label) {
+                    for (depth, count) in bins {
+                        *target.entry(*depth).or_insert(0.0) += count;
+                    }
+                }
+            }
+        }
+        sum
+    };
+
+    let canonical = lrom::canonical_kmers();
+    let order = gatk_tools::collect_f1r2_counts::ref_context_order();
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for sample in &sample_order {
+        let refs = sum_files(ref_by_sample.get(sample).map_or(&[][..], Vec::as_slice));
+        let alts = sum_files(alt_by_sample.get(sample).map_or(&[][..], Vec::as_slice));
+        let records = &records_by_sample[sample];
+        let mut priors: HashMap<String, lrom::Prior> = HashMap::new();
+        for context in &canonical {
+            let revcomp = lrom::reverse_complement(context);
+            let ref_bins = |label: &str| -> BTreeMap<i32, f64> {
+                refs.iter()
+                    .find(|(name, _)| name == label)
+                    .map(|(_, bins)| bins.clone())
+                    .unwrap_or_default()
+            };
+            // `combineRefHistogramWithRC`: the context's bins with the reverse complement's.
+            let mut combined: BTreeMap<i32, f64> =
+                (1..=max_depth).map(|depth| (depth, 0.0)).collect();
+            let forward = ref_bins(context);
+            let backward = ref_bins(&revcomp);
+            for (depth, count) in &forward {
+                *combined.entry(*depth).or_insert(0.0) +=
+                    count + backward.get(depth).unwrap_or(&0.0);
+            }
+            // `combineAltDepthOneHistogramWithRC`, alt bases in order, F1R2 before F2R1.
+            let mut combined_alts = Vec::new();
+            let middle = context.as_bytes()[1];
+            for alt in [lrom::Base::A, lrom::Base::C, lrom::Base::G, lrom::Base::T] {
+                if alt.name().as_bytes()[0] == middle {
+                    continue;
+                }
+                for f1r2 in [true, false] {
+                    let label = format!(
+                        "{context}_{}_{}",
+                        alt.name(),
+                        if f1r2 { "F1R2" } else { "F2R1" }
+                    );
+                    let other = format!(
+                        "{revcomp}_{}_{}",
+                        alt.complement().name(),
+                        if f1r2 { "F2R1" } else { "F1R2" }
+                    );
+                    let find = |label: &str| {
+                        alts.iter()
+                            .find(|(name, _)| name == label)
+                            .map(|(_, bins)| bins.clone())
+                            .unwrap_or_default()
+                    };
+                    let (a, b) = (find(&label), find(&other));
+                    let mut counts: BTreeMap<i32, f64> =
+                        (1..=max_depth).map(|depth| (depth, 0.0)).collect();
+                    for (depth, count) in &a {
+                        *counts.entry(*depth).or_insert(0.0) +=
+                            count + b.get(depth).unwrap_or(&0.0);
+                    }
+                    combined_alts.push(lrom::AltHistogram { alt, f1r2, counts });
+                }
+            }
+            // `mergeDesignMatrices`: the context's own records, then the reverse complement's
+            // turned around.
+            let mut design: Vec<lrom::AltSite> = records
+                .iter()
+                .filter(|r| &r.context == context)
+                .cloned()
+                .collect();
+            design.extend(
+                records
+                    .iter()
+                    .filter(|r| r.context == revcomp)
+                    .map(lrom::AltSite::reverse_complement),
+            );
+            let ref_sum: f64 = combined.values().sum();
+            if ref_sum == 0.0 || design.is_empty() {
+                continue;
+            }
+            let prior = lrom::learn_prior(
+                context,
+                &combined,
+                &combined_alts,
+                &design,
+                threshold,
+                max_iterations,
+                max_depth,
+            );
+            priors.insert(revcomp.clone(), prior.reverse_complement());
+            priors.insert(context.clone(), prior);
+        }
+        let columns = [
+            "context",
+            "rev_comp",
+            "f1r2_a",
+            "f1r2_c",
+            "f1r2_g",
+            "f1r2_t",
+            "f2r1_a",
+            "f2r1_c",
+            "f2r1_g",
+            "f2r1_t",
+            "hom_ref",
+            "germline_het",
+            "somatic_het",
+            "hom_var",
+            "num_examples",
+            "num_alt_examples",
+        ];
+        let rows: Vec<Vec<String>> = order
+            .iter()
+            .map(|kmer| {
+                let prior = priors.get(kmer).cloned().unwrap_or_else(|| {
+                    let middle = lrom::Base::from_byte(kmer.as_bytes()[1]).expect("a k-mer");
+                    lrom::Prior {
+                        context: kmer.clone(),
+                        pi: lrom::flat_prior(middle),
+                        examples: 0,
+                        alt_examples: 0,
+                    }
+                });
+                let mut row = vec![
+                    prior.context.clone(),
+                    lrom::reverse_complement(&prior.context),
+                ];
+                row.extend(
+                    prior
+                        .pi
+                        .iter()
+                        .map(|value| gatk_engine::tsv_table::java_double_to_string(*value)),
+                );
+                row.push(prior.examples.to_string());
+                row.push(prior.alt_examples.to_string());
+                row
+            })
+            .collect();
+        let text = gatk_engine::tsv_table::write_table(&columns, &rows, &[("SAMPLE", sample)]);
+        files.push((
+            format!(
+                "./{}.orientation_priors",
+                gatk_tools::get_sample_name::url_encode_utf8(sample)
+            ),
+            text.into_bytes(),
+        ));
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    write_file(&output, &tar_gz(&files))?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// Every regular entry of an uncompressed tar stream, by name, GNU long names followed.
+fn tar_members(tar: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let field = |block: &[u8], from: usize, to: usize| -> String {
+        let raw = &block[from..to];
+        let end = raw.iter().position(|byte| *byte == 0).unwrap_or(raw.len());
+        String::from_utf8_lossy(&raw[..end]).into_owned()
+    };
+    let mut out = Vec::new();
+    let mut offset = 0;
+    let mut long_name: Option<String> = None;
+    while offset + 512 <= tar.len() {
+        let block = &tar[offset..offset + 512];
+        if block.iter().all(|byte| *byte == 0) {
+            break;
+        }
+        let size = usize::from_str_radix(field(block, 124, 136).trim(), 8).unwrap_or(0);
+        let data_start = offset + 512;
+        let data = &tar[data_start..(data_start + size).min(tar.len())];
+        match block[156] {
+            b'L' => long_name = Some(field(data, 0, data.len())),
+            b'0' | 0 => {
+                let name = long_name.take().unwrap_or_else(|| field(block, 0, 100));
+                out.push((name, data.to_vec()));
+            }
+            _ => {}
+        }
+        offset = data_start + size.div_ceil(512) * 512;
+    }
+    out
+}
+
+/// Labelled histograms: each one's value label and its counts by bin.
+type LabelledHistograms = Vec<(String, std::collections::BTreeMap<i32, f64>)>;
+
+/// A Picard metrics file's first header, which is the sample, and its histograms by label.
+fn parse_metrics_histograms(text: &str) -> (String, LabelledHistograms) {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut sample = String::new();
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with("## htsjdk.samtools.metrics.StringHeader") {
+            sample = lines
+                .get(index + 1)
+                .and_then(|value| value.strip_prefix("# "))
+                .unwrap_or("")
+                .to_string();
+            break;
+        }
+    }
+    let mut histograms = Vec::new();
+    if let Some(start) = lines
+        .iter()
+        .position(|line| line.starts_with("## HISTOGRAM"))
+    {
+        if let Some(header) = lines.get(start + 1) {
+            let labels: Vec<&str> = header.split('\t').skip(1).collect();
+            histograms = labels
+                .iter()
+                .map(|label| (label.to_string(), std::collections::BTreeMap::new()))
+                .collect();
+            for line in lines.iter().skip(start + 2) {
+                if line.trim().is_empty() {
+                    break;
+                }
+                let mut cells = line.split('\t');
+                let Some(depth) = cells.next().and_then(|d| d.parse::<i32>().ok()) else {
+                    continue;
+                };
+                for (index, cell) in cells.enumerate() {
+                    if let (Some((_, bins)), Ok(value)) =
+                        (histograms.get_mut(index), cell.parse::<f64>())
+                    {
+                        bins.insert(depth, value);
+                    }
+                }
+            }
+        }
+    }
+    (sample, histograms)
+}
+
+/// An alt table's sample and rows.
+fn parse_alt_table(
+    text: &str,
+) -> (
+    String,
+    Vec<gatk_tools::learn_read_orientation_model::AltSite>,
+) {
+    let mut sample = String::new();
+    let mut rows = Vec::new();
+    let mut seen_header = false;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("#<METADATA>SAMPLE=") {
+            sample = rest.to_string();
+            continue;
+        }
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        if !seen_header {
+            seen_header = true;
+            continue;
+        }
+        let cells: Vec<&str> = line.split('\t').collect();
+        if cells.len() < 7 {
+            continue;
+        }
+        let number = |index: usize| cells[index].parse::<i32>().unwrap_or(0);
+        if let Some(alt) = gatk_tools::learn_read_orientation_model::Base::parse(cells[6]) {
+            rows.push(gatk_tools::learn_read_orientation_model::AltSite {
+                context: cells[0].to_string(),
+                ref_count: number(1),
+                alt_count: number(2),
+                ref_f1r2: number(3),
+                alt_f1r2: number(4),
+                alt,
+            });
+        }
+    }
+    (sample, rows)
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves
