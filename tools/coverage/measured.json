@@ -820,6 +820,69 @@
       "t": 2,
       "share": 1.0
     },
+    "SVCluster": {
+      "rows": 24,
+      "accepted": 15,
+      "rejected": 9,
+      "distinct_outputs": 11,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "GroupedSVCluster": {
+      "rows": 23,
+      "accepted": 15,
+      "rejected": 8,
+      "distinct_outputs": 10,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "SVAnnotate": {
+      "rows": 18,
+      "accepted": 14,
+      "rejected": 4,
+      "distinct_outputs": 8,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "ReferenceBlockConcordance": {
+      "rows": 17,
+      "accepted": 11,
+      "rejected": 6,
+      "distinct_outputs": 11,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "CombineSegmentBreakpoints": {
+      "rows": 18,
+      "accepted": 3,
+      "rejected": 15,
+      "distinct_outputs": 3,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "MergeMutect2CallsWithMC3": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 6,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterFuncotations": {
+      "rows": 16,
+      "accepted": 10,
+      "rejected": 6,
+      "distinct_outputs": 5,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
