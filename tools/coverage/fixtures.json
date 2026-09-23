@@ -4886,6 +4886,114 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "AddFlowSNVQuality": {
+      "$why": [
+        "flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two",
+        "keep switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping",
+        "the floor to 1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four",
+        "formulae; --output-quality-attribute moves the base quality to a tag and leaves QUAL. The",
+        "boundary flows are spread unless --keep-boundary-flows. The debug switches are held out: one",
+        "writes a statistics file beside the output, the other only matters with it."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--output": [
+        "/work/out/flow_snvq.bam"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--max-phred-score": [
+        "NaN",
+        "30",
+        "90"
+      ],
+      "--snvq-mode": [
+        "Geometric",
+        "Legacy",
+        "Optimistic",
+        "Pessimistic"
+      ],
+      "--output-quality-attribute": [
+        "null",
+        "BQ"
+      ],
+      "--keep-supplementary-alignments": [
+        "true",
+        "false"
+      ],
+      "--include-qc-failed-read": [
+        "true",
+        "false"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--create-output-bam-index": [
+        "true",
+        "false"
+      ],
+      "--debug-read-name": [],
+      "--debug-collect-stats-into": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

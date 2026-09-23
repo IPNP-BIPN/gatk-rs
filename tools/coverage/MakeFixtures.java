@@ -930,7 +930,8 @@ public class MakeFixtures {
      * flow.bam: Ultima flow reads over mutect_ref.fasta. Two read groups, one under TGCA with the
      * default maximal class and one under TACG with mc 8, so the matrix has two shapes. Every read
      * carries a signed tp array (mostly zero, some +-1 and +-2) and varied qualities; every third
-     * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class.
+     * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class. One read is
+     * supplementary and one fails the vendor check, which AddFlowSNVQuality's switches drop.
      */
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
@@ -980,6 +981,8 @@ public class MakeFixtures {
             }
             record.setBaseQualities(quals);
             record.setMappingQuality(60);
+            record.setSupplementaryAlignmentFlag(n == 7);
+            record.setReadFailsVendorQualityCheckFlag(n == 11);
             record.setAttribute("RG", n % 2 == 0 ? "rgU" : "rgV");
             record.setAttribute("tp", tp);
             if (n % 3 == 0) {

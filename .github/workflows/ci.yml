@@ -608,6 +608,7 @@ jobs:
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
             --tool AddFlowBaseQuality \
+            --tool AddFlowSNVQuality \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

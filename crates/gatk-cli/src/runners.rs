@@ -9884,6 +9884,56 @@ pub fn add_flow_base_quality(parser: &Parser) -> Outcome {
     }
 }
 
+/// `AddFlowSNVQuality`: the sibling of `AddFlowBaseQuality` over the same flow matrix, whose
+/// boundary flows are spread unless `--keep-boundary-flows` says otherwise, and which drops the
+/// supplementary and QC-failed reads its own switches exclude rather than writing them.
+pub fn add_flow_snv_quality(parser: &Parser) -> Outcome {
+    use gatk_tools::add_flow_snv_quality::{Settings, SnvqMode};
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "AddFlowSNVQuality")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("AddFlowSNVQuality", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let mode = match scalar(parser, "snvq-mode").as_deref() {
+        Some("Legacy") => SnvqMode::Legacy,
+        Some("Optimistic") => SnvqMode::Optimistic,
+        Some("Pessimistic") => SnvqMode::Pessimistic,
+        _ => SnvqMode::Geometric,
+    };
+    let settings = Settings {
+        max_phred_score: scalar(parser, "max-phred-score")
+            .and_then(|text| text.parse::<f64>().ok())
+            .filter(|score| !score.is_nan()),
+        keep_supplementary_alignments: flag(parser, "keep-supplementary-alignments"),
+        include_qc_failed_reads: flag(parser, "include-qc-failed-read"),
+        mode,
+        output_quality_attribute: scalar(parser, "output-quality-attribute"),
+        flow: flow_arguments(parser),
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::add_flow_snv_quality::add_flow_snv_quality_with(
+        &source, &options, &filter, &settings, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Err(refusal) => Err(flow_refusal(refusal)),
+    }
+}
+
 /// A floating-point argument with the tool's own default where it was not given.
 fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)
