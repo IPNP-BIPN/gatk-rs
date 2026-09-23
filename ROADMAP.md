@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 86 conformance suites, all oracle-backed; `format`, whose 41,678 formatted doubles once had a harness and a Rust test and no CI-derived golden, is among them. CRAM, GKL-exact deflate and full VCF remain |
 | **picard-rs** | 121 tools | 105 tools carry a suite, all oracle-backed; 107 suites over 122 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 53 tools |
-| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 110 tools' arguments and RUNS 100 of them end to end, with a t=2 covering array measured against the oracle for all 100, every one at 1.000 with what the tool PRINTS compared as well as what it writes. **No performance number exists yet for any of it**: see Milestone S |
+| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 137 tools' arguments and RUNS 100 of them end to end, with a t=2 covering array measured against the oracle for all 100, every one at 1.000 with what the tool PRINTS compared as well as what it writes. **No performance number exists yet for any of it**: see Milestone S |
 
 Across the three repositories that is **491 oracle-backed suites**, and the generated dashboard
 ([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%. The
