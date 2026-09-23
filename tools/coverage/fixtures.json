@@ -3489,6 +3489,31 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "ConvertHeaderlessHadoopBamShardToBam": {
+      "$why": [
+        "--bam-shard is copied byte for byte and never parsed, so any file is a shard: reads.bam, a text",
+        "file, and the fixtures DIRECTORY, which FileUtils.copyFile refuses inside the same try as the output",
+        "and therefore as `Error writing to` the output. --bam-with-header is the donor SamReaderFactory opens:",
+        "a coordinate BAM, a SAM text donor.sam whose VN:1.5 the tool keeps, a BGZF VCF read as SAM text",
+        "(an empty header), and a missing file, the RuntimeIOException. --output carries two names.",
+        "--use-jdk-deflater is what decides the header block's deflate stream, the one part the tool writes."
+      ],
+      "--bam-shard": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures"
+      ],
+      "--bam-with-header": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/donor.sam",
+        "/work/fixtures/reads.vcf.gz",
+        "/work/fixtures/missing.bam"
+      ],
+      "--output": [
+        "/work/out/converted.bam",
+        "/work/out/other.bam"
+      ]
     }
   },
   "constraints": [

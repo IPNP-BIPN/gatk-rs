@@ -13160,3 +13160,109 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
     finish(&text)?;
     Ok(None)
 }
+
+/// `ConvertHeaderlessHadoopBamShardToBam.doWork`: a donor's header, the shard's own bytes, and a
+/// terminator.
+///
+/// A `CommandLineProgram` rather than a `GATKTool`, so nothing here is the engine's: the donor is
+/// opened by `SamReaderFactory` directly, and its refusals are htsjdk's rather than GATK's. The
+/// three steps fail in three ways, and the array measures each:
+///
+///   - the donor that cannot be opened is a `RuntimeIOException` naming the path AS GIVEN, and the
+///     handler prints its class because it is not a `UserException`;
+///   - the output and the shard both fail inside one `try`, whose `IOException` becomes
+///     `Error writing to <the output's absolute path>` whichever of the two it was;
+///   - and a shard that fails leaves the header block behind, because the stream was opened, and
+///     written to, before `copyFile` asked for the shard.
+///
+/// The donor needs no header to speak of: a file that is not a BAM is read as SAM text, and a text
+/// with no `@` lines at all is an empty header whose whole text is `@HD VN:1.6`.
+pub fn convert_headerless_hadoop_bam_shard_to_bam(parser: &Parser) -> Outcome {
+    use gatk_tools::convert_headerless_shard::{header_block, EMPTY_GZIP_BLOCK};
+    use std::io::Write;
+
+    let required = |name: &str| {
+        argument(parser, name).ok_or_else(|| {
+            Thrown::command_line(format!(
+                "Argument {name} was missing: Argument '{name}' is required"
+            ))
+        })
+    };
+    let shard = required("bam-shard")?;
+    let donor = required("bam-with-header")?;
+    let output = required("output")?;
+
+    let header = donor_header(&donor)?;
+
+    let writing = || Thrown::user(format!("Error writing to {}", java_absolute_path(&output)));
+    let mut out = std::fs::File::create(&output).map_err(|_| writing())?;
+    let (level, deflater) = output_compression(parser);
+    let block = header_block(&header, level, deflater)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, error.to_string()))?;
+    out.write_all(&block).map_err(|_| writing())?;
+    // `FileUtils.copyFile(File, OutputStream)` opens the shard only now, so a missing one leaves
+    // the header block in the file.
+    let bytes = std::fs::read(&shard).map_err(|_| writing())?;
+    out.write_all(&bytes).map_err(|_| writing())?;
+    out.write_all(&EMPTY_GZIP_BLOCK).map_err(|_| writing())?;
+    // `doWork` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
+
+/// `SamReaderFactory.makeDefault().validationStringency(SILENT).open(file).getFileHeader()`.
+///
+/// Measured on the reference rather than read from htsjdk: a gzip or BGZF stream whose content is
+/// not `BAM\1` is read as SAM text, like an uncompressed one, and SAM text's header is its leading
+/// `@` lines, so a VCF, an empty file and a bare word all give the empty header.
+fn donor_header(donor: &str) -> Result<SamHeader, Thrown> {
+    use std::io::Read;
+
+    let unreadable = |reason: &str| {
+        Thrown::non_user(
+            "htsjdk.samtools.util.RuntimeIOException",
+            format!("java.io.FileNotFoundException: {donor} ({reason})"),
+        )
+    };
+    let path = std::path::Path::new(donor);
+    if path.is_dir() {
+        return Err(unreadable("Is a directory"));
+    }
+    let bytes = std::fs::read(path).map_err(|_| unreadable("No such file or directory"))?;
+    if bytes.starts_with(b"CRAM") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "A CRAM donor is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let content = if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut plain = Vec::new();
+        flate2::read::MultiGzDecoder::new(bytes.as_slice())
+            .read_to_end(&mut plain)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{donor}: {error}")))?;
+        plain
+    } else {
+        bytes
+    };
+    if content.starts_with(&gatk_tools::read_walker_refusal::BAM_MAGIC) {
+        return htsjdk_bam::reader::BamReader::new(&content)
+            .map(|reader| reader.header.text)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{donor}: {error:?}")));
+    }
+    let text = String::from_utf8_lossy(&content);
+    let leading: String = text
+        .lines()
+        .take_while(|line| line.starts_with('@'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    // `SAMTextHeaderCodec.decode` fills a `new SAMFileHeader()`, whose constructor has already set
+    // `VN:1.6`: a text with no `@HD` keeps that line, and one with an `@HD` overwrites it in place.
+    let parsed = htsjdk_bam::reader::parse_header_text(&leading);
+    let mut header = SamHeader::default();
+    for (key, value) in parsed.attributes.iter() {
+        header.attributes.set(key, value);
+    }
+    Ok(SamHeader {
+        attributes: header.attributes,
+        ..parsed
+    })
+}

@@ -56,6 +56,27 @@ pub const EMPTY_GZIP_BLOCK: [u8; 28] = [
     0x1b, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+/// `writeBAMHeaderToStream`'s block at the compression a tool run writes at.
+///
+/// `new BlockCompressedOutputStream(outputStream, (File) null)` takes htsjdk's STATIC defaults, and
+/// `CommandLineProgram` sets both before `doWork`: the level from `GATKConfig` and the deflater from
+/// `--use-jdk-deflater`. [`write_bam_header_block`] writes at htsjdk's own level five, so its block
+/// is inflated and deflated again here. The uncompressed bytes decide where a block ends, so the
+/// second pass cuts the header exactly where the first one did.
+pub fn header_block(
+    header: &SamHeader,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> std::io::Result<Vec<u8>> {
+    use std::io::Write;
+    let block = write_bam_header_block(header)?;
+    let plain = htsjdk_bgzf::read::decompress_all(&block)
+        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+    let mut bgzf = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+    bgzf.write_all(&plain)?;
+    bgzf.into_inner_without_terminator()
+}
+
 /// `SparkUtils.convertHeaderlessHadoopBamShardToBam`: header block, shard verbatim, terminator.
 ///
 /// `shard` is the raw file, already BGZF-compressed and carrying no header block and no terminator
@@ -113,6 +134,23 @@ mod tests {
         assert_eq!(
             occurrences, 1,
             "the header block is flushed rather than closed"
+        );
+    }
+
+    #[test]
+    fn the_header_block_at_htsjdk_level_is_the_plain_one() {
+        let at_five = header_block(
+            &header(),
+            htsjdk_bgzf::DEFAULT_COMPRESSION_LEVEL,
+            htsjdk_bgzf::Deflater::Jdk,
+        )
+        .unwrap();
+        assert_eq!(at_five, write_bam_header_block(&header()).unwrap());
+        let at_two = header_block(&header(), 2, htsjdk_bgzf::Deflater::Jdk).unwrap();
+        assert_eq!(
+            htsjdk_bgzf::read::decompress_all(&at_two).unwrap(),
+            htsjdk_bgzf::read::decompress_all(&at_five).unwrap(),
+            "the level changes the deflate stream and not what it carries"
         );
     }
 
