@@ -8498,6 +8498,9 @@ fn write_bam(
 ) -> Result<Option<String>, Thrown> {
     std::fs::write(output, bytes)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    // htsjdk's writer builds an index only for a `SO:coordinate` file, whatever
+    // `--create-output-bam-index` says: an unsorted or queryname BAM is written without one.
+    let bai = bai.filter(|_| is_coordinate_sorted(bytes));
     if let Some(bai) = bai {
         let companion = std::path::Path::new(output).with_extension("bai");
         std::fs::write(&companion, bai).map_err(|error| {
@@ -12893,5 +12896,70 @@ fn java_allele(allele: &htsjdk_vcf::allele::Allele) -> String {
         format!("{text}*")
     } else {
         text
+    }
+}
+
+/// `DownsampleByDuplicateSet`: whole molecules kept or dropped, one seeded draw per molecule.
+///
+/// The grouping, the three rejection rules and the draws are
+/// [`gatk_tools::downsample_by_duplicate_set`], where a golden measures them. The runner adds the
+/// read walker's startup and filters, and the writer. A traversal that hands over no read at all
+/// is the reference's own `NullPointerException`; a read without a well-formed `MI` is a refusal of
+/// the port's own, since what the reference throws depends on how the tag is malformed.
+pub fn downsample_by_duplicate_set(parser: &Parser) -> Outcome {
+    use gatk_tools::downsample_by_duplicate_set as downsample;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "DownsampleByDuplicateSet")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let fraction: f64 = scalar(parser, "fraction-to-keep")
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| {
+            Thrown::command_line(
+                "Argument fraction-to-keep was missing: Argument 'fraction-to-keep' is required",
+            )
+        })?;
+    let arguments = downsample::Arguments {
+        fraction_to_keep: fraction,
+        minimum_reads: number_or(parser, "min-reads", 1).max(0) as usize,
+        minimum_reads_per_strand: number_or(parser, "min-per-strand-reads", 0).max(0) as usize,
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("DownsampleByDuplicateSet", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let (level, deflater) = output_compression(parser);
+    match downsample::downsample_with(&source, &options, &filter, level, deflater, &arguments)
+        .map_err(reads_traversal_error)?
+    {
+        None => Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "DownsampleByDuplicateSet met a read without a well-formed MI tag, which the reference \
+             fails on with a JVM exception",
+        )),
+        // `processLastReadSet` asks the set it never started for its reads: a helpful NPE naming
+        // the field, which is deterministic.
+        Some(Err(downsample::DownsampleError::NoReads)) => Err(Thrown::non_user(
+            "java.lang.NullPointerException",
+            "Cannot invoke \"org.broadinstitute.hellbender.tools.walkers.consensus.ReadsWithSameUMI.getReads()\" because \"this.currentReadsWithSameUMI\" is null",
+        )),
+        Some(Err(error)) => Err(Thrown::user(error.message())),
+        Some(Ok((bytes, bai))) => {
+            write_bam(parser, &output, &bytes, bai)?;
+            // `onTraversalSuccess` returns the word, which `handleResult` prints.
+            Ok(Some("SUCCESS".to_string()))
+        }
     }
 }

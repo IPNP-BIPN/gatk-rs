@@ -72,6 +72,8 @@ pub struct Read {
 pub enum DownsampleError {
     /// A molecule number went backwards.
     NotSortedByMoleculeId,
+    /// No read reached the walker, so the last set was never started.
+    NoReads,
 }
 
 impl DownsampleError {
@@ -142,4 +144,71 @@ pub fn run(reads: &[Read], arguments: &Arguments) -> Result<Vec<Read>, Downsampl
         offer(&current, &mut rng, &mut written);
     }
     Ok(written)
+}
+
+/// A written BAM and its index, or the walk's refusal; `None` is a read the port cannot place.
+pub type Downsampled = Option<Result<(Vec<u8>, Option<Vec<u8>>), DownsampleError>>;
+
+/// The tool end to end: the reads the traversal hands over, grouped and downsampled, then written.
+///
+/// A read's molecule is `MI`'s number before the slash and its strand the part after. A read whose
+/// `MI` is missing, or does not split that way, is `None`: the reference dereferences a null or
+/// indexes past the split, and the caller refuses it as a gap of the port's own rather than
+/// reproducing a JVM message.
+pub fn downsample_with(
+    source: &gatk_engine::reads::ReadsDataSource,
+    options: &crate::sam_output::Options,
+    filter: &dyn Fn(&htsjdk_bam::record::BamRecord) -> bool,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+    arguments: &Arguments,
+) -> Result<Downsampled, gatk_engine::reads::ReadsError> {
+    let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
+    let mut reads = Vec::with_capacity(records.len());
+    for (index, record) in records.iter().enumerate() {
+        let Some(tag) = crate::transfer_read_tags::attribute_as_string(record, "MI") else {
+            return Ok(None);
+        };
+        // `String.split("/")`, which drops trailing empty fields.
+        let mut fields: Vec<&str> = tag.split('/').collect();
+        while fields.last() == Some(&"") {
+            fields.pop();
+        }
+        let (Some(number), Some(strand)) = (fields.first(), fields.get(1)) else {
+            return Ok(None);
+        };
+        let Ok(molecule) = number.parse::<i32>() else {
+            return Ok(None);
+        };
+        reads.push(Read {
+            // The index, so the written reads can be found again among the records.
+            name: index.to_string(),
+            molecule,
+            strand: strand.to_string(),
+        });
+    }
+    if reads.is_empty() {
+        // `processLastReadSet` asks the null set it never started for its reads.
+        return Ok(Some(Err(DownsampleError::NoReads)));
+    }
+    let written = match run(&reads, arguments) {
+        Ok(written) => written,
+        Err(error) => return Ok(Some(Err(error))),
+    };
+    let kept: Vec<htsjdk_bam::record::BamRecord> = written
+        .iter()
+        .map(|read| records[read.name.parse::<usize>().expect("an index")].clone())
+        .collect();
+    let header = crate::sam_output::header_for_sam_writer(
+        source.header(),
+        "GATK DownsampleByDuplicateSet",
+        options,
+    );
+    Ok(Some(Ok(crate::sam_output::write_records_with(
+        &header,
+        &kept,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )?)))
 }
