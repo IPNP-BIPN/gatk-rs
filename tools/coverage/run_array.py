@@ -22,6 +22,7 @@ Two modes, and the difference is the whole point of Milestone C:
 
 import argparse
 import hashlib
+import re
 import json
 import shlex
 import shutil
@@ -186,11 +187,25 @@ def read_output(out_dir):
         raw = path.read_bytes()
         name = path.relative_to(out_dir).as_posix()
         try:
-            parts.append(f"{name}: {raw.decode('utf-8')}")
+            parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
         except UnicodeDecodeError:
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
+
+
+def without_start_time(text):
+    """A metrics file with the one line that is the wall clock taken out.
+
+    `CommandLineProgram.getMetricsFile` heads every metrics file with the command line and then
+    `# Started on: <now>`, so two runs of the reference already differ there. The line is kept and
+    its value replaced, which still measures that both sides write it, where, and that everything
+    around it is the same; only the time of day is not compared.
+    """
+    return STARTED_ON.sub("# Started on: <start time>", text)
 
 
 def first_error(text):

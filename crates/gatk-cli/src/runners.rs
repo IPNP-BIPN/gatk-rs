@@ -16044,3 +16044,185 @@ pub fn sv_annotate(parser: &Parser) -> Outcome {
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// `ReferenceBlockConcordance`: two GVCFs' reference blocks as three histograms.
+///
+/// The accumulation and the metrics file are [`gatk_tools::reference_block_concordance`]; the
+/// runner reads the two files, keeps only the records whose first genotype is hom-ref on either
+/// side (both walker filters), walks them with [`gatk_engine::concordance_walker`], and writes
+/// the three files `onTraversalSuccess` writes, each headed by `getMetricsFile`'s two lines: the
+/// command line, and the time the run started, which the covering array does not compare.
+///
+/// The tool returns `SUCCESS`, which `handleResult` prints.
+pub fn reference_block_concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::reference_block_concordance as rbc;
+
+    let _ = resolve_read_filters(parser, "ReferenceBlockConcordance")?;
+    let required = |name: &str| {
+        argument(parser, name).ok_or_else(|| {
+            Thrown::command_line(format!(
+                "Argument {name} was missing: Argument '{name}' is required"
+            ))
+        })
+    };
+    let truth_path = required("truth")?;
+    let eval_path = required("evaluation")?;
+    let truth_histogram = required("truth-block-histogram")?;
+    let eval_histogram = required("eval-block-histogram")?;
+    let concordance_histogram = required("confidence-concordance-histogram")?;
+
+    let read_vcf = |path: &str| -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
+        let bytes = std::fs::read(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: path.to_string(),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })
+    };
+    let truth_file = read_vcf(&truth_path)?;
+    let eval_file = read_vcf(&eval_path)?;
+    let dictionary: Vec<String> = sequence_dictionary_of(&truth_file.header)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+
+    // Both walker filters: the first genotype hom-ref.
+    // The concordance walker's own `FeatureDataSource`s name their records `Unknown`, where a
+    // `MultiVariantDataSource` names them by path.
+    let blocks = |file: &htsjdk_vcf::reader::VcfFile| -> Vec<(rbc::Block, bool)> {
+        file.records
+            .iter()
+            .filter_map(|record| {
+                let first = record.genotypes.first()?;
+                let hom_ref =
+                    !first.alleles.is_empty() && first.alleles.iter().all(|a| a.is_reference());
+                hom_ref.then(|| {
+                    (
+                        rbc::Block {
+                            contig: record.contig.clone(),
+                            start: record.start as i32,
+                            end: record.stop as i32,
+                            gq: first.gq.unwrap_or(-1),
+                            is_hom_ref: true,
+                            genotypes: record.genotypes.len(),
+                            rendered: java_variant_context_string_decoded(record, "Unknown"),
+                        },
+                        record.is_filtered(),
+                    )
+                })
+            })
+            .collect()
+    };
+    let truth = blocks(&truth_file);
+    let eval = blocks(&eval_file);
+    let loci = |blocks: &[(rbc::Block, bool)]| -> Vec<ConcordanceLocus> {
+        blocks
+            .iter()
+            .enumerate()
+            .map(|(index, (block, filtered))| ConcordanceLocus {
+                index,
+                contig: block.contig.clone(),
+                start: block.start,
+                filtered: *filtered,
+            })
+            .collect()
+    };
+    let steps: Vec<(Option<usize>, Option<usize>)> = gatk_engine::concordance_walker::concordance(
+        &loci(&truth),
+        &loci(&eval),
+        &dictionary,
+        |_, _| true,
+    )
+    .into_iter()
+    .map(|step| (step.truth, step.eval))
+    .collect();
+    let truth_blocks: Vec<rbc::Block> = truth.into_iter().map(|(block, _)| block).collect();
+    let eval_blocks: Vec<rbc::Block> = eval.into_iter().map(|(block, _)| block).collect();
+    let histograms = rbc::accumulate(&truth_blocks, &eval_blocks, &steps)
+        .map_err(|error| Thrown::non_user("java.lang.IllegalStateException", error.message()))?;
+
+    // `getMetricsFile`: the command line, then the time the run started.
+    let headers = vec![
+        crate::command_line::expanded("ReferenceBlockConcordance", parser),
+        format!("Started on: {}", java_display_now()),
+    ];
+    write_file(
+        &truth_histogram,
+        rbc::write_histogram(&histograms.truth_blocks, &headers).as_bytes(),
+    )?;
+    write_file(
+        &eval_histogram,
+        rbc::write_histogram(&histograms.eval_blocks, &headers).as_bytes(),
+    )?;
+    write_file(
+        &concordance_histogram,
+        rbc::write_histogram(&histograms.confidence_concordance, &headers).as_bytes(),
+    )?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `Utils.getDateTimeForDisplay(ZonedDateTime.now())`, in UTC: the one value a metrics header
+/// carries that no comparison reads.
+fn java_display_now() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0);
+    let days = seconds.div_euclid(86_400);
+    let of_day = seconds.rem_euclid(86_400);
+    // Civil date from days since the epoch (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let (hour, minute, second) = (of_day / 3600, (of_day / 60) % 60, of_day % 60);
+    let (twelve, meridiem) = match hour {
+        0 => (12, "AM"),
+        1..=11 => (hour, "AM"),
+        12 => (12, "PM"),
+        _ => (hour - 12, "PM"),
+    };
+    format!(
+        "{} {day}, {year} at {twelve}:{minute:02}:{second:02} {meridiem} UTC",
+        MONTHS[(month - 1) as usize]
+    )
+}
