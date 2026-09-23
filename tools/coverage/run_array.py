@@ -95,7 +95,7 @@ def row_arguments(row, held):
     return args
 
 
-def as_cli(args, positional=()):
+def as_cli(args, positional=(), tagged=()):
     """Barclay long form: `--name value`, which is the syntax the claim is defined against.
 
     A POSITIONAL argument has no name to write, so it cannot come out of the array at all: every
@@ -107,6 +107,14 @@ def as_cli(args, positional=()):
     out = []
     for pair in args:
         name, _, value = pair.partition("=")
+        if name in tagged:
+            # One value naming several tagged inputs: `tag:path` words, each written as
+            # `--name:tag path`. `VCFComparator` tells its two `--variant`s apart by tag alone, so
+            # a value of this argument is the whole tagged pair rather than one file.
+            for word in value.split():
+                tag, _, path = word.partition(":")
+                out += [f"{name}:{tag}", path]
+            continue
         out += [name, value]
     out += list(positional)
     # Both sides are run through a shell inside the container, so a value carrying a shell
@@ -144,13 +152,13 @@ def clear(out_dir):
             pass
 
 
-def run_oracle(tool, row_args, workdir, positional=()):
+def run_oracle(tool, row_args, workdir, positional=(), tagged=()):
     """Run one row in the container. Returns (exit code, output as text or digest, error line)."""
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
     clear(out_dir)
 
-    cli = " ".join(as_cli(row_args, positional))
+    cli = " ".join(as_cli(row_args, positional, tagged))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
@@ -281,7 +289,7 @@ def first_error(text):
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
-def run_port(binary, tool, row_args, workdir, positional=()):
+def run_port(binary, tool, row_args, workdir, positional=(), tagged=()):
     """Run the port binary on the same row, IN THE CONTAINER, at the same paths.
 
     Not on the host, and the reason is the output itself: a Tribble index records the file it was
@@ -300,7 +308,7 @@ def run_port(binary, tool, row_args, workdir, positional=()):
     clear(out_dir)
 
     binary = Path(binary).resolve()
-    cli = " ".join(as_cli(row_args, positional))
+    cli = " ".join(as_cli(row_args, positional, tagged))
     command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
@@ -415,10 +423,25 @@ def positional_values(tool):
     return list(fixtures.get("per_tool", {}).get(tool, {}).get("$positional", []))
 
 
+def tagged_arguments(tool):
+    """The arguments whose fixture values are `tag:path` words, per tool under `$tagged`.
+
+    A tagged input's tag is part of the command line and not of the value, so the array, which
+    assigns values, cannot carry it. Declaring the argument tagged lets one value stand for a whole
+    set of tagged inputs, which is the only way a tool that reads its inputs BY TAG can be run.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return ()
+    fixtures = json.loads(path.read_text())
+    return tuple(fixtures.get("per_tool", {}).get(tool, {}).get("$tagged", []))
+
+
 def run_rows(options, array, held, workdir):
     """Every row of the array, against the oracle and optionally against the port."""
     rows, matched, rejected = [], 0, 0
     positional = positional_values(options.tool)
+    tagged = tagged_arguments(options.tool)
     outputs = set()
     if True:  # keeps the body's indentation while it lives in its own function
         if FIXTURES_DIR is None:
@@ -426,7 +449,7 @@ def run_rows(options, array, held, workdir):
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
-            code, text, error = run_oracle(options.tool, args, workdir, positional)
+            code, text, error = run_oracle(options.tool, args, workdir, positional, tagged)
             reference = outcome(code, text, error)
             if code != 0:
                 rejected += 1
@@ -435,7 +458,7 @@ def run_rows(options, array, held, workdir):
             record = {"row": row["row"], "arguments": args, "reference": reference}
             if options.port:
                 port_code, port_text, port_error = run_port(
-                    options.port, options.tool, args, workdir, positional
+                    options.port, options.tool, args, workdir, positional, tagged
                 )
                 ours = outcome(port_code, port_text, port_error)
                 record["port"] = ours
