@@ -607,6 +607,7 @@ jobs:
             --tool CalibrateDragstrModel \
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
+            --tool CRAMIssue8768Detector \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
