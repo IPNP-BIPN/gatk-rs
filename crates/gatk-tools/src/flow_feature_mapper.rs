@@ -660,9 +660,7 @@ pub fn features_on_read(
             let mut offset = span_before;
             while offset < length - span_after {
                 let r = at(reference, ref_offset as i64)?;
-                if r != b'N'
-                    && (settings.report_all_alts || at(bases, read_offset as i64)? != r)
-                {
+                if r != b'N' && (settings.report_all_alts || at(bases, read_offset as i64)? != r) {
                     let is_surrounded = surrounded(
                         bases,
                         reference,

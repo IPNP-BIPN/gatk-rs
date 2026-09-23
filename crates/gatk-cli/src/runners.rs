@@ -10717,49 +10717,108 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
     }
 
     // makeVCFHeader, which the writer sorts.
-    let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, description: &str| {
-        HeaderLine::Compound {
-            key: key.to_string(),
-            id: id.to_string(),
-            number,
-            line_type,
-            description: description.to_string(),
-            extra: Vec::new(),
-        }
-    };
+    let compound =
+        |key: &str, id: &str, number: Cardinality, line_type: LineType, description: &str| {
+            HeaderLine::Compound {
+                key: key.to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            }
+        };
     let one = Cardinality::Fixed(1);
     let mut lines = default_tool_vcf_header_lines(parser, "FlowFeatureMapper");
     lines.push(compound("INFO", "MLEAC", Cardinality::A, LineType::Integer, "Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed"));
     lines.push(compound("INFO", "MLEAF", Cardinality::A, LineType::Float, "Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed"));
-    lines.push(compound("FORMAT", "GT", one.clone(), LineType::String, "Genotype"));
-    lines.push(compound("FORMAT", "GQ", one.clone(), LineType::Integer, "Genotype Quality"));
-    lines.push(compound("FORMAT", "DP", one.clone(), LineType::Integer, "Approximate read depth (reads with MQ=255 or with bad mates are filtered)"));
-    lines.push(compound("FORMAT", "PL", Cardinality::G, LineType::Integer, "Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification"));
+    lines.push(compound("FORMAT", "GT", one, LineType::String, "Genotype"));
+    lines.push(compound(
+        "FORMAT",
+        "GQ",
+        one,
+        LineType::Integer,
+        "Genotype Quality",
+    ));
+    lines.push(compound(
+        "FORMAT",
+        "DP",
+        one,
+        LineType::Integer,
+        "Approximate read depth (reads with MQ=255 or with bad mates are filtered)",
+    ));
+    lines.push(compound(
+        "FORMAT",
+        "PL",
+        Cardinality::G,
+        LineType::Integer,
+        "Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification",
+    ));
     for (id, kind, description) in [
         ("X_RN", LineType::String, "Read name"),
         ("X_SCORE", LineType::Float, "Mapping score"),
         ("X_FLAGS", LineType::Integer, "Read flags"),
         ("X_MAPQ", LineType::Integer, "Read mapqe"),
         ("X_CIGAR", LineType::String, "Read CIGAR"),
-        ("X_READ_COUNT", LineType::Integer, "Number of reads containing this location"),
-        ("X_FILTERED_COUNT", LineType::Integer, "Number of reads containing this location that pass the adjacent base filter"),
-        ("X_FC1", LineType::Integer, "Number of M bases different on read from references"),
-        ("X_FC2", LineType::Integer, "Number of features before score threshold filter"),
+        (
+            "X_READ_COUNT",
+            LineType::Integer,
+            "Number of reads containing this location",
+        ),
+        (
+            "X_FILTERED_COUNT",
+            LineType::Integer,
+            "Number of reads containing this location that pass the adjacent base filter",
+        ),
+        (
+            "X_FC1",
+            LineType::Integer,
+            "Number of M bases different on read from references",
+        ),
+        (
+            "X_FC2",
+            LineType::Integer,
+            "Number of features before score threshold filter",
+        ),
         ("X_LENGTH", LineType::Integer, "Read length"),
-        ("X_EDIST", LineType::Integer, "Read Levenshtein edit distance from reference"),
-        ("X_INDEX", LineType::Integer, "Ordinal index, from start of the read, where the feature was found"),
-        ("X_SMQ_LEFT", LineType::Integer, "Ordinal Median quality of N bases to the left of the feature"),
-        ("X_SMQ_RIGHT", LineType::Integer, "Ordinal Median quality of N bases to the right of the feature"),
-        ("X_SMQ_LEFT_MEAN", LineType::Integer, "Ordinal Mean quality of N bases to the left of the feature"),
-        ("X_SMQ_RIGHT_MEAN", LineType::Integer, "Ordinal Mean quality of N bases to the right of the feature"),
+        (
+            "X_EDIST",
+            LineType::Integer,
+            "Read Levenshtein edit distance from reference",
+        ),
+        (
+            "X_INDEX",
+            LineType::Integer,
+            "Ordinal index, from start of the read, where the feature was found",
+        ),
+        (
+            "X_SMQ_LEFT",
+            LineType::Integer,
+            "Ordinal Median quality of N bases to the left of the feature",
+        ),
+        (
+            "X_SMQ_RIGHT",
+            LineType::Integer,
+            "Ordinal Median quality of N bases to the right of the feature",
+        ),
+        (
+            "X_SMQ_LEFT_MEAN",
+            LineType::Integer,
+            "Ordinal Mean quality of N bases to the left of the feature",
+        ),
+        (
+            "X_SMQ_RIGHT_MEAN",
+            LineType::Integer,
+            "Ordinal Mean quality of N bases to the right of the feature",
+        ),
     ] {
-        lines.push(compound("INFO", id, one.clone(), kind, description));
+        lines.push(compound("INFO", id, one, kind, description));
     }
     for attribute in &settings.copy_attributes {
         lines.push(compound(
             "INFO",
             &attribute.key(&settings.copy_attribute_prefix),
-            one.clone(),
+            one,
             line_type(&attribute.kind)?,
             &attribute.description,
         ));
@@ -10769,7 +10828,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
             lines.push(compound(
                 "INFO",
                 &format!("X_SCORE_{}", base as char),
-                one.clone(),
+                one,
                 LineType::Float,
                 "Base specific mapping score",
             ));
@@ -10779,7 +10838,7 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
         lines.push(compound(
             "INFO",
             "X_ADJACENT_REF_DIFF",
-            one.clone(),
+            one,
             LineType::Flag,
             "Adjacent base filter indication: indel in the adjacent 5 bases to the considered base on the read",
         ));
@@ -10830,13 +10889,19 @@ pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
                 Value::Str(gatk_engine::java_format::format_decimals(feature.score, 5)),
             ),
             ("X_FLAGS".to_string(), Value::Int(i64::from(read.flags))),
-            ("X_MAPQ".to_string(), Value::Int(i64::from(read.mapping_quality))),
+            (
+                "X_MAPQ".to_string(),
+                Value::Int(i64::from(read.mapping_quality)),
+            ),
             ("X_CIGAR".to_string(), Value::Str(read.cigar.to_text())),
             ("X_READ_COUNT".to_string(), int(feature.read_count)),
             ("X_FILTERED_COUNT".to_string(), int(feature.filtered_count)),
             ("X_FC1".to_string(), int(feature.non_ident_m_bases_on_read)),
             ("X_FC2".to_string(), int(feature.features_on_read)),
-            ("X_LENGTH".to_string(), Value::Int(read.read_bases.len() as i64)),
+            (
+                "X_LENGTH".to_string(),
+                Value::Int(read.read_bases.len() as i64),
+            ),
             ("X_EDIST".to_string(), int(feature.ref_edit_distance)),
             ("X_INDEX".to_string(), int(feature.index)),
         ];

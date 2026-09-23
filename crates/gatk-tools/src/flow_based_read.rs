@@ -313,7 +313,13 @@ impl FlowRead {
         if read_length - clip_left_base - clip_right_base < minimal_read_length {
             self.valid = false;
         } else {
-            self.apply_clipping(clip_left, left_hmer_clip, clip_right, right_hmer_clip, spread)?;
+            self.apply_clipping(
+                clip_left,
+                left_hmer_clip,
+                clip_right,
+                right_hmer_clip,
+                spread,
+            )?;
             self.valid = true;
         }
         Ok(())
