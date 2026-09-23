@@ -323,6 +323,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyVQSR" => Some(run_apply_vqsr),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
+        "SVCluster" => Some(run_sv_cluster),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
             Some(run_convert_headerless_hadoop_bam_shard_to_bam)
@@ -561,6 +562,10 @@ fn run_sv_stratify(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_sv_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::sv_concordance(&parsed("SVConcordance", args)?)
+}
+
+fn run_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::sv_cluster(&parsed("SVCluster", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -3760,6 +3760,148 @@
         "/work/out/converted.bam",
         "/work/out/other.bam"
       ]
+    },
+    "SVCluster": {
+      "$why": [
+        "--variant is sv_cluster_input.vcf, calls that group under every linkage (overlapping deletions",
+        "with and without breakpoint evidence, duplications, subtyped insertions, an inversion, breakends",
+        "with one far end, and a depth-only DEL/DUP pair only --enable-cnv joins); and sv_calls.vcf, whose",
+        "genotypes carry no ECN, which --fast-mode's carrier test refuses. --reference is sv_reference.fasta,",
+        "the only reference the calls fit. --ploidy-table gives s2 two or one copy of chr1, read for the",
+        "samples --fast-mode drops. The algorithm, the two summary strategies, the flag logic (declared and",
+        "never read), --variant-prefix and the four switches are all varied; --algorithm DEFRAGMENT_CNV is the",
+        "port's limitation and not listed. The sample-overlap arguments are held at 0, since the carrier test",
+        "they need refuses the second input differently inside the linkage. The engine's read, interval and",
+        "dictionary arguments are held out as for SVStratify."
+      ],
+      "--variant": [
+        "/work/fixtures/sv_cluster_input.vcf",
+        "/work/fixtures/sv_calls.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/sv_reference.fasta"
+      ],
+      "--ploidy-table": [
+        "/work/fixtures/sv_ploidy.tsv",
+        "/work/fixtures/sv_ploidy_haploid.tsv"
+      ],
+      "--output": [
+        "/work/out/clustered.vcf",
+        "/work/out/clustered.vcf.gz"
+      ],
+      "--algorithm": [
+        "SINGLE_LINKAGE",
+        "MAX_CLIQUE"
+      ],
+      "--breakpoint-summary-strategy": [
+        "REPRESENTATIVE",
+        "MEDIAN_START_MEDIAN_END",
+        "MIN_START_MAX_END",
+        "MAX_START_MIN_END",
+        "MEAN_START_MEAN_END"
+      ],
+      "--alt-allele-summary-strategy": [
+        "COMMON_SUBTYPE",
+        "MOST_SPECIFIC_SUBTYPE"
+      ],
+      "--flag-field-logic": [
+        "OR",
+        "AND"
+      ],
+      "--variant-prefix": [
+        "null",
+        "SVx_"
+      ],
+      "--enable-cnv": [
+        "false",
+        "true"
+      ],
+      "--fast-mode": [
+        "false",
+        "true"
+      ],
+      "--omit-members": [
+        "false",
+        "true"
+      ],
+      "--default-no-call": [
+        "false",
+        "true"
+      ],
+      "--depth-interval-overlap": [
+        "0.8",
+        "0.5"
+      ],
+      "--pesr-breakend-window": [
+        "500",
+        "20"
+      ],
+      "--pesr-interval-overlap": [
+        "0.5",
+        "0.9"
+      ],
+      "--depth-sample-overlap": [
+        "0.0"
+      ],
+      "--mixed-sample-overlap": [
+        "0.0"
+      ],
+      "--pesr-sample-overlap": [
+        "0.0"
+      ],
+      "--max-records-in-ram": [
+        "10000"
+      ],
+      "--defrag-padding-fraction": [
+        "0.25"
+      ],
+      "--defrag-sample-overlap": [
+        "0.8"
+      ],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--depth-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--mixed-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--pesr-size-similarity": [
+        "0.0",
+        "0.95"
+      ],
+      "--mixed-interval-overlap": [
+        "0.8",
+        "0.5"
+      ],
+      "--depth-breakend-window": [
+        "10000000",
+        "50"
+      ],
+      "--mixed-breakend-window": [
+        "1000",
+        "50"
+      ]
     }
   },
   "constraints": [

@@ -284,6 +284,7 @@ jobs:
             --tool ApplyVQSR \
             --tool SVStratify \
             --tool SVConcordance \
+            --tool SVCluster \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
