@@ -826,8 +826,12 @@ public class MakeFixtures {
         });
         // The same calls with a stats table saying nothing was callable, which switches the
         // empirical priors off.
-        Files.copy(dir.resolve("mutect.vcf"), dir.resolve("mutect_nocallable.vcf"));
-        Files.copy(dir.resolve("mutect.vcf.idx"), dir.resolve("mutect_nocallable.vcf.idx"));
+        // REPLACE_EXISTING because the conformance runner builds the corpus a second time into the
+        // same directory, and a plain copy refuses a target that is already there.
+        Files.copy(dir.resolve("mutect.vcf"), dir.resolve("mutect_nocallable.vcf"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("mutect.vcf.idx"), dir.resolve("mutect_nocallable.vcf.idx"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         Files.writeString(dir.resolve("mutect_nocallable.vcf.stats"), "statistic\tvalue\ncallable\t0.0\n",
                 StandardCharsets.UTF_8);
     }
