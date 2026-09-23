@@ -18,7 +18,7 @@ golden stays `[~]`.
 |---|---|---|
 | **htsjdk-rs** | the I/O and math foundation | 86 conformance suites, all oracle-backed; `format`, whose 41,678 formatted doubles once had a harness and a Rust test and no CI-derived golden, is among them. CRAM, GKL-exact deflate and full VCF remain |
 | **picard-rs** | 121 tools | 105 tools carry a suite, all oracle-backed; 107 suites over 122 cases. Many are partial (default paths only). The harness is generated from a manifest, the fuzzer and the determinism gate run in CI, and argument coverage is measured for 53 tools |
-| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 97 tools' arguments and RUNS 88 of them end to end, with a t=2 covering array measured against the oracle for all 88, every one at 1.000 with what the tool PRINTS compared as well as what it writes. **No performance number exists yet for any of it**: see Milestone S |
+| **gatk-rs** | 190 tools | 7 crates, **298 conformance suites over 303 cases and 158 tools, all 298 oracle-backed**; 3 tools byte-identical, and 53 of 54 annotations measured. The seventh crate is `gatk-cli`, which now declares 110 tools' arguments and RUNS 89 of them end to end, with a t=2 covering array measured against the oracle for all 89, every one at 1.000 with what the tool PRINTS compared as well as what it writes. **No performance number exists yet for any of it**: see Milestone S |
 
 Across the three repositories that is **491 oracle-backed suites**, and the generated dashboard
 ([docs/STATUS.md](docs/STATUS.md)) puts 227 of the 311 tools in an oracle-backed state, 73.0%. The
@@ -1294,8 +1294,8 @@ sentence into the second.
       are applied and the count reaches both `-O` and the return value (`count-reads-plumbing`);
       and `CountVariants`, a variant WALKER, whose `-L` resolves against the sequence dictionary the
       VCF's own header declares and is refused before any record is read when no index sits beside
-      the file (`count-variants`). Eighty-eight tools have it today, and the layer is one shape
-      rather than eighty-eight: a BAM output carries the index and the digest its arguments ask for
+      the file (`count-variants`). Eighty-nine tools have it today, and the layer is one shape
+      rather than eighty-nine: a BAM output carries the index and the digest its arguments ask for
       and is written at the level and through the deflater `GATKConfig` chose; a VCF output the
       same, block compressed when its name says so, with a tabix index rather than a Tribble one;
       a report or a table goes to `-O` or to stdout where the argument is optional; and a refused
@@ -1309,7 +1309,7 @@ sentence into the second.
       sentence names the target definition's FIELD (`mutex-target-names`). `gatk-rs CountReads -h`
       answers with the reference's two hundred and ninety-seven lines
 - [x] **C.5 the covering arrays run against the port binary**, which is the point of the milestone
-      and what unblocks V.5. Eighty-eight tools are measured on both sides on every CI run, all of
+      and what unblocks V.5. Eighty-nine tools are measured on both sides on every CI run, all of
       them at 1.000, and the number is committed in `tools/coverage/measured.json` and re-derived
       by the job that produced it. What the arrays found is the rest of the argument surface: a
       parser that hashed a spec's option names in the annotation's order rather than jopt-simple's
@@ -1320,7 +1320,8 @@ sentence into the second.
       return nothing where `doWork` returns `SUCCESS` or `0`, or to return what the reference
       prints; the later tools added a dictionary sort that REFUSES a contig it lacks rather than
       sorting it last, a `.bai` that htsjdk writes only for a coordinate-sorted BAM, and a feature
-      file named twice that `FeatureManager` reads once
+      file named twice that `FeatureManager` reads once. The array also runs in a quarter of the
+      time it did: the corpus is generated once and four tools are swept at a time (#1207)
 
 The first tool end to end was small, because the logic and the parser both existed and only the
 glue was missing. The rest went by archetype, since tools of one archetype share both their

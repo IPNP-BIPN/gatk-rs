@@ -801,6 +801,15 @@
       "matched": 18,
       "t": 2,
       "share": 1.0
+    },
+    "ASEReadCounter": {
+      "rows": 20,
+      "accepted": 13,
+      "rejected": 7,
+      "distinct_outputs": 7,
+      "matched": 20,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
