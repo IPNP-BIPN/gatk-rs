@@ -596,6 +596,7 @@ jobs:
             --tool SVAnnotate \
             --tool ReferenceBlockConcordance \
             --tool CombineSegmentBreakpoints \
+            --tool MergeMutect2CallsWithMC3 \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

@@ -1832,6 +1832,36 @@ public class MakeFixtures {
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
+        // `MergeMutect2CallsWithMC3`: an MC3 call set with CENTERS and read counts, and Mutect2 calls
+        // at the same sites and others, one filtered, one multiallelic, with and without the
+        // `##tumor_sample` line the tool reads its sample from.
+        final String mc3Header = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=CENTERS,Number=.,Type=String,Description=\"Centers\">\n"
+                + "##INFO=<ID=NREF,Number=1,Type=Integer,Description=\"Ref count\">\n"
+                + "##INFO=<ID=NALT,Number=1,Type=Integer,Description=\"Alt count\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("mc3.vcf"), mc3Header
+                + "chr1\t100\tmc3_tp\tA\tC\t.\tPASS\tCENTERS=MUSE,VARSCAN;NREF=20;NALT=5\n"
+                + "chr1\t200\tmc3_fn\tG\tT\t.\tPASS\tCENTERS=MUSE;NREF=30;NALT=3\n"
+                + "chr1\t300\tmc3_ffn\tC\tA\t.\t.\tNREF=12;NALT=4\n"
+                + "chr1\t400\tmc3_disc\tT\tG\t.\tPASS\tCENTERS=MUSE;NREF=9;NALT=1\n",
+                StandardCharsets.UTF_8);
+        final String m2Header = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=weak_evidence,Description=\"Weak\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##contig=<ID=chr1,length=100000>\n";
+        final String m2Records = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tTUMOR\tNORMAL\n"
+                + "chr1\t100\t.\tA\tC\t.\tPASS\t.\tGT:AD\t0/1:18,6\t0/0:25,0\n"
+                + "chr1\t150\t.\tA\tG,T\t.\tPASS\t.\tGT:AD\t0/1:10,4,2\t0/0:20,0,0\n"
+                + "chr1\t300\t.\tC\tA\t.\tweak_evidence\t.\tGT:AD\t0/1:11,2\t0/0:15,0\n"
+                + "chr1\t350\t.\tG\tC\t.\tweak_evidence\t.\tGT:AD\t0/1:8,1\t0/0:10,0\n"
+                + "chr1\t400\t.\tT\tA\t.\tPASS\t.\tGT:AD\t0/1:7,3\t0/0:12,0\n";
+        Files.writeString(dir.resolve("m2.vcf"),
+                m2Header + "##tumor_sample=TUMOR\n##normal_sample=NORMAL\n" + m2Records,
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("m2_no_tumor.vcf"), m2Header + m2Records, StandardCharsets.UTF_8);
         // `CombineSegmentBreakpoints` takes exactly two segment files and, optionally, two labels, so
         // each value is a .list of two; a third segment file carries a SAM header whose dictionary
         // the tool merges instead of asking for a reference.

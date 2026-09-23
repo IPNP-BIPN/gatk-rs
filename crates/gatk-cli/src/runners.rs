@@ -16383,3 +16383,263 @@ pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
     write_file(&output, collection.write().as_bytes())?;
     Ok(None)
 }
+
+/// `MergeMutect2CallsWithMC3`: Mutect2 calls merged into the MC3 call set, one record per step of
+/// the concordance walk.
+///
+/// The states and what each writes are [`gatk_tools::merge_mutect2_mc3`]; the runner builds the
+/// records from the two files' own variants rather than from text:
+///
+/// * **the tumour sample is the eval header's `##tumor_sample`**, and a header without one is the
+///   reference's `NullPointerException`;
+/// * **the header is the TRUTH file's lines** with the standard `GT` and `AD` lines, the tool's own
+///   and `M2_FILTERS`, over the one tumour sample;
+/// * **a true positive and a filtered false negative keep the MC3 record** and add `M2` to its
+///   `CENTERS`, the latter with the M2 filters; **a false negative** is written unchanged; **a false
+///   positive** is rebuilt from the M2 site and alleles alone; **a filtered true negative** is
+///   dropped;
+/// * **every record's one genotype carries EVERY allele of the site** and the M2 depths, or MC3's
+///   `NREF`/`NALT` where M2 has no record.
+pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
+    use gatk_engine::concordance_walker::ConcordanceState;
+    use gatk_tools::merge_mutect2_mc3 as mc3;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let _ = resolve_read_filters(parser, "MergeMutect2CallsWithMC3")?;
+    let required = |name: &str| {
+        argument(parser, name).ok_or_else(|| {
+            Thrown::command_line(format!(
+                "Argument {name} was missing: Argument '{name}' is required"
+            ))
+        })
+    };
+    let truth_path = required("truth")?;
+    let eval_path = required("evaluation")?;
+    let output = required("output")?;
+    let read_vcf = |path: &str| -> Result<htsjdk_vcf::reader::VcfFile, Thrown> {
+        let bytes = std::fs::read(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: path.to_string(),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })
+    };
+    let truth_file = read_vcf(&truth_path)?;
+    let eval_file = read_vcf(&eval_path)?;
+    let dictionary: Vec<String> = sequence_dictionary_of(&truth_file.header)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+
+    // `onTraversalStart`.
+    let tumor = eval_file
+        .header
+        .lines
+        .iter()
+        .find_map(|line| match line {
+            HeaderLine::Unstructured { key, value } if key == "tumor_sample" => Some(value.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            Thrown::non_user(
+                "java.lang.NullPointerException",
+                "Cannot invoke \"htsjdk.variant.vcf.VCFHeaderLine.getValue()\" because the return value of \"htsjdk.variant.vcf.VCFHeader.getMetaDataLine(String)\" is null",
+            )
+        })?;
+    let mut header = truth_file.header.clone();
+    let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
+        HeaderLine::Compound {
+            key: key.to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: text.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let mut added = vec![
+        compound(
+            "FORMAT",
+            "GT",
+            Cardinality::Fixed(1),
+            LineType::String,
+            "Genotype",
+        ),
+        compound(
+            "FORMAT",
+            "AD",
+            Cardinality::R,
+            LineType::Integer,
+            "Allelic depths for the ref and alt alleles in the order listed",
+        ),
+    ];
+    added.extend(default_tool_vcf_header_lines(
+        parser,
+        "MergeMutect2CallsWithMC3",
+    ));
+    added.push(compound(
+        "INFO",
+        mc3::M2_FILTERS_KEY,
+        Cardinality::Unbounded,
+        LineType::String,
+        "M2 filters applied to variant.",
+    ));
+    for line in added {
+        // A `HashSet` of lines: an identical one collapses, nothing else does.
+        if !header
+            .lines
+            .iter()
+            .any(|existing| existing.render() == line.render())
+        {
+            header.lines.push(line);
+        }
+    }
+    header.samples = vec![tumor.clone()];
+
+    // The walk, with no filter on either side.
+    let loci = |file: &htsjdk_vcf::reader::VcfFile| -> Vec<ConcordanceLocus> {
+        file.records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| ConcordanceLocus {
+                index,
+                contig: record.contig.clone(),
+                start: record.start as i32,
+                filtered: record.is_filtered(),
+            })
+            .collect()
+    };
+    let steps = gatk_engine::concordance_walker::concordance(
+        &loci(&truth_file),
+        &loci(&eval_file),
+        &dictionary,
+        |truth, eval| {
+            let truth = &truth_file.records[truth.index];
+            let eval = &eval_file.records[eval.index];
+            match truth.alternate_alleles().first() {
+                None => false,
+                Some(alternate) => {
+                    truth.reference() == eval.reference()
+                        && eval.alternate_alleles().contains(alternate)
+                }
+            }
+        },
+    );
+
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for step in steps {
+        let truth = step.truth.map(|index| &truth_file.records[index]);
+        let eval = step.eval.map(|index| &eval_file.records[index]);
+        let int_attribute = |record: &htsjdk_vcf::variant::VariantContext, key: &str| {
+            record
+                .attributes
+                .iter()
+                .find(|(name, _)| name == key)
+                .and_then(|(_, value)| value.format())
+                .and_then(|text| text.parse::<i32>().ok())
+                .unwrap_or(0)
+        };
+        let depths = match eval {
+            Some(eval) => {
+                let Some(genotype) = eval.genotypes.iter().find(|g| g.sample_name == tumor) else {
+                    finish(&written)?;
+                    return Err(Thrown::non_user(
+                        "java.lang.NullPointerException",
+                        "Cannot invoke \"htsjdk.variant.variantcontext.Genotype.getAD()\" because the return value of \"htsjdk.variant.variantcontext.VariantContext.getGenotype(String)\" is null",
+                    ));
+                };
+                genotype.ad.clone()
+            }
+            None => {
+                let truth = truth.expect("a step with no eval has truth");
+                Some(vec![
+                    int_attribute(truth, mc3::MC3_REF_COUNT_KEY),
+                    int_attribute(truth, mc3::MC3_ALT_COUNT_KEY),
+                ])
+            }
+        };
+        let site = truth.or(eval).expect("a step has at least one record");
+        let mut genotype = htsjdk_vcf::variant::Genotype::new(&tumor, site.alleles.clone());
+        genotype.ad = depths;
+        let with_center = |mc3_record: &htsjdk_vcf::variant::VariantContext| {
+            let mut out = mc3_record.clone();
+            let mut centers: Vec<Value> = match out
+                .attributes
+                .iter()
+                .find(|(name, _)| name == mc3::CENTERS_KEY)
+            {
+                Some((_, Value::List(items))) => items.clone(),
+                Some((_, value)) => vec![value.clone()],
+                None => Vec::new(),
+            };
+            centers.push(Value::Str(mc3::M2_CENTER_NAME.to_string()));
+            out.attributes.retain(|(name, _)| name != mc3::CENTERS_KEY);
+            out.attributes
+                .push((mc3::CENTERS_KEY.to_string(), Value::List(centers)));
+            out
+        };
+        let record = match step.state {
+            ConcordanceState::TruePositive => Some(with_center(truth.expect("truth"))),
+            ConcordanceState::FalsePositive => {
+                let m2 = eval.expect("eval");
+                let mut out = htsjdk_vcf::variant::VariantContext::new(
+                    &m2.contig,
+                    m2.start,
+                    m2.alleles.clone(),
+                );
+                out.stop = m2.stop;
+                out.attributes.push((
+                    mc3::CENTERS_KEY.to_string(),
+                    Value::Str(mc3::M2_CENTER_NAME.to_string()),
+                ));
+                Some(out)
+            }
+            ConcordanceState::FalseNegative => Some(truth.expect("truth").clone()),
+            ConcordanceState::FilteredTrueNegative => None,
+            ConcordanceState::FilteredFalseNegative => {
+                let mut out = with_center(truth.expect("truth"));
+                let filters = eval.expect("eval").filters.clone().unwrap_or_default();
+                out.attributes.push((
+                    mc3::M2_FILTERS_KEY.to_string(),
+                    Value::List(filters.into_iter().map(Value::Str).collect()),
+                ));
+                Some(out)
+            }
+        };
+        if let Some(mut record) = record {
+            record.genotypes = vec![genotype].into();
+            written.push(record);
+        }
+    }
+    finish(&written)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
