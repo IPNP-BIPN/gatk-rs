@@ -214,7 +214,9 @@ jobs:
 
       - name: Run the array against both sides
         run: |
-          python3 tools/coverage/measure.py \
+          # Four tools side by side over one corpus: the runner has four cores, and each row is one
+          # container at a time within its tool.
+          python3 tools/coverage/measure.py --jobs 4 \
             --tool IndexFeatureFile --tool PrintBGZFBlockInformation --tool CountReads \
             --tool CountVariants --tool CreateHadoopBamSplittingIndex \
             --tool PrintReads --tool GatherVcfsCloud --tool ApplyBQSR \

@@ -39,6 +39,17 @@ PLATFORM = "linux/amd64"
 ABSENT = {"None", "null", "[]", ""}
 
 
+# A corpus built once and handed to every row, by `measure.py` when it runs many tools. The files are
+# mounted READ-ONLY into every container, so one copy serves any number of runs, concurrent ones
+# included; `None` builds a corpus of this run's own.
+FIXTURES_DIR = None
+
+
+def fixtures_of(workdir):
+    """Where this run's corpus is: the shared one when there is one, else its own."""
+    return Path(FIXTURES_DIR) if FIXTURES_DIR else workdir / "fixtures"
+
+
 def build_fixtures(workdir):
     """Materialize the corpus with MakeFixtures.java, inside the pinned container."""
     fixtures = workdir / "fixtures"
@@ -145,7 +156,7 @@ def run_oracle(tool, row_args, workdir, positional=()):
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
-            "-v", f"{workdir / 'fixtures'}:/work/fixtures:ro",
+            "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-w", "/work", IMAGE, command,
         ],
@@ -219,7 +230,7 @@ def run_port(binary, tool, row_args, workdir, positional=()):
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
-            "-v", f"{workdir / 'fixtures'}:/work/fixtures:ro",
+            "-v", f"{fixtures_of(workdir)}:/work/fixtures:ro",
             "-v", f"{out_dir}:/work/out",
             "-v", f"{binary.parent}:/work/port-binary:ro",
             "-w", "/work", IMAGE, command,
@@ -265,7 +276,13 @@ def main(argv):
     parser.add_argument("--t", type=int, default=2)
     parser.add_argument("--port", help="the port binary to compare against")
     parser.add_argument("--corpus", help="where to write the corpus")
+    parser.add_argument(
+        "--fixtures-dir",
+        help="a corpus MakeFixtures.java already built, to run against instead of building one",
+    )
     options = parser.parse_args(argv)
+    global FIXTURES_DIR
+    FIXTURES_DIR = options.fixtures_dir
 
     array_path = ARRAYS / f"{options.tool}.t{options.t}.json"
     if not array_path.exists():
@@ -329,7 +346,8 @@ def run_rows(options, array, held, workdir):
     positional = positional_values(options.tool)
     outputs = set()
     if True:  # keeps the body's indentation while it lives in its own function
-        build_fixtures(workdir)
+        if FIXTURES_DIR is None:
+            build_fixtures(workdir)
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
