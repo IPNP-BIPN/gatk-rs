@@ -321,6 +321,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
+        "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
         "SVCluster" => Some(run_sv_cluster),
@@ -349,6 +350,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FlowPairHMMAlignReadsToHaplotypes" => Some(run_flow_pairhmm_align_reads_to_haplotypes),
         "FlowFeatureMapper" => Some(run_flow_feature_mapper),
         "GeneExpressionEvaluation" => Some(run_gene_expression_evaluation),
+        "CRAMIssue8768Detector" => Some(run_cram_issue_8768_detector),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -575,6 +577,10 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
 }
 
+fn run_vcf_comparator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::vcf_comparator(&parsed("VCFComparator", args)?)
+}
+
 fn run_sv_stratify(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::sv_stratify(&parsed("SVStratify", args)?)
 }
@@ -738,6 +744,10 @@ fn run_add_flow_base_quality(args: &[String]) -> Result<Option<String>, Thrown> 
 
 fn run_gene_expression_evaluation(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::gene_expression_evaluation(&parsed("GeneExpressionEvaluation", args)?)
+}
+
+fn run_cram_issue_8768_detector(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::cram_issue_8768_detector(&parsed("CRAMIssue8768Detector", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {
