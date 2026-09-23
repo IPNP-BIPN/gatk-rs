@@ -302,6 +302,7 @@ jobs:
             --tool GeneExpressionEvaluation \
             --tool AddFlowBaseQuality \
             --tool AddFlowSNVQuality \
+            --tool FlowPairHMMAlignReadsToHaplotypes \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

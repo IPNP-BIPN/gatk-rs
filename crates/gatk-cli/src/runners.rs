@@ -9934,6 +9934,159 @@ pub fn add_flow_snv_quality(parser: &Parser) -> Outcome {
     }
 }
 
+/// `FlowPairHMMAlignReadsToHaplotypes` with the `FlowBased` engine: every read scored against
+/// every haplotype of a FASTA by the flow matrix alone, in buffers of fifty.
+///
+/// Each buffer takes its flow order and maximal class from its FIRST read's group and applies
+/// them to all of its reads, which is the engine's own shortcut ("all reads belong to the same
+/// sample"). An empty final buffer takes the first usable flow order of the header instead. The
+/// `FlowBasedHMM` engine is not ported.
+pub fn flow_pairhmm_align_reads_to_haplotypes(parser: &Parser) -> Outcome {
+    use gatk_tools::flow_based_read::{read_group_info, FlowRead};
+    use gatk_tools::flow_pairhmm_align_reads_to_haplotypes as align;
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "FlowPairHMMAlignReadsToHaplotypes")?;
+    let output = scalar(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    // The writer opens its file before anything else can fail.
+    write_file(&output, b"")?;
+    let fasta_path = argument(parser, "haplotypes").unwrap_or_default();
+    let fasta = std::fs::read_to_string(&fasta_path).map_err(|error| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            format!("could not read {fasta_path}: {error}"),
+        )
+    })?;
+    let reference_name = scalar(parser, "ref-haplotype");
+    let records = align::read_haplotype_fasta(&fasta);
+    // `haplotypeToName` is keyed by the bases, so two records with the same bases both print the
+    // LAST name.
+    let mut name_by_bases: std::collections::HashMap<Vec<u8>, String> =
+        std::collections::HashMap::new();
+    for (name, bases) in &records {
+        name_by_bases.insert(bases.clone(), name.clone());
+    }
+    // `IndexedAlleleList` keeps the first of equal haplotypes, and `Haplotype.equals` is the bases
+    // AND the reference flag: a second record with the same bases is dropped unless it alone is
+    // the reference.
+    let mut records_kept: Vec<(Vec<u8>, bool)> = Vec::new();
+    for (name, bases) in &records {
+        let entry = (
+            bases.clone(),
+            reference_name.as_deref() == Some(name.as_str()),
+        );
+        if !records_kept.contains(&entry) {
+            records_kept.push(entry);
+        }
+    }
+    let haplotypes: Vec<align::Haplotype> = records_kept
+        .iter()
+        .map(|(bases, is_reference)| align::Haplotype {
+            name: name_by_bases[bases].clone(),
+            is_reference: *is_reference,
+        })
+        .collect();
+    match scalar(parser, "aligner").as_deref() {
+        None | Some("FlowBased") => {}
+        Some("FlowBasedHMM") => return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "the FlowBasedHMM engine is not ported. This message is the port's own and not GATK's."
+                .to_string(),
+        )),
+        Some(_) => {
+            return Err(Thrown::non_user(
+                "java.lang.RuntimeException",
+                align::UNKNOWN_ENGINE_MESSAGE.to_string(),
+            ))
+        }
+    }
+    let mut flow = flow_arguments(parser);
+    flow.keep_boundary_flows = true;
+    let optimized = flag(parser, "flow-likelihood-optimized-comp");
+    let cycle = number_or(parser, "flow-order-cycle-length", 4).max(0) as usize;
+    let cycle_order = |order: &str| -> Result<String, Thrown> {
+        order.get(..cycle).map(str::to_string).ok_or_else(|| {
+            Thrown::non_user(
+                "java.lang.StringIndexOutOfBoundsException",
+                format!("begin 0, end {cycle}, length {}", order.len()),
+            )
+        })
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let mut rows: Vec<(String, Vec<f64>)> = Vec::new();
+    let mut chunks: Vec<&[htsjdk_bam::record::BamRecord]> =
+        reads.chunks(align::BUFFER_SIZE_LIMIT).collect();
+    if reads.len() % align::BUFFER_SIZE_LIMIT == 0 {
+        chunks.push(&[]);
+    }
+    for chunk in chunks {
+        let (flow_order, max_class) = match chunk.first() {
+            Some(first) => {
+                let info = read_group_info(first, &header).map_err(flow_refusal)?;
+                (cycle_order(&info.flow_order)?, info.max_class)
+            }
+            None => {
+                let usable = header
+                    .read_groups
+                    .iter()
+                    .filter_map(|group| group.attributes.get("FO"))
+                    .find(|order| order.len() >= cycle);
+                match usable {
+                    Some(order) => (cycle_order(order)?, 0),
+                    None => {
+                        return Err(Thrown::non_user(
+                            "org.broadinstitute.hellbender.exceptions.GATKException",
+                            "Unable to perform flow based operations without the flow order"
+                                .to_string(),
+                        ))
+                    }
+                }
+            }
+        };
+        let mut flow_reads = Vec::with_capacity(chunk.len());
+        for read in chunk {
+            let mut flow_read =
+                FlowRead::new(read, &flow_order, max_class, &flow).map_err(flow_refusal)?;
+            flow_read.apply_alignment().map_err(flow_refusal)?;
+            flow_reads.push(flow_read);
+        }
+        let mut flow_haplotypes = Vec::with_capacity(records_kept.len());
+        for (bases, _) in &records_kept {
+            flow_haplotypes.push(align::FlowHaplotype::new(bases, &flow_order).ok_or_else(|| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "baseArrayToKey periodGuard tripped, on {}, flowOrder: {flow_order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                        String::from_utf8_lossy(bases)
+                    ),
+                )
+            })?);
+        }
+        for (read, flow_read) in chunk.iter().zip(&flow_reads) {
+            let scores = flow_haplotypes
+                .iter()
+                .map(|haplotype| align::exact_length_score(haplotype, flow_read, optimized))
+                .collect();
+            rows.push((read.read_name.clone(), scores));
+        }
+    }
+    let text = if flag(parser, "concise-output-format") {
+        align::concise_file(&haplotypes, &rows)
+    } else {
+        align::expanded_file(&haplotypes, &rows)
+    };
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
 /// A floating-point argument with the tool's own default where it was not given.
 fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)

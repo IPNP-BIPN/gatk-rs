@@ -996,6 +996,22 @@ public class MakeFixtures {
                              dir.resolve("flow.bam").toFile())) {
             records.forEach(writer::addAlignment);
         }
+        // Haplotypes for FlowPairHMMAlignReadsToHaplotypes over the same stretch of chr1: the
+        // reference, one with three substitutions, one with a three-base deletion and one shorter
+        // than any read. The second file repeats the reference's bases under another name, which
+        // the writer's name-by-bases map resolves to the last.
+        final String ref = bases.substring(0, 2400);
+        final StringBuilder snp = new StringBuilder(ref);
+        for (final int at : new int[] {200, 700, 1300}) {
+            snp.setCharAt(at, snp.charAt(at) == 'A' ? 'C' : 'A');
+        }
+        final String del = ref.substring(0, 1000) + ref.substring(1003);
+        Files.writeString(dir.resolve("haplotypes.fasta"),
+                ">ref\n" + ref + "\n>snp\n" + snp + "\n>del\n" + del + "\n>short\n" + ref.substring(100, 125) + "\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("haplotypes_dup.fasta"),
+                ">ref\n" + ref + "\n>snp\n" + snp + "\n>copy\n" + ref + "\n",
+                StandardCharsets.UTF_8);
     }
 
     static void geneExpressionFixtures(final Path dir) throws Exception {

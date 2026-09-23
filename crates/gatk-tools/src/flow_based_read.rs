@@ -217,6 +217,8 @@ pub fn base_array_to_key(bases: &[u8], flow_order: &str) -> Option<Vec<i32>> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlowRead {
     pub key: Vec<i32>,
+    /// `flowOrder`: the base each flow of the key reads, the order cycled to the key's length.
+    pub flow_order: Vec<u8>,
     pub max_hmer: i32,
     /// `flowMatrix[hmer][flow]`, `maxHmer + 1` rows of `key.len()` columns.
     pub matrix: Vec<Vec<f64>>,
@@ -261,6 +263,34 @@ impl FlowRead {
             }
         }
         Ok(flow_read)
+    }
+
+    /// `applyAlignment` on a read already in reference direction and in base format, which is
+    /// `applyClipping(0, 0, 0, 0, false)`: nothing is clipped, but the zero flows at either end
+    /// of the key are dropped, with their columns and their bases of the flow order.
+    pub fn apply_alignment(&mut self) -> Result<(), FlowReadError> {
+        let length = self.key.len();
+        if length == 0 {
+            return Err(FlowReadError::thrown(
+                "java.lang.IllegalStateException",
+                "Weird read clip calculated: left/right/keyLength 0/0/0".to_string(),
+            ));
+        }
+        let mut left = 0;
+        while self.key[left] == 0 {
+            left += 1;
+        }
+        let mut right = 0;
+        while self.key[length - 1 - right] == 0 {
+            right += 1;
+        }
+        let end = length - right;
+        self.key = self.key[left..end].to_vec();
+        self.flow_order = self.flow_order[left..end].to_vec();
+        for row in self.matrix.iter_mut() {
+            *row = row[left..end].to_vec();
+        }
+        Ok(())
     }
 
     /// `spreadFlowLengthProbsAcrossCountsAtFlow`.
@@ -481,7 +511,11 @@ fn read_flow_matrix(
         qual_ofs += run as usize;
     }
 
+    let flow_order_bytes = flow_order.as_bytes();
     let mut flow_read = FlowRead {
+        flow_order: (0..key.len())
+            .map(|i| flow_order_bytes[i % flow_order_bytes.len()])
+            .collect(),
         key,
         max_hmer,
         matrix,

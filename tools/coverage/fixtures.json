@@ -4994,6 +4994,105 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "FlowPairHMMAlignReadsToHaplotypes": {
+      "$why": [
+        "flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten,",
+        "each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch,",
+        "a copy with three substitutions, one with a three-base deletion and one shorter than any read;",
+        "haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names",
+        "the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal;",
+        "FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--haplotypes": [
+        "/work/fixtures/haplotypes.fasta",
+        "/work/fixtures/haplotypes_dup.fasta"
+      ],
+      "--output": [
+        "/work/out/likelihoods.tsv"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--ref-haplotype": [
+        "null",
+        "ref",
+        "snp",
+        "missing"
+      ],
+      "--concise-output-format": [
+        "false",
+        "true"
+      ],
+      "--aligner": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--dragstr-params-path": [],
+      "--pair-hmm-results-file": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
