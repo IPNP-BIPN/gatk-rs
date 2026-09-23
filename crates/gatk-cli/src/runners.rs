@@ -16226,3 +16226,160 @@ fn java_display_now() -> String {
         MONTHS[(month - 1) as usize]
     )
 }
+
+/// `CombineSegmentBreakpoints`: two segment files cut at every breakpoint either carries, each
+/// piece annotated from both.
+///
+/// The cutting and the annotation are [`gatk_tools::combine_segment_breakpoints`]; the runner reads
+/// the two collections restricted to `--columns-of-interest`, builds the output header the way
+/// `SamFileHeaderMerger` does, and writes the combined collection:
+///
+/// * **the dictionaries are compared with their order checked**: common contigs of different
+///   lengths, or a different order, are refused as bad input;
+/// * **the merged header is `@HD VN:1.6 GO:none SO:coordinate`** over the merged dictionary, and a
+///   merge with no sequences takes the best available one, the reference's, or is refused when
+///   there is none;
+/// * **a column of interest neither file has is refused**, after both are read;
+/// * **an annotation both files carry takes its file's label as a suffix**, and the columns are
+///   written sorted.
+///
+/// Two inputs with DIFFERENT non-empty dictionaries are merged by `SamFileHeaderMerger`'s own
+/// rules, which this does not port: the first input's dictionary is kept.
+pub fn combine_segment_breakpoints(parser: &Parser) -> Outcome {
+    use gatk_tools::sequence_dictionary::{compare, Compatibility};
+
+    let _ = resolve_read_filters(parser, "CombineSegmentBreakpoints")?;
+    let segments = arguments(parser, "segments");
+    // The declaration's default is `[1, 2]`, and `--labels null` empties it.
+    let labels = arguments(parser, "labels");
+    let columns: Vec<String> = arguments(parser, "columns-of-interest");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // `AnnotatedIntervalCollection.create(path, columnsOfInterest)`: only the columns asked for.
+    let read = |path: &str| -> Result<gatk_tools::annotated_interval::AnnotatedIntervalCollection, Thrown> {
+        let mut collection = annotated_intervals(path)?;
+        collection.annotations.retain(|name| columns.contains(name));
+        for record in &mut collection.records {
+            record.annotations.retain(|name, _| columns.contains(name));
+        }
+        Ok(collection)
+    };
+    let first = read(&segments[0])?;
+    let second = read(&segments[1])?;
+
+    // `createOutputSamFileHeader`.
+    let dictionary_of =
+        |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
+            let text: String = collection
+                .header_lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect();
+            htsjdk_bam::reader::parse_header_text(&text).sequences
+        };
+    let (dictionary1, dictionary2) = (dictionary_of(&first), dictionary_of(&second));
+    match compare(&dictionary1, &dictionary2, true) {
+        Compatibility::UnequalCommonContigs => {
+            return Err(bad_input(
+                "Input files had common contigs with different lengths in the sequence dictionaries.  Were these segment files generated with the same reference?".to_string(),
+            ))
+        }
+        Compatibility::OutOfOrder => {
+            return Err(bad_input(
+                "Input files have different sequence dictionary ordering.  The risk of errors downstream is too high to continue.".to_string(),
+            ))
+        }
+        _ => {}
+    }
+    let mut merged = if dictionary1.is_empty() {
+        dictionary2
+    } else {
+        dictionary1
+    };
+    if merged.is_empty() {
+        let best = master_dictionary(parser)?.or(reference_dictionary(parser)?);
+        match best {
+            Some(best) => merged = best.sequences,
+            None => {
+                return Err(bad_input(
+                    "Cannot assemble a reference dictionary.  In order to use this tool, one of the following conditions must be satisfied:  1)  One or both input files have a SAM File header ... 2)  A reference is provided (-R)".to_string(),
+                ))
+            }
+        }
+    }
+
+    let mut seen: Vec<String> = first.annotations.clone();
+    for name in &second.annotations {
+        if !seen.contains(name) {
+            seen.push(name.clone());
+        }
+    }
+    let unused: Vec<String> = columns
+        .iter()
+        .filter(|name| !seen.contains(name))
+        .cloned()
+        .collect();
+    if !unused.is_empty() {
+        return Err(bad_input(format!(
+            "Some columns of interest specified by the user were not seen in any input files: {}",
+            unused.join(", ")
+        )));
+    }
+
+    // A column both files carry is suffixed with each file's label, read with `get(0)` and
+    // `get(1)`: an emptied `--labels` is refused there, and only when some column is shared.
+    let columns_of = |collection: &gatk_tools::annotated_interval::AnnotatedIntervalCollection| {
+        collection
+            .records
+            .first()
+            .map(|record| record.annotations.keys().cloned().collect::<Vec<String>>())
+            .unwrap_or_default()
+    };
+    let shared = columns_of(&first)
+        .iter()
+        .any(|name| columns_of(&second).contains(name));
+    if shared && labels.len() < 2 {
+        return Err(Thrown::non_user(
+            "java.lang.IndexOutOfBoundsException",
+            format!(
+                "Index {} out of bounds for length {}",
+                labels.len(),
+                labels.len()
+            ),
+        ));
+    }
+    let label = |index: usize| labels.get(index).map(String::as_str).unwrap_or("");
+    let names: Vec<String> = merged
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let records = gatk_tools::combine_segment_breakpoints::combine(
+        &first.records,
+        &second.records,
+        &names,
+        [label(0), label(1)],
+        &columns,
+    );
+    let mut header = SamHeader::default();
+    header.attributes.set("GO", "none");
+    header.attributes.set("SO", "coordinate");
+    header.sequences = merged;
+    let mut annotations: Vec<String> = records
+        .first()
+        .map(|record| record.annotations.keys().cloned().collect())
+        .unwrap_or_default();
+    annotations.sort();
+    let collection = gatk_tools::annotated_interval::AnnotatedIntervalCollection {
+        header_lines: header.encode().lines().map(str::to_string).collect(),
+        comments: Vec::new(),
+        annotations,
+        records,
+        contig_column: "CONTIG".to_string(),
+        start_column: "START".to_string(),
+        end_column: "END".to_string(),
+    };
+    write_file(&output, collection.write().as_bytes())?;
+    Ok(None)
+}

@@ -1832,6 +1832,20 @@ public class MakeFixtures {
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
+        // `CombineSegmentBreakpoints` takes exactly two segment files and, optionally, two labels, so
+        // each value is a .list of two; a third segment file carries a SAM header whose dictionary
+        // the tool merges instead of asking for a reference.
+        Files.writeString(dir.resolve("csb_header.seg"),
+                "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:30000\n@SQ\tSN:chr2\tLN:30000\n"
+                + "CONTIG\tSTART\tEND\tCALL\tSEGMENT_MEAN\n"
+                + "chr1\t500\t2000\t-\t-0.5\nchr1\t6000\t7000\t+\t0.4\nchr2\t100\t900\t0\t0.0\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("csb_pair.list"),
+                "/work/fixtures/tumour.seg\n/work/fixtures/normal.seg\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("csb_pair_header.list"),
+                "/work/fixtures/tumour.seg\n/work/fixtures/csb_header.seg\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("csb_labels.list"), "T\nN\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("csb_columns.list"), "CALL\nMEAN\n", StandardCharsets.UTF_8);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"

@@ -4115,6 +4115,45 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "CombineSegmentBreakpoints": {
+      "$why": [
+        "--segments takes exactly two files, so each value is a .list of two: tumour.seg and normal.seg,",
+        "neither with a SAM header, or tumour.seg and csb_header.seg, whose dictionary the merge takes.",
+        "--labels is absent (1 and 2) or a .list of T and N. --columns-of-interest is CALL and MEAN, CALL",
+        "alone (which both files carry, so it takes the labels), or a column neither has, refused.",
+        "--reference is two_contigs.fasta or absent, which without a SAM header is refused. The engine's",
+        "read, interval and dictionary arguments are held out."
+      ],
+      "--segments": [
+        "/work/fixtures/csb_pair.list",
+        "/work/fixtures/csb_pair_header.list"
+      ],
+      "--labels": [
+        "null",
+        "/work/fixtures/csb_labels.list"
+      ],
+      "--columns-of-interest": [
+        "/work/fixtures/csb_columns.list",
+        "CALL",
+        "MISSING"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "null"
+      ],
+      "--output": [
+        "/work/out/combined.seg",
+        "/work/out/other.seg"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
     }
   },
   "constraints": [

@@ -327,6 +327,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GroupedSVCluster" => Some(run_grouped_sv_cluster),
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
+        "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
             Some(run_convert_headerless_hadoop_bam_shard_to_bam)
@@ -581,6 +582,10 @@ fn run_sv_annotate(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_reference_block_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::reference_block_concordance(&parsed("ReferenceBlockConcordance", args)?)
+}
+
+fn run_combine_segment_breakpoints(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::combine_segment_breakpoints(&parsed("CombineSegmentBreakpoints", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

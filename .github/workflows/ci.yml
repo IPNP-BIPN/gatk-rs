@@ -595,6 +595,7 @@ jobs:
             --tool GroupedSVCluster \
             --tool SVAnnotate \
             --tool ReferenceBlockConcordance \
+            --tool CombineSegmentBreakpoints \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
