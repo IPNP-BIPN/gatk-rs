@@ -3388,6 +3388,47 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "DownsampleByDuplicateSet": {
+      "$why": [
+        "--input is molecules.bam, reads grouped by MI as fgbio leaves them: molecules of two and four",
+        "reads, one of three (rejected as unpaired), one on a single strand, and a three-read last one",
+        "that escapes every rule because the last set is never asked; molecules_backwards.bam swaps two",
+        "molecules, which the walker refuses as not sorted by MI. --fraction-to-keep is 0.5 and 1.0: the",
+        "seeded draws keep and drop whole molecules, and a rejected molecule costs no draw. --min-reads is",
+        "1 and 4, --min-per-strand-reads 0 and 1. --read-index, --intervals and --exclude-intervals are",
+        "held out: the file is unsorted and unindexed. The three read-filter arguments whose filters no",
+        "row selects are held out as for CondenseDepthEvidence."
+      ],
+      "--input": [
+        "/work/fixtures/molecules.bam",
+        "/work/fixtures/molecules_backwards.bam"
+      ],
+      "--fraction-to-keep": [
+        "0.5",
+        "1.0"
+      ],
+      "--min-reads": [
+        "1",
+        "4"
+      ],
+      "--min-per-strand-reads": [
+        "0",
+        "1"
+      ],
+      "--output": [
+        "/work/out/downsampled.bam",
+        "/work/out/downsampled2.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

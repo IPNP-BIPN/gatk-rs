@@ -812,6 +812,54 @@ public class MakeFixtures {
      * forward until it catches up with the aligned read, so a name here that the aligned file does
      * not carry is skipped, while the reverse is the tool's `IllegalStateException`.
      */
+    /**
+     * Reads grouped by molecule as fgbio leaves them, for `DownsampleByDuplicateSet`: `MI` is
+     * `<molecule>/<strand>`, the file is ordered by molecule and its header says unsorted, so the
+     * writer keeps the order it is given. Molecule 1 has two reads, one per strand; 2 has four; 3
+     * has three, which the walker rejects as unpaired; 4 has two reads on one strand, which a
+     * per-strand minimum of one rejects; 5..9 have two each, so the seeded draws have something to
+     * keep and drop; and 10, the last, has three, which escapes every rule because the last set is
+     * never asked. With `backwards` the molecules 4 and 5 swap places, which the walker refuses.
+     */
+    static void moleculeGroups(final Path bam, final boolean backwards) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+        final String[][] molecules = {
+                {"1", "A", "B"}, {"2", "A", "A", "B", "B"}, {"3", "A", "B", "A"}, {"4", "A", "A"},
+                {"5", "A", "B"}, {"6", "A", "B"}, {"7", "B", "A"}, {"8", "A", "B"}, {"9", "A", "B"},
+                {"10", "A", "B", "B"}};
+        if (backwards) {
+            final String[] fourth = molecules[3];
+            molecules[3] = molecules[4];
+            molecules[4] = fourth;
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, bam.toFile())) {
+            int serial = 0;
+            for (final String[] molecule : molecules) {
+                for (int i = 1; i < molecule.length; i++) {
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName("read" + (serial++));
+                    record.setReferenceName("chr1");
+                    record.setAlignmentStart(1000 + 10 * Integer.parseInt(molecule[0]));
+                    record.setMappingQuality(60);
+                    record.setCigarString("10M");
+                    record.setReadString("ACGTACGTAC");
+                    record.setBaseQualityString("IIIIIIIIII");
+                    record.setAttribute("RG", "rg1");
+                    record.setAttribute("MI", molecule[0] + "/" + molecule[i]);
+                    writer.addAlignment(record);
+                }
+            }
+        }
+    }
+
     static void umi(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1060,6 +1108,8 @@ public class MakeFixtures {
         pairs(dir.resolve("pairs.bam"));
         queryNameSorted(dir.resolve("qname.bam"));
         umi(dir.resolve("umi.bam"));
+        moleculeGroups(dir.resolve("molecules.bam"), false);
+        moleculeGroups(dir.resolve("molecules_backwards.bam"), true);
         requalified(dir.resolve("requal.bam"));
         // The indel VCF, INDEXED: a variant walker refuses `-L` over an input with no random
         // access, so an unindexed one would answer a refusal on every interval row.

@@ -320,6 +320,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ExampleMultiFeatureWalker" => Some(run_example_multi_feature_walker),
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
+        "DownsampleByDuplicateSet" => Some(run_downsample_by_duplicate_set),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -520,6 +521,10 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_downsample_by_duplicate_set(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::downsample_by_duplicate_set(&parsed("DownsampleByDuplicateSet", args)?)
 }
 
 fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
