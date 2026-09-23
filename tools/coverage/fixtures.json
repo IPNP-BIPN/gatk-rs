@@ -4196,6 +4196,53 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "FilterFuncotations": {
+      "$why": [
+        "--variant is funcotated.vcf, one record per filter (ClinVar, LoF over two transcripts, LMM, an",
+        "autosomal recessive compound het pair and a hom-var), one matching nothing and already filtered, and",
+        "a multiallelic site; and the same records under a header with no FUNCOTATION line, refused before",
+        "the writer. --ref-version is b37, whose Gencode_19 keys the file carries, or hg38, whose keys it",
+        "does not. --allele-frequency-data-source is exac or gnomad. The engine's read, interval and",
+        "dictionary arguments are held out, the writer's index, filtering mode and command line held."
+      ],
+      "--variant": [
+        "/work/fixtures/funcotated.vcf",
+        "/work/fixtures/unfuncotated.vcf"
+      ],
+      "--ref-version": [
+        "b37",
+        "hg38"
+      ],
+      "--allele-frequency-data-source": [
+        "exac",
+        "gnomad"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered.vcf.gz"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [
