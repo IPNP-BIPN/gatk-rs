@@ -853,6 +853,28 @@ fn vcf_dictionary(text: &str) -> SamHeader {
 /// file and `.tbi` for a block compressed one, both APPENDED to the whole name rather than
 /// replacing anything. That is `Tribble.indexPath` and `Tribble.tabixIndexPath`, and it is not
 /// `SamFiles.findIndex`'s rule: a feature file's index is never named by replacing its extension.
+/// `IndexUtils.createSequenceDictionaryFromFeatureIndex`: the Tribble index's contig names, each
+/// at `UNKNOWN_SEQUENCE_LENGTH`, which is zero. `None` without an index or with an empty one.
+fn index_dictionary(path: &str) -> Option<SamHeader> {
+    let index = index_feature_file::default_output(path);
+    if !index.ends_with(".idx") {
+        return None;
+    }
+    let bytes = std::fs::read(&index).ok()?;
+    let parsed = htsjdk_tribble::index::TribbleIndex::read(&bytes).ok()?;
+    let names = parsed.sequence_names();
+    if names.is_empty() {
+        return None;
+    }
+    Some(SamHeader {
+        sequences: names
+            .into_iter()
+            .map(|name| htsjdk_bam::header::SequenceRecord::new(name, 0))
+            .collect(),
+        ..SamHeader::default()
+    })
+}
+
 fn has_feature_index(path: &str) -> bool {
     std::path::Path::new(&index_feature_file::default_output(path)).is_file()
 }
@@ -1021,8 +1043,21 @@ fn variant_walker_startup_over(
     // What `-L` resolves against is NOT the master here: a variant walker prefers the DRIVING
     // VARIANTS' dictionary unless that one was synthesized from an index, and a VCF carrying
     // `##contig` lines gives a real one.
+    //
+    // A VCF with no `##contig` line has its dictionary SYNTHESIZED from its Tribble index: the
+    // index's contig names at an unknown length. That one is used only when no other source has a
+    // dictionary (`VariantWalkerBase.getBestAvailableSequenceDictionary`), and an unknown length
+    // is not checked against an interval's stop, so `-L` over such a VCF is accepted.
     let best = if header.sequences.is_empty() {
-        master.clone().unwrap_or_else(|| header.clone())
+        match master.clone().or_else(|| reference.clone()).or_else(|| {
+            reads_dictionaries.first().map(|sequences| SamHeader {
+                sequences: sequences.clone(),
+                ..SamHeader::default()
+            })
+        }) {
+            Some(other) => other,
+            None => index_dictionary(&input).unwrap_or_else(|| header.clone()),
+        }
     } else {
         header.clone()
     };
@@ -6879,6 +6914,528 @@ pub fn get_normal_artifact_data(parser: &Parser) -> Outcome {
     Ok(Some("SUCCESS".to_string()))
 }
 
+/// `CollectF1R2Counts`, a locus walker whose one output is an ARCHIVE written by `closeTool`.
+///
+/// The collector exists from `onTraversalStart`, and with it one alt table writer per sample; the
+/// histograms are only written by `onTraversalSuccess`. `closeTool` runs in `doWork`'s `finally`,
+/// so a traversal that is refused part way still leaves a `.tar.gz` behind, holding the alt tables
+/// as far as they got and no histogram at all. A refusal in the startup, before the collector
+/// exists, leaves nothing.
+///
+/// The members are named `./<url-encoded sample><extension>`, in `File.listFiles()` order, which is
+/// the file system's and not reproducible; the port writes them sorted, and the covering array
+/// compares the archive member by member rather than byte by byte.
+pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
+    use gatk_tools::collect_f1r2_counts as f1r2;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "CollectF1R2Counts")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let args = f1r2::Args {
+        min_median_map_qual: number_or(parser, "f1r2-median-mq", 50),
+        min_base_quality: number_or(parser, "f1r2-min-bq", 20),
+        max_depth: number_or(parser, "f1r2-max-depth", f1r2::DEFAULT_MAX_DEPTH),
+    };
+
+    // `ReadUtils.getSamplesFromHeader`: the read groups' samples, once each.
+    let mut samples: Vec<String> = Vec::new();
+    for group in &header.read_groups {
+        if let Some(sample) = group.attributes.get("SM") {
+            if !samples.iter().any(|known| known == sample) {
+                samples.push(sample.to_string());
+            }
+        }
+    }
+    let mut collector = f1r2::Collector::new(args, &samples);
+    let archive = |collector: &f1r2::Collector, histograms: bool| -> Result<(), Thrown> {
+        let mut files = collector.files(histograms);
+        files.sort_by(|left, right| left.0.cmp(&right.0));
+        let entries: Vec<(String, Vec<u8>)> = files
+            .into_iter()
+            .map(|(name, text)| (format!("./{name}"), text.into_bytes()))
+            .collect();
+        write_file(&output, &tar_gz(&entries))
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = match gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    ) {
+        Ok(applied) => applied,
+        Err(error) => {
+            archive(&collector, false)?;
+            return Err(locus_traversal_error(error));
+        }
+    };
+
+    let sequences = gatk_tools::reference_walker::dictionary(&reference).sequences;
+    let one_sample = samples.len() == 1;
+    for one in &applied {
+        let Some(length) = sequences
+            .iter()
+            .find(|sequence| sequence.name == one.context.contig)
+            .map(|sequence| sequence.length)
+        else {
+            archive(&collector, false)?;
+            return Err(Thrown::user(format!(
+                "Contig {} not present in the sequence dictionary {}\n",
+                one.context.contig,
+                gatk_tools::sequence_dictionary::pretty_print(&sequences)
+            )));
+        };
+        let mut elements = Vec::new();
+        for element in &one.context.pileup.elements {
+            let sample = gatk_engine::read_pileup::sample_name(element.read, &header);
+            // `splitBySample(header, null)`: a read with no sample is refused, but only on the
+            // path that splits, which is every sample count but one.
+            if sample.is_none() && !one_sample {
+                archive(&collector, false)?;
+                return Err(Thrown::user(format!(
+                    "SAM/BAM/CRAM file (unknown) is malformed: Read {} is missing the read group \
+                     (RG) tag, which is required by the GATK.  Please use \
+                     http://gatkforums.broadinstitute.org/discussion/59/\
+                     companion-utilities-replacereadgroups to fix this problem",
+                    element.read.read_name
+                )));
+            }
+            let flags = element.read.flags;
+            elements.push(f1r2::Element {
+                sample: sample.unwrap_or_default(),
+                base: element.base(),
+                qual: element.qual(),
+                reverse_strand: flags & 0x10 != 0,
+                first_of_pair: flags & 0x1 != 0 && flags & 0x40 != 0,
+                mapping_quality: element.mapping_qual() as i32,
+                deletion: element.is_deletion(),
+                after_insertion: element.is_after_insertion(),
+                before_deletion_start: element.is_before_deletion_start(),
+            });
+        }
+        // `getKmerAround(position, 1)`: the window widened within the contig, and no k-mer at all
+        // when the contig's end cut it short.
+        let position = one.context.position;
+        let start = (position - 1).max(1);
+        let end = (position + 1).min(length);
+        let kmer = if end - start < 2 * f1r2::REF_CONTEXT_PADDING as i32 {
+            None
+        } else {
+            let bases = reference
+                .query(&one.context.contig, start, end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            Some(String::from_utf8_lossy(&bases).to_ascii_uppercase())
+        };
+        collector.process(&elements, kmer.as_deref());
+    }
+
+    archive(&collector, true)?;
+    // What `onTraversalSuccess` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `CreateSomaticPanelOfNormals`, a variant walker over a multi-sample VCF.
+///
+/// The site rules, the germline test and the beta fit are [`gatk_tools::create_somatic_panel_of_normals`]'s;
+/// what the runner adds is the header, which is built fresh rather than copied:
+///
+///   - the tool's own two INFO lines, one `##normal_sample` line per sample of the input, and the
+///     default tool lines, all in a `HashSet` the writer sorts;
+///   - and the contig lines of the INPUT's dictionary, set after the writer exists, so an input
+///     with no contig line at all is a `NullPointerException` that leaves an empty file behind.
+///
+/// Each record written is a site with the input's alleles, no ID, no QUAL, no FILTER and no
+/// genotype, holding `FRACTION` and `BETA` and nothing else. The germline resource is queried by
+/// overlap and only its FIRST record is read, its `AF` values summed.
+pub fn create_somatic_panel_of_normals(parser: &Parser) -> Outcome {
+    use gatk_tools::create_somatic_panel_of_normals as pon;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "CreateSomaticPanelOfNormals")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let min_sample_count = number_or(
+        parser,
+        "min-sample-count",
+        pon::DEFAULT_MIN_SAMPLE_COUNT as i32,
+    );
+    let max_germline_probability = scalar(parser, "max-germline-probability")
+        .and_then(|text| text.parse::<f64>().ok())
+        .unwrap_or(pon::DEFAULT_MAX_GERMLINE_PROBABILITY);
+    let germline = match argument(parser, "germline-resource") {
+        Some(path) => Some(feature_variants(&path)?.0),
+        None => None,
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let samples = file.header.samples.clone();
+
+    let mut header = htsjdk_vcf::header::VcfHeader::new();
+    header.lines.extend(default_tool_vcf_header_lines(
+        parser,
+        "CreateSomaticPanelOfNormals",
+    ));
+    header.lines.push(HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: "FRACTION".to_string(),
+        number: Cardinality::Fixed(1),
+        line_type: LineType::Float,
+        description: "Fraction of samples exhibiting artifact".to_string(),
+        extra: Vec::new(),
+    });
+    header.lines.push(HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: "BETA".to_string(),
+        number: Cardinality::Fixed(2),
+        line_type: LineType::Float,
+        description: "Beta distribution parameters to fit artifact allele fractions".to_string(),
+        extra: Vec::new(),
+    });
+    for sample in &samples {
+        let line = HeaderLine::Unstructured {
+            key: "normal_sample".to_string(),
+            value: sample.clone(),
+        };
+        if !header.lines.contains(&line) {
+            header.lines.push(line);
+        }
+    }
+    let contigs: Vec<Vec<(String, String)>> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Contig { fields, .. } => Some(fields.clone()),
+            _ => None,
+        })
+        .collect();
+    if contigs.is_empty() {
+        // `setSequenceDictionary(null)`, after `createVCFWriter` opened the file and before the
+        // header was written: `closeTool` closes a writer that wrote nothing.
+        write_variant_output(parser, &output, "")?;
+        return Err(Thrown::non_user(
+            "java.lang.NullPointerException",
+            "Cannot invoke \"htsjdk.samtools.SAMSequenceDictionary.getSequences()\" because \
+             \"dictionary\" is null",
+        ));
+    }
+    for (index, fields) in contigs.iter().enumerate() {
+        let field = |key: &str| {
+            fields
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, value)| value.clone())
+        };
+        // `getSAMSequenceRecord` then `new VCFContigHeaderLine(record, record.getAssembly())`: the
+        // ID, the length (zero when the line had none) and the assembly survive, nothing else.
+        let mut rebuilt = vec![
+            ("ID".to_string(), field("ID").unwrap_or_default()),
+            (
+                "length".to_string(),
+                field("length")
+                    .and_then(|length| length.parse::<i32>().ok())
+                    .unwrap_or(0)
+                    .to_string(),
+            ),
+        ];
+        if let Some(assembly) = field("assembly") {
+            rebuilt.push(("assembly".to_string(), assembly));
+        }
+        header.lines.push(HeaderLine::Contig {
+            index: index as i32,
+            fields: rebuilt,
+        });
+    }
+
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+
+    let germline_frequency = |record: &htsjdk_vcf::variant::VariantContext| -> f64 {
+        let Some(resource) = germline.as_ref() else {
+            return 0.0;
+        };
+        let Some(first) = resource.iter().find(|candidate| {
+            candidate.contig == record.contig
+                && candidate.start <= record.stop
+                && record.start <= candidate.stop
+        }) else {
+            return 0.0;
+        };
+        // `getAttributeAsDoubleList(vc, AF, 0.0)`: a missing value reads as the default.
+        let text_of = |value: &Value| value.format().unwrap_or_default();
+        let values: Vec<String> = match first.attributes.iter().find(|(key, _)| key == "AF") {
+            None => Vec::new(),
+            Some((_, Value::List(items))) => items.iter().map(text_of).collect(),
+            Some((_, value)) => text_of(value).split(',').map(str::to_string).collect(),
+        };
+        values
+            .iter()
+            .map(|value| {
+                if value == "." {
+                    0.0
+                } else {
+                    value.parse::<f64>().unwrap_or(0.0)
+                }
+            })
+            .sum()
+    };
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for record in kept {
+        record.genotypes.decode();
+        let site = pon::Site {
+            contig: record.contig.clone(),
+            position: record.start as i32,
+            reference: record.reference().display_string(),
+            alternates: record
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.display_string())
+                .collect(),
+            genotypes: record
+                .genotypes
+                .iter()
+                .map(|genotype| pon::Genotype {
+                    sample: genotype.sample_name.clone(),
+                    allele_depths: genotype.ad.clone(),
+                })
+                .collect(),
+        };
+        let entries = pon::build_panel(
+            std::slice::from_ref(&site),
+            samples.len(),
+            |_| germline_frequency(record),
+            min_sample_count.max(0) as usize,
+            max_germline_probability,
+        );
+        let Some(entry) = entries.into_iter().next() else {
+            continue;
+        };
+        let mut out = htsjdk_vcf::variant::VariantContext::new(
+            &record.contig,
+            record.start,
+            record.alleles.clone(),
+        );
+        out.stop = record.stop;
+        out.attributes = vec![
+            ("FRACTION".to_string(), Value::Double(entry.fraction)),
+            (
+                "BETA".to_string(),
+                Value::List(vec![
+                    Value::Double(entry.beta.alpha),
+                    Value::Double(entry.beta.beta),
+                ]),
+            ),
+        ];
+        written.push(out);
+    }
+
+    finish(&written)?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `SplitCRAM`, a `CommandLineProgram` that cuts a CRAM at container boundaries.
+///
+/// Where the cuts fall is [`gatk_tools::split_cram::plan`]'s. What the runner adds is the bytes of
+/// each shard, which are htsjdk's writers rather than a copy of the input's first bytes:
+///
+///   - the file definition, written back from the one read;
+///   - the SAM header container, REBUILT: the header text is parsed and encoded again, the block is
+///     GZIP at `Defaults.COMPRESSION_LEVEL`, which `GATKConfig` sets to two, and the container
+///     header is `makeSAMFileHeaderContainer`'s, unmapped with one block and no landmark;
+///   - every data container as it was read, which `Container.write` reproduces for a file htsjdk
+///     wrote, its blocks keeping their compressed bytes;
+///   - and the version 3 EOF container.
+///
+/// Nothing is printed: `doWork` returns null.
+pub fn split_cram(parser: &Parser) -> Outcome {
+    use gatk_tools::split_cram as split;
+    use htsjdk_cram::varint::{write_unsigned_itf8, write_unsigned_ltf8};
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let template =
+        argument(parser, "output").unwrap_or_else(|| split::DEFAULT_TEMPLATE.to_string());
+    let shard_records = scalar(parser, "shard-records")
+        .and_then(|text| text.parse::<i64>().ok())
+        .unwrap_or(split::DEFAULT_SHARD_RECORDS);
+    let max_output_count = number_or(parser, "shard-max-output-count", 0);
+
+    // `onStartup`, before the input is opened.
+    if !split::accepts_template(&template) {
+        let error = split::SplitError::TemplateMissingFormatter {
+            template: template.clone(),
+        };
+        // `SplitError::java_class` borrows the error; the class is a constant.
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            error.message(),
+        ));
+    }
+
+    let cram = std::fs::read(&input).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {}. Error was: It doesn't exist.",
+            std::path::Path::new(&input).display()
+        ))
+    })?;
+    if cram.len() < 4 || &cram[..4] != b"CRAM" {
+        return Err(Thrown::non_user(
+            "java.lang.RuntimeException",
+            "Input does not have a valid CRAM header.",
+        ));
+    }
+    let walk = htsjdk_cram::file::read_file(&cram)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?;
+    let major = walk.definition.major;
+
+    // `CramIO.readSAMFileHeader`: a little-endian length, then that many bytes of text.
+    let text_length = walk
+        .sam_header
+        .get(..4)
+        .map(|bytes| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]).max(0) as usize)
+        .unwrap_or(0);
+    let text_end = (4 + text_length).min(walk.sam_header.len());
+    let text = String::from_utf8_lossy(walk.sam_header.get(4..text_end).unwrap_or(&[]));
+    let header = htsjdk_bam::reader::parse_header_text(&text);
+    let encoded = header.encode_replacing_version();
+
+    // `samHeaderToByteArray`, then `createGZIPFileHeaderBlock` and the block's own `write`.
+    let mut raw = (encoded.len() as i32).to_le_bytes().to_vec();
+    raw.extend_from_slice(encoded.as_bytes());
+    let compressed = java_gzip(&raw, 2);
+    let mut block = vec![1u8, 0u8];
+    block.extend_from_slice(&write_unsigned_itf8(0).0);
+    block.extend_from_slice(&write_unsigned_itf8(compressed.len() as i32).0);
+    block.extend_from_slice(&write_unsigned_itf8(raw.len() as i32).0);
+    block.extend_from_slice(&compressed);
+    if major >= 3 {
+        let crc = htsjdk_cram::compression_header::crc32(&block);
+        block.extend_from_slice(&crc.to_le_bytes());
+    }
+    // `makeSAMFileHeaderContainer(blockSize)`, written by `ContainerHeader.write`.
+    let mut container = (block.len() as i32).to_le_bytes().to_vec();
+    container.extend_from_slice(&write_unsigned_itf8(-1).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_ltf8(0).0);
+    container.extend_from_slice(&write_unsigned_ltf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(1).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    if major >= 3 {
+        let crc = htsjdk_cram::compression_header::crc32(&container);
+        container.extend_from_slice(&crc.to_le_bytes());
+    }
+    let mut preamble = walk.definition.write();
+    preamble.extend_from_slice(&container);
+    preamble.extend_from_slice(&block);
+
+    // The data containers, as bytes, stopping at the EOF container the iterator does not return.
+    let containers: Vec<(&[u8], i32)> = walk
+        .containers
+        .iter()
+        .filter(|one| !one.header.is_eof())
+        .map(|one| {
+            let end =
+                one.offset + one.header.byte_length + one.header.blocks_byte_size.max(0) as usize;
+            (
+                &cram[one.offset..end.min(cram.len())],
+                one.header.record_count,
+            )
+        })
+        .collect();
+    let counts: Vec<i32> = containers.iter().map(|(_, count)| *count).collect();
+    let shards = split::plan(&counts, shard_records, max_output_count, &template)
+        .map_err(|error| Thrown::non_user("java.lang.IllegalArgumentException", error.message()))?;
+
+    let mut next = 0usize;
+    for shard in &shards {
+        let mut out = preamble.clone();
+        for _ in &shard.containers {
+            out.extend_from_slice(containers[next].0);
+            next += 1;
+        }
+        out.extend_from_slice(&CRAM_V3_EOF);
+        write_file(&shard.name, &out)?;
+    }
+    Ok(None)
+}
+
+/// `CramIO.ZERO_F_EOF_MARKER`, the version 3 EOF container.
+const CRAM_V3_EOF: [u8; 38] = [
+    0x0f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0xe0, 0x45, 0x4f, 0x46, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x05, 0xbd, 0xd9, 0x4f, 0x00, 0x01, 0x00, 0x06, 0x06, 0x01, 0x00, 0x01, 0x00,
+    0x01, 0x00, 0xee, 0x63, 0x01, 0x4b,
+];
+
+/// `java.util.zip.GZIPOutputStream` at `level`: the fixed ten-byte header with no name and no
+/// time, whose operating system byte is 255 (unknown, measured on the oracle's JDK rather than the
+/// zero older JDKs wrote), the JDK's zlib deflate, then the CRC and the length.
+fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
+    let mut out = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff];
+    let mut compressor = flate2::Compress::new(flate2::Compression::new(level), false);
+    let mut deflated = Vec::with_capacity(data.len() + 64);
+    loop {
+        let status = compressor
+            .compress_vec(
+                &data[compressor.total_in() as usize..],
+                &mut deflated,
+                flate2::FlushCompress::Finish,
+            )
+            .expect("deflating into a vector does not fail");
+        if status == flate2::Status::StreamEnd {
+            break;
+        }
+        deflated.reserve(deflated.capacity().max(64));
+    }
+    out.extend_from_slice(&deflated);
+    let mut crc = flate2::Crc::new();
+    crc.update(data);
+    out.extend_from_slice(&crc.sum().to_le_bytes());
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves
@@ -10922,6 +11479,54 @@ fn tar_entry<'a>(tar: &'a [u8], name: &str) -> Option<&'a [u8]> {
         offset = next;
     }
     None
+}
+
+/// `IOUtils.writeTarGz`: regular files in a gzipped ustar stream, as commons-compress lays them
+/// out. A name of a hundred bytes or more goes ahead of its entry in a GNU `././@LongLink` entry,
+/// which is `LONGFILE_GNU`; the stream ends with two zero blocks.
+fn tar_gz(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
+    use std::io::Write;
+    let mtime = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let header = |name: &[u8], size: usize, kind: u8| -> [u8; 512] {
+        let mut block = [0u8; 512];
+        let name_length = name.len().min(100);
+        block[..name_length].copy_from_slice(&name[..name_length]);
+        block[100..108].copy_from_slice(b"0000644\0");
+        block[108..116].copy_from_slice(b"0000000\0");
+        block[116..124].copy_from_slice(b"0000000\0");
+        block[124..136].copy_from_slice(format!("{size:011o}\0").as_bytes());
+        block[136..148].copy_from_slice(format!("{mtime:011o}\0").as_bytes());
+        block[156] = kind;
+        block[257..263].copy_from_slice(b"ustar\0");
+        block[263..265].copy_from_slice(b"00");
+        block[148..156].copy_from_slice(b"        ");
+        let sum: u32 = block.iter().map(|byte| *byte as u32).sum();
+        block[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+        block
+    };
+    let mut tar: Vec<u8> = Vec::new();
+    let push = |tar: &mut Vec<u8>, data: &[u8]| {
+        tar.extend_from_slice(data);
+        tar.resize(tar.len().div_ceil(512) * 512, 0);
+    };
+    for (name, data) in entries {
+        if name.len() >= 100 {
+            let mut long = name.as_bytes().to_vec();
+            long.push(0);
+            tar.extend_from_slice(&header(b"././@LongLink", long.len(), b'L'));
+            push(&mut tar, &long);
+        }
+        tar.extend_from_slice(&header(name.as_bytes(), data.len(), b'0'));
+        push(&mut tar, data);
+    }
+    tar.resize(tar.len() + 1024, 0);
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder
+        .write_all(&tar)
+        .expect("writing to a vector does not fail");
+    encoder.finish().expect("writing to a vector does not fail")
 }
 
 /// `PathSeqBuildKmers.doWork`, up to the file it writes.
@@ -16862,4 +17467,113 @@ pub fn filter_funcotations(parser: &Parser) -> Outcome {
     finish(&written)?;
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
+}
+
+/// `AnalyzeCovariates`: up to three BQSR reports folded into the csv the plotting script reads.
+///
+/// The csv is [`gatk_tools::analyze_covariates`]; the runner is `checkArgumentsValues` in its order
+/// (each report checked as a file, then that there is one, then each output's location, then that
+/// an output was asked for) and the write. The plots are R's and the reference only draws them when
+/// `--plots-report-file` is given, which this port does not do: asking for them is the port's
+/// limitation. The tool returns `Optional.empty()`, which `handleResult` prints.
+pub fn analyze_covariates(parser: &Parser) -> Outcome {
+    use gatk_tools::analyze_covariates as ac;
+
+    let bqsr = argument(parser, "bqsr-recal-file");
+    let before = argument(parser, "before-report-file");
+    let after = argument(parser, "after-report-file");
+    let plots = argument(parser, "plots-report-file");
+    let csv = argument(parser, "intermediate-csv-file");
+    let bad_value = |name: &str, message: String| {
+        Thrown::command_line(format!("Argument {name} has a bad value: {message}"))
+    };
+    for (name, value) in [("BQSR", &bqsr), ("before", &before), ("after", &after)] {
+        let Some(path) = value else { continue };
+        let meta = std::fs::metadata(path);
+        match meta {
+            Err(_) => {
+                return Err(bad_value(
+                    name,
+                    format!("input report '{path}' does not exist or is unreachable"),
+                ))
+            }
+            Ok(meta) if !meta.is_file() => {
+                return Err(bad_value(
+                    name,
+                    format!("input report '{path}' is not a regular file"),
+                ))
+            }
+            Ok(_) => {}
+        }
+    }
+    if bqsr.is_none() && before.is_none() && after.is_none() {
+        return Err(Thrown::user(ac::AnalyzeCovariatesError::NoReport.message()));
+    }
+    for (name, value) in [("plots", &plots), ("csv", &csv)] {
+        let Some(path) = value else { continue };
+        let target = std::path::Path::new(path);
+        if target.exists() && !target.is_file() {
+            return Err(bad_value(
+                name,
+                format!("the output file location '{path}' exists as not a file"),
+            ));
+        }
+        let Some(parent) = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        else {
+            continue;
+        };
+        if !parent.exists() {
+            return Err(bad_value(
+                name,
+                format!(
+                    "the output file parent directory '{}' does not exists or is unreachable",
+                    parent.display()
+                ),
+            ));
+        }
+        if !parent.is_dir() {
+            return Err(bad_value(
+                name,
+                format!(
+                    "the output file parent directory '{}' is not a directory",
+                    parent.display()
+                ),
+            ));
+        }
+    }
+    if plots.is_none() && csv.is_none() {
+        return Err(Thrown::user(ac::AnalyzeCovariatesError::NoOutput.message()));
+    }
+
+    let mut parsed_reports: Vec<(&str, gatk_engine::recalibration_report::RecalibrationReport)> =
+        Vec::new();
+    for (role, value) in [("BQSR", &bqsr), ("Before", &before), ("After", &after)] {
+        let Some(path) = value else { continue };
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+        let report = gatk_engine::recalibration_report::RecalibrationReport::parse(&text)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        parsed_reports.push((role, report));
+    }
+    let roles: Vec<ac::RoleReport> = parsed_reports
+        .iter()
+        .map(|(role, report)| ac::RoleReport { role, report })
+        .collect();
+    let text = ac::analyze_covariates(&roles, csv.is_some()).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+    if let Some(path) = &csv {
+        write_file(path, text.as_bytes())?;
+    }
+    if plots.is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--plots-report-file draws the plots through R, which this port does not carry. This message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(Some("Optional.empty".to_string()))
 }

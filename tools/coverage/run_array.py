@@ -186,6 +186,9 @@ def read_output(out_dir):
     for path in produced:
         raw = path.read_bytes()
         name = path.relative_to(out_dir).as_posix()
+        if name.endswith(".tar.gz"):
+            parts.append(f"{name}: {tar_gz_members(raw)}")
+            continue
         try:
             parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
         except UnicodeDecodeError:
@@ -195,6 +198,63 @@ def read_output(out_dir):
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
+
+
+def tar_gz_members(raw):
+    """A tar.gz output as its members, sorted by name, each as text where it is text.
+
+    `IOUtils.writeTarGz` stamps every entry with the time it was written and adds the files in the
+    order `File.listFiles()` returns them, which is the file system's: two runs of the reference
+    already differ in the archive's bytes. What the tool decides is which members there are and
+    what each holds, so that is what is compared.
+    """
+    import gzip
+    import io
+    import tarfile
+
+    try:
+        archive = tarfile.open(fileobj=io.BytesIO(gzip.decompress(raw)), mode="r:")
+    except (OSError, tarfile.TarError) as error:
+        digest = hashlib.sha256(raw).hexdigest()
+        return f"BINARY sha256={digest} bytes={len(raw)} (not a tar.gz: {error})"
+    rendered = []
+    for member in sorted(archive.getmembers(), key=lambda m: m.name):
+        if not member.isfile():
+            rendered.append(f"[{member.name}: {member.type!r}]")
+            continue
+        content = archive.extractfile(member).read()
+        try:
+            text = without_start_time(content.decode("utf-8"))
+        except UnicodeDecodeError:
+            text = f"BINARY sha256={hashlib.sha256(content).hexdigest()} bytes={len(content)}"
+        if member.name.endswith(".alt_histogram"):
+            text = histogram_columns_sorted(text)
+        rendered.append(f"[{member.name}: {text}]")
+    return "TAR.GZ " + " ".join(rendered)
+
+
+def histogram_columns_sorted(text):
+    """A metrics file whose histogram columns are put in label order, the bin column first.
+
+    `CollectF1R2Counts`' depth-one histograms come out of a map keyed by a pair holding an enum,
+    whose hash is an identity hash, so the reference writes the same columns in a different order
+    from one JVM to the next. The columns are what the tool decides; their order is not.
+    """
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        if not line.startswith("## HISTOGRAM"):
+            continue
+        body = index + 1
+        end = body
+        while end < len(lines) and lines[end] != "":
+            end += 1
+        rows = [row.split("\t") for row in lines[body:end]]
+        if not rows:
+            break
+        order = [0] + sorted(range(1, len(rows[0])), key=lambda column: rows[0][column])
+        lines[body:end] = ["\t".join(row[column] for column in order) for row in rows]
+        break
+    return "\n".join(lines)
 
 
 def without_start_time(text):

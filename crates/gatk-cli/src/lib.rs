@@ -330,12 +330,16 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
         "MergeMutect2CallsWithMC3" => Some(run_merge_mutect2_calls_with_mc3),
         "FilterFuncotations" => Some(run_filter_funcotations),
+        "AnalyzeCovariates" => Some(run_analyze_covariates),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
             Some(run_convert_headerless_hadoop_bam_shard_to_bam)
         }
         "DownsampleByDuplicateSet" => Some(run_downsample_by_duplicate_set),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
+        "CollectF1R2Counts" => Some(run_collect_f1r2_counts),
+        "CreateSomaticPanelOfNormals" => Some(run_create_somatic_panel_of_normals),
+        "SplitCRAM" => Some(run_split_cram),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -598,6 +602,10 @@ fn run_filter_funcotations(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_funcotations(&parsed("FilterFuncotations", args)?)
 }
 
+fn run_analyze_covariates(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::analyze_covariates(&parsed("AnalyzeCovariates", args)?)
+}
+
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::calculate_average_combined_annotations(&parsed(
         "CalculateAverageCombinedAnnotations",
@@ -670,6 +678,18 @@ fn run_path_seq_build_reference_taxonomy(args: &[String]) -> Result<Option<Strin
 
 fn run_get_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::get_normal_artifact_data(&parsed("GetNormalArtifactData", args)?)
+}
+
+fn run_collect_f1r2_counts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::collect_f1r2_counts(&parsed("CollectF1R2Counts", args)?)
+}
+
+fn run_create_somatic_panel_of_normals(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::create_somatic_panel_of_normals(&parsed("CreateSomaticPanelOfNormals", args)?)
+}
+
+fn run_split_cram(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_cram(&parsed("SplitCRAM", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {

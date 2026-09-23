@@ -527,6 +527,199 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * The reads `CollectF1R2Counts` sorts into its three places, one sample, forty-base pairs over
+     * `reference.fasta`'s `ACGT` repeat so every read clears Mutect2's length filter.
+     *
+     * At 1001 one block holds a reference-only stretch, an alt of six reads (the alt table), an
+     * alt of one (a depth-one histogram), an alt of four whose base qualities sit under the default
+     * `--f1r2-min-bq`, and a tie between two alt bases. Every alt of the table has at least four
+     * reads, alternating first and second of pair, so a filter that keeps one half of the pairs
+     * still leaves an alt-table site. At 2001 every read has mapping quality 40,
+     * under the default median of 50. At 3001 two reads carry a deletion, which makes each site
+     * they cover an indel site. At 1 and at 99961 the k-mer runs off the contig at its end base.
+     */
+    static void f1r2Reads(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgf");
+        group.setSample("f1r2");
+        group.setLibrary("libf");
+        group.setPlatformUnit("unit1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final List<SAMRecord> records = new ArrayList<>();
+        // {name, start, cigar, alt offset, alt base, quality at that offset, mapping quality}
+        final Object[][] reads = {
+                {"a0", 1001, "40M", -1, 'N', 'I', 60}, {"a1", 1001, "40M", -1, 'N', 'I', 60},
+                {"a2", 1001, "40M", -1, 'N', 'I', 60}, {"a3", 1001, "40M", -1, 'N', 'I', 60},
+                {"a4", 1001, "40M", -1, 'N', 'I', 60}, {"a5", 1001, "40M", -1, 'N', 'I', 60},
+                {"a6", 1001, "40M", 10, 'T', 'I', 60}, {"a7", 1001, "40M", 10, 'T', 'I', 60},
+                {"a8", 1001, "40M", 10, 'T', 'I', 60}, {"a9", 1001, "40M", 10, 'T', 'I', 60},
+                {"a10", 1001, "40M", 10, 'T', 'I', 60}, {"a11", 1001, "40M", 10, 'T', 'I', 60},
+                {"a12", 1001, "40M", 20, 'C', 'I', 60}, {"a13", 1001, "40M", 30, 'A', '+', 60},
+                {"a14", 1001, "40M", 30, 'A', '+', 60}, {"a15", 1001, "40M", 30, 'A', '+', 60},
+                {"a16", 1001, "40M", 30, 'A', '+', 60}, {"a17", 1001, "40M", 34, 'A', 'I', 60},
+                {"a18", 1001, "40M", 34, 'C', 'I', 60}, {"b0", 2001, "40M", -1, 'N', 'I', 40},
+                {"b1", 2001, "40M", -1, 'N', 'I', 40}, {"b2", 2001, "40M", -1, 'N', 'I', 40},
+                {"b3", 2001, "40M", -1, 'N', 'I', 40}, {"b4", 2001, "40M", 5, 'T', 'I', 40},
+                {"b5", 2001, "40M", 5, 'T', 'I', 40}, {"b6", 2001, "40M", 5, 'T', 'I', 40},
+                {"b7", 2001, "40M", 5, 'T', 'I', 40}, {"c0", 3001, "40M", -1, 'N', 'I', 60},
+                {"c1", 3001, "40M", -1, 'N', 'I', 60}, {"c2", 3001, "40M", 3, 'G', 'I', 60},
+                {"c3", 3001, "40M", 3, 'G', 'I', 60}, {"c4", 3001, "40M", 3, 'G', 'I', 60},
+                {"c5", 3001, "40M", 3, 'G', 'I', 60}, {"c6", 3001, "20M1D20M", -1, 'N', 'I', 60},
+                {"c7", 3001, "20M1D20M", -1, 'N', 'I', 60}, {"d0", 1, "40M", 0, 'G', 'I', 60},
+                {"d1", 1, "40M", 1, 'T', 'I', 60}, {"d2", 1, "40M", 1, 'T', 'I', 60},
+                {"d3", 1, "40M", 1, 'T', 'I', 60}, {"d4", 1, "40M", 1, 'T', 'I', 60},
+                {"d5", 1, "40M", -1, 'N', 'I', 60}, {"e0", 99961, "40M", -1, 'N', 'I', 60},
+                {"e1", 99961, "40M", 39, 'A', 'I', 60}, {"e2", 99961, "40M", 38, 'A', 'I', 60},
+                {"e3", 99961, "40M", 38, 'A', 'I', 60}, {"e4", 99961, "40M", 38, 'A', 'I', 60},
+                {"e5", 99961, "40M", 38, 'A', 'I', 60}};
+        for (int index = 0; index < reads.length; index++) {
+            final Object[] read = reads[index];
+            final int start = (Integer) read[1];
+            final String cigar = (String) read[2];
+            final int altOffset = (Integer) read[3];
+            final StringBuilder bases = new StringBuilder();
+            // The reference under the read, skipping the one deleted base of `20M1D20M`.
+            final int span = cigar.equals("40M") ? 40 : 41;
+            for (int position = start; position < start + span; position++) {
+                if (span == 41 && position == start + 20) {
+                    continue;
+                }
+                bases.append("ACGT".charAt((position - 1) % 4));
+            }
+            final StringBuilder qualities = new StringBuilder("I".repeat(40));
+            if (altOffset >= 0) {
+                bases.setCharAt(altOffset, (Character) read[4]);
+                qualities.setCharAt(altOffset, (Character) read[5]);
+            }
+            final boolean first = index % 2 == 0;
+            final boolean reverse = (index / 2) % 2 == 1;
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("F1R2:" + read[0]);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(cigar);
+            record.setMappingQuality((Integer) read[6]);
+            record.setReadString(bases.toString());
+            record.setBaseQualityString(qualities.toString());
+            record.setAttribute("RG", "rgf");
+            record.setReadPairedFlag(true);
+            record.setProperPairFlag(true);
+            record.setFirstOfPairFlag(first);
+            record.setSecondOfPairFlag(!first);
+            record.setReadNegativeStrandFlag(reverse);
+            record.setMateNegativeStrandFlag(!reverse);
+            record.setMateReferenceName("chr1");
+            record.setMateAlignmentStart(start);
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * The normals `CreateSomaticPanelOfNormals` reads and the germline resource it weighs them
+     * against, both indexed so `-L` reaches a traversal.
+     *
+     * Three samples with AD at every site shape the panel's rules: a site with two carriers, one
+     * with a single carrier (dropped at the default `--min-sample-count`), a multiallelic site
+     * that counts every genotype including one with no AD, a spanning deletion and a site with no
+     * alternate (both skipped), a site the resource calls common enough to be germline, and a site
+     * whose resource AF is missing. The second VCF has no contig line, which the tool reads as a
+     * null dictionary once the writer exists.
+     */
+    static void ponFixtures(final Path dir) throws java.io.IOException {
+        final String format = "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tn1\tn2\tn3\n";
+        final String body = "chr1\t100\t.\tA\tC\t.\t.\t.\tGT:AD\t0/1:10,3\t0/1:12,2\t0/0:20,0\n"
+                + "chr1\t200\t.\tC\tT\t.\t.\t.\tGT:AD\t0/1:10,1\t0/0:9,0\t0/0:11,0\n"
+                + "chr1\t300\t.\tG\tA,T\t.\t.\t.\tGT:AD\t0/1:5,1,0\t0/0:5,0,0\t./.\n"
+                + "chr1\t400\t.\tT\t*\t.\t.\t.\tGT:AD\t0/1:5,2\t0/1:5,2\t0/1:5,2\n"
+                + "chr1\t500\t.\tA\t.\t.\t.\t.\tGT:AD\t0/0:5\t0/0:5\t0/0:5\n"
+                + "chr1\t600\t.\tG\tA\t.\t.\t.\tGT:AD\t0/1:5,5\t0/1:4,6\t0/1:3,7\n"
+                + "chr1\t700\t.\tC\tT\t.\t.\t.\tGT:AD\t0/1:20,2\t0/1:20,3\t0/1:18,2\n"
+                + "chr1\t800\t.\tT\tG\t.\t.\t.\tGT:AD\t0/1:30,4\t0/1:25,5\t0/0:40,0\n";
+        final Path normals = dir.resolve("pon_normals.vcf");
+        Files.writeString(normals, "##fileformat=VCFv4.2\n##contig=<ID=chr1,length=100000,assembly=test>\n"
+                + format + columns + body, StandardCharsets.UTF_8);
+        final Path bare = dir.resolve("pon_nocontig.vcf");
+        Files.writeString(bare, "##fileformat=VCFv4.2\n" + format + columns + body,
+                StandardCharsets.UTF_8);
+        final Path germline = dir.resolve("pon_germline.vcf");
+        Files.writeString(germline, "##fileformat=VCFv4.2\n##contig=<ID=chr1,length=100000>\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t100\t.\tA\tC\t.\t.\tAF=.\n"
+                + "chr1\t600\t.\tG\tA\t.\t.\tAF=0.3\n"
+                + "chr1\t700\t.\tC\tT\t.\t.\tAF=0.01\n"
+                + "chr1\t800\t.\tT\tG,C\t.\t.\tAF=0.2,0.25\n", StandardCharsets.UTF_8);
+        for (final Path path : new Path[] {normals, bare, germline}) {
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(Paths.get(path + ".idx"));
+        }
+    }
+
+    /**
+     * The CRAM `SplitCRAM` cuts: ten twenty-base reads over `reference.fasta`, three to a slice
+     * and one slice to a container, so the file holds four containers of 3, 3, 3 and 1 records
+     * and a `--shard-records` of 3, 7 or ten million cuts it three different ways.
+     */
+    static void splitCram(final Path dir) throws Exception {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgc");
+        group.setSample("cram");
+        header.addReadGroup(group);
+        final htsjdk.samtools.cram.structure.CRAMEncodingStrategy strategy =
+                new htsjdk.samtools.cram.structure.CRAMEncodingStrategy()
+                        .setMinimumSingleReferenceSliceSize(1)
+                        .setReadsPerSlice(3)
+                        .setSlicesPerContainer(1);
+        final htsjdk.samtools.cram.ref.ReferenceSource source =
+                new htsjdk.samtools.cram.ref.ReferenceSource(dir.resolve("reference.fasta"));
+        try (final OutputStream os = Files.newOutputStream(dir.resolve("split.cram"))) {
+            final htsjdk.samtools.CRAMFileWriter writer = new htsjdk.samtools.CRAMFileWriter(
+                    strategy, os, null, true, source, header, "split.cram");
+            for (int index = 0; index < 10; index++) {
+                final int start = 100 + index * 50;
+                final StringBuilder bases = new StringBuilder();
+                for (int position = start; position < start + 20; position++) {
+                    bases.append("ACGT".charAt((position - 1) % 4));
+                }
+                // One mismatch in every other read, so the containers are not all alike.
+                if (index % 2 == 1) {
+                    bases.setCharAt(5, bases.charAt(5) == 'A' ? 'C' : 'A');
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("CRAM:" + index);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(start);
+                record.setCigarString("20M");
+                record.setMappingQuality(60);
+                record.setReadString(bases.toString());
+                record.setBaseQualityString("I".repeat(20));
+                record.setAttribute("RG", "rgc");
+                writer.addAlignment(record);
+            }
+            writer.close();
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1169,6 +1362,8 @@ public class MakeFixtures {
         indels(dir.resolve("indels.bam"));
         twoGroups(dir.resolve("groups.bam"));
         tumorAndNormal(dir.resolve("tumor_normal.bam"));
+        f1r2Reads(dir.resolve("f1r2.bam"));
+        ponFixtures(dir);
         deep(dir.resolve("deep.bam"));
         spliced(dir.resolve("spliced.bam"));
         methylation(dir.resolve("methyl.bam"));
@@ -1375,6 +1570,7 @@ public class MakeFixtures {
         // whose `@SQ` line carries an M5, which is the only way a command line reaches
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
+        splitCram(dir);
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is

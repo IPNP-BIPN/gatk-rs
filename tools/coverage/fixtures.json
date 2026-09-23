@@ -4243,6 +4243,168 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "AnalyzeCovariates": {
+      "$why": [
+        "The three report arguments take recal.table and recal2.table, the REFERENCE's own BaseRecalibrator",
+        "reports over the corpus's two BAMs, or are absent: all three absent is the first refusal, and two reports",
+        "whose arguments differ would be the consistency one. --intermediate-csv-file is a path or absent,",
+        "absent being the no-output refusal. --plots-report-file is held out: the plots are R's, which the",
+        "oracle image does not carry either."
+      ],
+      "--bqsr-recal-file": [
+        "/work/fixtures/recal.table",
+        "null"
+      ],
+      "--before-report-file": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table",
+        "null"
+      ],
+      "--after-report-file": [
+        "/work/fixtures/recal2.table",
+        "null"
+      ],
+      "--intermediate-csv-file": [
+        "/work/out/covariates.csv",
+        "null"
+      ],
+      "--plots-report-file": []
+    },
+    "CollectF1R2Counts": {
+      "$why": [
+        "f1r2.bam is one sample over reference.fasta's ACGT repeat, forty-base pairs so Mutect2's",
+        "length filter keeps them, built to reach every place a site can go: the alt table, a",
+        "depth-one histogram, a reference histogram, a tie between alt bases, a site under the median",
+        "mapping quality, an indel site and a k-mer cut short at each end of the contig.",
+        "tumor_normal.bam is the second input because it carries two samples, which is the path that",
+        "splits the pileup and stops at the first sample in hash order that returns.",
+        "--read-index is held out so each BAM finds its own index beside it.",
+        "--f1r2-min-bq 5 lets the two low-quality alt bases at 1031 through; --f1r2-median-mq 30 lets",
+        "the block at 2001 in; --f1r2-max-depth 3 caps the depth bins where the default does not.",
+        "--intervals keeps the window over the reads, and its second value leaves the far end out.",
+        "--max-depth-per-sample is held at zero: this port does not reproduce the downsampler's stream."
+      ],
+      "--input": [
+        "/work/fixtures/f1r2.bam",
+        "/work/fixtures/tumor_normal.bam"
+      ],
+      "--read-index": [],
+      "--intervals": [
+        "chr1:1-100000",
+        "chr1:900-3100"
+      ],
+      "--output": [
+        "/work/out/f1r2.tar.gz"
+      ],
+      "--f1r2-min-bq": [
+        "20",
+        "5"
+      ],
+      "--f1r2-median-mq": [
+        "50",
+        "30"
+      ],
+      "--f1r2-max-depth": [
+        "200",
+        "3"
+      ],
+      "--max-depth-per-sample": [
+        "0"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--reference": [
+        "/work/fixtures/reference.fasta"
+      ]
+    },
+    "CreateSomaticPanelOfNormals": {
+      "$why": [
+        "pon_normals.vcf is three normals with AD at every site, built so each rule of the panel is",
+        "reached: two carriers, one carrier, a multiallelic site that counts every genotype, a",
+        "spanning deletion and a site with no alternate (both skipped), and sites the germline",
+        "resource weighs. pon_nocontig.vcf is the same body with no contig line, which the tool",
+        "reads as a null dictionary after its writer exists.",
+        "--germline-resource is pon_germline.vcf or absent, whose AF values move sites 600 to 800",
+        "across --max-germline-probability's two values.",
+        "--min-sample-count 1 keeps the single-carrier site and 3 keeps only the sites every normal",
+        "carries."
+      ],
+      "--variant": [
+        "/work/fixtures/pon_normals.vcf",
+        "/work/fixtures/pon_nocontig.vcf"
+      ],
+      "--germline-resource": [
+        "/work/fixtures/pon_germline.vcf",
+        "null"
+      ],
+      "--output": [
+        "/work/out/pon.vcf",
+        "/work/out/pon.vcf.gz"
+      ],
+      "--min-sample-count": [
+        "2",
+        "1",
+        "3"
+      ],
+      "--max-germline-probability": [
+        "0.5",
+        "0.99"
+      ],
+      "--intervals": [
+        "chr1:1-1000",
+        "chr1:250-650"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
+    },
+    "SplitCRAM": {
+      "$why": [
+        "split.cram holds four containers of 3, 3, 3 and 1 records, written by htsjdk with three reads",
+        "to a slice and one slice to a container; reads.bam is not a CRAM and is refused at the magic.",
+        "--shard-records 3 cuts after every container, 7 after the third, and ten million not at all.",
+        "--shard-max-output-count 1 stops after the first shard and 2 stops nothing, the counter being",
+        "reset for every shard. --output without a %d is refused before the input is opened."
+      ],
+      "--input": [
+        "/work/fixtures/split.cram",
+        "/work/fixtures/reads.bam"
+      ],
+      "--output": [
+        "/work/out/shard_%04d.cram",
+        "/work/out/part%d.cram",
+        "/work/out/shard.cram"
+      ],
+      "--shard-records": [
+        "3",
+        "7",
+        "10000000"
+      ],
+      "--shard-max-output-count": [
+        "0",
+        "1",
+        "2"
+      ]
     }
   },
   "constraints": [
