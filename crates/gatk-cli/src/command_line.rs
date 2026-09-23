@@ -77,11 +77,15 @@ pub fn expanded(class_name: &str, parser: &Parser) -> String {
 
     for definition in parser.definitions() {
         if definition.has_been_set() {
-            push(
-                &mut line,
-                definition.long_name(),
-                display_values(&definition.value),
-            );
+            let values = display_values(&definition.value);
+            if values.is_empty() {
+                // A collection SET to `null` is emptied and still counts as set: its display string
+                // is empty and the join still puts a space for it, so the line carries two spaces
+                // where the argument would be. Measured on `ComposeSTRTableFile --intervals null`.
+                line.push(' ');
+            } else {
+                push(&mut line, definition.long_name(), values);
+            }
         }
     }
     for definition in parser.definitions() {

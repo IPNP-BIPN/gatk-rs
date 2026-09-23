@@ -309,6 +309,21 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // filters with the wellformed one LAST, two of them parameterised at thresholds that are
         // the ENGINE's rather than the library's (mapping quality twenty, read length thirty).
         // The names live next to the tool that applies them, so the list cannot drift from it.
+        // `GeneExpressionEvaluation.getDefaultReadFilters`, which does not call super: nine library
+        // filters and the tool's own `MappingQualityReadFilter` instance LAST, the one
+        // `onTraversalStart` drops to zero under EQUAL multi-mapping.
+        "GeneExpressionEvaluation" => Some(&[
+            "ValidAlignmentStartReadFilter",
+            "ValidAlignmentEndReadFilter",
+            "AlignmentAgreesWithHeaderReadFilter",
+            "MatchingBasesAndQualsReadFilter",
+            "ReadLengthEqualsCigarLengthReadFilter",
+            "SeqIsStoredReadFilter",
+            "MappedReadFilter",
+            "NonZeroReferenceLengthAlignmentReadFilter",
+            "NotDuplicateReadFilter",
+            "MappingQualityReadFilter",
+        ]),
         "GetNormalArtifactData" | "CollectF1R2Counts" => {
             Some(&crate::get_normal_artifact_data::STANDARD_MUTECT2_READ_FILTERS)
         }

@@ -340,3 +340,256 @@ pub fn validate_context(context: &str, alt_design_matrix_size: usize) -> Result<
     }
     Ok(())
 }
+
+// ================================================================================================
+// The engine's EM, and the tool around it.
+// ================================================================================================
+
+impl State {
+    /// `getRevCompState`: an artefact becomes the other orientation of the complementary base, and
+    /// the four real states are their own.
+    pub fn reverse_complement(self) -> State {
+        match self {
+            State::F1R2A => State::F2R1T,
+            State::F1R2C => State::F2R1G,
+            State::F1R2G => State::F2R1C,
+            State::F1R2T => State::F2R1A,
+            State::F2R1A => State::F1R2T,
+            State::F2R1C => State::F1R2G,
+            State::F2R1G => State::F1R2C,
+            State::F2R1T => State::F1R2A,
+            other => other,
+        }
+    }
+}
+
+impl Base {
+    pub fn complement(self) -> Base {
+        match self {
+            Base::A => Base::T,
+            Base::C => Base::G,
+            Base::G => Base::C,
+            Base::T => Base::A,
+        }
+    }
+
+    pub fn from_byte(byte: u8) -> Option<Base> {
+        match byte.to_ascii_uppercase() {
+            b'A' => Some(Base::A),
+            b'C' => Some(Base::C),
+            b'G' => Some(Base::G),
+            b'T' => Some(Base::T),
+            _ => None,
+        }
+    }
+}
+
+/// `SequenceUtil.reverseComplement` over the four bases.
+pub fn reverse_complement(context: &str) -> String {
+    context
+        .bytes()
+        .rev()
+        .map(|base| match base {
+            b'A' => 'T',
+            b'C' => 'G',
+            b'G' => 'C',
+            b'T' => 'A',
+            other => other as char,
+        })
+        .collect()
+}
+
+/// `F1R2FilterConstants.CANONICAL_KMERS`: each k-mer or its reverse complement, whichever sorts
+/// first, in the order `ALL_KMERS` meets them.
+pub fn canonical_kmers() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for kmer in crate::collect_f1r2_counts::all_kmers() {
+        let revcomp = reverse_complement(&kmer);
+        let canonical = if kmer < revcomp { kmer } else { revcomp };
+        if !out.contains(&canonical) {
+            out.push(canonical);
+        }
+    }
+    out
+}
+
+/// One row of an alt table, as `AltSiteRecord` reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AltSite {
+    pub context: String,
+    pub ref_count: i32,
+    pub alt_count: i32,
+    pub ref_f1r2: i32,
+    pub alt_f1r2: i32,
+    pub alt: Base,
+}
+
+impl AltSite {
+    pub fn depth(&self) -> i32 {
+        self.ref_count + self.alt_count
+    }
+
+    /// `getReverseComplementOfRecord`: the F1R2 counts become the F2R1 ones.
+    pub fn reverse_complement(&self) -> AltSite {
+        AltSite {
+            context: reverse_complement(&self.context),
+            ref_count: self.ref_count,
+            alt_count: self.alt_count,
+            ref_f1r2: self.ref_count - self.ref_f1r2,
+            alt_f1r2: self.alt_count - self.alt_f1r2,
+            alt: self.alt.complement(),
+        }
+    }
+}
+
+/// One depth-one histogram of a context: its alternate base, its orientation, and its counts from
+/// depth one up, however many bins it had.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AltHistogram {
+    pub alt: Base,
+    pub f1r2: bool,
+    pub counts: std::collections::BTreeMap<i32, f64>,
+}
+
+/// What `learnPriorForArtifactStates` returns: `ArtifactPrior`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prior {
+    pub context: String,
+    pub pi: [f64; NUM_STATES],
+    pub examples: i32,
+    pub alt_examples: i32,
+}
+
+impl Prior {
+    /// `getReverseComplement`.
+    pub fn reverse_complement(&self) -> Prior {
+        let mut pi = [0.0; NUM_STATES];
+        for state in State::all() {
+            pi[state.index()] = self.pi[state.reverse_complement().index()];
+        }
+        Prior {
+            context: reverse_complement(&self.context),
+            pi,
+            examples: self.examples,
+            alt_examples: self.alt_examples,
+        }
+    }
+}
+
+fn add_into(target: &mut [f64; NUM_STATES], values: &[f64; NUM_STATES]) {
+    for (t, v) in target.iter_mut().zip(values) {
+        *t += v;
+    }
+}
+
+fn scaled(scale: f64, values: &[f64; NUM_STATES]) -> [f64; NUM_STATES] {
+    let mut out = [0.0; NUM_STATES];
+    for (o, v) in out.iter_mut().zip(values) {
+        *o = scale * v;
+    }
+    out
+}
+
+/// `MathUtils.sumArrayFunction(min, max, f)`: the first value, then the others added in order.
+fn sum_array_function(count: usize, f: impl Fn(usize) -> [f64; NUM_STATES]) -> [f64; NUM_STATES] {
+    let mut result = f(0);
+    for n in 1..count {
+        add_into(&mut result, &f(n));
+    }
+    result
+}
+
+/// `LearnReadOrientationModelEngine`, constructed and run.
+///
+/// `reference` holds the combined reference histogram's counts by depth, all its bins included, so
+/// its sum is the number of reference examples even past `max_depth`. The E-step computes every
+/// responsibility once per iteration and the M-step sums them in the reference's order: the design
+/// matrix row by row, the depth-one histograms in the order they are handed in, then the reference
+/// histogram depth by depth.
+pub fn learn_prior(
+    context: &str,
+    reference: &std::collections::BTreeMap<i32, f64>,
+    alt_histograms: &[AltHistogram],
+    design: &[AltSite],
+    convergence_threshold: f64,
+    max_iterations: i32,
+    max_depth: i32,
+) -> Prior {
+    let ref_base = Base::from_byte(context.as_bytes()[1]).expect("a canonical k-mer");
+    let alt_examples = design.len() as i32
+        + alt_histograms
+            .iter()
+            .map(|h| h.counts.values().sum::<f64>() as i32)
+            .sum::<i32>();
+    let ref_examples = reference.values().sum::<f64>() as i32;
+    let pseudocounts = flat_prior(ref_base);
+    let mut prior = pseudocounts;
+    let depth_bin = |counts: &std::collections::BTreeMap<i32, f64>, depth: i32| {
+        *counts.get(&depth).unwrap_or(&0.0)
+    };
+    let mut iterations = 0;
+    loop {
+        let old = prior;
+        // E-step.
+        let ref_rows: Vec<[f64; NUM_STATES]> = (1..=max_depth)
+            .map(|depth| compute_responsibilities(ref_base, ref_base, 0, 0, depth, &prior, false))
+            .collect();
+        let alt_rows: Vec<[f64; NUM_STATES]> = design
+            .iter()
+            .map(|site| {
+                compute_responsibilities(
+                    ref_base,
+                    site.alt,
+                    site.alt_count,
+                    site.alt_f1r2,
+                    site.depth(),
+                    &prior,
+                    false,
+                )
+            })
+            .collect();
+        let depth_one = |alt: Base, f1r2: bool, depth: i32| {
+            compute_responsibilities(ref_base, alt, 1, i32::from(f1r2), depth, &prior, false)
+        };
+        // M-step.
+        let from_design = sum_array_function(alt_rows.len(), |n| alt_rows[n]);
+        let mut from_histograms = [0.0; NUM_STATES];
+        for histogram in alt_histograms {
+            let cache: Vec<[f64; NUM_STATES]> = (1..=max_depth)
+                .map(|depth| depth_one(histogram.alt, histogram.f1r2, depth))
+                .collect();
+            let sum = sum_array_function(max_depth as usize, |i| {
+                scaled(depth_bin(&histogram.counts, i as i32 + 1), &cache[i])
+            });
+            add_into(&mut from_histograms, &sum);
+        }
+        let mut effective = from_design;
+        add_into(&mut effective, &from_histograms);
+        let from_reference = sum_array_function(max_depth as usize, |i| {
+            scaled(depth_bin(reference, i as i32 + 1), &ref_rows[i])
+        });
+        add_into(&mut effective, &from_reference);
+        let mut with_pseudo = effective;
+        add_into(&mut with_pseudo, &pseudocounts);
+        let total: f64 = with_pseudo.iter().sum();
+        for (p, v) in prior.iter_mut().zip(&with_pseudo) {
+            *p = v / total;
+        }
+        let distance = old
+            .iter()
+            .zip(&prior)
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum::<f64>()
+            .sqrt();
+        iterations += 1;
+        if !(distance > convergence_threshold && iterations < max_iterations) {
+            break;
+        }
+    }
+    Prior {
+        context: context.to_string(),
+        pi: prior,
+        examples: ref_examples + alt_examples,
+        alt_examples,
+    }
+}
