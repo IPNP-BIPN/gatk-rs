@@ -3173,6 +3173,221 @@
         "/work/out/gathered.tranches",
         "/work/out/gathered2.tranches"
       ]
+    },
+    "NuMTFilterTool": {
+      "$why": [
+        "--variant is mito.vcf, Mutect2-shaped calls with AD, AF and AS_FilterStatus, and",
+        "mito_plain.vcf, the same calls without AS_FilterStatus, which the filter's merge refuses as soon",
+        "as it filters anything: `lists are not the same size`. --autosomal-coverage is the default 0,",
+        "which leaves the cutoff at zero and the output unfiltered, and 30; --max-numt-autosomal-copies",
+        "is 4 and 1, so the Poisson's mean and therefore the cutoff move. --output is a VCF and a",
+        "block-compressed one. --create-output-variant-index is held at false for the reason every",
+        "variant writer holds it: the index records the output's last-modified time.",
+        "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and -L is held out.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--variant": [
+        "/work/fixtures/mito.vcf",
+        "/work/fixtures/mito_plain.vcf"
+      ],
+      "--autosomal-coverage": [
+        "0.0",
+        "30.0"
+      ],
+      "--max-numt-autosomal-copies": [
+        "4.0",
+        "1.0"
+      ],
+      "--output": [
+        "/work/out/numt.vcf",
+        "/work/out/numt.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "MTLowHeteroplasmyFilterTool": {
+      "$why": [
+        "--variant is mito.vcf, whose five unfiltered sites below 0.1 are past the default allowance",
+        "of three, and mito_plain.vcf, the same calls without AS_FilterStatus, whose merge the filter",
+        "refuses once the file fails. --max-allowed-low-hets is 3 and 10, which the five sites do not",
+        "reach, so the file comes out untouched. --low-het-threshold is 0.1 and 0.6 and changes nothing:",
+        "the field is a private final with a constant initialiser, so javac folded every read of it.",
+        "--create-output-variant-index is held at false and --variant-output-filtering at ANYWHERE for",
+        "the reasons NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/mito.vcf",
+        "/work/fixtures/mito_plain.vcf"
+      ],
+      "--max-allowed-low-hets": [
+        "3",
+        "10"
+      ],
+      "--low-het-threshold": [
+        "0.1",
+        "0.6"
+      ],
+      "--output": [
+        "/work/out/lowhet.vcf",
+        "/work/out/lowhet.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "ExampleMultiFeatureWalker": {
+      "$why": [
+        "--feature is depth.rd.txt alone and evidence.list, which Barclay expands into depth2 and depth3:",
+        "two files sharing three bins, so the heap hands equal intervals over in its own order, and one",
+        "a file names twice. --sequence-dictionary is sv.dict or null and --reference reference.fasta or",
+        "null: both, one, or neither, the last refused as having no dictionary, and the reference alone",
+        "misreporting chr2 as an unsorted input after printing everything before it.",
+        "The engine's read arguments are held out for the reasons CondenseDepthEvidence gives."
+      ],
+      "--feature": [
+        "/work/fixtures/depth.rd.txt",
+        "/work/fixtures/evidence.list",
+        "/work/fixtures/evidence_twice.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict",
+        "null"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "null"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "CalculateAverageCombinedAnnotations": {
+      "$why": [
+        "--variant is summed.vcf, sites with RAW_GT_COUNT and two summed annotations (one site's",
+        "divisor zero, one missing a sum), and summed_missing.vcf, whose third site lacks RAW_GT_COUNT and",
+        "is refused where the walk reaches it, leaving the header and two records. --summed-annotation-to-",
+        "divide is sums_two.list, naming MQ_SUM and QD_SUM, and sums.list, naming them the other way",
+        "round with one annotation no site carries, which still gains its header line. The index and the output filtering mode are held for the reasons",
+        "NuMTFilterTool gives, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/summed.vcf",
+        "/work/fixtures/summed_missing.vcf"
+      ],
+      "--summed-annotation-to-divide": [
+        "/work/fixtures/sums_two.list",
+        "/work/fixtures/sums.list"
+      ],
+      "--output": [
+        "/work/out/averaged.vcf",
+        "/work/out/averaged.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "FilterVariantTranches": {
+      "$why": [
+        "--variant is cnn.vcf: SNPs and indels scored in CNN_2D, one unscored, one already filtered.",
+        "--resource is snp_truth.vcf and truth.list, which adds indel_truth.vcf, whose deletion is spelled",
+        "with a longer reference so the match extends the shorter one. Without the indel resource the two",
+        "scored indels have nothing to match and the tool refuses. --snp-tranche is the default 99.95 and a",
+        ".list of 99.0, 90.0 and 99.0 again, deduplicated and sorted; --indel-tranche is 99.4 and 50.0.",
+        "--info-key is CNN_2D and CNN_1D, which the header does not declare. --invalidate-previous-filters",
+        "drops LowQual and its header line. The index and the output filtering mode are held for the",
+        "reasons NuMTFilterTool gives, --add-output-vcf-command-line at false since it writes the run's",
+        "own time into the header, and the engine's read arguments are held out likewise."
+      ],
+      "--variant": [
+        "/work/fixtures/cnn.vcf"
+      ],
+      "--resource": [
+        "/work/fixtures/snp_truth.vcf",
+        "/work/fixtures/truth.list"
+      ],
+      "--snp-tranche": [
+        "99.95",
+        "/work/fixtures/snp_tranches.list"
+      ],
+      "--indel-tranche": [
+        "99.4",
+        "50.0"
+      ],
+      "--info-key": [
+        "CNN_2D",
+        "CNN_1D"
+      ],
+      "--output": [
+        "/work/out/tranched.vcf",
+        "/work/out/tranched.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

@@ -274,6 +274,11 @@ jobs:
             --tool MergeAnnotatedRegionsByAnnotation \
             --tool TagGermlineEvents \
             --tool GatherTranches \
+            --tool NuMTFilterTool \
+            --tool MTLowHeteroplasmyFilterTool \
+            --tool ExampleMultiFeatureWalker \
+            --tool CalculateAverageCombinedAnnotations \
+            --tool FilterVariantTranches \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

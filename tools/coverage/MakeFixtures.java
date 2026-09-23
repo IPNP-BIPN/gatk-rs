@@ -1388,6 +1388,11 @@ public class MakeFixtures {
                 // The paths the ROWS see: the corpus is written here and read under /work/fixtures.
                 "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n",
                 StandardCharsets.UTF_8);
+        // The same pair with depth2 named twice, which `FeatureManager` keeps as one input.
+        Files.writeString(dir.resolve("evidence_twice.list"),
+                "/work/fixtures/depth2.rd.txt\n/work/fixtures/depth3.rd.txt\n"
+                        + "/work/fixtures/depth2.rd.txt\n",
+                StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("samples.list"), "zulu\nbravo\nnobody\nzulu\n",
                 StandardCharsets.UTF_8);
         // For `SiteDepthtoBAF`: allele depths for two samples at four chr1 sites and one chr2 site,
@@ -1598,6 +1603,107 @@ public class MakeFixtures {
                         + "/work/fixtures/shard3.tranches\n",
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("levels.list"), "90.0\n99.0\n95.0\n", StandardCharsets.UTF_8);
+        // Mutect2-shaped calls for the mitochondrial filters: `AD` per allele, `AF` per alternate,
+        // and the `AS_FilterStatus` a filtered Mutect2 VCF carries, one entry per alternate. Five
+        // unfiltered sites sit below the low-heteroplasmy fraction of 0.1, which is past the
+        // default allowance of three; one filtered low site does not count; the multi-allelic
+        // record has one deep and one shallow alternate, so an allele filter splits it. The
+        // second file is the same calls without `AS_FilterStatus`, which the filters' merge
+        // refuses the moment anything is filtered.
+        final String mtHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=PASS,Description=\"All filters passed\">\n"
+                + "##FILTER=<ID=weak_evidence,Description=\"Mutation does not meet likelihood threshold\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=AF,Number=A,Type=Float,Description=\"Allele fractions\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AS_FilterStatus,Number=A,Type=String,Description=\"Filter status for each allele\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        final String[][] calls = {
+                {"100", "A", "C", "PASS", "SITE", "0/1", "190,10", "0.05"},
+                {"200", "C", "G", "PASS", "SITE", "0/1", "180,9", "0.048"},
+                {"300", "G", "T", "PASS", "SITE", "0/1", "150,40", "0.21"},
+                {"400", "T", "A", "PASS", "SITE", "0/1", "200,8", "0.038"},
+                {"500", "A", "G", "weak_evidence", "weak_evidence", "0/1", "300,5", "0.016"},
+                {"600", "C", "T", "PASS", "SITE", "0/1", "100,6", "0.057"},
+                {"700", "G", "A", "PASS", "SITE", "0/1", "120,7", "0.055"},
+                {"800", "T", "C,G", "PASS", "SITE|SITE", "0/1/2", "90,45,4", "0.33,0.03"}};
+        final StringBuilder mt = new StringBuilder(mtHeader);
+        final StringBuilder mtPlain = new StringBuilder(mtHeader);
+        for (final String[] call : calls) {
+            final String prefix = "chr1\t" + call[0] + "\t.\t" + call[1] + "\t" + call[2] + "\t.\t" + call[3] + "\t";
+            final String sample = "\tGT:AD:AF\t" + call[5] + ":" + call[6] + ":" + call[7] + "\n";
+            mt.append(prefix).append("AS_FilterStatus=").append(call[4]).append(sample);
+            mtPlain.append(prefix).append(".").append(sample);
+        }
+        Files.writeString(dir.resolve("mito.vcf"), mt.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("mito_plain.vcf"), mtPlain.toString(), StandardCharsets.UTF_8);
+        // For `CalculateAverageCombinedAnnotations`: sites as GenomicsDB leaves them, with
+        // `RAW_GT_COUNT` (hom-ref, het, hom-var) and two summed annotations. One site's divisor is
+        // zero, so it is written through untouched; one carries only one of the sums. The second
+        // file drops `RAW_GT_COUNT` from its third site, which the tool refuses where it reaches it.
+        final String sumsHeader = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=MQ_SUM,Number=1,Type=Float,Description=\"Summed mapping quality\">\n"
+                + "##INFO=<ID=QD_SUM,Number=1,Type=Float,Description=\"Summed quality by depth\">\n"
+                + "##INFO=<ID=RAW_GT_COUNT,Number=3,Type=Integer,Description=\"Genotype counts\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String[] sumsRows = {
+                "chr1\t100\t.\tA\tC\t50\tPASS\tMQ_SUM=180.0;QD_SUM=33.3;RAW_GT_COUNT=4,2,1\n",
+                "chr1\t200\t.\tC\tG\t50\tPASS\tMQ_SUM=60.0;QD_SUM=10.0;RAW_GT_COUNT=7,0,0\n",
+                "chr1\t300\t.\tG\tT\t50\tPASS\tQD_SUM=7.25;RAW_GT_COUNT=1,3,0\n",
+                "chr1\t400\t.\tT\tA\t50\tPASS\tMQ_SUM=240.5;QD_SUM=41.0;RAW_GT_COUNT=0,1,3\n"};
+        Files.writeString(dir.resolve("summed.vcf"), sumsHeader + String.join("", sumsRows),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("summed_missing.vcf"), sumsHeader + sumsRows[0] + sumsRows[1]
+                        + sumsRows[2].replace(";RAW_GT_COUNT=1,3,0", "") + sumsRows[3],
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sums.list"), "QD_SUM\nMQ_SUM\nABSENT_SUM\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sums_two.list"), "MQ_SUM\nQD_SUM\n", StandardCharsets.UTF_8);
+        // For `FilterVariantTranches`: calls scored in `CNN_2D`, one unscored, one already filtered,
+        // two indels, and resources that share their sites. The indel resource spells the deletion
+        // at 600 with one more reference base, so the match goes through `isAlleleInList`'s
+        // extension of the shorter reference; the second resource file carries the indels only.
+        final String cnnHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##INFO=<ID=CNN_2D,Number=1,Type=Float,Description=\"2D CNN score\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("cnn.vcf"), cnnHeader
+                + "chr1\t100\t.\tA\tC\t50\t.\tCNN_2D=2.5\n"
+                + "chr1\t200\t.\tC\tT\t50\t.\tCNN_2D=-1.0\n"
+                + "chr1\t300\t.\tG\tA\t50\tPASS\tCNN_2D=0.5\n"
+                + "chr1\t400\t.\tT\tG\t50\t.\tCNN_2D=1.8\n"
+                + "chr1\t500\t.\tA\tAT\t50\t.\tCNN_2D=-0.5\n"
+                + "chr1\t600\t.\tCTG\tC\t50\t.\tCNN_2D=1.2\n"
+                + "chr1\t700\t.\tG\tC\t50\t.\t.\n"
+                + "chr1\t800\t.\tT\tC\t50\tLowQual\tCNN_2D=-2.0\n",
+                StandardCharsets.UTF_8);
+        final String resourceHeader = "##fileformat=VCFv4.2\n##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        Files.writeString(dir.resolve("snp_truth.vcf"), resourceHeader
+                + "chr1\t100\t.\tA\tC\t.\t.\t.\n"
+                + "chr1\t200\t.\tC\tT\t.\t.\t.\n"
+                + "chr1\t300\t.\tG\tA,T\t.\t.\t.\n"
+                + "chr1\t400\t.\tT\tG\t.\t.\t.\n"
+                + "chr1\t500\t.\tA\tAT\t.\t.\t.\n"
+                + "chr1\t800\t.\tT\tA\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("indel_truth.vcf"), resourceHeader
+                + "chr1\t500\t.\tA\tAT\t.\t.\t.\n"
+                + "chr1\t600\t.\tCTGG\tCG\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        // A resource is queried by interval, which needs an index.
+        for (final String truth : new String[] {"snp_truth.vcf", "indel_truth.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(truth).toString()});
+        }
+        Files.writeString(dir.resolve("truth.list"),
+                "/work/fixtures/snp_truth.vcf\n/work/fixtures/indel_truth.vcf\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
+                StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }
