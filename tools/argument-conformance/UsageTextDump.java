@@ -90,6 +90,23 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.copynumber.utils.MergeAnnotatedRegionsByAnnotation());
         usage("TagGermlineEvents",
                 new org.broadinstitute.hellbender.tools.copynumber.utils.TagGermlineEvents());
+        // Eight more undocumented walkers.
+        usage("AlleleFrequencyQC",
+                new org.broadinstitute.hellbender.tools.walkers.varianteval.AlleleFrequencyQC());
+        usage("CalculateAverageCombinedAnnotations",
+                new org.broadinstitute.hellbender.tools.CalculateAverageCombinedAnnotations());
+        usage("DownsampleByDuplicateSet",
+                new org.broadinstitute.hellbender.tools.walkers.consensus.DownsampleByDuplicateSet());
+        usage("ExampleMultiFeatureWalker",
+                new org.broadinstitute.hellbender.tools.examples.ExampleMultiFeatureWalker());
+        usage("MTLowHeteroplasmyFilterTool",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.MTLowHeteroplasmyFilterTool());
+        usage("MergeMutect2CallsWithMC3",
+                new org.broadinstitute.hellbender.tools.walkers.validation.MergeMutect2CallsWithMC3());
+        usage("NuMTFilterTool",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NuMTFilterTool());
+        usage("ReferenceBlockConcordance",
+                new org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */
