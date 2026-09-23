@@ -4154,6 +4154,48 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "MergeMutect2CallsWithMC3": {
+      "$why": [
+        "--truth is mc3.vcf: a site Mutect2 also calls, one it misses, one it calls filtered, and one where",
+        "it calls another allele; --evaluation is m2.vcf, with those and a multiallelic call MC3 lacks and a",
+        "filtered one it lacks, and the same without its ##tumor_sample line, the reference's",
+        "NullPointerException. --output is plain or BGZF. The engine's read, interval and dictionary",
+        "arguments are held out, and the writer's index, filtering mode and command line held."
+      ],
+      "--truth": [
+        "/work/fixtures/mc3.vcf"
+      ],
+      "--evaluation": [
+        "/work/fixtures/m2.vcf",
+        "/work/fixtures/m2_no_tumor.vcf"
+      ],
+      "--output": [
+        "/work/out/merged.vcf",
+        "/work/out/merged.vcf.gz"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--confidence": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [

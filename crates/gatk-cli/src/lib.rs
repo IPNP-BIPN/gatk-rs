@@ -328,6 +328,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
+        "MergeMutect2CallsWithMC3" => Some(run_merge_mutect2_calls_with_mc3),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
             Some(run_convert_headerless_hadoop_bam_shard_to_bam)
@@ -586,6 +587,10 @@ fn run_reference_block_concordance(args: &[String]) -> Result<Option<String>, Th
 
 fn run_combine_segment_breakpoints(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::combine_segment_breakpoints(&parsed("CombineSegmentBreakpoints", args)?)
+}
+
+fn run_merge_mutect2_calls_with_mc3(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::merge_mutect2_calls_with_mc3(&parsed("MergeMutect2CallsWithMC3", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
