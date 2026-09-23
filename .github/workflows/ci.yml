@@ -593,6 +593,7 @@ jobs:
             --tool SVConcordance \
             --tool SVCluster \
             --tool GroupedSVCluster \
+            --tool SVAnnotate \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

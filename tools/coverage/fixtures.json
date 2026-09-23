@@ -4014,6 +4014,65 @@
         "1",
         "2"
       ]
+    },
+    "SVAnnotate": {
+      "$why": [
+        "--variant is sv_annotate.vcf, one SV per rule: a deletion in a CDS, an intronic insertion, a UTR",
+        "duplication, an enhancer deletion far from both genes, an inversion and a duplication spanning a",
+        "gene, a multiallelic CNV, a short breakend pair, a complex dupINV and a translocation; and",
+        "sv_calls.vcf, SVStratify's calls. --protein-coding-gtf and --non-coding-bed are the fixtures or",
+        "absent, which turns their annotations off. --promoter-window-length is the default, a short window",
+        "and zero, whose promoter interval is refused before the writer. --max-breakend-as-cnv-length is",
+        "zero, which leaves a breakend a breakend, or long enough to read the pair as a deletion; the",
+        "default -1 cannot be written, an int taking no null. The engine's read, interval and",
+        "dictionary arguments are held out."
+      ],
+      "--variant": [
+        "/work/fixtures/sv_annotate.vcf",
+        "/work/fixtures/sv_calls.vcf"
+      ],
+      "--protein-coding-gtf": [
+        "/work/fixtures/sv_genes.gtf",
+        "null"
+      ],
+      "--non-coding-bed": [
+        "/work/fixtures/sv_noncoding.bed",
+        "null"
+      ],
+      "--promoter-window-length": [
+        "1000",
+        "100",
+        "0"
+      ],
+      "--max-breakend-as-cnv-length": [
+        "0",
+        "5000"
+      ],
+      "--output": [
+        "/work/out/annotated.vcf",
+        "/work/out/annotated.vcf.gz"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [
