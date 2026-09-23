@@ -793,6 +793,33 @@
       "t": 2,
       "share": 1.0
     },
+    "ApplyVQSR": {
+      "rows": 25,
+      "accepted": 9,
+      "rejected": 16,
+      "distinct_outputs": 6,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
+    "SVStratify": {
+      "rows": 16,
+      "accepted": 9,
+      "rejected": 7,
+      "distinct_outputs": 5,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "SVConcordance": {
+      "rows": 19,
+      "accepted": 13,
+      "rejected": 6,
+      "distinct_outputs": 10,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
@@ -808,6 +835,15 @@
       "rejected": 7,
       "distinct_outputs": 7,
       "matched": 20,
+      "t": 2,
+      "share": 1.0
+    },
+    "ConvertHeaderlessHadoopBamShardToBam": {
+      "rows": 12,
+      "accepted": 6,
+      "rejected": 6,
+      "distinct_outputs": 6,
+      "matched": 12,
       "t": 2,
       "share": 1.0
     }
