@@ -185,7 +185,7 @@
       "rows": 21,
       "accepted": 10,
       "rejected": 11,
-      "distinct_outputs": 3,
+      "distinct_outputs": 4,
       "matched": 21,
       "t": 2,
       "share": 1.0
@@ -635,7 +635,7 @@
       "rows": 20,
       "accepted": 6,
       "rejected": 14,
-      "distinct_outputs": 3,
+      "distinct_outputs": 4,
       "matched": 20,
       "t": 2,
       "share": 1.0
@@ -681,6 +681,123 @@
       "accepted": 15,
       "rejected": 3,
       "distinct_outputs": 6,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "MergeMutectStats": {
+      "rows": 7,
+      "accepted": 5,
+      "rejected": 2,
+      "distinct_outputs": 4,
+      "matched": 7,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherPileupSummaries": {
+      "rows": 6,
+      "accepted": 4,
+      "rejected": 2,
+      "distinct_outputs": 4,
+      "matched": 6,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherNormalArtifactData": {
+      "rows": 6,
+      "accepted": 6,
+      "rejected": 0,
+      "distinct_outputs": 4,
+      "matched": 6,
+      "t": 2,
+      "share": 1.0
+    },
+    "MergeAnnotatedRegions": {
+      "rows": 18,
+      "accepted": 11,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 18,
+      "t": 2,
+      "share": 1.0
+    },
+    "MergeAnnotatedRegionsByAnnotation": {
+      "rows": 22,
+      "accepted": 15,
+      "rejected": 7,
+      "distinct_outputs": 6,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
+    "TagGermlineEvents": {
+      "rows": 17,
+      "accepted": 10,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 17,
+      "t": 2,
+      "share": 1.0
+    },
+    "GatherTranches": {
+      "rows": 8,
+      "accepted": 6,
+      "rejected": 2,
+      "distinct_outputs": 5,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "NuMTFilterTool": {
+      "rows": 15,
+      "accepted": 11,
+      "rejected": 4,
+      "distinct_outputs": 5,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "MTLowHeteroplasmyFilterTool": {
+      "rows": 15,
+      "accepted": 9,
+      "rejected": 6,
+      "distinct_outputs": 3,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "ExampleMultiFeatureWalker": {
+      "rows": 16,
+      "accepted": 11,
+      "rejected": 5,
+      "distinct_outputs": 2,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "CalculateAverageCombinedAnnotations": {
+      "rows": 16,
+      "accepted": 9,
+      "rejected": 7,
+      "distinct_outputs": 3,
+      "matched": 16,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterVariantTranches": {
+      "rows": 15,
+      "accepted": 8,
+      "rejected": 7,
+      "distinct_outputs": 5,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "DownsampleByDuplicateSet": {
+      "rows": 18,
+      "accepted": 11,
+      "rejected": 7,
+      "distinct_outputs": 11,
       "matched": 18,
       "t": 2,
       "share": 1.0
