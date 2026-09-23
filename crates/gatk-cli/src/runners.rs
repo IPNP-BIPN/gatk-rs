@@ -13768,20 +13768,7 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
     let prefix = argument(parser, "output-prefix");
     let split_output = flag(parser, "split-output");
     let allow_multiple = flag(parser, "allow-multiple-matches");
-    let thresholds = stratify::Thresholds {
-        overlap_fraction: scalar(parser, "stratify-overlap-fraction")
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(0.0),
-        num_breakpoint_overlaps: scalar(parser, "stratify-num-breakpoint-overlaps")
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(1),
-        num_breakpoint_overlaps_interchrom: scalar(
-            parser,
-            "stratify-num-breakpoint-overlaps-interchromosomal",
-        )
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(1),
-    };
+    let thresholds = stratification_thresholds(parser);
 
     let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
     let gatk = |message: String| {
@@ -13790,12 +13777,6 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
             message,
         )
     };
-    let bad_input = |message: String| Thrown {
-        failure: Failure::User,
-        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
-        message: Some(format!("Bad input: {message}")),
-    };
-
     // `onTraversalStart`.
     let Some(dictionary) = master_dictionary(parser)? else {
         return Err(illegal(
@@ -13809,118 +13790,7 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
 
-    // `loadStratificationConfig`: the tracks, then the table.
-    let track_names = arguments(parser, "track-name");
-    let track_files = arguments(parser, "track-intervals");
-    if track_names.len() != track_files.len() {
-        return Err(illegal(
-            stratify::StratifyError::TrackCountMismatch.message(),
-        ));
-    }
-    let mut names: Vec<String> = Vec::new();
-    let mut loaded: Vec<Vec<stratify::Interval>> = Vec::new();
-    for (name, path) in track_names.iter().zip(&track_files) {
-        let parameters = gatk_engine::interval_arguments::traversal_parameters(
-            std::slice::from_ref(path),
-            &[],
-            &dictionary,
-            SetRule::Union,
-            MergingRule::All,
-            0,
-            0,
-        )
-        .map_err(|error| Thrown {
-            failure: Failure::User,
-            exception: error.java_class(),
-            message: Some(error.message()),
-        })?;
-        if names.contains(name) {
-            return Err(bad_input(
-                stratify::StratifyError::DuplicateTrack { name: name.clone() }.message(),
-            ));
-        }
-        names.push(name.clone());
-        loaded.push(
-            parameters
-                .intervals
-                .into_iter()
-                .map(|interval| stratify::Interval {
-                    contig: interval.contig,
-                    start: interval.start,
-                    end: interval.end,
-                })
-                .collect(),
-        );
-    }
-    let tracks =
-        stratify::Tracks::new(&names, &loaded).map_err(|error| bad_input(error.message()))?;
-
-    let table_text = std::fs::read_to_string(&config)
-        .map_err(|_| gatk("IO error while reading config table".to_string()))?;
-    let table =
-        gatk_engine::tsv_table::Table::parse(&table_text, &config).map_err(|error| Thrown {
-            failure: Failure::User,
-            exception: error.java_class(),
-            message: Some(error.message()),
-        })?;
-    // The header line's number, which a format error names: the first line that is no comment.
-    let header_line = table_text
-        .lines()
-        .position(|line| !line.starts_with('#'))
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    if table.columns.is_empty() {
-        return Err(bad_input(format!(
-            "format error in '{config}' at line {}: premature end of table: header line not found",
-            table_text.lines().count()
-        )));
-    }
-    stratify::check_columns(&table.columns).map_err(|error| {
-        bad_input(format!(
-            "format error in '{config}' at line {header_line}: {}",
-            error.message()
-        ))
-    })?;
-    let mut strata: Vec<stratify::Stratum> = Vec::new();
-    for row in &table.rows {
-        let cell = |column: &str| -> String {
-            table
-                .get(row, column)
-                .map(str::to_string)
-                .unwrap_or_default()
-        };
-        let type_name = cell("SVTYPE");
-        let sv_type = stratify::SvType::parse(&type_name).ok_or_else(|| {
-            illegal(format!(
-                "No enum constant org.broadinstitute.hellbender.tools.spark.sv.utils.GATKSVVCFConstants.StructuralVariantAnnotationType.{type_name}"
-            ))
-        })?;
-        let name = cell("NAME");
-        let bound = |column: &str| -> Result<Option<i32>, Thrown> {
-            let value = cell(column);
-            if stratify::NULL_TABLE_VALUES.contains(&value.as_str()) {
-                return Ok(None);
-            }
-            value.parse::<i32>().map(Some).map_err(|_| {
-                Thrown::non_user(
-                    "java.lang.NumberFormatException",
-                    format!("For input string: \"{value}\""),
-                )
-            })
-        };
-        let min_size = bound("MIN_SIZE")?;
-        let max_size = bound("MAX_SIZE")?;
-        let track_list = stratify::parse_track_string(&cell("TRACKS"), &names)
-            .map_err(|error| gatk(error.message()))?;
-        let stratum = stratify::Stratum::new(&name, sv_type, min_size, max_size, track_list)
-            .map_err(|error| illegal(error.message()))?;
-        if strata.iter().any(|existing| existing.name == stratum.name) {
-            return Err(gatk(format!("Encountered duplicate name {}", stratum.name)));
-        }
-        strata.push(stratum);
-    }
-    let engine =
-        stratify::Engine::new(strata, tracks).map_err(|error| bad_input(error.message()))?;
+    let engine = load_stratification_engine(parser, &config, &dictionary)?;
 
     // `initializeWriters`.
     let prefix = if split_output {
@@ -14862,57 +14732,233 @@ fn donor_header(donor: &str) -> Result<SamHeader, Thrown> {
 /// at the end of its contig rather than at the record that completed it, which only a refused
 /// collapse can observe.
 pub fn sv_cluster(parser: &Parser) -> Outcome {
-    use gatk_tools::sv_call_record as svr;
-    use gatk_tools::sv_collapser as collapser;
-    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    let mut walker = SvClusterWalker::start(parser, "SVCluster", Vec::new())?;
+    let linkage = sv_cluster_linkage(parser);
+    let records = walker.records.clone();
+    let mut members: Vec<gatk_tools::sv_collapser::Member> = Vec::new();
+    let mut current: Option<String> = None;
+    for record in &records {
+        let member = match walker.member(record) {
+            Ok(member) => member,
+            Err(error) => return walker.refuse(error),
+        };
+        if current.as_deref() != Some(member.call.contig_a.as_str()) {
+            if let Err(error) = walker.cluster_and_build(&mut members, &linkage) {
+                return walker.refuse(error);
+            }
+            current = Some(member.call.contig_a.clone());
+        }
+        members.push(member);
+    }
+    if let Err(error) = walker.cluster_and_build(&mut members, &linkage) {
+        return walker.refuse(error);
+    }
+    walker.finish()?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
+
+/// `GroupedSVCluster`: each record clustered under the thresholds of the one stratum it falls in.
+///
+/// The stratification is `SVStratify`'s ([`load_stratification_engine`]) over the REFERENCE's
+/// dictionary, and the clustering and writing `SVCluster`'s ([`SvClusterWalker`]); the tool is the
+/// wiring, in [`gatk_tools::grouped_sv_cluster`]:
+///
+/// * **`onTraversalStart` refuses after the writer exists**: no strata, a clustering table whose
+///   groups do not match the strata one for one, or a stratum it does not name, each an
+///   `IllegalStateException`, leave the header behind;
+/// * **a record matching two strata is refused**, inside `apply` and therefore wrapped;
+/// * **a record matching none is written straight out**, not clustered, with `MEMBERS` its own ID
+///   and `STRAT` `default`;
+/// * **a matched record carries `STRAT` into its cluster**, whose representative writes it.
+///
+/// Each stratum's engine flushes at a new contig of its own, and the engines are flushed at the end
+/// in the `HashMap` order the strata already have.
+pub fn grouped_sv_cluster(parser: &Parser) -> Outcome {
+    use gatk_tools::grouped_sv_cluster as grouped;
     use htsjdk_vcf::variant::Value;
 
-    let _ = resolve_read_filters(parser, "SVCluster")?;
-    let inputs = arguments(parser, "variant");
-    if inputs.len() > 1 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "More than one --variant is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
-        ));
-    }
-    let input = inputs.into_iter().next().ok_or_else(|| {
-        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
-    })?;
-    let VariantWalkerStart {
-        input,
-        text,
-        intervals,
-        ..
-    } = variant_walker_startup_over(parser, input)?;
-    let output = argument(parser, "output").ok_or_else(|| {
-        Thrown::command_line("Argument output was missing: Argument 'output' is required")
-    })?;
-    let ploidy_path = argument(parser, "ploidy-table").ok_or_else(|| {
+    let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: "STRAT".to_string(),
+        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        line_type: htsjdk_vcf::header::LineType::String,
+        description: "Stratum ID".to_string(),
+        extra: Vec::new(),
+    };
+    let mut walker = SvClusterWalker::start(parser, "GroupedSVCluster", vec![strat_line])?;
+    let config = argument(parser, "stratify-config").ok_or_else(|| {
         Thrown::command_line(
-            "Argument ploidy-table was missing: Argument 'ploidy-table' is required",
+            "Argument stratify-config was missing: Argument 'stratify-config' is required",
         )
     })?;
-    let algorithm = match scalar(parser, "algorithm").as_deref() {
-        Some("MAX_CLIQUE") => gatk_tools::sv_cluster::Algorithm::MaxClique,
-        Some("DEFRAGMENT_CNV") => {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                "--algorithm DEFRAGMENT_CNV is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
-            ))
+    let clustering = argument(parser, "clustering-config").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument clustering-config was missing: Argument 'clustering-config' is required",
+        )
+    })?;
+    let thresholds = stratification_thresholds(parser);
+    let illegal_state =
+        |message: String| Thrown::non_user("java.lang.IllegalStateException", message);
+
+    let engine = match load_stratification_engine(parser, &config, &walker.dictionary) {
+        Ok(engine) => engine,
+        Err(error) => return walker.refuse(error),
+    };
+    if engine.strata.is_empty() {
+        return walker.refuse(illegal_state(grouped::GroupedError::NoStrata.message()));
+    }
+    let parameters = match read_clustering_config(&clustering) {
+        Ok(parameters) => parameters,
+        Err(error) => return walker.refuse(error),
+    };
+    let engines = grouped::Engines::new(&parameters);
+    if let Err(error) = grouped::validate(&engine, &engines) {
+        return walker.refuse(illegal_state(error.message()));
+    }
+    let enable_cnv = flag(parser, "enable-cnv");
+    let mut buckets: Vec<(
+        String,
+        Option<String>,
+        Vec<gatk_tools::sv_collapser::Member>,
+    )> = engine
+        .strata
+        .iter()
+        .map(|stratum| (stratum.name.clone(), None, Vec::new()))
+        .collect();
+    let linkage_of = |name: &str| {
+        grouped::linkage_for(engines.get(name).expect("a validated group"), enable_cnv)
+    };
+
+    let records = walker.records.clone();
+    for record in &records {
+        let mut member = match walker.member(record) {
+            Ok(member) => member,
+            Err(error) => return walker.refuse(error),
+        };
+        let matches = match engine.matches(&member.call.stratify_record(), thresholds) {
+            Ok(matches) => matches,
+            Err(_) => return walker.refuse(walker.wrapped(record, true)),
+        };
+        let set = |member: &mut gatk_tools::sv_collapser::Member, key: &str, value: Value| {
+            member.call.attributes.retain(|(name, _)| name != key);
+            member.call.attributes.push((key.to_string(), value));
+        };
+        match matches.len() {
+            0 => {
+                let id = member.call.id.clone();
+                set(
+                    &mut member,
+                    gatk_tools::sv_collapser::CLUSTER_MEMBER_IDS_KEY,
+                    Value::List(vec![Value::Str(id)]),
+                );
+                set(
+                    &mut member,
+                    "STRAT",
+                    Value::List(vec![Value::Str(
+                        gatk_tools::sv_stratify::DEFAULT_STRATUM.to_string(),
+                    )]),
+                );
+                let built = walker.build(
+                    member.call,
+                    member.alleles,
+                    member.genotypes,
+                    &member.filters,
+                );
+                if let Err(error) = built {
+                    return walker.refuse(error);
+                }
+            }
+            1 => {
+                let name = matches[0].name.clone();
+                set(
+                    &mut member,
+                    "STRAT",
+                    Value::List(vec![Value::Str(name.clone())]),
+                );
+                let bucket = buckets
+                    .iter_mut()
+                    .find(|(stratum, _, _)| *stratum == name)
+                    .expect("a bucket per stratum");
+                if bucket.1.as_deref() != Some(member.call.contig_a.as_str()) {
+                    let flushed = walker.cluster_and_build(&mut bucket.2, &linkage_of(&name));
+                    if let Err(error) = flushed {
+                        return walker.refuse(error);
+                    }
+                    bucket.1 = Some(member.call.contig_a.clone());
+                }
+                bucket.2.push(member);
+            }
+            _ => return walker.refuse(walker.wrapped(record, true)),
         }
-        _ => gatk_tools::sv_cluster::Algorithm::SingleLinkage,
+    }
+    for (name, _, members) in &mut buckets {
+        if let Err(error) = walker.cluster_and_build(members, &linkage_of(name)) {
+            return walker.refuse(error);
+        }
+    }
+    walker.finish()?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
+
+/// `StratifiedClusteringTableParser`: the columns checked at the header line, then one row per
+/// group with its three fractions and its window.
+fn read_clustering_config(
+    path: &str,
+) -> Result<Vec<gatk_tools::grouped_sv_cluster::StratumParameters>, Thrown> {
+    let text = std::fs::read_to_string(path).map_err(|_| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "IO error while reading config table",
+        )
+    })?;
+    let table_error = |error: gatk_engine::tsv_table::TableError| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
     };
-    let breakpoints = scalar(parser, "breakpoint-summary-strategy")
-        .and_then(|name| collapser::BreakpointSummary::value_of(&name))
-        .unwrap_or(collapser::BreakpointSummary::Representative);
-    let alternates = match scalar(parser, "alt-allele-summary-strategy").as_deref() {
-        Some("MOST_SPECIFIC_SUBTYPE") => collapser::AltAlleleSummary::MostSpecificSubtype,
-        _ => collapser::AltAlleleSummary::CommonSubtype,
-    };
-    let fast_mode = flag(parser, "fast-mode");
-    let omit_members = flag(parser, "omit-members");
-    let default_no_call = flag(parser, "default-no-call");
-    let prefix = argument(parser, "variant-prefix");
+    let table = gatk_engine::tsv_table::Table::parse(&text, path).map_err(table_error)?;
+    let header_line = text
+        .lines()
+        .position(|line| !line.starts_with('#'))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    gatk_tools::grouped_sv_cluster::check_columns(&table.columns).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!(
+            "Bad input: format error in '{path}' at line {header_line}: {}",
+            error.message()
+        )),
+    })?;
+    let mut parameters = Vec::new();
+    for (row, line) in table.rows.iter().zip(&table.row_lines) {
+        let double = |column: &str| -> Result<f64, Thrown> {
+            let value = table.get(row, column).map_err(table_error)?;
+            value.parse::<f64>().map_err(|_| Thrown {
+                failure: Failure::User,
+                exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+                message: Some(format!(
+                    "Bad input: format error in '{path}' at line {line}: expected double value for column {column} but found {value}"
+                )),
+            })
+        };
+        parameters.push(gatk_tools::grouped_sv_cluster::StratumParameters {
+            name: table.get(row, "NAME").map_err(table_error)?.to_string(),
+            reciprocal_overlap: double("RECIPROCAL_OVERLAP")?,
+            size_similarity: double("SIZE_SIMILARITY")?,
+            breakend_window: table
+                .get_int(row, "BREAKEND_WINDOW", path, *line)
+                .map_err(table_error)?,
+            sample_overlap: double("SAMPLE_OVERLAP")?,
+        });
+    }
+    Ok(parameters)
+}
+
+/// `SVClusterEngineArgumentsCollection`'s three parameter sets, and `--enable-cnv`.
+fn sv_cluster_linkage(parser: &Parser) -> gatk_tools::sv_cluster::Linkage {
     let parameter = |name: &str, default: f64| -> f64 {
         scalar(parser, name)
             .and_then(|value| value.parse().ok())
@@ -14923,7 +14969,7 @@ pub fn sv_cluster(parser: &Parser) -> Outcome {
             .and_then(|value| value.parse().ok())
             .unwrap_or(default)
     };
-    let linkage = gatk_tools::sv_cluster::Linkage {
+    gatk_tools::sv_cluster::Linkage {
         depth: gatk_tools::sv_cluster::ClusteringParameters::depth(
             parameter("depth-interval-overlap", 0.8),
             parameter("depth-size-similarity", 0.0),
@@ -14943,187 +14989,285 @@ pub fn sv_cluster(parser: &Parser) -> Outcome {
             parameter("pesr-sample-overlap", 0.0),
         ),
         cluster_del_with_dup: flag(parser, "enable-cnv"),
-    };
-    let needs_carriers = linkage.depth.sample_overlap > 0.0
-        || linkage.mixed.sample_overlap > 0.0
-        || linkage.pesr.sample_overlap > 0.0;
-
-    // `onTraversalStart`: the reference and its dictionary, then the ploidy table.
-    let Some(reference_path) = argument(parser, "reference") else {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "SVCluster without --reference is refused by the engine before it starts, which this port does not word yet. This message is the port's own and not GATK's.",
-        ));
-    };
-    let Some(dictionary) = reference_dictionary(parser)? else {
-        return Err(Thrown::user("Reference sequence dictionary required"));
-    };
-    let mut reference =
-        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let sequences: Vec<(String, i32)> = dictionary
-        .sequences
-        .iter()
-        .map(|sequence| (sequence.name.clone(), sequence.length))
-        .collect();
-
-    let ploidy_text = std::fs::read_to_string(&ploidy_path).map_err(|_| {
-        Thrown::non_user(
-            "org.broadinstitute.hellbender.exceptions.GATKException",
-            "IO error while reading ploidy table",
-        )
-    })?;
-    let ploidy_table =
-        gatk_engine::tsv_table::Table::parse(&ploidy_text, &ploidy_path).map_err(|error| {
-            Thrown {
-                failure: Failure::User,
-                exception: error.java_class(),
-                message: Some(error.message()),
-            }
-        })?;
-    let mut ploidies: Vec<(String, Vec<(String, i32)>)> = Vec::new();
-    for (row, line) in ploidy_table.rows.iter().zip(&ploidy_table.row_lines) {
-        let mut contigs = Vec::new();
-        for column in &ploidy_table.columns[1..] {
-            let value = ploidy_table
-                .get_int(row, column, &ploidy_path, *line)
-                .map_err(|error| Thrown {
-                    failure: Failure::User,
-                    exception: error.java_class(),
-                    message: Some(error.message()),
-                })?;
-            contigs.push((column.clone(), value));
-        }
-        ploidies.retain(|(sample, _)| *sample != row[0]);
-        ploidies.push((row[0].clone(), contigs));
     }
-    let ploidy_of = |sample: &str, contig: &str| -> Result<i32, Thrown> {
-        let illegal =
-            |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
-        let Some((_, contigs)) = ploidies.iter().find(|(name, _)| name == sample) else {
-            return Err(illegal(format!(
-                "Sample {sample} not found in ploidy records"
-            )));
-        };
-        contigs
-            .iter()
-            .find(|(name, _)| name == contig)
-            .map(|(_, ploidy)| *ploidy)
-            .ok_or_else(|| {
-                illegal(format!(
-                    "No ploidy entry for sample {sample} at contig {contig}"
-                ))
-            })
-    };
+}
 
-    // `createHeader`: the input's lines, the reference's contigs, and the tool's own lines.
-    let file = htsjdk_vcf::reader::read_vcf(&text)
-        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
-    let mut header = file.header.clone();
-    header.samples.sort();
-    header.samples.dedup();
-    header
-        .lines
-        .retain(|line| !matches!(line, HeaderLine::Contig { .. }));
-    for (index, (name, length)) in sequences.iter().enumerate() {
+/// `SVClusterWalker`: what `SVCluster` and `GroupedSVCluster` share, from `onTraversalStart` to the
+/// sorted write.
+struct SvClusterWalker<'p> {
+    parser: &'p Parser,
+    input: String,
+    records: Vec<htsjdk_vcf::variant::VariantContext>,
+    output: String,
+    algorithm: gatk_tools::sv_cluster::Algorithm,
+    breakpoints: gatk_tools::sv_collapser::BreakpointSummary,
+    alternates: gatk_tools::sv_collapser::AltAlleleSummary,
+    fast_mode: bool,
+    omit_members: bool,
+    default_no_call: bool,
+    prefix: Option<String>,
+    numbered: usize,
+    reference: gatk_engine::reference::ReferenceFileSource,
+    dictionary: SamHeader,
+    sequences: Vec<(String, i32)>,
+    ploidies: PloidyTable,
+    header: htsjdk_vcf::header::VcfHeader,
+    has_cn_format: bool,
+    built: Vec<htsjdk_vcf::variant::VariantContext>,
+}
+
+impl<'p> SvClusterWalker<'p> {
+    /// The walker's startup and `onTraversalStart`, with `extra` header lines the subclass adds.
+    fn start(
+        parser: &'p Parser,
+        tool: &str,
+        extra: Vec<htsjdk_vcf::header::HeaderLine>,
+    ) -> Result<Self, Thrown> {
+        use gatk_tools::sv_collapser as collapser;
+        use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+
+        let _ = resolve_read_filters(parser, tool)?;
+        let inputs = arguments(parser, "variant");
+        if inputs.len() > 1 {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "More than one --variant is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+            ));
+        }
+        let input = inputs.into_iter().next().ok_or_else(|| {
+            Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+        })?;
+        let VariantWalkerStart {
+            input,
+            text,
+            intervals,
+            ..
+        } = variant_walker_startup_over(parser, input)?;
+        let output = argument(parser, "output").ok_or_else(|| {
+            Thrown::command_line("Argument output was missing: Argument 'output' is required")
+        })?;
+        let ploidy_path = argument(parser, "ploidy-table").ok_or_else(|| {
+            Thrown::command_line(
+                "Argument ploidy-table was missing: Argument 'ploidy-table' is required",
+            )
+        })?;
+        let algorithm = match scalar(parser, "algorithm").as_deref() {
+            Some("MAX_CLIQUE") => gatk_tools::sv_cluster::Algorithm::MaxClique,
+            Some("DEFRAGMENT_CNV") => {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "--algorithm DEFRAGMENT_CNV is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+                ))
+            }
+            _ => gatk_tools::sv_cluster::Algorithm::SingleLinkage,
+        };
+        let breakpoints = scalar(parser, "breakpoint-summary-strategy")
+            .and_then(|name| collapser::BreakpointSummary::value_of(&name))
+            .unwrap_or(collapser::BreakpointSummary::Representative);
+        let alternates = match scalar(parser, "alt-allele-summary-strategy").as_deref() {
+            Some("MOST_SPECIFIC_SUBTYPE") => collapser::AltAlleleSummary::MostSpecificSubtype,
+            _ => collapser::AltAlleleSummary::CommonSubtype,
+        };
+
+        // `onTraversalStart`: the reference and its dictionary, then the ploidy table.
+        let Some(reference_path) = argument(parser, "reference") else {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "A cluster walker without --reference is refused by the engine before it starts, which this port does not word yet. This message is the port's own and not GATK's.",
+            ));
+        };
+        let Some(dictionary) = reference_dictionary(parser)? else {
+            return Err(Thrown::user("Reference sequence dictionary required"));
+        };
+        let reference = gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(
+            &reference_path,
+        ))
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let sequences: Vec<(String, i32)> = dictionary
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect();
+        let ploidies = read_ploidy_table(&ploidy_path)?;
+
+        // `createHeader`: the input's lines, the reference's contigs, and the tool's own lines.
+        let file = htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+        let mut header = file.header.clone();
+        header.samples.sort();
+        header.samples.dedup();
         header
             .lines
-            .push(HeaderLine::contig(name, i64::from(*length), index as i32));
-    }
-    let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
-        HeaderLine::Compound {
-            key: key.to_string(),
-            id: id.to_string(),
-            number,
-            line_type,
-            description: text.to_string(),
-            extra: Vec::new(),
+            .retain(|line| !matches!(line, HeaderLine::Contig { .. }));
+        for (index, (name, length)) in sequences.iter().enumerate() {
+            header
+                .lines
+                .push(HeaderLine::contig(name, i64::from(*length), index as i32));
         }
-    };
-    let one = Cardinality::Fixed(1);
-    let mut added = vec![
-        compound(
-            "INFO",
-            "END",
-            one,
-            LineType::Integer,
-            "Stop position of the interval",
-        ),
-        compound(
-            "INFO",
-            "SVLEN",
-            Cardinality::Unbounded,
-            LineType::Integer,
-            "Difference in length between REF and ALT alleles",
-        ),
-        compound(
-            "INFO",
-            "SVTYPE",
-            one,
-            LineType::String,
-            "Type of structural variant",
-        ),
-        compound("INFO", "END2", one, LineType::Integer, "Second position"),
-        compound("INFO", "CHR2", one, LineType::String, "Second contig"),
-        compound(
-            "INFO",
-            "STRANDS",
-            one,
-            LineType::String,
-            "First and second strands",
-        ),
-        compound(
-            "INFO",
-            "ALGORITHMS",
-            Cardinality::Unbounded,
-            LineType::String,
-            "Source algorithms",
-        ),
-    ];
-    if !omit_members {
-        added.push(compound(
-            "INFO",
-            "MEMBERS",
-            Cardinality::Unbounded,
-            LineType::String,
-            "Cluster variant ids",
-        ));
-    }
-    added.push(compound("FORMAT", "GT", one, LineType::String, "Genotype"));
-    for line in added {
-        if !header
-            .lines
-            .iter()
-            .any(|existing| same_compound_id(existing, &line))
-        {
-            header.lines.push(line);
+        let compound =
+            |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
+                HeaderLine::Compound {
+                    key: key.to_string(),
+                    id: id.to_string(),
+                    number,
+                    line_type,
+                    description: text.to_string(),
+                    extra: Vec::new(),
+                }
+            };
+        let one = Cardinality::Fixed(1);
+        let omit_members = flag(parser, "omit-members");
+        let mut added = vec![
+            compound(
+                "INFO",
+                "END",
+                one,
+                LineType::Integer,
+                "Stop position of the interval",
+            ),
+            compound(
+                "INFO",
+                "SVLEN",
+                Cardinality::Unbounded,
+                LineType::Integer,
+                "Difference in length between REF and ALT alleles",
+            ),
+            compound(
+                "INFO",
+                "SVTYPE",
+                one,
+                LineType::String,
+                "Type of structural variant",
+            ),
+            compound("INFO", "END2", one, LineType::Integer, "Second position"),
+            compound("INFO", "CHR2", one, LineType::String, "Second contig"),
+            compound(
+                "INFO",
+                "STRANDS",
+                one,
+                LineType::String,
+                "First and second strands",
+            ),
+            compound(
+                "INFO",
+                "ALGORITHMS",
+                Cardinality::Unbounded,
+                LineType::String,
+                "Source algorithms",
+            ),
+        ];
+        if !omit_members {
+            added.push(compound(
+                "INFO",
+                "MEMBERS",
+                Cardinality::Unbounded,
+                LineType::String,
+                "Cluster variant ids",
+            ));
         }
+        added.push(compound("FORMAT", "GT", one, LineType::String, "Genotype"));
+        added.extend(extra);
+        for line in added {
+            if !header
+                .lines
+                .iter()
+                .any(|existing| same_compound_id(existing, &line))
+            {
+                header.lines.push(line);
+            }
+        }
+        let has_cn_format = header.lines.iter().any(|line| {
+            matches!(line, HeaderLine::Compound { key, id, .. } if key == "FORMAT" && id == "CN")
+        });
+        let records = variants_in_traversal(&file.records, intervals.as_deref(), &input)?
+            .into_iter()
+            .cloned()
+            .collect();
+        Ok(SvClusterWalker {
+            parser,
+            input,
+            records,
+            output,
+            algorithm,
+            breakpoints,
+            alternates,
+            fast_mode: flag(parser, "fast-mode"),
+            omit_members,
+            default_no_call: flag(parser, "default-no-call"),
+            prefix: argument(parser, "variant-prefix"),
+            numbered: 0,
+            reference,
+            dictionary,
+            sequences,
+            ploidies,
+            header,
+            has_cn_format,
+            built: Vec::new(),
+        })
     }
-    let has_cn_format = header.lines.iter().any(|line| {
-        matches!(line, HeaderLine::Compound { key, id, .. } if key == "FORMAT" && id == "CN")
-    });
-    let samples = header.samples.clone();
 
-    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
-        let mut header = header.clone();
-        let mut records = written.to_vec();
-        apply_sites_only(parser, &mut header, &mut records);
-        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
-        write_variant_output(parser, &output, &out)
-    };
+    /// The traversal's `GATKException` for a record `apply` failed on. `create` decodes the
+    /// genotypes as its very last step, so a record it refused prints them as the file carried
+    /// them and a record refused after it prints them decoded.
+    fn wrapped(&self, record: &htsjdk_vcf::variant::VariantContext, decoded: bool) -> Thrown {
+        let text = if decoded {
+            java_variant_context_string_decoded(record, &self.input)
+        } else {
+            java_variant_context_string(record, &self.input)
+        };
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "Exception thrown at {}:{} {}",
+                record.contig, record.start, text
+            ),
+        )
+    }
 
-    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
-    let mut built: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
-    let mut members: Vec<collapser::Member> = Vec::new();
-    let mut numbered = 0usize;
-    let mut current: Option<String> = None;
+    /// `SVClusterWalker.apply` up to `applyRecord`: the conversion, and `--fast-mode`'s carriers.
+    fn member(
+        &self,
+        record: &htsjdk_vcf::variant::VariantContext,
+    ) -> Result<gatk_tools::sv_collapser::Member, Thrown> {
+        let call = gatk_tools::sv_call_record::create(record, &self.sequences)
+            .map_err(|_| self.wrapped(record, false))?;
+        let mut genotypes: Vec<htsjdk_vcf::variant::Genotype> =
+            record.genotypes.iter().cloned().collect();
+        if self.fast_mode && call.sv_type != gatk_tools::sv_stratify::SvType::Cnv {
+            let has_alt = record.alleles[1..]
+                .iter()
+                .any(|a| !a.is_no_call() && !a.is_reference());
+            let mut carriers = Vec::new();
+            for genotype in genotypes {
+                match gatk_tools::sv_collapser::is_carrier(call.sv_type, has_alt, &genotype) {
+                    Ok(true) => carriers.push(genotype),
+                    Ok(false) => {}
+                    Err(_) => return Err(self.wrapped(record, true)),
+                }
+            }
+            genotypes = carriers;
+        }
+        Ok(gatk_tools::sv_collapser::Member {
+            call,
+            alleles: record.alleles.clone(),
+            genotypes,
+            filters: record.filters.clone().unwrap_or_default(),
+        })
+    }
 
-    // One contig's clusters, collapsed and built, in the order the clustering produced them.
-    let mut flush = |members: &mut Vec<collapser::Member>,
-                     built: &mut Vec<htsjdk_vcf::variant::VariantContext>,
-                     numbered: &mut usize|
-     -> Result<(), Thrown> {
-        let refuse = |class: &'static str, message: String| Thrown::non_user(class, message);
+    /// One engine's items clustered and collapsed, each group built as it comes out.
+    ///
+    /// The engine flushes at a new contig; a collapse is placed there rather than at the record
+    /// that completed its cluster, which only a refused collapse can observe.
+    fn cluster_and_build(
+        &mut self,
+        members: &mut Vec<gatk_tools::sv_collapser::Member>,
+        linkage: &gatk_tools::sv_cluster::Linkage,
+    ) -> Result<(), Thrown> {
+        use gatk_tools::sv_collapser as collapser;
+        let needs_carriers = linkage.depth.sample_overlap > 0.0
+            || linkage.mixed.sample_overlap > 0.0
+            || linkage.pesr.sample_overlap > 0.0;
         let calls: Vec<gatk_tools::sv_cluster::CallRecord> = members
             .iter()
             .map(|member| {
@@ -15158,15 +15302,16 @@ pub fn sv_cluster(parser: &Parser) -> Outcome {
                 }
             })
             .collect();
-        for cluster in gatk_tools::sv_cluster::cluster_indices(&calls, &linkage, algorithm) {
+        for cluster in gatk_tools::sv_cluster::cluster_indices(&calls, linkage, self.algorithm) {
             let group: Vec<collapser::Member> = cluster
                 .iter()
                 .map(|index| members[*index].clone())
                 .collect();
+            let reference = &mut self.reference;
             let collapsed = collapser::collapse(
                 &group,
-                breakpoints,
-                alternates,
+                self.breakpoints,
+                self.alternates,
                 collapser::FlagFieldLogic::Or,
                 &mut |contig, position| {
                     reference
@@ -15175,134 +15320,152 @@ pub fn sv_cluster(parser: &Parser) -> Outcome {
                         .and_then(|bases| bases.first().copied())
                 },
             )
-            .map_err(|error| refuse(error.class(), error.message()))?;
-            svr::validate_coordinates(&collapsed.call, &sequences)
-                .map_err(|error| refuse(error.class(), error.message()))?;
-            // `buildVariantContext`: every sample, then the new name, then the variant.
-            let mut genotypes = collapsed.genotypes.clone();
-            let is_cnv = matches!(
-                collapsed.call.sv_type,
-                gatk_tools::sv_stratify::SvType::Del
-                    | gatk_tools::sv_stratify::SvType::Dup
-                    | gatk_tools::sv_stratify::SvType::Cnv
-            );
-            for sample in &samples {
-                if genotypes.iter().any(|g| g.sample_name == *sample) {
-                    continue;
-                }
-                let ploidy = ploidy_of(sample, &collapsed.call.contig_a)?;
-                let allele = if default_no_call {
-                    htsjdk_vcf::allele::Allele::no_call()
-                } else {
-                    collapsed.alleles[0].clone()
-                };
-                let mut genotype = htsjdk_vcf::variant::Genotype::new(
-                    sample,
-                    vec![allele; ploidy.max(0) as usize],
-                );
-                genotype
-                    .extended
-                    .push(("ECN".to_string(), Value::Int(i64::from(ploidy))));
-                if is_cnv && has_cn_format {
-                    genotype
-                        .extended
-                        .push(("CN".to_string(), Value::Int(i64::from(ploidy))));
-                }
-                genotypes.push(genotype);
-            }
-            let mut call = collapsed.call.clone();
-            if let Some(prefix) = &prefix {
-                call.id = format!("{prefix}{:08x}", *numbered);
-                *numbered += 1;
-            }
-            if omit_members {
-                call.attributes
-                    .retain(|(key, _)| key != collapser::CLUSTER_MEMBER_IDS_KEY);
-            }
-            built.push(svr::to_variant(
-                &call,
-                collapsed.alleles.clone(),
-                genotypes,
+            .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+            self.build(
+                collapsed.call,
+                collapsed.alleles,
+                collapsed.genotypes,
                 &collapsed.filters,
-            ));
+            )?;
         }
         members.clear();
         Ok(())
-    };
+    }
 
-    for record in kept {
-        // `create` decodes the genotypes as its very last step, so a record it refused prints them
-        // as the file carried them and a record refused after it prints them decoded.
-        let wrapped = |decoded: bool| {
-            let text = if decoded {
-                java_variant_context_string_decoded(record, &input)
+    /// `buildVariantContext`: every sample filled in from the ploidy table, the new name, the
+    /// dictionary's validation, then the variant.
+    fn build(
+        &mut self,
+        mut call: gatk_tools::sv_call_record::SvCallRecord,
+        alleles: Vec<htsjdk_vcf::allele::Allele>,
+        mut genotypes: Vec<htsjdk_vcf::variant::Genotype>,
+        filters: &[String],
+    ) -> Result<(), Thrown> {
+        use htsjdk_vcf::variant::Value;
+        let is_cnv = matches!(
+            call.sv_type,
+            gatk_tools::sv_stratify::SvType::Del
+                | gatk_tools::sv_stratify::SvType::Dup
+                | gatk_tools::sv_stratify::SvType::Cnv
+        );
+        for sample in &self.header.samples {
+            if genotypes.iter().any(|g| g.sample_name == *sample) {
+                continue;
+            }
+            let ploidy = ploidy_of(&self.ploidies, sample, &call.contig_a)?;
+            let allele = if self.default_no_call {
+                htsjdk_vcf::allele::Allele::no_call()
             } else {
-                java_variant_context_string(record, &input)
+                alleles[0].clone()
             };
-            Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                format!(
-                    "Exception thrown at {}:{} {}",
-                    record.contig, record.start, text
-                ),
-            )
-        };
-        let call = match svr::create(record, &sequences) {
-            Ok(call) => call,
-            Err(_) => {
-                finish(&[])?;
-                return Err(wrapped(false));
+            let mut genotype =
+                htsjdk_vcf::variant::Genotype::new(sample, vec![allele; ploidy.max(0) as usize]);
+            genotype
+                .extended
+                .push(("ECN".to_string(), Value::Int(i64::from(ploidy))));
+            if is_cnv && self.has_cn_format {
+                genotype
+                    .extended
+                    .push(("CN".to_string(), Value::Int(i64::from(ploidy))));
             }
-        };
-        let mut genotypes: Vec<htsjdk_vcf::variant::Genotype> =
-            record.genotypes.iter().cloned().collect();
-        if fast_mode && call.sv_type != gatk_tools::sv_stratify::SvType::Cnv {
-            let has_alt = record.alleles[1..]
-                .iter()
-                .any(|a| !a.is_no_call() && !a.is_reference());
-            let mut carriers = Vec::new();
-            for genotype in genotypes {
-                match collapser::is_carrier(call.sv_type, has_alt, &genotype) {
-                    Ok(true) => carriers.push(genotype),
-                    Ok(false) => {}
-                    Err(_) => {
-                        finish(&[])?;
-                        return Err(wrapped(true));
-                    }
-                }
-            }
-            genotypes = carriers;
+            genotypes.push(genotype);
         }
-        if current.as_deref() != Some(call.contig_a.as_str()) {
-            if let Err(error) = flush(&mut members, &mut built, &mut numbered) {
-                finish(&[])?;
-                return Err(error);
-            }
-            current = Some(call.contig_a.clone());
+        if let Some(prefix) = &self.prefix {
+            call.id = format!("{prefix}{:08x}", self.numbered);
+            self.numbered += 1;
         }
-        members.push(collapser::Member {
-            call,
-            alleles: record.alleles.clone(),
-            genotypes,
-            filters: record.filters.clone().unwrap_or_default(),
-        });
-    }
-    if let Err(error) = flush(&mut members, &mut built, &mut numbered) {
-        finish(&[])?;
-        return Err(error);
+        gatk_tools::sv_call_record::validate_coordinates(&call, &self.sequences)
+            .map_err(|error| Thrown::non_user(error.class(), error.message()))?;
+        if self.omit_members {
+            call.attributes
+                .retain(|(key, _)| key != gatk_tools::sv_collapser::CLUSTER_MEMBER_IDS_KEY);
+        }
+        self.built.push(gatk_tools::sv_call_record::to_variant(
+            &call, alleles, genotypes, filters,
+        ));
+        Ok(())
     }
 
-    // The sorting collection: by contig then start, stably.
-    let index_of = |contig: &str| {
-        sequences
-            .iter()
-            .position(|(name, _)| name == contig)
-            .unwrap_or(usize::MAX)
+    /// `closeTool` after a refusal: the writer was opened with its header, and the sorting buffer
+    /// is never flushed into it.
+    fn refuse(&self, error: Thrown) -> Outcome {
+        self.write(&[])?;
+        Err(error)
+    }
+
+    fn write(&self, records: &[htsjdk_vcf::variant::VariantContext]) -> Result<(), Thrown> {
+        let mut header = self.header.clone();
+        let mut records = records.to_vec();
+        apply_sites_only(self.parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(self.parser, &header, &records)?;
+        write_variant_output(self.parser, &self.output, &out)
+    }
+
+    /// `onTraversalSuccess`: the sorting collection, by contig then start, stably.
+    fn finish(&mut self) -> Result<(), Thrown> {
+        let sequences = &self.sequences;
+        let index_of = |contig: &str| {
+            sequences
+                .iter()
+                .position(|(name, _)| name == contig)
+                .unwrap_or(usize::MAX)
+        };
+        let mut built = std::mem::take(&mut self.built);
+        built.sort_by_key(|record| (index_of(&record.contig), record.start));
+        self.write(&built)
+    }
+}
+
+/// Each sample's ploidy per contig, in the table's order.
+type PloidyTable = Vec<(String, Vec<(String, i32)>)>;
+
+/// `PloidyTable`: the first column names the sample, every other one a contig.
+fn read_ploidy_table(path: &str) -> Result<PloidyTable, Thrown> {
+    let text = std::fs::read_to_string(path).map_err(|_| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "IO error while reading ploidy table",
+        )
+    })?;
+    let table_error = |error: gatk_engine::tsv_table::TableError| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
     };
-    built.sort_by_key(|record| (index_of(&record.contig), record.start));
-    finish(&built)?;
-    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
-    Ok(None)
+    let table = gatk_engine::tsv_table::Table::parse(&text, path).map_err(table_error)?;
+    let mut ploidies: PloidyTable = Vec::new();
+    for (row, line) in table.rows.iter().zip(&table.row_lines) {
+        let mut contigs = Vec::new();
+        for column in &table.columns[1..] {
+            let value = table
+                .get_int(row, column, path, *line)
+                .map_err(table_error)?;
+            contigs.push((column.clone(), value));
+        }
+        // `Collectors.toMap` would refuse a repeated sample; the last one is kept here.
+        ploidies.retain(|(sample, _)| *sample != row[0]);
+        ploidies.push((row[0].clone(), contigs));
+    }
+    Ok(ploidies)
+}
+
+/// `PloidyTable.get`.
+fn ploidy_of(ploidies: &PloidyTable, sample: &str, contig: &str) -> Result<i32, Thrown> {
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    let Some((_, contigs)) = ploidies.iter().find(|(name, _)| name == sample) else {
+        return Err(illegal(format!(
+            "Sample {sample} not found in ploidy records"
+        )));
+    };
+    contigs
+        .iter()
+        .find(|(name, _)| name == contig)
+        .map(|(_, ploidy)| *ploidy)
+        .ok_or_else(|| {
+            illegal(format!(
+                "No ploidy entry for sample {sample} at contig {contig}"
+            ))
+        })
 }
 
 /// `VCFWriter` over the tool's own header, with `--lenient` deciding what an undeclared key does.
@@ -15462,4 +15625,159 @@ fn java_variant_context_string_decoded(
         .expect("a VariantContext string has a GT field");
     let filters = tail.rsplit_once(" filters=").map(|(_, f)| f).unwrap_or("");
     format!("{head} GT={decoded} filters={filters}")
+}
+
+/// `SVStratificationEngineArgumentsCollection`'s three thresholds, at their defaults when absent.
+fn stratification_thresholds(parser: &Parser) -> gatk_tools::sv_stratify::Thresholds {
+    gatk_tools::sv_stratify::Thresholds {
+        overlap_fraction: scalar(parser, "stratify-overlap-fraction")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0),
+        num_breakpoint_overlaps: scalar(parser, "stratify-num-breakpoint-overlaps")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1),
+        num_breakpoint_overlaps_interchrom: scalar(
+            parser,
+            "stratify-num-breakpoint-overlaps-interchromosomal",
+        )
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1),
+    }
+}
+
+/// `SVStratify.loadStratificationConfig`, which `GroupedSVCluster` calls too: the tracks, each
+/// loaded through the interval arguments and refused for a name given twice after its file was read,
+/// then the table, checked for its columns at its header line and parsed row by row.
+///
+/// `dictionary` is the tool's: the master one for `SVStratify`, the reference's for
+/// `GroupedSVCluster`.
+fn load_stratification_engine(
+    parser: &Parser,
+    config: &str,
+    dictionary: &SamHeader,
+) -> Result<gatk_tools::sv_stratify::Engine, Thrown> {
+    use gatk_tools::sv_stratify as stratify;
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    let gatk = |message: String| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            message,
+        )
+    };
+    let bad_input = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!("Bad input: {message}")),
+    };
+    // `loadStratificationConfig`: the tracks, then the table.
+    let track_names = arguments(parser, "track-name");
+    let track_files = arguments(parser, "track-intervals");
+    if track_names.len() != track_files.len() {
+        return Err(illegal(
+            stratify::StratifyError::TrackCountMismatch.message(),
+        ));
+    }
+    let mut names: Vec<String> = Vec::new();
+    let mut loaded: Vec<Vec<stratify::Interval>> = Vec::new();
+    for (name, path) in track_names.iter().zip(&track_files) {
+        let parameters = gatk_engine::interval_arguments::traversal_parameters(
+            std::slice::from_ref(path),
+            &[],
+            dictionary,
+            SetRule::Union,
+            MergingRule::All,
+            0,
+            0,
+        )
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+        if names.contains(name) {
+            return Err(bad_input(
+                stratify::StratifyError::DuplicateTrack { name: name.clone() }.message(),
+            ));
+        }
+        names.push(name.clone());
+        loaded.push(
+            parameters
+                .intervals
+                .into_iter()
+                .map(|interval| stratify::Interval {
+                    contig: interval.contig,
+                    start: interval.start,
+                    end: interval.end,
+                })
+                .collect(),
+        );
+    }
+    let tracks =
+        stratify::Tracks::new(&names, &loaded).map_err(|error| bad_input(error.message()))?;
+
+    let table_text = std::fs::read_to_string(config)
+        .map_err(|_| gatk("IO error while reading config table".to_string()))?;
+    let table =
+        gatk_engine::tsv_table::Table::parse(&table_text, config).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+    // The header line's number, which a format error names: the first line that is no comment.
+    let header_line = table_text
+        .lines()
+        .position(|line| !line.starts_with('#'))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    if table.columns.is_empty() {
+        return Err(bad_input(format!(
+            "format error in '{config}' at line {}: premature end of table: header line not found",
+            table_text.lines().count()
+        )));
+    }
+    stratify::check_columns(&table.columns).map_err(|error| {
+        bad_input(format!(
+            "format error in '{config}' at line {header_line}: {}",
+            error.message()
+        ))
+    })?;
+    let mut strata: Vec<stratify::Stratum> = Vec::new();
+    for row in &table.rows {
+        let cell = |column: &str| -> String {
+            table
+                .get(row, column)
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        let type_name = cell("SVTYPE");
+        let sv_type = stratify::SvType::parse(&type_name).ok_or_else(|| {
+            illegal(format!(
+                "No enum constant org.broadinstitute.hellbender.tools.spark.sv.utils.GATKSVVCFConstants.StructuralVariantAnnotationType.{type_name}"
+            ))
+        })?;
+        let name = cell("NAME");
+        let bound = |column: &str| -> Result<Option<i32>, Thrown> {
+            let value = cell(column);
+            if stratify::NULL_TABLE_VALUES.contains(&value.as_str()) {
+                return Ok(None);
+            }
+            value.parse::<i32>().map(Some).map_err(|_| {
+                Thrown::non_user(
+                    "java.lang.NumberFormatException",
+                    format!("For input string: \"{value}\""),
+                )
+            })
+        };
+        let min_size = bound("MIN_SIZE")?;
+        let max_size = bound("MAX_SIZE")?;
+        let track_list = stratify::parse_track_string(&cell("TRACKS"), &names)
+            .map_err(|error| gatk(error.message()))?;
+        let stratum = stratify::Stratum::new(&name, sv_type, min_size, max_size, track_list)
+            .map_err(|error| illegal(error.message()))?;
+        if strata.iter().any(|existing| existing.name == stratum.name) {
+            return Err(gatk(format!("Encountered duplicate name {}", stratum.name)));
+        }
+        strata.push(stratum);
+    }
+    stratify::Engine::new(strata, tracks).map_err(|error| bad_input(error.message()))
 }
