@@ -1830,6 +1830,7 @@ public class MakeFixtures {
         svStratifyFixtures(dir);
         svConcordanceFixtures(dir);
         svClusterFixtures(dir);
+        svAnnotateFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1858,6 +1859,48 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `SVAnnotate` reads: SVs of every type the rules tell apart, a protein-coding GTF and a
+     * non-coding BED.
+     *
+     * `sv_genes.gtf` holds `alpha` on the plus strand, two exons with CDS, start and stop codons and
+     * UTRs, and `beta` on the minus strand, one exon and a CDS, in the GENCODE form the codec
+     * accepts. `sv_noncoding.bed` has an enhancer and a silencer. `sv_annotate.vcf` places a
+     * deletion in a CDS, a duplication in a UTR, a deletion in the enhancer far from both genes, a
+     * duplication spanning `beta`, an insertion in an intron, an inversion spanning `alpha`, a
+     * breakend pair short enough for `--max-breakend-as-cnv-length`, a multiallelic CNV, a complex
+     * `dupINV` and a translocation.
+     */
+    static void svAnnotateFixtures(final Path dir) throws Exception {
+        Files.writeString(dir.resolve("sv_genes.gtf"), "chr1\tHAVANA\tgene\t1000\t3000\t.\t+\t.\tgene_id \"GA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; level 2; havana_gene \"OTTHUMG1.1\";\n" + "chr1\tHAVANA\ttranscript\t1000\t3000\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; tag \"basic\"; havana_gene \"OTTHUMG1.1\";\n" + "chr1\tHAVANA\texon\t1000\t1200\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 1; exon_id \"TA.1.1\";\n" + "chr1\tHAVANA\texon\t2000\t3000\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 2; exon_id \"TA.1.2\";\n" + "chr1\tHAVANA\tCDS\t1100\t1200\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 1; exon_id \"TA.1.1\";\n" + "chr1\tHAVANA\tCDS\t2000\t2800\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 2; exon_id \"TA.1.2\";\n" + "chr1\tHAVANA\tstart_codon\t1100\t1102\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 1; exon_id \"TA.1.1\";\n" + "chr1\tHAVANA\tstop_codon\t2798\t2800\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 2; exon_id \"TA.1.2\";\n" + "chr1\tHAVANA\tUTR\t1000\t1099\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 1; exon_id \"TA.1.1\";\n" + "chr1\tHAVANA\tUTR\t2801\t3000\t.\t+\t.\tgene_id \"GA.1\"; transcript_id \"TA.1\"; gene_type \"protein_coding\"; gene_name \"alpha\"; transcript_type \"protein_coding\"; transcript_name \"TA.1\"; level 2; exon_number 2; exon_id \"TA.1.2\";\n" + "chr1\tHAVANA\tgene\t10000\t12000\t.\t-\t.\tgene_id \"GB.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; level 2; havana_gene \"OTTHUMG2.1\";\n" + "chr1\tHAVANA\ttranscript\t10000\t12000\t.\t-\t.\tgene_id \"GB.1\"; transcript_id \"TB.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TB.1\"; level 2; tag \"basic\"; havana_gene \"OTTHUMG2.1\";\n" + "chr1\tHAVANA\texon\t10000\t12000\t.\t-\t.\tgene_id \"GB.1\"; transcript_id \"TB.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TB.1\"; level 2; exon_number 1; exon_id \"TB.1.1\";\n" + "chr1\tHAVANA\tCDS\t10200\t11800\t.\t-\t.\tgene_id \"GB.1\"; transcript_id \"TB.1\"; gene_type \"protein_coding\"; gene_name \"beta\"; transcript_type \"protein_coding\"; transcript_name \"TB.1\"; level 2; exon_number 1; exon_id \"TB.1.1\";\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_noncoding.bed"),
+                "chr1\t4000\t4500\tenhancer\t.\t+\nchr1\t20000\t20100\tsilencer\t.\t-\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_annotate.vcf"), "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##INFO=<ID=CPX_TYPE,Number=1,Type=String,Description=\"Complex type\">\n"
+                + "##INFO=<ID=CPX_INTERVALS,Number=.,Type=String,Description=\"Complex intervals\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t1150\tdel_cds\tN\t<DEL>\t.\tPASS\tEND=1180;SVTYPE=DEL;SVLEN=31\n"
+                + "chr1\t1300\tins_intron\tN\t<INS:ME>\t.\tPASS\tEND=1301;SVTYPE=INS;SVLEN=300\n"
+                + "chr1\t2850\tdup_utr\tN\t<DUP>\t.\tPASS\tEND=2900;SVTYPE=DUP;SVLEN=51\n"
+                + "chr1\t4100\tdel_enh\tN\t<DEL>\t.\tPASS\tEND=4200;SVTYPE=DEL;SVLEN=101\n"
+                + "chr1\t500\tinv_span\tN\t<INV>\t.\tPASS\tEND=3500;SVTYPE=INV;SVLEN=3001\n"
+                + "chr1\t9000\tdup_span\tN\t<DUP>\t.\tPASS\tEND=13000;SVTYPE=DUP;SVLEN=4001\n"
+                + "chr1\t10500\tcnv\tN\t<CNV>\t.\tPASS\tEND=10800;SVTYPE=CNV;SVLEN=301\n"
+                + "chr1\t11500\tbnd_short\tN\tN[chr1:11900[\t.\tPASS\tSVTYPE=BND;CHR2=chr1;END2=11900;STRANDS=+-;SVLEN=400\n"
+                + "chr1\t15000\tcpx\tN\t<CPX>\t.\tPASS\tEND=16000;SVTYPE=CPX;SVLEN=1000;CPX_TYPE=dupINV;CPX_INTERVALS=DUP_chr1:2500-2700,INV_chr1:2700-16000\n"
+                + "chr1\t20050\tctx\tN\t<CTX>\t.\tPASS\tEND=20050;SVTYPE=CTX;CHR2=chr2;END2=500\n",
+                StandardCharsets.UTF_8);
     }
 
     /**

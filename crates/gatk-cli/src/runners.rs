@@ -15781,3 +15781,266 @@ fn load_stratification_engine(
     }
     stratify::Engine::new(strata, tracks).map_err(|error| bad_input(error.message()))
 }
+
+/// `SVAnnotate`: every SV annotated with what it is predicted to do to the protein-coding genes
+/// and non-coding elements it reaches.
+///
+/// The rules are [`gatk_tools::sv_annotate`]; the runner reads the three inputs and writes:
+///
+/// * **the GTF and the BED are read in `onTraversalStart`, before the writer**, and only their
+///   features on a contig the VCF's own dictionary names are kept; every promoter is built there
+///   too, so a window the interval refuses leaves no file;
+/// * **the SV type comes from the ALT allele**, not `SVTYPE`: a breakend allele is a BND (a CPX when
+///   `CPX_INTERVALS` is present), a symbolic one its first symbol, anything else refused;
+/// * **nothing inside `apply` is wrapped**, a `VariantWalker` calling it bare;
+/// * **the consequences are added to the record's own attributes**, each a sorted list of names,
+///   and `PREDICTED_INTERGENIC` is written whenever a GTF was given, as a flag that a `false` drops.
+pub fn sv_annotate(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_annotate as annotate;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "SVAnnotate")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let promoter_window = scalar(parser, "promoter-window-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1000);
+    let max_breakend_len = scalar(parser, "max-breakend-as-cnv-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(-1);
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    let refused = |error: annotate::AnnotateError| match error {
+        annotate::AnnotateError::CpxWithoutIntervals
+        | annotate::AnnotateError::CpxWithoutType
+        | annotate::AnnotateError::CtxWithoutContig2 => Thrown::user(error.message()),
+        annotate::AnnotateError::NumberFormat { .. } => {
+            Thrown::non_user("java.lang.NumberFormatException", error.message())
+        }
+        annotate::AnnotateError::InvalidInterval { .. } => illegal(error.message()),
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let contigs: Vec<String> = sequence_dictionary_of(&file.header)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+
+    // `onTraversalStart`: the GTF, then the BED, then the writer.
+    let read = |path: &str| {
+        std::fs::read_to_string(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: java_absolute_path(path),
+                }
+                .message(),
+            )
+        })
+    };
+    let gtf = argument(parser, "protein-coding-gtf");
+    let transcripts = match &gtf {
+        Some(path) => annotate::transcripts_from_gtf(&read(path)?, &contigs),
+        None => Vec::new(),
+    };
+    for transcript in &transcripts {
+        annotate::promoter_interval(transcript, promoter_window).map_err(refused)?;
+    }
+    let bed = argument(parser, "non-coding-bed");
+    let non_coding = match &bed {
+        Some(path) => annotate::non_coding_from_bed(&read(path)?, &contigs).map_err(refused)?,
+        None => Vec::new(),
+    };
+
+    let mut header = file.header.clone();
+    let list = |id: &str, text: &str| HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: id.to_string(),
+        number: Cardinality::Unbounded,
+        line_type: LineType::String,
+        description: text.to_string(),
+        extra: Vec::new(),
+    };
+    let mut added = vec![
+        list(annotate::LOF, "Gene(s) on which the SV is predicted to have a loss-of-function effect."),
+        list(annotate::INT_EXON_DUP, "Gene(s) on which the SV is predicted to result in intragenic exonic duplication without breaking any coding sequences."),
+        list(annotate::COPY_GAIN, "Gene(s) on which the SV is predicted to have a copy-gain effect."),
+        list(annotate::TSS_DUP, "Gene(s) for which the SV is predicted to duplicate the transcription start site."),
+        list(annotate::DUP_PARTIAL, "Gene(s) which are partially overlapped by an SV's duplication, but the transcription start site is not duplicated."),
+        list(annotate::INTRONIC, "Gene(s) where the SV was found to lie entirely within an intron."),
+        list(annotate::PARTIAL_EXON_DUP, "Gene(s) where the duplication SV has one breakpoint in the coding sequence."),
+        list(annotate::INV_SPAN, "Gene(s) which are entirely spanned by an SV's inversion."),
+        list(annotate::UTR, "Gene(s) for which the SV is predicted to disrupt a UTR."),
+        list(annotate::MSV_EXON_OVERLAP, "Gene(s) on which the multiallelic SV would be predicted to have a LOF, INTRAGENIC_EXON_DUP, COPY_GAIN, DUP_PARTIAL, TSS_DUP, or PARTIAL_EXON_DUP annotation if the SV were biallelic."),
+        list(annotate::PROMOTER, "Gene(s) for which the SV is predicted to overlap the promoter region."),
+        list(annotate::BREAKEND_EXON, "Gene(s) for which the SV breakend is predicted to fall in an exon."),
+        HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: annotate::INTERGENIC.to_string(),
+            number: Cardinality::Fixed(0),
+            line_type: LineType::Flag,
+            description: "SV does not overlap any protein-coding genes.".to_string(),
+            extra: Vec::new(),
+        },
+        list(annotate::NONCODING_SPAN, "Class(es) of noncoding elements spanned by SV."),
+        list(annotate::NONCODING_BREAKPOINT, "Class(es) of noncoding elements disrupted by SV breakpoint."),
+        list(annotate::NEAREST_TSS, "Nearest transcription start site to an intergenic variant."),
+        list(annotate::PARTIAL_DISPERSED_DUP, "Gene(s) overlapped partially by the duplicated interval involved in a dispersed duplication event in a complex SV."),
+    ];
+    added.retain(|line| {
+        !header
+            .lines
+            .iter()
+            .any(|existing| same_compound_id(existing, line))
+    });
+    header.lines.extend(added);
+    header
+        .lines
+        .extend(default_tool_vcf_header_lines(parser, "SVAnnotate"));
+
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+    let attribute = |record: &htsjdk_vcf::variant::VariantContext, key: &str| {
+        record
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    let text_of = |value: &Value| match value {
+        Value::Str(text) => text.clone(),
+        other => other.format().unwrap_or_default(),
+    };
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for record in kept {
+        let outcome = (|| -> Result<htsjdk_vcf::variant::VariantContext, Thrown> {
+            // `getSVType`.
+            let alternates = record.alternate_alleles();
+            if alternates.len() > 1 {
+                let names: Vec<String> = alternates.iter().map(|a| a.display_string()).collect();
+                return Err(illegal(format!(
+                    "Expected single ALT allele, found multiple: [{}]",
+                    names.join(", ")
+                )));
+            }
+            let alt = alternates[0].display_string();
+            let is_breakpoint = alt.len() > 1 && (alt.contains('[') || alt.contains(']'));
+            let sv_type = if is_breakpoint {
+                if attribute(record, "CPX_INTERVALS").is_some() {
+                    annotate::SvType::Cpx
+                } else {
+                    annotate::SvType::Bnd
+                }
+            } else if alternates[0].is_symbolic() {
+                let symbol = alt.replace(['<', '>'], "");
+                let first = symbol.split(':').next().unwrap_or_default().to_string();
+                annotate::sv_type_named(&first).ok_or_else(|| {
+                    illegal(format!(
+                        "No enum constant org.broadinstitute.hellbender.tools.spark.sv.utils.GATKSVVCFConstants.StructuralVariantAnnotationType.{first}"
+                    ))
+                })?
+            } else {
+                return Err(illegal(format!(
+                    "Unexpected ALT allele: {alt}. Expected breakpoint or symbolic ALT allele representing a structural variant record."
+                )));
+            };
+            // `getComplexSubtype`.
+            let complex_type = match attribute(record, "CPX_TYPE") {
+                None => None,
+                Some(value) => {
+                    let name = text_of(&value);
+                    if !gatk_tools::sv_call_record::COMPLEX_SUBTYPES.contains(&name.as_str()) {
+                        let error =
+                            gatk_tools::sv_call_record::SvRecordError::InvalidComplexSubtype {
+                                subtype: name,
+                            };
+                        return Err(illegal(error.message()));
+                    }
+                    annotate::complex_subtype(&name)
+                }
+            };
+            let int = |key: &str, default: i32| -> Result<i32, Thrown> {
+                match attribute(record, key) {
+                    None | Some(Value::Missing) => Ok(default),
+                    Some(value) => {
+                        let text = text_of(&value);
+                        text.parse().map_err(|_| {
+                            Thrown::non_user(
+                                "java.lang.NumberFormatException",
+                                format!("For input string: \"{text}\""),
+                            )
+                        })
+                    }
+                }
+            };
+            let variant = annotate::Variant {
+                id: record.id.clone(),
+                contig: record.contig.clone(),
+                position: record.start as i32,
+                end: record.stop as i32,
+                sv_type,
+                sv_length: int("SVLEN", 0)?,
+                contig2: attribute(record, "CHR2").map(|value| text_of(&value)),
+                end2: match attribute(record, "END2") {
+                    None => None,
+                    Some(_) => Some(int("END2", record.start as i32)?),
+                },
+                strands: attribute(record, "STRANDS").map(|value| text_of(&value)),
+                complex_type,
+                complex_intervals: match attribute(record, "CPX_INTERVALS") {
+                    None => Vec::new(),
+                    Some(Value::List(items)) => items.iter().map(text_of).collect(),
+                    Some(value) => vec![text_of(&value)],
+                },
+            };
+            let annotation = annotate::annotate_structural_variant(
+                &variant,
+                &transcripts,
+                &non_coding,
+                gtf.is_some(),
+                bed.is_some(),
+                promoter_window,
+                max_breakend_len,
+            )
+            .map_err(refused)?;
+            let mut out = record.clone();
+            for (consequence, names) in annotation.consequences {
+                out.attributes.retain(|(key, _)| *key != consequence);
+                out.attributes.push((
+                    consequence,
+                    Value::List(names.into_iter().map(Value::Str).collect()),
+                ));
+            }
+            if let Some(intergenic) = annotation.intergenic {
+                out.attributes
+                    .retain(|(key, _)| key != annotate::INTERGENIC);
+                out.attributes
+                    .push((annotate::INTERGENIC.to_string(), Value::Bool(intergenic)));
+            }
+            Ok(out)
+        })();
+        match outcome {
+            Ok(annotated) => written.push(annotated),
+            Err(error) => {
+                finish(&written)?;
+                return Err(error);
+            }
+        }
+    }
+    finish(&written)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}

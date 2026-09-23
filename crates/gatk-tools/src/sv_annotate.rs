@@ -879,3 +879,149 @@ pub fn nearest_transcription_start_site(
     }
     best.map(|(_, _, gene)| gene)
 }
+
+/// `ComplexVariantSubtype` by its VCF name, over the subtypes the rules tell apart; the others
+/// (`piDUP_FR`, `piDUP_RF`) are valid and simply carry no rule.
+pub fn complex_subtype(name: &str) -> Option<ComplexSubtype> {
+    Some(match name {
+        "dDUP" => ComplexSubtype::DDup,
+        "dupINV" => ComplexSubtype::DupInv,
+        "INVdup" => ComplexSubtype::InvDup,
+        "dupINVdup" => ComplexSubtype::DupInvDup,
+        "dupINVdel" => ComplexSubtype::DupInvDel,
+        "delINVdup" => ComplexSubtype::DelInvDup,
+        "dDUP_iDEL" => ComplexSubtype::DDupIDel,
+        "INS_iDEL" => ComplexSubtype::InsIDel,
+        "delINV" => ComplexSubtype::DelInv,
+        "INVdel" => ComplexSubtype::InvDel,
+        "delINVdel" => ComplexSubtype::DelInvDel,
+        "CTX_PP/QQ" => ComplexSubtype::CtxPpQq,
+        "CTX_PQ/QP" => ComplexSubtype::CtxPqQp,
+        "CTX_INV" => ComplexSubtype::CtxInv,
+        _ => return None,
+    })
+}
+
+/// `SVType` by name, as `StructuralVariantAnnotationType.valueOf` reads the first symbol of an ALT.
+pub fn sv_type_named(name: &str) -> Option<SvType> {
+    Some(match name {
+        "DEL" => SvType::Del,
+        "DUP" => SvType::Dup,
+        "CNV" => SvType::Cnv,
+        "INS" => SvType::Ins,
+        "INV" => SvType::Inv,
+        "BND" => SvType::Bnd,
+        "CTX" => SvType::Ctx,
+        "CPX" => SvType::Cpx,
+        _ => return None,
+    })
+}
+
+fn gtf_attribute<'a>(attributes: &'a str, key: &str) -> Option<&'a str> {
+    attributes.split(';').find_map(|entry| {
+        let (name, value) = entry.trim().split_once(' ')?;
+        (name == key).then(|| value.trim().trim_matches('"'))
+    })
+}
+
+/// The transcripts of a protein-coding GTF as `buildIntervalTreesFromGTF` walks them: one per
+/// `transcript_id`, carrying its own line and every exon, CDS, codon and UTR line under it, and
+/// only on a contig `contigs` (the VCF's dictionary) names.
+///
+/// The GENCODE codec's validation is not ported: a file it would refuse is read here as far as its
+/// lines allow.
+pub fn transcripts_from_gtf(gtf: &str, contigs: &[String]) -> Vec<Transcript> {
+    let mut transcripts: Vec<(String, Transcript)> = Vec::new();
+    for line in gtf.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 9 || !contigs.iter().any(|c| c == fields[0]) {
+            continue;
+        }
+        let (Ok(start), Ok(end)) = (fields[3].parse::<i32>(), fields[4].parse::<i32>()) else {
+            continue;
+        };
+        let Some(id) = gtf_attribute(fields[8], "transcript_id") else {
+            continue;
+        };
+        let kind = match fields[2] {
+            "transcript" => FeatureKind::Transcript,
+            "exon" => FeatureKind::Exon,
+            "CDS" => FeatureKind::Cds,
+            "start_codon" => FeatureKind::StartCodon,
+            "stop_codon" => FeatureKind::StopCodon,
+            "UTR" => FeatureKind::Utr,
+            _ => continue,
+        };
+        if kind == FeatureKind::Transcript {
+            transcripts.push((
+                id.to_string(),
+                Transcript {
+                    gene_name: gtf_attribute(fields[8], "gene_name")
+                        .unwrap_or_default()
+                        .to_string(),
+                    contig: fields[0].to_string(),
+                    start,
+                    end,
+                    negative_strand: fields[6] == "-",
+                    features: vec![Feature { kind, start, end }],
+                },
+            ));
+        } else if let Some((_, transcript)) = transcripts.iter_mut().find(|(key, _)| key == id) {
+            transcript.features.push(Feature { kind, start, end });
+        }
+    }
+    transcripts.into_iter().map(|(_, t)| t).collect()
+}
+
+/// The non-coding elements of a BED as `buildIntervalTreeFromBED` reads them: the name column, the
+/// start made one-based, header lines skipped, and an element on a contig the VCF does not name
+/// dropped. A data line whose coordinates do not parse is `Integer.parseInt`'s refusal.
+pub fn non_coding_from_bed(
+    bed: &str,
+    contigs: &[String],
+) -> Result<Vec<NonCodingElement>, AnnotateError> {
+    let mut elements = Vec::new();
+    for line in bed.lines() {
+        if line.is_empty()
+            || line.starts_with('#')
+            || line.starts_with("track")
+            || line.starts_with("browser")
+        {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 3 {
+            continue;
+        }
+        let start: i32 = fields[1]
+            .trim()
+            .parse()
+            .map_err(|_| AnnotateError::NumberFormat {
+                text: fields[1].to_string(),
+            })?;
+        let end: i32 = fields[2]
+            .trim()
+            .parse()
+            .map_err(|_| AnnotateError::NumberFormat {
+                text: fields[2].to_string(),
+            })?;
+        if !contigs.iter().any(|c| c == fields[0]) {
+            continue;
+        }
+        elements.push(NonCodingElement {
+            name: fields
+                .get(3)
+                .map(|name| name.to_string())
+                .unwrap_or_default(),
+            interval: Interval {
+                contig: fields[0].to_string(),
+                start: start + 1,
+                end,
+            },
+        });
+    }
+    Ok(elements)
+}
