@@ -1832,6 +1832,20 @@ public class MakeFixtures {
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
+        // `FilterFuncotations`: a Funcotated VCF whose records match each filter once (ClinVar,
+        // LoF, LMM, an autosomal recessive compound het pair and a hom-var, nothing at all, and a
+        // multiallelic site), and the same records under a header with no FUNCOTATION line.
+        final String funcotationHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=100000>\n";
+        final String funcotationLine = "##INFO=<ID=FUNCOTATION,Number=A,Type=String,Description=\"Functional annotation from the Funcotator tool.  Funcotation fields are: Gencode_19_hugoSymbol|Gencode_19_annotationTranscript|Gencode_19_variantClassification|ClinVar_VCF_CLNSIG|ACMG_recommendation_Disease_Name|ACMGLMMLof_LOF_Mechanism|LMMKnown_LMM_FLAGGED|ExAC_AC_AFR|ExAC_AN_AFR|gnomAD_exome_AF_afr|gnomAD_exome_FILTER\">\n";
+        final String funcotationRecords = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
+                + "chr1\t100\t.\tA\tG\t50\tPASS\tFUNCOTATION=[GENE1|TX1|MISSENSE|Pathogenic|Cancer|||1|1000|0.001|PASS]\tGT\t0/1\n" + "chr1\t200\t.\tC\tT\t50\tPASS\tFUNCOTATION=[GENE2|TX2|NONSENSE|||YES||0|0|0.0|PASS]#[GENE2|TX2b|INTRON||||||||]\tGT\t0/1\n" + "chr1\t300\t.\tG\tA\t50\tPASS\tFUNCOTATION=[GENE3|TX3|SILENT||||true|5|10|0.5|AC0]\tGT\t0/1\n" + "chr1\t400\t.\tT\tC\t50\tPASS\tFUNCOTATION=[MUTYH|TX4|MISSENSE||||||||]\tGT\t0/1\n" + "chr1\t500\t.\tA\tT\t50\tPASS\tFUNCOTATION=[MUTYH|TX4|MISSENSE||||||||]\tGT\t0/1\n" + "chr1\t600\t.\tG\tC\t50\tPASS\tFUNCOTATION=[ATP7B|TX5|MISSENSE||||||||]\tGT\t1/1\n" + "chr1\t700\t.\tC\tG\t50\tLowQual\tFUNCOTATION=[GENE7|TX7|INTRON||||||||]\tGT\t0/1\n" + "chr1\t800\t.\tA\tC,G\t50\t.\tFUNCOTATION=[GENE8|TX8|NONSENSE|||YES||200|1000|0.2|PASS],[GENE8|TX8|MISSENSE|Likely_pathogenic|Heart|||1|2000|0.0005|PASS]\tGT\t1/2\n";
+        Files.writeString(dir.resolve("funcotated.vcf"),
+                funcotationHeader + funcotationLine + funcotationRecords, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("unfuncotated.vcf"),
+                funcotationHeader + funcotationRecords, StandardCharsets.UTF_8);
         // `MergeMutect2CallsWithMC3`: an MC3 call set with CENTERS and read counts, and Mutect2 calls
         // at the same sites and others, one filtered, one multiallelic, with and without the
         // `##tumor_sample` line the tool reads its sample from.

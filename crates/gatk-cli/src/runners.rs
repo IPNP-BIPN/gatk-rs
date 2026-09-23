@@ -16643,3 +16643,223 @@ pub fn merge_mutect2_calls_with_mc3(parser: &Parser) -> Outcome {
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// `FilterFuncotations`: a Funcotated VCF read twice and marked with the clinical-significance
+/// filters its funcotations match.
+///
+/// The five filters are [`gatk_tools::filter_funcotations`]; the runner is the two passes and the
+/// reading of the `FUNCOTATION` field:
+///
+/// * **the keys come from the header's `FUNCOTATION` line**, and a header without one is refused
+///   before the writer exists;
+/// * **each alternate allele's value splits into transcripts at `]#[`** and each transcript into
+///   the header's keys at `|`, the value count checked against the key count, and an alternate
+///   count that differs from the value count refused;
+/// * **the first pass collects the compound het variants**, the second writes every record with
+///   `CLINSIG` naming the matched filters, `PASS` when any matched and `NOT_CLINSIG` added to its
+///   filters when none did.
+pub fn filter_funcotations(parser: &Parser) -> Outcome {
+    use gatk_tools::filter_funcotations as ff;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "FilterFuncotations")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference = match scalar(parser, "ref-version").as_deref() {
+        Some("hg38") => ff::Reference::Hg38,
+        Some("hg19") => ff::Reference::Hg19,
+        _ => ff::Reference::B37,
+    };
+    let source = match scalar(parser, "allele-frequency-data-source").as_deref() {
+        Some("gnomad") => ff::AlleleFrequencySource::Gnomad,
+        _ => ff::AlleleFrequencySource::Exac,
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let description = file.header.lines.iter().find_map(|line| match line {
+        HeaderLine::Compound {
+            key,
+            id,
+            description,
+            ..
+        } if key == "INFO" && id == "FUNCOTATION" => Some(description.clone()),
+        _ => None,
+    });
+    let Some(description) = description else {
+        return Err(bad_input(
+            "Could not extract Funcotation keys from FUNCOTATION field in input VCF header."
+                .to_string(),
+        ));
+    };
+    let keys =
+        gatk_tools::funcotator::extract_funcotator_keys_from_header_description(&description);
+    let mut header = file.header.clone();
+    if !header.has_filter_line(ff::NOT_CLINSIG_FILTER) {
+        header.lines.push(HeaderLine::Filter {
+            id: ff::NOT_CLINSIG_FILTER.to_string(),
+            description: "Filter for clinically insignificant variants.".to_string(),
+        });
+    }
+    let clinsig = HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: ff::CLINSIG_INFO_KEY.to_string(),
+        number: Cardinality::Fixed(1),
+        line_type: LineType::String,
+        description:
+            "Rule(s) which caused this annotation to be flagged as clinically significant."
+                .to_string(),
+        extra: Vec::new(),
+    };
+    if !header
+        .lines
+        .iter()
+        .any(|line| same_compound_id(line, &clinsig))
+    {
+        header.lines.push(clinsig);
+    }
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+
+    // `createAlleleToFuncotationMapFromFuncotationVcfAttribute`, one list per alternate, then the
+    // transcripts of all of them.
+    let transcripts_of =
+        |record: &htsjdk_vcf::variant::VariantContext| -> Result<Vec<ff::Funcotations>, Thrown> {
+            let values: Vec<String> = match record
+                .attributes
+                .iter()
+                .find(|(name, _)| name == "FUNCOTATION")
+                .map(|(_, value)| value)
+            {
+                None => Vec::new(),
+                Some(Value::List(items)) => items
+                    .iter()
+                    .map(|item| item.format().unwrap_or_default())
+                    .collect(),
+                Some(value) => vec![value.format().unwrap_or_default()],
+            };
+            if values.len() != record.alternate_alleles().len() {
+                return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException$ShouldNeverReachHereException",
+                "Could not parse FUNCOTATION field properly.",
+            ));
+            }
+            let mut transcripts = Vec::new();
+            for value in values {
+                for transcript in value.split("]#[").filter(|part| !part.is_empty()) {
+                    let mut fields: Vec<&str> = transcript.split('|').collect();
+                    if let Some(first) = fields.first_mut() {
+                        *first = first.strip_prefix('[').unwrap_or(first);
+                    }
+                    if let Some(last) = fields.last_mut() {
+                        *last = last.strip_suffix(']').unwrap_or(last);
+                    }
+                    if fields.len() != keys.len() {
+                        return Err(Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException$ShouldNeverReachHereException",
+                        format!(
+                            "Cannot parse the funcotation attribute.  Num values: {}   Num keys: {}",
+                            fields.len(),
+                            keys.len()
+                        ),
+                    ));
+                    }
+                    let pairs: Vec<(&str, &str)> = keys
+                        .iter()
+                        .map(String::as_str)
+                        .zip(fields.iter().copied())
+                        .collect();
+                    transcripts.push(ff::Funcotations::new(&pairs));
+                }
+            }
+            Ok(transcripts)
+        };
+    let variant_of = |record: &htsjdk_vcf::variant::VariantContext| {
+        let het = |g: &htsjdk_vcf::variant::Genotype| {
+            g.alleles.len() > 1
+                && g.alleles.iter().all(|a| !a.is_no_call())
+                && g.alleles.iter().any(|a| *a != g.alleles[0])
+        };
+        let hom_var = |g: &htsjdk_vcf::variant::Genotype| {
+            !g.alleles.is_empty()
+                && g.alleles
+                    .iter()
+                    .all(|a| !a.is_no_call() && !a.is_reference())
+                && g.alleles.iter().all(|a| *a == g.alleles[0])
+        };
+        ff::Variant {
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            end: record.stop as i32,
+            reference_allele: record.reference().display_string(),
+            alternate_alleles: record
+                .alternate_alleles()
+                .iter()
+                .map(|a| a.display_string())
+                .collect(),
+            het_count: record.genotypes.iter().filter(|g| het(g)).count() as i32,
+            hom_var_count: record.genotypes.iter().filter(|g| hom_var(g)).count() as i32,
+        }
+    };
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    // The first pass: every record's transcripts, for the compound het rule.
+    let mut first_pass: Vec<(ff::Variant, Vec<ff::Funcotations>)> = Vec::new();
+    for record in &kept {
+        match transcripts_of(record) {
+            Ok(transcripts) => first_pass.push((variant_of(record), transcripts)),
+            Err(error) => {
+                finish(&[])?;
+                return Err(error);
+            }
+        }
+    }
+    let compound = ff::compound_het_variants(&first_pass, reference);
+
+    // The second pass.
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    for (record, (variant, transcripts)) in kept.iter().zip(&first_pass) {
+        let matching =
+            match ff::matching_filters(transcripts, variant, reference, source, &compound) {
+                Ok(matching) => matching,
+                Err(error) => {
+                    finish(&written)?;
+                    return Err(Thrown::non_user(
+                        "java.lang.NumberFormatException",
+                        error.message(),
+                    ));
+                }
+            };
+        let (value, significant) = ff::clinsig(&matching);
+        let mut out = (*record).clone();
+        out.attributes
+            .retain(|(name, _)| name != ff::CLINSIG_INFO_KEY);
+        out.attributes
+            .push((ff::CLINSIG_INFO_KEY.to_string(), Value::Str(value)));
+        out.filters = if significant {
+            Some(Vec::new())
+        } else {
+            let mut filters = out.filters.clone().unwrap_or_default();
+            if !filters.iter().any(|f| f == ff::NOT_CLINSIG_FILTER) {
+                filters.push(ff::NOT_CLINSIG_FILTER.to_string());
+            }
+            Some(filters)
+        };
+        written.push(out);
+    }
+    finish(&written)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
