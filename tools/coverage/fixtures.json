@@ -4377,6 +4377,34 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "SplitCRAM": {
+      "$why": [
+        "split.cram holds four containers of 3, 3, 3 and 1 records, written by htsjdk with three reads",
+        "to a slice and one slice to a container; reads.bam is not a CRAM and is refused at the magic.",
+        "--shard-records 3 cuts after every container, 7 after the third, and ten million not at all.",
+        "--shard-max-output-count 1 stops after the first shard and 2 stops nothing, the counter being",
+        "reset for every shard. --output without a %d is refused before the input is opened."
+      ],
+      "--input": [
+        "/work/fixtures/split.cram",
+        "/work/fixtures/reads.bam"
+      ],
+      "--output": [
+        "/work/out/shard_%04d.cram",
+        "/work/out/part%d.cram",
+        "/work/out/shard.cram"
+      ],
+      "--shard-records": [
+        "3",
+        "7",
+        "10000000"
+      ],
+      "--shard-max-output-count": [
+        "0",
+        "1",
+        "2"
+      ]
     }
   },
   "constraints": [

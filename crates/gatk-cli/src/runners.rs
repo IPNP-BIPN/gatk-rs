@@ -7272,6 +7272,170 @@ pub fn create_somatic_panel_of_normals(parser: &Parser) -> Outcome {
     Ok(Some("SUCCESS".to_string()))
 }
 
+/// `SplitCRAM`, a `CommandLineProgram` that cuts a CRAM at container boundaries.
+///
+/// Where the cuts fall is [`gatk_tools::split_cram::plan`]'s. What the runner adds is the bytes of
+/// each shard, which are htsjdk's writers rather than a copy of the input's first bytes:
+///
+///   - the file definition, written back from the one read;
+///   - the SAM header container, REBUILT: the header text is parsed and encoded again, the block is
+///     GZIP at `Defaults.COMPRESSION_LEVEL`, which `GATKConfig` sets to two, and the container
+///     header is `makeSAMFileHeaderContainer`'s, unmapped with one block and no landmark;
+///   - every data container as it was read, which `Container.write` reproduces for a file htsjdk
+///     wrote, its blocks keeping their compressed bytes;
+///   - and the version 3 EOF container.
+///
+/// Nothing is printed: `doWork` returns null.
+pub fn split_cram(parser: &Parser) -> Outcome {
+    use gatk_tools::split_cram as split;
+    use htsjdk_cram::varint::{write_unsigned_itf8, write_unsigned_ltf8};
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let template =
+        argument(parser, "output").unwrap_or_else(|| split::DEFAULT_TEMPLATE.to_string());
+    let shard_records = scalar(parser, "shard-records")
+        .and_then(|text| text.parse::<i64>().ok())
+        .unwrap_or(split::DEFAULT_SHARD_RECORDS);
+    let max_output_count = number_or(parser, "shard-max-output-count", 0);
+
+    // `onStartup`, before the input is opened.
+    if !split::accepts_template(&template) {
+        let error = split::SplitError::TemplateMissingFormatter {
+            template: template.clone(),
+        };
+        // `SplitError::java_class` borrows the error; the class is a constant.
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            error.message(),
+        ));
+    }
+
+    let cram = std::fs::read(&input).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {}. Error was: It doesn't exist.",
+            std::path::Path::new(&input).display()
+        ))
+    })?;
+    if cram.len() < 4 || &cram[..4] != b"CRAM" {
+        return Err(Thrown::non_user(
+            "java.lang.RuntimeException",
+            "Input does not have a valid CRAM header.",
+        ));
+    }
+    let walk = htsjdk_cram::file::read_file(&cram)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?;
+    let major = walk.definition.major;
+
+    // `CramIO.readSAMFileHeader`: a little-endian length, then that many bytes of text.
+    let text_length = walk
+        .sam_header
+        .get(..4)
+        .map(|bytes| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]).max(0) as usize)
+        .unwrap_or(0);
+    let text_end = (4 + text_length).min(walk.sam_header.len());
+    let text = String::from_utf8_lossy(walk.sam_header.get(4..text_end).unwrap_or(&[]));
+    let header = htsjdk_bam::reader::parse_header_text(&text);
+    let encoded = header.encode_replacing_version();
+
+    // `samHeaderToByteArray`, then `createGZIPFileHeaderBlock` and the block's own `write`.
+    let mut raw = (encoded.len() as i32).to_le_bytes().to_vec();
+    raw.extend_from_slice(encoded.as_bytes());
+    let compressed = java_gzip(&raw, 2);
+    let mut block = vec![1u8, 0u8];
+    block.extend_from_slice(&write_unsigned_itf8(0).0);
+    block.extend_from_slice(&write_unsigned_itf8(compressed.len() as i32).0);
+    block.extend_from_slice(&write_unsigned_itf8(raw.len() as i32).0);
+    block.extend_from_slice(&compressed);
+    if major >= 3 {
+        let crc = htsjdk_cram::compression_header::crc32(&block);
+        block.extend_from_slice(&crc.to_le_bytes());
+    }
+    // `makeSAMFileHeaderContainer(blockSize)`, written by `ContainerHeader.write`.
+    let mut container = (block.len() as i32).to_le_bytes().to_vec();
+    container.extend_from_slice(&write_unsigned_itf8(-1).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    container.extend_from_slice(&write_unsigned_ltf8(0).0);
+    container.extend_from_slice(&write_unsigned_ltf8(0).0);
+    container.extend_from_slice(&write_unsigned_itf8(1).0);
+    container.extend_from_slice(&write_unsigned_itf8(0).0);
+    if major >= 3 {
+        let crc = htsjdk_cram::compression_header::crc32(&container);
+        container.extend_from_slice(&crc.to_le_bytes());
+    }
+    let mut preamble = walk.definition.write();
+    preamble.extend_from_slice(&container);
+    preamble.extend_from_slice(&block);
+
+    // The data containers, as bytes, stopping at the EOF container the iterator does not return.
+    let containers: Vec<(&[u8], i32)> = walk
+        .containers
+        .iter()
+        .filter(|one| !one.header.is_eof())
+        .map(|one| {
+            let end =
+                one.offset + one.header.byte_length + one.header.blocks_byte_size.max(0) as usize;
+            (
+                &cram[one.offset..end.min(cram.len())],
+                one.header.record_count,
+            )
+        })
+        .collect();
+    let counts: Vec<i32> = containers.iter().map(|(_, count)| *count).collect();
+    let shards = split::plan(&counts, shard_records, max_output_count, &template)
+        .map_err(|error| Thrown::non_user("java.lang.IllegalArgumentException", error.message()))?;
+
+    let mut next = 0usize;
+    for shard in &shards {
+        let mut out = preamble.clone();
+        for _ in &shard.containers {
+            out.extend_from_slice(containers[next].0);
+            next += 1;
+        }
+        out.extend_from_slice(&CRAM_V3_EOF);
+        write_file(&shard.name, &out)?;
+    }
+    Ok(None)
+}
+
+/// `CramIO.ZERO_F_EOF_MARKER`, the version 3 EOF container.
+const CRAM_V3_EOF: [u8; 38] = [
+    0x0f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0xe0, 0x45, 0x4f, 0x46, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x05, 0xbd, 0xd9, 0x4f, 0x00, 0x01, 0x00, 0x06, 0x06, 0x01, 0x00, 0x01, 0x00,
+    0x01, 0x00, 0xee, 0x63, 0x01, 0x4b,
+];
+
+/// `java.util.zip.GZIPOutputStream` at `level`: the fixed ten-byte header with no name and no
+/// time, whose operating system byte is 255 (unknown, measured on the oracle's JDK rather than the
+/// zero older JDKs wrote), the JDK's zlib deflate, then the CRC and the length.
+fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
+    let mut out = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff];
+    let mut compressor = flate2::Compress::new(flate2::Compression::new(level), false);
+    let mut deflated = Vec::with_capacity(data.len() + 64);
+    loop {
+        let status = compressor
+            .compress_vec(
+                &data[compressor.total_in() as usize..],
+                &mut deflated,
+                flate2::FlushCompress::Finish,
+            )
+            .expect("deflating into a vector does not fail");
+        if status == flate2::Status::StreamEnd {
+            break;
+        }
+        deflated.reserve(deflated.capacity().max(64));
+    }
+    out.extend_from_slice(&deflated);
+    let mut crc = flate2::Crc::new();
+    crc.update(data);
+    out.extend_from_slice(&crc.sum().to_le_bytes());
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves

@@ -294,6 +294,7 @@ jobs:
             --tool AnalyzeCovariates \
             --tool CollectF1R2Counts \
             --tool CreateSomaticPanelOfNormals \
+            --tool SplitCRAM \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

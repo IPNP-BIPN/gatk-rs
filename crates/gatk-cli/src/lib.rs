@@ -339,6 +339,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "CollectF1R2Counts" => Some(run_collect_f1r2_counts),
         "CreateSomaticPanelOfNormals" => Some(run_create_somatic_panel_of_normals),
+        "SplitCRAM" => Some(run_split_cram),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -685,6 +686,10 @@ fn run_collect_f1r2_counts(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_create_somatic_panel_of_normals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::create_somatic_panel_of_normals(&parsed("CreateSomaticPanelOfNormals", args)?)
+}
+
+fn run_split_cram(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::split_cram(&parsed("SplitCRAM", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {

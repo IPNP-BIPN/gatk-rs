@@ -671,6 +671,55 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * The CRAM `SplitCRAM` cuts: ten twenty-base reads over `reference.fasta`, three to a slice
+     * and one slice to a container, so the file holds four containers of 3, 3, 3 and 1 records
+     * and a `--shard-records` of 3, 7 or ten million cuts it three different ways.
+     */
+    static void splitCram(final Path dir) throws Exception {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgc");
+        group.setSample("cram");
+        header.addReadGroup(group);
+        final htsjdk.samtools.cram.structure.CRAMEncodingStrategy strategy =
+                new htsjdk.samtools.cram.structure.CRAMEncodingStrategy()
+                        .setMinimumSingleReferenceSliceSize(1)
+                        .setReadsPerSlice(3)
+                        .setSlicesPerContainer(1);
+        final htsjdk.samtools.cram.ref.ReferenceSource source =
+                new htsjdk.samtools.cram.ref.ReferenceSource(dir.resolve("reference.fasta"));
+        try (final OutputStream os = Files.newOutputStream(dir.resolve("split.cram"))) {
+            final htsjdk.samtools.CRAMFileWriter writer = new htsjdk.samtools.CRAMFileWriter(
+                    strategy, os, null, true, source, header, "split.cram");
+            for (int index = 0; index < 10; index++) {
+                final int start = 100 + index * 50;
+                final StringBuilder bases = new StringBuilder();
+                for (int position = start; position < start + 20; position++) {
+                    bases.append("ACGT".charAt((position - 1) % 4));
+                }
+                // One mismatch in every other read, so the containers are not all alike.
+                if (index % 2 == 1) {
+                    bases.setCharAt(5, bases.charAt(5) == 'A' ? 'C' : 'A');
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("CRAM:" + index);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(start);
+                record.setCigarString("20M");
+                record.setMappingQuality(60);
+                record.setReadString(bases.toString());
+                record.setBaseQualityString("I".repeat(20));
+                record.setAttribute("RG", "rgc");
+                writer.addAlignment(record);
+            }
+            writer.close();
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1521,6 +1570,7 @@ public class MakeFixtures {
         // whose `@SQ` line carries an M5, which is the only way a command line reaches
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
+        splitCram(dir);
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is
