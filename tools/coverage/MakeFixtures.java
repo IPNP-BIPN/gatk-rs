@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class MakeFixtures {
@@ -860,6 +861,76 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * Reads over four sites for `ASEReadCounter`, on `reference.fasta`, whose base at position p is
+     * "ACGT"[(p - 1) % 4]. Every read is ten bases from four before its site, the reference's own
+     * bases except the one AT the site. At 1001 (ref A, alt G): two reads of A and two of G, one A
+     * at mapping quality 10, one G at base quality 2, a C that is neither allele, a proper pair
+     * whose mates agree on A and one whose mates disagree (A and G), and an improper pair. 1102
+     * (ref C, alt T) carries three reads; 1203 is multiallelic and 1304 homozygous in the VCF.
+     */
+    static void aseBam(final Path bam) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 100000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+        // name, site, base at the site, mapping quality, base quality at the site, pairing
+        // (0 unpaired, 1 proper first, 2 proper second, 3 improper first)
+        final Object[][] reads = {
+                {"a1", 1001, 'A', 60, 30, 0}, {"a2", 1001, 'A', 60, 30, 0},
+                {"g1", 1001, 'G', 60, 30, 0}, {"g2", 1001, 'G', 60, 30, 0},
+                {"lowmq", 1001, 'A', 10, 30, 0}, {"lowbq", 1001, 'G', 60, 2, 0},
+                {"other", 1001, 'C', 60, 30, 0},
+                {"pairsame", 1001, 'A', 60, 30, 1}, {"pairsame", 1001, 'A', 60, 25, 2},
+                {"pairdiff", 1001, 'A', 60, 30, 1}, {"pairdiff", 1001, 'G', 60, 25, 2},
+                {"improper", 1001, 'G', 60, 30, 3},
+                {"c1", 1102, 'C', 60, 30, 0}, {"t1", 1102, 'T', 60, 30, 0},
+                {"t2", 1102, 'T', 60, 30, 0},
+                {"m1", 1203, 'A', 60, 30, 0}, {"h1", 1304, 'C', 60, 30, 0}};
+        final List<SAMRecord> records = new ArrayList<>();
+        for (final Object[] read : reads) {
+            final int site = (Integer) read[1];
+            final int start = site - 4;
+            final StringBuilder bases = new StringBuilder();
+            final StringBuilder quals = new StringBuilder();
+            for (int p = start; p < start + 10; p++) {
+                bases.append(p == site ? (char) (Character) read[2] : "ACGT".charAt((p - 1) % 4));
+                quals.append(p == site ? (char) (33 + (Integer) read[4]) : 'I');
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) read[0]);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString("10M");
+            record.setMappingQuality((Integer) read[3]);
+            record.setReadString(bases.toString());
+            record.setBaseQualityString(quals.toString());
+            record.setAttribute("RG", "rg1");
+            final int pairing = (Integer) read[5];
+            if (pairing != 0) {
+                record.setReadPairedFlag(true);
+                record.setProperPairFlag(pairing != 3);
+                record.setFirstOfPairFlag(pairing != 2);
+                record.setSecondOfPairFlag(pairing == 2);
+                record.setMateReferenceName("chr1");
+                record.setMateAlignmentStart(start);
+                record.setMateNegativeStrandFlag(pairing == 1);
+                record.setReadNegativeStrandFlag(pairing == 2);
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void umi(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1108,6 +1179,7 @@ public class MakeFixtures {
         pairs(dir.resolve("pairs.bam"));
         queryNameSorted(dir.resolve("qname.bam"));
         umi(dir.resolve("umi.bam"));
+        aseBam(dir.resolve("ase.bam"));
         moleculeGroups(dir.resolve("molecules.bam"), false);
         moleculeGroups(dir.resolve("molecules_backwards.bam"), true);
         requalified(dir.resolve("requal.bam"));
@@ -1754,6 +1826,20 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
+        // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
+        // walker queries them by locus; and the same file without its index, which it refuses.
+        final String aseSites = "##fileformat=VCFv4.2\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+                + "chr1\t1001\trs1\tA\tG\t.\t.\t.\tGT\t0/1\n"
+                + "chr1\t1102\trs2\tC\tT\t.\t.\t.\tGT\t0/1\n"
+                + "chr1\t1203\trs3\tG\tA,T\t.\t.\t.\tGT\t1/2\n"
+                + "chr1\t1304\t.\tT\tC\t.\t.\t.\tGT\t1/1\n";
+        Files.writeString(dir.resolve("ase_sites.vcf"), aseSites, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("ase_sites.vcf").toString()});
+        Files.writeString(dir.resolve("ase_sites_unindexed.vcf"), aseSites, StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

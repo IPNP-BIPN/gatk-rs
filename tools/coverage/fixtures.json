@@ -3429,6 +3429,66 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "ASEReadCounter": {
+      "$why": [
+        "--input is ase.bam, reads over four sites of reference.fasta: at 1001 two A and two G, one A at",
+        "mapping quality 10, one G at base quality 2, a C that is neither allele, a pair whose mates agree,",
+        "a pair whose mates disagree (which the three overlap handlings treat three ways) and an improper",
+        "pair; 1102 three reads; 1203 multiallelic and 1304 homozygous in the VCF, both skipped.",
+        "--variant is ase_sites.vcf, indexed, and the same file unindexed, which the locus query refuses.",
+        "--reference is reference.fasta or null, and without one the first locus indexes an empty array.",
+        "--min-mapping-quality and --min-base-quality are 0 and 20, --min-depth-of-non-filtered-base -1 and",
+        "3; --output is a file or null, the second writing to stdout, which the array compares.",
+        "--read-index, --intervals and --exclude-intervals are held out, and the three read-filter",
+        "arguments whose filters no row selects, as for CondenseDepthEvidence."
+      ],
+      "--input": [
+        "/work/fixtures/ase.bam"
+      ],
+      "--variant": [
+        "/work/fixtures/ase_sites.vcf",
+        "/work/fixtures/ase_sites_unindexed.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "null"
+      ],
+      "--min-mapping-quality": [
+        "0",
+        "20"
+      ],
+      "--min-base-quality": [
+        "0",
+        "20"
+      ],
+      "--min-depth-of-non-filtered-base": [
+        "-1",
+        "3"
+      ],
+      "--count-overlap-reads-handling": [
+        "COUNT_READS",
+        "COUNT_FRAGMENTS",
+        "COUNT_FRAGMENTS_REQUIRE_SAME_BASE"
+      ],
+      "--output-format": [
+        "TABLE",
+        "RTABLE",
+        "CSV"
+      ],
+      "--output": [
+        "/work/out/ase.table",
+        "null"
+      ],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
