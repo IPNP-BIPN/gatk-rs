@@ -288,7 +288,8 @@ fn every_filter_column_matches_the_golden() {
 
     let mut complaints: Vec<String> = Vec::new();
     for (run, rows) in &expected {
-        let output = filter_mutect_calls(&records(run), &arguments(run));
+        let output = filter_mutect_calls(&records(run), &arguments(run))
+            .expect("the golden's runs are accepted");
         assert_eq!(output.records.len(), rows.len(), "{run}: record count");
         for (index, (filter, status, annotations)) in rows.iter().enumerate() {
             let ours = &output.records[index];
@@ -346,7 +347,8 @@ fn every_filtering_stats_line_matches_the_golden() {
 
     let mut complaints: Vec<String> = Vec::new();
     for (run, lines) in &expected {
-        let output = filter_mutect_calls(&records(run), &arguments(run));
+        let output = filter_mutect_calls(&records(run), &arguments(run))
+            .expect("the golden's runs are accepted");
         let ours: Vec<String> = output
             .filtering_stats
             .lines()

@@ -7436,6 +7436,410 @@ fn java_gzip(data: &[u8], level: u32) -> Vec<u8> {
     out
 }
 
+/// `FilterMutectCalls`, a `MultiplePassVariantWalker` over Mutect2's calls.
+///
+/// The four passes, the filters and the two outputs' content are
+/// [`gatk_tools::filter_mutect_calls::run`]'s. What the runner adds is the translation both ways:
+///
+///   - each `VariantContext` becomes the `Record` the filters read, its genotypes told apart by the
+///     header's `##normal_sample` lines, every other sample being a tumour;
+///   - the header is rebuilt in `onTraversalStart` and written as soon as the writer exists, BEFORE
+///     the stats table is looked for, so a missing table is a `CouldNotReadInputFile` that leaves a
+///     VCF of nothing but its header;
+///   - and each output record is the input's with its FILTER replaced, `AS_FilterStatus` set and the
+///     phred-scaled posteriors the filters annotate, its genotypes written from the file.
+///
+/// The three inputs that bring a second model in, `--contamination-table`, `--tumor-segmentation`
+/// and `--ob-priors`, are refused rather than ignored.
+pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
+    use gatk_engine::accumulate_data::AccumulationAllele;
+    use gatk_engine::allele_filter::GenotypeData;
+    use gatk_engine::filtering_engine::{EngineArguments, Record};
+    use gatk_engine::mutect_filter_list::FilterArguments;
+    use gatk_engine::somatic_clustering_model::AlternateAllele;
+    use gatk_engine::threshold_calculator::Strategy;
+    use gatk_tools::filter_mutect_calls as fmc;
+    use htsjdk_vcf::header::HeaderLine;
+    use htsjdk_vcf::variant::Value;
+
+    for held in ["contamination-table", "tumor-segmentation", "ob-priors"] {
+        if !arguments(parser, held).is_empty() {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "FilterMutectCalls' --{held} is a second model this port does not read yet, \
+                     and a run that ignored it would filter differently. This message is the \
+                     port's own and not GATK's."
+                ),
+            ));
+        }
+    }
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "FilterMutectCalls")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let double = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(default)
+    };
+
+    let defaults = EngineArguments::default();
+    let list_defaults = FilterArguments::default();
+    let mut list = FilterArguments {
+        mitochondria: flag(parser, "mitochondria-mode"),
+        microbial: flag(parser, "microbial-mode"),
+        min_median_mapping_quality: number_or(
+            parser,
+            "min-median-mapping-quality",
+            list_defaults.min_median_mapping_quality,
+        ),
+        log_snv_prior: double("log-snv-prior", list_defaults.log_snv_prior),
+        log_indel_prior: double("log-indel-prior", list_defaults.log_indel_prior),
+        read_orientation_priors: false,
+    };
+    let min_median_mapping_quality = list.min_median_mapping_quality();
+    let engine = EngineArguments {
+        list,
+        min_median_base_quality: number_or(
+            parser,
+            "min-median-base-quality",
+            defaults.min_median_base_quality,
+        ),
+        min_median_mapping_quality,
+        long_indel_length: number_or(parser, "long-indel-length", defaults.long_indel_length),
+        unique_alt_read_count: number_or(
+            parser,
+            "unique-alt-read-count",
+            defaults.unique_alt_read_count,
+        ),
+        contamination_estimate: double("contamination-estimate", defaults.contamination_estimate),
+        min_reads_on_each_strand: number_or(
+            parser,
+            "min-reads-per-strand",
+            defaults.min_reads_on_each_strand,
+        ),
+        min_median_read_position: number_or(
+            parser,
+            "min-median-read-position",
+            defaults.min_median_read_position,
+        ),
+        min_af: double("min-allele-fraction", defaults.min_af),
+        normal_pileup_p_value_threshold: double(
+            "normal-p-value-threshold",
+            defaults.normal_pileup_p_value_threshold,
+        ),
+        n_ratio: double("max-n-ratio", defaults.n_ratio),
+        max_events_in_region: number_or(
+            parser,
+            "max-events-in-region",
+            defaults.max_events_in_region,
+        ),
+        max_events_in_haplotype: number_or(
+            parser,
+            "max-events-in-haplotype",
+            defaults.max_events_in_haplotype,
+        ),
+        num_alt_alleles_threshold: number_or(
+            parser,
+            "max-alt-allele-count",
+            defaults.num_alt_alleles_threshold as i32,
+        )
+        .max(0) as usize,
+        max_median_fragment_length_difference: number_or(
+            parser,
+            "max-median-fragment-length-difference",
+            defaults.max_median_fragment_length_difference,
+        ),
+        min_slippage_length: number_or(parser, "min-slippage-length", defaults.min_slippage_length),
+        slippage_rate: double("pcr-slippage-rate", defaults.slippage_rate),
+        max_distance_to_filtered_call_on_same_haplotype: number_or(
+            parser,
+            "distance-on-haplotype",
+            defaults.max_distance_to_filtered_call_on_same_haplotype,
+        ),
+    };
+    let tool_defaults = fmc::ToolArguments::default();
+    let strategy = match scalar(parser, "threshold-strategy").as_deref() {
+        Some("CONSTANT") => Strategy::Constant,
+        Some("FALSE_DISCOVERY_RATE") => Strategy::FalseDiscoveryRate,
+        _ => Strategy::OptimalFScore,
+    };
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+
+    // `onTraversalStart`'s header: the input's lines less `filtering_status`, a new
+    // `filtering_status`, the STRQ and AS_FilterStatus INFO lines, every Mutect FILTER line and the
+    // default tool lines, in one set the writer sorts.
+    let mut header = file.header.clone();
+    header.lines.retain(
+        |line| !matches!(line, HeaderLine::Unstructured { key, .. } if key == "filtering_status"),
+    );
+    let mut added: Vec<HeaderLine> = vec![HeaderLine::Unstructured {
+        key: "filtering_status".to_string(),
+        value: "These calls have been filtered by FilterMutectCalls to label false positives \
+                with a list of failed filters and true positives with PASS."
+            .to_string(),
+    }];
+    let parsed_line = |text: &str| -> Option<HeaderLine> {
+        htsjdk_vcf::reader::read_vcf(&format!(
+            "##fileformat=VCFv4.2\n##{text}\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+        ))
+        .ok()
+        .and_then(|parsed| {
+            parsed.header.lines.into_iter().find(
+                |line| !matches!(line, HeaderLine::Unstructured { key, .. } if key == "fileformat"),
+            )
+        })
+    };
+    for (_, line) in gatk_engine::mutect_filter_list::INFO_LINES {
+        added.extend(parsed_line(line));
+    }
+    for name in gatk_engine::mutect_filter_list::MUTECT_FILTER_NAMES {
+        if let Some(line) = gatk_engine::mutect_filter_list::filter_line(name) {
+            added.extend(parsed_line(&line));
+        }
+    }
+    added.extend(default_tool_vcf_header_lines(parser, "FilterMutectCalls"));
+    for line in added {
+        if !header.lines.contains(&line) {
+            header.lines.push(line);
+        }
+    }
+    let write_records = |records: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = records.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = write_vcf_honouring_lenient(parser, &header, &records)?;
+        write_variant_output(parser, &output, &out)
+    };
+
+    // `new File(statsTable == null ? drivingVariantFile + ".stats" : statsTable)`, looked for
+    // after the header is written.
+    let stats_path = argument(parser, "stats").unwrap_or_else(|| format!("{input}.stats"));
+    let Ok(stats) = std::fs::read_to_string(&stats_path) else {
+        write_records(&[])?;
+        let missing = fmc::MissingStatsTable { path: stats_path };
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: missing.class(),
+            message: Some(missing.message()),
+        });
+    };
+    // `MutectStats.readFromFile`, of which the clustering model reads `callable` alone.
+    let callable_sites = stats.lines().skip(1).find_map(|line| {
+        let mut fields = line.split('\t');
+        match (fields.next(), fields.next()) {
+            (Some("callable"), Some(value)) => value.trim().parse::<f64>().ok(),
+            _ => None,
+        }
+    });
+
+    let normal_samples: Vec<String> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Unstructured { key, value } if key == "normal_sample" => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let text_of = |value: &Value| value.format().unwrap_or_default();
+    let values_of = |value: &Value| -> Vec<String> {
+        match value {
+            Value::List(items) => items.iter().map(text_of).collect(),
+            other => text_of(other).split(',').map(str::to_string).collect(),
+        }
+    };
+    let info = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<String>> {
+        record
+            .attributes
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| values_of(value))
+    };
+    let doubles = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<f64>> {
+        info(record, key).map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim().parse::<f64>().unwrap_or(0.0))
+                .collect()
+        })
+    };
+    let ints = |record: &htsjdk_vcf::variant::VariantContext, key: &str| -> Option<Vec<i32>> {
+        info(record, key).map(|values| {
+            values
+                .iter()
+                .map(|value| value.trim().parse::<i32>().unwrap_or(0))
+                .collect()
+        })
+    };
+
+    let mut records: Vec<Record> = Vec::new();
+    for variant in &kept {
+        variant.genotypes.decode();
+        let reference = variant.reference();
+        let reference_length = reference.len() as i32;
+        let alternates: Vec<AccumulationAllele> = variant
+            .alternate_alleles()
+            .iter()
+            .map(|allele| AccumulationAllele {
+                allele: AlternateAllele {
+                    length: if allele.is_symbolic() {
+                        0
+                    } else {
+                        allele.len() as i32
+                    },
+                    symbolic: allele.is_symbolic(),
+                },
+                non_ref: allele.display_string() == "<NON_REF>",
+            })
+            .collect();
+        // `getIndelLengths`, which answers only for an INDEL or MIXED record.
+        let kinds: Vec<&str> = variant
+            .alternate_alleles()
+            .iter()
+            .map(|allele| {
+                if allele.is_symbolic() {
+                    "SYMBOLIC"
+                } else if allele.len() == reference.len() {
+                    if allele.len() == 1 {
+                        "SNP"
+                    } else {
+                        "MNP"
+                    }
+                } else {
+                    "INDEL"
+                }
+            })
+            .collect();
+        let mixed = kinds.windows(2).any(|pair| pair[0] != pair[1]);
+        let indel_lengths = if mixed || kinds.first() == Some(&"INDEL") {
+            Some(
+                alternates
+                    .iter()
+                    .map(|alternate| alternate.allele.length - reference_length)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        let mut genotypes = Vec::new();
+        let mut allele_fractions = Vec::new();
+        let mut phasing = Vec::new();
+        for genotype in variant.genotypes.iter() {
+            genotypes.push(GenotypeData {
+                tumor: !normal_samples.contains(&genotype.sample_name),
+                allele_depths: genotype.ad.clone().unwrap_or_default(),
+                values: Vec::new(),
+            });
+            allele_fractions.push(
+                genotype
+                    .get("AF")
+                    .map(|value| {
+                        values_of(value)
+                            .iter()
+                            .map(|text| text.trim().parse::<f64>().unwrap_or(0.0))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+            let field = |key: &str| {
+                genotype
+                    .get(key)
+                    .map(text_of)
+                    .filter(|text| !text.is_empty() && text != ".")
+            };
+            phasing.push((field("PGT"), field("PID")));
+        }
+        let single_int = |key: &str| ints(variant, key).and_then(|values| values.first().copied());
+        records.push(Record {
+            start: variant.start as i32,
+            reference_length,
+            alternates,
+            genotypes,
+            allele_fractions,
+            phasing,
+            tumor_log_10_odds: doubles(variant, "TLOD"),
+            normal_artifact_log_10_odds: doubles(variant, "NALOD"),
+            normal_log_10_odds: doubles(variant, "NLOD"),
+            population_af: doubles(variant, "POPAF"),
+            median_base_quality: ints(variant, "MBQ"),
+            median_mapping_quality: ints(variant, "MMQ"),
+            median_fragment_length: ints(variant, "MFRL"),
+            median_read_position: ints(variant, "MPOS"),
+            unique_alt_read_count: ints(variant, "AS_UNIQ_ALT_READ_COUNT"),
+            strand_bias_table: info(variant, "AS_SB_TABLE").map(|values| values.join(",")),
+            n_count: single_int("NCount"),
+            event_count_in_region: single_int("ECNT"),
+            event_count_in_haplotype: single_int("ECNTH"),
+            repeats_per_allele: info(variant, "RPA"),
+            repeat_unit: info(variant, "RU").map(|values| values.join(",")),
+            in_panel_of_normals: variant.attributes.iter().any(|(key, _)| key == "PON"),
+            indel_lengths,
+        });
+    }
+
+    let arguments = fmc::ToolArguments {
+        engine,
+        strategy,
+        initial_posterior_threshold: double(
+            "initial-threshold",
+            tool_defaults.initial_posterior_threshold,
+        ),
+        max_false_discovery_rate: double(
+            "false-discovery-rate",
+            tool_defaults.max_false_discovery_rate,
+        ),
+        f_score_beta: double("f-score-beta", tool_defaults.f_score_beta),
+        callable_sites,
+        log_artifact_prior: double("log-artifact-prior", tool_defaults.log_artifact_prior),
+    };
+    let result = match fmc::run(&records, &arguments) {
+        Ok(result) => result,
+        Err(error) => {
+            write_records(&[])?;
+            return Err(Thrown::non_user(error.class, error.message));
+        }
+    };
+
+    let mut written = Vec::new();
+    for (variant, applied) in kept.iter().zip(&result.records) {
+        let mut out = (*variant).clone();
+        let mut filters = applied.filters.clone();
+        filters.sort();
+        filters.dedup();
+        out.filters = Some(filters);
+        out.attributes.retain(|(key, _)| key != "AS_FilterStatus");
+        out.attributes.push((
+            "AS_FilterStatus".to_string(),
+            Value::Str(applied.as_filter_status.clone()),
+        ));
+        for (key, quality) in &applied.annotations {
+            out.attributes.retain(|(name, _)| name != key);
+            out.attributes
+                .push((key.clone(), Value::Int(i64::from(*quality))));
+        }
+        written.push(out);
+    }
+    write_records(&written)?;
+    let stats_output = argument(parser, "filtering-stats")
+        .unwrap_or_else(|| format!("{output}.filteringStats.tsv"));
+    write_file(&stats_output, result.filtering_stats.as_bytes())?;
+    Ok(None)
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves

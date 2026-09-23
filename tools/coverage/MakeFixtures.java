@@ -720,6 +720,122 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * Calls for `FilterMutectCalls`, made by the reference's own Mutect2 so every INFO field and
+     * header line a real run carries is there, and its `.stats` beside them.
+     *
+     * The corpus's `reference.fasta` repeats `ACGT`, where every k-mer recurs and the assembler finds
+     * nothing, so these calls have a reference of their own: three thousand bases drawn from a
+     * seeded `java.util.Random`. The BAM holds a tumour and a normal sample over it, fifty-base reads
+     * tiled every
+     * five bases from 800 to 2150, one forward and one reverse per start and sample, so each site is
+     * about twenty reads deep in each sample. Six sites carry an alternate: at 1000 a clean somatic
+     * variant (two reads in five of the tumour), at 1200 a germline het in both samples, at 1400
+     * two tumour reads only, at 1600 an alternate on forward reads alone, at 1800 an alternate whose
+     * base quality is low, and at 1950 one near the reads' first bases.
+     */
+    static void mutectFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20260923L);
+        final StringBuilder sequence = new StringBuilder();
+        for (int i = 0; i < 3000; i++) {
+            sequence.append("ACGT".charAt(random.nextInt(4)));
+        }
+        final String referenceBases = sequence.toString();
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("mutect_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            reference.addSequence(new htsjdk.samtools.reference.ReferenceSequence("chr1", 0,
+                    referenceBases.getBytes(StandardCharsets.US_ASCII)));
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 3000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String[] group : new String[][] {{"rgT", "tumor"}, {"rgN", "normal"}}) {
+            final SAMReadGroupRecord record = new SAMReadGroupRecord(group[0]);
+            record.setSample(group[1]);
+            record.setLibrary("lib" + group[1]);
+            record.setPlatform("ILLUMINA");
+            header.addReadGroup(record);
+        }
+        final int[] sites = {1000, 1200, 1400, 1600, 1800, 1950};
+        final java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int start = 800; start <= 2150; start += 5) {
+            for (final String group : new String[] {"rgT", "rgN"}) {
+                final boolean tumor = group.equals("rgT");
+                for (final boolean reverse : new boolean[] {false, true}) {
+                    final StringBuilder bases = new StringBuilder();
+                    bases.append(referenceBases, start - 1, start + 49);
+                    final StringBuilder qualities = new StringBuilder("I".repeat(50));
+                    for (final int site : sites) {
+                        if (site < start || site >= start + 50) {
+                            continue;
+                        }
+                        final String key = group + site;
+                        final int count = seen.merge(key, 1, Integer::sum);
+                        final int offset = site - start;
+                        final boolean alt;
+                        switch (site) {
+                            case 1000: alt = tumor && count % 5 < 2; break;
+                            case 1200: alt = count % 2 == 0; break;
+                            case 1400: alt = tumor && (count == 3 || count == 7); break;
+                            case 1600: alt = tumor && !reverse && count % 3 == 0; break;
+                            case 1800: alt = tumor && count % 3 == 0; break;
+                            default: alt = tumor && offset < 6 && count % 2 == 0; break;
+                        }
+                        if (alt) {
+                            final char reference = bases.charAt(offset);
+                            bases.setCharAt(offset, "CGTA".charAt("ACGT".indexOf(reference)));
+                            if (site == 1800) {
+                                qualities.setCharAt(offset, '/');
+                            }
+                        }
+                    }
+                    final SAMRecord record = new SAMRecord(header);
+                    record.setReadName(group + ":" + start + (reverse ? "r" : "f"));
+                    record.setReferenceName("chr1");
+                    record.setAlignmentStart(start);
+                    record.setCigarString("50M");
+                    record.setMappingQuality(60);
+                    record.setReadNegativeStrandFlag(reverse);
+                    record.setReadString(bases.toString());
+                    record.setBaseQualityString(qualities.toString());
+                    record.setAttribute("RG", group);
+                    records.add(record);
+                }
+            }
+        }
+        final Path bam = dir.resolve("mutect_tn.bam");
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             bam.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        new org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2().instanceMain(new String[] {
+                "--input", bam.toString(),
+                "--reference", dir.resolve("mutect_ref.fasta").toString(),
+                "--tumor-sample", "tumor",
+                "--normal-sample", "normal",
+                "--intervals", "chr1:900-2100",
+                "--output", dir.resolve("mutect.vcf").toString(),
+        });
+        // The same calls with a stats table saying nothing was callable, which switches the
+        // empirical priors off.
+        // REPLACE_EXISTING because the conformance runner builds the corpus a second time into the
+        // same directory, and a plain copy refuses a target that is already there.
+        Files.copy(dir.resolve("mutect.vcf"), dir.resolve("mutect_nocallable.vcf"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("mutect.vcf.idx"), dir.resolve("mutect_nocallable.vcf.idx"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(dir.resolve("mutect_nocallable.vcf.stats"), "statistic\tvalue\ncallable\t0.0\n",
+                StandardCharsets.UTF_8);
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1571,6 +1687,7 @@ public class MakeFixtures {
         // `CheckReferenceCompatibility`'s MD5 path.
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
+        mutectFixtures(dir);
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is
