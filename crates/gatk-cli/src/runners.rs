@@ -7840,6 +7840,187 @@ pub fn filter_mutect_calls(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `ComposeSTRTableFile`, a `GATKTool` that scans the reference for tandem repeats and writes a zip.
+///
+/// The scan and the decimation are [`gatk_tools::compose_str_table`]'s. What the runner adds is the
+/// zip `STRTableFileBuilder.store` writes: `reference.dict` (the best available dictionary, under an
+/// `@HD` line of its own), `decimation.txt`, `sites.bin` and `sites.idx`, `sites.txt` when asked for,
+/// and `summary.txt`, whose annotations carry the tool's command line.
+///
+/// The intervals are merged again under `ALL`, whatever `--interval-merging-rule` said, and are
+/// traversed contig by contig in the dictionary's order. The members are written stored rather
+/// than deflated and in name order; the covering array compares a zip member by member.
+pub fn compose_str_table_file(parser: &Parser) -> Outcome {
+    use gatk_tools::compose_str_table as str_table;
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let spec = scalar(parser, "decimation").unwrap_or_else(|| "DEFAULT".to_string());
+    let table = if spec.eq_ignore_ascii_case("NONE") {
+        str_table::DecimationTable::none()
+    } else if spec.eq_ignore_ascii_case("DEFAULT") {
+        str_table::DecimationTable::default_table()
+    } else {
+        let text = std::fs::read_to_string(&spec)
+            .map_err(|_| Thrown::user(format!("Couldn't read file {spec}. Error was: {spec}")))?;
+        str_table::DecimationTable::parse(&text, &spec).map_err(|error| match error {
+            str_table::DecimationError::BadInput(message) => bad_input(message),
+        })?
+    };
+    let settings = str_table::Settings {
+        max_period: number_or(parser, "max-period", 8).max(1) as usize,
+        max_repeat: number_or(parser, "max-repeats", 20).max(1) as usize,
+    };
+
+    let _ = resolve_read_filters(parser, "ComposeSTRTableFile")?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `getBestAvailableSequenceDictionary`: the master one, else the reference's own `.dict`.
+    let dictionary = match master_dictionary(parser)? {
+        Some(master) => master,
+        None => reference_dictionary(parser)?.unwrap_or_default(),
+    };
+    let intervals = interval_arguments(parser, &dictionary)?.map(|parameters| parameters.intervals);
+
+    let mut contigs: Vec<(String, Vec<u8>)> = Vec::new();
+    for sequence in &dictionary.sequences {
+        let bases = reference
+            .query(&sequence.name, 1, sequence.length)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        contigs.push((sequence.name.clone(), bases));
+    }
+    // `sortAndMergeIntervals(..., IntervalMergingRule.ALL)`: overlapping and adjacent intervals
+    // become one, per contig.
+    let mut chosen: Vec<(String, i64, i64)> = Vec::new();
+    if let Some(intervals) = &intervals {
+        let mut sorted: Vec<(usize, i64, i64, String)> = intervals
+            .iter()
+            .filter_map(|interval| {
+                dictionary
+                    .sequences
+                    .iter()
+                    .position(|sequence| sequence.name == interval.contig)
+                    .map(|index| {
+                        (
+                            index,
+                            i64::from(interval.start),
+                            i64::from(interval.end),
+                            interval.contig.clone(),
+                        )
+                    })
+            })
+            .collect();
+        sorted.sort();
+        for (_, start, end, contig) in sorted {
+            match chosen.last_mut() {
+                Some((last_contig, _, last_end))
+                    if *last_contig == contig && start <= *last_end + 1 =>
+                {
+                    *last_end = (*last_end).max(end);
+                }
+                _ => chosen.push((contig, start, end)),
+            }
+        }
+    }
+    let scan = if intervals.is_some() && chosen.is_empty() {
+        str_table::Scan::default()
+    } else {
+        str_table::scan(&contigs, &chosen, settings, &table)
+    };
+
+    let names: Vec<String> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let dictionary_text = htsjdk_bam::header::SamHeader {
+        sequences: dictionary.sequences.clone(),
+        ..htsjdk_bam::header::SamHeader::default()
+    }
+    .encode_replacing_version();
+    let (sites, index) = str_table::sites_binary(&scan.emitted);
+    let annotations = vec![(
+        "commandLine".to_string(),
+        crate::command_line::expanded("ComposeSTRTableFile", parser),
+    )];
+    let summary = str_table::summary(
+        &scan,
+        settings,
+        &annotations,
+        &table,
+        gatk_barclay::java_double_to_string,
+    );
+    let mut members: Vec<(String, Vec<u8>)> = vec![
+        ("decimation.txt".to_string(), table.print().into_bytes()),
+        ("reference.dict".to_string(), dictionary_text.into_bytes()),
+        ("sites.bin".to_string(), sites),
+        ("sites.idx".to_string(), index),
+        ("summary.txt".to_string(), summary.into_bytes()),
+    ];
+    if flag(parser, "generate-sites-text-output") {
+        members.push((
+            "sites.txt".to_string(),
+            str_table::sites_text(&scan.emitted, &names).into_bytes(),
+        ));
+    }
+    members.sort_by(|left, right| left.0.cmp(&right.0));
+    write_file(&output, &stored_zip(&members))?;
+    Ok(None)
+}
+
+/// A zip of `members`, each stored rather than deflated: local headers, the central directory and
+/// its end record, with no time on any entry.
+fn stored_zip(members: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in members {
+        let offset = out.len() as u32;
+        let mut crc = flate2::Crc::new();
+        crc.update(data);
+        let crc = crc.sum();
+        let mut header = Vec::new();
+        header.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        header.extend_from_slice(&0u16.to_le_bytes()); // flags
+        header.extend_from_slice(&0u16.to_le_bytes()); // stored
+        header.extend_from_slice(&0u16.to_le_bytes()); // time
+        header.extend_from_slice(&0x21u16.to_le_bytes()); // date: 1980-01-01
+        header.extend_from_slice(&crc.to_le_bytes());
+        header.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        header.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        header.extend_from_slice(&0u16.to_le_bytes()); // extra
+        out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(data);
+        central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes()); // version made by
+        central.extend_from_slice(&header);
+        central.extend_from_slice(&0u16.to_le_bytes()); // comment
+        central.extend_from_slice(&0u16.to_le_bytes()); // disk
+        central.extend_from_slice(&0u16.to_le_bytes()); // internal attributes
+        central.extend_from_slice(&0u32.to_le_bytes()); // external attributes
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let central_offset = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&(members.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(members.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&central_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves

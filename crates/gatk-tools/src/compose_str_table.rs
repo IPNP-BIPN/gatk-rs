@@ -60,8 +60,17 @@ pub const DEFAULT_DECIMATION_MATRIX: &[&[i32]] = &[
 /// `STRDecimationTable`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecimationTable {
+    /// The bits per period and repeat, as given; what `print` writes and `decimationBit` reads.
+    matrix: Vec<Vec<i32>>,
     /// `(1 << bits) - 1` per entry, computed as an int shift exactly as the reference does.
     masks: Vec<Vec<i64>>,
+}
+
+/// What reading a decimation file refuses, with the reference's own wording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecimationError {
+    /// `UserException.BadInput`.
+    BadInput(String),
 }
 
 impl DecimationTable {
@@ -70,22 +79,89 @@ impl DecimationTable {
         DecimationTable::from_matrix(DEFAULT_DECIMATION_MATRIX)
     }
 
-    /// `STRDecimationTable.NONE`, which keeps everything.
+    /// `STRDecimationTable.NONE`, whose matrix is a single zero, so nothing past period zero is
+    /// ever decimated.
     pub fn none() -> Self {
-        DecimationTable { masks: Vec::new() }
+        DecimationTable::from_rows(vec![vec![0]])
     }
 
     pub fn from_matrix(matrix: &[&[i32]]) -> Self {
-        DecimationTable {
-            masks: matrix
-                .iter()
-                .map(|row| {
-                    row.iter()
-                        .map(|bits| i64::from((1i32 << bits) - 1))
-                        .collect()
-                })
-                .collect(),
+        DecimationTable::from_rows(matrix.iter().map(|row| row.to_vec()).collect())
+    }
+
+    pub fn from_rows(matrix: Vec<Vec<i32>>) -> Self {
+        let masks = matrix
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|bits| i64::from(1i32.wrapping_shl(*bits as u32).wrapping_sub(1)))
+                    .collect()
+            })
+            .collect();
+        DecimationTable { matrix, masks }
+    }
+
+    /// `new STRDecimationTable(spec)` over a file's text: the lines that are neither blank nor a
+    /// `#` comment, each split on runs of whitespace.
+    ///
+    /// `path` is only what the messages quote.
+    pub fn parse(text: &str, path: &str) -> Result<Self, DecimationError> {
+        let rows: Vec<Vec<&str>> = text
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+            .map(split_on_whitespace)
+            .collect();
+        if rows.is_empty() {
+            return Ok(DecimationTable::from_rows(Vec::new()));
         }
+        let mut matrix = Vec::new();
+        let mut total = 0;
+        for (i, row) in rows.iter().enumerate() {
+            let mut values = Vec::new();
+            for (j, cell) in row.iter().enumerate() {
+                let bad = |details: &str| {
+                    DecimationError::BadInput(format!(
+                        "bad decimation value found in {path} for period and repeats ({i}, {j}) \
+                         with string ({cell}): {details}"
+                    ))
+                };
+                let value: i32 = cell
+                    .parse()
+                    .map_err(|_| bad("not a valid double literal"))?;
+                if value < 0 {
+                    return Err(bad("negatives are not allowed"));
+                }
+                values.push(value);
+                total += 1;
+            }
+            matrix.push(values);
+        }
+        if total == 0 {
+            return Err(DecimationError::BadInput(format!(
+                "the input decimation matrix does contain any values:{path}"
+            )));
+        }
+        Ok(DecimationTable::from_rows(matrix))
+    }
+
+    /// `print`: each row's values joined by tabs, one row per line.
+    pub fn print(&self) -> String {
+        let mut out = String::new();
+        for row in &self.matrix {
+            let cells: Vec<String> = row.iter().map(|value| value.to_string()).collect();
+            out.push_str(&cells.join("\t"));
+            out.push('\n');
+        }
+        out
+    }
+
+    /// `decimationBit`, zero past the end of the table.
+    pub fn decimation_bit(&self, period: usize, repeats: usize) -> i32 {
+        self.matrix
+            .get(period)
+            .and_then(|row| row.get(repeats))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// `decimate`: a bit test, so it keeps one site in every 2^n rather than a fraction.
@@ -100,6 +176,18 @@ impl DecimationTable {
         };
         ((mask as i32) & (*right as i32)) != 0 || ((mask >> 32) & (right >> 32)) != 0
     }
+}
+
+/// `String.split("\\s+")`: a leading run of whitespace leaves an empty first field, a trailing one
+/// leaves nothing.
+fn split_on_whitespace(line: &str) -> Vec<&str> {
+    let mut fields: Vec<&str> = line.split(char::is_whitespace).collect();
+    let leading_empty = fields.first().is_some_and(|field| field.is_empty());
+    fields = std::iter::once(if leading_empty { Some("") } else { None })
+        .flatten()
+        .chain(fields.into_iter().filter(|field| !field.is_empty()))
+        .collect();
+    fields
 }
 
 /// `Nucleotide.same`, which compares the decoded values and is false for anything undecodable.
@@ -331,4 +419,147 @@ pub fn scan(
         );
     }
     scan
+}
+
+/// `DragstrLocusUtils.INDEX_BYTE_INTERVAL`: an index entry at least every 64 KB of sites.
+pub const INDEX_BYTE_INTERVAL: u64 = 1 << 16;
+
+/// `sites.bin` and `sites.idx`, as `DragstrLocusUtils.binaryWriter` lays them out.
+///
+/// A site is 23 big-endian bytes: the contig index as an int, the start as a long, the period as a
+/// byte, the length in bases as a short and the mask as a long. The index holds an entry, the
+/// contig index and the start as ints and the byte offset as a long, where a contig begins and then
+/// wherever 64 KB have passed since the last entry.
+pub fn sites_binary(loci: &[Locus]) -> (Vec<u8>, Vec<u8>) {
+    let mut sites = Vec::with_capacity(loci.len() * 23);
+    let mut index = Vec::new();
+    let mut last_contig: i64 = -1;
+    let mut last_entry_offset: u64 = 0;
+    for locus in loci {
+        let offset = sites.len() as u64;
+        let contig = locus.contig_index as i64;
+        if contig != last_contig || offset - last_entry_offset >= INDEX_BYTE_INTERVAL {
+            last_contig = contig;
+            index.extend_from_slice(&(locus.contig_index as i32).to_be_bytes());
+            index.extend_from_slice(&(locus.start as i32).to_be_bytes());
+            index.extend_from_slice(&(offset as i64).to_be_bytes());
+            last_entry_offset = offset;
+        }
+        sites.extend_from_slice(&(locus.contig_index as i32).to_be_bytes());
+        sites.extend_from_slice(&locus.start.to_be_bytes());
+        sites.push(locus.period as u8);
+        sites.extend_from_slice(&(locus.length() as i16).to_be_bytes());
+        sites.extend_from_slice(&locus.mask.to_be_bytes());
+    }
+    (sites, index)
+}
+
+/// `sites.txt`, `DragstrLocusUtils.textWriter`'s table.
+pub fn sites_text(loci: &[Locus], contig_names: &[String]) -> String {
+    let mut out =
+        String::from("chridx\tchrid\tstart\tend\tperiod\tmask\tmask_bin\tlength_bp\tlength_rp\n");
+    for locus in loci {
+        let length = locus.length() as i16;
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{:b}\t{}\t{}\n",
+            locus.contig_index,
+            contig_names
+                .get(locus.contig_index)
+                .map(String::as_str)
+                .unwrap_or(""),
+            locus.start,
+            locus.start + i64::from(length) - 1,
+            locus.period,
+            locus.mask,
+            locus.mask,
+            length,
+            i32::from(length) / locus.period as i32,
+        ));
+    }
+    out
+}
+
+impl Locus {
+    /// `getLength`, the site's span in bases, which the writer narrows to a short.
+    pub fn length(&self) -> i64 {
+        self.end - self.start + 1
+    }
+}
+
+/// `STRTableFileBuilder.writeSummary`.
+///
+/// Every site the scan found is counted in `total`, and the kept ones in `emitted` too, both by the
+/// period and the repeat CAPPED at the maxima. `double_to_string` is `Double.toString`, which the
+/// actual decimation column is rendered with.
+pub fn summary(
+    scan: &Scan,
+    settings: Settings,
+    annotations: &[(String, String)],
+    table: &DecimationTable,
+    double_to_string: impl Fn(f64) -> String,
+) -> String {
+    let Settings {
+        max_period,
+        max_repeat,
+    } = settings;
+    let mut total = vec![vec![0i64; max_repeat + 1]; max_period + 1];
+    let mut emitted = vec![vec![0i64; max_repeat + 1]; max_period + 1];
+    for locus in &scan.emitted {
+        let period = locus.period.min(max_period);
+        let repeats = locus.repeats.min(max_repeat);
+        total[period][repeats] += 1;
+        emitted[period][repeats] += 1;
+    }
+    for (period, repeats) in &scan.decimated {
+        total[(*period).min(max_period)][(*repeats).min(max_repeat)] += 1;
+    }
+    let rule = "##########################################################################################\n";
+    let mut out = String::new();
+    out.push_str(rule);
+    out.push_str("# STRTableSummary\n");
+    out.push_str("# ---------------------------------------\n");
+    out.push_str(&format!("# maxPeriod = {max_period}\n"));
+    out.push_str(&format!("# maxRepeatLength = {max_repeat}\n"));
+    for (name, value) in annotations {
+        out.push_str(&format!("# {name} = {value}\n"));
+    }
+    out.push_str(rule);
+    out.push_str(
+        "period\trepeatLength\ttotalCounts\temittedCounts\tintendedDecimation\tactualDecimation\n",
+    );
+    for period in 1..=max_period {
+        let first = if period == 1 { 1 } else { 2 };
+        for repeats in first..=max_repeat {
+            let all = total[period][repeats];
+            let kept = emitted[period][repeats];
+            let actual = if all > 0 {
+                std::f64::consts::LOG2_E * ((all as f64).ln() - (kept as f64).ln())
+            } else {
+                0.0
+            };
+            // `Math.round(x * 100) / 100.0`: a long, saturating, divided back.
+            let rounded = java_round(actual * 100.0) as f64 / 100.0;
+            out.push_str(&format!(
+                "{period}\t{repeats}\t{all}\t{kept}\t{}\t{}\n",
+                table.decimation_bit(period, repeats),
+                double_to_string(rounded)
+            ));
+        }
+    }
+    out
+}
+
+/// `Math.round(double)`: `floor(x + 0.5)` saturated to a long, NaN to zero.
+fn java_round(value: f64) -> i64 {
+    if value.is_nan() {
+        return 0;
+    }
+    let floored = (value + 0.5).floor();
+    if floored >= i64::MAX as f64 {
+        i64::MAX
+    } else if floored <= i64::MIN as f64 {
+        i64::MIN
+    } else {
+        floored as i64
+    }
 }

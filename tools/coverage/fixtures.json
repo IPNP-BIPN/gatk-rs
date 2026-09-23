@@ -4555,6 +4555,56 @@
         "0",
         "5"
       ]
+    },
+    "ComposeSTRTableFile": {
+      "$why": [
+        "mutect_ref.fasta is three thousand random bases, whose short tandem repeats are the ones",
+        "chance makes; two_contigs.fasta repeats ACGT on two contigs, so every site is one long period-4",
+        "repeat and the second contig's masks start at one. decimation.txt is a small matrix with a",
+        "comment and a blank line; DEFAULT and NONE are the two built-in tables.",
+        "--intervals absent scans every contig; the two windows cut the first one.",
+        "--max-period 2 and --max-repeats 3 cap what is found and what is counted."
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "/work/fixtures/two_contigs.fasta"
+      ],
+      "--output": [
+        "/work/out/str.zip"
+      ],
+      "--decimation": [
+        "DEFAULT",
+        "NONE",
+        "/work/fixtures/decimation.txt"
+      ],
+      "--max-period": [
+        "8",
+        "2"
+      ],
+      "--max-repeats": [
+        "20",
+        "3"
+      ],
+      "--generate-sites-text-output": [
+        "true",
+        "false"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:100-600",
+        "chr1:500-900"
+      ],
+      "--reference-sequence-buffer-size": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

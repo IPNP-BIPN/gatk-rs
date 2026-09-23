@@ -1684,6 +1684,10 @@ public class MakeFixtures {
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
         mutectFixtures(dir);
+        // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
+        // that keeps one site in two of every period-one repeat of length three.
+        Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",
+                StandardCharsets.UTF_8);
 
         // Two sequence dictionaries for `--sequence-dictionary`: one that agrees with the corpus's
         // own contig and one that shares nothing with it, so the argument has a row that is

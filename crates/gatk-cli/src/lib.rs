@@ -341,6 +341,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CreateSomaticPanelOfNormals" => Some(run_create_somatic_panel_of_normals),
         "SplitCRAM" => Some(run_split_cram),
         "FilterMutectCalls" => Some(run_filter_mutect_calls),
+        "ComposeSTRTableFile" => Some(run_compose_str_table_file),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -695,6 +696,10 @@ fn run_split_cram(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_filter_mutect_calls(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_mutect_calls(&parsed("FilterMutectCalls", args)?)
+}
+
+fn run_compose_str_table_file(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::compose_str_table_file(&parsed("ComposeSTRTableFile", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {

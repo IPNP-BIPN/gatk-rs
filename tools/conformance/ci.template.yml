@@ -296,6 +296,7 @@ jobs:
             --tool CreateSomaticPanelOfNormals \
             --tool SplitCRAM \
             --tool FilterMutectCalls \
+            --tool ComposeSTRTableFile \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
