@@ -13952,7 +13952,7 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
     if !header
         .lines
         .iter()
-        .any(|line| line.render() == strat_line.render())
+        .any(|line| same_compound_id(line, &strat_line))
     {
         header.lines.push(strat_line);
     }
@@ -14051,4 +14051,686 @@ pub fn sv_stratify(parser: &Parser) -> Outcome {
     close(&writers)?;
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
+}
+
+/// An SV record as `SVConcordance` holds it: the converted call, and what the annotator reads.
+struct SvConcordanceItem {
+    call: gatk_tools::sv_call_record::SvCallRecord,
+    record: gatk_tools::sv_concordance::Record,
+    variant: htsjdk_vcf::variant::VariantContext,
+}
+
+/// `SVConcordance`: every eval SV annotated with the closest truth SV the linkage allows.
+///
+/// The closest-record choice and every value the annotator computes are
+/// [`gatk_tools::sv_concordance`]; the conversion both ways is [`gatk_tools::sv_call_record`]. The
+/// runner is the walk:
+///
+/// * **the master dictionary is required**, a `UserException` of its own, and the two files'
+///   dictionaries are then compared with the contig order checked;
+/// * **the two files are walked by [`gatk_engine::concordance_walker`]** with every pair counted
+///   concordant and no truth filter, and each step adds its truth record before its eval one;
+/// * **a truth record is rebuilt with a dictionary**, so its breakpoints are validated where an
+///   eval record's are not, and its genotypes keep only their alleles and `CN`;
+/// * **the finder is flushed at each new contig**, every eval record taking the closest truth record
+///   of the contig the linkage allows, and the output is sorted by `compareCalls`;
+/// * **the record written is `getVariantBuilder`'s**, not the input line: the fields the record owns
+///   are written again, a passing record comes out unfiltered, and a null annotation is absent.
+///
+/// Nothing inside `apply` is wrapped: `AbstractConcordanceWalker.traverse` calls it bare, so a record
+/// the conversion refuses reaches the user as the conversion's own exception.
+pub fn sv_concordance(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_call_record as svr;
+    use gatk_tools::sv_concordance as conc;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let _ = resolve_read_filters(parser, "SVConcordance")?;
+    let truth_path = argument(parser, "truth").ok_or_else(|| {
+        Thrown::command_line("Argument truth was missing: Argument 'truth' is required")
+    })?;
+    let eval_path = argument(parser, "evaluation").ok_or_else(|| {
+        Thrown::command_line("Argument evaluation was missing: Argument 'evaluation' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    let read_vcf = |path: &str| -> Result<(String, htsjdk_vcf::reader::VcfFile), Thrown> {
+        let bytes = std::fs::read(path).map_err(|_| {
+            Thrown::user(
+                index_feature_file::Refusal::CouldNotReadInputFile {
+                    path: path.to_string(),
+                }
+                .message(),
+            )
+        })?;
+        let text = if gatk_tools::read_walker_refusal::is_block_compressed(&bytes) {
+            htsjdk_bgzf::read::decompress_all(&bytes)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .ok_or_else(|| {
+                    Thrown::non_user(
+                        gatk_tools::read_walker_refusal::SAM_FORMAT,
+                        format!("{path} is not a block compressed file"),
+                    )
+                })?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        Ok((text, file))
+    };
+    let (truth_text, truth_file) = read_vcf(&truth_path)?;
+    let (eval_text, eval_file) = read_vcf(&eval_path)?;
+
+    // The engine's own validation, as `Concordance` runs it: the master against the features.
+    let truth_dictionary = vcf_dictionary(&truth_text);
+    let eval_dictionary = vcf_dictionary(&eval_text);
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let Some(master) = &master {
+            if let Some(reference) = &reference {
+                validate_against_master(master, "reference", &reference.sequences)?;
+            }
+            validate_against_master(master, "features", &truth_dictionary.sequences)?;
+        }
+        if let Some(reference) = &reference {
+            gatk_tools::sequence_dictionary::validate(
+                "reference",
+                &reference.sequences,
+                "features",
+                &truth_dictionary.sequences,
+                false,
+                false,
+            )
+            .map_err(|refusal| Thrown {
+                failure: Failure::User,
+                exception: refusal.java_class(),
+                message: Some(refusal.message()),
+            })?;
+        }
+    }
+
+    // `onTraversalStart`.
+    let Some(dictionary) = master else {
+        return Err(Thrown::user("Reference sequence dictionary required"));
+    };
+    gatk_tools::sequence_dictionary::validate(
+        "eval",
+        &eval_dictionary.sequences,
+        "truth",
+        &truth_dictionary.sequences,
+        false,
+        true,
+    )
+    .map_err(|refusal| Thrown {
+        failure: Failure::User,
+        exception: refusal.java_class(),
+        message: Some(refusal.message()),
+    })?;
+    let sequences: Vec<(String, i32)> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+    let parameter = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    };
+    let window = |name: &str, default: i32| -> i32 {
+        scalar(parser, name)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    };
+    let linkage = gatk_tools::sv_cluster::Linkage {
+        depth: gatk_tools::sv_cluster::ClusteringParameters::depth(
+            parameter("depth-interval-overlap", 0.8),
+            parameter("depth-size-similarity", 0.0),
+            window("depth-breakend-window", 10_000_000),
+            parameter("depth-sample-overlap", 0.0),
+        ),
+        mixed: gatk_tools::sv_cluster::ClusteringParameters::mixed(
+            parameter("mixed-interval-overlap", 0.8),
+            parameter("mixed-size-similarity", 0.0),
+            window("mixed-breakend-window", 1000),
+            parameter("mixed-sample-overlap", 0.0),
+        ),
+        pesr: gatk_tools::sv_cluster::ClusteringParameters::pesr(
+            parameter("pesr-interval-overlap", 0.5),
+            parameter("pesr-size-similarity", 0.0),
+            window("pesr-breakend-window", 500),
+            parameter("pesr-sample-overlap", 0.0),
+        ),
+        cluster_del_with_dup: false,
+    };
+    let common: Vec<String> = eval_file
+        .header
+        .samples
+        .iter()
+        .filter(|sample| truth_file.header.samples.contains(sample))
+        .cloned()
+        .collect();
+
+    // The header: the eval file's, with the tool's lines added to its set.
+    let mut header = eval_file.header.clone();
+    let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
+        HeaderLine::Compound {
+            key: key.to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: text.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let one = Cardinality::Fixed(1);
+    let added = vec![
+        compound(
+            "FORMAT",
+            "CONC_ST",
+            Cardinality::Unbounded,
+            LineType::String,
+            "The genotype concordance contingency state",
+        ),
+        compound(
+            "FORMAT",
+            "TRUTH_CN_EQUAL",
+            one,
+            LineType::Integer,
+            "Truth CNV copy state is equal (1=True, 0=False)",
+        ),
+        compound(
+            "INFO",
+            "STATUS",
+            one,
+            LineType::String,
+            "Truth status: TP/FP/FN for true positive/false positive/false negative.",
+        ),
+        compound(
+            "INFO",
+            "GENOTYPE_CONCORDANCE",
+            one,
+            LineType::Float,
+            "Genotype concordance",
+        ),
+        compound(
+            "INFO",
+            "CNV_CONCORDANCE",
+            one,
+            LineType::Float,
+            "CNV copy number concordance",
+        ),
+        compound(
+            "INFO",
+            "NON_REF_GENOTYPE_CONCORDANCE",
+            one,
+            LineType::Float,
+            "Non-ref genotype concordance",
+        ),
+        compound(
+            "INFO",
+            "HET_PPV",
+            one,
+            LineType::Float,
+            "Heterozygous genotype positive predictive value",
+        ),
+        compound(
+            "INFO",
+            "HET_SENSITIVITY",
+            one,
+            LineType::Float,
+            "Heterozygous genotype sensitivity",
+        ),
+        compound(
+            "INFO",
+            "HOMVAR_PPV",
+            one,
+            LineType::Float,
+            "Homozygous genotype positive predictive value",
+        ),
+        compound(
+            "INFO",
+            "HOMVAR_SENSITIVITY",
+            one,
+            LineType::Float,
+            "Homozygous genotype sensitivity",
+        ),
+        compound(
+            "INFO",
+            "VAR_PPV",
+            one,
+            LineType::Float,
+            "Non-ref genotype positive predictive value",
+        ),
+        compound(
+            "INFO",
+            "VAR_SENSITIVITY",
+            one,
+            LineType::Float,
+            "Non-ref genotype sensitivity",
+        ),
+        compound(
+            "INFO",
+            "VAR_SPECIFICITY",
+            one,
+            LineType::Float,
+            "Non-ref genotype specificity",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_VID",
+            one,
+            LineType::String,
+            "Matching truth set variant id",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_AC",
+            Cardinality::A,
+            LineType::Integer,
+            "Truth set allele count",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_AN",
+            Cardinality::A,
+            LineType::Integer,
+            "Truth set allele number",
+        ),
+        compound(
+            "INFO",
+            "TRUTH_AF",
+            Cardinality::A,
+            LineType::Float,
+            "Truth set allele frequency",
+        ),
+        compound(
+            "INFO",
+            "AF",
+            Cardinality::A,
+            LineType::Float,
+            "Allele Frequency, for each ALT allele, in the same order as listed",
+        ),
+        compound(
+            "INFO",
+            "AC",
+            Cardinality::A,
+            LineType::Integer,
+            "Allele count in genotypes, for each ALT allele, in the same order as listed",
+        ),
+        compound(
+            "INFO",
+            "AN",
+            one,
+            LineType::Integer,
+            "Total number of alleles in called genotypes",
+        ),
+    ];
+    for line in added {
+        if !header
+            .lines
+            .iter()
+            .any(|existing| same_compound_id(existing, &line))
+        {
+            header.lines.push(line);
+        }
+    }
+
+    // The walk.
+    let truth: Vec<ConcordanceLocus> = truth_file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+    let eval: Vec<ConcordanceLocus> = eval_file
+        .records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| ConcordanceLocus {
+            index,
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            filtered: record.is_filtered(),
+        })
+        .collect();
+    let walk_dictionary: Vec<String> = truth_dictionary
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let steps =
+        gatk_engine::concordance_walker::concordance(&truth, &eval, &walk_dictionary, |_, _| true);
+
+    let refused = |error: svr::SvRecordError| Thrown {
+        failure: if error.is_user() {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: error.class(),
+        message: Some(error.message()),
+    };
+    // The concordance side of a record: the call the linkage reads and the genotypes as indices.
+    let item = |variant: &htsjdk_vcf::variant::VariantContext,
+                call: gatk_tools::sv_call_record::SvCallRecord,
+                keep_counts: bool|
+     -> SvConcordanceItem {
+        let genotypes = variant
+            .genotypes
+            .iter()
+            .map(|genotype| conc::Genotype {
+                sample: genotype.sample_name.clone(),
+                alleles: genotype
+                    .alleles
+                    .iter()
+                    .map(|allele| {
+                        if allele.is_no_call() {
+                            None
+                        } else {
+                            variant
+                                .alleles
+                                .iter()
+                                .position(|known| known == allele)
+                                .map(|index| index as i32)
+                        }
+                    })
+                    .collect(),
+                copy_number: genotype
+                    .extended
+                    .iter()
+                    .find(|(key, _)| key == "CN")
+                    .and_then(|(_, value)| value.format())
+                    .and_then(|text| text.parse().ok()),
+            })
+            .collect();
+        let text = |key: &str| {
+            call.attributes
+                .iter()
+                .find(|(name, _)| name == key)
+                .and_then(|(_, value)| match value {
+                    Value::Missing => None,
+                    other => other.format(),
+                })
+        };
+        let allele_counts = if keep_counts {
+            match (text("AC"), text("AF"), text("AN")) {
+                (Some(ac), Some(af), Some(an)) => Some(conc::AlleleCounts {
+                    count: Vec::new(),
+                    frequency: Vec::new(),
+                    number: 0,
+                    verbatim: Some((ac, af, an)),
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let record = conc::Record {
+            call: gatk_tools::sv_cluster::CallRecord {
+                id: call.id.clone(),
+                sv_type: call.sv_type,
+                contig_a: call.contig_a.clone(),
+                position_a: call.position_a,
+                contig_b: call.contig_b.clone(),
+                position_b: call.position_b,
+                strand_a: call.strand_a,
+                strand_b: call.strand_b,
+                length: call.length,
+                algorithms: call.algorithms.clone(),
+                carriers: Vec::new(),
+            },
+            genotypes,
+            allele_counts,
+        };
+        SvConcordanceItem {
+            call,
+            record,
+            variant: variant.clone(),
+        }
+    };
+
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    let mut truth_items: Vec<SvConcordanceItem> = Vec::new();
+    let mut eval_items: Vec<SvConcordanceItem> = Vec::new();
+    let mut current: Option<String> = None;
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut records = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut records);
+        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        write_variant_output(parser, &output, &out)
+    };
+    let flush = |truth_items: &mut Vec<SvConcordanceItem>,
+                 eval_items: &mut Vec<SvConcordanceItem>,
+                 written: &mut Vec<htsjdk_vcf::variant::VariantContext>| {
+        let truths: Vec<conc::Record> =
+            truth_items.iter().map(|item| item.record.clone()).collect();
+        let mut annotated: Vec<(
+            gatk_tools::sv_call_record::SvCallRecord,
+            htsjdk_vcf::variant::VariantContext,
+        )> = Vec::new();
+        for item in eval_items.iter() {
+            let closest = conc::closest(&linkage, &item.record, &truths);
+            let annotation = conc::annotate(&item.record, closest, &common);
+            annotated.push(sv_concordance_output(item, &annotation, &common));
+        }
+        annotated.sort_by(|a, b| svr::compare_calls(&a.0, &b.0, &sequences));
+        written.extend(annotated.into_iter().map(|(_, variant)| variant));
+        truth_items.clear();
+        eval_items.clear();
+    };
+    for step in steps {
+        let mut add = |index: usize, is_truth: bool| -> Result<(), Thrown> {
+            let variant = if is_truth {
+                &truth_file.records[index]
+            } else {
+                &eval_file.records[index]
+            };
+            let call = svr::create(variant, &sequences).map_err(refused)?;
+            if current.as_deref() != Some(call.contig_a.as_str()) {
+                flush(&mut truth_items, &mut eval_items, &mut written);
+                current = Some(call.contig_a.clone());
+            }
+            if is_truth {
+                // `minimizeTruthFootprint`: rebuilt WITH the dictionary, genotypes cut to
+                // alleles and `CN`.
+                svr::validate_coordinates(&call, &sequences).map_err(refused)?;
+                let mut stripped = variant.clone();
+                let genotypes: Vec<htsjdk_vcf::variant::Genotype> = variant
+                    .genotypes
+                    .iter()
+                    .map(|genotype| {
+                        let mut kept = htsjdk_vcf::variant::Genotype::new(
+                            &genotype.sample_name,
+                            genotype.alleles.clone(),
+                        );
+                        kept.extended = genotype
+                            .extended
+                            .iter()
+                            .filter(|(key, _)| key == "CN")
+                            .cloned()
+                            .collect();
+                        kept
+                    })
+                    .collect();
+                stripped.genotypes = genotypes.into();
+                truth_items.push(item(&stripped, call, true));
+            } else {
+                eval_items.push(item(variant, call, true));
+            }
+            Ok(())
+        };
+        let outcome = step
+            .truth
+            .map_or(Ok(()), |index| add(index, true))
+            .and_then(|()| step.eval.map_or(Ok(()), |index| add(index, false)));
+        if let Err(error) = outcome {
+            finish(&written)?;
+            return Err(error);
+        }
+    }
+    flush(&mut truth_items, &mut eval_items, &mut written);
+    finish(&written)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}
+
+/// One eval record written back: its genotypes and attributes annotated, then `getVariantBuilder`.
+fn sv_concordance_output(
+    item: &SvConcordanceItem,
+    annotation: &gatk_tools::sv_concordance::Annotation,
+    common: &[String],
+) -> (
+    gatk_tools::sv_call_record::SvCallRecord,
+    htsjdk_vcf::variant::VariantContext,
+) {
+    use htsjdk_vcf::variant::Value;
+    let is_cnv = item.call.sv_type == gatk_tools::sv_stratify::SvType::Cnv;
+    let genotypes: Vec<htsjdk_vcf::variant::Genotype> = item
+        .variant
+        .genotypes
+        .iter()
+        .map(|genotype| {
+            let mut genotype = genotype.clone();
+            if common.contains(&genotype.sample_name) {
+                if is_cnv {
+                    let value = annotation
+                        .truth_copy_number_equal
+                        .iter()
+                        .find(|(sample, _)| *sample == genotype.sample_name)
+                        .and_then(|(_, equal)| *equal)
+                        .map(|equal| Value::Int(if equal { 1 } else { 0 }))
+                        .unwrap_or(Value::Missing);
+                    genotype
+                        .extended
+                        .push(("TRUTH_CN_EQUAL".to_string(), value));
+                } else if let Some(Some(state)) = annotation
+                    .contingency
+                    .iter()
+                    .find(|(sample, _)| *sample == genotype.sample_name)
+                    .map(|(_, state)| state.clone())
+                {
+                    genotype
+                        .extended
+                        .push(("CONC_ST".to_string(), Value::Str(state)));
+                }
+            }
+            genotype
+        })
+        .collect();
+
+    let mut call = item.call.clone();
+    let mut put = |key: &str, value: Option<Value>| {
+        call.attributes.retain(|(name, _)| name != key);
+        if let Some(value) = value {
+            call.attributes.push((key.to_string(), value));
+        }
+    };
+    let double = |value: f64| (!value.is_nan()).then_some(Value::Double(value));
+    put(
+        "TRUTH_VID",
+        annotation.truth_variant_id.clone().map(Value::Str),
+    );
+    put("STATUS", Some(Value::Str(annotation.status.to_string())));
+    if is_cnv {
+        put(
+            "CNV_CONCORDANCE",
+            annotation.copy_number_concordance.map(Value::Double),
+        );
+    } else if let Some(metrics) = &annotation.metrics {
+        put("GENOTYPE_CONCORDANCE", double(metrics.genotype_concordance));
+        put(
+            "NON_REF_GENOTYPE_CONCORDANCE",
+            double(metrics.non_ref_genotype_concordance),
+        );
+        put("HET_PPV", double(metrics.het_ppv));
+        put("HET_SENSITIVITY", double(metrics.het_sensitivity));
+        put("HOMVAR_PPV", double(metrics.homvar_ppv));
+        put("HOMVAR_SENSITIVITY", double(metrics.homvar_sensitivity));
+        put("VAR_PPV", double(metrics.var_ppv));
+        put("VAR_SENSITIVITY", double(metrics.var_sensitivity));
+        put("VAR_SPECIFICITY", double(metrics.var_specificity));
+    }
+    let counts = |counts: &gatk_tools::sv_concordance::AlleleCounts| -> [Value; 3] {
+        match &counts.verbatim {
+            Some((ac, af, an)) => [
+                Value::Str(ac.clone()),
+                Value::Str(af.clone()),
+                Value::Str(an.clone()),
+            ],
+            None => [
+                Value::List(counts.count.iter().map(|c| Value::Int(*c as i64)).collect()),
+                Value::List(counts.frequency.iter().map(|f| Value::Double(*f)).collect()),
+                Value::Int(counts.number as i64),
+            ],
+        }
+    };
+    if !is_cnv {
+        // The eval record's own counts are written only when it carried none.
+        if let Some(own) = &annotation.allele_counts {
+            if own.verbatim.is_none() {
+                let [ac, af, an] = counts(own);
+                put("AC", Some(ac));
+                put("AF", Some(af));
+                put("AN", Some(an));
+            }
+        }
+        match &annotation.truth_allele_counts {
+            None => {
+                put("TRUTH_AC", None);
+                put("TRUTH_AF", None);
+                put("TRUTH_AN", None);
+            }
+            Some(theirs) => {
+                let [ac, af, an] = counts(theirs);
+                put("TRUTH_AC", Some(ac));
+                put("TRUTH_AF", Some(af));
+                put("TRUTH_AN", Some(an));
+            }
+        }
+    }
+    let filters = item.variant.filters.clone().unwrap_or_default();
+    let variant = gatk_tools::sv_call_record::to_variant(
+        &call,
+        item.variant.alleles.clone(),
+        genotypes,
+        &filters,
+    );
+    (call, variant)
+}
+
+/// Two compound header lines under the same key and ID, which is how `VCFHeader.addMetaDataLine`
+/// keys them: it keeps the line already there, so an eval file declaring its own `AC` keeps its
+/// description where a constructor over a `HashSet` of lines would have kept both. Measured on
+/// `SVConcordance`'s array.
+fn same_compound_id(
+    existing: &htsjdk_vcf::header::HeaderLine,
+    line: &htsjdk_vcf::header::HeaderLine,
+) -> bool {
+    use htsjdk_vcf::header::HeaderLine;
+    match (existing, line) {
+        (
+            HeaderLine::Compound { key, id, .. },
+            HeaderLine::Compound {
+                key: other_key,
+                id: other_id,
+                ..
+            },
+        ) => key == other_key && id == other_id,
+        _ => existing.render() == line.render(),
+    }
 }

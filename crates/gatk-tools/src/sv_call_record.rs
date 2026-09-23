@@ -195,6 +195,19 @@ pub enum SvRecordError {
     MissingSecondBreakpoint {
         id: String,
     },
+    /// `validatePosition`: a breakpoint on a contig the dictionary does not name.
+    ContigNotInDictionary {
+        contig: String,
+    },
+    /// `validatePosition`: a breakpoint outside `[1, length]`.
+    InvalidPosition {
+        contig: String,
+        position: i32,
+    },
+    /// `validateCoordinates`: the second breakpoint sorts before the first.
+    EndPrecedesStart {
+        id: String,
+    },
 }
 
 impl SvRecordError {
@@ -263,6 +276,15 @@ impl SvRecordError {
             SvRecordError::MissingSecondBreakpoint { id } => format!(
                 "Bad input: Attributes {END2_ATTRIBUTE} and {CONTIG2_ATTRIBUTE} are required for BND and CTX records (variant {id})."
             ),
+            SvRecordError::ContigNotInDictionary { contig } => {
+                format!("Contig {contig} not found in dictionary")
+            }
+            SvRecordError::InvalidPosition { contig, position } => {
+                format!("Invalid position {contig}:{position}")
+            }
+            SvRecordError::EndPrecedesStart { id } => {
+                format!("End precedes start in variant {id}")
+            }
         }
     }
 }
@@ -302,6 +324,204 @@ impl SvCallRecord {
             length: self.length,
         }
     }
+}
+
+/// `validateCoordinates`, which the constructor taking a dictionary runs and `create` does not.
+///
+/// Both breakpoints must lie on a contig of the dictionary and inside it, the second may not sort
+/// before the first unless the record is complex, and every complex interval is checked the same
+/// way at both of its ends.
+pub fn validate_coordinates(
+    record: &SvCallRecord,
+    dictionary: &[(String, i32)],
+) -> Result<(), SvRecordError> {
+    let position = |contig: &str, position: i32| -> Result<usize, SvRecordError> {
+        let Some(index) = dictionary.iter().position(|(name, _)| name == contig) else {
+            return Err(SvRecordError::ContigNotInDictionary {
+                contig: contig.to_string(),
+            });
+        };
+        if position <= 0 || position > dictionary[index].1 {
+            return Err(SvRecordError::InvalidPosition {
+                contig: contig.to_string(),
+                position,
+            });
+        }
+        Ok(index)
+    };
+    let a = position(&record.contig_a, record.position_a)?;
+    let b = position(&record.contig_b, record.position_b)?;
+    if record.sv_type != SvType::Cpx && (a, record.position_a) > (b, record.position_b) {
+        return Err(SvRecordError::EndPrecedesStart {
+            id: record.id.clone(),
+        });
+    }
+    for interval in &record.cpx_intervals {
+        position(&interval.contig, interval.start)?;
+        position(&interval.contig, interval.end)?;
+    }
+    Ok(())
+}
+
+/// `SVCallRecordUtils.compareCalls`: both breakpoints in dictionary order, then the type's
+/// ordinal, then the strands and the length, an absent value sorting first.
+pub fn compare_calls(
+    first: &SvCallRecord,
+    second: &SvCallRecord,
+    dictionary: &[(String, i32)],
+) -> std::cmp::Ordering {
+    let index = |contig: &str| {
+        dictionary
+            .iter()
+            .position(|(name, _)| name == contig)
+            .unwrap_or(usize::MAX)
+    };
+    let ordinal = |sv_type: SvType| match sv_type {
+        SvType::Del => 0,
+        SvType::Dup => 1,
+        SvType::Ins => 2,
+        SvType::Inv => 3,
+        SvType::Cpx => 4,
+        SvType::Bnd => 5,
+        SvType::Ctx => 6,
+        SvType::Cnv => 7,
+    };
+    (index(&first.contig_a), first.position_a)
+        .cmp(&(index(&second.contig_a), second.position_a))
+        .then(
+            (index(&first.contig_b), first.position_b)
+                .cmp(&(index(&second.contig_b), second.position_b)),
+        )
+        .then(ordinal(first.sv_type).cmp(&ordinal(second.sv_type)))
+        .then(first.strand_a.cmp(&second.strand_a))
+        .then(first.strand_b.cmp(&second.strand_b))
+        .then(first.length.cmp(&second.length))
+}
+
+fn evidence_name(evidence: Evidence) -> &'static str {
+    match evidence {
+        Evidence::Baf => "BAF",
+        Evidence::Pe => "PE",
+        Evidence::Rd => "RD",
+        Evidence::Sr => "SR",
+    }
+}
+
+/// `SVCallRecordUtils.getVariantBuilder`: the record back into a variant.
+///
+/// The fields the record owns are written again from the record rather than copied from the input,
+/// so what comes out is not what went in: a deletion's `SVLEN` is the length `END - POS + 1`,
+/// positive, whatever sign the input used; `END` of a breakend is its own position; `STRANDS` is
+/// written only for the types that keep them. The filters are set only when there are some, and
+/// `getFilters()` answers the empty set for `PASS` as for `.`, so a passing input comes out
+/// UNFILTERED. `alleles` is the variant's own list, reference first; `filters` the input's.
+pub fn to_variant(
+    record: &SvCallRecord,
+    alleles: Vec<htsjdk_vcf::allele::Allele>,
+    genotypes: Vec<htsjdk_vcf::variant::Genotype>,
+    filters: &[String],
+) -> VariantContext {
+    let (end, second) = match record.sv_type {
+        SvType::Bnd | SvType::Ctx => (
+            record.position_a,
+            Some((record.position_b, record.contig_b.clone())),
+        ),
+        _ => (record.position_b, None),
+    };
+    let mut variant = VariantContext::new(&record.contig_a, record.position_a as i64, alleles);
+    variant.id = record.id.clone();
+    variant.stop = end as i64;
+    let mut attributes = record.attributes.clone();
+    let mut put =
+        |key: &str, value: Value| match attributes.iter_mut().find(|(name, _)| name == key) {
+            Some(slot) => slot.1 = value,
+            None => attributes.push((key.to_string(), value)),
+        };
+    put("END", Value::Int(end as i64));
+    put(SVTYPE, Value::Str(type_name(record.sv_type).to_string()));
+    put(
+        ALGORITHMS_ATTRIBUTE,
+        Value::List(
+            record
+                .algorithms
+                .iter()
+                .map(|a| Value::Str(a.clone()))
+                .collect(),
+        ),
+    );
+    if let Some((position, contig)) = second {
+        put(END2_ATTRIBUTE, Value::Int(position as i64));
+        put(CONTIG2_ATTRIBUTE, Value::Str(contig));
+    }
+    if let Some(subtype) = &record.cpx_subtype {
+        put(CPX_TYPE, Value::Str(subtype.clone()));
+    }
+    if !record.cpx_intervals.is_empty() {
+        put(
+            CPX_INTERVALS,
+            Value::List(
+                record
+                    .cpx_intervals
+                    .iter()
+                    .map(|interval| {
+                        Value::Str(format!(
+                            "{}_{}:{}-{}",
+                            type_name(interval.sv_type),
+                            interval.contig,
+                            interval.start,
+                            interval.end
+                        ))
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    if let Some(length) = record.length {
+        put(SVLEN, Value::Int(length as i64));
+    }
+    if matches!(
+        record.sv_type,
+        SvType::Bnd | SvType::Inv | SvType::Ins | SvType::Cpx | SvType::Ctx
+    ) {
+        if let (Some(a), Some(b)) = (record.strand_a, record.strand_b) {
+            let strand = |forward: bool| if forward { "+" } else { "-" };
+            put(
+                STRANDS_ATTRIBUTE,
+                Value::Str(format!("{}{}", strand(a), strand(b))),
+            );
+        }
+    }
+    if !record.evidence.is_empty() {
+        put(
+            EVIDENCE,
+            Value::List(
+                record
+                    .evidence
+                    .iter()
+                    .map(|evidence| Value::Str(evidence_name(*evidence).to_string()))
+                    .collect(),
+            ),
+        );
+    }
+    variant.attributes = attributes;
+    if !filters.is_empty() {
+        variant.filters = Some(filters.to_vec());
+    }
+    if let Some(error) = record.log10_p_error {
+        variant.log10_p_error = error;
+    }
+    // "htsjdk vcf encoder does not allow genotypes to have empty alleles".
+    variant.genotypes = genotypes
+        .into_iter()
+        .map(|mut genotype| {
+            if genotype.alleles.is_empty() {
+                genotype.alleles = vec![htsjdk_vcf::allele::Allele::no_call()];
+            }
+            genotype
+        })
+        .collect::<Vec<_>>()
+        .into();
+    variant
 }
 
 fn attribute<'a>(variant: &'a VariantContext, key: &str) -> Option<&'a Value> {

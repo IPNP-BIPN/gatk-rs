@@ -1828,6 +1828,7 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         vqsrFixtures(dir);
         svStratifyFixtures(dir);
+        svConcordanceFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1844,6 +1845,59 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("ase_sites_unindexed.vcf"), aseSites, StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `SVConcordance` compares: a truth and an evaluation SV callset sharing one sample.
+     *
+     * Each eval record sits near a truth record of its type, except one deletion with nothing near
+     * it (a false positive) and a CNV, whose copy numbers are compared instead of its genotypes.
+     * `s1` is in both files and `s2`, `s3` in one each, so only `s1` is annotated. The truth
+     * insertion carries AC, AF and AN, which are copied rather than recounted. `sv_eval_sites.vcf`
+     * is the eval file without samples, which gets no allele counts of its own.
+     */
+    static void svConcordanceFixtures(final Path dir) throws Exception {
+        final String lines = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=\"Algorithms\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        Files.writeString(dir.resolve("sv_truth.vcf"), lines + columns + "\ts1\ts2\n"
+                + "chr1\t1000\tt_del\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;ALGORITHMS=manta\tGT\t0/1\t1/1\n"
+                + "chr1\t5000\tt_dup\tN\t<DUP>\t.\tPASS\tEND=6000;SVTYPE=DUP;ALGORITHMS=depth\tGT\t0/1\t0/0\n"
+                + "chr1\t30000\tt_ins\tN\t<INS>\t.\tPASS\tEND=30001;SVTYPE=INS;SVLEN=400;ALGORITHMS=manta;AC=3;AF=0.75;AN=4\tGT\t1/1\t0/1\n"
+                + "chr1\t40000\tt_cnv\tN\t<DEL>,<DUP>\t.\tPASS\tEND=45000;SVTYPE=CNV;ALGORITHMS=depth\tGT:CN\t./.:1\t./.:3\n"
+                + "chr2\t2000\tt_bnd\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=9000;STRANDS=+-;ALGORITHMS=manta\tGT\t0/1\t0/0\n",
+                StandardCharsets.UTF_8);
+        final String evalRecords =
+                "chr1\t1010\te_del\tN\t<DEL>\t.\tPASS\tEND=1290;SVTYPE=DEL;SVLEN=-280;ALGORITHMS=manta"
+                + "\tchr1\t5100\te_dup\tN\t<DUP>\t.\t.\tEND=6100;SVTYPE=DUP;ALGORITHMS=depth"
+                + "\tchr1\t20000\te_fp\tN\t<DEL>\t.\tPASS\tEND=21000;SVTYPE=DEL;ALGORITHMS=manta"
+                + "\tchr1\t30050\te_ins\tN\t<INS>\t.\tPASS\tEND=30051;SVTYPE=INS;SVLEN=380;ALGORITHMS=manta"
+                + "\tchr1\t40100\te_cnv\tN\t<DEL>,<DUP>\t.\tPASS\tEND=45100;SVTYPE=CNV;ALGORITHMS=depth"
+                + "\tchr2\t2010\te_bnd\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=9005;STRANDS=+-;ALGORITHMS=manta";
+        final String[] records = evalRecords.split("\t(?=chr[12]\t)");
+        final String[] genotypes = {"GT\t0/1\t0/0", "GT\t1/1\t./.", "GT\t0/1\t0/1", "GT\t1/1\t0/1",
+                "GT:CN\t./.:1\t./.:2", "GT\t0/1\t0/0"};
+        final StringBuilder eval = new StringBuilder(lines + columns + "\ts1\ts3\n");
+        final StringBuilder sites = new StringBuilder(lines + columns.replace("\tFORMAT", "") + "\n");
+        for (int i = 0; i < records.length; i++) {
+            eval.append(records[i]).append('\t').append(genotypes[i]).append('\n');
+            sites.append(records[i]).append('\n');
+        }
+        Files.writeString(dir.resolve("sv_eval.vcf"), eval.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_eval_sites.vcf"), sites.toString(), StandardCharsets.UTF_8);
     }
 
     /**

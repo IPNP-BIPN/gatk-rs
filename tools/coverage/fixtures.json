@@ -3637,6 +3637,104 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "SVConcordance": {
+      "$why": [
+        "--evaluation is sv_eval.vcf, one call near each truth call of its type, a deletion near nothing,",
+        "and a CNV compared by copy number; and the same records without samples. --truth is sv_truth.vcf,",
+        "which shares sample s1 with the eval file and carries AC/AF/AN on its insertion; sv_calls.vcf,",
+        "SVStratify's calls, which share no sample; and sv_bad.vcf, whose second deletion has no ALGORITHMS",
+        "and is refused unwrapped. The interval-overlap and window arguments carry their defaults and a",
+        "value that breaks one pairing each; the sample-overlap ones are held at 0, since a truth genotype",
+        "is stripped of its ECN and any positive threshold refuses the first comparison.",
+        "--sequence-dictionary is held at sv.dict, --do-not-sort at false, and the reference and the",
+        "engine's read and interval arguments are held out."
+      ],
+      "--evaluation": [
+        "/work/fixtures/sv_eval.vcf",
+        "/work/fixtures/sv_eval_sites.vcf"
+      ],
+      "--truth": [
+        "/work/fixtures/sv_truth.vcf",
+        "/work/fixtures/sv_calls.vcf",
+        "/work/fixtures/sv_bad.vcf"
+      ],
+      "--output": [
+        "/work/out/concordance.vcf",
+        "/work/out/concordance.vcf.gz"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict"
+      ],
+      "--do-not-sort": [
+        "false"
+      ],
+      "--depth-interval-overlap": [
+        "0.8",
+        "0.95"
+      ],
+      "--mixed-interval-overlap": [
+        "0.8",
+        "0.5"
+      ],
+      "--pesr-interval-overlap": [
+        "0.5",
+        "0.99"
+      ],
+      "--depth-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--mixed-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--pesr-size-similarity": [
+        "0.0",
+        "0.99"
+      ],
+      "--depth-breakend-window": [
+        "10000000",
+        "50"
+      ],
+      "--mixed-breakend-window": [
+        "1000",
+        "50"
+      ],
+      "--pesr-breakend-window": [
+        "500",
+        "5"
+      ],
+      "--depth-sample-overlap": [
+        "0.0"
+      ],
+      "--mixed-sample-overlap": [
+        "0.0"
+      ],
+      "--pesr-sample-overlap": [
+        "0.0"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--confidence": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [

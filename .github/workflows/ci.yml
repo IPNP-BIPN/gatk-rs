@@ -590,6 +590,7 @@ jobs:
             --tool FilterVariantTranches \
             --tool ApplyVQSR \
             --tool SVStratify \
+            --tool SVConcordance \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
