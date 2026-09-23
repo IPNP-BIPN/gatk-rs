@@ -139,18 +139,14 @@ pub fn print_bgzf_block_information(parser: &Parser) -> Outcome {
         Some(path) => std::fs::write(&path, report).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
         })?,
-        // With no output the report goes to standard output, which the dispatcher prints as the
-        // tool's own return value.
-        None => {
-            if let Some(refusal) = refusal {
-                return Err(Thrown::user(refusal.message()));
-            }
-            return Ok(Some(report));
-        }
+        // With no output the report is written to `System.out` as the blocks are read, and a
+        // refusal comes after what was printed.
+        None => print!("{report}"),
     }
     match refusal {
         Some(refusal) => Err(Thrown::user(refusal.message())),
-        None => Ok(None),
+        // `doWork` returns 0, which `handleResult` prints.
+        None => Ok(Some("0".to_string())),
     }
 }
 
@@ -1275,7 +1271,8 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
         })?;
     }
     // The tool returns nothing, so `handleResult` prints nothing.
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("0".to_string()))
 }
 
 /// The BGZF compression a tool run writes at: GATK's deflater and GATK's level.
@@ -2038,7 +2035,10 @@ pub fn count_bases_in_reference(parser: &Parser) -> Outcome {
         std::fs::write(&output, &report)
             .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
     }
-    Ok(Some(report))
+    // `onTraversalSuccess` PRINTS the counts itself and returns 0, which `handleResult` prints
+    // after them.
+    print!("{report}");
+    Ok(Some("0".to_string()))
 }
 
 /// A reference walker's traversal failure, as the reference throws it.
@@ -2976,7 +2976,8 @@ pub fn calculate_mixing_fractions(parser: &Parser) -> Outcome {
     let rows = mixing::mixing_fractions(&file.header.samples, &counts)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
     write_file(&output, mixing::table(&rows).as_bytes())?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `AnnotateVcfWithExpectedAlleleFraction.apply`: one Float INFO field per record.
@@ -3281,7 +3282,8 @@ pub fn count_false_positives(parser: &Parser) -> Outcome {
     let territory = counting::target_territory(&resolved);
     let id = counting::id_from_path(&input);
     write_file(&output, counting::table(&id, counts, territory).as_bytes())?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `EvaluateInfoFieldConcordance.apply`: one INFO key of the eval file against one of the truth.
@@ -3437,7 +3439,8 @@ pub fn evaluate_info_field_concordance(parser: &Parser) -> Outcome {
     }
 
     write_file(&summary, totals.table(&eval_key, &truth_key).as_bytes())?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// As much of a record as the concordance iterator looks at.
@@ -4696,7 +4699,8 @@ pub fn left_align_and_trim_variants(parser: &Parser) -> Outcome {
         message: Some(format!("{error:?}")),
     })?;
     write_variant_output(parser, &output, &text)?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// What the biallelic splitter refuses: the trimming underneath, or the genotype combinatorics.
@@ -4741,7 +4745,8 @@ pub fn gather_bqsr_reports(parser: &Parser) -> Outcome {
     let gathered = gather::gather(&borrowed)
         .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
     write_file(&output, gathered.as_bytes())?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("0".to_string()))
 }
 
 /// One record of either side, as the concordance iterator reads it.
@@ -5138,7 +5143,8 @@ pub fn concordance(parser: &Parser) -> Outcome {
         })?;
         write_variant_output(parser, &path, &text)?;
     }
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `DepthOfCoverage.apply`: every base of every interval, counted per sample.
@@ -5332,7 +5338,7 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     // port writes: the run then writes nothing at all, and so does the reference once the other
     // three omissions have taken their files away.
     if omissions.depth_output_at_each_base {
-        return Ok(None);
+        return Ok(Some("success".to_string()));
     }
 
     let print_base_counts = flag(parser, "print-base-counts");
@@ -5353,7 +5359,8 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
         }
     }
     write_file(&output, text.as_bytes())?;
-    Ok(None)
+    // `onTraversalSuccess` returns the word, lower case, which `handleResult` prints.
+    Ok(Some("success".to_string()))
 }
 
 /// One record as the posteriors read it: the alleles, the counts in INFO, and the genotypes.
@@ -6025,7 +6032,8 @@ pub fn validate_basic_somatic_short_mutations(parser: &Parser) -> Outcome {
         })?;
         write_variant_output(parser, &path, &text)?;
     }
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `PrintReadCounts.apply`: a depth-evidence or counts file rewritten for the CNV callers.
@@ -6858,7 +6866,8 @@ pub fn get_normal_artifact_data(parser: &Parser) -> Outcome {
     }
 
     write_file(&output, artifact::write(&rows).as_bytes())?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
@@ -7443,7 +7452,9 @@ pub fn compare_interval_lists(parser: &Parser) -> Outcome {
     let comparison = gatk_tools::compare_interval_lists::equate_intervals(&lists[0], &lists[1]);
     match comparison {
         gatk_tools::compare_interval_lists::Comparison::Equal => {
-            Ok(Some("Intervals are equal".to_string()))
+            // `doWork` prints the verdict and returns 0.
+            println!("Intervals are equal");
+            Ok(Some("0".to_string()))
         }
         gatk_tools::compare_interval_lists::Comparison::Different(difference) => Err(Thrown {
             failure: Failure::User,
@@ -7816,6 +7827,8 @@ pub fn print_file_diagnostics(parser: &Parser) -> Outcome {
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
+    // `HTSAnalyzerFactory.getFileAnalyzer` prints the input as given before it chooses anything.
+    println!("{input}");
     let analyzer = gatk_tools::print_file_diagnostics::analyzer_for(&input)
         .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
     let bytes = std::fs::read(&input)
@@ -7840,7 +7853,11 @@ pub fn print_file_diagnostics(parser: &Parser) -> Outcome {
     std::fs::write(&output, report).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
-    Ok(None)
+    // `BAIAnalyzer.doAnalysis` prints where it wrote, `analyze` then emits an empty line, and
+    // `doWork` returns 0, which `handleResult` prints.
+    println!("\nOutput written to {output}\n");
+    println!();
+    Ok(Some("0".to_string()))
 }
 
 /// `SplitReads`, whose `--output` names a DIRECTORY and whose file names it builds itself.
@@ -8020,11 +8037,13 @@ pub fn clip_reads(parser: &Parser) -> Outcome {
         }
     };
     if let Some(path) = argument(parser, "output-statistics") {
-        std::fs::write(&path, statistics).map_err(|error| {
+        std::fs::write(&path, &statistics).map_err(|error| {
             Thrown::non_user(PORT_FAILURE, format!("could not write {path}: {error}"))
         })?;
     }
-    write_bam(parser, &output, &bytes, bai)
+    write_bam(parser, &output, &bytes, bai)?;
+    // `onTraversalSuccess` returns the clipping statistics, which `handleResult` prints.
+    Ok(Some(statistics))
 }
 
 /// `SplitNCigarReads`, which splits a read at every `N` of its cigar.
@@ -8366,7 +8385,8 @@ pub fn base_recalibrator(parser: &Parser) -> Outcome {
     std::fs::write(&output, table).map_err(|error| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
     })?;
-    Ok(None)
+    // What `doWork` returns, which `handleResult` prints after `Tool returned:`.
+    Ok(Some("SUCCESS".to_string()))
 }
 
 /// `GtfToBed`, whose BED is one-based because nothing converts the GTF's own coordinates.
@@ -9144,7 +9164,10 @@ pub fn transfer_read_tags(parser: &Parser) -> Outcome {
     )
     .map_err(reads_traversal_error)?;
     match run {
-        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Ok((bytes, bai)) => {
+            write_bam(parser, &output, &bytes, bai)?;
+            Ok(Some("SUCCESS".to_string()))
+        }
         Err(refusal) => Err(transfer_error(refusal)),
     }
 }
@@ -9199,7 +9222,10 @@ pub fn post_process_reads_for_rsem(parser: &Parser) -> Outcome {
     )
     .map_err(reads_traversal_error)?;
     match run {
-        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Ok((bytes, bai)) => {
+            write_bam(parser, &output, &bytes, bai)?;
+            Ok(Some("SUCCESS".to_string()))
+        }
         // Four of the five refusals are the tool's own `UserException`s; the fifth is the JVM's
         // `NullPointerException`, raised from inside a guard that exists because the value may be
         // null and dereferences it anyway.

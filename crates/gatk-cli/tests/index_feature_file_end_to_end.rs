@@ -111,9 +111,9 @@ fn an_explicit_output_is_used_as_given() {
     assert!(written.stdout.ends_with("elsewhere.idx\n"));
 }
 
-/// The second tool the port runs prints its report rather than writing a file.
+/// The second tool the port runs prints its report rather than writing a file, and returns 0.
 #[test]
-fn a_report_is_returned_where_a_file_is_not_named() {
+fn a_report_is_printed_where_a_file_is_not_named() {
     let dir = scratch("bgzf");
     // A tiny BGZF file: an empty block and the terminator, which is what an empty gzip member
     // and the reference's own terminator look like on disk.
@@ -129,16 +129,11 @@ fn a_report_is_returned_where_a_file_is_not_named() {
         &file.to_string_lossy(),
     ]));
     assert_eq!(written.status, 0, "{}", written.stderr);
-    // `handleResult` prints what the tool returned, and what this tool returns with no `--output`
-    // is the report itself.
-    assert!(
-        written
-            .stdout
-            .starts_with("Tool returned:\nBGZF block information for file: empty.bgzf"),
-        "{}",
-        written.stdout
-    );
-    // With an output it writes the file instead and returns nothing.
+    // With no `--output` the report goes to `System.out` as the blocks are read, straight from
+    // the runner, and `doWork` returns 0, which is all `handleResult` prints. Measured by the
+    // covering array once it compared stdout: the report was never the returned value.
+    assert_eq!(written.stdout, "Tool returned:\n0\n");
+    // With an output it writes the file instead, and still returns 0.
     let report = dir.join("report.txt");
     let written = gatk_cli::run(&args(&[
         "PrintBGZFBlockInformation",
@@ -148,7 +143,7 @@ fn a_report_is_returned_where_a_file_is_not_named() {
         &report.to_string_lossy(),
     ]));
     assert_eq!(written.status, 0, "{}", written.stderr);
-    assert!(written.stdout.is_empty(), "{}", written.stdout);
+    assert_eq!(written.stdout, "Tool returned:\n0\n");
     let text = std::fs::read_to_string(&report).expect("the report");
     assert!(
         text.starts_with("BGZF block information for file: empty.bgzf"),
