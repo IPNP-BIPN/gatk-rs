@@ -4788,6 +4788,35 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "CRAMIssue8768Detector": {
+      "$why": [
+        "issue8768.cram has its first container on each of two contigs opening at position 1, so the",
+        "second is suspected, with four mismatches in every third read; multislice.cram is the same",
+        "reads two slices a container, which the detector calls foreign and stops on; split.cram opens",
+        "at 100 and has nothing to suspect. two_contigs.fasta is the reference the first two were",
+        "written against; reference.fasta disagrees with them base for base."
+      ],
+      "--input": [
+        "/work/fixtures/issue8768.cram",
+        "/work/fixtures/multislice.cram",
+        "/work/fixtures/split.cram"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--output": [
+        "/work/out/cram8768.txt"
+      ],
+      "--output-tsv": [
+        "/work/out/cram8768.tsv",
+        "null"
+      ],
+      "--mismatch-rate-threshold": [
+        "0.05",
+        "0.0"
+      ]
     }
   },
   "constraints": [
