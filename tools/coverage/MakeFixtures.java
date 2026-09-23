@@ -1918,6 +1918,27 @@ public class MakeFixtures {
                 "SAMPLE\tchr1\tchr2\ns1\t2\t2\ns2\t2\t2\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("sv_ploidy_haploid.tsv"),
                 "SAMPLE\tchr1\tchr2\ns1\t2\t2\ns2\t1\t2\n", StandardCharsets.UTF_8);
+        // What `GroupedSVCluster` adds to them: a track over the deletions and the insertions, the
+        // strata to group by, and the thresholds per group, in full and with one group missing,
+        // which `onTraversalStart` refuses after the writer exists.
+        Files.writeString(dir.resolve("sv_grp_track.bed"),
+                "chr1\t899\t2100\nchr1\t19989\t20030\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_grp_strata.tsv"),
+                "NAME\tSVTYPE\tMIN_SIZE\tMAX_SIZE\tTRACKS\n"
+                + "DEL_small\tDEL\t50\t5000\tNA\n"
+                + "DEL_large\tDEL\t5000\tNA\tNA\n"
+                + "DUP_all\tDUP\tNA\tNA\tNA\n"
+                + "INS_tr\tINS\tNA\tNA\tTR\n"
+                + "BND_all\tBND\tNA\tNA\tNA\n", StandardCharsets.UTF_8);
+        final String clustering = "NAME\tRECIPROCAL_OVERLAP\tSIZE_SIMILARITY\tBREAKEND_WINDOW\tSAMPLE_OVERLAP\n"
+                + "DEL_small\t0.5\t0.0\t500\t0.0\n"
+                + "DEL_large\t0.8\t0.0\t1000\t0.0\n"
+                + "DUP_all\t0.8\t0.0\t1000\t0.0\n"
+                + "INS_tr\t0.1\t0.0\t100\t0.0\n";
+        Files.writeString(dir.resolve("sv_grp_clustering.tsv"),
+                clustering + "BND_all\t0.0\t0.0\t50\t0.0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_grp_clustering_short.tsv"), clustering,
+                StandardCharsets.UTF_8);
     }
 
     /**

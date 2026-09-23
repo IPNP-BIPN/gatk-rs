@@ -3902,6 +3902,118 @@
         "1000",
         "50"
       ]
+    },
+    "GroupedSVCluster": {
+      "--variant": [
+        "/work/fixtures/sv_cluster_input.vcf",
+        "/work/fixtures/sv_calls.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/sv_reference.fasta"
+      ],
+      "--ploidy-table": [
+        "/work/fixtures/sv_ploidy.tsv",
+        "/work/fixtures/sv_ploidy_haploid.tsv"
+      ],
+      "--output": [
+        "/work/out/clustered.vcf",
+        "/work/out/clustered.vcf.gz"
+      ],
+      "--algorithm": [
+        "SINGLE_LINKAGE",
+        "MAX_CLIQUE"
+      ],
+      "--breakpoint-summary-strategy": [
+        "REPRESENTATIVE",
+        "MEDIAN_START_MEDIAN_END",
+        "MIN_START_MAX_END",
+        "MAX_START_MIN_END",
+        "MEAN_START_MEAN_END"
+      ],
+      "--alt-allele-summary-strategy": [
+        "COMMON_SUBTYPE",
+        "MOST_SPECIFIC_SUBTYPE"
+      ],
+      "--flag-field-logic": [
+        "OR",
+        "AND"
+      ],
+      "--variant-prefix": [
+        "null",
+        "SVx_"
+      ],
+      "--enable-cnv": [
+        "false",
+        "true"
+      ],
+      "--fast-mode": [
+        "false",
+        "true"
+      ],
+      "--omit-members": [
+        "false",
+        "true"
+      ],
+      "--default-no-call": [
+        "false",
+        "true"
+      ],
+      "--max-records-in-ram": [
+        "10000"
+      ],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "$why": [
+        "SVCluster's inputs, reference and ploidy tables, stratified before they are clustered.",
+        "--stratify-config is sv_grp_strata.tsv: deletions by size, duplications, insertions in the TR track,",
+        "breakends; the inversion matches nothing and is written straight out. --clustering-config is the",
+        "table naming every group, or the same without BND_all, which onTraversalStart refuses. --track-name",
+        "and --track-intervals are held at TR and sv_grp_track.bed; the stratification thresholds are varied.",
+        "The cluster parameters are the table's own, so SVCluster's command-line ones are absent here."
+      ],
+      "--stratify-config": [
+        "/work/fixtures/sv_grp_strata.tsv"
+      ],
+      "--clustering-config": [
+        "/work/fixtures/sv_grp_clustering.tsv",
+        "/work/fixtures/sv_grp_clustering_short.tsv"
+      ],
+      "--track-name": [
+        "TR"
+      ],
+      "--track-intervals": [
+        "/work/fixtures/sv_grp_track.bed"
+      ],
+      "--stratify-overlap-fraction": [
+        "0.0",
+        "0.5"
+      ],
+      "--stratify-num-breakpoint-overlaps": [
+        "1",
+        "2"
+      ],
+      "--stratify-num-breakpoint-overlaps-interchromosomal": [
+        "1",
+        "2"
+      ]
     }
   },
   "constraints": [
