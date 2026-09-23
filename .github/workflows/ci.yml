@@ -599,6 +599,8 @@ jobs:
             --tool MergeMutect2CallsWithMC3 \
             --tool FilterFuncotations \
             --tool AnalyzeCovariates \
+            --tool CollectF1R2Counts \
+            --tool CreateSomaticPanelOfNormals \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

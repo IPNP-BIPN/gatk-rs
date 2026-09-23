@@ -379,9 +379,14 @@ fn validate_on_reference(
     header: &SamHeader,
 ) -> Result<(), IntervalArgumentError> {
     match contig_length(header, &interval.contig) {
-        Some(length) if interval.end > length => Err(IntervalArgumentError::MalformedGenomeLoc(
-            format!("{}:{}-{}", interval.contig, interval.start, interval.end),
-        )),
+        // `UNKNOWN_SEQUENCE_LENGTH`, which a dictionary synthesized from an index carries, is
+        // not a length the stop is checked against.
+        Some(length) if length != 0 && interval.end > length => {
+            Err(IntervalArgumentError::MalformedGenomeLoc(format!(
+                "{}:{}-{}",
+                interval.contig, interval.start, interval.end
+            )))
+        }
         _ => Ok(()),
     }
 }

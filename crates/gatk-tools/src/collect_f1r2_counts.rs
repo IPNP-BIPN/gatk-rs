@@ -247,7 +247,22 @@ impl Collector {
         }
         let ref_base = context.as_bytes()[REF_CONTEXT_PADDING];
 
-        for sample in self.samples.clone() {
+        // One sample filters the pileup down to it; any other count splits the pileup by sample,
+        // and the split holds only the samples that have a read HERE, in the hash order of that
+        // subset.
+        let order = if self.samples.len() == 1 {
+            self.samples.clone()
+        } else {
+            let mut present: Vec<String> = Vec::new();
+            for element in elements {
+                if !present.contains(&element.sample) {
+                    present.push(element.sample.clone());
+                }
+            }
+            sample_order(&present)
+        };
+
+        for sample in order {
             let pileup: Vec<&Element> = elements
                 .iter()
                 .filter(|element| {
@@ -339,6 +354,28 @@ impl Collector {
         depth > 0
             && !is_indel
             && jmath::percentile::median(&mapping_qualities) >= self.args.min_median_map_qual as f64
+    }
+
+    /// The files `closeAndArchiveFiles` puts in the archive, by name, for every sample: the alt
+    /// table always, since its writer exists from the start, and the two histogram files only
+    /// once `writeHistograms` ran, which is on success.
+    pub fn files(&self, histograms_written: bool) -> Vec<(String, String)> {
+        let mut files = Vec::new();
+        for sample in &self.samples {
+            let stem = crate::get_sample_name::url_encode_utf8(sample);
+            files.push((format!("{stem}.alt_table"), self.alt_table_text(sample)));
+            if histograms_written {
+                let mut refs = htsjdk_metrics::file::MetricsFile::new();
+                refs.add_header(sample);
+                refs.histograms = self.ref_histograms(sample);
+                files.push((format!("{stem}.ref_histogram"), refs.write()));
+                let mut alts = htsjdk_metrics::file::MetricsFile::new();
+                alts.add_header(sample);
+                alts.histograms = self.alt_histograms(sample);
+                files.push((format!("{stem}.alt_histogram"), alts.write()));
+            }
+        }
+        files
     }
 
     pub fn samples(&self) -> &[String] {
