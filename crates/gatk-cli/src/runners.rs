@@ -291,11 +291,14 @@ fn read_filter<'a>(
 ) -> Result<Filter<'a>, Thrown> {
     let mut plain: Vec<(gatk_readfilter::ReadFilter, bool)> = Vec::new();
     let mut wellformed: Option<bool> = None;
+    let mut agrees_with_header: Option<bool> = None;
     let mut parameterized: Vec<(gatk_readfilter::Parameterized, bool)> = Vec::new();
     for filter in resolved {
         let name = filter.name.as_str();
         if name == "WellformedReadFilter" {
             wellformed = Some(filter.negated);
+        } else if name == "AlignmentAgreesWithHeaderReadFilter" {
+            agrees_with_header = Some(filter.negated);
         } else if let Some(plain_filter) = gatk_readfilter::by_name(name) {
             plain.push((plain_filter, filter.negated));
         } else if name == "MappingQualityReadFilter" {
@@ -347,6 +350,11 @@ fn read_filter<'a>(
         // the opposite of what the filter itself answers, on the same read.
         if let Some(negated) = wellformed {
             if gatk_readfilter::with_header::wellformed(read, header) == negated {
+                return false;
+            }
+        }
+        if let Some(negated) = agrees_with_header {
+            if gatk_readfilter::with_header::alignment_agrees_with_header(read, header) == negated {
                 return false;
             }
         }
@@ -8783,6 +8791,274 @@ fn parse_alt_table(
         }
     }
     (sample, rows)
+}
+
+/// `GeneExpressionEvaluation`, a read walker counting fragments over a gff3's features.
+///
+/// The counting is [`gatk_tools::gene_expression_evaluation::count`]'s. The runner is
+/// `onTraversalStart` and the traversal: the grouping features of the gff3 overlapping each
+/// traversal interval, each with the intervals of its descendants of the overlap types, keyed by
+/// the feature shrunk to its label attribute so that one found twice is one feature; then the
+/// reads through the tool's own ten default filters, the mapping quality one being the instance
+/// EQUAL multi-mapping drops to zero.
+pub fn gene_expression_evaluation(parser: &Parser) -> Outcome {
+    use gatk_tools::gene_expression_evaluation as gee;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GeneExpressionEvaluation")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let gff_path = argument(parser, "gff-file").ok_or_else(|| {
+        Thrown::command_line("Argument gff-file was missing: Argument 'gff-file' is required")
+    })?;
+    let label = match scalar(parser, "feature-label-key").as_deref() {
+        Some("ID") => gee::FeatureLabel::Id,
+        _ => gee::FeatureLabel::Name,
+    };
+    let multi_overlap_method = match scalar(parser, "multi-overlap-method").as_deref() {
+        Some("EQUAL") => gee::MultiOverlapMethod::Equal,
+        _ => gee::MultiOverlapMethod::Proportional,
+    };
+    let multi_map_method = match scalar(parser, "multi-map-method").as_deref() {
+        Some("EQUAL") => gee::MultiMapMethod::Equal,
+        _ => gee::MultiMapMethod::Ignore,
+    };
+    let read_strands = match scalar(parser, "read-strands").as_deref() {
+        Some("FORWARD_FORWARD") => gee::ReadStrands::ForwardForward,
+        Some("REVERSE_FORWARD") => gee::ReadStrands::ReverseForward,
+        Some("REVERSE_REVERSE") => gee::ReadStrands::ReverseReverse,
+        _ => gee::ReadStrands::ForwardReverse,
+    };
+    let grouping: Vec<String> = {
+        let given = arguments(parser, "grouping-type");
+        if given.is_empty() {
+            vec!["gene".to_string()]
+        } else {
+            given
+        }
+    };
+    let overlap: Vec<String> = {
+        let given = arguments(parser, "overlap-type");
+        if given.is_empty() {
+            vec!["exon".to_string()]
+        } else {
+            given
+        }
+    };
+    let minimum = number_or(parser, "minimum-mapping-quality", 10);
+    let settings = gee::Settings {
+        multi_overlap_method,
+        multi_map_method,
+        read_strands,
+        unspliced: flag(parser, "unspliced"),
+        feature_label: label,
+        minimum_mapping_quality: minimum,
+        filter_mapping_quality: false,
+    };
+    let effective_minimum = settings.effective_minimum_mapping_quality();
+
+    // `onTraversalStart`: the sample, one across every read group.
+    let mut sample: Option<String> = None;
+    for group in &header.read_groups {
+        let this = group.attributes.get("SM").map(str::to_string);
+        match &sample {
+            None => sample = this,
+            Some(first) => {
+                if this.as_deref() != Some(first.as_str()) {
+                    return Err(Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        "Cannot run GeneExpressionEvaluation on multi-sample bam.",
+                    ));
+                }
+            }
+        }
+    }
+    let dictionary: Vec<htsjdk_bam::header::SequenceRecord> = match master_dictionary(parser)? {
+        Some(master) => master.sequences,
+        None => match reference_dictionary(parser)? {
+            Some(reference) => reference.sequences,
+            None => header.sequences.clone(),
+        },
+    };
+    let all_intervals: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        dictionary
+            .iter()
+            .filter_map(|s| gatk_engine::interval::SimpleInterval::new(&s.name, 1, s.length))
+            .collect()
+    } else {
+        intervals.clone()
+    };
+
+    let text = {
+        let bytes = std::fs::read(&gff_path).map_err(|_| {
+            Thrown::user(format!(
+                "Couldn't read file {gff_path}. Error was: {gff_path}"
+            ))
+        })?;
+        if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+            gunzip(&bytes).map_err(|error| Thrown::non_user(PORT_FAILURE, error.to_string()))?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    };
+    let gff = gee::parse_gff3(&text).map_err(|message| Thrown {
+        failure: Failure::User,
+        exception: "htsjdk.tribble.TribbleException",
+        message: Some(message),
+    })?;
+    let mut features: Vec<gee::GroupingFeature> = Vec::new();
+    for interval in &all_intervals {
+        for (index, feature) in gff.iter().enumerate() {
+            let base = &feature.base;
+            if base.contig != interval.contig
+                || base.start > interval.end
+                || base.end < interval.start
+                || !grouping.contains(&base.kind)
+            {
+                continue;
+            }
+            let overlaps: Vec<gee::Interval> = gee::descendants(&gff, index)
+                .into_iter()
+                .filter(|child| overlap.contains(&gff[*child].base.kind))
+                .map(|child| gee::Interval {
+                    contig: gff[child].base.contig.clone(),
+                    start: gff[child].base.start,
+                    end: gff[child].base.end,
+                })
+                .collect();
+            // `shrinkBaseData`: only the label attribute survives.
+            let mut shrunk = base.clone();
+            shrunk.attributes.retain(|key, _| key == label.key());
+            if label.value(&shrunk).is_none() {
+                return Err(Thrown::user(format!(
+                    "no geneid field {} found in feature at {}:{}-{}",
+                    if label == gee::FeatureLabel::Id {
+                        "ID"
+                    } else {
+                        "NAME"
+                    },
+                    shrunk.contig,
+                    shrunk.start,
+                    shrunk.end
+                )));
+            }
+            match features.iter_mut().find(|known| known.base == shrunk) {
+                Some(known) => {
+                    for interval in overlaps {
+                        if !known.overlaps.contains(&interval) {
+                            known.overlaps.push(interval);
+                        }
+                    }
+                }
+                None => features.push(gee::GroupingFeature {
+                    base: shrunk,
+                    overlaps,
+                }),
+            }
+        }
+    }
+
+    // The tool's own filters, the mapping quality one with EQUAL's zero.
+    let mut plain_filters = filters.clone();
+    let mapping_quality = plain_filters
+        .iter()
+        .position(|filter| filter.name == "MappingQualityReadFilter")
+        .map(|index| plain_filters.remove(index));
+    let maximum =
+        scalar(parser, "maximum-mapping-quality").and_then(|text| text.parse::<i32>().ok());
+    let filter = read_filter(parser, &plain_filters, &header)?;
+    let keep = |read: &BamRecord| -> bool {
+        if !filter(read) {
+            return false;
+        }
+        match &mapping_quality {
+            None => true,
+            Some(resolved) => {
+                let mq = i32::from(read.mapping_quality);
+                let passes = mq >= effective_minimum && maximum.is_none_or(|max| mq <= max);
+                passes != resolved.negated
+            }
+        }
+    };
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &keep)
+        .map_err(reads_traversal_error)?;
+    let name_of = |index: i32| -> Option<String> {
+        header.sequences.get(index as usize).map(|s| s.name.clone())
+    };
+    let int_tag = |read: &BamRecord, tag: &[u8; 2]| -> Option<i32> {
+        match read.tags.get(htsjdk_bam::tag::Tag::new(tag)) {
+            Some(htsjdk_bam::tag::TagValue::Int(value)) => Some(*value as i32),
+            _ => None,
+        }
+    };
+    let blocks_of =
+        |cigar: &htsjdk_bam::cigar::Cigar, start: i32, contig: &str| -> Vec<gee::Interval> {
+            htsjdk_bam::alignment_block::alignment_blocks(cigar, start)
+                .into_iter()
+                .map(|block| gee::Interval {
+                    contig: contig.to_string(),
+                    start: block.reference_start,
+                    end: block.reference_start + block.length - 1,
+                })
+                .collect()
+        };
+    let reads: Vec<gee::Read> = records
+        .iter()
+        .map(|read| {
+            let contig = name_of(read.reference_index).unwrap_or_default();
+            let mate_contig = name_of(read.mate_reference_index);
+            let mate_blocks = match read.tags.get(htsjdk_bam::tag::Tag::new(b"MC")) {
+                Some(htsjdk_bam::tag::TagValue::Str(text)) => {
+                    htsjdk_bam::text_parse::parse_cigar(text).ok().map(|cigar| {
+                        blocks_of(
+                            &cigar,
+                            read.mate_alignment_start,
+                            mate_contig.as_deref().unwrap_or(""),
+                        )
+                    })
+                }
+                _ => None,
+            };
+            gee::Read {
+                name: read.read_name.clone(),
+                contig: contig.clone(),
+                start: read.alignment_start,
+                blocks: blocks_of(&read.cigar, read.alignment_start, &contig),
+                end: read.alignment_end(),
+                reverse: read.flags & 0x10 != 0,
+                paired: read.flags & 0x1 != 0,
+                proper_pair: read.flags & 0x2 != 0,
+                first_of_pair: read.flags & 0x1 != 0 && read.flags & 0x40 != 0,
+                mate_unmapped: read.flags & 0x8 != 0,
+                mate_contig,
+                mate_start: (read.mate_alignment_start > 0).then_some(read.mate_alignment_start),
+                mate_blocks,
+                mate_reverse: read.flags & 0x20 != 0,
+                mate_quality: int_tag(read, b"MQ"),
+                mapping_quality: i32::from(read.mapping_quality),
+                hits: int_tag(read, b"NH"),
+                fragment_length: read.inferred_insert_size,
+            }
+        })
+        .collect();
+    let coverages = gee::count(&features, &reads, &settings)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let inputs = arguments(parser, "input");
+    let text = gee::write_counts(
+        &features,
+        &coverages,
+        sample.as_deref().unwrap_or("null"),
+        label,
+        &inputs,
+        &gff_path,
+    );
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
 }
 
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.

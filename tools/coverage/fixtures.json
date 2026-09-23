@@ -4736,6 +4736,58 @@
         "200",
         "50"
       ]
+    },
+    "GeneExpressionEvaluation": {
+      "$why": [
+        "rna.bam is one sample's pairs over mutect_ref.fasta with MC and MQ written, some spliced",
+        "across the first gene's intron, some multi-mapped (NH 2), some at MQ 5 and some duplicates.",
+        "genes.gff3 holds two stranded genes with an mRNA and exons, and an unstranded one overlapping",
+        "the second; genes_noname.gff3 adds a gene with no Name, refused under the default label.",
+        "--read-strands, --multi-overlap-method, --multi-map-method and --unspliced each move the counts."
+      ],
+      "--input": [
+        "/work/fixtures/rna.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--gff-file": [
+        "/work/fixtures/genes.gff3",
+        "/work/fixtures/genes_noname.gff3"
+      ],
+      "--output": [
+        "/work/out/expression.tsv"
+      ],
+      "--grouping-type": [
+        "gene",
+        "mRNA"
+      ],
+      "--overlap-type": [
+        "exon",
+        "mRNA"
+      ],
+      "--feature-label-key": [
+        "NAME",
+        "ID"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:1-1000"
+      ],
+      "--minimum-mapping-quality": [
+        "10",
+        "0"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

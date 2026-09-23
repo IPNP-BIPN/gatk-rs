@@ -606,6 +606,7 @@ jobs:
             --tool ComposeSTRTableFile \
             --tool CalibrateDragstrModel \
             --tool LearnReadOrientationModel \
+            --tool GeneExpressionEvaluation \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

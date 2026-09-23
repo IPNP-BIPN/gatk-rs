@@ -198,6 +198,8 @@ pub enum CountError {
     UnpairedRead,
     /// The `MQ` tag missing on a read that reached the good-pair test.
     MissingMateQuality,
+    /// A good pair with no `MC` tag, when the read is spliced.
+    MissingMateCigar,
     /// A grouping feature carrying no value under the label key.
     NoLabel {
         key: String,
@@ -211,7 +213,7 @@ impl CountError {
     pub fn java_class(&self) -> &'static str {
         match self {
             CountError::UnpairedRead => "java.lang.IllegalStateException",
-            CountError::MissingMateQuality => {
+            CountError::MissingMateQuality | CountError::MissingMateCigar => {
                 "org.broadinstitute.hellbender.exceptions.GATKException"
             }
             CountError::NoLabel { .. } => "org.broadinstitute.hellbender.exceptions.UserException",
@@ -226,6 +228,9 @@ impl CountError {
             // Two spaces after the full stop, as the reference writes it.
             CountError::MissingMateQuality => {
                 "Mate quality must be included.  Consider running FixMateInformation.".to_string()
+            }
+            CountError::MissingMateCigar => {
+                "Mate cigar must be present if using spliced reads".to_string()
             }
             CountError::NoLabel {
                 key,
@@ -356,7 +361,7 @@ pub fn alignment_intervals(
             let mate_blocks = read
                 .mate_blocks
                 .as_ref()
-                .expect("a good pair carries its mate cigar");
+                .ok_or(CountError::MissingMateCigar)?;
             intervals.extend(mate_blocks.iter().cloned());
         }
         return Ok(merged_intervals(&intervals));
@@ -502,6 +507,9 @@ pub struct Settings {
     pub feature_label: FeatureLabel,
     /// `MappingQualityReadFilter.minMappingQualityScore`, before onTraversalStart touches it.
     pub minimum_mapping_quality: i32,
+    /// Whether `count` applies the mapping quality filter itself. A caller that already ran the
+    /// read filters, the mapping quality one among them, passes false.
+    pub filter_mapping_quality: bool,
 }
 
 impl Settings {
@@ -538,7 +546,7 @@ pub fn count(
     let minimum = settings.effective_minimum_mapping_quality();
     let mut coverages = vec![Coverage::default(); features.len()];
     for read in reads {
-        if read.mapping_quality < minimum {
+        if settings.filter_mapping_quality && read.mapping_quality < minimum {
             continue;
         }
         if !(read.first_of_pair || !in_good_pair(read, minimum, settings.read_strands)?) {
@@ -600,4 +608,160 @@ fn row(feature: &GroupingFeature, label: FeatureLabel, count: f64, sense: bool) 
     ];
     let quoted: Vec<String> = values.iter().map(|value| quote_if_needed(value)).collect();
     format!("{}\n", quoted.join("\t"))
+}
+
+// ================================================================================================
+// The gff3 the features come from.
+// ================================================================================================
+
+/// One line of a gff3 as `Gff3Codec` decodes it, with the links it makes to other lines.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GffFeature {
+    pub base: BaseData,
+    pub score: String,
+    pub phase: String,
+    /// Indices of the features whose `Parent` names this one's `ID`, in the order they were linked.
+    pub children: Vec<usize>,
+}
+
+/// `URLDecoder.decode(text, "UTF-8")`: `+` is a space and `%XX` a byte.
+fn url_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => {
+                match u8::from_str_radix(&text[i + 1..i + 3], 16) {
+                    Ok(byte) => out.push(byte),
+                    Err(_) => out.extend_from_slice(&bytes[i..i + 3]),
+                }
+                i += 3;
+            }
+            other => {
+                out.push(other);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// `Gff3Codec` over a whole file, DEEP: every feature line, in file order, each linked to its
+/// parents by `ID` among the lines since the last `###` directive. Every feature is returned, a
+/// child as much as a top-level one, which is what the codec flushes.
+pub fn parse_gff3(text: &str) -> Result<Vec<GffFeature>, String> {
+    let mut features: Vec<GffFeature> = Vec::new();
+    let mut with_id: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut waiting_for_parent: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (number, line) in text.lines().enumerate() {
+        if line.starts_with('>') || line.starts_with("##FASTA") {
+            break;
+        }
+        if line.starts_with("###") {
+            with_id.clear();
+            waiting_for_parent.clear();
+            continue;
+        }
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() != 9 {
+            return Err(format!(
+                "Found an invalid number of columns in the given Gff3 file at line + {} - Given: {} Expected: 9 : {line}",
+                number + 1,
+                fields.len()
+            ));
+        }
+        let (Ok(start), Ok(end)) = (fields[3].parse::<i32>(), fields[4].parse::<i32>()) else {
+            return Err(format!(
+                "Cannot read integer value for start/end position from line {}.  Line is: {line}",
+                number + 1
+            ));
+        };
+        let mut attributes: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        if fields[8] != "." {
+            for attribute in fields[8].split(';').filter(|a| !a.is_empty()) {
+                let parts: Vec<&str> = attribute.split('=').collect();
+                if parts.len() != 2 {
+                    return Err(format!("Attribute string {} is invalid", fields[8]));
+                }
+                let values = parts[1]
+                    .trim()
+                    .split(',')
+                    .map(|value| url_decode(value.trim()))
+                    .collect();
+                attributes.insert(url_decode(parts[0].trim()), values);
+            }
+        }
+        let this = features.len();
+        let id = attributes.get("ID").and_then(|ids| ids.first()).cloned();
+        let parents = attributes.get("Parent").cloned().unwrap_or_default();
+        features.push(GffFeature {
+            base: BaseData {
+                contig: url_decode(fields[0]),
+                source: url_decode(fields[1]),
+                kind: url_decode(fields[2]),
+                start,
+                end,
+                strand: Strand::decode(fields[6]),
+                attributes,
+            },
+            score: fields[5].to_string(),
+            phase: fields[7].to_string(),
+            children: Vec::new(),
+        });
+        for parent in &parents {
+            if let Some(owners) = with_id.get(parent) {
+                for owner in owners.clone() {
+                    if !features[owner].children.contains(&this) {
+                        features[owner].children.push(this);
+                    }
+                }
+            }
+            waiting_for_parent
+                .entry(parent.clone())
+                .or_default()
+                .push(this);
+        }
+        if let Some(id) = id {
+            with_id.entry(id.clone()).or_default().push(this);
+            if let Some(children) = waiting_for_parent.get(&id) {
+                for child in children.clone() {
+                    if child != this && !features[this].children.contains(&child) {
+                        features[this].children.push(child);
+                    }
+                }
+            }
+        }
+    }
+    Ok(features)
+}
+
+/// `getDescendents`: the children, then each child's own descendants, once each and never back
+/// through a feature already in the lineage.
+pub fn descendants(features: &[GffFeature], index: usize) -> Vec<usize> {
+    fn walk(features: &[GffFeature], index: usize, lineage: &mut Vec<usize>, out: &mut Vec<usize>) {
+        for child in &features[index].children {
+            if lineage.contains(child) {
+                continue;
+            }
+            if !out.contains(child) {
+                out.push(*child);
+            }
+            lineage.push(*child);
+            walk(features, *child, lineage, out);
+            lineage.pop();
+        }
+    }
+    let mut out = Vec::new();
+    walk(features, index, &mut vec![index], &mut out);
+    out
 }
