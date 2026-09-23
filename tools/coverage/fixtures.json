@@ -4788,6 +4788,104 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "AddFlowBaseQuality": {
+      "$why": [
+        "flow.bam is Ultima reads in two flow groups (TGCA at the default maximal class, TACG at mc 8),",
+        "every read with a signed tp array and varied qualities, every third with a t0 string, and one",
+        "holding a 13-base hmer longer than either class. Each flow-matrix argument moves the matrix",
+        "the tool reads its bands from; --replace-quality-mode moves the answer from XQ to OQ and QUAL.",
+        "--flow-matrix-mods carries two instruction lists valid under both classes; --reference is the",
+        "reads' own or none. --flow-fill-empty-bins-value 0 is the",
+        "mode that estimates the floor from the read's own best quality."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--output": [
+        "/work/out/flow_quality.bam"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--minimal-error-rate": [
+        "0.001",
+        "0.01",
+        "0.0001"
+      ],
+      "--maximal-quality-score": [
+        "93",
+        "40",
+        "20"
+      ],
+      "--replace-quality-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--create-output-bam-index": [
+        "true",
+        "false"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

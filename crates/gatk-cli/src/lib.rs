@@ -344,6 +344,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ComposeSTRTableFile" => Some(run_compose_str_table_file),
         "CalibrateDragstrModel" => Some(run_calibrate_dragstr_model),
         "LearnReadOrientationModel" => Some(run_learn_read_orientation_model),
+        "AddFlowBaseQuality" => Some(run_add_flow_base_quality),
         "GeneExpressionEvaluation" => Some(run_gene_expression_evaluation),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -711,6 +712,10 @@ fn run_calibrate_dragstr_model(args: &[String]) -> Result<Option<String>, Thrown
 
 fn run_learn_read_orientation_model(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::learn_read_orientation_model(&parsed("LearnReadOrientationModel", args)?)
+}
+
+fn run_add_flow_base_quality(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::add_flow_base_quality(&parsed("AddFlowBaseQuality", args)?)
 }
 
 fn run_gene_expression_evaluation(args: &[String]) -> Result<Option<String>, Thrown> {

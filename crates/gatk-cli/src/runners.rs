@@ -9842,6 +9842,87 @@ pub fn add_original_alignment_tags(parser: &Parser) -> Outcome {
     }
 }
 
+/// `AddFlowBaseQuality`: a record transform whose per-read work is the flow matrix of
+/// `FlowBasedRead`, built from the `tp`/`t0` tags and the read group's flow order.
+///
+/// A read the reference would throw on stops the run with that exception; one in a layout the port
+/// does not read (the vestigial `kr`/`ti` matrices, a group that is not flow-based) is refused as
+/// a port limitation.
+pub fn add_flow_base_quality(parser: &Parser) -> Outcome {
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "AddFlowBaseQuality")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let command_line = crate::command_line::expanded("AddFlowBaseQuality", parser);
+    let options = gatk_tools::sam_output::Options {
+        intervals: intervals.clone(),
+        create_output_bam_index: flag(parser, "create-output-bam-index"),
+        add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+        command_line: &command_line,
+        version: crate::TOOLKIT_VERSION,
+    };
+    let settings = gatk_tools::add_flow_base_quality::Settings {
+        min_error_rate: double_or(parser, "minimal-error-rate", 1e-3),
+        max_quality_score: number_or(parser, "maximal-quality-score", 93),
+        replace_quality_mode: flag(parser, "replace-quality-mode"),
+        flow: flow_arguments(parser),
+    };
+    let (level, deflater) = output_compression(parser);
+    let run = gatk_tools::add_flow_base_quality::add_flow_base_quality_with(
+        &source, &options, &filter, &settings, level, deflater,
+    )
+    .map_err(reads_traversal_error)?;
+    match run {
+        Ok((bytes, bai)) => write_bam(parser, &output, &bytes, bai),
+        Err(refusal) => Err(flow_refusal(refusal)),
+    }
+}
+
+/// A floating-point argument with the tool's own default where it was not given.
+fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
+    scalar(parser, long_name)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(default)
+}
+
+/// `FlowBasedArgumentCollection`, as a command line sets it.
+fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
+    gatk_tools::flow_based_read::FlowArguments {
+        use_t0_tag: flag(parser, "flow-use-t0-tag"),
+        remove_longer_than_one_indels: flag(parser, "flow-remove-non-single-base-pair-indels"),
+        remove_one_to_zero_probs: flag(parser, "flow-remove-one-zero-probs"),
+        filling_value: double_or(parser, "flow-fill-empty-bins-value", 0.001),
+        symmetric_indels: flag(parser, "flow-symmetric-indel-probs"),
+        only_ins_or_del: flag(parser, "flow-report-insertion-or-deletion"),
+        disallow_larger_probs: flag(parser, "flow-disallow-probs-larger-than-call"),
+        lump_probs: flag(parser, "flow-lump-probs"),
+        retain_max_n_probs: flag(parser, "flow-retain-max-n-probs-base-format"),
+        flow_matrix_mods: scalar(parser, "flow-matrix-mods").filter(|text| text != "null"),
+        keep_boundary_flows: flag(parser, "keep-boundary-flows"),
+    }
+}
+
+/// A flow read the reference throws on, or one the port does not read.
+fn flow_refusal(refusal: gatk_tools::flow_based_read::FlowReadError) -> Thrown {
+    if refusal.port_limitation {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{}: this port does not read it. This message is the port's own and not GATK's.",
+                refusal.message
+            ),
+        )
+    } else {
+        Thrown::non_user(refusal.class, refusal.message)
+    }
+}
+
 /// `LeftAlignIndels`, the first read walker here whose REFERENCE is required.
 ///
 /// The window each read is left-aligned in is the read's own span, which the walker builds as

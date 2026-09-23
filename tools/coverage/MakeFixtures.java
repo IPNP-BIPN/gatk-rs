@@ -926,6 +926,75 @@ public class MakeFixtures {
      * across the first gene's intron, one in seven maps twice (`NH` 2), one in eleven maps at 5, and one in thirteen
      * is a duplicate.
      */
+    /**
+     * flow.bam: Ultima flow reads over mutect_ref.fasta. Two read groups, one under TGCA with the
+     * default maximal class and one under TACG with mc 8, so the matrix has two shapes. Every read
+     * carries a signed tp array (mostly zero, some +-1 and +-2) and varied qualities; every third
+     * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class.
+     */
+    static void flowFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final java.util.Random random = new java.util.Random(8768);
+        final List<SAMRecord> records = new ArrayList<>();
+        int n = 0;
+        for (int start = 50; start + 60 < bases.length() && n < 60; start += 37, n++) {
+            final int length = 30 + random.nextInt(20);
+            String read = bases.substring(start - 1, start - 1 + length);
+            if (n == 4) {
+                read = read.substring(0, 10) + "A".repeat(13) + read.substring(23);
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("F:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(length + "M");
+            record.setReadString(read);
+            final byte[] quals = new byte[length];
+            final byte[] tp = new byte[length];
+            final StringBuilder t0 = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : roll < 9 ? -1 : (random.nextBoolean() ? 2 : -2));
+                quals[i] = (byte) (tp[i] == 0 ? 30 + random.nextInt(11) : 5 + random.nextInt(20));
+                t0.append((char) ('!' + 10 + random.nextInt(31)));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(60);
+            record.setAttribute("RG", n % 2 == 0 ? "rgU" : "rgV");
+            record.setAttribute("tp", tp);
+            if (n % 3 == 0) {
+                record.setAttribute("t0", t0.toString());
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("flow.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -1863,6 +1932,7 @@ public class MakeFixtures {
         mutectFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
+        flowFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.

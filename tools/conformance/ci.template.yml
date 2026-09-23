@@ -300,6 +300,7 @@ jobs:
             --tool CalibrateDragstrModel \
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
+            --tool AddFlowBaseQuality \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
