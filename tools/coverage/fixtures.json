@@ -4605,6 +4605,108 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "CalibrateDragstrModel": {
+      "$why": [
+        "dragstr.bam is one sample's reads tiled over mutect_ref.fasta, some carrying a one-base",
+        "deletion or insertion in a homopolymer, some with XQ, some supplementary, some at MQ 10;",
+        "mutect_tn.bam has two samples, which the tool refuses. dragstr_str.zip and",
+        "dragstr_str_all.zip are the reference's own ComposeSTRTableFile over mutect_ref.fasta with",
+        "the default decimation and with none.",
+        "--force-estimation true estimates from what little data there is; false writes the defaults.",
+        "--max-period 2 is below the table's periods, which the reference indexes past.",
+        "--parallel and --threads are held: the parallel collection is not ported."
+      ],
+      "--input": [
+        "/work/fixtures/dragstr.bam",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--str-table-path": [
+        "/work/fixtures/dragstr_str.zip",
+        "/work/fixtures/dragstr_str_all.zip"
+      ],
+      "--output": [
+        "/work/out/dragstr_params.txt"
+      ],
+      "--debug-sites-output": [
+        "/work/out/dragstr_sites.txt",
+        "null"
+      ],
+      "--force-estimation": [
+        "true",
+        "false"
+      ],
+      "--minimum-depth": [
+        "10",
+        "3"
+      ],
+      "--pileup-padding": [
+        "5",
+        "0"
+      ],
+      "--sampling-min-mq": [
+        "20",
+        "50"
+      ],
+      "--down-sample-size": [
+        "4096",
+        "512"
+      ],
+      "--max-period": [
+        "8",
+        "2"
+      ],
+      "--max-repeats": [
+        "20",
+        "8"
+      ],
+      "--gp-values": [
+        "10:1.0:50",
+        "5:2.0:40"
+      ],
+      "--api-values": [
+        "0:1.0:40",
+        "0:5:40"
+      ],
+      "--gop-values": [
+        "10:.25:50",
+        "10:1:30"
+      ],
+      "--het-to-hom-ratio": [
+        "2.0",
+        "1.0"
+      ],
+      "--min-loci-count": [
+        "50",
+        "5"
+      ],
+      "--api-mono-threshold": [
+        "3",
+        "0"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:500-1500"
+      ],
+      "--parallel": [
+        "false"
+      ],
+      "--threads": [
+        "0"
+      ],
+      "--shard-size": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [

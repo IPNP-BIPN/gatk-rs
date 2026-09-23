@@ -297,6 +297,7 @@ jobs:
             --tool SplitCRAM \
             --tool FilterMutectCalls \
             --tool ComposeSTRTableFile \
+            --tool CalibrateDragstrModel \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

@@ -610,6 +610,7 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "GetSampleName"
             | "TransferReadTags"
             | "PostProcessReadsForRSEM"
+            | "CalibrateDragstrModel"
     )
 }
 
@@ -8019,6 +8020,420 @@ fn stored_zip(members: &[(String, Vec<u8>)]) -> Vec<u8> {
     out.extend_from_slice(&central_offset.to_le_bytes());
     out.extend_from_slice(&0u16.to_le_bytes());
     out
+}
+
+/// `CalibrateDragstrModel`, a `GATKTool` that piles the reads up over the STR table's sites and
+/// estimates the DRAGstr parameters from them.
+///
+/// The estimation and the file layout are [`gatk_tools::calibrate_dragstr_model`]'s. The runner
+/// adds the traversal the tool does itself, interval by interval: the sites whose START falls in
+/// the interval, in the table's order, and for each one the reads overlapping it that are neither
+/// unmapped, secondary nor QC-failed, with `XQ` read as the mapping quality. Then the downsampling by
+/// the table's decimation bits, the qualifying filter, and either the estimate or Illumina's
+/// defaults, which is decided by a minimum count per period and repeat length.
+///
+/// `--parallel` and `--threads` are refused: the parallel collection merges shards in an order the
+/// sequential one does not, and that order reaches both the estimate and the sites file.
+pub fn calibrate_dragstr_model(parser: &Parser) -> Outcome {
+    use gatk_tools::calibrate_dragstr_model as cdm;
+
+    if flag(parser, "parallel") || number_or(parser, "threads", 0) > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "CalibrateDragstrModel's parallel collection is not ported. This message is the \
+             port's own and not GATK's.",
+        ));
+    }
+    let bad_value = |name: &str, message: String| {
+        Thrown::command_line(format!("Argument {name} has a bad value: {message}"))
+    };
+    let sequence = |name: &str, default: &str| -> Result<(Vec<f64>, bool), Thrown> {
+        let text = scalar(parser, name).unwrap_or_else(|| default.to_string());
+        let set = scalar(parser, name).is_some();
+        cdm::double_sequence(&text)
+            .map(|values| (values, set))
+            .map_err(|message| bad_value(name, message))
+    };
+    let (gp, gp_set) = sequence("gp-values", "10:1.0:50")?;
+    let (api, api_set) = sequence("api-values", "0:1.0:40")?;
+    let (gop, _) = sequence("gop-values", "10:.25:50")?;
+    let parameters = cdm::HyperParameters {
+        phred_gp_values: gp,
+        phred_api_values: api,
+        phred_gop_values: gop,
+        het_to_hom_ratio: scalar(parser, "het-to-hom-ratio")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(2.0),
+        min_loci_count: number_or(parser, "min-loci-count", 50).max(0) as usize,
+        api_mono_threshold: f64::from(number_or(parser, "api-mono-threshold", 3)),
+        max_period: number_or(parser, "max-period", 8).max(1) as usize,
+        max_repeat_length: number_or(parser, "max-repeats", 20).max(1) as usize,
+    };
+    // `DragstrHyperParameters.validate`, an else-if chain: a GP sequence given on the command line
+    // is checked and nothing after it is.
+    let not_phred = |values: &[f64]| values.iter().find(|d| !d.is_finite() || **d < 0.0).copied();
+    if gp_set {
+        if let Some(d) = not_phred(&parameters.phred_gp_values) {
+            return Err(bad_value(
+                "gp-values",
+                format!(
+                    "Not a valid Phred value: {}",
+                    gatk_barclay::java_double_to_string(d)
+                ),
+            ));
+        }
+    } else if api_set {
+        if let Some(d) = not_phred(&parameters.phred_api_values) {
+            return Err(bad_value(
+                "api-values",
+                format!(
+                    "Not a valid Phred value: {}",
+                    gatk_barclay::java_double_to_string(d)
+                ),
+            ));
+        }
+    } else if !parameters.het_to_hom_ratio.is_finite() || parameters.het_to_hom_ratio <= 0.0 {
+        return Err(bad_value(
+            "het-to-hom-ratio",
+            format!(
+                "must be finite and greater than 0 but found {}",
+                gatk_barclay::java_double_to_string(parameters.het_to_hom_ratio)
+            ),
+        ));
+    } else if number_or(parser, "min-loci-count", 50) < 1 {
+        return Err(bad_value(
+            "min-loci-count",
+            format!(
+                "must be greater than 0 but found {}",
+                number_or(parser, "min-loci-count", 50)
+            ),
+        ));
+    }
+    let min_depth = number_or(parser, "minimum-depth", 10);
+    let padding = i64::from(number_or(parser, "pileup-padding", 5));
+    let min_mq = number_or(parser, "sampling-min-mq", 20);
+    let downsample_size = number_or(parser, "down-sample-size", 4096).max(0) as usize;
+    let force = flag(parser, "force-estimation");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let table_path = argument(parser, "str-table-path").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument str-table-path was missing: Argument 'str-table-path' is required",
+        )
+    })?;
+    let sites_output = scalar(parser, "debug-sites-output");
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        ..
+    } = read_walker_startup(parser, "CalibrateDragstrModel")?;
+    // `getBestAvailableSequenceDictionary`: the master, else the reference, else the reads.
+    let dictionary: Vec<htsjdk_bam::header::SequenceRecord> = match master_dictionary(parser)? {
+        Some(master) => master.sequences,
+        None => match reference_dictionary(parser)? {
+            Some(reference) => reference.sequences,
+            None => header.sequences.clone(),
+        },
+    };
+    let read_groups: Vec<String> = header
+        .read_groups
+        .iter()
+        .map(|group| group.id.clone())
+        .collect();
+    let mut samples: Vec<Option<String>> = Vec::new();
+    for group in &header.read_groups {
+        let sample = group.attributes.get("SM").map(str::to_string);
+        if !samples.contains(&sample) {
+            samples.push(sample);
+        }
+    }
+    if samples.len() > 1 {
+        let names: Vec<String> = samples
+            .iter()
+            .map(|s| s.clone().unwrap_or_else(|| "null".to_string()))
+            .collect();
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "the input alignment(s) have more than one sample: {}",
+                names.join(", ")
+            ),
+        ));
+    }
+    let sample = samples.first().cloned().flatten();
+
+    // The sites file is opened before the table is.
+    let mut sites_lines: Vec<String> = Vec::new();
+    if let Some(path) = &sites_output {
+        write_file(path, b"")?;
+    }
+
+    let zip = std::fs::read(&table_path).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file {table_path}. Error was: {table_path}"
+        ))
+    })?;
+    let members = read_zip(&zip).map_err(|message| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            message,
+        )
+    })?;
+    let member = |name: &str| -> Result<&Vec<u8>, Thrown> {
+        members.get(name).ok_or_else(|| {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!("str-table-file {table_path} is missing {name}"),
+            )
+        })
+    };
+    let table_dictionary =
+        htsjdk_bam::reader::parse_header_text(&String::from_utf8_lossy(member("reference.dict")?))
+            .sequences;
+    let decimation = gatk_tools::compose_str_table::DecimationTable::parse(
+        &String::from_utf8_lossy(member("decimation.txt")?),
+        "decimation.txt",
+    )
+    .map_err(|error| match error {
+        gatk_tools::compose_str_table::DecimationError::BadInput(message) => bad_input(message),
+    })?;
+    let sites = cdm::read_sites(member("sites.bin")?);
+
+    match gatk_tools::sequence_dictionary::compare(&dictionary, &table_dictionary, false) {
+        gatk_tools::sequence_dictionary::Compatibility::Identical
+        | gatk_tools::sequence_dictionary::Compatibility::Superset
+        | gatk_tools::sequence_dictionary::Compatibility::NonCanonicalHumanOrder
+        | gatk_tools::sequence_dictionary::Compatibility::OutOfOrder => {}
+        other => {
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "the reference and str-table sequence dictionary are incompatible: {}",
+                    other.name()
+                ),
+            ));
+        }
+    }
+
+    // `getTraversalIntervals`: the ones given, else every contig of the best dictionary.
+    let traversal: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        dictionary
+            .iter()
+            .filter_map(|sequence| {
+                gatk_engine::interval::SimpleInterval::new(&sequence.name, 1, sequence.length)
+            })
+            .collect()
+    } else {
+        intervals
+    };
+    let mut all = cdm::Stratified::new(parameters.max_period, parameters.max_repeat_length);
+    for interval in &traversal {
+        let Some(contig_index) = table_dictionary
+            .iter()
+            .position(|s| s.name == interval.contig)
+        else {
+            continue;
+        };
+        let contig_length = dictionary
+            .iter()
+            .find(|s| s.name == interval.contig)
+            .map_or(0, |s| i64::from(s.length));
+        let records =
+            gatk_tools::read_walker::traverse(&source, std::slice::from_ref(interval), &|_| true)
+                .map_err(reads_traversal_error)?;
+        let reads: Vec<cdm::PileRead> = records
+            .iter()
+            .filter(|read| {
+                read.flags & (0x4 | 0x100 | 0x200) == 0
+                    && read.alignment_start <= read.alignment_end()
+            })
+            .map(|read| {
+                let xq = match read.tags.get(htsjdk_bam::tag::Tag::new(b"XQ")) {
+                    Some(htsjdk_bam::tag::TagValue::Int(value)) => Some(*value as i32),
+                    _ => None,
+                };
+                cdm::PileRead {
+                    start: i64::from(read.alignment_start),
+                    end: i64::from(read.alignment_end()),
+                    mapping_quality: xq.unwrap_or(i32::from(read.mapping_quality)),
+                    supplementary: read.flags & 0x800 != 0,
+                    cigar: read
+                        .cigar
+                        .elements
+                        .iter()
+                        .map(|element| (element.op.to_char(), i64::from(element.length)))
+                        .collect(),
+                }
+            })
+            .collect();
+        for site in sites.iter().filter(|site| {
+            site.contig == contig_index as i32
+                && site.start >= i64::from(interval.start)
+                && site.start <= i64::from(interval.end)
+        }) {
+            let overlapping: Vec<&cdm::PileRead> = reads
+                .iter()
+                .filter(|read| read.start <= site.end() && read.end >= site.start)
+                .collect();
+            let case = cdm::collect(site, &overlapping, padding, contig_length);
+            all.add(case).map_err(|(index, length)| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!("Index {index} out of bounds for length {length}"),
+                )
+            })?;
+        }
+    }
+
+    // `downSample`, combination by combination.
+    let mut kept = cdm::Stratified::new(parameters.max_period, parameters.max_repeat_length);
+    for period in 1..=parameters.max_period {
+        for repeats in 1..=parameters.max_repeat_length {
+            let bit = decimation.decimation_bit(period, repeats).max(0) as usize;
+            let cell = all.cells[period - 1][repeats - 1].clone();
+            let survivors = cdm::downsample_cell(&cell, bit, downsample_size, &mut sites_lines)
+                .map_err(|(index, length)| {
+                    Thrown::non_user(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        format!("Index {index} out of bounds for length {length}"),
+                    )
+                })?;
+            for case in survivors {
+                let _ = kept.add(case);
+            }
+        }
+    }
+    let final_sites = kept.qualifying(min_depth, min_mq, 0);
+    if sites_output.is_some() {
+        for row in &kept.cells {
+            for cell in row {
+                for case in cell {
+                    let fate = if case.qualifies(min_depth, min_mq, 0) {
+                        "used"
+                    } else {
+                        "skipped"
+                    };
+                    sites_lines.push(case.line(fate));
+                }
+            }
+        }
+    }
+
+    // `isThereEnoughCases` answers true under `--force-estimation` whatever the counts, so the file
+    // says `estimated` and `estimatedByForce` is never written.
+    let enough = force
+        || cdm::enough_cases(
+            &final_sites,
+            parameters.max_period,
+            parameters.max_repeat_length,
+        );
+    let using_defaults = !enough && !force;
+    let annotations = vec![
+        (
+            "sample",
+            sample.unwrap_or_else(|| "<unspecified>".to_string()),
+        ),
+        (
+            "readGroups",
+            if read_groups.is_empty() {
+                "<unspecified>".to_string()
+            } else {
+                read_groups.join(", ")
+            },
+        ),
+        (
+            "estimatedOrDefaults",
+            if using_defaults {
+                "defaults"
+            } else if enough {
+                "estimated"
+            } else {
+                "estimatedByForce"
+            }
+            .to_string(),
+        ),
+        (
+            "commandLine",
+            crate::command_line::expanded("CalibrateDragstrModel", parser),
+        ),
+    ];
+    let text = if using_defaults {
+        cdm::params_file(&annotations, 20, &cdm::default_rows())
+    } else {
+        let rows = cdm::estimate(&parameters, &final_sites.as_cases());
+        cdm::params_file(&annotations, parameters.max_repeat_length, &rows)
+    };
+    if let Some(path) = &sites_output {
+        let mut body = sites_lines.join("\n");
+        if !sites_lines.is_empty() {
+            body.push('\n');
+        }
+        write_file(path, body.as_bytes())?;
+    }
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// The members of a zip, by name, from its central directory: stored or deflated.
+fn read_zip(bytes: &[u8]) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
+    use std::io::Read;
+    let u16_at = |at: usize| -> Option<usize> {
+        bytes
+            .get(at..at + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
+    };
+    let u32_at = |at: usize| -> Option<usize> {
+        bytes
+            .get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let end = (0..bytes.len().saturating_sub(21))
+        .rev()
+        .find(|&at| u32_at(at) == Some(0x0605_4b50))
+        .ok_or_else(|| "not a zip file".to_string())?;
+    let count = u16_at(end + 10).ok_or("truncated zip")?;
+    let mut at = u32_at(end + 16).ok_or("truncated zip")?;
+    let mut members = std::collections::HashMap::new();
+    for _ in 0..count {
+        if u32_at(at) != Some(0x0201_4b50) {
+            return Err("a broken central directory".to_string());
+        }
+        let method = u16_at(at + 10).ok_or("truncated zip")?;
+        let compressed = u32_at(at + 20).ok_or("truncated zip")?;
+        let name_length = u16_at(at + 28).ok_or("truncated zip")?;
+        let extra_length = u16_at(at + 30).ok_or("truncated zip")?;
+        let comment_length = u16_at(at + 32).ok_or("truncated zip")?;
+        let local = u32_at(at + 42).ok_or("truncated zip")?;
+        let name = String::from_utf8_lossy(
+            bytes
+                .get(at + 46..at + 46 + name_length)
+                .ok_or("truncated zip")?,
+        )
+        .into_owned();
+        at += 46 + name_length + extra_length + comment_length;
+        let local_name = u16_at(local + 26).ok_or("truncated zip")?;
+        let local_extra = u16_at(local + 28).ok_or("truncated zip")?;
+        let data_start = local + 30 + local_name + local_extra;
+        let data = bytes
+            .get(data_start..data_start + compressed)
+            .ok_or("truncated zip")?;
+        let content = match method {
+            0 => data.to_vec(),
+            8 => {
+                let mut out = Vec::new();
+                flate2::read::DeflateDecoder::new(data)
+                    .read_to_end(&mut out)
+                    .map_err(|error| error.to_string())?;
+                out
+            }
+            other => return Err(format!("zip method {other} is not supported")),
+        };
+        members.insert(name, content);
+    }
+    Ok(members)
 }
 
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.

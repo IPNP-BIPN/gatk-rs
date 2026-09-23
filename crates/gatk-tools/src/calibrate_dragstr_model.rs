@@ -441,3 +441,524 @@ pub fn table(parameters: &HyperParameters, rows: &[(Vec<f64>, Vec<f64>, Vec<f64>
 pub fn gcp_row(period: usize, max_repeat_length: usize) -> Vec<f64> {
     vec![10.0 / period as f64; max_repeat_length]
 }
+
+// ================================================================================================
+// The traversal: the sites, the reads over them, the downsampling and the file.
+// ================================================================================================
+
+/// `DragstrParams.DEFAULT_GOP`, Illumina's table, eight periods by twenty repeat lengths.
+pub const DEFAULT_GOP: [[f64; 20]; 8] = [
+    [
+        45.00, 45.00, 45.00, 45.00, 45.00, 45.00, 40.50, 33.50, 28.00, 24.00, 21.75, 21.75, 21.75,
+        21.75, 21.75, 21.75, 21.75, 21.75, 21.75, 21.75,
+    ],
+    [
+        39.50, 39.50, 39.50, 39.50, 36.00, 30.00, 27.25, 25.00, 24.25, 24.75, 26.25, 26.25, 26.25,
+        26.25, 26.25, 26.25, 26.25, 26.25, 26.25, 26.75,
+    ],
+    [
+        38.50, 41.00, 41.00, 41.00, 41.00, 37.50, 35.25, 34.75, 34.75, 33.25, 33.25, 33.25, 32.50,
+        30.75, 28.50, 29.00, 29.00, 29.00, 29.00, 29.00,
+    ],
+    [
+        37.50, 39.00, 39.00, 37.75, 34.00, 34.00, 30.25, 30.25, 30.25, 30.25, 30.25, 30.25, 30.25,
+        30.25, 30.25, 31.75, 31.75, 31.75, 31.75, 31.75,
+    ],
+    [
+        37.00, 40.00, 40.00, 40.00, 36.00, 35.00, 24.50, 24.50, 24.50, 24.50, 22.50, 22.50, 22.50,
+        23.50, 23.50, 23.50, 23.50, 23.50, 23.50, 23.50,
+    ],
+    [
+        36.25, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00,
+        40.00, 40.00, 40.00, 40.00, 40.00, 40.00, 40.00,
+    ],
+    [
+        36.00, 40.50, 40.50, 40.50, 20.75, 20.75, 20.75, 20.75, 20.75, 20.75, 20.75, 20.75, 20.75,
+        20.75, 20.75, 20.75, 20.75, 20.75, 20.75, 20.75,
+    ],
+    [
+        36.25, 39.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75,
+        32.75, 32.75, 32.75, 32.75, 32.75, 32.75, 32.75,
+    ],
+];
+
+/// `DragstrParams.DEFAULT_API`.
+pub const DEFAULT_API: [[f64; 20]; 8] = [
+    [
+        39.00, 39.00, 37.00, 35.00, 32.00, 26.00, 20.00, 16.00, 12.00, 10.00, 8.00, 7.00, 7.00,
+        6.00, 6.00, 5.00, 5.00, 4.00, 4.00, 4.00,
+    ],
+    [
+        30.00, 30.00, 29.00, 22.00, 17.00, 14.00, 11.00, 8.00, 6.00, 5.00, 4.00, 4.00, 3.00, 3.00,
+        3.00, 3.00, 3.00, 3.00, 2.00, 2.00,
+    ],
+    [
+        27.00, 27.00, 25.00, 18.00, 14.00, 12.00, 9.00, 7.00, 5.00, 4.00, 3.00, 3.00, 3.00, 3.00,
+        2.00, 2.00, 2.00, 2.00, 2.00, 2.00,
+    ],
+    [
+        27.00, 27.00, 18.00, 9.00, 9.00, 9.00, 9.00, 3.00, 3.00, 3.00, 3.00, 3.00, 2.00, 2.00,
+        2.00, 2.00, 2.00, 2.00, 2.00, 2.00,
+    ],
+    [
+        29.00, 29.00, 18.00, 8.00, 8.00, 8.00, 4.00, 3.00, 3.00, 3.00, 2.00, 2.00, 2.00, 2.00,
+        2.00, 2.00, 2.00, 2.00, 2.00, 2.00,
+    ],
+    [
+        25.00, 25.00, 10.00, 10.00, 10.00, 4.00, 3.00, 3.00, 3.00, 3.00, 3.00, 3.00, 3.00, 3.00,
+        3.00, 3.00, 3.00, 3.00, 3.00, 3.00,
+    ],
+    [
+        21.00, 21.00, 11.00, 11.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00, 5.00,
+        5.00, 5.00, 5.00, 5.00, 5.00, 5.00,
+    ],
+    [
+        18.00, 18.00, 10.00, 6.00, 4.00, 4.00, 4.00, 4.00, 4.00, 4.00, 4.00, 4.00, 4.00, 4.00,
+        4.00, 4.00, 4.00, 4.00, 4.00, 4.00,
+    ],
+];
+
+/// `DragstrParams.DEFAULT`: the three blocks, eight periods by twenty, whatever the hyper-parameters
+/// said. GCP is `Math.round(1000.0 / period) / 100.0`.
+pub fn default_rows() -> Vec<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    (0..8)
+        .map(|index| {
+            let period = (index + 1) as f64;
+            let gcp = (1000.0 / period + 0.5).floor() / 100.0;
+            (
+                DEFAULT_GOP[index].to_vec(),
+                vec![gcp; 20],
+                DEFAULT_API[index].to_vec(),
+            )
+        })
+        .collect()
+}
+
+/// `MathUtils.doubles(start, limit, step)`, which a `DoubleSequence` is built from.
+pub fn java_doubles(start: f64, limit: f64, step: f64) -> Result<Vec<f64>, String> {
+    if !start.is_finite() || !limit.is_finite() || !step.is_finite() {
+        return Err("the start, limit and step must be finite".to_string());
+    }
+    let tolerance = 10f64.powf((0f64.min(step.abs().log10() - 3.0)).floor());
+    let diff = limit - start;
+    if diff.abs() < tolerance {
+        return Ok(vec![start]);
+    }
+    if diff * step <= 0.0 {
+        return Err(
+            "the difference between start and end must have the same sign as the step".to_string(),
+        );
+    }
+    let length = (1.0 + tolerance + diff / step).floor() as usize;
+    let mut result: Vec<f64> = (0..length).map(|i| start + step * i as f64).collect();
+    if let Some(last) = result.last_mut() {
+        if (*last - limit).abs() <= tolerance {
+            *last = limit;
+        }
+    }
+    Ok(result)
+}
+
+/// A `DoubleSequence`'s text, `start:step:limit`, parsed.
+pub fn double_sequence(text: &str) -> Result<Vec<f64>, String> {
+    let parts: Vec<&str> = text.split(':').collect();
+    let number = |part: &str| -> Option<f64> {
+        let valid = !part.is_empty()
+            && part
+                .trim_start_matches(['+', '-'])
+                .chars()
+                .all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'));
+        if valid {
+            part.parse::<f64>().ok()
+        } else {
+            None
+        }
+    };
+    match parts.as_slice() {
+        [start, step, limit] => match (number(start), number(step), number(limit)) {
+            (Some(start), Some(step), Some(limit)) => java_doubles(start, limit, step),
+            _ => Err(format!("invalid double sequence specificatior: {text}")),
+        },
+        _ => Err(format!("invalid double sequence specificatior: {text}")),
+    }
+}
+
+/// One site of the STR table, as `DragstrLocus` holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Site {
+    pub contig: i32,
+    pub start: i64,
+    pub period: i32,
+    /// The span in bases, a short on disk.
+    pub length: i32,
+    pub mask: i64,
+}
+
+impl Site {
+    pub fn end(&self) -> i64 {
+        self.start + i64::from(self.length) - 1
+    }
+
+    /// `getRepeats`: whole units in the span.
+    pub fn repeats(&self) -> i32 {
+        if self.period == 0 {
+            0
+        } else {
+            self.length / self.period
+        }
+    }
+}
+
+/// `sites.bin`, 23 big-endian bytes a site.
+pub fn read_sites(bytes: &[u8]) -> Vec<Site> {
+    bytes
+        .chunks_exact(23)
+        .map(|chunk| Site {
+            contig: i32::from_be_bytes(chunk[0..4].try_into().expect("four bytes")),
+            start: i64::from_be_bytes(chunk[4..12].try_into().expect("eight bytes")),
+            period: i32::from(chunk[12] as i8),
+            length: i32::from(i16::from_be_bytes(
+                chunk[13..15].try_into().expect("two bytes"),
+            )),
+            mask: i64::from_be_bytes(chunk[15..23].try_into().expect("eight bytes")),
+        })
+        .collect()
+}
+
+/// One read as the case collector reads it, after the extended-MQ transformer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PileRead {
+    pub start: i64,
+    pub end: i64,
+    pub mapping_quality: i32,
+    pub supplementary: bool,
+    /// The CIGAR as operator letters and lengths.
+    pub cigar: Vec<(u8, i64)>,
+}
+
+/// `DragstrLocusCase`: what the reads over one site said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SiteCase {
+    pub site: Site,
+    pub depth: i32,
+    pub indels: i32,
+    pub min_mq: i32,
+    pub n_sup: i32,
+}
+
+impl SiteCase {
+    /// `qualifies`.
+    pub fn qualifies(&self, min_depth: i32, min_mq: i32, max_sup: i32) -> bool {
+        self.depth >= min_depth && self.n_sup <= max_sup && self.min_mq >= min_mq
+    }
+
+    /// `outputSiteDetails`' line.
+    pub fn line(&self, fate: &str) -> String {
+        format!(
+            "{}:{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            self.site.contig,
+            self.site.start - 1,
+            self.site.period,
+            self.site.repeats(),
+            self.depth,
+            self.indels,
+            self.min_mq,
+            self.n_sup,
+            fate
+        )
+    }
+}
+
+/// `DragstrLocusCaseCollector` over the reads overlapping one site.
+///
+/// Only a read spanning the site PADDED on both sides counts. Every insertion that starts inside
+/// the repeat or right after it, and every deletion that touches it, adds one to the indel count,
+/// so a read with two such events counts twice.
+pub fn collect(site: &Site, reads: &[&PileRead], padding: i64, contig_length: i64) -> SiteCase {
+    let str_start = site.start;
+    let str_end = site.end();
+    let str_end_plus_one = str_end + 1;
+    let padded_start = (str_start - padding).max(1);
+    let padded_end = (str_end + padding).min(contig_length);
+    let (mut n, mut k, mut n_sup, mut min_mq) = (0, 0, 0, 255);
+    for read in reads {
+        if read.start <= padded_start && read.end >= padded_end {
+            if read.supplementary {
+                n_sup += 1;
+            }
+            min_mq = min_mq.min(read.mapping_quality);
+            let mut ref_pos = read.start;
+            for (op, length) in &read.cigar {
+                let insertion = *op == b'I' && ref_pos >= str_start && ref_pos <= str_end_plus_one;
+                let deletion = *op == b'D' && ref_pos + length > str_start && ref_pos <= str_end;
+                if insertion || deletion {
+                    k += 1;
+                }
+                if matches!(op, b'M' | b'D' | b'N' | b'=' | b'X') {
+                    ref_pos += length;
+                }
+                if ref_pos > str_end_plus_one {
+                    break;
+                }
+            }
+            n += 1;
+        }
+    }
+    SiteCase {
+        site: *site,
+        depth: n,
+        indels: k,
+        min_mq,
+        n_sup,
+    }
+}
+
+/// `StratifiedDragstrLocusCases`: `[period - 1][repeats - 1]`, the repeats capped at the maximum.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stratified {
+    pub cells: Vec<Vec<Vec<SiteCase>>>,
+}
+
+impl Stratified {
+    pub fn new(max_period: usize, max_repeats: usize) -> Self {
+        Stratified {
+            cells: vec![vec![Vec::new(); max_repeats]; max_period],
+        }
+    }
+
+    /// `add`, which indexes the period without a check: a site whose period is past the maximum is
+    /// the reference's `ArrayIndexOutOfBoundsException`, reported here as the index and the length.
+    pub fn add(&mut self, case: SiteCase) -> Result<(), (i64, usize)> {
+        let period_index = i64::from(case.site.period) - 1;
+        if period_index < 0 || period_index as usize >= self.cells.len() {
+            return Err((period_index, self.cells.len()));
+        }
+        let row = &mut self.cells[period_index as usize];
+        let repeat_index = ((case.site.repeats() - 1).max(0) as usize).min(row.len() - 1);
+        row[repeat_index].push(case);
+        Ok(())
+    }
+
+    /// `get`, whose repeat index is capped.
+    pub fn get(&self, period: usize, repeats: usize) -> &[SiteCase] {
+        let row = &self.cells[period - 1];
+        &row[(repeats - 1).min(row.len() - 1)]
+    }
+
+    /// `qualifyingOnly`.
+    pub fn qualifying(&self, min_depth: i32, min_mq: i32, max_sup: i32) -> Stratified {
+        Stratified {
+            cells: self
+                .cells
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|cell| {
+                            cell.iter()
+                                .filter(|case| case.qualifies(min_depth, min_mq, max_sup))
+                                .copied()
+                                .collect()
+                        })
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+
+    /// The cases as the estimator reads them.
+    pub fn as_cases(&self) -> Cases {
+        let max_period = self.cells.len();
+        let max_repeat_length = self.cells.first().map_or(0, Vec::len);
+        let mut cases = Cases::empty(max_period, max_repeat_length);
+        for (p, row) in self.cells.iter().enumerate() {
+            for (r, cell) in row.iter().enumerate() {
+                for case in cell {
+                    cases.add(
+                        p + 1,
+                        r + 1,
+                        Case {
+                            depth: case.depth,
+                            indels: case.indels,
+                        },
+                    );
+                }
+            }
+        }
+        cases
+    }
+}
+
+/// `DECIMATION_MASKS_BY_BIT[j]`, which the static initializer leaves as `~(1 << j)`.
+fn decimation_mask_by_bit(j: usize) -> i64 {
+    !(1i64 << j)
+}
+
+/// `downSample` over one cell. Returns the cases kept and appends a `downsampled-out` line for each
+/// one dropped. `Err` is the reference's array overrun, index and length.
+pub fn downsample_cell(
+    cell: &[SiteCase],
+    min_decimation_bit: usize,
+    downsample_size: usize,
+    out: &mut Vec<String>,
+) -> Result<Vec<SiteCase>, (usize, usize)> {
+    if cell.len() <= downsample_size {
+        return Ok(cell.to_vec());
+    }
+    let length = 64usize.saturating_sub(min_decimation_bit);
+    let mut count_by_first_bit = vec![0usize; length];
+    let mut zero_depth = 0usize;
+    for case in cell {
+        if case.depth <= 0 {
+            zero_depth += 1;
+            continue;
+        }
+        let mask = case.site.mask;
+        let mut j = min_decimation_bit;
+        while mask != 0 && j < 64 {
+            let new_mask = mask & decimation_mask_by_bit(j);
+            if new_mask != mask {
+                if j >= length {
+                    return Err((j, length));
+                }
+                count_by_first_bit[j] += 1;
+                break;
+            }
+            j += 1;
+        }
+    }
+    let mut final_size = cell.len() - zero_depth;
+    let mut filter_mask = 0i64;
+    let mut j = min_decimation_bit;
+    while final_size > downsample_size && j < 64 {
+        if j >= length {
+            return Err((j, length));
+        }
+        final_size = final_size.saturating_sub(count_by_first_bit[j]);
+        filter_mask |= !decimation_mask_by_bit(j);
+        j += 1;
+    }
+    let mut kept = Vec::new();
+    for case in cell {
+        if (case.site.mask & filter_mask) == 0 && case.depth > 0 {
+            kept.push(*case);
+        } else {
+            out.push(case.line("downsampled-out"));
+        }
+    }
+    Ok(kept)
+}
+
+/// `MINIMUM_CASES_BY_PERIOD_AND_LENGTH`.
+const MINIMUM_CASES: [&[usize]; 9] = [
+    &[],
+    &[0, 200, 200, 200, 200, 200, 200, 200, 200, 200, 0],
+    &[0, 0, 200, 200, 200, 200, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 200, 200, 0, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 200, 0, 0, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0],
+    &[0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0],
+];
+
+/// `isThereEnoughCases`, before `--force-estimation` is considered.
+pub fn enough_cases(sites: &Stratified, max_period: usize, max_repeat_length: usize) -> bool {
+    let max_p = max_period.min(MINIMUM_CASES.len() - 1);
+    for (i, minimums) in MINIMUM_CASES.iter().enumerate().take(max_p + 1).skip(1) {
+        let max_l = max_repeat_length.min(minimums.len() - 1);
+        for (j, minimum) in minimums.iter().enumerate().take(max_l + 1).skip(1) {
+            if sites.get(i, j).len() < *minimum {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `Math.pow`, at run time and never folded, like `gatk_engine::math_utils::pow10`.
+fn java_pow(base: f64, exponent: f64) -> f64 {
+    std::hint::black_box(base).powf(exponent)
+}
+
+/// `DragstrParamsBuilder.gopCalculation`, a grid search from zero whose step accumulates.
+fn gop_calculation(gp: f64, gcp: f64, period: usize, max_gop: f64, step: f64) -> f64 {
+    let gp_prob = java_pow(10.0, -0.1 * gp);
+    let mut best_gop = 0.0;
+    let c = java_pow(10.0, -0.1 * gcp);
+    let mut best_cost = f64::INFINITY;
+    let mut gop = 0.0;
+    while max_gop - gop > -0.001 {
+        let g = java_pow(10.0, -0.1 * gop);
+        let pr_gap = g * java_pow(c, (period - 1) as f64) * (1.0 - c);
+        let pr_no_gap = java_pow(1.0 - 2.0 * g, (period + 1) as f64);
+        let cost = (pr_gap / pr_no_gap - gp_prob).abs();
+        if cost < best_cost {
+            best_gop = gop;
+            best_cost = cost;
+        }
+        gop += step;
+    }
+    best_gop
+}
+
+/// `DragstrParametersEstimator.estimate`, then `DragstrParamsBuilder.make(gopValues)`: every
+/// period's groups, and GOP derived from each cell's GP by the grid over the GOP values.
+pub fn estimate(
+    parameters: &HyperParameters,
+    cases: &Cases,
+) -> Vec<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    let precomputed = precompute(parameters);
+    let values = &parameters.phred_gop_values;
+    let (min_gop, max_gop) = match values.len() {
+        0 => (f64::NAN, f64::NAN),
+        1 | 2 => (values[0], values[0]),
+        n => (values[0].min(values[n - 1]), values[0].max(values[n - 1])),
+    };
+    let step = if values.len() < 2 {
+        f64::NAN
+    } else {
+        values[1] - values[0]
+    };
+    (1..=parameters.max_period)
+        .map(|period| {
+            let mut gp = vec![0.0; parameters.max_repeat_length];
+            let mut gcp = vec![0.0; parameters.max_repeat_length];
+            let mut api = vec![0.0; parameters.max_repeat_length];
+            for (range, estimate) in estimate_period(period, parameters, &precomputed, cases) {
+                for repeats in range {
+                    gp[repeats - 1] = estimate.gp;
+                    gcp[repeats - 1] = estimate.gcp;
+                    api[repeats - 1] = estimate.api;
+                }
+            }
+            let gop = gp
+                .iter()
+                .zip(&gcp)
+                .map(|(gp, gcp)| min_gop.max(gop_calculation(*gp, *gcp, period, max_gop, step)))
+                .collect();
+            (gop, gcp, api)
+        })
+        .collect()
+}
+
+/// `DragstrParamUtils.print`: a banner with the annotations, then the table.
+pub fn params_file(
+    annotations: &[(&str, String)],
+    max_repeat_length: usize,
+    rows: &[(Vec<f64>, Vec<f64>, Vec<f64>)],
+) -> String {
+    let rule = "############################################################################################\n";
+    let mut out = String::from(rule);
+    out.push_str("# DragstrParams\n# -------------------------\n");
+    for (name, value) in annotations {
+        out.push_str(&format!("# {name} = {value}\n"));
+    }
+    out.push_str(rule);
+    let parameters = HyperParameters {
+        max_period: rows.len(),
+        max_repeat_length,
+        ..HyperParameters::default()
+    };
+    out.push_str(&table(&parameters, rows));
+    out
+}

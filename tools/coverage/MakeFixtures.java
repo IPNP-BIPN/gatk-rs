@@ -836,6 +836,88 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
     }
 
+    /**
+     * `CalibrateDragstrModel`'s inputs over `mutect_ref.fasta`: the STR table the reference's own
+     * `ComposeSTRTableFile` writes for it, and one sample's fifty-base reads tiled every three bases.
+     * A read whose middle holds a homopolymer of three or more carries, one read in four, a deletion
+     * of one of its bases and, one in seven, an insertion of one more; one read in five says its
+     * mapping quality in `XQ`, one in eleven is supplementary and one in thirteen maps at 10.
+     */
+    static void calibrationFixtures(final Path dir) throws Exception {
+        final Path reference = dir.resolve("mutect_ref.fasta");
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(reference)) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII);
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgD");
+        group.setSample("dragstr");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final List<SAMRecord> records = new ArrayList<>();
+        int index = 0;
+        for (int start = 1; start + 60 <= bases.length(); start += 3, index++) {
+            final String window = bases.substring(start - 1, start - 1 + 60);
+            // The first homopolymer of three or more that starts ten bases in and ends ten before
+            // the fiftieth.
+            int run = -1;
+            int runLength = 0;
+            for (int i = 10; i < 38 && run < 0; i++) {
+                int j = i;
+                while (j + 1 < 60 && window.charAt(j + 1) == window.charAt(i)) {
+                    j++;
+                }
+                if (j - i + 1 >= 3 && j < 40) {
+                    run = i;
+                    runLength = j - i + 1;
+                }
+            }
+            String read = window.substring(0, 50);
+            String cigar = "50M";
+            if (run >= 0 && index % 4 == 0) {
+                read = window.substring(0, run) + window.substring(run + 1, 51);
+                cigar = run + "M1D" + (50 - run) + "M";
+            } else if (run >= 0 && index % 7 == 0) {
+                read = window.substring(0, run) + window.charAt(run) + window.substring(run, 49);
+                cigar = run + "M1I" + (49 - run) + "M";
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("DRAG:" + index);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(cigar);
+            record.setMappingQuality(index % 13 == 0 ? 10 : 60);
+            record.setReadNegativeStrandFlag(index % 2 == 1);
+            record.setSupplementaryAlignmentFlag(index % 11 == 0);
+            record.setReadString(read);
+            record.setBaseQualityString("I".repeat(50));
+            record.setAttribute("RG", "rgD");
+            if (index % 5 == 0) {
+                record.setAttribute("XQ", 120);
+            }
+            records.add(record);
+        }
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("dragstr.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile().instanceMain(new String[] {
+                "--reference", reference.toString(),
+                "--output", dir.resolve("dragstr_str.zip").toString(),
+        });
+        new org.broadinstitute.hellbender.tools.dragstr.ComposeSTRTableFile().instanceMain(new String[] {
+                "--reference", reference.toString(),
+                "--decimation", "NONE",
+                "--output", dir.resolve("dragstr_str_all.zip").toString(),
+        });
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -1688,6 +1770,7 @@ public class MakeFixtures {
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
         mutectFixtures(dir);
+        calibrationFixtures(dir);
         // A decimation matrix for `ComposeSTRTableFile`, with a comment line, a blank line and a row
         // that keeps one site in two of every period-one repeat of length three.
         Files.writeString(dir.resolve("decimation.txt"), "# period by repeat\n0\n0 0 0 1 2\n\n0 0 1\n",
