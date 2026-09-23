@@ -1,0 +1,327 @@
+{
+  "tool": "AnalyzeCovariates",
+  "origin": "gatk",
+  "t": 2,
+  "numeric_policy": "strict",
+  "arguments_total": 18,
+  "arguments_in_array": 7,
+  "arguments_excluded": 11,
+  "excluded": [
+    {
+      "argument": "--arguments_file",
+      "type": "List[File]",
+      "reason": "excluded by the repository: expands into the command line itself, which is measured by the barclay-arguments-file suite instead",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gatk-config-file",
+      "type": "String",
+      "reason": "excluded by the repository: a configuration file the corpus does not carry; varying it would measure the config loader",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-max-retries",
+      "type": "int",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--gcs-project-for-requester-pays",
+      "type": "String",
+      "reason": "excluded by the repository: reaches nothing without a cloud path in the row",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--help",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the usage and returns; the row would measure the argument parser rather than the tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--plots-report-file",
+      "type": "File",
+      "reason": "excluded by the repository: no value is declared for this tool",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--QUIET",
+      "type": "Boolean",
+      "reason": "excluded by the repository: suppresses the log on stderr, and what is compared is stdout and the output file",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--showHidden",
+      "type": "boolean",
+      "reason": "excluded by the repository: changes the usage text only",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--use-jdk-inflater",
+      "type": "boolean",
+      "reason": "excluded by the repository: chooses an inflater, and the input is read the same way either way",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--verbosity",
+      "type": "LogLevel",
+      "reason": "excluded by the repository: log level on stderr, same reason",
+      "held_at": null,
+      "source": "none"
+    },
+    {
+      "argument": "--version",
+      "type": "boolean",
+      "reason": "excluded by the repository: prints the version and returns, same reason",
+      "held_at": null,
+      "source": "none"
+    }
+  ],
+  "rows": 11,
+  "tuples_total": 96,
+  "tuples_covered": 96,
+  "tuples_forbidden": 0,
+  "constraint_notes": [],
+  "coverage": 1.0,
+  "array": [
+    {
+      "row": 0,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[0]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=/work/fixtures/recal.table",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 1,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[1]",
+        "--bqsr-recal-file": "fixture[1]",
+        "--ignore-last-modification-times": "false",
+        "--intermediate-csv-file": "fixture[1]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=/work/fixtures/recal2.table",
+        "--bqsr-recal-file=null",
+        "--ignore-last-modification-times=false",
+        "--intermediate-csv-file=null",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 2,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[2]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "false",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=null",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=false",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 3,
+      "labels": {
+        "--after-report-file": "fixture[1]",
+        "--before-report-file": "fixture[0]",
+        "--bqsr-recal-file": "fixture[1]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--after-report-file=null",
+        "--before-report-file=/work/fixtures/recal.table",
+        "--bqsr-recal-file=null",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=null",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 4,
+      "labels": {
+        "--after-report-file": "fixture[1]",
+        "--before-report-file": "fixture[1]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=null",
+        "--before-report-file=/work/fixtures/recal2.table",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--after-report-file": "fixture[1]",
+        "--before-report-file": "fixture[2]",
+        "--bqsr-recal-file": "fixture[1]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--after-report-file=null",
+        "--before-report-file=null",
+        "--bqsr-recal-file=null",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--after-report-file": "fixture[1]",
+        "--before-report-file": "fixture[0]",
+        "--bqsr-recal-file": "fixture[1]",
+        "--ignore-last-modification-times": "false",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=null",
+        "--before-report-file=/work/fixtures/recal.table",
+        "--bqsr-recal-file=null",
+        "--ignore-last-modification-times=false",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 7,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[2]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=null",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=null",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 8,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[0]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=/work/fixtures/recal.table",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 9,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[1]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=/work/fixtures/recal2.table",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 10,
+      "labels": {
+        "--after-report-file": "fixture[0]",
+        "--before-report-file": "fixture[0]",
+        "--bqsr-recal-file": "fixture[0]",
+        "--ignore-last-modification-times": "true",
+        "--intermediate-csv-file": "fixture[0]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--after-report-file=/work/fixtures/recal2.table",
+        "--before-report-file=/work/fixtures/recal.table",
+        "--bqsr-recal-file=/work/fixtures/recal.table",
+        "--ignore-last-modification-times=true",
+        "--intermediate-csv-file=/work/out/covariates.csv",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    }
+  ]
+}

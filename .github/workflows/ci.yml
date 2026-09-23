@@ -598,6 +598,7 @@ jobs:
             --tool CombineSegmentBreakpoints \
             --tool MergeMutect2CallsWithMC3 \
             --tool FilterFuncotations \
+            --tool AnalyzeCovariates \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

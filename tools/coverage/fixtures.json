@@ -4243,6 +4243,33 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "AnalyzeCovariates": {
+      "$why": [
+        "The three report arguments take recal.table and recal2.table, the REFERENCE's own BaseRecalibrator",
+        "reports over the corpus's two BAMs, or are absent: all three absent is the first refusal, and two reports",
+        "whose arguments differ would be the consistency one. --intermediate-csv-file is a path or absent,",
+        "absent being the no-output refusal. --plots-report-file is held out: the plots are R's, which the",
+        "oracle image does not carry either."
+      ],
+      "--bqsr-recal-file": [
+        "/work/fixtures/recal.table",
+        "null"
+      ],
+      "--before-report-file": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table",
+        "null"
+      ],
+      "--after-report-file": [
+        "/work/fixtures/recal2.table",
+        "null"
+      ],
+      "--intermediate-csv-file": [
+        "/work/out/covariates.csv",
+        "null"
+      ],
+      "--plots-report-file": []
     }
   },
   "constraints": [

@@ -16863,3 +16863,112 @@ pub fn filter_funcotations(parser: &Parser) -> Outcome {
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// `AnalyzeCovariates`: up to three BQSR reports folded into the csv the plotting script reads.
+///
+/// The csv is [`gatk_tools::analyze_covariates`]; the runner is `checkArgumentsValues` in its order
+/// (each report checked as a file, then that there is one, then each output's location, then that
+/// an output was asked for) and the write. The plots are R's and the reference only draws them when
+/// `--plots-report-file` is given, which this port does not do: asking for them is the port's
+/// limitation. The tool returns `Optional.empty()`, which `handleResult` prints.
+pub fn analyze_covariates(parser: &Parser) -> Outcome {
+    use gatk_tools::analyze_covariates as ac;
+
+    let bqsr = argument(parser, "bqsr-recal-file");
+    let before = argument(parser, "before-report-file");
+    let after = argument(parser, "after-report-file");
+    let plots = argument(parser, "plots-report-file");
+    let csv = argument(parser, "intermediate-csv-file");
+    let bad_value = |name: &str, message: String| {
+        Thrown::command_line(format!("Argument {name} has a bad value: {message}"))
+    };
+    for (name, value) in [("BQSR", &bqsr), ("before", &before), ("after", &after)] {
+        let Some(path) = value else { continue };
+        let meta = std::fs::metadata(path);
+        match meta {
+            Err(_) => {
+                return Err(bad_value(
+                    name,
+                    format!("input report '{path}' does not exist or is unreachable"),
+                ))
+            }
+            Ok(meta) if !meta.is_file() => {
+                return Err(bad_value(
+                    name,
+                    format!("input report '{path}' is not a regular file"),
+                ))
+            }
+            Ok(_) => {}
+        }
+    }
+    if bqsr.is_none() && before.is_none() && after.is_none() {
+        return Err(Thrown::user(ac::AnalyzeCovariatesError::NoReport.message()));
+    }
+    for (name, value) in [("plots", &plots), ("csv", &csv)] {
+        let Some(path) = value else { continue };
+        let target = std::path::Path::new(path);
+        if target.exists() && !target.is_file() {
+            return Err(bad_value(
+                name,
+                format!("the output file location '{path}' exists as not a file"),
+            ));
+        }
+        let Some(parent) = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        else {
+            continue;
+        };
+        if !parent.exists() {
+            return Err(bad_value(
+                name,
+                format!(
+                    "the output file parent directory '{}' does not exists or is unreachable",
+                    parent.display()
+                ),
+            ));
+        }
+        if !parent.is_dir() {
+            return Err(bad_value(
+                name,
+                format!(
+                    "the output file parent directory '{}' is not a directory",
+                    parent.display()
+                ),
+            ));
+        }
+    }
+    if plots.is_none() && csv.is_none() {
+        return Err(Thrown::user(ac::AnalyzeCovariatesError::NoOutput.message()));
+    }
+
+    let mut parsed_reports: Vec<(&str, gatk_engine::recalibration_report::RecalibrationReport)> =
+        Vec::new();
+    for (role, value) in [("BQSR", &bqsr), ("Before", &before), ("After", &after)] {
+        let Some(path) = value else { continue };
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+        let report = gatk_engine::recalibration_report::RecalibrationReport::parse(&text)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        parsed_reports.push((role, report));
+    }
+    let roles: Vec<ac::RoleReport> = parsed_reports
+        .iter()
+        .map(|(role, report)| ac::RoleReport { role, report })
+        .collect();
+    let text = ac::analyze_covariates(&roles, csv.is_some()).map_err(|error| Thrown {
+        failure: Failure::User,
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+    if let Some(path) = &csv {
+        write_file(path, text.as_bytes())?;
+    }
+    if plots.is_some() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "--plots-report-file draws the plots through R, which this port does not carry. This message is the port's own and not GATK's.",
+        ));
+    }
+    Ok(Some("Optional.empty".to_string()))
+}
