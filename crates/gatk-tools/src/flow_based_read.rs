@@ -223,6 +223,8 @@ pub struct FlowRead {
     /// `flowMatrix[hmer][flow]`, `maxHmer + 1` rows of `key.len()` columns.
     pub matrix: Vec<Vec<f64>>,
     per_hmer_min_error_prob: f64,
+    /// `validKey`, which a base clipping that leaves too short a read turns off.
+    pub valid: bool,
 }
 
 impl FlowRead {
@@ -289,6 +291,128 @@ impl FlowRead {
         self.flow_order = self.flow_order[left..end].to_vec();
         for row in self.matrix.iter_mut() {
             *row = row[left..end].to_vec();
+        }
+        Ok(())
+    }
+
+    /// `applyBaseClipping(clipLeftBase, clipRightBase, spread)` on a read of `read_length` bases.
+    ///
+    /// A clipping that would leave fewer than `minimal_read_length` bases clips nothing and marks
+    /// the read invalid instead.
+    pub fn apply_base_clipping(
+        &mut self,
+        clip_left_base: i32,
+        clip_right_base: i32,
+        spread: bool,
+        read_length: i32,
+        minimal_read_length: i32,
+    ) -> Result<(), FlowReadError> {
+        let (clip_left, left_hmer_clip) = find_clipping(clip_left_base, &self.key);
+        let reversed: Vec<i32> = self.key.iter().rev().copied().collect();
+        let (clip_right, right_hmer_clip) = find_clipping(clip_right_base, &reversed);
+        if read_length - clip_left_base - clip_right_base < minimal_read_length {
+            self.valid = false;
+        } else {
+            self.apply_clipping(clip_left, left_hmer_clip, clip_right, right_hmer_clip, spread)?;
+            self.valid = true;
+        }
+        Ok(())
+    }
+
+    /// `applyClipping`: whole flows off each end, then the hmer clip off the flow left at the edge.
+    fn apply_clipping(
+        &mut self,
+        mut clip_left: i32,
+        left_hmer_clip: i32,
+        mut clip_right: i32,
+        right_hmer_clip: i32,
+        spread: bool,
+    ) -> Result<(), FlowReadError> {
+        let length = self.key.len() as i32;
+        if clip_left < 0 || clip_right < 0 || clip_left >= length || clip_right >= length {
+            return Err(FlowReadError::thrown(
+                "java.lang.IllegalStateException",
+                format!(
+                    "Weird read clip calculated: left/right/keyLength {clip_left}/{clip_right}/{length}"
+                ),
+            ));
+        }
+        let limit = self.max_hmer + 2;
+        if left_hmer_clip < 0
+            || right_hmer_clip < 0
+            || left_hmer_clip >= limit
+            || right_hmer_clip >= limit
+        {
+            return Err(FlowReadError::thrown(
+                "java.lang.IllegalStateException",
+                format!(
+                    "Weird read clip calculated: left/right/maxHmer+2 {left_hmer_clip}/{right_hmer_clip}/{limit}"
+                ),
+            ));
+        }
+        let key_at = |key: &[i32], at: i32| -> Result<i32, FlowReadError> {
+            if at < 0 || at >= key.len() as i32 {
+                Err(FlowReadError::out_of_bounds(at as i64, key.len()))
+            } else {
+                Ok(key[at as usize])
+            }
+        };
+        self.key[clip_left as usize] -= left_hmer_clip;
+        let mut shift_left = true;
+        while key_at(&self.key, clip_left)? == 0 {
+            clip_left += 1;
+            shift_left = false;
+        }
+        self.key[(length - clip_right - 1) as usize] -= right_hmer_clip;
+        let mut shift_right = true;
+        while key_at(&self.key, length - 1 - clip_right)? == 0 {
+            clip_right += 1;
+            shift_right = false;
+        }
+        let end = length - clip_right;
+        if clip_left > end {
+            return Err(FlowReadError::thrown(
+                "java.lang.IllegalArgumentException",
+                format!("{clip_left} > {end}"),
+            ));
+        }
+        let (from, to) = (clip_left as usize, end as usize);
+        self.key = self.key[from..to].to_vec();
+        self.flow_order = self.flow_order[from..to].to_vec();
+        for row in self.matrix.iter_mut() {
+            *row = row[from..to].to_vec();
+        }
+        if shift_left {
+            self.shift_column_up(0, left_hmer_clip)?;
+        }
+        if shift_right {
+            let last = self.key.len() as i64 - 1;
+            if last < 0 {
+                return Err(FlowReadError::out_of_bounds(last, 0));
+            }
+            self.shift_column_up(last as usize, right_hmer_clip)?;
+        }
+        if spread {
+            self.spread(find_first_non_zero(&self.key));
+            self.spread(find_last_non_zero(&self.key));
+        }
+        Ok(())
+    }
+
+    /// `shiftColumnUp`.
+    fn shift_column_up(&mut self, column: usize, shift: i32) -> Result<(), FlowReadError> {
+        if self.key.is_empty() {
+            return Err(FlowReadError::out_of_bounds(column as i64, 0));
+        }
+        let rows = self.matrix.len() as i32;
+        for i in 0..(rows - shift).max(0) {
+            self.matrix[i as usize][column] = self.matrix[(i + shift) as usize][column];
+        }
+        for i in (rows - shift)..rows {
+            if i < 0 {
+                return Err(FlowReadError::out_of_bounds(i as i64, rows as usize));
+            }
+            self.matrix[i as usize][column] = 0.0;
         }
         Ok(())
     }
@@ -366,6 +490,36 @@ impl FlowRead {
         }
         Ok(())
     }
+}
+
+/// `FlowBasedReadUtils.findLeftClipping` over a key (or `findRightClipping` over the reversed
+/// key): the flow the clip stops in, and how many of that flow's bases it takes.
+pub fn find_clipping(base_clipping: i32, key: &[i32]) -> (i32, i32) {
+    if base_clipping == 0 {
+        return (0, 0);
+    }
+    let flow2base = key_to_base(key);
+    let mut stop_clip = 0usize;
+    for i in 0..flow2base.len() {
+        if flow2base[i] + key[i] >= base_clipping {
+            stop_clip = i;
+            break;
+        }
+    }
+    let base = flow2base.get(stop_clip).copied().unwrap_or(-1);
+    (stop_clip as i32, base_clipping - base - 1)
+}
+
+/// `FlowBasedKeyCodec.getKeyToBase`: for each flow, the index of the last base before it.
+pub fn key_to_base(key: &[i32]) -> Vec<i32> {
+    let mut result = vec![0i32; key.len()];
+    if !result.is_empty() {
+        result[0] = -1;
+    }
+    for i in 1..result.len() {
+        result[i] = result[i - 1] + key[i - 1];
+    }
+    result
 }
 
 fn find_first_non_zero(key: &[i32]) -> Option<usize> {
@@ -520,6 +674,7 @@ fn read_flow_matrix(
         max_hmer,
         matrix,
         per_hmer_min_error_prob,
+        valid: true,
     };
     flow_read.apply_filtering(args)?;
     Ok(flow_read)

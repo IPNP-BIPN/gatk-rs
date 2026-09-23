@@ -610,6 +610,7 @@ jobs:
             --tool AddFlowBaseQuality \
             --tool AddFlowSNVQuality \
             --tool FlowPairHMMAlignReadsToHaplotypes \
+            --tool FlowFeatureMapper \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

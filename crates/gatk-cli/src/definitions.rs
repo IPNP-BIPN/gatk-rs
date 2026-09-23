@@ -84,11 +84,30 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
 /// list and a rebuilt null render identically and the definition is not changed by the choice.
 pub fn initial_value(declaration: &Declaration, class: &ValueClass) -> Value {
     if declaration.collection {
-        return Value::List(Vec::new());
+        // `AbstractCollection.toString`: `[a, b, c]`. A field initialised with elements keeps
+        // them until the command line names the argument, and `getCommandLine` prints them as
+        // one pair each (`--gvcf-gq-bands 1 --gvcf-gq-bands 2 ...` for `FlowFeatureMapper`).
+        let elements = declaration
+            .default
+            .and_then(|text| text.strip_prefix('['))
+            .and_then(|text| text.strip_suffix(']'))
+            .filter(|text| !text.is_empty());
+        return Value::List(match elements {
+            Some(text) => text
+                .split(", ")
+                .map(|element| scalar_value(element, class))
+                .collect(),
+            None => Vec::new(),
+        });
     }
     let Some(default) = declaration.default else {
         return Value::Null;
     };
+    scalar_value(default, class)
+}
+
+/// One default rendered by `String.valueOf`, read back as a value of the argument's class.
+fn scalar_value(default: &str, class: &ValueClass) -> Value {
     match class {
         ValueClass::Integer => default
             .parse::<i32>()

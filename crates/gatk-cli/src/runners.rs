@@ -10087,6 +10087,289 @@ pub fn flow_pairhmm_align_reads_to_haplotypes(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `FlowFeatureMapper` with its one mapper, `SNVMapper`: every mismatch surrounded by matching
+/// bases, scored by the flow matrix as the read's haplotype against the reference's, and written
+/// once the traversal has passed it, with the reads still queued over it counted.
+///
+/// The GVCF reference-confidence mode is not ported.
+pub fn flow_feature_mapper(parser: &Parser) -> Outcome {
+    use gatk_tools::flow_feature_mapper as mapper;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "FlowFeatureMapper")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    if header.attributes.get("SO") != Some("coordinate") {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "input file must be coordinated sorted".to_string(),
+        ));
+    }
+    if scalar(parser, "emit-ref-confidence").as_deref() == Some("GVCF") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "the GVCF writer of FlowFeatureMapper is not ported. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    let optional_int = |name: &str| scalar(parser, name).and_then(|text| text.parse::<i32>().ok());
+    let before = number_or(parser, "snv-identical-bases", 1);
+    let after = number_or(parser, "snv-identical-bases-after", 0);
+    let settings = mapper::Settings {
+        surround_before: before,
+        surround_after: if after != 0 { after } else { before },
+        smq_size: optional_int("surrounding-median-quality-size"),
+        smq_size_mean: optional_int("surrounding-mean-quality-size"),
+        report_all_alts: flag(parser, "report-all-alts"),
+        tag_bases_with_adjacent_ref_diff: flag(parser, "tag-bases-with-adjacent-ref-diff"),
+        limit_score: double_or(parser, "limit-score", f64::NAN),
+        max_score: double_or(parser, "max-score", f64::INFINITY),
+        min_score: double_or(parser, "min-score", f64::NEG_INFINITY),
+        exclude_nan_scores: flag(parser, "exclude-nan-scores"),
+        include_dup_reads: flag(parser, "include-dup-reads"),
+        keep_negatives: flag(parser, "keep-negatives"),
+        keep_supplementary_alignments: flag(parser, "keep-supplementary-alignments"),
+        include_qc_failed_reads: flag(parser, "include-qc-failed-reads"),
+        copy_attributes: arguments(parser, "copy-attr")
+            .iter()
+            .map(|spec| mapper::CopyAttribute::parse(spec))
+            .collect(),
+        copy_attribute_prefix: scalar(parser, "copy-attr-prefix").unwrap_or_default(),
+        flow: flow_arguments(parser),
+    };
+    let line_type = |kind: &str| -> Result<LineType, Thrown> {
+        match kind {
+            "Integer" => Ok(LineType::Integer),
+            "Float" => Ok(LineType::Float),
+            "String" => Ok(LineType::String),
+            "Character" => Ok(LineType::Character),
+            "Flag" => Ok(LineType::Flag),
+            other => Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("No enum constant htsjdk.variant.vcf.VCFHeaderLineType.{other}"),
+            )),
+        }
+    };
+
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let mut entries = Vec::with_capacity(reads.len());
+    for read in &reads {
+        let contig = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|at| header.sequences.get(at))
+            .map(|sequence| sequence.name.clone())
+            .unwrap_or_else(|| "*".to_string());
+        let end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
+        let bases = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, read.alignment_start, end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
+        entries.push(mapper::ReadWithReference {
+            read,
+            contig,
+            reference: bases,
+        });
+    }
+
+    // makeVCFHeader, which the writer sorts.
+    let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, description: &str| {
+        HeaderLine::Compound {
+            key: key.to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let one = Cardinality::Fixed(1);
+    let mut lines = default_tool_vcf_header_lines(parser, "FlowFeatureMapper");
+    lines.push(compound("INFO", "MLEAC", Cardinality::A, LineType::Integer, "Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed"));
+    lines.push(compound("INFO", "MLEAF", Cardinality::A, LineType::Float, "Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed"));
+    lines.push(compound("FORMAT", "GT", one.clone(), LineType::String, "Genotype"));
+    lines.push(compound("FORMAT", "GQ", one.clone(), LineType::Integer, "Genotype Quality"));
+    lines.push(compound("FORMAT", "DP", one.clone(), LineType::Integer, "Approximate read depth (reads with MQ=255 or with bad mates are filtered)"));
+    lines.push(compound("FORMAT", "PL", Cardinality::G, LineType::Integer, "Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification"));
+    for (id, kind, description) in [
+        ("X_RN", LineType::String, "Read name"),
+        ("X_SCORE", LineType::Float, "Mapping score"),
+        ("X_FLAGS", LineType::Integer, "Read flags"),
+        ("X_MAPQ", LineType::Integer, "Read mapqe"),
+        ("X_CIGAR", LineType::String, "Read CIGAR"),
+        ("X_READ_COUNT", LineType::Integer, "Number of reads containing this location"),
+        ("X_FILTERED_COUNT", LineType::Integer, "Number of reads containing this location that pass the adjacent base filter"),
+        ("X_FC1", LineType::Integer, "Number of M bases different on read from references"),
+        ("X_FC2", LineType::Integer, "Number of features before score threshold filter"),
+        ("X_LENGTH", LineType::Integer, "Read length"),
+        ("X_EDIST", LineType::Integer, "Read Levenshtein edit distance from reference"),
+        ("X_INDEX", LineType::Integer, "Ordinal index, from start of the read, where the feature was found"),
+        ("X_SMQ_LEFT", LineType::Integer, "Ordinal Median quality of N bases to the left of the feature"),
+        ("X_SMQ_RIGHT", LineType::Integer, "Ordinal Median quality of N bases to the right of the feature"),
+        ("X_SMQ_LEFT_MEAN", LineType::Integer, "Ordinal Mean quality of N bases to the left of the feature"),
+        ("X_SMQ_RIGHT_MEAN", LineType::Integer, "Ordinal Mean quality of N bases to the right of the feature"),
+    ] {
+        lines.push(compound("INFO", id, one.clone(), kind, description));
+    }
+    for attribute in &settings.copy_attributes {
+        lines.push(compound(
+            "INFO",
+            &attribute.key(&settings.copy_attribute_prefix),
+            one.clone(),
+            line_type(&attribute.kind)?,
+            &attribute.description,
+        ));
+    }
+    if settings.report_all_alts {
+        for base in mapper::VALID_BASES_UPPER {
+            lines.push(compound(
+                "INFO",
+                &format!("X_SCORE_{}", base as char),
+                one.clone(),
+                LineType::Float,
+                "Base specific mapping score",
+            ));
+        }
+    }
+    if settings.report_all_alts || settings.tag_bases_with_adjacent_ref_diff {
+        lines.push(compound(
+            "INFO",
+            "X_ADJACENT_REF_DIFF",
+            one.clone(),
+            LineType::Flag,
+            "Adjacent base filter indication: indel in the adjacent 5 bases to the considered base on the read",
+        ));
+    }
+    // A set of lines, so an exact repeat collapses.
+    let mut unique: Vec<HeaderLine> = Vec::new();
+    for line in lines {
+        if !unique.contains(&line) {
+            unique.push(line);
+        }
+    }
+    for (index, sequence) in header.sequences.iter().enumerate() {
+        unique.push(HeaderLine::Contig {
+            index: index as i32,
+            fields: vec![
+                ("ID".to_string(), sequence.name.clone()),
+                ("length".to_string(), sequence.length.to_string()),
+            ],
+        });
+    }
+    let mut vcf_header = htsjdk_vcf::header::VcfHeader::new();
+    vcf_header.lines = unique;
+
+    let features = mapper::map_features(&entries, &header, &settings).map_err(flow_refusal)?;
+    let mut records = Vec::with_capacity(features.len());
+    for feature in &features {
+        let read = entries[feature.read].read;
+        let reference_allele = htsjdk_vcf::allele::Allele::create(&[feature.ref_base], true)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+        let alternate_bases: &[u8] =
+            if settings.report_all_alts && feature.read_base == feature.ref_base {
+                b"*"
+            } else {
+                std::slice::from_ref(&feature.read_base)
+            };
+        let alternate = htsjdk_vcf::allele::Allele::create(alternate_bases, false)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+        let mut record = htsjdk_vcf::variant::VariantContext::new(
+            &feature.contig,
+            feature.start as i64,
+            vec![reference_allele, alternate],
+        );
+        let int = |value: i32| Value::Int(i64::from(value));
+        let mut attributes: Vec<(String, Value)> = vec![
+            ("X_RN".to_string(), Value::Str(read.read_name.clone())),
+            (
+                "X_SCORE".to_string(),
+                Value::Str(gatk_engine::java_format::format_decimals(feature.score, 5)),
+            ),
+            ("X_FLAGS".to_string(), Value::Int(i64::from(read.flags))),
+            ("X_MAPQ".to_string(), Value::Int(i64::from(read.mapping_quality))),
+            ("X_CIGAR".to_string(), Value::Str(read.cigar.to_text())),
+            ("X_READ_COUNT".to_string(), int(feature.read_count)),
+            ("X_FILTERED_COUNT".to_string(), int(feature.filtered_count)),
+            ("X_FC1".to_string(), int(feature.non_ident_m_bases_on_read)),
+            ("X_FC2".to_string(), int(feature.features_on_read)),
+            ("X_LENGTH".to_string(), Value::Int(read.read_bases.len() as i64)),
+            ("X_EDIST".to_string(), int(feature.ref_edit_distance)),
+            ("X_INDEX".to_string(), int(feature.index)),
+        ];
+        if settings.smq_size.is_some() {
+            attributes.push(("X_SMQ_LEFT".to_string(), int(feature.smq_left)));
+            attributes.push(("X_SMQ_RIGHT".to_string(), int(feature.smq_right)));
+        }
+        if settings.smq_size_mean.is_some() {
+            attributes.push(("X_SMQ_LEFT_MEAN".to_string(), int(feature.smq_left_mean)));
+            attributes.push(("X_SMQ_RIGHT_MEAN".to_string(), int(feature.smq_right_mean)));
+        }
+        for attribute in &settings.copy_attributes {
+            let Ok(name) = <[u8; 2]>::try_from(attribute.name.as_bytes()) else {
+                continue;
+            };
+            let Some(value) = read.tags.get(htsjdk_bam::tag::Tag::new(&name)) else {
+                continue;
+            };
+            use htsjdk_bam::tag::TagValue;
+            let key = attribute.key(&settings.copy_attribute_prefix);
+            let limitation = || {
+                Thrown::non_user(
+                    PORT_LIMITATION,
+                    format!("--copy-attr {key}: this tag's type is not converted by the port. This message is the port's own and not GATK's."),
+                )
+            };
+            let converted = match (attribute.kind.as_str(), value) {
+                ("Integer", TagValue::Int(number)) => Value::Int(*number),
+                ("Integer", TagValue::Str(text)) => {
+                    Value::Int(text.parse::<i64>().map_err(|_| limitation())?)
+                }
+                ("Float", _) | ("Integer", _) => return Err(limitation()),
+                (_, TagValue::Str(text)) => Value::Str(text.clone()),
+                (_, TagValue::Int(number)) => Value::Str(number.to_string()),
+                (_, TagValue::Char(c)) => Value::Str((*c as char).to_string()),
+                _ => return Err(limitation()),
+            };
+            attributes.push((key, converted));
+        }
+        if let Some(scores) = feature.score_for_base {
+            for (slot, base) in mapper::VALID_BASES_UPPER.iter().enumerate() {
+                if !scores[slot].is_nan() {
+                    attributes.push((
+                        format!("X_SCORE_{}", *base as char),
+                        Value::Str(gatk_engine::java_format::format_decimals(scores[slot], 5)),
+                    ));
+                }
+            }
+        }
+        if feature.adjacent_ref_diff {
+            attributes.push(("X_ADJACENT_REF_DIFF".to_string(), Value::Bool(true)));
+        }
+        record.attributes = attributes;
+        records.push(record);
+    }
+    apply_sites_only(parser, &mut vcf_header, &mut records);
+    let text = write_vcf_honouring_lenient(parser, &vcf_header, &records)?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
 /// A floating-point argument with the tool's own default where it was not given.
 fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
     scalar(parser, long_name)
@@ -12220,25 +12503,15 @@ fn default_tool_vcf_header_lines(
     parser: &Parser,
     tool: &str,
 ) -> Vec<htsjdk_vcf::header::HeaderLine> {
-    if !flag(parser, "add-output-vcf-command-line") {
+    let Some(command_line) = command_line_header_line(parser, tool) else {
         return Vec::new();
-    }
+    };
     vec![
         htsjdk_vcf::header::HeaderLine::Unstructured {
             key: "source".to_string(),
             value: tool.to_string(),
         },
-        htsjdk_vcf::header::HeaderLine::Structured {
-            key: "GATKCommandLine".to_string(),
-            fields: vec![
-                ("ID".to_string(), tool.to_string()),
-                (
-                    "CommandLine".to_string(),
-                    crate::command_line::expanded(tool, parser),
-                ),
-                ("Version".to_string(), crate::TOOLKIT_VERSION.to_string()),
-            ],
-        },
+        command_line,
     ]
 }
 

@@ -347,6 +347,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "AddFlowBaseQuality" => Some(run_add_flow_base_quality),
         "AddFlowSNVQuality" => Some(run_add_flow_snv_quality),
         "FlowPairHMMAlignReadsToHaplotypes" => Some(run_flow_pairhmm_align_reads_to_haplotypes),
+        "FlowFeatureMapper" => Some(run_flow_feature_mapper),
         "GeneExpressionEvaluation" => Some(run_gene_expression_evaluation),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -714,6 +715,10 @@ fn run_calibrate_dragstr_model(args: &[String]) -> Result<Option<String>, Thrown
 
 fn run_learn_read_orientation_model(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::learn_read_orientation_model(&parsed("LearnReadOrientationModel", args)?)
+}
+
+fn run_flow_feature_mapper(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::flow_feature_mapper(&parsed("FlowFeatureMapper", args)?)
 }
 
 fn run_flow_pairhmm_align_reads_to_haplotypes(args: &[String]) -> Result<Option<String>, Thrown> {

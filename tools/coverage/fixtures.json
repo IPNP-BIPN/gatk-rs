@@ -5093,6 +5093,154 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "FlowFeatureMapper": {
+      "$why": [
+        "flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared sites, so the",
+        "feature queue emits several records at one position; one read is soft-clipped, one has an",
+        "insertion, every third is reverse, one is a duplicate and one in five carries an integer XI tag.",
+        "--reference is required in practice: without it the mapper indexes an empty array. The",
+        "surround, the score bounds and the read switches each move which features are written;",
+        "--copy-attr copies XI as an Integer or t0 as a String. GVCF output is not ported and left out.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index."
+      ],
+      "--input": [
+        "/work/fixtures/flow_snv.bam"
+      ],
+      "--output": [
+        "/work/out/features.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:300-500"
+      ],
+      "--snv-identical-bases": [
+        "1",
+        "2",
+        "0"
+      ],
+      "--snv-identical-bases-after": [
+        "0",
+        "1",
+        "3"
+      ],
+      "--limit-score": [
+        "NaN",
+        "5"
+      ],
+      "--max-score": [
+        "Infinity",
+        "10"
+      ],
+      "--min-score": [
+        "-Infinity",
+        "1"
+      ],
+      "--exclude-nan-scores": [
+        "false",
+        "true"
+      ],
+      "--include-dup-reads": [
+        "false",
+        "true"
+      ],
+      "--keep-negatives": [
+        "false",
+        "true"
+      ],
+      "--keep-supplementary-alignments": [
+        "false",
+        "true"
+      ],
+      "--include-qc-failed-reads": [
+        "false",
+        "true"
+      ],
+      "--copy-attr": [
+        "null",
+        "XI,Integer,xi",
+        "t0"
+      ],
+      "--copy-attr-prefix": [
+        "",
+        "bam_"
+      ],
+      "--emit-ref-confidence": [
+        "NONE",
+        "BP_RESOLUTION"
+      ],
+      "--mapping-feature": [
+        "SNV"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--gvcf-gq-bands": [],
+      "--floor-blocks": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
     }
   },
   "constraints": [

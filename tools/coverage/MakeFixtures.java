@@ -1014,6 +1014,97 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
     }
 
+    /**
+     * flow_snv.bam: overlapping Ultima reads over mutect_ref.fasta that carry substitutions, for
+     * FlowFeatureMapper. The substitutions sit at a few shared sites, so several reads report a
+     * feature at the same position and the queue decides their order. One read is soft-clipped,
+     * one carries an insertion, every third is on the reverse strand, one is a duplicate and one
+     * in five holds an integer XI tag; every other one carries a t0 string.
+     */
+    static void flowSnvFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final int[] sites = {230, 255, 301, 322, 377, 420, 461, 503, 555, 610};
+        final java.util.Random random = new java.util.Random(1223);
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int n = 0; n < 40; n++) {
+            final int start = 200 + n * 11;
+            final int length = 40 + random.nextInt(21);
+            final StringBuilder read = new StringBuilder(bases.substring(start - 1, start - 1 + length));
+            for (final int site : sites) {
+                if (site >= start + 2 && site < start + length - 2 && random.nextInt(3) != 0) {
+                    final int at = site - start;
+                    final char was = read.charAt(at);
+                    read.setCharAt(at, was == 'A' ? 'G' : was == 'G' ? 'T' : was == 'T' ? 'C' : 'A');
+                }
+            }
+            String cigar = length + "M";
+            String sequence = read.toString();
+            int alignmentStart = start;
+            if (n == 6) {
+                cigar = "5S" + (length - 5) + "M";
+                alignmentStart = start + 5;
+            } else if (n == 9) {
+                sequence = read.substring(0, 20) + "TT" + read.substring(20);
+                cigar = "20M2I" + (length - 20) + "M";
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("S:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(alignmentStart);
+            record.setCigarString(cigar);
+            record.setReadString(sequence);
+            final int total = sequence.length();
+            final byte[] quals = new byte[total];
+            final byte[] tp = new byte[total];
+            final StringBuilder t0 = new StringBuilder();
+            for (int i = 0; i < total; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : -1);
+                quals[i] = (byte) (tp[i] == 0 ? 25 + random.nextInt(16) : 5 + random.nextInt(20));
+                t0.append((char) ('!' + 10 + random.nextInt(31)));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(60);
+            record.setReadNegativeStrandFlag(n % 3 == 2);
+            record.setDuplicateReadFlag(n == 13);
+            record.setAttribute("RG", n % 4 == 3 ? "rgV" : "rgU");
+            record.setAttribute("tp", tp);
+            if (n % 2 == 0) {
+                record.setAttribute("t0", t0.toString());
+            }
+            if (n % 5 == 0) {
+                record.setAttribute("XI", n * 3);
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("flow_snv.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -1952,6 +2043,7 @@ public class MakeFixtures {
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
+        flowSnvFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.
