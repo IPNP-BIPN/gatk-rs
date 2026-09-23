@@ -22,10 +22,12 @@ sets of digests. The comparison inside one run is exact; a golden of those diges
 """
 
 import argparse
+import concurrent.futures
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -58,23 +60,41 @@ def main(argv):
         "--corpus-dir",
         help="where to write each tool's row-by-row corpus, which is what a divergence is read from",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="how many tools to run side by side; each row is still one container at a time",
+    )
     options = parser.parse_args(argv)
 
-    tools = {}
-    for tool in options.tool:
+    # The corpus once for every tool. Each array run used to build its own, which was most of a
+    # run's time and the same files every time; the containers mount it read-only, so the tools can
+    # share one copy and run side by side.
+    shared = tempfile.TemporaryDirectory(prefix="gatk-coverage-fixtures-")
+    sys.path.insert(0, str(RUNNER.parent))
+    import run_array
+
+    fixtures = run_array.build_fixtures(Path(shared.name))
+
+    def measure_one(tool):
         command = [
             sys.executable, str(RUNNER), "--tool", tool,
             "--t", str(options.t), "--port", options.port,
+            "--fixtures-dir", str(fixtures),
         ]
         if options.corpus_dir:
             corpus = Path(options.corpus_dir)
             corpus.mkdir(parents=True, exist_ok=True)
             command += ["--corpus", str(corpus / f"{tool}.t{options.t}.txt")]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-        )
+        return subprocess.run(command, capture_output=True, text=True)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, options.jobs)) as pool:
+        results = list(pool.map(measure_one, options.tool))
+
+    tools = {}
+    # In the order the tools were named, whatever order they finished in.
+    for tool, result in zip(options.tool, results):
         print(result.stdout[-4000:])
         if result.returncode != 0:
             print(result.stderr[-2000:])
