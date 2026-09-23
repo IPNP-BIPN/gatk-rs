@@ -1840,6 +1840,18 @@ public class MakeFixtures {
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("ase_sites.vcf").toString()});
         Files.writeString(dir.resolve("ase_sites_unindexed.vcf"), aseSites, StandardCharsets.UTF_8);
+        // A SAM TEXT donor for ConvertHeaderlessHadoopBamShardToBam, whose header is read by
+        // SamReaderFactory rather than the engine. The version is 1.5 because that tool keeps it,
+        // and the record after the header is where SAMTextReader stops reading it.
+        Files.writeString(dir.resolve("donor.sam"),
+                "@HD\tVN:1.5\tSO:queryname\n"
+                + "@SQ\tSN:chr1\tLN:100000\n"
+                + "@SQ\tSN:chr2\tLN:50000\n"
+                + "@RG\tID:donor\tSM:donor\tPL:ILLUMINA\n"
+                + "@CO\tdonated header\n"
+                + "r1\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\t####\n"
+                + "@CO\tafter the first record, so not header\n",
+                StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

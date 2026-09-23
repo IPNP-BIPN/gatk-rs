@@ -321,6 +321,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ASEReadCounter" => Some(run_ase_read_counter),
+        "ConvertHeaderlessHadoopBamShardToBam" => {
+            Some(run_convert_headerless_hadoop_bam_shard_to_bam)
+        }
         "DownsampleByDuplicateSet" => Some(run_downsample_by_duplicate_set),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
@@ -530,6 +533,15 @@ fn run_downsample_by_duplicate_set(args: &[String]) -> Result<Option<String>, Th
 
 fn run_ase_read_counter(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::ase_read_counter(&parsed("ASEReadCounter", args)?)
+}
+
+fn run_convert_headerless_hadoop_bam_shard_to_bam(
+    args: &[String],
+) -> Result<Option<String>, Thrown> {
+    runners::convert_headerless_hadoop_bam_shard_to_bam(&parsed(
+        "ConvertHeaderlessHadoopBamShardToBam",
+        args,
+    )?)
 }
 
 fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
