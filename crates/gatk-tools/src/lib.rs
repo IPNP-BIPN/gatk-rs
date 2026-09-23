@@ -139,6 +139,7 @@ pub mod read_walker;
 pub mod read_walker_refusal;
 pub mod reblock_gvcf;
 pub mod reference_block_concordance;
+pub mod reference_confidence_merger;
 pub mod reference_walker;
 pub mod remove_nearby_indels;
 pub mod rename_sample_in_vcf;

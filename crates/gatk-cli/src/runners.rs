@@ -933,6 +933,15 @@ fn variant_walker_startup_over(
     parser: &Parser,
     input: String,
 ) -> Result<VariantWalkerStart, Thrown> {
+    let (codec, text) = open_feature_input(&input)?;
+    let header = vcf_dictionary(&text);
+    variant_walker_validation(parser, input, text, codec, header)
+}
+
+/// A driving feature file opened: the codec its name resolves to and its text, decompressed when
+/// it is block compressed.
+fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, String), Thrown> {
+    let input = input.to_string();
     let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
         Thrown::user(
             index_feature_file::Refusal::NoSuitableCodecs {
@@ -964,9 +973,21 @@ fn variant_walker_startup_over(
     } else {
         String::from_utf8_lossy(&bytes).into_owned()
     };
+    Ok((codec, text))
+}
 
-    let header = vcf_dictionary(&text);
-
+/// The half of a variant walker's startup that follows the driving file's opening: the reads,
+/// the dictionaries compared, and `-L` resolved, against `header` as the features' dictionary.
+///
+/// A `MultiVariantWalker` reaches it with the dictionary its inputs' headers merge into, which is
+/// the one its data source reports.
+fn variant_walker_validation(
+    parser: &Parser,
+    input: String,
+    text: String,
+    codec: gatk_tools::feature_codec::Codec,
+    header: SamHeader,
+) -> Result<VariantWalkerStart, Thrown> {
     // `--read-index` is counted against the READS inputs, and both its refusals fire while they
     // are opened -- which a variant walker does whenever a command line names any, and before
     // anything decides whether the dictionaries are compared at all.
@@ -12199,6 +12220,418 @@ fn default_tool_vcf_header_lines(
             ],
         },
     ]
+}
+
+/// `CombineGVCFs`: several GVCFs walked together, grouped on start, and merged into one.
+///
+/// The walk and both merges are [`gatk_tools::combine_gvcfs`] and
+/// [`gatk_tools::reference_confidence_merger`]; the annotations it was asked for are resolved by
+/// [`gatk_annotation::catalogue`]. The runner is the `MultiVariantWalker` around them:
+///
+/// * **each `--variant` is named by its absolute path**, which is what a repeated input is refused
+///   by and what the MNP refusal names;
+/// * **the inputs' dictionaries merge into the features' dictionary**, and the startup that
+///   validates it against the reference and resolves `-L` is a variant walker's. Two inputs whose
+///   dictionaries differ are the port's limitation rather than a merge;
+/// * **the records are handed over in `MergingIterator`'s order**, a priority queue whose ties
+///   are not in input order;
+/// * **the header is the merged inputs' lines, the annotations' descriptions and the tool's own**,
+///   collapsed only where two lines are identical;
+/// * **a failure inside the traversal is wrapped** as a `GATKException` naming the record whose
+///   arrival flushed the group, and one in the last group or the final flush is not.
+pub fn combine_gvcfs(parser: &Parser) -> Outcome {
+    use gatk_annotation::catalogue;
+    use gatk_tools::combine_gvcfs as combine;
+    use gatk_tools::reference_confidence_merger as merger;
+    use htsjdk_vcf::header::{HeaderLine, VcfHeader};
+
+    let _ = resolve_read_filters(parser, "CombineGVCFs")?;
+    // `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`, which runs while the command line
+    // is parsed and so before anything is opened.
+    let resolved = catalogue::resolve(
+        &catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &["StandardAnnotation"],
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
+            return Err(limitation(&format!(
+                "--{configured} configures an annotation this tool never computes, and GATK \
+                 validates it against the annotations it resolved, which this port does not carry \
+                 yet."
+            )));
+        }
+    }
+
+    let paths = arguments(parser, "variant");
+    if paths.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument variant was missing: Argument 'variant' is required",
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+
+    // `initializeDrivingVariants`: a repeated input is refused before any is opened.
+    let names: Vec<String> = paths.iter().map(|path| absolute_input_name(path)).collect();
+    for (index, name) in names.iter().enumerate() {
+        if names[..index].contains(name) {
+            return Err(Thrown::user(format!(
+                "Bad input: Feature inputs must be unique: {name}"
+            )));
+        }
+    }
+    let mut opened = Vec::new();
+    for path in &paths {
+        let (codec, text) = open_feature_input(path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        opened.push((path.clone(), codec, text, file));
+    }
+    let dictionaries: Vec<SamHeader> = opened
+        .iter()
+        .map(|(_, _, text, _)| vcf_dictionary(text))
+        .collect();
+    let names_of = |header: &SamHeader| -> Vec<(String, i32)> {
+        header
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect()
+    };
+    if dictionaries
+        .iter()
+        .any(|header| names_of(header) != names_of(&dictionaries[0]))
+    {
+        return Err(limitation(
+            "--variant inputs whose sequence dictionaries differ are merged into one by GATK, \
+             which this port does not carry yet.",
+        ));
+    }
+    if dictionaries[0].sequences.is_empty() {
+        return Err(limitation(
+            "--variant inputs with no ##contig line have their dictionary derived from an index \
+             by GATK, which this port does not carry yet.",
+        ));
+    }
+    let (first_path, first_codec, first_text, _) = &opened[0];
+    let VariantWalkerStart { intervals, .. } = variant_walker_validation(
+        parser,
+        first_path.clone(),
+        first_text.clone(),
+        *first_codec,
+        dictionaries[0].clone(),
+    )?;
+    // `--dbsnp` is a feature input like any other: opened at startup, and refused there when it
+    // cannot be read. Its records are never consulted, since the merge annotates nothing.
+    let dbsnp = argument(parser, "dbsnp");
+    if let Some(path) = &dbsnp {
+        open_feature_input(path)?;
+    }
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs: Vec<String> = match master_dictionary(parser)? {
+        Some(master) => master
+            .sequences
+            .iter()
+            .map(|sequence| sequence.name.clone())
+            .collect(),
+        None => reference
+            .sequences()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+    };
+
+    // `MultiVariantDataSource.getMergedHeader`: the one header, or the smart merge of them all.
+    let merged_lines: Vec<HeaderLine> = if opened.len() > 1 {
+        let versions: Vec<Option<String>> = opened
+            .iter()
+            .map(|(_, _, _, file)| {
+                file.header_version
+                    .map(|version| version.version_string().to_string())
+            })
+            .collect();
+        let sources: Vec<htsjdk_vcf::merge::Source> = opened
+            .iter()
+            .zip(&versions)
+            .map(|((_, _, _, file), version)| htsjdk_vcf::merge::Source {
+                header: &file.header,
+                version: version.as_deref(),
+            })
+            .collect();
+        htsjdk_vcf::merge::smart_merge_headers(&sources, true)
+            .map_err(|error| Thrown::non_user("java.lang.IllegalStateException", error.message()))?
+            .0
+    } else {
+        opened[0].3.header.lines.clone()
+    };
+    let merged_header = VcfHeader {
+        lines: merged_lines.clone(),
+        samples: Vec::new(),
+    };
+
+    let somatic = flag(parser, "input-is-somatic");
+    let drop_somatic_filtering = flag(parser, "drop-somatic-filtering-annotations");
+    let merger = merger::Merger {
+        header: &merged_header,
+        annotations: resolved.clone(),
+        somatic,
+        drop_somatic_filtering_annotations: drop_somatic_filtering,
+        call_genotypes: flag(parser, "call-genotypes"),
+    };
+
+    // `getVCFWriter`.
+    let mut samples: Vec<String> = opened
+        .iter()
+        .flat_map(|(_, _, _, file)| file.header.samples.clone())
+        .collect();
+    samples.sort();
+    samples.dedup();
+    let mut lines = merged_lines;
+    lines.extend(default_tool_vcf_header_lines(parser, "CombineGVCFs"));
+    lines.extend(catalogue::descriptions(&resolved, false, false));
+    // The engine's overlap line for `--dbsnp`, and then the tool's own copy of the same line.
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
+    }
+    lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DP"));
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
+    }
+    if somatic {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_format_line(
+            "FT",
+        ));
+        if !drop_somatic_filtering {
+            // `GATKVCFHeaderLines.getEquivalentFormatHeaderLine`, the INFO line moved to FORMAT.
+            for (key, annotation) in [
+                ("MMQ", "MappingQuality"),
+                ("MBQ", "BaseQuality"),
+                ("MPOS", "ReadPosition"),
+                ("MFRL", "FragmentLength"),
+            ] {
+                let line = catalogue::entry(annotation)
+                    .expect("a catalogued annotation")
+                    .description_lines()
+                    .into_iter()
+                    .find(|line| matches!(line, HeaderLine::Compound { id, .. } if id == key))
+                    .expect("the annotation's own line");
+                if let HeaderLine::Compound {
+                    id,
+                    number,
+                    line_type,
+                    description,
+                    extra,
+                    ..
+                } = line
+                {
+                    lines.push(HeaderLine::Compound {
+                        key: "FORMAT".to_string(),
+                        id,
+                        number,
+                        line_type,
+                        description,
+                        extra,
+                    });
+                }
+            }
+        }
+    }
+    let mut header = VcfHeader {
+        lines,
+        samples: samples.clone(),
+    };
+
+    // `-L` queries every input by interval, so each needs an index before a record is read.
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    if spans.is_some() {
+        if let Some((path, ..)) = opened.iter().find(|(path, ..)| !has_feature_index(path)) {
+            return Err(Thrown::user(
+                gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                    path: path.clone(),
+                }
+                .message(),
+            ));
+        }
+    }
+    let reached: Vec<Vec<htsjdk_vcf::variant::VariantContext>> = opened
+        .iter()
+        .map(|(_, _, _, file)| {
+            let loci: Vec<Locus> = file
+                .records
+                .iter()
+                .map(|record| Locus {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    stop: record.stop as i32,
+                })
+                .collect();
+            gatk_engine::variant_source::traverse(&loci, spans)
+                .iter()
+                .filter_map(|locus| {
+                    let index = loci.iter().position(|other| std::ptr::eq(other, *locus))?;
+                    Some(file.records[index].clone())
+                })
+                .collect()
+        })
+        .collect();
+
+    // `VariantContextComparator` over the merged dictionary's contig order.
+    let merged_contigs: Vec<String> = dictionaries[0]
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let keys: Vec<Vec<(i64, i64)>> = reached
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .map(|record| {
+                    let index = merged_contigs
+                        .iter()
+                        .position(|name| *name == record.contig)
+                        .map_or(-1, |index| index as i64);
+                    (index, record.start)
+                })
+                .collect()
+        })
+        .collect();
+
+    let user_intervals: Option<Vec<(String, i64, i64)>> = intervals.as_ref().map(|list| {
+        list.iter()
+            .map(|interval| {
+                (
+                    interval.contig.clone(),
+                    interval.start as i64,
+                    interval.end as i64,
+                )
+            })
+            .collect()
+    });
+    let mut source = ReferenceBases(&mut reference);
+    let mut walker = combine::Walker::new(
+        merger,
+        combine::Arguments {
+            base_pair_resolution: flag(parser, "convert-to-base-pair-resolution"),
+            break_bands_at_multiples_of: number_or(parser, "break-bands-at-multiples-of", 0) as i64,
+            call_genotypes: flag(parser, "call-genotypes"),
+            ignore_variants_starting_outside_interval: flag(
+                parser,
+                "ignore-variants-starting-outside-interval",
+            ),
+            combine_variants_distance: number_or(parser, "combine-variants-distance", 0) as i64,
+            max_distance: number_or(parser, "max-distance", i32::MAX) as i64,
+            ref_padding: number_or(parser, "ref-padding", 1) as i64,
+        },
+        &mut source,
+        contigs,
+        user_intervals,
+    );
+
+    let failed = |failure: combine::Failure| match failure {
+        combine::Failure::User(message) => Thrown::user(message),
+        combine::Failure::Runtime { class, message } => {
+            Thrown::non_user(java_class_name(&class), message)
+        }
+    };
+    let order = combine::merging_order(&keys).map_err(failed)?;
+    for (input, index) in order {
+        let record = &reached[input][index];
+        walker
+            .accept(combine::Sourced {
+                record: record.clone(),
+                source: names[input].clone(),
+            })
+            .map_err(|_| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "Exception thrown at {}:{} {}",
+                        record.contig,
+                        record.start,
+                        java_variant_context_string(record, &names[input])
+                    ),
+                )
+            })?;
+    }
+    walker.finish().map_err(failed)?;
+    if walker.cut_blocks {
+        eprintln!(
+            "WARN  CombineGVCFs - You have asked for an interval that cuts in the middle of one or \
+             more gVCF blocks. Please note that this will cause you to lose records that don't end \
+             within your interval."
+        );
+    }
+
+    let mut written = std::mem::take(&mut walker.written);
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut header, &mut written);
+    let text = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
+/// The reference as the walker reads it, which is the engine's source queried base by base.
+struct ReferenceBases<'a>(&'a mut gatk_engine::reference::ReferenceFileSource);
+
+impl gatk_tools::combine_gvcfs::Reference for ReferenceBases<'_> {
+    fn length(&self, contig: &str) -> i64 {
+        self.0.sequence_length(contig).unwrap_or(0) as i64
+    }
+
+    fn bases(&mut self, contig: &str, start: i64, end: i64) -> Vec<u8> {
+        self.0
+            .query(contig, start as i32, end as i32)
+            .unwrap_or_default()
+    }
+}
+
+/// `FeatureInput.toString()` for an untagged input: its path made absolute.
+fn absolute_input_name(path: &str) -> String {
+    std::path::absolute(path)
+        .map(|absolute| absolute.display().to_string())
+        .unwrap_or_else(|_| path.to_string())
+}
+
+/// The Java class a walker failure names, as the `'static` string a [`Thrown`] carries.
+fn java_class_name(class: &str) -> &'static str {
+    match class {
+        "java.lang.IllegalStateException" => "java.lang.IllegalStateException",
+        "java.lang.IllegalArgumentException" => "java.lang.IllegalArgumentException",
+        "java.lang.ArrayIndexOutOfBoundsException" => "java.lang.ArrayIndexOutOfBoundsException",
+        "java.lang.IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
+        "java.lang.ClassCastException" => "java.lang.ClassCastException",
+        "java.lang.NumberFormatException" => "java.lang.NumberFormatException",
+        "org.broadinstitute.hellbender.exceptions.GATKException" => {
+            "org.broadinstitute.hellbender.exceptions.GATKException"
+        }
+        _ => "java.lang.RuntimeException",
+    }
 }
 
 /// `RemoveNearbyIndels`, the first tool here that writes a VCF of its own records.

@@ -13,6 +13,7 @@ name = "gatk-rs"
 path = "src/main.rs"
 
 [dependencies]
+gatk-annotation = { path = "../gatk-annotation" }
 gatk-barclay = { path = "../gatk-barclay" }
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }

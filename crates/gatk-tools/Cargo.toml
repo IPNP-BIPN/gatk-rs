@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# CombineGVCFs combines the raw annotations its inputs carry, and reads which ones through the
+# annotation catalogue.
+gatk-annotation = { path = "../gatk-annotation" }
 gatk-engine = { path = "../gatk-engine" }
 gatk-readfilter = { path = "../gatk-readfilter" }
 htsjdk-bam.workspace = true

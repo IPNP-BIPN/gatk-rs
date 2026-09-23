@@ -20,6 +20,7 @@ pub mod allele_pseudo_depth;
 pub mod allele_specific_rank_sum;
 pub mod allele_specific_site_statistics;
 pub mod allele_specific_strand_bias;
+pub mod catalogue;
 pub mod chromosome_counts;
 pub mod coverage;
 pub mod decimal_format;

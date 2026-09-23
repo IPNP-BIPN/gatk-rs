@@ -301,6 +301,7 @@ jobs:
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
             --tool CRAMIssue8768Detector \
+            --tool CombineGVCFs \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
