@@ -1831,6 +1831,7 @@ public class MakeFixtures {
         svConcordanceFixtures(dir);
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
+        referenceBlockFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1859,6 +1860,40 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `ReferenceBlockConcordance` compares: two single-sample GVCFs whose reference blocks cut
+     * the same stretch differently and at different confidences, each with a variant site the
+     * hom-ref filter drops, and a two-sample GVCF the length extraction refuses.
+     */
+    static void referenceBlockFixtures(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=NON_REF,Description=\"Any other allele\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n"
+                + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"Minimum depth\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        Files.writeString(dir.resolve("rbc_truth.g.vcf"), header + "\tS1\n"
+                + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=100\tGT:GQ:MIN_DP\t0/0:40:10\n"
+                + "chr1\t101\t.\tA\tC,<NON_REF>\t50\t.\t.\tGT:GQ\t0/1:50\n"
+                + "chr1\t102\t.\tC\t<NON_REF>\t.\t.\tEND=300\tGT:GQ:MIN_DP\t0/0:60:20\n"
+                + "chr1\t301\t.\tG\t<NON_REF>\t.\t.\tEND=301\tGT:GQ:MIN_DP\t0/0:99:30\n"
+                + "chr2\t10\t.\tT\t<NON_REF>\t.\t.\tEND=50\tGT:GQ:MIN_DP\t0/0:20:5\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("rbc_eval.g.vcf"), header + "\tS1\n"
+                + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=50\tGT:GQ:MIN_DP\t0/0:30:10\n"
+                + "chr1\t51\t.\tT\t<NON_REF>\t.\t.\tEND=200\tGT:GQ:MIN_DP\t0/0:45:12\n"
+                + "chr1\t201\t.\tA\tG,<NON_REF>\t60\t.\t.\tGT:GQ\t1/1:60\n"
+                + "chr1\t202\t.\tC\t<NON_REF>\t.\t.\tEND=301\tGT:GQ:MIN_DP\t0/0:99:25\n"
+                + "chr2\t20\t.\tT\t<NON_REF>\t.\t.\tEND=40\tGT:GQ:MIN_DP\t0/0:20:5\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("rbc_multi.g.vcf"), header + "\tS1\tS2\n"
+                + "chr1\t1\t.\tA\t<NON_REF>\t.\t.\tEND=100\tGT:GQ\t0/0:40\t0/0:30\n",
+                StandardCharsets.UTF_8);
     }
 
     /**

@@ -4073,6 +4073,48 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "ReferenceBlockConcordance": {
+      "$why": [
+        "--truth and --evaluation are two single-sample GVCFs whose blocks cut chr1 and chr2 differently and",
+        "at different GQs, each with a variant site the hom-ref filter drops; --evaluation also takes a two-sample",
+        "GVCF the length extraction refuses. The three histogram outputs carry two names each. Every metrics",
+        "file is headed by the time the run started, which run_array replaces before comparing. The engine's",
+        "read, interval and dictionary arguments are held out."
+      ],
+      "--truth": [
+        "/work/fixtures/rbc_truth.g.vcf",
+        "/work/fixtures/rbc_eval.g.vcf"
+      ],
+      "--evaluation": [
+        "/work/fixtures/rbc_eval.g.vcf",
+        "/work/fixtures/rbc_multi.g.vcf"
+      ],
+      "--truth-block-histogram": [
+        "/work/out/truth.hist",
+        "/work/out/truth2.hist"
+      ],
+      "--eval-block-histogram": [
+        "/work/out/eval.hist",
+        "/work/out/eval2.hist"
+      ],
+      "--confidence-concordance-histogram": [
+        "/work/out/concordance.hist",
+        "/work/out/concordance2.hist"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--confidence": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
     }
   },
   "constraints": [
