@@ -9346,6 +9346,249 @@ pub fn gene_expression_evaluation(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `CRAMIssue8768Detector`, a `CommandLineProgram` that walks a CRAM container by container.
+///
+/// The decision and the report are [`gatk_tools::cram_issue_8768`]'s. The runner reads each
+/// container's shape, and for a single-reference one decodes its records against the reference to
+/// count the bases they hold and how many of the aligned ones differ from it, which is
+/// `SequenceUtil.countMismatches` over the alignment blocks of the cigar the read features rebuild.
+/// What `doWork` returns is the analyzer's code, 1 when a contig looked corrupt.
+pub fn cram_issue_8768_detector(parser: &Parser) -> Outcome {
+    use gatk_tools::cram_issue_8768 as detector;
+    use htsjdk_cram::external_codecs::SliceReadStreams;
+    use htsjdk_cram::record_read::{read_record, RecordReaders, SliceContext};
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let tsv_output = argument(parser, "output-tsv");
+    let threshold = scalar(parser, "mismatch-rate-threshold")
+        .and_then(|text| text.parse::<f64>().ok())
+        .unwrap_or(detector::DEFAULT_MISMATCH_RATE_THRESHOLD);
+    let verbose = flag(parser, "verbose");
+    let echo = flag(parser, "echo-to-stdout");
+
+    let cram = std::fs::read(&input)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+    if cram.len() < 4 || &cram[..4] != b"CRAM" {
+        return Err(Thrown::non_user(
+            "java.lang.RuntimeException",
+            "Input does not have a valid CRAM header.",
+        ));
+    }
+    let walk = htsjdk_cram::file::read_file(&cram)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?;
+    let text_length = walk
+        .sam_header
+        .get(..4)
+        .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]).max(0) as usize)
+        .unwrap_or(0);
+    let header_text = String::from_utf8_lossy(
+        walk.sam_header
+            .get(4..(4 + text_length).min(walk.sam_header.len()))
+            .unwrap_or(&[]),
+    )
+    .into_owned();
+    let sam_header = htsjdk_bam::reader::parse_header_text(&header_text);
+    let names: Vec<String> = sam_header
+        .sequences
+        .iter()
+        .map(|s| s.name.clone())
+        .collect();
+
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut contig_bases: std::collections::HashMap<i32, Vec<u8>> =
+        std::collections::HashMap::new();
+
+    // The shape of every container, read without decoding a record.
+    let metas: Vec<detector::ContainerMeta> = walk
+        .containers
+        .iter()
+        .map(|container| {
+            let header = &container.header;
+            detector::ContainerMeta {
+                context: match header.reference_context_id {
+                    -2 => detector::RefContext::Multiple,
+                    -1 => detector::RefContext::UnmappedUnplaced,
+                    id => detector::RefContext::Single(id),
+                },
+                start: header.alignment_start,
+                span: header.alignment_span,
+                slices: container.slices.len(),
+                reference_required: container
+                    .compression_header
+                    .as_ref()
+                    .map(|compression| compression.preservation.reference_required),
+                embedded_reference: container
+                    .slices
+                    .iter()
+                    .map(|slice| slice.header.embedded_reference_content_id)
+                    .find(|id| *id != detector::EMBEDDED_REFERENCE_ABSENT_CONTENT_ID)
+                    .unwrap_or(detector::EMBEDDED_REFERENCE_ABSENT_CONTENT_ID),
+                bases: 0,
+                mismatches: 0,
+                is_eof: header.is_eof(),
+            }
+        })
+        .collect();
+
+    // `analyzeContainerBaseMismatches`, only for the containers the walk records.
+    let mut stats = |index: usize| -> Result<(i64, i64), Thrown> {
+        let container = &walk.containers[index];
+        let id = container.header.reference_context_id;
+        let Some(compression) = container.compression_header.as_ref() else {
+            return Ok((0, 0));
+        };
+        if let std::collections::hash_map::Entry::Vacant(slot) = contig_bases.entry(id) {
+            // `ReferenceSource` hands over the whole contig of that NAME, however long the CRAM's
+            // own header says it is.
+            let name = names.get(id as usize).cloned().unwrap_or_default();
+            let length = reference
+                .sequences()
+                .iter()
+                .find(|(contig, _)| contig == &name)
+                .map_or(0, |(_, length)| *length as i32);
+            let fetched = reference.query(&name, 1, length).map_err(|_| {
+                Thrown::non_user(
+                    "java.lang.IllegalArgumentException",
+                    format!("Failure getting reference bases for sequence {name}"),
+                )
+            })?;
+            slot.insert(fetched.to_ascii_uppercase());
+        }
+        let reference_bases = &contig_bases[&id];
+        let matrix = htsjdk_cram::substitution_matrix::SubstitutionMatrix::from_encoded(
+            compression.preservation.substitution_matrix,
+        );
+        let readers = RecordReaders::new(&compression.encodings)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?;
+        let (mut bases, mut mismatches) = (0i64, 0i64);
+        for slice in &container.slices {
+            let blocks = slice.block_bytes();
+            let mut streams = SliceReadStreams::new(&blocks);
+            let context = SliceContext {
+                reference_context: slice.header.reference_context_id,
+                alignment_start: slice.header.alignment_start,
+            };
+            let mut previous = slice.header.alignment_start;
+            for _ in 0..slice.header.record_count.max(0) {
+                let record = read_record(&readers, compression, &context, &mut streams, previous)
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?;
+                previous = record.alignment_start;
+                let unknown = record.flags.cram & htsjdk_cram::record_flags::CF_UNKNOWN_BASES != 0;
+                let read_bases = if record.flags.bam & htsjdk_cram::record_flags::READ_UNMAPPED != 0
+                {
+                    record.read_bases.clone()
+                } else {
+                    htsjdk_cram::read_features::restore_read_bases(
+                        &record.read_features,
+                        unknown,
+                        record.alignment_start,
+                        record.read_length,
+                        reference_bases,
+                        0,
+                        &matrix,
+                    )
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, error.message()))?
+                };
+                bases += read_bases.len() as i64;
+                let cigar = htsjdk_cram::read_features::cigar_for_read_features(
+                    &record.read_features,
+                    record.read_length,
+                );
+                for block in
+                    htsjdk_bam::alignment_block::alignment_blocks(&cigar, record.alignment_start)
+                {
+                    for i in 0..block.length {
+                        let read_base = read_bases.get((block.read_start - 1 + i) as usize);
+                        let reference_base =
+                            reference_bases.get((block.reference_start - 1 + i) as usize);
+                        if let (Some(read_base), Some(reference_base)) = (read_base, reference_base)
+                        {
+                            if !read_base.eq_ignore_ascii_case(reference_base) {
+                                mismatches += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok((bases, mismatches))
+    };
+    let info = detector::CramHeaderInfo {
+        file_name: std::path::Path::new(&input)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        version: format!("{}.{}", walk.definition.major, walk.definition.minor),
+        id_base64: base64_standard(&walk.definition.id),
+    };
+    let analysis = match detector::analyse_with(&metas, verbose, &mut stats) {
+        Ok(analysis) => analysis,
+        Err(detector::AnalyseError::Duplicate(duplicate)) => {
+            return Err(Thrown::non_user(
+                duplicate.java_class(),
+                duplicate.message(),
+            ));
+        }
+        Err(detector::AnalyseError::Stats(thrown)) => {
+            // `analyzeCRAMHeader` had already written its three lines, and `onShutdown` closes
+            // the stream on the way out.
+            write_file(
+                &output,
+                format!(
+                    "CRAM File Name: {}\nCRAM Version: {}\nCRAM ID Contents: {}\n",
+                    info.file_name, info.version, info.id_base64
+                )
+                .as_bytes(),
+            )?;
+            return Err(thrown);
+        }
+    };
+    let report = detector::report(&info, &analysis, threshold, echo);
+    write_file(&output, report.text.as_bytes())?;
+    if analysis.foreign.is_none() {
+        if let Some(path) = &tsv_output {
+            write_file(
+                path,
+                detector::tsv(&analysis, &info.file_name, &names).as_bytes(),
+            )?;
+        }
+    }
+    print!("{}", report.stdout);
+    Ok(Some(report.code.to_string()))
+}
+
+/// `Base64.getEncoder().encodeToString`: the standard alphabet, padded.
+fn base64_standard(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            if i <= chunk.len() {
+                out.push(ALPHABET[((n >> shift) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// `FastaAlternateReferenceMaker.apply`, which is the maker's with a VCF applied at every locus.
 ///
 /// The startup is `FastaReferenceMaker`'s to the line, because it IS that class's: `-L` resolves

@@ -1009,6 +1009,77 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * CRAMs for `CRAMIssue8768Detector` over `two_contigs.fasta`: three reads a container, the first
+     * container of each contig opening at position 1, so the second container of each is the one
+     * the detector suspects; every third read carries four mismatches and the last reads are
+     * unmapped. The same reads two slices to a container make a file the detector calls foreign.
+     */
+    static void cramIssueFixtures(final Path dir) throws Exception {
+        final Path referencePath = dir.resolve("two_contigs.fasta");
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        final java.util.Map<String, String> contigs = new java.util.LinkedHashMap<>();
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(referencePath)) {
+            for (final String name : new String[] {"chr1", "chr2"}) {
+                final String bases = new String(file.getSequence(name).getBases(), StandardCharsets.US_ASCII);
+                contigs.put(name, bases);
+                dictionary.addSequence(new SAMSequenceRecord(name, bases.length()));
+            }
+        }
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rgX");
+        group.setSample("cram");
+        header.addReadGroup(group);
+        final List<SAMRecord> records = new ArrayList<>();
+        int index = 0;
+        for (final java.util.Map.Entry<String, String> contig : contigs.entrySet()) {
+            for (int start = 1; start <= 400; start += 40, index++) {
+                final StringBuilder bases = new StringBuilder(contig.getValue().substring(start - 1, start - 1 + 30));
+                if (index % 3 == 2) {
+                    for (final int offset : new int[] {3, 9, 15, 21}) {
+                        bases.setCharAt(offset, bases.charAt(offset) == 'A' ? 'C' : 'A');
+                    }
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName("X:" + index);
+                record.setReferenceName(contig.getKey());
+                record.setAlignmentStart(start);
+                record.setCigarString("30M");
+                record.setMappingQuality(60);
+                record.setReadString(bases.toString());
+                record.setBaseQualityString("I".repeat(30));
+                record.setAttribute("RG", "rgX");
+                records.add(record);
+            }
+        }
+        for (int u = 0; u < 3; u++) {
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("U:" + u);
+            record.setReadUnmappedFlag(true);
+            record.setReadString("ACGTACGTACGTACGTACGTACGTACGTAC");
+            record.setBaseQualityString("I".repeat(30));
+            record.setAttribute("RG", "rgX");
+            records.add(record);
+        }
+        final htsjdk.samtools.cram.ref.ReferenceSource source = new htsjdk.samtools.cram.ref.ReferenceSource(referencePath);
+        for (final Object[] spec : new Object[][] {{"issue8768.cram", 1}, {"multislice.cram", 2}}) {
+            final htsjdk.samtools.cram.structure.CRAMEncodingStrategy strategy =
+                    new htsjdk.samtools.cram.structure.CRAMEncodingStrategy()
+                            .setMinimumSingleReferenceSliceSize(1)
+                            .setReadsPerSlice(3)
+                            .setSlicesPerContainer((Integer) spec[1]);
+            try (final OutputStream os = Files.newOutputStream(dir.resolve((String) spec[0]))) {
+                final htsjdk.samtools.CRAMFileWriter writer = new htsjdk.samtools.CRAMFileWriter(
+                        strategy, os, null, true, source, header, (String) spec[0]);
+                records.forEach(writer::addAlignment);
+                writer.close();
+            }
+        }
+    }
+
     static void twoGroups(final Path bam) {
         final SAMFileHeader header = new SAMFileHeader();
         final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
@@ -2181,6 +2252,8 @@ public class MakeFixtures {
             both.startSequence("chr1").appendBases(bases.toString());
             both.startSequence("chr2").appendBases(bases.toString());
         }
+        // The CRAMs `CRAMIssue8768Detector` reads, written against that reference.
+        cramIssueFixtures(dir);
         Files.writeString(dir.resolve("tumour.seg"),
                 "CONTIG\tSTART\tEND\tCALL\tMEAN\n"
                         + "chr1\t1\t1000\t+\t0.9\n"
