@@ -3489,6 +3489,71 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "ApplyVQSR": {
+      "$why": [
+        "--variant is vqsr_input.vcf: SNPs, an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP",
+        "beside a spanning deletion, and a SNP filtered LowQual; and vqsr_snp_applied.vcf, the REFERENCE's own",
+        "-AS SNP pass over it, which makes a row a second run. --recal-file is the per-allele recal file",
+        "first (which -AS matches allele by allele and a site run takes at the right end), then the site",
+        "file, which -AS refuses at its first allele, and the site file without its index, refused at the first record. --tranches-file is SNP or INDEL, read only",
+        "with a --truth-sensitivity-filter-level (99.0 or none), and absent in the third value, the",
+        "reference's NullPointerException. --lod-score-cutoff is none or 1.0, the pair of them the mutual",
+        "exclusion. --ignore-filter lets LowQual through or is absent. --output is plain or BGZF.",
+        "The index, the filtering mode, the command line and the engine's read and interval arguments are",
+        "held as for FilterVariantTranches."
+      ],
+      "--variant": [
+        "/work/fixtures/vqsr_input.vcf",
+        "/work/fixtures/vqsr_snp_applied.vcf"
+      ],
+      "--recal-file": [
+        "/work/fixtures/vqsr_alleles.recal.vcf",
+        "/work/fixtures/vqsr_sites.recal.vcf",
+        "/work/fixtures/vqsr_unindexed.recal.vcf"
+      ],
+      "--tranches-file": [
+        "/work/fixtures/snp.tranches",
+        "/work/fixtures/indel.tranches",
+        "null"
+      ],
+      "--truth-sensitivity-filter-level": [
+        "99.0",
+        "null"
+      ],
+      "--lod-score-cutoff": [
+        "null",
+        "1.0"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL",
+        "BOTH"
+      ],
+      "--ignore-filter": [
+        "LowQual",
+        "null"
+      ],
+      "--output": [
+        "/work/out/applied.vcf",
+        "/work/out/applied.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
     }
   },
   "constraints": [

@@ -588,6 +588,7 @@ jobs:
             --tool ExampleMultiFeatureWalker \
             --tool CalculateAverageCombinedAnnotations \
             --tool FilterVariantTranches \
+            --tool ApplyVQSR \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus

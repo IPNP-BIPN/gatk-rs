@@ -320,6 +320,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ExampleMultiFeatureWalker" => Some(run_example_multi_feature_walker),
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
+        "ApplyVQSR" => Some(run_apply_vqsr),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "DownsampleByDuplicateSet" => Some(run_downsample_by_duplicate_set),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
@@ -534,6 +535,10 @@ fn run_ase_read_counter(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_variant_tranches(&parsed("FilterVariantTranches", args)?)
+}
+
+fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

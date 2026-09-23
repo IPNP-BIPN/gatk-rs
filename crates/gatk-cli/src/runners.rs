@@ -892,7 +892,16 @@ fn variant_walker_startup(parser: &Parser, tool: &str) -> Result<VariantWalkerSt
     let input = argument(parser, "variant").ok_or_else(|| {
         Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
     })?;
+    variant_walker_startup_over(parser, input)
+}
 
+/// [`variant_walker_startup`] over a driving file already chosen, which is what a
+/// `MultiVariantWalker` with one `--variant` reaches: its collection holds the path, and the rest
+/// of the startup is a variant walker's.
+fn variant_walker_startup_over(
+    parser: &Parser,
+    input: String,
+) -> Result<VariantWalkerStart, Thrown> {
     let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
         Thrown::user(
             index_feature_file::Refusal::NoSuitableCodecs {
@@ -13158,5 +13167,554 @@ pub fn ase_read_counter(parser: &Parser) -> Outcome {
         }
     }
     finish(&text)?;
+    Ok(None)
+}
+
+/// `VariantContext.toString()` for a record read from a VCF, which a walker's wrapper prints whole.
+///
+/// The same string [`variant_context_to_string`] builds for `VariantsToTable`'s own record type, over
+/// htsjdk-rs's instead. The source is the caller's: `MultiVariantDataSource` names each record by
+/// the path it came from, where a plain variant walker's records say `Unknown`. The span is
+/// `getEnd()` and so reads `END`, the
+/// alleles are sorted reference first, the attributes are a `TreeMap`'s `toString`, and the
+/// genotypes are the unparsed text while they are still lazy and `GenotypesContext.toString()`
+/// otherwise, which for a file with no samples is `[]`.
+fn java_variant_context_string(
+    record: &htsjdk_vcf::variant::VariantContext,
+    source: &str,
+) -> String {
+    use htsjdk_vcf::variant::Value;
+    let position = if record.start == record.stop {
+        format!("{}:{}", record.contig, record.start)
+    } else {
+        format!("{}:{}-{}", record.contig, record.start, record.stop)
+    };
+    let qual = if record.has_log10_p_error() {
+        format!("{:.2}", record.phred_scaled_qual())
+    } else {
+        ".".to_string()
+    };
+    let reference = record.reference().display_string();
+    let alternates: Vec<String> = record
+        .alternate_alleles()
+        .iter()
+        .map(|allele| allele.display_string())
+        .collect();
+    let mut sorted = alternates.clone();
+    sorted.sort();
+    let alleles = std::iter::once(format!("{reference}*"))
+        .chain(sorted)
+        .collect::<Vec<String>>()
+        .join(", ");
+    fn java(value: &Value) -> String {
+        match value {
+            Value::Missing => "null".to_string(),
+            Value::Bool(flag) => flag.to_string(),
+            Value::Str(text) => text.clone(),
+            Value::List(items) => format!(
+                "[{}]",
+                items.iter().map(java).collect::<Vec<String>>().join(", ")
+            ),
+            other => other.format().unwrap_or_default(),
+        }
+    }
+    let mut attributes: Vec<(String, String)> = record
+        .attributes
+        .iter()
+        .map(|(key, value)| (key.clone(), java(value)))
+        .collect();
+    attributes.sort();
+    let attributes = attributes
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<String>>()
+        .join(", ");
+    let genotypes = match record.genotypes.unparsed() {
+        Some(text) => text.to_string(),
+        None if record.genotypes.is_empty() => "[]".to_string(),
+        None => "[...]".to_string(),
+    };
+    format!(
+        "[VC {source} @ {position} Q{qual} of type={} alleles=[{alleles}] attr={{{attributes}}} GT={genotypes} filters={}",
+        variant_type_name(&reference, &alternates),
+        record.filters.clone().unwrap_or_default().join(",")
+    )
+}
+
+/// `getAttributeAsString(key, default)`: a list is joined at `,`, whatever it held.
+fn attribute_as_string(record: &htsjdk_vcf::variant::VariantContext, key: &str) -> Option<String> {
+    use htsjdk_vcf::variant::Value;
+    record
+        .attributes
+        .iter()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| match value {
+            Value::Str(text) => text.clone(),
+            Value::List(items) => items
+                .iter()
+                .map(|item| item.format().unwrap_or_default())
+                .collect::<Vec<String>>()
+                .join(","),
+            Value::Bool(flag) => flag.to_string(),
+            other => other.format().unwrap_or_default(),
+        })
+}
+
+/// A recal file's record, as `ApplyVQSR` reads one.
+struct RecalVariant<'a>(&'a htsjdk_vcf::variant::VariantContext);
+
+impl gatk_tools::apply_vqsr::RecalRecord for RecalVariant<'_> {
+    fn start(&self) -> i32 {
+        self.0.start as i32
+    }
+    fn end(&self) -> i32 {
+        self.0.stop as i32
+    }
+    fn lod_string(&self) -> Option<String> {
+        attribute_as_string(self.0, gatk_tools::apply_vqsr::VQS_LOD_KEY)
+    }
+    fn culprit(&self) -> Option<String> {
+        attribute_as_string(self.0, gatk_tools::apply_vqsr::CULPRIT_KEY)
+    }
+    fn has_positive_label(&self) -> bool {
+        self.0
+            .attributes
+            .iter()
+            .any(|(key, _)| key == gatk_tools::apply_vqsr::POSITIVE_LABEL_KEY)
+    }
+    fn has_negative_label(&self) -> bool {
+        self.0
+            .attributes
+            .iter()
+            .any(|(key, _)| key == gatk_tools::apply_vqsr::NEGATIVE_LABEL_KEY)
+    }
+}
+
+impl gatk_tools::apply_vqsr::AllelicRecalRecord for RecalVariant<'_> {
+    fn first_alternate(&self) -> String {
+        self.0
+            .alternate_alleles()
+            .first()
+            .map(|allele| allele.display_string())
+            .unwrap_or_default()
+    }
+}
+
+/// `ApplyVQSR`: a VQSR recal file and its tranches applied to the variants they were built from.
+///
+/// The cut, the filter names, the header lines and both filtering paths are
+/// [`gatk_tools::apply_vqsr`], each measured by a golden of its own. The runner is the walker around
+/// them, and it is the first `MultiVariantWalker` here:
+///
+/// * **one `--variant`**: the collection is read, and more than one input is the port's limitation
+///   rather than a merge, since a single input's merged header is its own header;
+/// * **`onTraversalStart` refuses before the writer exists**: the tranches file (a missing
+///   `--tranches-file` is the reference's `NullPointerException`), a previous run's malformed filter
+///   name, the two cutoffs given together, and a level no tranche reaches all leave no file;
+/// * **the header is a `HashSet` of lines**: the input's, the four VQSR `INFO` lines, `END`, the
+///   `PASS` filter line, the three allele-specific lines under `-AS`, the tranche or `LOW_VQSLOD`
+///   lines and the tool's own, with an identical line collapsing and nothing else;
+/// * **every record queries the recal file first**, so a recal file with no index is refused at the
+///   first record, and like every other failure inside `apply` it reaches the user as a
+///   `GATKException` naming the locus and the whole record;
+/// * **a record of the other mode, or filtered and not ignored, is written untouched**, and
+///   `--exclude-filtered` drops only a recalibrated record whose new filter is neither `PASS` nor
+///   `.`.
+pub fn apply_vqsr(parser: &Parser) -> Outcome {
+    use gatk_engine::tranches::{Mode, TruthSensitivityTranche};
+    use gatk_tools::apply_vqsr as vqsr;
+    use gatk_tools::remove_nearby_indels::{variant_type, VariantType};
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType};
+    use htsjdk_vcf::variant::Value;
+
+    let _ = resolve_read_filters(parser, "ApplyVQSR")?;
+    let inputs = arguments(parser, "variant");
+    if inputs.len() > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "More than one --variant is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let input = inputs.into_iter().next().ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup_over(parser, input)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+
+    // The recal file is a feature input, opened at startup and queried at every record.
+    let recal_path = argument(parser, "recal-file").ok_or_else(|| {
+        Thrown::command_line("Argument recal-file was missing: Argument 'recal-file' is required")
+    })?;
+    let recal_bytes = std::fs::read(&recal_path).map_err(|_| {
+        Thrown::user(
+            index_feature_file::Refusal::CouldNotReadInputFile {
+                path: java_absolute_path(&recal_path),
+            }
+            .message(),
+        )
+    })?;
+    let recal_text = if gatk_tools::read_walker_refusal::is_block_compressed(&recal_bytes) {
+        let mut inflated = String::new();
+        std::io::Read::read_to_string(
+            &mut flate2::read::MultiGzDecoder::new(recal_bytes.as_slice()),
+            &mut inflated,
+        )
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{recal_path}: {error}")))?;
+        inflated
+    } else {
+        String::from_utf8_lossy(&recal_bytes).into_owned()
+    };
+    let recal_file = htsjdk_vcf::reader::read_vcf(&recal_text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let recal_indexed = has_feature_index(&recal_path);
+
+    let use_as = flag(parser, "use-allele-specific-annotations");
+    let exclude_filtered = flag(parser, "exclude-filtered");
+    let ignore_all_filters = flag(parser, "ignore-all-filters");
+    let mode = match scalar(parser, "mode").as_deref() {
+        Some("INDEL") => Mode::Indel,
+        Some("BOTH") => Mode::Both,
+        _ => Mode::Snp,
+    };
+    let number = |name: &str| -> Option<f64> {
+        // A boxed `Double` is not a string to `argument`, which reads it as absent.
+        scalar(parser, name).map(|value| value.parse().unwrap_or(f64::NAN))
+    };
+    let level = number("truth-sensitivity-filter-level");
+    let cutoff = number("lod-score-cutoff");
+    let mut ignored: Vec<String> = arguments(parser, "ignore-filter");
+    ignored.sort();
+    ignored.dedup();
+
+    let refused = |error: vqsr::ApplyVqsrError| Thrown {
+        failure: if error.class().contains("UserException") {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: error.class(),
+        message: Some(error.message()),
+    };
+
+    // `onTraversalStart`: the tranches first, sorted by sensitivity, before anything else is read.
+    let tranches: Vec<TruthSensitivityTranche> = match level {
+        None => Vec::new(),
+        Some(_) => {
+            let Some(path) = argument(parser, "tranches-file") else {
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"org.broadinstitute.hellbender.engine.GATKPath.toPath()\" because \"f\" is null",
+                ));
+            };
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                Thrown::user(format!(
+                    "Couldn't read file {path}. Error was: Can't read tranches file with exception: {path}"
+                ))
+            })?;
+            gatk_engine::tranches::read_tranches(&path, &text).map_err(|error| Thrown {
+                failure: if error.class().contains("UserException") {
+                    Failure::User
+                } else {
+                    Failure::Other
+                },
+                exception: error.class(),
+                message: Some(error.message()),
+            })?
+        }
+    };
+    let kept = level.map(|level| vqsr::keep(&tranches, level));
+
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let mut header = file.header.clone();
+    let compound = |id: &str, number: Cardinality, line_type: LineType, description: &str| {
+        HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let mut added = vec![
+        compound(
+            "END",
+            Cardinality::Fixed(1),
+            LineType::Integer,
+            "Stop position of the interval",
+        ),
+        compound(
+            vqsr::VQS_LOD_KEY,
+            Cardinality::Fixed(1),
+            LineType::Float,
+            "Log odds of being a true variant versus being false under the trained gaussian mixture model",
+        ),
+        compound(
+            vqsr::CULPRIT_KEY,
+            Cardinality::Fixed(1),
+            LineType::String,
+            "The annotation which was the worst performing in the Gaussian mixture model, likely the reason why the variant was filtered out",
+        ),
+        // A `Flag` line built with a count of one is rewritten to zero by htsjdk's constructor.
+        compound(
+            vqsr::POSITIVE_LABEL_KEY,
+            Cardinality::Fixed(0),
+            LineType::Flag,
+            "This variant was used to build the positive training set of good variants",
+        ),
+        compound(
+            vqsr::NEGATIVE_LABEL_KEY,
+            Cardinality::Fixed(0),
+            LineType::Flag,
+            "This variant was used to build the negative training set of bad variants",
+        ),
+        HeaderLine::Filter {
+            id: vqsr::PASSES_FILTERS.to_string(),
+            description: "Site contains at least one allele that passes filters".to_string(),
+        },
+    ];
+    if use_as {
+        added.push(compound(
+            vqsr::AS_FILTER_STATUS_KEY,
+            Cardinality::A,
+            LineType::String,
+            "Filter status for each allele, as assessed by ApplyVQSR. Note that the VCF filter field will reflect the most lenient/sensitive status across all alleles.",
+        ));
+        added.push(compound(
+            vqsr::AS_CULPRIT_KEY,
+            Cardinality::A,
+            LineType::String,
+            "For each alt allele, the annotation which was the worst performing in the Gaussian mixture model, likely the reason why the variant was filtered out",
+        ));
+        added.push(compound(
+            vqsr::AS_VQS_LOD_KEY,
+            Cardinality::A,
+            LineType::String,
+            "For each alt allele, the log odds of being a true variant versus being false under the trained gaussian mixture model",
+        ));
+    }
+
+    // `checkForPreviousApplyRecalRun`, over the INPUT's filter lines.
+    let filter_ids: Vec<String> = file
+        .header
+        .lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Filter { id, .. } => Some(id.clone()),
+            HeaderLine::Structured { key, fields } if key == "FILTER" => fields
+                .iter()
+                .find(|(name, _)| name == "ID")
+                .map(|(_, value)| value.clone()),
+            _ => None,
+        })
+        .collect();
+    let runs = vqsr::previous_runs(&filter_ids).map_err(refused)?;
+
+    let cut = match &kept {
+        Some(kept) => {
+            if cutoff.is_some() {
+                return Err(refused(vqsr::ApplyVqsrError::MutuallyExclusiveCutoffs));
+            }
+            let lines =
+                vqsr::tranche_filter_lines(kept, level.unwrap_or_default()).map_err(refused)?;
+            for line in lines {
+                added.push(HeaderLine::Filter {
+                    id: line.id,
+                    description: line.description,
+                });
+            }
+            vqsr::Cut::Tranches(kept.clone())
+        }
+        None => {
+            let line = vqsr::low_vqslod_filter_line(cutoff);
+            added.push(HeaderLine::Filter {
+                id: line.id,
+                description: line.description,
+            });
+            vqsr::Cut::Lod(cutoff.unwrap_or(vqsr::DEFAULT_VQSLOD_CUTOFF))
+        }
+    };
+    // A `HashSet`: an identical line collapses, one differing in anything stays beside it.
+    let same = |a: &HeaderLine, b: &HeaderLine| a.render() == b.render();
+    for line in added {
+        if !header.lines.iter().any(|existing| same(existing, &line)) {
+            header.lines.push(line);
+        }
+    }
+    header.samples.sort();
+    header.samples.dedup();
+    header
+        .lines
+        .extend(default_tool_vcf_header_lines(parser, "ApplyVQSR"));
+
+    let kept_records = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let is_of_mode = |kind: VariantType| match mode {
+        Mode::Snp => matches!(kind, VariantType::Snp | VariantType::Mnp),
+        Mode::Indel => matches!(
+            kind,
+            VariantType::Indel | VariantType::Mixed | VariantType::Symbolic
+        ),
+        Mode::Both => true,
+    };
+    let both_modes_were_run =
+        (mode == Mode::Snp && runs.indel) || (mode == Mode::Indel && runs.snp);
+
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    let finish = |written: &[htsjdk_vcf::variant::VariantContext]| -> Result<(), Thrown> {
+        let mut header = header.clone();
+        let mut written = written.to_vec();
+        apply_sites_only(parser, &mut header, &mut written);
+        let out = htsjdk_vcf::vcf_file::write_vcf(&header, &written)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        write_variant_output(parser, &output, &out)
+    };
+    for record in kept_records {
+        // `MultiVariantWalker.traverse` catches whatever `apply` throws and rethrows it as a
+        // `GATKException` naming the locus and the whole record, so the cause is not what prints.
+        let wrapped = || {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "Exception thrown at {}:{} {}",
+                    record.contig,
+                    record.start,
+                    java_variant_context_string(record, &input)
+                ),
+            )
+        };
+        // `featureContext.getValues(recal, vc.getStart())` runs first, whatever the record is.
+        if !recal_indexed {
+            finish(&written)?;
+            return Err(wrapped());
+        }
+        let recals: Vec<RecalVariant> = recal_file
+            .records
+            .iter()
+            .filter(|other| {
+                other.contig == record.contig
+                    && other.start == record.start
+                    && other.start <= record.stop
+                    && other.stop >= record.start
+            })
+            .map(RecalVariant)
+            .collect();
+        let kind = variant_type(record);
+        let of_mode = is_of_mode(kind);
+        let filters = record.filters.clone().unwrap_or_default();
+        let evaluate = use_as || of_mode;
+        if !vqsr::recalibrates(evaluate, &filters, ignore_all_filters, &ignored) {
+            written.push(record.clone());
+            continue;
+        }
+        let mut out = record.clone();
+        let set = |out: &mut htsjdk_vcf::variant::VariantContext, key: &str, value: Value| match out
+            .attributes
+            .iter_mut()
+            .find(|(name, _)| name == key)
+        {
+            Some(slot) => slot.1 = value,
+            None => out.attributes.push((key.to_string(), value)),
+        };
+        let description = java_variant_context_string(record, &input);
+        let filter = if !use_as {
+            let (annotation, lod) = match vqsr::site_specific_filtering(
+                record.start as i32,
+                record.stop as i32,
+                &recals,
+                &description,
+            ) {
+                Ok(found) => found,
+                Err(_) => {
+                    finish(&written)?;
+                    return Err(wrapped());
+                }
+            };
+            set(&mut out, vqsr::VQS_LOD_KEY, Value::Str(annotation.vqslod));
+            set(&mut out, vqsr::CULPRIT_KEY, Value::Str(annotation.culprit));
+            if annotation.positive_label {
+                set(&mut out, vqsr::POSITIVE_LABEL_KEY, Value::Bool(true));
+            }
+            if annotation.negative_label {
+                set(&mut out, vqsr::NEGATIVE_LABEL_KEY, Value::Bool(true));
+            }
+            cut.filter(lod)
+        } else {
+            let previous = (runs.snp || runs.indel).then(|| {
+                vqsr::PreviousAlleleLists::from_attributes(
+                    &attribute_as_string(record, vqsr::AS_CULPRIT_KEY).unwrap_or_default(),
+                    &attribute_as_string(record, vqsr::AS_VQS_LOD_KEY).unwrap_or_default(),
+                    &attribute_as_string(record, vqsr::AS_FILTER_STATUS_KEY).unwrap_or_default(),
+                )
+            });
+            let reference = record.reference().display_string();
+            let alternates: Vec<String> = record
+                .alternate_alleles()
+                .iter()
+                .map(|allele| allele.display_string())
+                .collect();
+            let site = vqsr::AlleleSpecificSite {
+                start: record.start as i32,
+                end: record.stop as i32,
+                reference: &reference,
+                alternates: &alternates,
+                record: &description,
+            };
+            let (annotations, best) = match vqsr::allele_specific_filtering_with(
+                &site,
+                &recals,
+                mode,
+                &cut,
+                previous.as_ref(),
+            ) {
+                Ok(found) => found,
+                Err(_) => {
+                    finish(&written)?;
+                    return Err(wrapped());
+                }
+            };
+            if annotations.positive_label {
+                set(&mut out, vqsr::POSITIVE_LABEL_KEY, Value::Bool(true));
+            }
+            if annotations.negative_label {
+                set(&mut out, vqsr::NEGATIVE_LABEL_KEY, Value::Bool(true));
+            }
+            for (key, list) in [
+                (vqsr::AS_FILTER_STATUS_KEY, &annotations.filter_status),
+                (vqsr::AS_VQS_LOD_KEY, &annotations.vqslod),
+                (vqsr::AS_CULPRIT_KEY, &annotations.culprit),
+            ] {
+                if !list.is_empty() {
+                    set(&mut out, key, Value::Str(list.join(vqsr::LIST_DELIMITER)));
+                }
+            }
+            let previous_status = attribute_as_string(record, vqsr::AS_FILTER_STATUS_KEY);
+            vqsr::site_filter_from_alleles_with(
+                kind == VariantType::Mixed,
+                of_mode,
+                both_modes_were_run,
+                previous_status.as_deref(),
+                best,
+                &cut,
+            )
+        };
+        out.filters = match filter.as_str() {
+            vqsr::PASSES_FILTERS => Some(Vec::new()),
+            vqsr::UNFILTERED => None,
+            other => Some(vec![other.to_string()]),
+        };
+        if vqsr::writes_out(true, &filter, exclude_filtered) {
+            written.push(out);
+        }
+    }
+    finish(&written)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
 }

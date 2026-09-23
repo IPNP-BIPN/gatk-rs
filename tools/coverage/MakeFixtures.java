@@ -1826,6 +1826,7 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
+        vqsrFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1842,6 +1843,98 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("ase_sites_unindexed.vcf"), aseSites, StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `ApplyVQSR` reads: variants, the recal file `VariantRecalibrator` would have written for
+     * them, and a tranches file per mode.
+     *
+     * The variants cover every class the mode test and the allele-specific path tell apart: SNPs,
+     * an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP beside a spanning deletion,
+     * and a SNP already filtered `LowQual`. The SITE recal file carries one record per site, ending
+     * where the variant ends; the ALLELE recal file one per alternate, which is what `-AS` matches
+     * on, and a site-mode run over it takes the first record at the right end. The site file is
+     * written a second time without its index, which the first query refuses.
+     *
+     * `vqsr_snp_applied.vcf` is the REFERENCE's own first pass, `-AS` in SNP mode at 99.0, so a row
+     * reading it is a second run: its header carries SNP tranche filters, which
+     * `checkForPreviousApplyRecalRun` finds, and its records carry the lists an INDEL run copies.
+     */
+    static void vqsrFixtures(final Path dir) throws Exception {
+        final String contig = "##contig=<ID=chr1,length=100000>\n";
+        final String info = "##INFO=<ID=VQSLOD,Number=1,Type=Float,Description=\"Log odds\">\n"
+                + "##INFO=<ID=culprit,Number=1,Type=String,Description=\"Culprit\">\n"
+                + "##INFO=<ID=POSITIVE_TRAIN_SITE,Number=0,Type=Flag,Description=\"Positive\">\n"
+                + "##INFO=<ID=NEGATIVE_TRAIN_SITE,Number=0,Type=Flag,Description=\"Negative\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n";
+        final String input = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + contig
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+                + "chr1\t100\trs100\tA\tG\t50\tPASS\tDP=10\tGT\t0/1\n"
+                + "chr1\t200\t.\tC\tT\t40\t.\tDP=8\tGT\t1/1\n"
+                + "chr1\t300\t.\tG\tGA\t30\tPASS\tDP=5\tGT\t0/1\n"
+                + "chr1\t400\t.\tT\tC,TA\t20\tPASS\tDP=7\tGT\t1/2\n"
+                + "chr1\t500\t.\tA\tC\t10\tLowQual\tDP=3\tGT\t0/1\n"
+                + "chr1\t600\t.\tCA\tC\t60\t.\tDP=12\tGT\t0/1\n"
+                + "chr1\t700\t.\tG\tA,T\t45\tPASS\tDP=9\tGT\t1/2\n"
+                + "chr1\t800\t.\tA\tC,*\t35\tPASS\tDP=6\tGT\t1/2\n";
+        Files.writeString(dir.resolve("vqsr_input.vcf"), input, StandardCharsets.UTF_8);
+
+        final String recalHeader = "##fileformat=VCFv4.2\n" + info + contig
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String sites = recalHeader
+                + "chr1\t100\t.\tA\t<VQSR>\t.\t.\tEND=100;POSITIVE_TRAIN_SITE;VQSLOD=5.21;culprit=QD\n"
+                + "chr1\t200\t.\tC\t<VQSR>\t.\t.\tEND=200;VQSLOD=-2.40;culprit=FS\n"
+                + "chr1\t300\t.\tG\t<VQSR>\t.\t.\tEND=300;VQSLOD=1.50;culprit=MQ\n"
+                + "chr1\t400\t.\tT\t<VQSR>\t.\t.\tEND=400;VQSLOD=0.80;culprit=QD\n"
+                + "chr1\t500\t.\tA\t<VQSR>\t.\t.\tEND=500;VQSLOD=2.00;culprit=SOR\n"
+                + "chr1\t600\t.\tCA\t<VQSR>\t.\t.\tEND=601;NEGATIVE_TRAIN_SITE;VQSLOD=-4.10;culprit=FS\n"
+                + "chr1\t700\t.\tG\t<VQSR>\t.\t.\tEND=700;VQSLOD=3.10;culprit=MQRankSum\n"
+                + "chr1\t800\t.\tA\t<VQSR>\t.\t.\tEND=800;VQSLOD=0.20;culprit=QD\n";
+        final String alleles = recalHeader
+                + "chr1\t100\t.\tA\tG\t.\t.\tEND=100;POSITIVE_TRAIN_SITE;VQSLOD=5.21;culprit=QD\n"
+                + "chr1\t200\t.\tC\tT\t.\t.\tEND=200;VQSLOD=-2.40;culprit=FS\n"
+                + "chr1\t300\t.\tG\tGA\t.\t.\tEND=300;VQSLOD=1.50;culprit=MQ\n"
+                + "chr1\t400\t.\tT\tC\t.\t.\tEND=400;VQSLOD=0.80;culprit=QD\n"
+                + "chr1\t400\t.\tT\tTA\t.\t.\tEND=400;VQSLOD=-0.50;culprit=FS\n"
+                + "chr1\t500\t.\tA\tC\t.\t.\tEND=500;VQSLOD=2.00;culprit=SOR\n"
+                + "chr1\t600\t.\tCA\tC\t.\t.\tEND=601;NEGATIVE_TRAIN_SITE;VQSLOD=-4.10;culprit=FS\n"
+                + "chr1\t700\t.\tG\tA\t.\t.\tEND=700;VQSLOD=3.10;culprit=MQRankSum\n"
+                + "chr1\t700\t.\tG\tT\t.\t.\tEND=700;VQSLOD=-1.50;culprit=QD\n"
+                + "chr1\t800\t.\tA\tC\t.\t.\tEND=800;VQSLOD=0.20;culprit=QD\n";
+        for (final String[] recal : new String[][] {
+                {"vqsr_sites.recal.vcf", sites}, {"vqsr_alleles.recal.vcf", alleles}}) {
+            Files.writeString(dir.resolve(recal[0]), recal[1], StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(recal[0]).toString()});
+        }
+        Files.writeString(dir.resolve("vqsr_unindexed.recal.vcf"), sites, StandardCharsets.UTF_8);
+
+        final String columns = "targetTruthSensitivity,numKnown,numNovel,knownTiTv,novelTiTv,minVQSLod,"
+                + "filterName,model,accessibleTruthSites,callsAtTruthSites,truthSensitivity\n";
+        for (final String model : new String[] {"SNP", "INDEL"}) {
+            final String name = "VQSRTranche" + model;
+            Files.writeString(dir.resolve(model.toLowerCase() + ".tranches"),
+                    "# Variant quality score tranches file\n# Version number 5\n" + columns
+                    + "90.00,0,3,0.0000,2.0000,4.0000," + name + "0.00to90.00," + model + ",10,9,0.9000\n"
+                    + "99.00,0,4,0.0000,2.0000,1.0000," + name + "90.00to99.00," + model + ",10,9,0.9900\n"
+                    + "99.90,0,5,0.0000,2.0000,-1.0000," + name + "99.00to99.90," + model + ",10,9,0.9990\n"
+                    + "100.00,0,6,0.0000,2.0000,-3.0000," + name + "99.90to100.00," + model + ",10,10,1.0000\n",
+                    StandardCharsets.UTF_8);
+        }
+
+        new org.broadinstitute.hellbender.tools.walkers.vqsr.ApplyVQSR().instanceMain(new String[] {
+                "-V", dir.resolve("vqsr_input.vcf").toString(),
+                "--recal-file", dir.resolve("vqsr_alleles.recal.vcf").toString(),
+                "--tranches-file", dir.resolve("snp.tranches").toString(),
+                "--truth-sensitivity-filter-level", "99.0",
+                "--use-allele-specific-annotations", "--mode", "SNP",
+                "--add-output-vcf-command-line", "false",
+                "--create-output-variant-index", "false",
+                "-O", dir.resolve("vqsr_snp_applied.vcf").toString()});
     }
 
     /**
