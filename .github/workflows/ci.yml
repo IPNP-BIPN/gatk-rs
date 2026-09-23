@@ -602,6 +602,7 @@ jobs:
             --tool CollectF1R2Counts \
             --tool CreateSomaticPanelOfNormals \
             --tool SplitCRAM \
+            --tool FilterMutectCalls \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

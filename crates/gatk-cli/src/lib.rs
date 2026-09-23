@@ -340,6 +340,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CollectF1R2Counts" => Some(run_collect_f1r2_counts),
         "CreateSomaticPanelOfNormals" => Some(run_create_somatic_panel_of_normals),
         "SplitCRAM" => Some(run_split_cram),
+        "FilterMutectCalls" => Some(run_filter_mutect_calls),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
         "GatherBQSRReports" => Some(run_gather_bqsr_reports),
@@ -690,6 +691,10 @@ fn run_create_somatic_panel_of_normals(args: &[String]) -> Result<Option<String>
 
 fn run_split_cram(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::split_cram(&parsed("SplitCRAM", args)?)
+}
+
+fn run_filter_mutect_calls(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::filter_mutect_calls(&parsed("FilterMutectCalls", args)?)
 }
 
 fn run_validate_variants(args: &[String]) -> Result<Option<String>, Thrown> {

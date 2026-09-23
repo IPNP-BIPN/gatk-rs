@@ -4405,6 +4405,156 @@
         "1",
         "2"
       ]
+    },
+    "FilterMutectCalls": {
+      "$why": [
+        "mutect.vcf is the reference's own Mutect2 run over mutect_tn.bam and mutect_ref.fasta, four",
+        "calls with every INFO field and header line a real run carries: a clean somatic SNV, a two-read",
+        "one, one on forward reads alone and one near the reads' starts, with mutect.vcf.stats beside it.",
+        "mutect_nocallable.vcf is the same calls with a stats table whose callable count is zero.",
+        "--stats absent reads the table beside the VCF; a path to a missing file is refused after the",
+        "header is written. The model inputs the port does not read, --contamination-table,",
+        "--tumor-segmentation and --ob-priors, are held.",
+        "Every numeric threshold has its default first and a value that moves a call second."
+      ],
+      "--variant": [
+        "/work/fixtures/mutect.vcf",
+        "/work/fixtures/mutect_nocallable.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered.vcf.gz"
+      ],
+      "--stats": [
+        "null",
+        "/work/fixtures/mutect_nocallable.vcf.stats",
+        "/work/fixtures/missing.stats"
+      ],
+      "--filtering-stats": [
+        "null",
+        "/work/out/filtering.tsv"
+      ],
+      "--intervals": [
+        "chr1:1-3000",
+        "chr1:1300-2000"
+      ],
+      "--contamination-table": [],
+      "--tumor-segmentation": [],
+      "--orientation-bias-artifact-priors": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--contamination-estimate": [
+        "0.0",
+        "0.2"
+      ],
+      "--distance-on-haplotype": [
+        "100",
+        "0"
+      ],
+      "--f-score-beta": [
+        "1.0",
+        "3.0"
+      ],
+      "--false-discovery-rate": [
+        "0.05",
+        "0.5"
+      ],
+      "--initial-threshold": [
+        "0.1",
+        "0.9"
+      ],
+      "--log-artifact-prior": [
+        "-2.302585092994046",
+        "-0.5"
+      ],
+      "--log-indel-prior": [
+        "-16.11809565095832",
+        "-2.0"
+      ],
+      "--log-snv-prior": [
+        "-13.815510557964275",
+        "-2.0"
+      ],
+      "--long-indel-length": [
+        "5",
+        "1"
+      ],
+      "--max-alt-allele-count": [
+        "1",
+        "0"
+      ],
+      "--max-events-in-haplotype": [
+        "2",
+        "0"
+      ],
+      "--max-events-in-region": [
+        "3",
+        "0"
+      ],
+      "--max-median-fragment-length-difference": [
+        "10000",
+        "0"
+      ],
+      "--max-n-ratio": [
+        "Infinity",
+        "0.0"
+      ],
+      "--min-allele-fraction": [
+        "0.0",
+        "0.3"
+      ],
+      "--min-median-base-quality": [
+        "20",
+        "45"
+      ],
+      "--min-median-mapping-quality": [
+        "-1",
+        "70"
+      ],
+      "--min-median-read-position": [
+        "1",
+        "5"
+      ],
+      "--min-reads-per-strand": [
+        "0",
+        "1"
+      ],
+      "--min-slippage-length": [
+        "8",
+        "1"
+      ],
+      "--normal-p-value-threshold": [
+        "0.001",
+        "0.9"
+      ],
+      "--pcr-slippage-rate": [
+        "0.1",
+        "0.9"
+      ],
+      "--unique-alt-read-count": [
+        "0",
+        "5"
+      ]
     }
   },
   "constraints": [

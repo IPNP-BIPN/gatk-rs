@@ -148,10 +148,15 @@ impl Value {
 /// that range is refused rather than guessed: the general `Double.toString` is `FloatingDecimal`,
 /// which is JDK source, and htsjdk-rs decision 0013 refused to transcribe it.
 pub fn java_double_to_string(value: f64) -> String {
-    assert!(
-        value.is_finite(),
-        "java_double_to_string is ported for finite values only; {value} is not one"
-    );
+    // The three non-finite values are constants in `Double.toString`'s own source rather than a
+    // product of the digit algorithm: `FilterMutectCalls` declares `--max-n-ratio` with a default of
+    // positive infinity, and its parser renders that default.
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
     // Outside `[1e-3, 1e7)` Java switches to `E` notation, and the DIGITS are chosen by the same
     // rule as inside it: the shortest that distinguishes the value from its neighbours. Rust's
     // `{:e}` picks those same digits, so the conversion is a reformatting rather than a second
