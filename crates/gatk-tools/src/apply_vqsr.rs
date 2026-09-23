@@ -65,7 +65,7 @@
 //! cutoff arguments is checked **after** the file has been read, so a broken file is reported in
 //! preference to a contradictory command line.
 
-use gatk_engine::tranches::TruthSensitivityTranche;
+use gatk_engine::tranches::{Mode, TruthSensitivityTranche};
 use htsjdk_vcf::variant::format_vcf_double;
 
 /// `GATKTool.getToolName()` for this tool.
@@ -216,16 +216,33 @@ pub enum SiteFilteringError {
     UnreadableLod { record: String },
     /// An alternate allele with no recal record of its own, which is the `-AS` wording.
     NoRecalAllele { record: String },
+    /// An allele's `VQSLOD` that `getAttributeAsDouble` hands to `Double.valueOf` and that refuses.
+    AlleleLodNotANumber { text: String },
+    /// A second run's previous `AS_VQSLOD` or `AS_FilterStatus` shorter than its `AS_culprit`:
+    /// `updateAnnotationsWithoutRecalibrating` checks the index against the culprits alone.
+    PreviousListTooShort { index: usize, length: usize },
 }
 
 impl SiteFilteringError {
     /// The class of the cause, before the walker wraps it.
     pub fn class(&self) -> &'static str {
-        "org.broadinstitute.hellbender.exceptions.UserException"
+        match self {
+            SiteFilteringError::AlleleLodNotANumber { .. } => "java.lang.NumberFormatException",
+            SiteFilteringError::PreviousListTooShort { .. } => {
+                "java.lang.ArrayIndexOutOfBoundsException"
+            }
+            _ => "org.broadinstitute.hellbender.exceptions.UserException",
+        }
     }
 
     pub fn message(&self) -> String {
         match self {
+            SiteFilteringError::AlleleLodNotANumber { text } => {
+                format!("For input string: \"{text}\"")
+            }
+            SiteFilteringError::PreviousListTooShort { index, length } => {
+                format!("Index {index} out of bounds for length {length}")
+            }
             SiteFilteringError::NoRecalRecord { record } => format!(
                 "Encountered input variant which isn't found in the input recal file. Please make sure VariantRecalibrator and ApplyVQSR were run on the same set of input variants. First seen at: {record}"
             ),
@@ -461,6 +478,111 @@ pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
     snp_mode: bool,
     kept: &[&TruthSensitivityTranche],
 ) -> Result<(AlleleAnnotations, f64), SiteFilteringError> {
+    let mode = if snp_mode { Mode::Snp } else { Mode::Indel };
+    allele_specific_filtering_with(site, recals, mode, &Cut::Tranches(kept.to_vec()), None)
+}
+
+/// `getMatchingRecalVC` in allele-specific mode, where the allele is compared too.
+pub fn matching_allele_recal<'a, T: RecalRecord + AllelicRecalRecord>(
+    start: i32,
+    end: i32,
+    allele: &str,
+    recals: &'a [T],
+) -> Option<&'a T> {
+    recals
+        .iter()
+        .filter(|recal| recal.start() == start)
+        .find(|recal| recal.end() == end && recal.first_alternate() == allele)
+}
+
+/// How a LOD becomes a filter name: `generateFilterString`, whose two branches are the tranches
+/// `--truth-sensitivity-filter-level` kept and the plain `--lod-score-cutoff`.
+///
+/// [`allele_specific_filtering`] and [`site_filter_from_alleles`] take the tranches alone, which is
+/// the branch their goldens measure; an `-AS` run with no level takes the other one, and the
+/// functions below take either.
+#[derive(Debug, Clone)]
+pub enum Cut<'a> {
+    Tranches(Vec<&'a TruthSensitivityTranche>),
+    Lod(f64),
+}
+
+impl Cut<'_> {
+    pub fn filter(&self, lod: f64) -> String {
+        match self {
+            Cut::Tranches(kept) => filter_string(kept, lod),
+            Cut::Lod(cutoff) => filter_string_by_cutoff(lod, *cutoff),
+        }
+    }
+}
+
+/// `checkVariationClass(vc, allele, mode)` over all three modes: `BOTH` takes every allele.
+pub fn allele_is_of(mode: Mode, reference: &str, allele: &str) -> bool {
+    match mode {
+        Mode::Snp => allele_is_of_mode(reference, allele, true),
+        Mode::Indel => allele_is_of_mode(reference, allele, false),
+        Mode::Both => true,
+    }
+}
+
+/// What a run of the other mode left on the record, split as `doAlleleSpecificFiltering` splits it.
+///
+/// Read only when [`PreviousRuns`] found a tranche of either mode in the header. Each list is
+/// `getAttributeAsString(key, "")` split at `,`, and an empty string is no entry rather than one
+/// empty one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PreviousAlleleLists {
+    pub culprit: Vec<String>,
+    pub vqslod: Vec<String>,
+    pub filter_status: Vec<String>,
+}
+
+impl PreviousAlleleLists {
+    pub fn from_attributes(culprit: &str, vqslod: &str, filter_status: &str) -> Self {
+        // `String.split` drops the trailing empty strings, and an empty input is one empty string
+        // the reference tests for before splitting.
+        let split = |text: &str| -> Vec<String> {
+            if text.is_empty() {
+                return Vec::new();
+            }
+            let mut parts: Vec<String> = text.split(LIST_DELIMITER).map(str::to_string).collect();
+            while parts.last().is_some_and(|part| part.is_empty()) {
+                parts.pop();
+            }
+            parts
+        };
+        PreviousAlleleLists {
+            culprit: split(culprit),
+            vqslod: split(vqslod),
+            filter_status: split(filter_status),
+        }
+    }
+}
+
+/// `replaceAll("[\\[\\]\\s]", "").trim()`: the brackets and spaces a Java list prints with.
+fn without_brackets(entry: &str) -> String {
+    entry
+        .chars()
+        .filter(|c| !matches!(c, '[' | ']') && !c.is_whitespace())
+        .collect()
+}
+
+/// `doAlleleSpecificFiltering` in full: any mode, either cut, and a second run's lists.
+///
+/// An allele of the other mode is where the two runs differ. With no previous tranche it is padded,
+/// as [`allele_specific_filtering`] pads it; after one, its three entries are COPIED from what the
+/// earlier run wrote, and an allele past the end of the earlier culprits gets no entry at all. The
+/// copy indexes the other two lists by the culprits' length, so a shorter one is an
+/// `ArrayIndexOutOfBoundsException`.
+///
+/// A list left empty is not written, which only a second run can reach.
+pub fn allele_specific_filtering_with<T: RecalRecord + AllelicRecalRecord>(
+    site: &AlleleSpecificSite,
+    recals: &[T],
+    mode: Mode,
+    cut: &Cut,
+    previous: Option<&PreviousAlleleLists>,
+) -> Result<(AlleleAnnotations, f64), SiteFilteringError> {
     let AlleleSpecificSite {
         start,
         end,
@@ -476,24 +598,40 @@ pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
         positive_label: false,
         negative_label: false,
     };
+    let pad = |annotations: &mut AlleleAnnotations| {
+        annotations
+            .filter_status
+            .push(EMPTY_STRING_VALUE.to_string());
+        annotations.vqslod.push(EMPTY_FLOAT_VALUE.to_string());
+        annotations.culprit.push(EMPTY_STRING_VALUE.to_string());
+    };
 
-    for allele in alternates {
-        if !allele_is_of_mode(reference, allele, snp_mode) {
-            // The first run has no previous lists to copy from, so the padding is all there is.
-            annotations
-                .filter_status
-                .push(EMPTY_STRING_VALUE.to_string());
-            annotations.vqslod.push(EMPTY_FLOAT_VALUE.to_string());
-            annotations.culprit.push(EMPTY_STRING_VALUE.to_string());
+    for (index, allele) in alternates.iter().enumerate() {
+        if !allele_is_of(mode, reference, allele) {
+            match previous {
+                None => pad(&mut annotations),
+                Some(lists) if index < lists.culprit.len() => {
+                    let at = |list: &[String]| {
+                        list.get(index).map(|entry| without_brackets(entry)).ok_or(
+                            SiteFilteringError::PreviousListTooShort {
+                                index,
+                                length: list.len(),
+                            },
+                        )
+                    };
+                    let culprit = at(&lists.culprit)?;
+                    let vqslod = at(&lists.vqslod)?;
+                    let filter_status = at(&lists.filter_status)?;
+                    annotations.culprit.push(culprit);
+                    annotations.vqslod.push(vqslod);
+                    annotations.filter_status.push(filter_status);
+                }
+                Some(_) => {}
+            }
             continue;
         }
         if is_spanning_deletion(allele) {
-            // Kept by the class test and then padded anyway, with no lookup at all.
-            annotations
-                .filter_status
-                .push(EMPTY_STRING_VALUE.to_string());
-            annotations.vqslod.push(EMPTY_FLOAT_VALUE.to_string());
-            annotations.culprit.push(EMPTY_STRING_VALUE.to_string());
+            pad(&mut annotations);
             continue;
         }
         let Some(recal) = matching_allele_recal(start, end, allele, recals) else {
@@ -501,16 +639,17 @@ pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
                 record: record.to_string(),
             });
         };
-        // `getAttributeAsDouble(VQS_LOD_KEY, MIN_ACCEPTABLE_LOD_SCORE)`: a missing key is the floor
-        // here rather than the refusal the site-level path makes of it.
-        let lod = recal
-            .lod_string()
-            .and_then(|text| text.trim().parse::<f64>().ok())
-            .unwrap_or(MIN_ACCEPTABLE_LOD_SCORE);
+        let lod = match recal.lod_string() {
+            None => MIN_ACCEPTABLE_LOD_SCORE,
+            Some(text) => text
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| SiteFilteringError::AlleleLodNotANumber { text: text.clone() })?,
+        };
         if lod > best_lod {
             best_lod = lod;
         }
-        annotations.filter_status.push(filter_string(kept, lod));
+        annotations.filter_status.push(cut.filter(lod));
         annotations.vqslod.push(format!("{lod:.4}"));
         annotations
             .culprit
@@ -521,17 +660,45 @@ pub fn allele_specific_filtering<T: RecalRecord + AllelicRecalRecord>(
     Ok((annotations, best_lod))
 }
 
-/// `getMatchingRecalVC` in allele-specific mode, where the allele is compared too.
-pub fn matching_allele_recal<'a, T: RecalRecord + AllelicRecalRecord>(
-    start: i32,
-    end: i32,
-    allele: &str,
-    recals: &'a [T],
-) -> Option<&'a T> {
-    recals
-        .iter()
-        .filter(|recal| recal.start() == start)
-        .find(|recal| recal.end() == end && recal.first_alternate() == allele)
+/// `generateFilterStringFromAlleles` with either cut: [`site_filter_from_alleles`] generalised.
+pub fn site_filter_from_alleles_with(
+    is_mixed: bool,
+    record_is_of_mode: bool,
+    both_modes_were_run: bool,
+    previous_status: Option<&str>,
+    best_lod: f64,
+    cut: &Cut,
+) -> String {
+    let only_one_mode_needed = !is_mixed && record_is_of_mode;
+    if !both_modes_were_run && !only_one_mode_needed {
+        return UNFILTERED.to_string();
+    }
+    let mut most_lenient = cut.filter(best_lod);
+    match previous_status {
+        None => most_lenient,
+        Some(status) if status == UNFILTERED => most_lenient,
+        Some(status) => {
+            if most_lenient == PASSES_FILTERS {
+                return most_lenient;
+            }
+            let mut lowest = parse_filter_lower_limit(&most_lenient);
+            for entry in status.split(LIST_DELIMITER) {
+                let entry = without_brackets(entry);
+                if entry == PASSES_FILTERS {
+                    return entry;
+                }
+                let limit = parse_filter_lower_limit(&entry);
+                if limit == -1.0 {
+                    continue;
+                }
+                if limit < lowest {
+                    lowest = limit;
+                    most_lenient = entry;
+                }
+            }
+            most_lenient
+        }
+    }
 }
 
 /// The one thing a recal record needs beyond [`RecalRecord`] for allele-specific matching.
@@ -697,42 +864,14 @@ pub fn site_filter_from_alleles(
     best_lod: f64,
     kept: &[&TruthSensitivityTranche],
 ) -> String {
-    let only_one_mode_needed = !is_mixed && record_is_of_mode;
-    if !both_modes_were_run && !only_one_mode_needed {
-        return UNFILTERED.to_string();
-    }
-
-    let mut most_lenient = filter_string(kept, best_lod);
-    match previous_status {
-        // A site nothing has filtered yet takes this mode's answer, whatever it is.
-        None => most_lenient,
-        Some(status) if status == UNFILTERED => most_lenient,
-        Some(status) => {
-            if most_lenient == PASSES_FILTERS {
-                return most_lenient;
-            }
-            let mut lowest = parse_filter_lower_limit(&most_lenient);
-            for entry in status.split(LIST_DELIMITER) {
-                // `replaceAll("[\\[\\]\\s]", "").trim()`: the brackets a Java list prints with.
-                let entry: String = entry
-                    .chars()
-                    .filter(|c| !matches!(c, '[' | ']') && !c.is_whitespace())
-                    .collect();
-                if entry == PASSES_FILTERS {
-                    return entry;
-                }
-                let limit = parse_filter_lower_limit(&entry);
-                if limit == -1.0 {
-                    continue;
-                }
-                if limit < lowest {
-                    lowest = limit;
-                    most_lenient = entry;
-                }
-            }
-            most_lenient
-        }
-    }
+    site_filter_from_alleles_with(
+        is_mixed,
+        record_is_of_mode,
+        both_modes_were_run,
+        previous_status,
+        best_lod,
+        &Cut::Tranches(kept.to_vec()),
+    )
 }
 
 pub fn site_filter_for_a_single_mode(
@@ -756,7 +895,9 @@ pub fn writes_out(recalibrated: bool, filter: &str, exclude_filtered: bool) -> b
     if !recalibrated {
         return true;
     }
-    !exclude_filtered || filter == PASSES_FILTERS
+    // `isNotFiltered()` is true for an UNFILTERED record as well as a passing one, and `.` is what
+    // an `-AS` run leaves on a mixed site the other mode has not seen.
+    !exclude_filtered || filter == PASSES_FILTERS || filter == UNFILTERED
 }
 
 #[cfg(test)]

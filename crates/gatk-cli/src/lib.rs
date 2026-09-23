@@ -320,6 +320,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ExampleMultiFeatureWalker" => Some(run_example_multi_feature_walker),
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
+        "ApplyVQSR" => Some(run_apply_vqsr),
+        "SVStratify" => Some(run_sv_stratify),
+        "SVConcordance" => Some(run_sv_concordance),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
             Some(run_convert_headerless_hadoop_bam_shard_to_bam)
@@ -546,6 +549,18 @@ fn run_convert_headerless_hadoop_bam_shard_to_bam(
 
 fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_variant_tranches(&parsed("FilterVariantTranches", args)?)
+}
+
+fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
+}
+
+fn run_sv_stratify(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::sv_stratify(&parsed("SVStratify", args)?)
+}
+
+fn run_sv_concordance(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::sv_concordance(&parsed("SVConcordance", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

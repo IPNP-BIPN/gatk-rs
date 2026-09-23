@@ -1826,6 +1826,9 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
+        vqsrFixtures(dir);
+        svStratifyFixtures(dir);
+        svConcordanceFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1854,6 +1857,214 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `SVConcordance` compares: a truth and an evaluation SV callset sharing one sample.
+     *
+     * Each eval record sits near a truth record of its type, except one deletion with nothing near
+     * it (a false positive) and a CNV, whose copy numbers are compared instead of its genotypes.
+     * `s1` is in both files and `s2`, `s3` in one each, so only `s1` is annotated. The truth
+     * insertion carries AC, AF and AN, which are copied rather than recounted. `sv_eval_sites.vcf`
+     * is the eval file without samples, which gets no allele counts of its own.
+     */
+    static void svConcordanceFixtures(final Path dir) throws Exception {
+        final String lines = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=\"Algorithms\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+        Files.writeString(dir.resolve("sv_truth.vcf"), lines + columns + "\ts1\ts2\n"
+                + "chr1\t1000\tt_del\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;ALGORITHMS=manta\tGT\t0/1\t1/1\n"
+                + "chr1\t5000\tt_dup\tN\t<DUP>\t.\tPASS\tEND=6000;SVTYPE=DUP;ALGORITHMS=depth\tGT\t0/1\t0/0\n"
+                + "chr1\t30000\tt_ins\tN\t<INS>\t.\tPASS\tEND=30001;SVTYPE=INS;SVLEN=400;ALGORITHMS=manta;AC=3;AF=0.75;AN=4\tGT\t1/1\t0/1\n"
+                + "chr1\t40000\tt_cnv\tN\t<DEL>,<DUP>\t.\tPASS\tEND=45000;SVTYPE=CNV;ALGORITHMS=depth\tGT:CN\t./.:1\t./.:3\n"
+                + "chr2\t2000\tt_bnd\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=9000;STRANDS=+-;ALGORITHMS=manta\tGT\t0/1\t0/0\n",
+                StandardCharsets.UTF_8);
+        final String evalRecords =
+                "chr1\t1010\te_del\tN\t<DEL>\t.\tPASS\tEND=1290;SVTYPE=DEL;SVLEN=-280;ALGORITHMS=manta"
+                + "\tchr1\t5100\te_dup\tN\t<DUP>\t.\t.\tEND=6100;SVTYPE=DUP;ALGORITHMS=depth"
+                + "\tchr1\t20000\te_fp\tN\t<DEL>\t.\tPASS\tEND=21000;SVTYPE=DEL;ALGORITHMS=manta"
+                + "\tchr1\t30050\te_ins\tN\t<INS>\t.\tPASS\tEND=30051;SVTYPE=INS;SVLEN=380;ALGORITHMS=manta"
+                + "\tchr1\t40100\te_cnv\tN\t<DEL>,<DUP>\t.\tPASS\tEND=45100;SVTYPE=CNV;ALGORITHMS=depth"
+                + "\tchr2\t2010\te_bnd\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=9005;STRANDS=+-;ALGORITHMS=manta";
+        final String[] records = evalRecords.split("\t(?=chr[12]\t)");
+        final String[] genotypes = {"GT\t0/1\t0/0", "GT\t1/1\t./.", "GT\t0/1\t0/1", "GT\t1/1\t0/1",
+                "GT:CN\t./.:1\t./.:2", "GT\t0/1\t0/0"};
+        final StringBuilder eval = new StringBuilder(lines + columns + "\ts1\ts3\n");
+        final StringBuilder sites = new StringBuilder(lines + columns.replace("\tFORMAT", "") + "\n");
+        for (int i = 0; i < records.length; i++) {
+            eval.append(records[i]).append('\t').append(genotypes[i]).append('\n');
+            sites.append(records[i]).append('\n');
+        }
+        Files.writeString(dir.resolve("sv_eval.vcf"), eval.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_eval_sites.vcf"), sites.toString(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What `SVStratify` reads: SV calls of every type the engine tells apart, two BED tracks, and
+     * two stratification tables.
+     *
+     * `sv_calls.vcf` has a small and a large deletion, a duplication, an insertion with a length and
+     * one without, an inversion and a breakend to chr2. `sv_bad.vcf` is the same header over a
+     * deletion with no `ALGORITHMS`, which `SVCallRecordUtils.create` refuses inside `apply`.
+     * `sv_rm.bed` covers the small deletion, the insertion and the breakend's far end; `sv_sd.bed`
+     * part of the large deletion and the inversion. `sv_strata.tsv` names only the RM track and its
+     * strata are mutually exclusive; `sv_overlap.tsv` names both tracks and has two deletion strata
+     * one record can match at once, which only `--allow-multiple-matches` lets through. The two
+     * `.list` files expand `--track-name` and `--track-intervals` to both tracks.
+     */
+    static void svStratifyFixtures(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=\"Algorithms\">\n"
+                + "##INFO=<ID=EVIDENCE,Number=.,Type=String,Description=\"Evidence\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        Files.writeString(dir.resolve("sv_calls.vcf"), header
+                + "chr1\t1000\tdel_small\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;SVLEN=-300;ALGORITHMS=manta;EVIDENCE=PE,SR\tGT\t0/1\n"
+                + "chr1\t5000\tdel_large\tN\t<DEL>\t.\tPASS\tEND=15000;SVTYPE=DEL;ALGORITHMS=depth;EVIDENCE=RD\tGT\t0/1\n"
+                + "chr1\t20000\tdup1\tN\t<DUP>\t.\tPASS\tEND=22000;SVTYPE=DUP;ALGORITHMS=depth\tGT\t0/1\n"
+                + "chr1\t30000\tins1\tN\t<INS>\t.\tPASS\tEND=30001;SVTYPE=INS;SVLEN=400;ALGORITHMS=manta;STRANDS=+-\tGT\t1/1\n"
+                + "chr1\t40000\tinv1\tN\t<INV>\t.\tPASS\tEND=41000;SVTYPE=INV;ALGORITHMS=manta;STRANDS=++\tGT\t0/1\n"
+                + "chr1\t50000\tbnd1\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=7000;ALGORITHMS=manta;STRANDS=+-\tGT\t0/1\n"
+                + "chr2\t8000\tins_undef\tN\t<INS>\t.\tPASS\tSVTYPE=INS;SVLEN=-1;ALGORITHMS=melt\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_bad.vcf"), header
+                + "chr1\t1000\tdel_small\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;ALGORITHMS=manta\tGT\t0/1\n"
+                + "chr1\t5000\tno_algorithms\tN\t<DEL>\t.\tPASS\tEND=15000;SVTYPE=DEL\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_rm.bed"),
+                "chr1\t899\t1400\nchr1\t29989\t30010\nchr2\t6989\t7010\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_sd.bed"),
+                "chr1\t4999\t10000\nchr1\t39999\t41000\n", StandardCharsets.UTF_8);
+        final String columns = "NAME\tSVTYPE\tMIN_SIZE\tMAX_SIZE\tTRACKS\n";
+        Files.writeString(dir.resolve("sv_strata.tsv"), columns
+                + "DEL_small\tDEL\t50\t5000\tNA\n"
+                + "DEL_large\tDEL\t5000\tNA\tNA\n"
+                + "DUP_any\tDUP\tNA\tNA\tNA\n"
+                + "INS_rm\tINS\tNA\tNA\tRM\n"
+                + "INV_any\tINV\t-1\t-1\t-1\n"
+                + "BND_rm\tBND\tNA\tNA\tRM\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_overlap.tsv"), columns
+                + "DEL_any\tDEL\tNA\tNA\tNA\n"
+                + "DEL_rm\tDEL\tNA\tNA\tRM\n"
+                + "INV_sd\tINV\tNA\tNA\tSD\n"
+                + "INS_rm\tINS\tNA\tNA\tRM,SD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_track_names.list"), "RM\nSD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_track_files.list"),
+                "/work/fixtures/sv_rm.bed\n/work/fixtures/sv_sd.bed\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What `ApplyVQSR` reads: variants, the recal file `VariantRecalibrator` would have written for
+     * them, and a tranches file per mode.
+     *
+     * The variants cover every class the mode test and the allele-specific path tell apart: SNPs,
+     * an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP beside a spanning deletion,
+     * and a SNP already filtered `LowQual`. The SITE recal file carries one record per site, ending
+     * where the variant ends; the ALLELE recal file one per alternate, which is what `-AS` matches
+     * on, and a site-mode run over it takes the first record at the right end. The site file is
+     * written a second time without its index, which the first query refuses.
+     *
+     * `vqsr_snp_applied.vcf` is the REFERENCE's own first pass, `-AS` in SNP mode at 99.0, so a row
+     * reading it is a second run: its header carries SNP tranche filters, which
+     * `checkForPreviousApplyRecalRun` finds, and its records carry the lists an INDEL run copies.
+     */
+    static void vqsrFixtures(final Path dir) throws Exception {
+        final String contig = "##contig=<ID=chr1,length=100000>\n";
+        final String info = "##INFO=<ID=VQSLOD,Number=1,Type=Float,Description=\"Log odds\">\n"
+                + "##INFO=<ID=culprit,Number=1,Type=String,Description=\"Culprit\">\n"
+                + "##INFO=<ID=POSITIVE_TRAIN_SITE,Number=0,Type=Flag,Description=\"Positive\">\n"
+                + "##INFO=<ID=NEGATIVE_TRAIN_SITE,Number=0,Type=Flag,Description=\"Negative\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n";
+        final String input = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + contig
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+                + "chr1\t100\trs100\tA\tG\t50\tPASS\tDP=10\tGT\t0/1\n"
+                + "chr1\t200\t.\tC\tT\t40\t.\tDP=8\tGT\t1/1\n"
+                + "chr1\t300\t.\tG\tGA\t30\tPASS\tDP=5\tGT\t0/1\n"
+                + "chr1\t400\t.\tT\tC,TA\t20\tPASS\tDP=7\tGT\t1/2\n"
+                + "chr1\t500\t.\tA\tC\t10\tLowQual\tDP=3\tGT\t0/1\n"
+                + "chr1\t600\t.\tCA\tC\t60\t.\tDP=12\tGT\t0/1\n"
+                + "chr1\t700\t.\tG\tA,T\t45\tPASS\tDP=9\tGT\t1/2\n"
+                + "chr1\t800\t.\tA\tC,*\t35\tPASS\tDP=6\tGT\t1/2\n";
+        Files.writeString(dir.resolve("vqsr_input.vcf"), input, StandardCharsets.UTF_8);
+
+        final String recalHeader = "##fileformat=VCFv4.2\n" + info + contig
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String sites = recalHeader
+                + "chr1\t100\t.\tA\t<VQSR>\t.\t.\tEND=100;POSITIVE_TRAIN_SITE;VQSLOD=5.21;culprit=QD\n"
+                + "chr1\t200\t.\tC\t<VQSR>\t.\t.\tEND=200;VQSLOD=-2.40;culprit=FS\n"
+                + "chr1\t300\t.\tG\t<VQSR>\t.\t.\tEND=300;VQSLOD=1.50;culprit=MQ\n"
+                + "chr1\t400\t.\tT\t<VQSR>\t.\t.\tEND=400;VQSLOD=0.80;culprit=QD\n"
+                + "chr1\t500\t.\tA\t<VQSR>\t.\t.\tEND=500;VQSLOD=2.00;culprit=SOR\n"
+                + "chr1\t600\t.\tCA\t<VQSR>\t.\t.\tEND=601;NEGATIVE_TRAIN_SITE;VQSLOD=-4.10;culprit=FS\n"
+                + "chr1\t700\t.\tG\t<VQSR>\t.\t.\tEND=700;VQSLOD=3.10;culprit=MQRankSum\n"
+                + "chr1\t800\t.\tA\t<VQSR>\t.\t.\tEND=800;VQSLOD=0.20;culprit=QD\n";
+        final String alleles = recalHeader
+                + "chr1\t100\t.\tA\tG\t.\t.\tEND=100;POSITIVE_TRAIN_SITE;VQSLOD=5.21;culprit=QD\n"
+                + "chr1\t200\t.\tC\tT\t.\t.\tEND=200;VQSLOD=-2.40;culprit=FS\n"
+                + "chr1\t300\t.\tG\tGA\t.\t.\tEND=300;VQSLOD=1.50;culprit=MQ\n"
+                + "chr1\t400\t.\tT\tC\t.\t.\tEND=400;VQSLOD=0.80;culprit=QD\n"
+                + "chr1\t400\t.\tT\tTA\t.\t.\tEND=400;VQSLOD=-0.50;culprit=FS\n"
+                + "chr1\t500\t.\tA\tC\t.\t.\tEND=500;VQSLOD=2.00;culprit=SOR\n"
+                + "chr1\t600\t.\tCA\tC\t.\t.\tEND=601;NEGATIVE_TRAIN_SITE;VQSLOD=-4.10;culprit=FS\n"
+                + "chr1\t700\t.\tG\tA\t.\t.\tEND=700;VQSLOD=3.10;culprit=MQRankSum\n"
+                + "chr1\t700\t.\tG\tT\t.\t.\tEND=700;VQSLOD=-1.50;culprit=QD\n"
+                + "chr1\t800\t.\tA\tC\t.\t.\tEND=800;VQSLOD=0.20;culprit=QD\n";
+        for (final String[] recal : new String[][] {
+                {"vqsr_sites.recal.vcf", sites}, {"vqsr_alleles.recal.vcf", alleles}}) {
+            Files.writeString(dir.resolve(recal[0]), recal[1], StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(recal[0]).toString()});
+        }
+        Files.writeString(dir.resolve("vqsr_unindexed.recal.vcf"), sites, StandardCharsets.UTF_8);
+
+        final String columns = "targetTruthSensitivity,numKnown,numNovel,knownTiTv,novelTiTv,minVQSLod,"
+                + "filterName,model,accessibleTruthSites,callsAtTruthSites,truthSensitivity\n";
+        for (final String model : new String[] {"SNP", "INDEL"}) {
+            final String name = "VQSRTranche" + model;
+            Files.writeString(dir.resolve(model.toLowerCase() + ".tranches"),
+                    "# Variant quality score tranches file\n# Version number 5\n" + columns
+                    + "90.00,0,3,0.0000,2.0000,4.0000," + name + "0.00to90.00," + model + ",10,9,0.9000\n"
+                    + "99.00,0,4,0.0000,2.0000,1.0000," + name + "90.00to99.00," + model + ",10,9,0.9900\n"
+                    + "99.90,0,5,0.0000,2.0000,-1.0000," + name + "99.00to99.90," + model + ",10,9,0.9990\n"
+                    + "100.00,0,6,0.0000,2.0000,-3.0000," + name + "99.90to100.00," + model + ",10,10,1.0000\n",
+                    StandardCharsets.UTF_8);
+        }
+
+        new org.broadinstitute.hellbender.tools.walkers.vqsr.ApplyVQSR().instanceMain(new String[] {
+                "-V", dir.resolve("vqsr_input.vcf").toString(),
+                "--recal-file", dir.resolve("vqsr_alleles.recal.vcf").toString(),
+                "--tranches-file", dir.resolve("snp.tranches").toString(),
+                "--truth-sensitivity-filter-level", "99.0",
+                "--use-allele-specific-annotations", "--mode", "SNP",
+                "--add-output-vcf-command-line", "false",
+                "--create-output-variant-index", "false",
+                "-O", dir.resolve("vqsr_snp_applied.vcf").toString()});
     }
 
     /**

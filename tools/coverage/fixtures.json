@@ -3490,6 +3490,252 @@
         "0"
       ]
     },
+    "ApplyVQSR": {
+      "$why": [
+        "--variant is vqsr_input.vcf: SNPs, an insertion, a deletion, a MIXED site, a multiallelic SNP, a SNP",
+        "beside a spanning deletion, and a SNP filtered LowQual; and vqsr_snp_applied.vcf, the REFERENCE's own",
+        "-AS SNP pass over it, which makes a row a second run. --recal-file is the per-allele recal file",
+        "first (which -AS matches allele by allele and a site run takes at the right end), then the site",
+        "file, which -AS refuses at its first allele, and the site file without its index, refused at the first record. --tranches-file is SNP or INDEL, read only",
+        "with a --truth-sensitivity-filter-level (99.0 or none), and absent in the third value, the",
+        "reference's NullPointerException. --lod-score-cutoff is none or 1.0, the pair of them the mutual",
+        "exclusion. --ignore-filter lets LowQual through or is absent. --output is plain or BGZF.",
+        "The index, the filtering mode, the command line and the engine's read and interval arguments are",
+        "held as for FilterVariantTranches."
+      ],
+      "--variant": [
+        "/work/fixtures/vqsr_input.vcf",
+        "/work/fixtures/vqsr_snp_applied.vcf"
+      ],
+      "--recal-file": [
+        "/work/fixtures/vqsr_alleles.recal.vcf",
+        "/work/fixtures/vqsr_sites.recal.vcf",
+        "/work/fixtures/vqsr_unindexed.recal.vcf"
+      ],
+      "--tranches-file": [
+        "/work/fixtures/snp.tranches",
+        "/work/fixtures/indel.tranches",
+        "null"
+      ],
+      "--truth-sensitivity-filter-level": [
+        "99.0",
+        "null"
+      ],
+      "--lod-score-cutoff": [
+        "null",
+        "1.0"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL",
+        "BOTH"
+      ],
+      "--ignore-filter": [
+        "LowQual",
+        "null"
+      ],
+      "--output": [
+        "/work/out/applied.vcf",
+        "/work/out/applied.vcf.gz"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
+    },
+    "SVStratify": {
+      "$why": [
+        "--variant is sv_calls.vcf, a DEL of each size, a DUP, an INS with and without a length, an INV and a",
+        "BND to chr2, and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused inside apply.",
+        "--stratify-config is sv_strata.tsv, exclusive strata over the RM track, and sv_overlap.tsv, two",
+        "DEL strata one record can match at once over both tracks. --track-name and --track-intervals are",
+        "RM and sv_rm.bed, or the two .list files naming both tracks; a row pairing one with the other is",
+        "the count refusal, and sv_overlap.tsv under RM alone names an unregistered track.",
+        "the output directory, which --split-output needs along with --output-prefix. The thresholds carry",
+        "their defaults and a second value each. The reference and the engine's read and interval",
+        "arguments are held out, the writer's index, filtering mode and command line held as elsewhere.",
+        "--split-output and --allow-multiple-matches list the accepting value first, and",
+        "--max-variants-per-shard is held at 0, so the rows that fill in the rest are runs rather than refusals.",
+        "--sequence-dictionary is held at sv.dict: without it the tool refuses before anything else."
+      ],
+      "--variant": [
+        "/work/fixtures/sv_calls.vcf",
+        "/work/fixtures/sv_bad.vcf"
+      ],
+      "--stratify-config": [
+        "/work/fixtures/sv_strata.tsv",
+        "/work/fixtures/sv_overlap.tsv"
+      ],
+      "--track-name": [
+        "RM",
+        "/work/fixtures/sv_track_names.list"
+      ],
+      "--track-intervals": [
+        "/work/fixtures/sv_rm.bed",
+        "/work/fixtures/sv_track_files.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict"
+      ],
+      "--output": [
+        "/work/out/stratified.vcf",
+        "/work/out"
+      ],
+      "--output-prefix": [
+        "strat",
+        "null"
+      ],
+      "--stratify-overlap-fraction": [
+        "0.0",
+        "0.5"
+      ],
+      "--stratify-num-breakpoint-overlaps": [
+        "1",
+        "2"
+      ],
+      "--stratify-num-breakpoint-overlaps-interchromosomal": [
+        "1",
+        "2"
+      ],
+      "--reference": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--split-output": [
+        "false",
+        "true"
+      ],
+      "--allow-multiple-matches": [
+        "true",
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "SVConcordance": {
+      "$why": [
+        "--evaluation is sv_eval.vcf, one call near each truth call of its type, a deletion near nothing,",
+        "and a CNV compared by copy number; and the same records without samples. --truth is sv_truth.vcf,",
+        "which shares sample s1 with the eval file and carries AC/AF/AN on its insertion; sv_calls.vcf,",
+        "SVStratify's calls, which share no sample; and sv_bad.vcf, whose second deletion has no ALGORITHMS",
+        "and is refused unwrapped. The interval-overlap and window arguments carry their defaults and a",
+        "value that breaks one pairing each; the sample-overlap ones are held at 0, since a truth genotype",
+        "is stripped of its ECN and any positive threshold refuses the first comparison.",
+        "--sequence-dictionary is held at sv.dict, --do-not-sort at false, and the reference and the",
+        "engine's read and interval arguments are held out."
+      ],
+      "--evaluation": [
+        "/work/fixtures/sv_eval.vcf",
+        "/work/fixtures/sv_eval_sites.vcf"
+      ],
+      "--truth": [
+        "/work/fixtures/sv_truth.vcf",
+        "/work/fixtures/sv_calls.vcf",
+        "/work/fixtures/sv_bad.vcf"
+      ],
+      "--output": [
+        "/work/out/concordance.vcf",
+        "/work/out/concordance.vcf.gz"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict"
+      ],
+      "--do-not-sort": [
+        "false"
+      ],
+      "--depth-interval-overlap": [
+        "0.8",
+        "0.95"
+      ],
+      "--mixed-interval-overlap": [
+        "0.8",
+        "0.5"
+      ],
+      "--pesr-interval-overlap": [
+        "0.5",
+        "0.99"
+      ],
+      "--depth-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--mixed-size-similarity": [
+        "0.0",
+        "0.5"
+      ],
+      "--pesr-size-similarity": [
+        "0.0",
+        "0.99"
+      ],
+      "--depth-breakend-window": [
+        "10000000",
+        "50"
+      ],
+      "--mixed-breakend-window": [
+        "1000",
+        "50"
+      ],
+      "--pesr-breakend-window": [
+        "500",
+        "5"
+      ],
+      "--depth-sample-overlap": [
+        "0.0"
+      ],
+      "--mixed-sample-overlap": [
+        "0.0"
+      ],
+      "--pesr-sample-overlap": [
+        "0.0"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--reference": [],
+      "--confidence": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ]
+    },
     "ConvertHeaderlessHadoopBamShardToBam": {
       "$why": [
         "--bam-shard is copied byte for byte and never parsed, so any file is a shard: reads.bam, a text",
@@ -3577,6 +3823,66 @@
         "--disable-read-filter": "MappedReadFilter"
       },
       "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--track-name": "RM",
+        "--track-intervals": "/work/fixtures/sv_track_files.list"
+      },
+      "why": "One name for two files is the count refusal, which a row with the files the other way round measures already."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--track-name": "/work/fixtures/sv_track_names.list",
+        "--track-intervals": "/work/fixtures/sv_rm.bed"
+      },
+      "why": "Two names for one file is the count refusal again, and every row carrying it measured nothing else."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "true",
+        "--output": "/work/out/stratified.vcf"
+      },
+      "why": "A file where --split-output wants a directory is refused before any record; the rows it took were the ones that should vary the strata."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "false",
+        "--output": "/work/out"
+      },
+      "why": "One writer on a directory is refused by htsjdk when it opens, before any record."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "true",
+        "--output-prefix": "null"
+      },
+      "why": "--split-output without a prefix is refused before any record."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--stratify-config": "/work/fixtures/sv_overlap.tsv",
+        "--track-name": "RM"
+      },
+      "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
     }
   ],
   "exclude": {

@@ -588,6 +588,9 @@ jobs:
             --tool ExampleMultiFeatureWalker \
             --tool CalculateAverageCombinedAnnotations \
             --tool FilterVariantTranches \
+            --tool ApplyVQSR \
+            --tool SVStratify \
+            --tool SVConcordance \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

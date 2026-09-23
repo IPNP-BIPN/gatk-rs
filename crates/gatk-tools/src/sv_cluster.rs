@@ -189,12 +189,21 @@ impl CallRecord {
         self.contig_a == self.contig_b
     }
 
-    /// `getLength(record, assumed)`: an insertion has no length of its own, so one is assumed, and
-    /// the two tests assume different ones.
+    /// `getLength(record, missingInsertionLength)`, per type.
+    ///
+    /// An insertion or a complex event takes its own length when it has one, at least 1, and the
+    /// assumed one only when `SVLEN` was undefined; the two tests assume different ones. A breakend
+    /// spans its two positions. Every other type takes its length, a missing one counting as 1.
+    /// Measured on `SVConcordance`'s array, where two insertions 50 bp apart with SVLEN 400 and
+    /// 380 paired in the reference and not here, since an assumed 50 bp made them disjoint.
     pub fn length_for(&self, assumed_for_insertion: i32) -> i32 {
         match self.sv_type {
-            SvType::Ins => assumed_for_insertion,
-            _ => self.length.unwrap_or(assumed_for_insertion),
+            SvType::Ins | SvType::Cpx => self
+                .length
+                .map(|length| length.max(1))
+                .unwrap_or(assumed_for_insertion),
+            SvType::Bnd => self.position_b - self.position_a + 1,
+            _ => self.length.unwrap_or(1).max(1),
         }
     }
 }
