@@ -5122,6 +5122,103 @@
         "0.05",
         "0.0"
       ]
+    },
+    "VCFComparator": {
+      "$why": [
+        "Two pairs of inputs, each actual one difference away from its expected per site, in position",
+        "order: a single-sample GVCF pair (QUAL, an INFO rank sum, the PLs and so the GQ, a genotype DP,",
+        "the phasing, a dbSNP id, a GQ-zero variant actual lacks, a 1/2 made 0/1 and a filter) and a",
+        "two-sample VCF pair (the site DP, InbreedingCoeff, QD, a multiallelic AC and a GQ). Which",
+        "difference a row reaches first is what its tolerances decide, and the answer names it.",
+        "--variant is TAGGED: the tool reads its inputs by tag, so each value is a whole set of tagged",
+        "inputs (`$tagged`): a GVCF pair, the same GVCF twice with the tags reversed, the VCF pair, one",
+        "single-sample VCF with no <NON_REF> under both tags, two inputs neither tagged expected, and one",
+        "input alone. The last three are the three refusals before the comparison.",
+        "No pair lets a record's genotypes leave an allele uncalled. Trimming that allele recomputes the",
+        "record's annotations through GATK's annotation engine, which is not ported: the claim excludes",
+        "those records, and --annotation, --annotation-group, --annotations-to-exclude, --pedigree and",
+        "--founder-id, which configure that engine alone, are held out.",
+        "--positions-only is mutually exclusive with eight of the other tolerances, and",
+        "--allow-new-stars with --allow-extra-alleles: every row sets every argument, so both are held",
+        "out, --positions-only because it has the most partners.",
+        "--input and --read-index carry no value: the walker opens reads it never consults.",
+        "--ignore-attribute carries the rank sum that differs and the site DP that differs, so each",
+        "value silences a different complaint.",
+        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends belong to",
+        "read filters no row enables, and --allow-old-rms-mapping-quality-annotation-data,",
+        "--assembly-complexity-reference-mode and --dirichlet-keep-prior-in-count to annotations: each is",
+        "refused without its plugin, and every row would set it.",
+        "A run that finds nothing prints nothing, so every accepted row answers the same and",
+        "distinct_outputs is one by construction: what varies is WHICH complaint a rejected row reports."
+      ],
+      "$tagged": [
+        "--variant"
+      ],
+      "--variant": [
+        "expected:/work/fixtures/vcfc_expected.g.vcf actual:/work/fixtures/vcfc_actual.g.vcf",
+        "actual:/work/fixtures/vcfc_same.g.vcf expected:/work/fixtures/vcfc_expected.g.vcf",
+        "expected:/work/fixtures/vcfc_expected.vcf actual:/work/fixtures/vcfc_actual.vcf",
+        "expected:/work/fixtures/vcfc_plain.vcf actual:/work/fixtures/vcfc_plain.vcf",
+        "first:/work/fixtures/vcfc_expected.vcf second:/work/fixtures/vcfc_actual.vcf",
+        "expected:/work/fixtures/vcfc_expected.g.vcf"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--positions-only": [],
+      "--allow-new-stars": [],
+      "--ignore-attribute": [
+        "ReadPosRankSum",
+        "DP"
+      ],
+      "--default-ploidy": [
+        "2",
+        "1"
+      ],
+      "--qual-change-allowed": [
+        "0.001",
+        "2.0"
+      ],
+      "--inbreeding-coeff-change-allowed": [
+        "0.001",
+        "0.05"
+      ],
+      "--good-qual-threshold": [
+        "100.0",
+        "20.0"
+      ],
+      "--dp-change-allowed": [
+        "0",
+        "2"
+      ],
+      "--ranksum-change-allowed": [
+        "0.0",
+        "1.0"
+      ],
+      "--likelihood-change-allowed": [
+        "0",
+        "20"
+      ],
+      "--ref-padding": [
+        "1",
+        "3"
+      ],
+      "--combine-variants-distance": [
+        "10000",
+        "0"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "100"
+      ],
+      "--annotation": [],
+      "--annotation-group": [],
+      "--annotations-to-exclude": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--allow-old-rms-mapping-quality-annotation-data": [],
+      "--assembly-complexity-reference-mode": [],
+      "--dirichlet-keep-prior-in-count": []
     }
   },
   "constraints": [
