@@ -13718,3 +13718,337 @@ pub fn apply_vqsr(parser: &Parser) -> Outcome {
     // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
     Ok(None)
 }
+
+/// `SVStratify`: every SV record labelled with the stratum its type, size and track overlap put it
+/// in, written to one file or to one file per stratum.
+///
+/// The engine is [`gatk_tools::sv_stratify`] and the record [`gatk_tools::sv_call_record`]; the
+/// runner is the configuration loading and the writers, in `onTraversalStart`'s order:
+///
+/// * **the master dictionary is required**, and `--sequence-dictionary` is the only thing that
+///   supplies it, a reference included;
+/// * **the tracks are loaded before the table**, each through `IntervalUtils.loadIntervals`, and a
+///   name given twice is refused after its file was read;
+/// * **the table's columns are checked when its header is read**, the rows parsed one by one, a
+///   stratum validated as it is built and a duplicate name refused as it is added;
+/// * **the writers exist before the first record**: one per stratum and a `default` one under
+///   `--split-output`, each a BGZF VCF named `<prefix>.<stratum>.vcf.gz` in the output directory,
+///   created in the engine's `HashMap` order, so a refusal inside `apply` leaves every file behind
+///   with its header;
+/// * **every failure inside `apply` is the walker's `GATKException`**, the multiple-match refusal
+///   included, since the traversal wraps whatever `apply` throws.
+pub fn sv_stratify(parser: &Parser) -> Outcome {
+    use gatk_tools::sv_stratify as stratify;
+
+    let _ = resolve_read_filters(parser, "SVStratify")?;
+    let inputs = arguments(parser, "variant");
+    if inputs.len() > 1 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "More than one --variant is a GATK feature that this port does not carry yet. This message is the port's own and not GATK's.",
+        ));
+    }
+    let input = inputs.into_iter().next().ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup_over(parser, input)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let config = argument(parser, "stratify-config").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument stratify-config was missing: Argument 'stratify-config' is required",
+        )
+    })?;
+    let prefix = argument(parser, "output-prefix");
+    let split_output = flag(parser, "split-output");
+    let allow_multiple = flag(parser, "allow-multiple-matches");
+    let thresholds = stratify::Thresholds {
+        overlap_fraction: scalar(parser, "stratify-overlap-fraction")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0),
+        num_breakpoint_overlaps: scalar(parser, "stratify-num-breakpoint-overlaps")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1),
+        num_breakpoint_overlaps_interchrom: scalar(
+            parser,
+            "stratify-num-breakpoint-overlaps-interchromosomal",
+        )
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1),
+    };
+
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+    let gatk = |message: String| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            message,
+        )
+    };
+    let bad_input = |message: String| Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException$BadInput",
+        message: Some(format!("Bad input: {message}")),
+    };
+
+    // `onTraversalStart`.
+    let Some(dictionary) = master_dictionary(parser)? else {
+        return Err(illegal(
+            "Reference dictionary is required; please specify with --sequence-dictionary"
+                .to_string(),
+        ));
+    };
+    let sequences: Vec<(String, i32)> = dictionary
+        .sequences
+        .iter()
+        .map(|sequence| (sequence.name.clone(), sequence.length))
+        .collect();
+
+    // `loadStratificationConfig`: the tracks, then the table.
+    let track_names = arguments(parser, "track-name");
+    let track_files = arguments(parser, "track-intervals");
+    if track_names.len() != track_files.len() {
+        return Err(illegal(
+            stratify::StratifyError::TrackCountMismatch.message(),
+        ));
+    }
+    let mut names: Vec<String> = Vec::new();
+    let mut loaded: Vec<Vec<stratify::Interval>> = Vec::new();
+    for (name, path) in track_names.iter().zip(&track_files) {
+        let parameters = gatk_engine::interval_arguments::traversal_parameters(
+            std::slice::from_ref(path),
+            &[],
+            &dictionary,
+            SetRule::Union,
+            MergingRule::All,
+            0,
+            0,
+        )
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+        if names.contains(name) {
+            return Err(bad_input(
+                stratify::StratifyError::DuplicateTrack { name: name.clone() }.message(),
+            ));
+        }
+        names.push(name.clone());
+        loaded.push(
+            parameters
+                .intervals
+                .into_iter()
+                .map(|interval| stratify::Interval {
+                    contig: interval.contig,
+                    start: interval.start,
+                    end: interval.end,
+                })
+                .collect(),
+        );
+    }
+    let tracks =
+        stratify::Tracks::new(&names, &loaded).map_err(|error| bad_input(error.message()))?;
+
+    let table_text = std::fs::read_to_string(&config)
+        .map_err(|_| gatk("IO error while reading config table".to_string()))?;
+    let table =
+        gatk_engine::tsv_table::Table::parse(&table_text, &config).map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.java_class(),
+            message: Some(error.message()),
+        })?;
+    // The header line's number, which a format error names: the first line that is no comment.
+    let header_line = table_text
+        .lines()
+        .position(|line| !line.starts_with('#'))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    if table.columns.is_empty() {
+        return Err(bad_input(format!(
+            "format error in '{config}' at line {}: premature end of table: header line not found",
+            table_text.lines().count()
+        )));
+    }
+    stratify::check_columns(&table.columns).map_err(|error| {
+        bad_input(format!(
+            "format error in '{config}' at line {header_line}: {}",
+            error.message()
+        ))
+    })?;
+    let mut strata: Vec<stratify::Stratum> = Vec::new();
+    for row in &table.rows {
+        let cell = |column: &str| -> String {
+            table
+                .get(row, column)
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        let type_name = cell("SVTYPE");
+        let sv_type = stratify::SvType::parse(&type_name).ok_or_else(|| {
+            illegal(format!(
+                "No enum constant org.broadinstitute.hellbender.tools.spark.sv.utils.GATKSVVCFConstants.StructuralVariantAnnotationType.{type_name}"
+            ))
+        })?;
+        let name = cell("NAME");
+        let bound = |column: &str| -> Result<Option<i32>, Thrown> {
+            let value = cell(column);
+            if stratify::NULL_TABLE_VALUES.contains(&value.as_str()) {
+                return Ok(None);
+            }
+            value.parse::<i32>().map(Some).map_err(|_| {
+                Thrown::non_user(
+                    "java.lang.NumberFormatException",
+                    format!("For input string: \"{value}\""),
+                )
+            })
+        };
+        let min_size = bound("MIN_SIZE")?;
+        let max_size = bound("MAX_SIZE")?;
+        let track_list = stratify::parse_track_string(&cell("TRACKS"), &names)
+            .map_err(|error| gatk(error.message()))?;
+        let stratum = stratify::Stratum::new(&name, sv_type, min_size, max_size, track_list)
+            .map_err(|error| illegal(error.message()))?;
+        if strata.iter().any(|existing| existing.name == stratum.name) {
+            return Err(gatk(format!("Encountered duplicate name {}", stratum.name)));
+        }
+        strata.push(stratum);
+    }
+    let engine =
+        stratify::Engine::new(strata, tracks).map_err(|error| bad_input(error.message()))?;
+
+    // `initializeWriters`.
+    let prefix = if split_output {
+        let Some(prefix) = prefix else {
+            return Err(illegal(
+                "Argument --output-prefix required if using --split-output".to_string(),
+            ));
+        };
+        if !std::path::Path::new(&output).is_dir() {
+            return Err(illegal(
+                "Argument --output must be a directory if using split-output".to_string(),
+            ));
+        }
+        Some(prefix)
+    } else {
+        None
+    };
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let mut header = file.header.clone();
+    let strat_line = htsjdk_vcf::header::HeaderLine::Compound {
+        key: "INFO".to_string(),
+        id: "STRAT".to_string(),
+        number: htsjdk_vcf::header::Cardinality::Fixed(1),
+        line_type: htsjdk_vcf::header::LineType::String,
+        description: "Stratum ID".to_string(),
+        extra: Vec::new(),
+    };
+    if !header
+        .lines
+        .iter()
+        .any(|line| line.render() == strat_line.render())
+    {
+        header.lines.push(strat_line);
+    }
+    header.samples.sort();
+    header.samples.dedup();
+    // One writer per file, in the order they were created: `default` first, then each stratum.
+    let mut writers: Vec<(String, String, Vec<htsjdk_vcf::variant::VariantContext>)> = match &prefix
+    {
+        Some(prefix) => stratify::split_output_files(&engine, prefix)
+            .into_iter()
+            .zip(
+                std::iter::once(stratify::DEFAULT_STRATUM.to_string())
+                    .chain(engine.strata.iter().map(|stratum| stratum.name.clone())),
+            )
+            .map(|(file, stratum)| {
+                (
+                    stratum,
+                    std::path::Path::new(&output)
+                        .join(file)
+                        .display()
+                        .to_string(),
+                    Vec::new(),
+                )
+            })
+            .collect(),
+        None => vec![(
+            stratify::DEFAULT_STRATUM.to_string(),
+            output.clone(),
+            Vec::new(),
+        )],
+    };
+    let close = |writers: &[(String, String, Vec<htsjdk_vcf::variant::VariantContext>)]| {
+        for (_, path, records) in writers {
+            let mut header = header.clone();
+            let mut records = records.clone();
+            apply_sites_only(parser, &mut header, &mut records);
+            let out = htsjdk_vcf::vcf_file::write_vcf(&header, &records)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            write_variant_output(parser, path, &out)?;
+        }
+        Ok::<(), Thrown>(())
+    };
+
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    for record in kept {
+        let wrapped = || {
+            gatk(format!(
+                "Exception thrown at {}:{} {}",
+                record.contig,
+                record.start,
+                java_variant_context_string(record, &input)
+            ))
+        };
+        let mut bare = record.clone();
+        bare.genotypes = Vec::new().into();
+        let sv = match gatk_tools::sv_call_record::create(&bare, &sequences) {
+            Ok(sv) => sv,
+            Err(_) => {
+                close(&writers)?;
+                return Err(wrapped());
+            }
+        };
+        let written = match stratify::apply(
+            &engine,
+            &sv.stratify_record(),
+            thresholds,
+            allow_multiple,
+            split_output,
+        ) {
+            Ok(written) => written,
+            Err(_) => {
+                close(&writers)?;
+                return Err(wrapped());
+            }
+        };
+        for entry in written {
+            let mut labelled = record.clone();
+            match labelled
+                .attributes
+                .iter_mut()
+                .find(|(key, _)| key == "STRAT")
+            {
+                Some(slot) => slot.1 = htsjdk_vcf::variant::Value::Str(entry.stratum.clone()),
+                None => labelled.attributes.push((
+                    "STRAT".to_string(),
+                    htsjdk_vcf::variant::Value::Str(entry.stratum.clone()),
+                )),
+            }
+            let target = writers
+                .iter_mut()
+                .find(|(stratum, _, _)| *stratum == entry.file)
+                .expect("a writer per stratum");
+            target.2.push(labelled);
+        }
+    }
+    close(&writers)?;
+    // `onTraversalSuccess` returns null, so `handleResult` prints nothing.
+    Ok(None)
+}

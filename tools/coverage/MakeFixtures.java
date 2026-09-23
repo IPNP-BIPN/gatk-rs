@@ -1827,6 +1827,7 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
         vqsrFixtures(dir);
+        svStratifyFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1843,6 +1844,69 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("ase_sites_unindexed.vcf"), aseSites, StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `SVStratify` reads: SV calls of every type the engine tells apart, two BED tracks, and
+     * two stratification tables.
+     *
+     * `sv_calls.vcf` has a small and a large deletion, a duplication, an insertion with a length and
+     * one without, an inversion and a breakend to chr2. `sv_bad.vcf` is the same header over a
+     * deletion with no `ALGORITHMS`, which `SVCallRecordUtils.create` refuses inside `apply`.
+     * `sv_rm.bed` covers the small deletion, the insertion and the breakend's far end; `sv_sd.bed`
+     * part of the large deletion and the inversion. `sv_strata.tsv` names only the RM track and its
+     * strata are mutually exclusive; `sv_overlap.tsv` names both tracks and has two deletion strata
+     * one record can match at once, which only `--allow-multiple-matches` lets through. The two
+     * `.list` files expand `--track-name` and `--track-intervals` to both tracks.
+     */
+    static void svStratifyFixtures(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=\"Algorithms\">\n"
+                + "##INFO=<ID=EVIDENCE,Number=.,Type=String,Description=\"Evidence\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        Files.writeString(dir.resolve("sv_calls.vcf"), header
+                + "chr1\t1000\tdel_small\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;SVLEN=-300;ALGORITHMS=manta;EVIDENCE=PE,SR\tGT\t0/1\n"
+                + "chr1\t5000\tdel_large\tN\t<DEL>\t.\tPASS\tEND=15000;SVTYPE=DEL;ALGORITHMS=depth;EVIDENCE=RD\tGT\t0/1\n"
+                + "chr1\t20000\tdup1\tN\t<DUP>\t.\tPASS\tEND=22000;SVTYPE=DUP;ALGORITHMS=depth\tGT\t0/1\n"
+                + "chr1\t30000\tins1\tN\t<INS>\t.\tPASS\tEND=30001;SVTYPE=INS;SVLEN=400;ALGORITHMS=manta;STRANDS=+-\tGT\t1/1\n"
+                + "chr1\t40000\tinv1\tN\t<INV>\t.\tPASS\tEND=41000;SVTYPE=INV;ALGORITHMS=manta;STRANDS=++\tGT\t0/1\n"
+                + "chr1\t50000\tbnd1\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=7000;ALGORITHMS=manta;STRANDS=+-\tGT\t0/1\n"
+                + "chr2\t8000\tins_undef\tN\t<INS>\t.\tPASS\tSVTYPE=INS;SVLEN=-1;ALGORITHMS=melt\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_bad.vcf"), header
+                + "chr1\t1000\tdel_small\tN\t<DEL>\t.\tPASS\tEND=1300;SVTYPE=DEL;ALGORITHMS=manta\tGT\t0/1\n"
+                + "chr1\t5000\tno_algorithms\tN\t<DEL>\t.\tPASS\tEND=15000;SVTYPE=DEL\tGT\t0/1\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_rm.bed"),
+                "chr1\t899\t1400\nchr1\t29989\t30010\nchr2\t6989\t7010\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_sd.bed"),
+                "chr1\t4999\t10000\nchr1\t39999\t41000\n", StandardCharsets.UTF_8);
+        final String columns = "NAME\tSVTYPE\tMIN_SIZE\tMAX_SIZE\tTRACKS\n";
+        Files.writeString(dir.resolve("sv_strata.tsv"), columns
+                + "DEL_small\tDEL\t50\t5000\tNA\n"
+                + "DEL_large\tDEL\t5000\tNA\tNA\n"
+                + "DUP_any\tDUP\tNA\tNA\tNA\n"
+                + "INS_rm\tINS\tNA\tNA\tRM\n"
+                + "INV_any\tINV\t-1\t-1\t-1\n"
+                + "BND_rm\tBND\tNA\tNA\tRM\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_overlap.tsv"), columns
+                + "DEL_any\tDEL\tNA\tNA\tNA\n"
+                + "DEL_rm\tDEL\tNA\tNA\tRM\n"
+                + "INV_sd\tINV\tNA\tNA\tSD\n"
+                + "INS_rm\tINS\tNA\tNA\tRM,SD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_track_names.list"), "RM\nSD\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_track_files.list"),
+                "/work/fixtures/sv_rm.bed\n/work/fixtures/sv_sd.bed\n", StandardCharsets.UTF_8);
     }
 
     /**

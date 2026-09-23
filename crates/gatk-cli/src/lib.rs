@@ -321,6 +321,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
+        "SVStratify" => Some(run_sv_stratify),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "DownsampleByDuplicateSet" => Some(run_downsample_by_duplicate_set),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
@@ -539,6 +540,10 @@ fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown
 
 fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
+}
+
+fn run_sv_stratify(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::sv_stratify(&parsed("SVStratify", args)?)
 }
 
 fn run_calculate_average_combined_annotations(args: &[String]) -> Result<Option<String>, Thrown> {

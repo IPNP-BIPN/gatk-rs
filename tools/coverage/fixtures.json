@@ -3554,6 +3554,89 @@
       "--add-output-vcf-command-line": [
         "false"
       ]
+    },
+    "SVStratify": {
+      "$why": [
+        "--variant is sv_calls.vcf, a DEL of each size, a DUP, an INS with and without a length, an INV and a",
+        "BND to chr2, and sv_bad.vcf, whose second deletion has no ALGORITHMS and is refused inside apply.",
+        "--stratify-config is sv_strata.tsv, exclusive strata over the RM track, and sv_overlap.tsv, two",
+        "DEL strata one record can match at once over both tracks. --track-name and --track-intervals are",
+        "RM and sv_rm.bed, or the two .list files naming both tracks; a row pairing one with the other is",
+        "the count refusal, and sv_overlap.tsv under RM alone names an unregistered track.",
+        "the output directory, which --split-output needs along with --output-prefix. The thresholds carry",
+        "their defaults and a second value each. The reference and the engine's read and interval",
+        "arguments are held out, the writer's index, filtering mode and command line held as elsewhere.",
+        "--split-output and --allow-multiple-matches list the accepting value first, and",
+        "--max-variants-per-shard is held at 0, so the rows that fill in the rest are runs rather than refusals.",
+        "--sequence-dictionary is held at sv.dict: without it the tool refuses before anything else."
+      ],
+      "--variant": [
+        "/work/fixtures/sv_calls.vcf",
+        "/work/fixtures/sv_bad.vcf"
+      ],
+      "--stratify-config": [
+        "/work/fixtures/sv_strata.tsv",
+        "/work/fixtures/sv_overlap.tsv"
+      ],
+      "--track-name": [
+        "RM",
+        "/work/fixtures/sv_track_names.list"
+      ],
+      "--track-intervals": [
+        "/work/fixtures/sv_rm.bed",
+        "/work/fixtures/sv_track_files.list"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/sv.dict"
+      ],
+      "--output": [
+        "/work/out/stratified.vcf",
+        "/work/out"
+      ],
+      "--output-prefix": [
+        "strat",
+        "null"
+      ],
+      "--stratify-overlap-fraction": [
+        "0.0",
+        "0.5"
+      ],
+      "--stratify-num-breakpoint-overlaps": [
+        "1",
+        "2"
+      ],
+      "--stratify-num-breakpoint-overlaps-interchromosomal": [
+        "1",
+        "2"
+      ],
+      "--reference": [],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--split-output": [
+        "false",
+        "true"
+      ],
+      "--allow-multiple-matches": [
+        "true",
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
@@ -3617,6 +3700,66 @@
         "--disable-read-filter": "MappedReadFilter"
       },
       "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--track-name": "RM",
+        "--track-intervals": "/work/fixtures/sv_track_files.list"
+      },
+      "why": "One name for two files is the count refusal, which a row with the files the other way round measures already."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--track-name": "/work/fixtures/sv_track_names.list",
+        "--track-intervals": "/work/fixtures/sv_rm.bed"
+      },
+      "why": "Two names for one file is the count refusal again, and every row carrying it measured nothing else."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "true",
+        "--output": "/work/out/stratified.vcf"
+      },
+      "why": "A file where --split-output wants a directory is refused before any record; the rows it took were the ones that should vary the strata."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "false",
+        "--output": "/work/out"
+      },
+      "why": "One writer on a directory is refused by htsjdk when it opens, before any record."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--split-output": "true",
+        "--output-prefix": "null"
+      },
+      "why": "--split-output without a prefix is refused before any record."
+    },
+    {
+      "tools": [
+        "SVStratify"
+      ],
+      "forbid": {
+        "--stratify-config": "/work/fixtures/sv_overlap.tsv",
+        "--track-name": "RM"
+      },
+      "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
     }
   ],
   "exclude": {
