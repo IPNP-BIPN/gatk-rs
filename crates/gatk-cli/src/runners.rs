@@ -12963,3 +12963,200 @@ pub fn downsample_by_duplicate_set(parser: &Parser) -> Outcome {
         }
     }
 }
+
+/// `ASEReadCounter`: reference and alternate counts at the heterozygous sites of a VCF.
+///
+/// The counting cascade, the overlapping-fragment handling and the line are
+/// [`gatk_tools::ase_read_counter`], where a golden measures them. The runner adds the locus
+/// walk and what `apply` asks of each locus, in its order:
+///
+/// * **the reference base first**, before anything else: with no `--reference` the context holds
+///   no bases and `getBase()` indexes an empty array, which is the reference's own
+///   `ArrayIndexOutOfBoundsException`;
+/// * **then the variants at the locus**, a feature query that needs each input's index, refused
+///   at the first locus when one has none, and more than one variant at a locus is refused;
+/// * a site that is not biallelic, or where no genotype is heterozygous, is skipped with only a
+///   warning, and one whose alternate has no bases is refused.
+///
+/// The header is written when the traversal starts and every line as its site is reached, so a
+/// refusal mid-walk leaves the header and the lines before it, on stdout when no `--output` is
+/// given.
+pub fn ase_read_counter(parser: &Parser) -> Outcome {
+    use gatk_tools::ase_read_counter as ase;
+    use htsjdk_vcf::genotype_type::{determine_type, GenotypeType};
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "ASEReadCounter")?;
+    let output = argument(parser, "output");
+    let variant_paths = distinct_feature_inputs(arguments(parser, "variant"));
+    let format = match scalar(parser, "output-format").as_deref() {
+        Some("TABLE") => ase::OutputFormat::Table,
+        Some("CSV") => ase::OutputFormat::Csv,
+        _ => ase::OutputFormat::RTable,
+    };
+    let count_type = match scalar(parser, "count-overlap-reads-handling").as_deref() {
+        Some("COUNT_READS") => ase::CountType::CountReads,
+        Some("COUNT_FRAGMENTS") => ase::CountType::CountFragments,
+        _ => ase::CountType::CountFragmentsRequireSameBase,
+    };
+    let minimum_depth = number_or(parser, "min-depth-of-non-filtered-base", -1);
+    let minimum_mapping_quality = number_or(parser, "min-mapping-quality", 0);
+    let minimum_base_quality = number_or(parser, "min-base-quality", 0).clamp(0, 255) as u8;
+
+    let mut variants = Vec::new();
+    for path in &variant_paths {
+        let file =
+            htsjdk_vcf::reader::read_vcf(&feature_text(path)?).map_err(|failure| Thrown {
+                failure: Failure::User,
+                exception: failure.error.class(),
+                message: Some(failure.error.message()),
+            })?;
+        variants.push((path.clone(), file.records));
+    }
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &|_| true)
+        .map_err(reads_traversal_error)?;
+    let applied = gatk_tools::locus_walker::traverse(
+        &records,
+        &header,
+        None,
+        if intervals.is_empty() {
+            None
+        } else {
+            Some(&intervals)
+        },
+        gatk_tools::locus_walker::Options {
+            max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+            ..gatk_tools::locus_walker::Options::default()
+        },
+        &filter,
+    )
+    .map_err(locus_traversal_error)?;
+
+    // `onTraversalStart` opens the stream and writes the header before the first locus.
+    let mut text = ase::header(format);
+    text.push('\n');
+    let finish = |text: &str| -> Result<(), Thrown> {
+        match &output {
+            Some(path) => write_file(path, text.as_bytes()),
+            None => {
+                print!("{text}");
+                Ok(())
+            }
+        }
+    };
+    let refuse = |text: &str, thrown: Thrown| -> Outcome {
+        finish(text)?;
+        Err(thrown)
+    };
+    let mut queried = false;
+    for one in &applied {
+        let contig = &one.context.contig;
+        let position = one.context.position;
+        let base = match reference.as_mut() {
+            Some(source) => match source.query(contig, position, position) {
+                Ok(bases) => bases[0],
+                Err(error) => return refuse(&text, Thrown::user(format!("{error:?}"))),
+            },
+            None => {
+                return refuse(
+                    &text,
+                    Thrown::non_user(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        "Index 0 out of bounds for length 0",
+                    ),
+                )
+            }
+        };
+        if !queried {
+            queried = true;
+            if let Some((path, _)) = variants.iter().find(|(path, _)| !has_feature_index(path)) {
+                return refuse(
+                    &text,
+                    Thrown::user(format!(
+                        "Input {path} must support random access to enable queries by interval. \
+                         If it's a file, please index it using the bundled tool IndexFeatureFile"
+                    )),
+                );
+            }
+        }
+        let at: Vec<&htsjdk_vcf::variant::VariantContext> = variants
+            .iter()
+            .flat_map(|(_, records)| records.iter())
+            .filter(|record| {
+                record.contig == *contig
+                    && record.start <= i64::from(position)
+                    && i64::from(position) <= record.stop
+            })
+            .collect();
+        if at.len() > 1 {
+            return refuse(
+                &text,
+                Thrown::user(format!(
+                    "More then one variant context at position: {contig}:{position}"
+                )),
+            );
+        }
+        let Some(site) = at.first() else {
+            continue;
+        };
+        if site.alleles.len() != 2 {
+            continue;
+        }
+        let hets = site
+            .genotypes
+            .iter()
+            .filter(|genotype| determine_type(genotype) == GenotypeType::Het)
+            .count();
+        if hets < 1 {
+            continue;
+        }
+        let alternate = site.alleles[1].display_string();
+        if alternate.is_empty() || site.alleles[1].is_symbolic() {
+            return refuse(
+                &text,
+                Thrown::user(
+                    "The file of variant sites must contain heterozygous sites and cannot be a \
+                     GVCF file containing <NON_REF> alleles."
+                        .to_string(),
+                ),
+            );
+        }
+        let alternate = alternate.as_bytes()[0];
+        let pileup = ase::filter_pileup(&one.context.pileup, count_type);
+        let counts = ase::count_site(
+            &pileup,
+            base,
+            alternate,
+            minimum_mapping_quality,
+            minimum_base_quality,
+        );
+        if let Some(line) = ase::line(
+            contig,
+            position,
+            &site.id,
+            base,
+            alternate,
+            counts,
+            minimum_depth,
+            format,
+        ) {
+            text.push_str(&line);
+            text.push('\n');
+        }
+    }
+    finish(&text)?;
+    Ok(None)
+}
