@@ -392,6 +392,38 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NuMTFilterTool());
         declarations("ReferenceBlockConcordance",
                 new org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance());
+        // Thirteen tools whose ports are oracle-backed and whose inputs are VCFs or GVCFs: the GVCF
+        // genotyper, combiner and reblocker, VQSR's application, the DRAGstr calibration,
+        // an allele-specific read counter, the structural-variant clusterers and their concordance
+        // and stratification, and two undocumented ones, a VCF comparator and the annotator. `GenotypeGVCFs` is not
+        // among them: the parser it hands out refuses its own definitions, `keep-combined` naming a
+        // mutex argument, `keep-specific-combined-raw-annotation`, that the parser does not hold.
+        declarations("ASEReadCounter",
+                new org.broadinstitute.hellbender.tools.walkers.rnaseq.ASEReadCounter());
+        declarations("ApplyVQSR",
+                new org.broadinstitute.hellbender.tools.walkers.vqsr.ApplyVQSR());
+        declarations("CalibrateDragstrModel",
+                new org.broadinstitute.hellbender.tools.dragstr.CalibrateDragstrModel());
+        declarations("CombineGVCFs",
+                new org.broadinstitute.hellbender.tools.walkers.CombineGVCFs());
+        declarations("GnarlyGenotyper",
+                new org.broadinstitute.hellbender.tools.walkers.gnarlyGenotyper.GnarlyGenotyper());
+        declarations("ReblockGVCF",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.ReblockGVCF());
+        declarations("GroupedSVCluster",
+                new org.broadinstitute.hellbender.tools.walkers.sv.GroupedSVCluster());
+        declarations("JointGermlineCNVSegmentation",
+                new org.broadinstitute.hellbender.tools.walkers.sv.JointGermlineCNVSegmentation());
+        declarations("SVCluster",
+                new org.broadinstitute.hellbender.tools.walkers.sv.SVCluster());
+        declarations("SVConcordance",
+                new org.broadinstitute.hellbender.tools.walkers.sv.SVConcordance());
+        declarations("SVStratify",
+                new org.broadinstitute.hellbender.tools.walkers.sv.SVStratify());
+        declarations("VCFComparator",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.VCFComparator());
+        declarations("VariantAnnotator",
+                new org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotator());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
