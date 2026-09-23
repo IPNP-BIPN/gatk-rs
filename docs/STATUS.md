@@ -118,7 +118,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
-| `ASEReadCounter` | locus-walker | oracle-backed | ase-read-counter | 1 | not measured |
+| `ASEReadCounter` | locus-walker | oracle-backed | ase-read-counter | 1 | t=2, 20/20 rows (100%) |
 | `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | not measured |
 | `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | not measured |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | t=2, 18/18 rows (100%) |
