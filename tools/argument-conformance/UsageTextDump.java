@@ -107,6 +107,11 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.walkers.mutect.filtering.NuMTFilterTool());
         usage("ReferenceBlockConcordance",
                 new org.broadinstitute.hellbender.tools.walkers.validation.ReferenceBlockConcordance());
+        // Two more undocumented tools.
+        usage("VCFComparator",
+                new org.broadinstitute.hellbender.tools.walkers.variantutils.VCFComparator());
+        usage("VariantAnnotator",
+                new org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotator());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */
