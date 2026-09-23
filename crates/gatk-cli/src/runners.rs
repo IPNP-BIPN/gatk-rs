@@ -11587,3 +11587,482 @@ pub fn site_depth_to_baf(parser: &Parser) -> Outcome {
         }
     }
 }
+
+/// The refusal each Mutect table reader raises for a file it cannot open: the `IOException` is
+/// caught and replaced, and the message names the file as the command line gave it.
+fn table_unreadable(path: &str) -> Thrown {
+    Thrown {
+        failure: Failure::User,
+        exception: "org.broadinstitute.hellbender.exceptions.UserException",
+        message: Some(format!(
+            "Encountered an IO exception while reading from {path}."
+        )),
+    }
+}
+
+/// A gather's error, whose class is borrowed from the error: a `Thrown` holds a `&'static str`.
+fn gather_error(error: gatk_tools::mutect_gathers::GatherError) -> Thrown {
+    let class = error.java_class();
+    Thrown {
+        failure: if class.starts_with("org.broadinstitute.hellbender.exceptions.UserException") {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: class,
+        message: Some(error.message()),
+    }
+}
+
+/// `MergeMutectStats`: every shard's statistics summed.
+///
+/// The sum is [`gatk_tools::mutect_gathers::merge_stats`], where a golden measures it. The runner
+/// adds that `--stats` is a `LinkedHashSet<File>`, so a file named twice is read once, and that
+/// the files are all read before any statistic is checked: an unreadable shard is refused before
+/// an unknown statistic in an earlier one.
+pub fn merge_mutect_stats(parser: &Parser) -> Outcome {
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut paths: Vec<String> = Vec::new();
+    for path in arguments(parser, "stats") {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    let mut shards = Vec::new();
+    for path in &paths {
+        shards.push(std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?);
+    }
+    let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+    let merged = gatk_tools::mutect_gathers::merge_stats(&texts).map_err(gather_error)?;
+    write_file(&output, merged.as_bytes())?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `GatherPileupSummaries`: the non-empty shards sorted by their first record, then concatenated.
+///
+/// The gather is [`gatk_tools::mutect_gathers::gather_pileup_summaries`]. The runner adds what
+/// `onStartup` does first: `--sequence-dictionary` is loaded before any shard is read, and one
+/// without an `@SQ` line is refused as a malformed file named by its ABSOLUTE path, since
+/// `loadFastaDictionary(File)` rewraps it that way. The value `doWork` returns counts the shards
+/// kept, which is what the tool prints.
+pub fn gather_pileup_summaries(parser: &Parser) -> Outcome {
+    use gatk_engine::pileup_summary;
+
+    let dictionary_path = argument(parser, "sequence-dictionary").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument sequence-dictionary was missing: Argument 'sequence-dictionary' is required",
+        )
+    })?;
+    let output = argument(parser, "O")
+        .ok_or_else(|| Thrown::command_line("Argument O was missing: Argument 'O' is required"))?;
+    let inputs = arguments(parser, "I");
+    let text = std::fs::read_to_string(&dictionary_path).map_err(|_| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{dictionary_path} could not be read, and the reference's refusal carries the \
+                 message of an IOException the port does not reproduce"
+            ),
+        )
+    })?;
+    let header = htsjdk_bam::reader::parse_header_text(&text);
+    if header.sequences.is_empty() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception: "org.broadinstitute.hellbender.exceptions.UserException$MalformedFile",
+            message: Some(format!(
+                "Unknown file is malformed: Could not read sequence dictionary from given fasta \
+                 file {}",
+                java_absolute_path(&dictionary_path)
+            )),
+        });
+    }
+    let dictionary: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|record| record.name.clone())
+        .collect();
+    let mut shards = Vec::new();
+    for path in &inputs {
+        shards.push((
+            std::fs::read_to_string(path).map_err(|_| table_unreadable(path))?,
+            path.clone(),
+        ));
+    }
+    let pairs: Vec<(&str, &str)> = shards
+        .iter()
+        .map(|(text, path)| (text.as_str(), path.as_str()))
+        .collect();
+    let mut kept = 0;
+    for (text, source) in &pairs {
+        let (_, records) = pileup_summary::read_from_file(text, source).map_err(|error| {
+            gather_error(gatk_tools::mutect_gathers::GatherError::PileupSummary(
+                error,
+            ))
+        })?;
+        if !records.is_empty() {
+            kept += 1;
+        }
+    }
+    let gathered = gatk_tools::mutect_gathers::gather_pileup_summaries(&pairs, &dictionary)
+        .map_err(gather_error)?;
+    write_file(&output, gathered.as_bytes())?;
+    Ok(Some(format!("Successfully merged {kept} samples")))
+}
+
+/// `GatherNormalArtifactData`: every shard's records in the order given, under one header.
+///
+/// The concatenation is [`gatk_tools::mutect_gathers::gather_normal_artifact_data`]. The writer is
+/// opened before the first shard is read, so a run refused over an unreadable shard still leaves
+/// the file with its header and the records of the shards before it.
+pub fn gather_normal_artifact_data(parser: &Parser) -> Outcome {
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let inputs = arguments(parser, "input");
+    let mut shards = Vec::new();
+    for path in &inputs {
+        match std::fs::read_to_string(path) {
+            Ok(text) => shards.push(text),
+            Err(_) => {
+                let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+                write_file(
+                    &output,
+                    gatk_tools::mutect_gathers::gather_normal_artifact_data(&texts).as_bytes(),
+                )?;
+                return Err(table_unreadable(path));
+            }
+        }
+    }
+    let texts: Vec<&str> = shards.iter().map(String::as_str).collect();
+    write_file(
+        &output,
+        gatk_tools::mutect_gathers::gather_normal_artifact_data(&texts).as_bytes(),
+    )?;
+    Ok(Some("SUCCESS".to_string()))
+}
+
+/// `AnnotatedIntervalCollection.create`, up to the records: the file must be readable, then its
+/// NAME must be one the codec claims, then the codec reads it.
+///
+/// The codec claims `.seg`, `.maf` and `.maf.annotated` and nothing else, so a table named `.tsv`
+/// is refused as a file that could not be parsed, before a line of it is read. A reader error
+/// names the input by its URI, which is how tribble reports its source.
+pub(crate) fn annotated_intervals(
+    path: &str,
+) -> Result<gatk_tools::annotated_interval::AnnotatedIntervalCollection, Thrown> {
+    let uri = format!("file://{}", java_absolute_path(path));
+    let meta = std::fs::metadata(path);
+    let problem = match &meta {
+        Err(_) => Some("It doesn't exist."),
+        Ok(meta) if !meta.is_file() => Some("It isn't a regular file"),
+        Ok(_) => None,
+    };
+    if let Some(problem) = problem {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile",
+            message: Some(format!("Couldn't read file {uri}. Error was: {problem}")),
+        });
+    }
+    if !(path.ends_with(".seg") || path.ends_with(".maf") || path.ends_with(".maf.annotated")) {
+        return Err(bad_input(format!("Could not parse xsv file: {uri}")));
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{path}: {error}")))?;
+    gatk_tools::annotated_interval::read(&text).map_err(|error| Thrown {
+        failure: Failure::Other,
+        exception: error.java_class(),
+        message: Some(error.message_with_source(&uri)),
+    })
+}
+
+/// `getBestAvailableSequenceDictionary` for a tool that requires a reference: the master
+/// dictionary when one was given, the reference's otherwise.
+fn best_dictionary(parser: &Parser) -> Result<Vec<String>, Thrown> {
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    Ok(master
+        .or(reference)
+        .map(|header| {
+            header
+                .sequences
+                .iter()
+                .map(|record| record.name.clone())
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// `MergeAnnotatedRegions`: overlapping regions of a segment file merged.
+///
+/// The merge and the file format are [`gatk_tools::annotated_interval`], where a golden measures
+/// them. The runner adds the engine's startup before `traverse` reads the segments, and the
+/// reading itself, whose refusals depend on the file's name before its content.
+pub fn merge_annotated_regions(parser: &Parser) -> Outcome {
+    use gatk_tools::annotated_interval::{merge_regions, DEFAULT_SEPARATOR};
+
+    let segments = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let _ = resolve_read_filters(parser, "MergeAnnotatedRegions")?;
+    let dictionary = best_dictionary(parser)?;
+    let mut collection = annotated_intervals(&segments)?;
+    gatk_tools::annotated_interval::check_sortable(&collection.records, &dictionary)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    collection.records = merge_regions(&collection.records, &dictionary, DEFAULT_SEPARATOR);
+    write_file(&output, collection.write().as_bytes())?;
+    Ok(None)
+}
+
+/// `getBestAvailableSequenceDictionary` for a tool whose reference is optional: `None` where
+/// neither a master dictionary nor a reference was given.
+fn optional_best_dictionary(parser: &Parser) -> Result<Option<Vec<String>>, Thrown> {
+    let master = master_dictionary(parser)?;
+    let reference = reference_dictionary(parser)?;
+    Ok(master.or(reference).map(|header| {
+        header
+            .sequences
+            .iter()
+            .map(|record| record.name.clone())
+            .collect()
+    }))
+}
+
+/// `MergeAnnotatedRegionsByAnnotation`: neighbouring regions merged when they agree on the named
+/// annotations and lie within the distance.
+///
+/// The merge is [`gatk_tools::annotated_interval::merge_regions_by_annotation`]. The runner adds
+/// the three checks `traverse` makes, in its order: every named annotation is in the file (the
+/// missing ones listed in the iteration order of a `HashSet` of the names given), a dictionary is
+/// available, which with no reference here comes only from `--sequence-dictionary`, and the
+/// distance is not negative. The output is written from the first merged region's annotations, so
+/// a file of no regions is refused only then.
+pub fn merge_annotated_regions_by_annotation(parser: &Parser) -> Outcome {
+    use gatk_engine::java_hash::JavaHashMap;
+    use gatk_tools::annotated_interval::{
+        merge_regions_by_annotation, write_without_header, DEFAULT_SEPARATOR,
+    };
+
+    let segments = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let names = arguments(parser, "annotations-to-match");
+    let max_distance: i64 = scalar(parser, "max-merge-distance")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1_000_000);
+    let column =
+        |name: &str, default: &str| argument(parser, name).unwrap_or_else(|| default.to_string());
+    let illegal = |message: String| Thrown::non_user("java.lang.IllegalArgumentException", message);
+
+    let _ = resolve_read_filters(parser, "MergeAnnotatedRegionsByAnnotation")?;
+    let dictionary = optional_best_dictionary(parser)?;
+    let collection = annotated_intervals(&segments)?;
+    let mut wanted: JavaHashMap<String, ()> =
+        JavaHashMap::with_capacity(JavaHashMap::<String, ()>::copy_capacity(names.len()));
+    for name in &names {
+        wanted.insert(name.clone(), ());
+    }
+    let missing: Vec<String> = wanted
+        .keys()
+        .filter(|name| !collection.annotations.contains(name))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(illegal(format!(
+            "Input file did not have all of the specified annotations.  Missing annotations were: \
+             {}",
+            missing.join(", ")
+        )));
+    }
+    let dictionary = dictionary.ok_or_else(|| {
+        illegal(
+            "Sequence dictionary not available in the input file nor specified in a reference \
+             parameter.  Please specify a reference with the -R parameter for this input file."
+                .to_string(),
+        )
+    })?;
+    if max_distance < 0 {
+        return Err(illegal(
+            "Cannot have a negative value for distance.".to_string(),
+        ));
+    }
+    gatk_tools::annotated_interval::check_sortable(&collection.records, &dictionary)
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    let merged = merge_regions_by_annotation(
+        &collection.records,
+        &dictionary,
+        &names,
+        DEFAULT_SEPARATOR,
+        max_distance,
+    );
+    let text = write_without_header(
+        &merged,
+        &column("output-contig-column", "CONTIG"),
+        &column("output-start-column", "START"),
+        &column("output-end-column", "END"),
+    )
+    .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?;
+    write_file(&output, text.as_bytes())?;
+    Ok(None)
+}
+
+/// `TagGermlineEvents`: tumour segments tagged where a called normal segment matches them.
+///
+/// The tagging is [`gatk_tools::tag_germline_events::tag_tumour_segments`], where a golden
+/// measures it and its refusals. The runner adds the engine's startup, both files read in
+/// `traverse` (the tumour first), and the output written from the tumour file's own header with
+/// `POSSIBLE_GERMLINE` sorted into its annotations.
+pub fn tag_germline_events(parser: &Parser) -> Outcome {
+    use gatk_tools::tag_germline_events::tag_tumour_segments;
+
+    let tumour_path = argument(parser, "segments").ok_or_else(|| {
+        Thrown::command_line("Argument segments was missing: Argument 'segments' is required")
+    })?;
+    let normal_path = argument(parser, "called-matched-normal-seg-file").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument called-matched-normal-seg-file was missing: Argument \
+             'called-matched-normal-seg-file' is required",
+        )
+    })?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let padding = number_or(parser, "endpoint-padding", 1000);
+    let call = argument(parser, "input-call-header").unwrap_or_else(|| "CALL".to_string());
+    let threshold: f64 = scalar(parser, "reciprocal-threshold")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.75);
+
+    let _ = resolve_read_filters(parser, "TagGermlineEvents")?;
+    let dictionary = best_dictionary(parser)?;
+    let mut tumour = annotated_intervals(&tumour_path)?;
+    let normal = annotated_intervals(&normal_path)?;
+    let tagged = tag_tumour_segments(
+        &tumour.records,
+        &normal.records,
+        &call,
+        &dictionary,
+        "POSSIBLE_GERMLINE",
+        padding,
+        threshold,
+    )
+    .map_err(|error| Thrown {
+        failure: if error.java_class().contains("UserException") {
+            Failure::User
+        } else {
+            Failure::Other
+        },
+        exception: error.java_class(),
+        message: Some(error.message()),
+    })?;
+    tumour.records = tagged;
+    tumour.annotations.push("POSSIBLE_GERMLINE".to_string());
+    tumour.annotations.sort();
+    write_file(&output, tumour.write().as_bytes())?;
+    Ok(None)
+}
+
+/// `GatherTranches`: the tranches of a scattered VQSR run pooled by VQSLOD and cut again at the
+/// requested sensitivities.
+///
+/// The pooling and the cut are [`gatk_tools::gather_tranches`], where a golden measures them. The
+/// runner adds `doWork`'s order: htsjdk's `assertFileIsReadable` over EVERY input before any is
+/// read, a `SAMException` naming the file by its URI; then each shard read in turn, a malformed
+/// one named by the path as the command line gave it, into an output already created; then the
+/// file written. `doWork` returns
+/// `0`, which the tool prints.
+pub fn gather_tranches(parser: &Parser) -> Outcome {
+    use gatk_engine::tranches::{Mode, TrancheError};
+    use gatk_tools::gather_tranches as tranches;
+
+    let inputs = arguments(parser, "input");
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mode = match scalar(parser, "mode").as_deref() {
+        Some("SNP") => Mode::Snp,
+        Some("INDEL") => Mode::Indel,
+        Some("BOTH") => Mode::Both,
+        _ => {
+            return Err(Thrown::command_line(
+                "Argument mode was missing: Argument 'mode' is required",
+            ))
+        }
+    };
+    let requested = arguments(parser, "truth-sensitivity-tranche");
+    let levels: Vec<f64> = if requested.is_empty() {
+        vec![100.0, 99.9, 99.0, 90.0]
+    } else {
+        requested
+            .iter()
+            .map(|value| value.parse().unwrap_or(f64::NAN))
+            .collect()
+    };
+
+    for input in &inputs {
+        let uri = format!("file://{}", java_absolute_path(input));
+        let problem = match std::fs::metadata(input) {
+            Err(_) => Some("Cannot read non-existent file: "),
+            Ok(meta) if meta.is_dir() => Some("Cannot read file because it is a directory: "),
+            Ok(_) => None,
+        };
+        if let Some(problem) = problem {
+            let uri = if problem.contains("directory") {
+                format!("{uri}/")
+            } else {
+                uri
+            };
+            return Err(Thrown::non_user(
+                "htsjdk.samtools.SAMException",
+                format!("{problem}{uri}"),
+            ));
+        }
+    }
+    // The output stream is opened before the first shard is read, so a refused shard leaves it
+    // created and empty.
+    write_file(&output, b"")?;
+    let mut all = Vec::new();
+    for input in &inputs {
+        let text = std::fs::read_to_string(input)
+            .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{input}: {error}")))?;
+        let shard = tranches::read_vqslod_tranches(&text).map_err(|mut error| {
+            // The reader was given text, so a malformed-file refusal is named here, by the path
+            // as the command line gave it: `MalformedFile(GATKPath, ...)` prints the raw string.
+            match &mut error {
+                TrancheError::HeaderLength { file, .. } | TrancheError::RowLength { file, .. } => {
+                    *file = input.clone()
+                }
+                _ => {}
+            }
+            let class = error.class();
+            Thrown {
+                failure: if class.contains("UserException") {
+                    Failure::User
+                } else {
+                    Failure::Other
+                },
+                exception: class,
+                message: Some(error.message()),
+            }
+        })?;
+        all.extend(shard);
+    }
+    let gathered = tranches::merge_and_convert(&all, &levels, mode);
+    let text = format!(
+        "{}{}",
+        tranches::print_header(),
+        tranches::tranches_string(&gathered)
+    );
+    write_file(&output, text.as_bytes())?;
+    Ok(Some("0".to_string()))
+}

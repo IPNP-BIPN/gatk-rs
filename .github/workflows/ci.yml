@@ -578,6 +578,13 @@ jobs:
             --tool CondenseDepthEvidence \
             --tool PrintSVEvidence \
             --tool SiteDepthtoBAF \
+            --tool MergeMutectStats \
+            --tool GatherPileupSummaries \
+            --tool GatherNormalArtifactData \
+            --tool MergeAnnotatedRegions \
+            --tool MergeAnnotatedRegionsByAnnotation \
+            --tool TagGermlineEvents \
+            --tool GatherTranches \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

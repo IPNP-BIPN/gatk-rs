@@ -117,6 +117,8 @@ pub enum CollectionError {
     NoLocatableColumns,
     /// A column line with no rows under it: the annotations are read off record zero.
     NoRecords,
+    /// `IntervalUtils.compareContigs`, reached by a sort over a contig the dictionary lacks.
+    ContigNotInDictionary,
 }
 
 impl CollectionError {
@@ -126,6 +128,7 @@ impl CollectionError {
                 "htsjdk.tribble.TribbleException$MalformedFeatureFile"
             }
             CollectionError::NoRecords => "java.lang.IndexOutOfBoundsException",
+            CollectionError::ContigNotInDictionary => "java.lang.IllegalArgumentException",
         }
     }
 
@@ -151,6 +154,10 @@ impl CollectionError {
                 text
             }
             CollectionError::NoRecords => "Index 0 out of bounds for length 0".to_string(),
+            CollectionError::ContigNotInDictionary => {
+                "Can't do comparison because Locatables' contigs not found in sequence dictionary"
+                    .to_string()
+            }
         }
     }
 }
@@ -285,8 +292,30 @@ impl AnnotatedIntervalCollection {
     }
 }
 
-/// `IntervalUtils.sortLocatablesBySequenceDictionary`, which puts an unknown contig last rather
-/// than refusing it.
+/// `IntervalUtils.sortLocatablesBySequenceDictionary`, for records [`check_sortable`] accepts.
+///
+/// An unknown contig sorts last here, which is what a single record under an incomplete
+/// dictionary looks like: the reference's sort never compares it, so it is written as it came.
+/// Whether `sortLocatablesBySequenceDictionary` sorts the records or refuses them.
+///
+/// `ArrayList.sort` is a TimSort, which compares nothing for fewer than two elements and compares
+/// every element at least once otherwise, and each comparison is `compareContigs`, which refuses a
+/// contig the dictionary does not hold. So two or more records with one such contig among them are
+/// refused, whatever order they are in.
+pub fn check_sortable(
+    records: &[AnnotatedInterval],
+    dictionary: &[String],
+) -> Result<(), CollectionError> {
+    if records.len() >= 2
+        && records
+            .iter()
+            .any(|record| !dictionary.contains(&record.contig))
+    {
+        return Err(CollectionError::ContigNotInDictionary);
+    }
+    Ok(())
+}
+
 pub fn sort_by_dictionary(records: &mut [AnnotatedInterval], dictionary: &[String]) {
     let index_of = |contig: &str| {
         dictionary

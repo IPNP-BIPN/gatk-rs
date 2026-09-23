@@ -1447,6 +1447,157 @@ public class MakeFixtures {
                             "--output", dir.resolve(pair[1]).toString(),
                     });
         }
+        // The three Mutect gathers. `GatherPileupSummaries` gets the REFERENCE's own summaries of
+        // one sample over three windows: two holding sites and one holding none, named by a
+        // `.list` out of order, so the gather has to sort them by their first record and drop the
+        // empty one. The population's sites sit below 5000, so the windows split there. A second
+        // `.list` adds the first window again under another sample's name, which the gather
+        // refuses: the corpus's two BAMs carry the same sample, so the name is rewritten here.
+        for (final String[] window : new String[][] {
+                {"chr1:2001-60000", "summaries_b.table"}, {"chr1:1-2000", "summaries_a.table"},
+                {"chr1:90001-100000", "summaries_empty.table"}}) {
+            new org.broadinstitute.hellbender.tools.walkers.contamination.GetPileupSummaries()
+                    .instanceMain(new String[] {
+                            "--input", dir.resolve("reads.bam").toString(),
+                            "--variant", population.toString(),
+                            "--intervals", window[0],
+                            "--output", dir.resolve(window[1]).toString(),
+                    });
+        }
+        Files.writeString(dir.resolve("pileups.list"),
+                "/work/fixtures/summaries_b.table\n/work/fixtures/summaries_empty.table\n"
+                        + "/work/fixtures/summaries_a.table\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("summaries_other.table"),
+                Files.readString(dir.resolve("summaries_a.table"))
+                        .replace("SAMPLE=sample1", "SAMPLE=other"),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("mixed_pileups.list"),
+                "/work/fixtures/summaries_b.table\n/work/fixtures/summaries_other.table\n",
+                StandardCharsets.UTF_8);
+        // `GatherNormalArtifactData` gets the reference's own tables for each sample of
+        // `tumor_normal.bam` taken as the normal, so the two shards hold different records.
+        for (final String sample : new String[] {"normal", "tumor"}) {
+            new org.broadinstitute.hellbender.tools.walkers.mutect.GetNormalArtifactData()
+                    .instanceMain(new String[] {
+                            "--input", dir.resolve("tumor_normal.bam").toString(),
+                            "--reference", dir.resolve("reference.fasta").toString(),
+                            "--normal-sample", sample,
+                            "--output", dir.resolve("artifact_" + sample + ".table").toString(),
+                    });
+        }
+        // `tumor` as the normal finds nothing, so its table is a header alone. A third table in the
+        // writer's own layout (ints, a double as `Double.toString` writes it, the type's name)
+        // gives the gather two shards with records, so their order shows in the output.
+        Files.writeString(dir.resolve("artifact_extra.table"),
+                "normal_alt\tnormal_dp\ttumor_alt\ttumor_dp\tdownsampling\ttype\n"
+                        + "0\t10\t3\t12\t0.5\tSNV\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("artifacts.list"),
+                "/work/fixtures/artifact_extra.table\n/work/fixtures/artifact_tumor.table\n"
+                        + "/work/fixtures/artifact_normal.table\n",
+                StandardCharsets.UTF_8);
+        // `MergeMutectStats` reads the two-column table Mutect2 writes. The `.list` names one
+        // shard twice, which the tool's `LinkedHashSet` reads once, and the second `.list` adds a
+        // shard carrying a statistic the aggregation map does not hold.
+        Files.writeString(dir.resolve("a.stats"), "statistic\tvalue\ncallable\t1000.0\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("b.stats"), "statistic\tvalue\ncallable\t2.5E7\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("odd.stats"),
+                "statistic\tvalue\ncallable\t3.0\nrejected\t1.0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("stats.list"),
+                "/work/fixtures/a.stats\n/work/fixtures/b.stats\n/work/fixtures/a.stats\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("odd_stats.list"),
+                "/work/fixtures/a.stats\n/work/fixtures/odd.stats\n", StandardCharsets.UTF_8);
+        // Segment files for the copy-number utilities, which the codec reads only under a `.seg`,
+        // `.maf` or `.maf.annotated` name: `regions.tsv` holds the same rows and is refused by
+        // its name alone. `regions.seg` is unsorted, overlaps itself in a chain, abuts, and has a
+        // chr2 row that a chr1-only dictionary sorts last; `regions2.seg` uses another spelling of
+        // the locatable columns and carries comments. `tumour.seg` and `normal.seg` are called
+        // segments: the normal amplification shares both breakpoints of one tumour segment within
+        // a few bases and reciprocally overlaps another, and its deletion matches nothing.
+        final String regions = "CONTIG\tSTART\tEND\tname\tvalue\tCALL\n"
+                + "chr1\t300\t400\tc\t1.5\t-\n"
+                + "chr1\t1\t100\ta\t0.5\t+\n"
+                + "chr1\t50\t150\tb\t0.5\t+\n"
+                + "chr1\t120\t200\tb\t0.7\t+\n"
+                + "chr1\t401\t500\td\t1.5\t-\n"
+                + "chr2\t1\t100\te\t2.0\t0\n";
+        Files.writeString(dir.resolve("regions.seg"), regions, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("regions.tsv"), regions, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("regions2.seg"),
+                "#a note\nChromosome\tStart_Position\tEnd_Position\tname\tCALL\n"
+                        + "chr1\t10\t60\tx\t+\n"
+                        + "chr1\t61\t90\ty\t+\n"
+                        + "chr1\t500\t900\tz\t-\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("annotations.list"), "CALL\nname\n", StandardCharsets.UTF_8);
+        // A reference naming both contigs the segment files use, for the tools that require one:
+        // under `reference.fasta` alone a file with a chr2 row is refused by the dictionary sort.
+        try (final htsjdk.samtools.reference.FastaReferenceWriter both =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("two_contigs.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 30000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            both.startSequence("chr1").appendBases(bases.toString());
+            both.startSequence("chr2").appendBases(bases.toString());
+        }
+        Files.writeString(dir.resolve("tumour.seg"),
+                "CONTIG\tSTART\tEND\tCALL\tMEAN\n"
+                        + "chr1\t1\t1000\t+\t0.9\n"
+                        + "chr1\t1001\t5000\t0\t0.0\n"
+                        + "chr1\t5001\t8000\t+\t0.8\n"
+                        + "chr1\t8001\t9000\t-\t-0.9\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("normal.seg"),
+                "CONTIG\tSTART\tEND\tCALL\n"
+                        + "chr1\t5\t995\t+\n"
+                        + "chr1\t5200\t8100\t+\n"
+                        + "chr1\t20000\t21000\t-\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("normal2.seg"),
+                "CONTIG\tSTART\tEND\tCALL\n"
+                        + "chr1\t8001\t9000\t-\n",
+                StandardCharsets.UTF_8);
+        // Tranche shards for `GatherTranches`, in the VQSLOD layout of version 6: two shards at
+        // the same four levels, a third with a level the others lack, and one of version 5, which
+        // the reader refuses by its version line. A `.list` names the first three, and another
+        // names the requested sensitivities, out of order, since the tool sorts them in place.
+        final String trancheHeader = "# Variant quality score tranches file\n# Version number 6\n"
+                + "requestedVQSLOD,numKnown,numNovel,knownTiTv,novelTiTv,minVQSLod,filterName,model,"
+                + "accessibleTruthSites,callsAtTruthSites,truthSensitivity\n";
+        Files.writeString(dir.resolve("shard1.tranches"), trancheHeader
+                + "4.0000,100,20,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,500,0.5000\n"
+                + "2.0000,200,50,2.1000,1.6000,2.0000,VQSRTranche,SNP,1000,800,0.8000\n"
+                + "0.0000,300,90,2.2000,1.7000,0.0000,VQSRTranche,SNP,1000,950,0.9500\n"
+                + "-2.0000,400,150,2.3000,1.8000,-2.0000,VQSRTranche,SNP,1000,990,0.9900\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("shard2.tranches"), trancheHeader
+                + "4.0000,60,10,1.8000,1.4000,4.0000,VQSRTranche,SNP,1000,450,0.4500\n"
+                + "2.0000,130,30,1.9000,1.5000,2.0000,VQSRTranche,SNP,1000,780,0.7800\n"
+                + "0.0000,220,70,2.0000,1.6000,0.0000,VQSRTranche,SNP,1000,940,0.9400\n"
+                + "-2.0000,330,120,2.1000,1.7000,-2.0000,VQSRTranche,SNP,1000,985,0.9850\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("shard3.tranches"), trancheHeader
+                + "4.0000,10,2,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,400,0.4000\n"
+                + "1.0000,90,25,2.0000,1.5000,1.0000,VQSRTranche,SNP,1000,700,0.7000\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("old.tranches"),
+                trancheHeader.replace("Version number 6", "Version number 5")
+                        + "4.0000,10,2,2.0000,1.5000,4.0000,VQSRTranche,SNP,1000,400,0.4000\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("tranches.list"),
+                "/work/fixtures/shard1.tranches\n/work/fixtures/shard2.tranches\n"
+                        + "/work/fixtures/shard3.tranches\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("levels.list"), "90.0\n99.0\n95.0\n", StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
     }

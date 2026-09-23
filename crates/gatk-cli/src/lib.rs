@@ -308,6 +308,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CondenseDepthEvidence" => Some(run_condense_depth_evidence),
         "PrintSVEvidence" => Some(run_print_sv_evidence),
         "SiteDepthtoBAF" => Some(run_site_depth_to_baf),
+        "MergeMutectStats" => Some(run_merge_mutect_stats),
+        "GatherPileupSummaries" => Some(run_gather_pileup_summaries),
+        "GatherNormalArtifactData" => Some(run_gather_normal_artifact_data),
+        "MergeAnnotatedRegions" => Some(run_merge_annotated_regions),
+        "MergeAnnotatedRegionsByAnnotation" => Some(run_merge_annotated_regions_by_annotation),
+        "TagGermlineEvents" => Some(run_tag_germline_events),
+        "GatherTranches" => Some(run_gather_tranches),
         "GetNormalArtifactData" => Some(run_get_normal_artifact_data),
         "ValidateVariants" => Some(run_validate_variants),
         "LeftAlignAndTrimVariants" => Some(run_left_align_and_trim_variants),
@@ -508,6 +515,37 @@ fn run_collect_allelic_counts(args: &[String]) -> Result<Option<String>, Thrown>
 
 fn run_filter_intervals(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_intervals(&parsed("FilterIntervals", args)?)
+}
+
+fn run_gather_tranches(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_tranches(&parsed("GatherTranches", args)?)
+}
+
+fn run_merge_annotated_regions_by_annotation(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::merge_annotated_regions_by_annotation(&parsed(
+        "MergeAnnotatedRegionsByAnnotation",
+        args,
+    )?)
+}
+
+fn run_tag_germline_events(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::tag_germline_events(&parsed("TagGermlineEvents", args)?)
+}
+
+fn run_merge_annotated_regions(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::merge_annotated_regions(&parsed("MergeAnnotatedRegions", args)?)
+}
+
+fn run_merge_mutect_stats(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::merge_mutect_stats(&parsed("MergeMutectStats", args)?)
+}
+
+fn run_gather_pileup_summaries(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_pileup_summaries(&parsed("GatherPileupSummaries", args)?)
+}
+
+fn run_gather_normal_artifact_data(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::gather_normal_artifact_data(&parsed("GatherNormalArtifactData", args)?)
 }
 
 fn run_site_depth_to_baf(args: &[String]) -> Result<Option<String>, Thrown> {

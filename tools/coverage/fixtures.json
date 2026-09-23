@@ -2953,6 +2953,226 @@
       "--read-filter-tag-op": [],
       "--keep-reverse-strand-only": [],
       "--dont-require-soft-clips-both-ends": []
+    },
+    "MergeMutectStats": {
+      "$why": [
+        "--stats is one shard, stats.list naming a.stats, b.stats and a.stats again, which the tool's",
+        "LinkedHashSet reads once, and odd_stats.list, whose second shard carries a statistic the",
+        "aggregation map does not hold: the IllegalStateException the suite also measures. The sum is",
+        "a double written as one, so 1000.0 and 2.5E7 come back as 2.5001E7."
+      ],
+      "--stats": [
+        "/work/fixtures/a.stats",
+        "/work/fixtures/stats.list",
+        "/work/fixtures/odd_stats.list"
+      ],
+      "--output": [
+        "/work/out/merged.stats",
+        "/work/out/merged2.stats"
+      ]
+    },
+    "GatherPileupSummaries": {
+      "$why": [
+        "-I is the reference's summary of reads.bam above 2000, pileups.list naming it, an empty window",
+        "and the window below 2000 in that order, which the gather drops and then sorts by first",
+        "record, and mixed_pileups.list, whose second table names another sample, which it refuses.",
+        "--sequence-dictionary is matching.dict and",
+        "sv.dict, which both put chr1 first; the printed count of samples merged is part of the output."
+      ],
+      "--I": [
+        "/work/fixtures/summaries_b.table",
+        "/work/fixtures/pileups.list",
+        "/work/fixtures/mixed_pileups.list"
+      ],
+      "--O": [
+        "/work/out/gathered.table",
+        "/work/out/gathered2.table"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/matching.dict",
+        "/work/fixtures/sv.dict"
+      ]
+    },
+    "GatherNormalArtifactData": {
+      "$why": [
+        "--input is the reference's table with tumor_normal.bam's `normal` as the normal, and",
+        "artifacts.list naming a table in the writer's layout, the reference's header-only table for",
+        "`tumor`, and the `normal` one, since the gather concatenates in the order given with no sort",
+        "and no empty check."
+      ],
+      "--input": [
+        "/work/fixtures/artifact_normal.table",
+        "/work/fixtures/artifacts.list"
+      ],
+      "--output": [
+        "/work/out/artifacts.table",
+        "/work/out/artifacts2.table"
+      ]
+    },
+    "MergeAnnotatedRegions": {
+      "$why": [
+        "--segments is regions.seg, unsorted, chained and abutting, regions2.seg with another",
+        "spelling of the locatable columns and a comment, and regions.tsv, the same rows under a name",
+        "the codec does not claim, which is refused before a line is read. --reference is",
+        "two_contigs.fasta, naming chr1 and chr2, and reference.fasta, naming chr1 alone: a file of",
+        "two or more rows with a chr2 row is then refused by the dictionary sort's compareContigs.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/regions.seg",
+        "/work/fixtures/regions2.seg",
+        "/work/fixtures/regions.tsv"
+      ],
+      "--output": [
+        "/work/out/merged.seg",
+        "/work/out/merged2.seg"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "MergeAnnotatedRegionsByAnnotation": {
+      "$why": [
+        "--annotations-to-match is CALL, annotations.list naming CALL and name, and ABSENT, which",
+        "the file does not carry. --max-merge-distance is the default and 50, which splits the chain.",
+        "--reference is two_contigs.fasta and reference.fasta, as for MergeAnnotatedRegions. The",
+        "output's locatable column names are arguments.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/regions.seg",
+        "/work/fixtures/regions2.seg"
+      ],
+      "--annotations-to-match": [
+        "CALL",
+        "/work/fixtures/annotations.list",
+        "ABSENT"
+      ],
+      "--max-merge-distance": [
+        "1000000",
+        "50"
+      ],
+      "--output": [
+        "/work/out/merged.tsv",
+        "/work/out/merged2.tsv"
+      ],
+      "--output-contig-column": [
+        "CONTIG",
+        "chrom"
+      ],
+      "--output-start-column": [
+        "START",
+        "begin"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "TagGermlineEvents": {
+      "$why": [
+        "--segments is the called tumour segments and regions.seg, whose CALL column has a",
+        "neutral 0 and whose rows overlap, which the tagger refuses. --called-matched-normal-seg-file",
+        "is normal.seg, one amplification matching a tumour segment's breakpoints within a few bases",
+        "and one reciprocally overlapping another, and normal2.seg, a deletion matching exactly.",
+        "--endpoint-padding is the default and 2, which loses the breakpoint match; --reciprocal-threshold",
+        "is the default 0.75 and 0.95, which loses the overlap. --reference is two_contigs.fasta and",
+        "reference.fasta, whose missing chr2 refuses regions.seg once it gets past the overlap check.",
+        "--input, --read-index, --intervals, --exclude-intervals and the three read-filter arguments",
+        "whose filters no row selects are held out for the reasons CondenseDepthEvidence gives, and",
+        "--sequence-dictionary with them: beside a reference it is compared against that reference's,",
+        "which measures the engine's validation rather than the tool."
+      ],
+      "--segments": [
+        "/work/fixtures/tumour.seg",
+        "/work/fixtures/regions.seg"
+      ],
+      "--called-matched-normal-seg-file": [
+        "/work/fixtures/normal.seg",
+        "/work/fixtures/normal2.seg"
+      ],
+      "--endpoint-padding": [
+        "1000",
+        "2"
+      ],
+      "--reciprocal-threshold": [
+        "0.75",
+        "0.95"
+      ],
+      "--output": [
+        "/work/out/tagged.seg",
+        "/work/out/tagged2.seg"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--intervals": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "GatherTranches": {
+      "$why": [
+        "--input is one shard, tranches.list naming three shards (two at the same four levels and",
+        "one with a level they lack, so the TreeMap pools them and the Ti/Tv of a pooled level is a ratio",
+        "of sums), and a shard of version 5, which the reader refuses. --truth-sensitivity-tranche is 99.0",
+        "alone and levels.list naming three levels out of order, which the tool sorts in place. --mode is",
+        "SNP and INDEL, which names the tranches' filters."
+      ],
+      "--input": [
+        "/work/fixtures/shard1.tranches",
+        "/work/fixtures/tranches.list",
+        "/work/fixtures/old.tranches"
+      ],
+      "--truth-sensitivity-tranche": [
+        "99.0",
+        "/work/fixtures/levels.list"
+      ],
+      "--mode": [
+        "SNP",
+        "INDEL"
+      ],
+      "--output": [
+        "/work/out/gathered.tranches",
+        "/work/out/gathered2.tranches"
+      ]
     }
   },
   "constraints": [
