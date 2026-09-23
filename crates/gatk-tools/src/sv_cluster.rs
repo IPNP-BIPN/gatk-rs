@@ -386,6 +386,27 @@ pub fn cluster(
     linkage: &Linkage,
     algorithm: Algorithm,
 ) -> Vec<Vec<String>> {
+    cluster_indices(records, linkage, algorithm)
+        .into_iter()
+        .map(|members| {
+            let mut ids: Vec<String> = members
+                .into_iter()
+                .map(|index| records[index].id.clone())
+                .collect();
+            // The output writes them sorted, which is what MEMBERS holds.
+            ids.sort();
+            ids
+        })
+        .collect()
+}
+
+/// [`cluster`] as positions in `records`, each cluster in its members' order, which is what a
+/// collapser reads: the first of two equal genotypes is the one kept.
+pub fn cluster_indices(
+    records: &[CallRecord],
+    linkage: &Linkage,
+    algorithm: Algorithm,
+) -> Vec<Vec<usize>> {
     let mut clusters: Vec<Vec<usize>> = Vec::new();
 
     for (index, item) in records.iter().enumerate() {
@@ -469,15 +490,4 @@ pub fn cluster(
     }
 
     clusters
-        .into_iter()
-        .map(|members| {
-            let mut ids: Vec<String> = members
-                .into_iter()
-                .map(|index| records[index].id.clone())
-                .collect();
-            // The output writes them sorted, which is what MEMBERS holds.
-            ids.sort();
-            ids
-        })
-        .collect()
 }

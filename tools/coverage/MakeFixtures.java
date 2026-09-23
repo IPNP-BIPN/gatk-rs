@@ -1829,6 +1829,7 @@ public class MakeFixtures {
         vqsrFixtures(dir);
         svStratifyFixtures(dir);
         svConcordanceFixtures(dir);
+        svClusterFixtures(dir);
         // The sites `ASEReadCounter` reads, with one sample's genotypes, indexed because the
         // walker queries them by locus; and the same file without its index, which it refuses.
         final String aseSites = "##fileformat=VCFv4.2\n"
@@ -1857,6 +1858,66 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * What `SVCluster` reads: a reference the SV calls fit on, calls that group, and ploidies.
+     *
+     * `sv_reference.fasta` names chr1 and chr2 at 100 kb, the lengths the SV fixtures' headers
+     * declare. `sv_cluster_input.vcf` holds three overlapping deletions (two with split-read or
+     * paired-end evidence and one depth-only, which the breakpoints ignore), two duplications, two
+     * insertions of different mobile-element subtypes, an inversion, two breakends to the same far
+     * end, and a depth-only deletion and duplication that only `--enable-cnv` groups into a CNV.
+     * Every genotype carries `ECN`, which carrier counting requires. `sv_ploidy.tsv` gives both
+     * samples a ploidy of two; `sv_ploidy_haploid.tsv` gives `s2` one on chr1, which only a sample
+     * `--fast-mode` dropped ever reads.
+     */
+    static void svClusterFixtures(final Path dir) throws Exception {
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("sv_reference.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < 100000; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            writer.startSequence("chr1").appendBases(bases.toString());
+            writer.startSequence("chr2").appendBases(bases.toString());
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type\">\n"
+                + "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=\"Algorithms\">\n"
+                + "##INFO=<ID=EVIDENCE,Number=.,Type=String,Description=\"Evidence\">\n"
+                + "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Second contig\">\n"
+                + "##INFO=<ID=END2,Number=1,Type=Integer,Description=\"Second end\">\n"
+                + "##INFO=<ID=STRANDS,Number=1,Type=String,Description=\"Strands\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=ECN,Number=1,Type=Integer,Description=\"Expected copy number\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "##contig=<ID=chr2,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n";
+        Files.writeString(dir.resolve("sv_cluster_input.vcf"), header
+                + "chr1\t1000\td1\tN\t<DEL>\t.\tPASS\tEND=2000;SVTYPE=DEL;ALGORITHMS=manta;EVIDENCE=PE,SR\tGT:ECN\t0/1:2\t0/0:2\n"
+                + "chr1\t1050\td2\tN\t<DEL>\t.\tPASS\tEND=2050;SVTYPE=DEL;ALGORITHMS=wham;EVIDENCE=PE\tGT:ECN\t0/0:2\t0/1:2\n"
+                + "chr1\t1100\td3\tN\t<DEL>\t.\tLowQual\tEND=1990;SVTYPE=DEL;ALGORITHMS=depth;EVIDENCE=RD\tGT:ECN\t0/1:2\t0/1:2\n"
+                + "chr1\t5000\tu1\tN\t<DUP>\t.\tPASS\tEND=8000;SVTYPE=DUP;ALGORITHMS=depth\tGT:ECN\t0/1:2\t0/0:2\n"
+                + "chr1\t5100\tu2\tN\t<DUP>\t.\tPASS\tEND=8100;SVTYPE=DUP;ALGORITHMS=depth\tGT:ECN\t0/0:2\t0/1:2\n"
+                + "chr1\t20000\ti1\tN\t<INS:ME:ALU>\t.\tPASS\tEND=20001;SVTYPE=INS;SVLEN=300;ALGORITHMS=manta;STRANDS=+-\tGT:ECN\t1/1:2\t0/0:2\n"
+                + "chr1\t20020\ti2\tN\t<INS:ME:LINE1>\t.\tPASS\tEND=20021;SVTYPE=INS;SVLEN=310;ALGORITHMS=melt;STRANDS=+-\tGT:ECN\t0/0:2\t0/1:2\n"
+                + "chr1\t40000\tv1\tN\t<INV>\t.\tPASS\tEND=42000;SVTYPE=INV;ALGORITHMS=manta;STRANDS=++\tGT:ECN\t0/1:2\t0/0:2\n"
+                + "chr2\t3000\tb1\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=60000;STRANDS=+-;ALGORITHMS=manta\tGT:ECN\t0/1:2\t0/0:2\n"
+                + "chr2\t3010\tb2\tN\t<BND>\t.\tPASS\tSVTYPE=BND;CHR2=chr2;END2=60010;STRANDS=+-;ALGORITHMS=wham\tGT:ECN\t0/0:2\t0/1:2\n"
+                + "chr2\t9000\tc1\tN\t<DEL>\t.\tPASS\tEND=9500;SVTYPE=DEL;ALGORITHMS=depth\tGT:ECN\t0/1:2\t0/0:2\n"
+                + "chr2\t9020\tc2\tN\t<DUP>\t.\tPASS\tEND=9510;SVTYPE=DUP;ALGORITHMS=depth\tGT:ECN\t0/0:2\t0/1:2\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_ploidy.tsv"),
+                "SAMPLE\tchr1\tchr2\ns1\t2\t2\ns2\t2\t2\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("sv_ploidy_haploid.tsv"),
+                "SAMPLE\tchr1\tchr2\ns1\t2\t2\ns2\t1\t2\n", StandardCharsets.UTF_8);
     }
 
     /**
