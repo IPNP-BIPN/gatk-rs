@@ -13558,13 +13558,18 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             "--input-is-somatic, the Mutect2 reference-confidence path, is not ported.",
         ));
     }
+    // `--dbsnp` is opened at startup and QUERIED at the first site the annotation engine reaches,
+    // which is where an input with no index is refused.
     let dbsnp = argument(parser, "dbsnp");
-    if let Some(path) = &dbsnp {
-        open_feature_input(path)?;
-        return Err(limitation(
-            "--dbsnp's rsID and DB annotation is not ported for GenotypeGVCFs yet.",
-        ));
-    }
+    let dbsnp_records = match &dbsnp {
+        Some(path) => {
+            let (_, text) = open_feature_input(path)?;
+            let file = htsjdk_vcf::reader::read_vcf(&text)
+                .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+            Some(file.records)
+        }
+        None => None,
+    };
     if argument(parser, "population-callset").is_some() {
         return Err(limitation("--population-callset is not ported."));
     }
@@ -13648,6 +13653,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         resolved: resolved.clone(),
         keep_combined: flag(parser, "keep-combined-raw-annotations"),
         raw_keys_to_keep,
+        dbsnp: dbsnp_records,
     };
     let allele_specific = annotations.any_allele_specific();
     let annotate_discovered = flag(parser, "annotate-with-num-discovered-alleles");
@@ -13666,6 +13672,10 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
     lines.extend(default_tool_vcf_header_lines(parser, "GenotypeGVCFs"));
     lines.retain(|line| !matches!(line, HeaderLine::Unstructured { key, .. } if key.starts_with("GVCFBlock")));
     lines.extend(catalogue::descriptions(&resolved, false, false));
+    // The engine's overlap line for `--dbsnp`; the tool adds the same line again further down.
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
+    }
     if annotate_discovered {
         lines.push(compound(
             "INFO",
@@ -13694,6 +13704,9 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             LineType::String,
             "Allele-specific QUAL approximations",
         ));
+    }
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
     }
     lines.push(HeaderLine::Filter {
         id: "LowQual".to_string(),
@@ -13824,6 +13837,16 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
             None => thrown,
         }
     })?;
+    // Every record the walk returns went through `annotateContext`, whose overlap annotator
+    // queries `--dbsnp` there; with no index that first query is the refusal.
+    if let Some(path) = &dbsnp {
+        if !written.is_empty() && !has_feature_index(path) {
+            return Err(Thrown::user(format!(
+                "Input {path} must support random access to enable queries by interval. If it's \
+                 a file, please index it using the bundled tool IndexFeatureFile"
+            )));
+        }
+    }
     written.retain(|record| {
         keep(record)
             && (!starts_in
