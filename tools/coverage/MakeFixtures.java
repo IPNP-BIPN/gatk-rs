@@ -2890,6 +2890,95 @@ public class MakeFixtures {
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("gg_dbsnp.vcf").toString()});
         Files.writeString(dir.resolve("gg_dbsnp_noidx.vcf"), ggDbsnp, StandardCharsets.UTF_8);
+        reblockGvcfFixtures(dir, chr1);
+    }
+
+    /**
+     * What `ReblockGVCF` rewrites: one sample, `sR`, over `cgv_ref.fasta`, in two shards.
+     *
+     * `rb_s.g.vcf` (chr1) walks every branch `regenotypeVC` takes. Blocks at GQ 45, 25 and 10 meet
+     * the bands; a het SNP at 120 with PL[0]=5 is demoted under `--rgq-threshold-to-no-call`; a 0/0
+     * call with an alternate at 130 is turned into a block against its best alternate; at 140 a
+     * deletion and a padded SNP where the genotype calls only the SNP, so the deletion is dropped,
+     * the reference trimmed and the gap filled with a block; a no-call at 160 is called from its
+     * PLs; a block at 161 has a GQ and no PL; a LowQual SNP at 170; a GQ0 block at 190; a SNP at
+     * 200 with `TREE_SCORE`, an unrecognised `EXTRA`, an A-length `AFA` and a FORMAT `SPARE`; a
+     * hom-var at 221 with `MQ` and no `RAW_MQandDP`; a deletion at 230 and a spanning deletion at
+     * 231 under it. `rb_s2.g.vcf` is chr2, the second shard, and `rb_shards.list` names both;
+     * `rb_missing.g.vcf` has a block with neither GQ nor PL.
+     */
+    static void reblockGvcfFixtures(final Path dir, final String chr1) throws Exception {
+        final java.util.Map<String, String> bases = java.util.Map.of("chr1", chr1);
+        final java.util.function.BiFunction<Integer, Integer, String> ref =
+                (position, length) -> chr1.substring(position - 1, position - 1 + length);
+        final java.util.function.Function<String, String> other =
+                base -> base.equals("A") ? "C" : "A";
+        final String header = COMBINE_GVCFS_HEADER.replace("##fileformat=VCFv4.2\n",
+                "##fileformat=VCFv4.2\n"
+                        + "##FILTER=<ID=q10,Description=\"Quality below 10\">\n"
+                        + "##FORMAT=<ID=SPARE,Number=1,Type=Integer,Description=\"An unrecognised format key\">\n"
+                        + "##INFO=<ID=AFA,Number=A,Type=Float,Description=\"An allele-length key\">\n"
+                        + "##INFO=<ID=EXTRA,Number=1,Type=String,Description=\"An unrecognised annotation\">\n"
+                        + "##INFO=<ID=MQ,Number=1,Type=Float,Description=\"RMS Mapping Quality\">\n"
+                        + "##INFO=<ID=TREE_SCORE,Number=1,Type=Float,Description=\"Score from single sample filtering with random forest model.\">\n")
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsR\n";
+        final String snp120 = other.apply(ref.apply(120, 1));
+        final String snp130 = other.apply(ref.apply(130, 1));
+        final String padded140 = other.apply(ref.apply(140, 1)) + ref.apply(141, 3);
+        final String snp160 = other.apply(ref.apply(160, 1));
+        final String snp170 = other.apply(ref.apply(170, 1));
+        final String snp200 = other.apply(ref.apply(200, 1));
+        final String snp221 = other.apply(ref.apply(221, 1));
+        final String snp231 = other.apply(ref.apply(231, 1));
+        final String rbInfo = "DP=12;ExcessHet=3.0103;MLEAC=1,0;MLEAF=0.500,0.00;RAW_MQandDP=43200,12";
+        final String[] chr1Records = {
+                cgBlock(bases, "chr1", 90, 99, 45),
+                cgBlock(bases, "chr1", 100, 109, 25),
+                cgBlock(bases, "chr1", 110, 119, 10),
+                cgVariant("chr1", 120, ".", ref.apply(120, 1), snp120, "3.2", CG_FORMAT,
+                        "0/1:6,2,0:8:5:5,0,200,23,206,229:3,3,1,1"),
+                cgBlock(bases, "chr1", 121, 129, 12),
+                cgVariant("chr1", 130, ".", ref.apply(130, 1), snp130, "0", CG_FORMAT,
+                        "0/0:9,0,0:9:30:0,30,300,30,300,300:4,5,0,0"),
+                cgBlock(bases, "chr1", 131, 139, 33),
+                cgVariant("chr1", 140, "rs140", ref.apply(140, 4), ref.apply(140, 1) + "," + padded140,
+                        "180.1", CG_FORMAT,
+                        "0/2:5,1,6,0:12:99:300,200,400,0,350,500,310,410,510,900:3,2,3,4"),
+                cgBlock(bases, "chr1", 144, 159, 45),
+                "chr1\t160\t.\t" + ref.apply(160, 1) + "\t" + snp160 + ",<NON_REF>\t38.2\t.\t" + rbInfo
+                        + "\tGT:AD:DP:GQ:PL\t./.:3,4,0:7:40:40,0,300,60,320,400",
+                "chr1\t161\t.\t" + ref.apply(161, 1) + "\t<NON_REF>\t.\t.\tEND=169\tGT:DP:GQ:MIN_DP\t0/0:15:22:15",
+                "chr1\t170\t.\t" + ref.apply(170, 1) + "\t" + snp170 + ",<NON_REF>\t42.5\tLowQual\t" + rbInfo
+                        + "\tGT:AD:DP:GQ:PL\t0/1:6,6,0:12:70:70,0,90,88,108,196",
+                cgBlock(bases, "chr1", 171, 189, "0/0:30:99:28:0,99,990"),
+                cgBlock(bases, "chr1", 190, 199, "0/0:0:0:0:0,0,0"),
+                "chr1\t200\t.\t" + ref.apply(200, 1) + "\t" + snp200 + ",<NON_REF>\t150.3\t.\t"
+                        + "AFA=0.5,0;DP=10;EXTRA=note;RAW_MQandDP=36000,10;TREE_SCORE=0.5"
+                        + "\tGT:AD:DP:GQ:PL:SB:SPARE\t0/1:5,5,0:10:99:150,0,160,165,175,340:3,2,3,2:7",
+                cgBlock(bases, "chr1", 201, 220, 45),
+                "chr1\t221\t.\t" + ref.apply(221, 1) + "\t" + snp221 + ",<NON_REF>\t400.6\t.\t"
+                        + "DP=12;MQ=58.5\tGT:AD:DP:GQ:PL\t1/1:0,12,0:12:36:400,36,0,410,40,450",
+                cgBlock(bases, "chr1", 222, 229, 45),
+                cgVariant("chr1", 230, ".", ref.apply(230, 3), ref.apply(230, 1), "200.4", CG_FORMAT,
+                        "0/1:5,6,0:11:99:200,0,210,215,225,440:3,2,3,3"),
+                "chr1\t231\t.\t" + ref.apply(231, 1) + "\t*," + snp231 + ",<NON_REF>\t300.2\t.\t"
+                        + "DP=11;RAW_MQandDP=39600,11\tGT:AD:DP:GQ:PL\t1/2:0,5,6,0:11:99:"
+                        + "400,300,350,200,0,420,410,310,330,700",
+                cgBlock(bases, "chr1", 233, 300, 45)};
+        final String[][] files = {
+                {"rb_s.g.vcf", String.join("\n", chr1Records)},
+                {"rb_s2.g.vcf", "chr2\t1\t.\tG\t<NON_REF>\t.\t.\tEND=30\tGT:DP:GQ:MIN_DP:PL\t0/0:20:45:19:0,45,675\n"
+                        + "chr2\t31\t.\tG\t<NON_REF>\t.\t.\tEND=60\tGT:DP:GQ:MIN_DP:PL\t0/0:21:50:20:0,50,750"},
+                {"rb_missing.g.vcf", cgBlock(bases, "chr1", 90, 99, 45) + "\n"
+                        + "chr1\t100\t.\t" + ref.apply(100, 1) + "\t<NON_REF>\t.\t.\tEND=120\tGT:DP\t0/0:15\n"
+                        + cgBlock(bases, "chr1", 121, 140, 45)}};
+        for (final String[] file : files) {
+            Files.writeString(dir.resolve(file[0]), header + file[1] + "\n", StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(file[0]).toString()});
+        }
+        Files.writeString(dir.resolve("rb_shards.list"),
+                "/work/fixtures/rb_s.g.vcf\n/work/fixtures/rb_s2.g.vcf\n", StandardCharsets.UTF_8);
     }
 
     /** A diploid hom-ref block at the given GQ, one read short of MIN_DP, with its PL from the GQ. */

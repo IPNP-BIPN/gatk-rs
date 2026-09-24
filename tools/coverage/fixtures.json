@@ -5612,6 +5612,170 @@
       "--enable-all-annotations": [
         "false"
       ]
+    },
+    "ReblockGVCF": {
+      "--variant": [
+        "/work/fixtures/rb_s.g.vcf",
+        "/work/fixtures/rb_shards.list",
+        "/work/fixtures/cg_a.g.vcf",
+        "/work/fixtures/cg_c.g.vcf",
+        "/work/fixtures/rb_missing.g.vcf",
+        "/work/fixtures/cg_ab.list"
+      ],
+      "--output": [
+        "/work/out/reblocked.g.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:95-175",
+        "chr1:200-300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:141-165"
+      ],
+      "--gvcf-gq-bands": [
+        "60",
+        "10",
+        "101"
+      ],
+      "--floor-blocks": [
+        "false",
+        "true"
+      ],
+      "--drop-low-quals": [
+        "false",
+        "true"
+      ],
+      "--rgq-threshold-to-no-call": [
+        "0.0",
+        "10.0"
+      ],
+      "--tree-score-threshold-to-no-call": [
+        "0.0",
+        "1.0"
+      ],
+      "--annotations-to-keep": [
+        "null",
+        "EXTRA",
+        "AFA"
+      ],
+      "--format-annotations-to-remove": [
+        "null",
+        "SPARE",
+        "SB"
+      ],
+      "--do-qual-score-approximation": [
+        "false",
+        "true"
+      ],
+      "--allow-missing-hom-ref-data": [
+        "false",
+        "true"
+      ],
+      "--keep-all-alts": [
+        "false",
+        "true"
+      ],
+      "--keep-site-filters": [
+        "false",
+        "true"
+      ],
+      "--add-site-filters-to-genotype": [
+        "false",
+        "true"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/cg_dbsnp.vcf"
+      ],
+      "--standard-min-confidence-threshold-for-calling": [
+        "30.0",
+        "10.0",
+        "400.0"
+      ],
+      "--sample-ploidy": [
+        "2",
+        "1"
+      ],
+      "--heterozygosity": [
+        "0.001",
+        "0.01"
+      ],
+      "--indel-heterozygosity": [
+        "1.25E-4",
+        "0.001"
+      ],
+      "--heterozygosity-stdev": [
+        "0.01",
+        "0.05"
+      ],
+      "--max-alternate-alleles": [
+        "6",
+        "1"
+      ],
+      "--annotation-group": [
+        "StandardAnnotation",
+        "AS_StandardAnnotation"
+      ],
+      "--annotation": [
+        "null",
+        "StrandBiasBySample"
+      ],
+      "--annotations-to-exclude": [
+        "null",
+        "ExcessHet"
+      ],
+      "--population-callset": [],
+      "--pedigree": [],
+      "--founder-id": [],
+      "--flow-order-for-annotations": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "$why": [
+        "The inputs are one sample, sR, over cgv_ref.fasta: rb_s.g.vcf walks every branch of",
+        "regenotypeVC (blocks in three bands, a weak het, a 0/0 call with an alternate, a dropped",
+        "deletion whose gap is filled with a block, a no-call called from its PLs, a block with a GQ",
+        "and no PL, a LowQual SNP, a GQ0 block, TREE_SCORE, EXTRA, an A-length AFA and a FORMAT SPARE,",
+        "a hom-var with MQ and no RAW_MQandDP, and a spanning deletion under a deletion);",
+        "rb_shards.list is it with its chr2 shard; cg_a and cg_c are the CombineGVCFs samples;",
+        "rb_missing.g.vcf has a block with neither GQ nor PL, refused unless",
+        "--allow-missing-hom-ref-data; cg_ab.list is two samples, refused at startup.",
+        "--gvcf-gq-bands takes one value per row, so the default [20, 100] is only ever the row's",
+        "absence: 60 and 10 re-band, and 101 is refused as malformed after the output file exists.",
+        "--annotations-to-keep EXTRA keeps an unrecognised key and AFA is refused as allele-length;",
+        "--format-annotations-to-remove removes SPARE or SB from the genotypes and the header.",
+        "--population-callset, --pedigree, --founder-id and --flow-order-for-annotations are held",
+        "out: the port does not carry the population priors or the pedigree and flow annotations.",
+        "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
+        "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index.",
+        "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
+        "the reasons CombineGVCFs gives.",
+        "--variant-output-filtering is held at ANYWHERE: every other mode needs -L, and a row",
+        "without one refuses the whole command line before the tool runs."
+      ]
     }
   },
   "constraints": [

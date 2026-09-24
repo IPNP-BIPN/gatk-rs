@@ -72,6 +72,16 @@ pub struct Configuration {
     pub emit_all_active_sites: bool,
     /// `doAlleleSpecificCalcs`: whether any allele-specific info annotation was resolved.
     pub allele_specific: bool,
+    /// `OutputMode.EMIT_ALL_CONFIDENT_SITES`, which ReblockGVCF sets: the emit threshold is the
+    /// call threshold, whatever the best guess.
+    pub emit_all_confident_sites: bool,
+    /// `annotateAllSitesWithPLs`, which ReblockGVCF sets: a monomorphic site's QUAL is the
+    /// probability that only the reference exists, as a polymorphic one's is.
+    pub annotate_all_sites_with_pls: bool,
+    /// `HaplotypeCallerGenotypingEngine.forceKeepAllele` in GVCF mode: every alternate is output.
+    pub force_keep_all_alleles: bool,
+    /// `genotypeArgs.genotypeAssignmentMethod`, which assigns the emitted genotypes.
+    pub assignment_method: SubsetMethod,
 }
 
 /// What the engine refuses, in the reference's classes, or the port's own limitation.
@@ -142,26 +152,57 @@ pub(crate) fn gq_of_log10(log10: f64) -> i32 {
 /// `VCFConstants.MAX_GENOTYPE_QUAL`.
 const MAX_GENOTYPE_QUAL: f64 = 99.0;
 
-/// The two `GenotypeAssignmentMethod`s the genotyper reaches: `PREFER_PLS` for the calls it
-/// emits, `BEST_MATCH_TO_ORIGINAL` for the reduction to `--max-alternate-alleles`.
+/// `GenotypeAssignmentMethod`. GenotypeGVCFs reaches `PREFER_PLS` for the calls it emits and
+/// `BEST_MATCH_TO_ORIGINAL` for the reduction to `--max-alternate-alleles`; ReblockGVCF's
+/// `--genotype-assignment-method` reaches the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubsetMethod {
+    SetToNoCall,
+    SetToNoCallNoAnnotations,
+    UsePlsToAssign,
     PreferPls,
     BestMatchToOriginal,
+    /// Throws, since no genotype prior calculator is ever passed where the tools reach it.
+    UsePosteriorProbabilities,
+    /// Neither branch of `makeGenotypeCall` touches the alleles.
+    DoNotAssignGenotypes,
+    /// As `DO_NOT_ASSIGN_GENOTYPES`: `makeGenotypeCall` has no branch for it.
+    UsePosteriorsAnnotation,
 }
 
-/// `makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse, originalGT, gpc)`.
-fn make_genotype_call(
+impl SubsetMethod {
+    /// The enum constant's name, as `--genotype-assignment-method` takes it.
+    pub fn from_name(name: &str) -> Option<SubsetMethod> {
+        Some(match name {
+            "SET_TO_NO_CALL" => SubsetMethod::SetToNoCall,
+            "SET_TO_NO_CALL_NO_ANNOTATIONS" => SubsetMethod::SetToNoCallNoAnnotations,
+            "USE_PLS_TO_ASSIGN" => SubsetMethod::UsePlsToAssign,
+            "PREFER_PLS" => SubsetMethod::PreferPls,
+            "BEST_MATCH_TO_ORIGINAL" => SubsetMethod::BestMatchToOriginal,
+            "USE_POSTERIOR_PROBABILITIES" => SubsetMethod::UsePosteriorProbabilities,
+            "DO_NOT_ASSIGN_GENOTYPES" => SubsetMethod::DoNotAssignGenotypes,
+            "USE_POSTERIORS_ANNOTATION" => SubsetMethod::UsePosteriorsAnnotation,
+            _ => return None,
+        })
+    }
+}
+
+/// `makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse, originalGT, null)`.
+pub(crate) fn make_genotype_call(
     ploidy: usize,
     genotype: &mut Genotype,
     method: SubsetMethod,
     likelihoods: Option<&[f64]>,
     targets: &[Allele],
     original: &Genotype,
-) {
+) -> Result<(), EngineError> {
     // Before the method: a hom-ref or no-call with GQ 0 is a no-call, and with DP 0 as well it
-    // loses everything but its name.
-    if (is_hom_ref(original) || is_no_call(original)) && original.gq == Some(0) {
+    // loses everything but its name. `SET_TO_NO_CALL` alone skips it, "so CombineGVCFs and
+    // GenomicsDB keep attributes".
+    if method != SubsetMethod::SetToNoCall
+        && (is_hom_ref(original) || is_no_call(original))
+        && original.gq == Some(0)
+    {
         genotype.alleles = vec![Allele::no_call(); ploidy];
         if original.dp == Some(0) {
             genotype.pl = None;
@@ -169,47 +210,73 @@ fn make_genotype_call(
             genotype.ad = None;
             genotype.gq = None;
             genotype.extended.clear();
-            return;
+            return Ok(());
         }
     }
-    if method == SubsetMethod::BestMatchToOriginal {
-        // "no-calls are just going to cause problems": a GQ-0 call whose best likelihood was
-        // already the reference stays uncalled.
-        let uninformative =
-            original.gq == Some(0) && original.pl.as_ref().is_none_or(|pl| pl.first() == Some(&0));
-        genotype.alleles = if uninformative {
-            vec![Allele::no_call(); ploidy]
-        } else {
-            best_match_to_original(targets, &original.alleles)
-        };
-        return;
+    match method {
+        SubsetMethod::SetToNoCall => genotype.alleles = vec![Allele::no_call(); ploidy],
+        SubsetMethod::UsePlsToAssign | SubsetMethod::PreferPls => {
+            let informative =
+                likelihoods.filter(|gls| gls.iter().sum::<f64>() < SUM_GL_THRESH_NOCALL);
+            let usable = if method == SubsetMethod::PreferPls {
+                informative
+            } else {
+                likelihoods
+            };
+            let Some(gls) = usable else {
+                genotype.alleles = best_match_to_original(targets, &original.alleles);
+                return Ok(());
+            };
+            let best = max_element_index(gls);
+            let called: Vec<Allele> = genotypes_in_canonical_order(ploidy, targets.len())
+                .into_iter()
+                .nth(best)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|index| targets[index].clone())
+                .collect();
+            let gq = gq_log10_from_likelihoods(best, gls);
+            if called.contains(&non_ref()) {
+                genotype.alleles = vec![targets[0].clone(); ploidy];
+                genotype.pl = Some(vec![0; gls.len()]);
+                genotype.gq = Some(0);
+            } else if best == 0 && gq > SUM_GL_THRESH_NOCALL {
+                genotype.alleles = vec![Allele::no_call(); ploidy];
+            } else {
+                genotype.alleles = called;
+            }
+            if targets.len() > 1 {
+                genotype.gq = Some(gq_of_log10(gq));
+            }
+        }
+        SubsetMethod::SetToNoCallNoAnnotations => {
+            genotype.alleles = vec![Allele::no_call(); ploidy];
+            genotype.gq = None;
+            genotype.ad = None;
+            genotype.pl = None;
+            genotype.extended.clear();
+        }
+        SubsetMethod::BestMatchToOriginal => {
+            // "no-calls are just going to cause problems": a GQ-0 call whose best likelihood was
+            // already the reference stays uncalled.
+            let uninformative = original.gq == Some(0)
+                && original.pl.as_ref().is_none_or(|pl| pl.first() == Some(&0));
+            genotype.alleles = if uninformative {
+                vec![Allele::no_call(); ploidy]
+            } else {
+                best_match_to_original(targets, &original.alleles)
+            };
+        }
+        SubsetMethod::UsePosteriorProbabilities => {
+            return Err(EngineError::Runtime {
+                class: "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
+                message: "cannot uses posteriors without an genotype prior calculator present"
+                    .to_string(),
+            });
+        }
+        SubsetMethod::DoNotAssignGenotypes | SubsetMethod::UsePosteriorsAnnotation => {}
     }
-    let informative = likelihoods.filter(|gls| gls.iter().sum::<f64>() < SUM_GL_THRESH_NOCALL);
-    let Some(gls) = informative else {
-        genotype.alleles = best_match_to_original(targets, &original.alleles);
-        return;
-    };
-    let best = max_element_index(gls);
-    let called: Vec<Allele> = genotypes_in_canonical_order(ploidy, targets.len())
-        .into_iter()
-        .nth(best)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|index| targets[index].clone())
-        .collect();
-    let gq = gq_log10_from_likelihoods(best, gls);
-    if called.contains(&non_ref()) {
-        genotype.alleles = vec![targets[0].clone(); ploidy];
-        genotype.pl = Some(vec![0; gls.len()]);
-        genotype.gq = Some(0);
-    } else if best == 0 && gq > SUM_GL_THRESH_NOCALL {
-        genotype.alleles = vec![Allele::no_call(); ploidy];
-    } else {
-        genotype.alleles = called;
-    }
-    if targets.len() > 1 {
-        genotype.gq = Some(gq_of_log10(gq));
-    }
+    Ok(())
 }
 
 /// `AlleleSubsettingUtils.subsetAlleles(genotypes, defaultPloidy, originalAlleles, allelesToKeep,
@@ -237,6 +304,27 @@ pub fn subset_alleles(
     original_alleles: &[Allele],
     alleles_to_keep: &[Allele],
     method: SubsetMethod,
+) -> Result<Vec<Genotype>, EngineError> {
+    subset_alleles_with_length_annotations(
+        genotypes,
+        default_ploidy,
+        original_alleles,
+        alleles_to_keep,
+        method,
+        &[],
+    )
+}
+
+/// `AlleleSubsettingUtils.subsetAlleles(genotypes, defaultPloidy, originalAlleles, allelesToKeep,
+/// null, method, alleleBasedLengthAnnots)`: the FORMAT attributes whose header count is A, R or G
+/// are removed, except F1R2 and F2R1, which are remapped to the alleles kept.
+pub fn subset_alleles_with_length_annotations(
+    genotypes: &[Genotype],
+    default_ploidy: usize,
+    original_alleles: &[Allele],
+    alleles_to_keep: &[Allele],
+    method: SubsetMethod,
+    allele_based_length_annotations: &[String],
 ) -> Result<Vec<Genotype>, EngineError> {
     let kept: Vec<usize> = alleles_to_keep
         .iter()
@@ -291,6 +379,31 @@ pub fn subset_alleles(
         built
             .extended
             .retain(|(key, _)| !matches!(key.as_str(), "PP" | "GP" | "PG"));
+        let mut removed_allele_fraction = false;
+        let mut remapped: Vec<(String, Value)> = Vec::new();
+        for (key, value) in &built.extended {
+            if !allele_based_length_annotations.contains(key) {
+                remapped.push((key.clone(), value.clone()));
+            } else if key == "F1R2" || key == "F2R1" {
+                let counts: Vec<i32> = crate::reference_confidence_merger::value_to_string(value)
+                    .split(',')
+                    .map(|count| count.trim().parse().unwrap_or(0))
+                    .collect();
+                remapped.push((
+                    key.clone(),
+                    Value::List(
+                        kept.iter()
+                            .map(|index| {
+                                Value::Int(i64::from(counts.get(*index).copied().unwrap_or(0)))
+                            })
+                            .collect(),
+                    ),
+                ));
+            } else if key == "AF" {
+                removed_allele_fraction = true;
+            }
+        }
+        built.extended = remapped;
         built.pl = None;
         built.gq = None;
         if new_log10_gq != f64::NEG_INFINITY && g.gq.is_some() {
@@ -305,7 +418,7 @@ pub fn subset_alleles(
             new_likelihoods.as_deref(),
             alleles_to_keep,
             g,
-        );
+        )?;
 
         if g.extended.iter().any(|(key, _)| key == "SAC") {
             return Err(EngineError::Limitation(
@@ -313,7 +426,22 @@ pub fn subset_alleles(
             ));
         }
         if let (Some(ad), true) = (&g.ad, built.ad.is_some()) {
-            built.ad = Some(kept.iter().map(|index| ad[*index]).collect());
+            let new_ad: Vec<i32> = kept.iter().map(|index| ad[*index]).collect();
+            // "if we have recalculated AD and the original genotype had AF but was then removed,
+            // then recalculate AF based on AD counts", without the reference's entry.
+            if removed_allele_fraction {
+                let total: f64 = new_ad.iter().map(|count| f64::from(*count)).sum();
+                built.extended.push((
+                    "AF".to_string(),
+                    Value::List(
+                        new_ad[1..]
+                            .iter()
+                            .map(|count| Value::Double(f64::from(*count) / total))
+                            .collect(),
+                    ),
+                ));
+            }
+            built.ad = Some(new_ad);
         }
         out.push(built);
     }
@@ -332,6 +460,18 @@ pub fn most_likely_alleles(
     default_ploidy: usize,
     keep: usize,
 ) -> Result<Vec<Allele>, EngineError> {
+    most_likely_alleles_ensuring_alt(vc, default_ploidy, keep, false)
+}
+
+/// `calculateMostLikelyAlleles(vc, defaultPloidy, numAltAllelesToKeep, ensureReturnContainsAlt)`:
+/// with the flag set, a sample's best genotype is looked for past the hom-ref, so a confident
+/// reference call still votes for its best alternate.
+pub fn most_likely_alleles_ensuring_alt(
+    vc: &VariantContext,
+    default_ploidy: usize,
+    keep: usize,
+    ensure_return_contains_alt: bool,
+) -> Result<Vec<Allele>, EngineError> {
     let has_non_ref = vc.alleles.contains(&non_ref());
     let proper_alternates = vc.alleles.len() - if has_non_ref { 2 } else { 1 };
     if keep >= proper_alternates {
@@ -343,7 +483,9 @@ pub fn most_likely_alleles(
     for genotype in ordered {
         let Some(pl) = &genotype.pl else { continue };
         let gls: Vec<f64> = pl.iter().map(|p| *p as f64 / -10.0).collect();
-        let best = max_element_index(&gls);
+        // `maxElementIndex(glsVector, start, length)`: the first maximum past `start`.
+        let start = usize::from(ensure_return_contains_alt).min(gls.len().saturating_sub(1));
+        let best = start + max_element_index(&gls[start..]);
         let margin = (gls[best] - gls[0]).abs();
         let ploidy = if genotype.ploidy() > 0 {
             genotype.ploidy()
@@ -462,8 +604,9 @@ impl GenotypingEngine {
             let plausible =
                 result.passes_threshold(alt, self.configuration.standard_confidence_for_calling);
             let spurious_span_del = is_span_del(allele) && !self.is_covered_by_deletion(vc);
-            // `forceKeepAllele` is `annotateAllSitesWithPLs`, which GenotypeGVCFs never sets.
-            let to_output = (plausible || lone_non_ref) && !spurious_span_del;
+            let to_output =
+                (plausible || self.configuration.force_keep_all_alleles || lone_non_ref)
+                    && !spurious_span_del;
             monomorphic &= !(plausible && !spurious_span_del);
             if to_output {
                 output.push(allele.clone());
@@ -516,7 +659,7 @@ impl GenotypingEngine {
             self.output_allele_subset(&result, &reduced_alleles, vc);
 
         // `+ 0.0` turns a -0.0 into 0.0, twice, as the reference writes it.
-        let log10_confidence = if !monomorphic {
+        let log10_confidence = if !monomorphic || self.configuration.annotate_all_sites_with_pls {
             result.log10_posterior_of_no_variant + 0.0
         } else {
             result.log10_prob_variant_present() + 0.0
@@ -524,8 +667,10 @@ impl GenotypingEngine {
         let phred = (-10.0 * log10_confidence) + 0.0;
 
         let passes_call = phred >= self.configuration.standard_confidence_for_calling;
-        // `passesEmitThreshold` under EMIT_VARIANTS_ONLY: a variant site that passes the call.
-        let passes_emit = !monomorphic && passes_call;
+        // `passesEmitThreshold`: under EMIT_VARIANTS_ONLY a variant site that passes the call,
+        // under EMIT_ALL_CONFIDENT_SITES any site that does.
+        let passes_emit =
+            (self.configuration.emit_all_confident_sites || !monomorphic) && passes_call;
         let first_is_non_ref = alternatives.first().is_some_and(|a| *a == non_ref());
         if !passes_emit && !self.configuration.emit_all_active_sites && !first_is_non_ref {
             return Ok(None);
@@ -550,7 +695,13 @@ impl GenotypingEngine {
         let genotypes = if output_alleles.len() == 1 {
             subset_to_ref_only(vc, default_ploidy)
         } else {
-            subset_alleles_prefer_pls(&vc.genotypes, default_ploidy, &vc.alleles, &output_alleles)?
+            subset_alleles(
+                &vc.genotypes,
+                default_ploidy,
+                &vc.alleles,
+                &output_alleles,
+                self.configuration.assignment_method,
+            )?
         };
         out.attributes = self.compose_call_attributes(
             vc,
