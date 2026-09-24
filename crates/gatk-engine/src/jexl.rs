@@ -420,6 +420,11 @@ fn tokenize(text: &str) -> Result<Vec<Token>, JexlError> {
                 i += 1;
             }
             tokens.push(Token::Ident(bytes[start..i].iter().collect()));
+            // Member access (`vc.isSNP()`, `g.GQ`) is valid JEXL this engine never learned: a
+            // refusal of the port's rather than a syntax error of the user's.
+            if bytes.get(i) == Some(&'.') {
+                return Err(JexlError::Unsupported(format!("member access in {text}")));
+            }
             continue;
         }
         let two: String = bytes[i..(i + 2).min(bytes.len())].iter().collect();
@@ -651,6 +656,11 @@ impl Parser {
                             return Err(JexlError::Parse("expected )".into()));
                         }
                         Ok(Node::Empty(Box::new(inner)))
+                    }
+                    // A method call (`vc.isSNP()`) is valid JEXL that this engine never learned,
+                    // which is a refusal of the port's rather than a syntax error of the user's.
+                    _ if matches!(self.tokens.get(self.position), Some(Token::Symbol("("))) => {
+                        Err(JexlError::Unsupported(format!("method call {name}(...)")))
                     }
                     _ => Ok(Node::Identifier(name)),
                 }

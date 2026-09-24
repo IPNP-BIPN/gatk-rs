@@ -307,7 +307,7 @@ jobs:
             --tool CRAMIssue8768Detector \
             --tool CombineGVCFs \
             --tool GenotypeGVCFs \
-            --tool ReblockGVCF --tool GnarlyGenotyper \
+            --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

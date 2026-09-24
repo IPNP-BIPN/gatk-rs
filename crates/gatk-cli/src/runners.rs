@@ -14289,6 +14289,500 @@ pub fn gnarly_genotyper(parser: &Parser) -> Outcome {
     }
 }
 
+/// A collection argument's values with their tags: `--eval:name file` answers `(file, Some(name))`.
+fn tagged_values(parser: &Parser, long_name: &str) -> Vec<(String, Option<String>)> {
+    parser
+        .definitions()
+        .iter()
+        .find(|definition| definition.long_name() == long_name)
+        .map(|definition| {
+            let one = |value: &Value| match value {
+                Value::Tagged { value, tag, .. } => Some((value.clone(), tag.clone())),
+                Value::Str(text) => Some((text.clone(), None)),
+                Value::Null => None,
+                other => Some((other.to_java_string(), None)),
+            };
+            match &definition.value {
+                Value::List(values) => values.iter().filter_map(one).collect(),
+                other => one(other).into_iter().collect(),
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// A BED file's features, 1-based and closed, as the strat-interval and CNV queries read them.
+fn read_bed_features(path: &str) -> Result<Vec<gatk_tools::variant_eval_engine::Feature>, Thrown> {
+    let (_, text) = open_feature_input(path)?;
+    let mut features = Vec::new();
+    if path.ends_with(".vcf") || path.ends_with(".vcf.gz") {
+        let file = htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+        for record in file.records {
+            features.push(gatk_tools::variant_eval_engine::Feature {
+                contig: record.contig,
+                start: record.start,
+                end: record.stop,
+            });
+        }
+        return Ok(features);
+    }
+    for line in text.lines() {
+        if let Some(feature) =
+            htsjdk_tribble::bed::decode(line, htsjdk_tribble::bed::StartOffset::One)
+                .ok()
+                .flatten()
+        {
+            features.push(gatk_tools::variant_eval_engine::Feature {
+                contig: feature.contig,
+                start: i64::from(feature.start),
+                end: i64::from(feature.end),
+            });
+        }
+    }
+    Ok(features)
+}
+
+/// `VariantEval`, a multi-variant walker grouped on start over its evals, `--dbsnp` and comps.
+pub fn variant_eval(parser: &Parser) -> Outcome {
+    use gatk_tools::variant_eval_engine as ve;
+
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    if flag(parser, "list") {
+        return Err(limitation(
+            "--list prints the module catalogue and exits; not ported.",
+        ));
+    }
+    if argument(parser, "pedigree").is_some() {
+        return Err(limitation(
+            "--pedigree (families and Mendelian violations) is not ported for VariantEval.",
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let evals = tagged_values(parser, "eval");
+    if evals.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument eval was missing: Argument 'eval' is required",
+        ));
+    }
+    let comps = tagged_values(parser, "comparison");
+    let dbsnp = argument(parser, "dbsnp");
+
+    // `getFeatureInputsForDrivingVariants`: the evals, dbSNP, then the comps.
+    let mut driving: Vec<(String, ve::Source)> = Vec::new();
+    // `FeatureInput.getName()`, which each record carries as its source.
+    let mut labels: Vec<String> = Vec::new();
+    for (index, (path, tag)) in evals.iter().enumerate() {
+        driving.push((path.clone(), ve::Source::Eval(index)));
+        labels.push(tag.clone().unwrap_or_else(|| absolute_path(path)));
+    }
+    let mut comp_names: Vec<String> = comps
+        .iter()
+        .map(|(_, tag)| tag.clone().unwrap_or_else(|| "comp".to_string()))
+        .collect();
+    for (index, (path, tag)) in comps.iter().enumerate() {
+        driving.push((path.clone(), ve::Source::Comp(index)));
+        labels.push(tag.clone().unwrap_or_else(|| absolute_path(path)));
+    }
+    let mut known: Vec<usize> = Vec::new();
+    let known_names = arguments(parser, "knownNames");
+    for (index, name) in comp_names.iter().enumerate() {
+        if known_names.contains(name) {
+            known.push(index);
+        }
+    }
+    if let Some(path) = &dbsnp {
+        let index = comp_names.len();
+        comp_names.push("dbsnp".to_string());
+        known.push(index);
+        driving.insert(evals.len(), (path.clone(), ve::Source::Comp(index)));
+        labels.insert(evals.len(), absolute_path(path));
+    }
+
+    let mut opened = Vec::new();
+    for (path, source) in &driving {
+        let (codec, text) = open_feature_input(path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        opened.push((path.clone(), *source, codec, text, file));
+    }
+    let dictionaries: Vec<SamHeader> = opened
+        .iter()
+        .map(|(_, _, _, text, _)| vcf_dictionary(text))
+        .collect();
+    // `MultiVariantDataSource.getSortedSamples` collects the headers `toMap` by input name, so
+    // one file given twice among the driving inputs (an eval that is also a comp, a comp that is
+    // also the dbSNP) is refused while the driving source is built, before any interval is read.
+    for (later, label) in labels.iter().enumerate() {
+        if labels[..later].contains(label) {
+            let header = java_vcf_header_string(&opened[later].3);
+            return Err(Thrown::non_user(
+                "java.lang.IllegalStateException",
+                format!("Duplicate key {label} (attempted merging values {header} and {header})"),
+            ));
+        }
+    }
+    let (first_path, _, first_codec, first_text, _) = &opened[0];
+    let VariantWalkerStart { intervals, .. } = variant_walker_validation(
+        parser,
+        first_path.clone(),
+        first_text.clone(),
+        *first_codec,
+        dictionaries[0].clone(),
+    )?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // `getTraversalIntervals`: the user's, or every contig of the reference.
+    let traversal: Vec<(String, i64, i64)> = match &intervals {
+        Some(list) => list
+            .iter()
+            .map(|interval| {
+                (
+                    interval.contig.clone(),
+                    i64::from(interval.start),
+                    i64::from(interval.end),
+                )
+            })
+            .collect(),
+        None => reference
+            .sequences()
+            .iter()
+            .map(|(name, length)| (name.clone(), 1, *length as i64))
+            .collect(),
+    };
+    let traversal_contigs: Vec<String> = traversal
+        .iter()
+        .map(|(contig, _, _)| contig.clone())
+        .collect();
+
+    // The samples of the eval headers, filtered by `--sample` and sorted.
+    let mut eval_samples: Vec<String> = Vec::new();
+    let mut eval_filter_names: Vec<String> = Vec::new();
+    for (_, source, _, _, file) in &opened {
+        if matches!(source, ve::Source::Eval(_)) {
+            for sample in &file.header.samples {
+                if !eval_samples.contains(sample) {
+                    eval_samples.push(sample.clone());
+                }
+            }
+            // `VCFHeader.getFilterLines()`, which the reader parses as a structured line.
+            for line in &file.header.lines {
+                let id = match line {
+                    htsjdk_vcf::header::HeaderLine::Filter { id, .. } => Some(id.clone()),
+                    htsjdk_vcf::header::HeaderLine::Compound { key, id, .. } if key == "FILTER" => {
+                        Some(id.clone())
+                    }
+                    htsjdk_vcf::header::HeaderLine::Structured { key, fields }
+                        if key == "FILTER" =>
+                    {
+                        fields
+                            .iter()
+                            .find(|(name, _)| name == "ID")
+                            .map(|(_, value)| value.clone())
+                    }
+                    _ => None,
+                };
+                if let Some(id) = id {
+                    if !eval_filter_names.contains(&id) {
+                        eval_filter_names.push(id);
+                    }
+                }
+            }
+        }
+    }
+    let expressions = arguments(parser, "sample");
+    // `Utils.filterCollectionByExpressions(vcfSamples, expressions, false)`.
+    let mut samples_for_evaluation: Vec<String> = if expressions.is_empty() {
+        eval_samples.clone()
+    } else {
+        gatk_engine::java_regex::filter_collection_by_expressions(
+            &eval_samples,
+            &expressions,
+            false,
+        )
+        .map_err(|error| Thrown::non_user(error.java_class(), error.message()))?
+    };
+    samples_for_evaluation.sort();
+
+    let select_expressions = arguments(parser, "selectExps");
+    let select_names = arguments(parser, "selectNames");
+    // `VariantContextUtils.initializeMatchExps(names, exps)`: the pairs go through a `HashMap`, so a
+    // repeated name keeps its first slot and its last expression, and the expressions are created
+    // in the map's order. The engine then files them in a `TreeSet` sorted by name.
+    if select_expressions.len() != select_names.len() {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            format!(
+                "Inconsistent number of provided filter names and expressions: names=[{}] exps=[{}]",
+                select_names.join(", "),
+                select_expressions.join(", ")
+            ),
+        ));
+    }
+    let mut paired: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for (name, text) in select_names.iter().zip(&select_expressions) {
+        paired.insert(name, text);
+    }
+    let order = gatk_engine::java_hash::hash_set_order(&select_names)
+        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+    let mut selects = Vec::new();
+    for name in order {
+        let text = paired[name.as_str()];
+        let expression = gatk_engine::jexl::create_expression(text).map_err(|error| {
+            if let gatk_engine::jexl::JexlError::Unsupported(what) = error {
+                return limitation(&format!("JEXL construct not ported: {what}"));
+            }
+            Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!(
+                    "Argument {name}has a bad value. Invalid expression used ({text}). Please see \
+                     the JEXL docs for correct syntax."
+                ),
+            )
+        })?;
+        selects.push(ve::SelectExpression { name, expression });
+    }
+    selects.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let strat_intervals = match argument(parser, "strat-intervals") {
+        Some(path) => Some(read_bed_features(&path)?),
+        None => None,
+    };
+    let known_cnvs = match argument(parser, "known-cnvs") {
+        Some(path) => Some(read_bed_features(&path)?),
+        None => None,
+    };
+    let gold_standard = match argument(parser, "gold-standard") {
+        Some(path) => {
+            let (_, text) = open_feature_input(&path)?;
+            Some(
+                htsjdk_vcf::reader::read_vcf(&text)
+                    .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?
+                    .records,
+            )
+        }
+        None => None,
+    };
+    if argument(parser, "ancestral-alignments").is_some() {
+        return Err(limitation(
+            "--ancestral-alignments is not ported for VariantEval.",
+        ));
+    }
+
+    let arguments_for_engine = ve::Arguments {
+        eval_names: evals
+            .iter()
+            .map(|(_, tag)| tag.clone().unwrap_or_else(|| "eval".to_string()))
+            .collect(),
+        comp_names,
+        known,
+        strats_to_use: arguments(parser, "stratification-module"),
+        no_standard_strats: flag(parser, "do-not-use-all-standard-stratifications"),
+        modules_to_use: arguments(parser, "eval-module"),
+        no_standard_modules: flag(parser, "do-not-use-all-standard-modules"),
+        ploidy: i64::from(number_or(parser, "sample-ploidy", 2)),
+        require_strict_allele_match: flag(parser, "require-strict-allele-match"),
+        keep_ac0: flag(parser, "keep-ac0"),
+        merge_evals: flag(parser, "merge-evals"),
+        num_samples_from_argument: i64::from(number_or(parser, "num-samples", 0)),
+        af_scale: ve::AfScale::Linear,
+        use_comp_af: false,
+        samples_for_evaluation,
+        all_eval_samples: eval_samples,
+        selects,
+        traversal,
+        eval_filter_names,
+        strat_intervals,
+        strat_intervals_unindexed: argument(parser, "strat-intervals")
+            .filter(|path| !has_feature_index(path)),
+        known_cnvs,
+        known_cnvs_unindexed: argument(parser, "known-cnvs")
+            .filter(|path| !has_feature_index(path)),
+        gold_standard,
+    };
+    let mut engine =
+        ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
+
+    // The records of every driving input inside the traversal, merged by position.
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    if spans.is_some() {
+        if let Some((path, ..)) = opened.iter().find(|(path, ..)| !has_feature_index(path)) {
+            return Err(Thrown::user(
+                gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                    path: path.clone(),
+                }
+                .message(),
+            ));
+        }
+    }
+    let reached: Vec<Vec<htsjdk_vcf::variant::VariantContext>> = opened
+        .iter()
+        .map(|(_, _, _, _, file)| {
+            let loci: Vec<Locus> = file
+                .records
+                .iter()
+                .map(|record| Locus {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    stop: record.stop as i32,
+                })
+                .collect();
+            gatk_engine::variant_source::traverse(&loci, spans)
+                .iter()
+                .filter_map(|locus| {
+                    let index = loci.iter().position(|other| std::ptr::eq(other, *locus))?;
+                    Some(file.records[index].clone())
+                })
+                .collect()
+        })
+        .collect();
+    let merged_contigs: Vec<String> = dictionaries[0]
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let keys: Vec<Vec<(i64, i64)>> = reached
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .map(|record| {
+                    let index = merged_contigs
+                        .iter()
+                        .position(|name| *name == record.contig)
+                        .map_or(-1, |index| index as i64);
+                    (index, record.start)
+                })
+                .collect()
+        })
+        .collect();
+    let failed = |failure: gatk_tools::combine_gvcfs::Failure| match failure {
+        gatk_tools::combine_gvcfs::Failure::User(message) => Thrown::user(message),
+        gatk_tools::combine_gvcfs::Failure::Runtime { class, message } => {
+            Thrown::non_user(java_class_name(&class), message)
+        }
+    };
+    let order = gatk_tools::combine_gvcfs::merging_order(&keys).map_err(failed)?;
+    let ignore_outside = flag(parser, "ignore-variants-starting-outside-interval");
+    let distance = i64::from(number_or(parser, "combine-variants-distance", 0));
+    let max_distance = i64::from(number_or(parser, "max-distance", i32::MAX));
+    let mut source = ReferenceBases(&mut reference);
+    let mut group: Vec<ve::Driving> = Vec::new();
+    let (mut first_start, mut last_start) = (0i64, 0i64);
+    for (input, index) in order {
+        let record = reached[input][index].clone();
+        if ignore_outside {
+            let inside = intervals.as_ref().is_none_or(|list| {
+                list.iter().any(|interval| {
+                    interval.contig == record.contig
+                        && i64::from(interval.start) <= record.start
+                        && record.start <= i64::from(interval.end)
+                })
+            });
+            if !inside {
+                continue;
+            }
+        }
+        if group.is_empty() {
+            first_start = record.start;
+        } else if group[0].record.contig != record.contig
+            || last_start < record.start - distance
+            || first_start < record.start - max_distance
+        {
+            // The group is flushed from `apply` on the record that starts the next one, so
+            // `MultiVariantWalker.traverse` wraps the failure naming that record.
+            engine
+                .apply(&std::mem::take(&mut group), &mut source)
+                .map_err(|_| {
+                    Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        format!(
+                            "Exception thrown at {}:{} {}",
+                            record.contig,
+                            record.start,
+                            java_variant_context_string(&record, &labels[input])
+                        ),
+                    )
+                })?;
+            first_start = record.start;
+        }
+        last_start = record.start;
+        group.push(ve::Driving {
+            source: opened[input].1,
+            record,
+        });
+    }
+    if !group.is_empty() {
+        engine
+            .apply(&group, &mut source)
+            .map_err(variant_eval_thrown)?;
+    }
+    let report = engine.finalize_report();
+    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(report.as_bytes(), 6)
+    } else {
+        report.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    Ok(None)
+}
+
+/// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between
+/// `[VCFHeader:` and `]`. The version line is not among them: the codec consumes it.
+fn java_vcf_header_string(text: &str) -> String {
+    let mut out = String::from("[VCFHeader:");
+    for line in text
+        .lines()
+        .take_while(|line| line.starts_with("##"))
+        .filter(|line| !line.starts_with("##fileformat="))
+    {
+        out.push_str("\n\t");
+        out.push_str(&line[2..]);
+    }
+    out.push_str("\n]");
+    out
+}
+
+/// A VariantEval engine refusal as `mainEntry` handles it: a `CommandLineException` prints the
+/// usage and exits one, any other user exception exits two.
+fn variant_eval_thrown(error: gatk_tools::variant_eval_engine::EvalError) -> Thrown {
+    if error.class == gatk_tools::main_entry::COMMANDLINE_EXCEPTION {
+        Thrown::command_line(error.message)
+    } else if error.user {
+        Thrown::user(error.message)
+    } else {
+        Thrown::non_user(java_class_name(&error.class), error.message)
+    }
+}
+
+impl gatk_tools::variant_eval_engine::ReferenceBases for ReferenceBases<'_> {
+    fn bases(&mut self, contig: &str, start: i64, end: i64) -> Vec<u8> {
+        let length = self.0.sequence_length(contig).unwrap_or(0) as i64;
+        let end = end.min(length);
+        if start > end {
+            return Vec::new();
+        }
+        self.0
+            .query(contig, start as i32, end as i32)
+            .unwrap_or_default()
+    }
+}
+
 fn gatk_random() -> std::sync::MutexGuard<'static, gatk_engine::java_random::JavaRandom> {
     static RANDOM: std::sync::OnceLock<std::sync::Mutex<gatk_engine::java_random::JavaRandom>> =
         std::sync::OnceLock::new();

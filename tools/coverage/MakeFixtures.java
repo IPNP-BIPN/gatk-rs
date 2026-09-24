@@ -2892,6 +2892,84 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("gg_dbsnp_noidx.vcf"), ggDbsnp, StandardCharsets.UTF_8);
         reblockGvcfFixtures(dir, chr1);
         gnarlyGenotyperFixtures(dir);
+        variantEvalFixtures(dir, chr1);
+    }
+
+    /**
+     * What `VariantEval` reads. `ve_eval.vcf` is the reference's own `GenotypeGVCFs` over
+     * `cg_combined.g.vcf` with `gg_dbsnp.vcf`: three samples, one of them haploid, a spanning
+     * deletion, a mixed site and rsIDs. `ve_eval2.vcf` is written by hand over the same reference
+     * with two diploid samples: a SNP shared with the first file, a LowQual SNP, a deletion, an
+     * insertion, an MNP, an AC0 site, a doubly filtered triallelic SNP, a mixed site, a symbolic
+     * deletion, a phased chr2 SNP and a 20-base chr2 deletion. Both are indexed, because `-L`
+     * queries them. `ve_strat.bed` (indexed) is what `IntervalStratification` queries, and
+     * `ve_strat_noidx.bed` the copy it refuses at its first query; `ve_cnv.bed` (indexed) is what
+     * `VariantSummary` queries for a CNV with no comp.
+     */
+    static void variantEvalFixtures(final Path dir, final String chr1) throws Exception {
+        final String reference = dir.resolve("cgv_ref.fasta").toString();
+        new org.broadinstitute.hellbender.tools.walkers.GenotypeGVCFs().instanceMain(new String[] {
+                "-R", reference,
+                "-V", dir.resolve("cg_combined.g.vcf").toString(),
+                "--dbsnp", dir.resolve("gg_dbsnp.vcf").toString(),
+                "-O", dir.resolve("ve_eval.vcf").toString(),
+                "--add-output-vcf-command-line", "false"});
+        final java.util.function.BiFunction<Integer, Integer, String> ref =
+                (position, length) -> chr1.substring(position - 1, position - 1 + length);
+        final java.util.function.Function<String, String> other =
+                base -> base.equals("A") ? "C" : "A";
+        final String chr2 = new String(java.nio.file.Files.readAllBytes(dir.resolve("cgv_ref.fasta")),
+                StandardCharsets.UTF_8).split(">chr2")[1].split("\n", 2)[1].replace("\n", "");
+        final String snp102 = ref.apply(102, 1);
+        final String text = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=q10,Description=\"Quality below 10\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read depth\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n"
+                + "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsA\tsB\n"
+                + "chr1\t102\trs9102\t" + snp102 + "\t" + (snp102.equals("T") ? "A" : "T")
+                + "\t300.00\tPASS\tDP=40;QD=7.50\tGT:GQ:DP\t0/1:99:20\t1/1:60:20\n"
+                + "chr1\t300\t.\t" + ref.apply(300, 1) + "\t" + other.apply(ref.apply(300, 1))
+                + "\t20.00\tLowQual\tDP=12;QD=1.67\tGT:GQ:DP\t0/1:20:6\t0/0:15:6\n"
+                + "chr1\t310\trs9310\t" + ref.apply(310, 4) + "\t" + ref.apply(310, 1)
+                + "\t150.00\tPASS\tDP=30;QD=5.00\tGT:GQ:DP\t0/1:80:15\t0/1:70:15\n"
+                + "chr1\t320\t.\t" + ref.apply(320, 1) + "\t" + ref.apply(320, 1) + "TG"
+                + "\t90.00\t.\tDP=18;QD=5.00\tGT:GQ:DP\t1/1:30:9\t./.:.:.\n"
+                + "chr1\t330\t.\t" + ref.apply(330, 2) + "\t" + other.apply(ref.apply(330, 1))
+                + other.apply(ref.apply(331, 1))
+                + "\t120.00\tPASS\tDP=25;QD=4.80\tGT:GQ:DP\t0/1:50:12\t0/0:40:13\n"
+                + "chr1\t340\t.\t" + ref.apply(340, 1) + "\t" + other.apply(ref.apply(340, 1))
+                + "\t10.00\tPASS\tDP=20;QD=0.50\tGT:GQ:DP\t0/0:30:10\t0/0:30:10\n"
+                + "chr1\t350\trs9350\t" + ref.apply(350, 1) + "\t" + other.apply(ref.apply(350, 1)) + ",G"
+                + "\t8.00\tLowQual;q10\tDP=16;QD=0.50\tGT:GQ:DP\t1/2:10:8\t0/1:12:8\n"
+                + "chr1\t360\t.\t" + ref.apply(360, 3) + "\t" + ref.apply(360, 1) + ","
+                + other.apply(ref.apply(360, 1)) + ref.apply(361, 2)
+                + "\t200.00\tPASS\tDP=30;QD=6.67\tGT:GQ:DP\t0/1:60:15\t0/2:50:15\n"
+                + "chr1\t370\t.\t" + ref.apply(370, 1) + "\t<DEL>\t60.00\tPASS\tEND=380;SVTYPE=DEL\tGT:GQ:DP\t0/1:40:10\t0/0:30:10\n"
+                + "chr2\t30\trs9030\t" + chr2.charAt(29) + "\t" + other.apply(String.valueOf(chr2.charAt(29)))
+                + "\t250.00\tPASS\tDP=28;QD=8.93\tGT:GQ:DP\t0|1:70:14\t1|1:45:14\n"
+                + "chr2\t40\t.\t" + chr2.substring(39, 60) + "\t" + chr2.charAt(39)
+                + "\t180.00\tPASS\tDP=22;QD=8.18\tGT:GQ:DP\t0/1:60:11\t0/1:55:11\n";
+        Files.writeString(dir.resolve("ve_eval2.vcf"), text, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("ve_eval2.vcf").toString()});
+        final String strat = "chr1\t90\t150\nchr1\t305\t345\nchr2\t0\t35\n";
+        Files.writeString(dir.resolve("ve_strat.bed"), strat, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("ve_strat.bed").toString()});
+        Files.writeString(dir.resolve("ve_strat_noidx.bed"), strat, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("ve_cnv.bed"), "chr1\t95\t105\tcnvA\nchr1\t300\t375\tcnvB\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("ve_cnv.bed").toString()});
     }
 
     /**
