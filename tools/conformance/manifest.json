@@ -2660,7 +2660,7 @@
     },
     {
       "id": "allele-frequency-calculator",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The Dirichlet fit behind QUAL, the allele-absent probabilities and MLEAC",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -2677,8 +2677,8 @@
       "cases": [
         {
           "dump": "AlleleFrequencyCalculatorDump",
-          "golden": null,
-          "why": "Twenty-five fits and three refusals: one diploid sample in five shapes, a cohort, a rare het among nineteen hom-refs, three and five alleles with a SNP beside an indel, four ploidies, a spanning deletion alone and beside a SNP, hom-refs carrying only a GQ, no-calls with and without likelihoods, a second calculator with wider priors, and the three argument checks. Every double is printed as its raw bits."
+          "golden": "crates/gatk-engine/tests/data/allele_frequency_calculator.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner. Twenty-five fits and three refusals: one diploid sample in five shapes, a cohort, a rare het among nineteen hom-refs, three and five alleles with a SNP beside an indel, four ploidies, a spanning deletion alone and beside a SNP, hom-refs carrying only a GQ, no-calls with and without likelihoods, a second calculator with wider priors, and the three argument checks. Every double is printed as its raw bits."
         }
       ]
     },
