@@ -1054,6 +1054,15 @@
       "t": 2,
       "share": 1.0
     },
+    "VariantAnnotator": {
+      "rows": 83,
+      "accepted": 68,
+      "rejected": 15,
+      "distinct_outputs": 65,
+      "matched": 83,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,

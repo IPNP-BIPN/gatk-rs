@@ -252,7 +252,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | t=2, 22/22 rows (100%) |
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
-| `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |
+| `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | t=2, 83/83 rows (100%) |
 | `VariantEval` | variant-walker | oracle-backed | variant-eval | 1 | t=2, 68/68 rows (100%) |
 | `VariantFiltration` | variant-transform | oracle-backed | variant-filtration | 1 | t=2, 24/24 rows (100%) |
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | not measured |
