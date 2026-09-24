@@ -13573,12 +13573,12 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
     let include_non_variants = flag(parser, "include-non-variant-sites");
     let force_output_strings = arguments(parser, "force-output-intervals");
     if include_non_variants && !force_output_strings.is_empty() {
-        return Err(Thrown::command_line(format!(
+        return Err(Thrown::command_line(
             "Illegal argument value: Force output (--force-output-intervals) is incompatible with \
              including non-variants (--include-non-variant-sites and --all-sites).  Use the latter \
              to force genotyping at all sites and the former to force genotyping only at given \
-             sites.In both cases, variant sites are genotyped as usual."
-        )));
+             sites.In both cases, variant sites are genotyped as usual.",
+        ));
     }
     let file = htsjdk_vcf::reader::read_vcf(&text)
         .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;

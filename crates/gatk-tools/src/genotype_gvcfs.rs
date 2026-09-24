@@ -410,13 +410,7 @@ pub fn cleanup_genotype_annotations(
         if !keep_sb {
             attrs.retain(|(key, _)| key != STRAND_BIAS_BY_SAMPLE_KEY);
         }
-        let is_hom_var = old.alleles.len() > 0
-            && old
-                .alleles
-                .iter()
-                .all(|a| !a.is_no_call() && !a.is_reference())
-            && old.alleles.windows(2).all(|pair| pair[0] == pair[1]);
-        if is_hom_var {
+        if old.is_hom_var() {
             if let Some(slot) = attrs
                 .iter_mut()
                 .find(|(key, _)| key == HAPLOTYPE_CALLER_PHASING_GT_KEY)
@@ -523,7 +517,7 @@ impl Engine<'_> {
                             id,
                             number,
                             ..
-                        } if kind == "FORMAT" && id == key => Some(number.clone()),
+                        } if kind == "FORMAT" && id == key => Some(*number),
                         _ => None,
                     });
                     match number {
