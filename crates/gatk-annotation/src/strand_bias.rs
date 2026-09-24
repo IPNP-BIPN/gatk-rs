@@ -285,6 +285,23 @@ where
     vec![(key.to_string(), AnnotationValue::Str(value_of(table)))]
 }
 
+/// `FisherStrand.makeValueObjectForAnnotation(pValueForContingencyTable(table))`: `FS` as written.
+pub fn fisher_strand_value(table: [[i32; 2]; 2]) -> String {
+    let p_value = p_value_for_contingency_table(table);
+    format_three_decimals(phred_scale_error_rate(p_value.max(MIN_PVALUE)))
+}
+
+/// `StrandOddsRatio.formattedValue(calculateSOR(table))`: `SOR` as written.
+pub fn strand_odds_ratio_value(table: [[i32; 2]; 2]) -> String {
+    format_three_decimals(calculate_sor(table))
+}
+
+/// `StrandBiasTest.decodeSBBS`: four counts as the two-by-two table, forward then reverse.
+pub fn decode_sbbs(counts: &[i32]) -> [[i32; 2]; 2] {
+    let at = |index: usize| counts.get(index).copied().unwrap_or(0);
+    [[at(0), at(1)], [at(2), at(3)]]
+}
+
 /// `FisherStrand`: `FS`, the phred-scaled two-sided Fisher p-value.
 pub struct FisherStrand;
 
