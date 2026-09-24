@@ -2591,6 +2591,7 @@ public class MakeFixtures {
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
+        combineGvcfsFixtures(dir);
         vcfComparatorFixtures(dir);
         // `FilterFuncotations`: a Funcotated VCF whose records match each filter once (ClinVar,
         // LoF, LMM, an autosomal recessive compound het pair and a hom-var, nothing at all, and a
@@ -2678,6 +2679,223 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * The header every `CombineGVCFs` input carries: the lines a HaplotypeCaller GVCF over
+     * `mutect_tn.bam` writes, less its command line, its GQ bands and its contig, with the two
+     * contigs of `cgv_ref.fasta` in their place.
+     */
+    static final String COMBINE_GVCFS_HEADER = "##fileformat=VCFv4.2\n"
+            + "##ALT=<ID=NON_REF,Description=\"Represents any possible alternative allele not already represented at this location by REF and ALT\">\n"
+            + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+            + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">\n"
+            + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth (reads with MQ=255 or with bad mates are filtered)\">\n"
+            + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">\n"
+            + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+            + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"Minimum DP observed within the GVCF block\">\n"
+            + "##FORMAT=<ID=PGT,Number=1,Type=String,Description=\"Physical phasing haplotype information, describing how the alternate alleles are phased in relation to one another; will always be heterozygous and is not intended to describe called alleles\">\n"
+            + "##FORMAT=<ID=PID,Number=1,Type=String,Description=\"Physical phasing ID information, where each unique ID within a given sample (but not across samples) connects records within a phasing group\">\n"
+            + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification\">\n"
+            + "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phasing set (typically the position of the first variant in the set)\">\n"
+            + "##FORMAT=<ID=SB,Number=4,Type=Integer,Description=\"Per-sample component statistics which comprise the Fisher's Exact Test to detect strand bias.\">\n"
+            + "##INFO=<ID=AS_InbreedingCoeff,Number=A,Type=Float,Description=\"Allele-specific inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation\">\n"
+            + "##INFO=<ID=AS_QD,Number=A,Type=Float,Description=\"Allele-specific Variant Confidence/Quality by Depth\">\n"
+            + "##INFO=<ID=AS_RAW_BaseQRankSum,Number=1,Type=String,Description=\"raw data for allele specific rank sum test of base qualities\">\n"
+            + "##INFO=<ID=AS_RAW_MQ,Number=1,Type=String,Description=\"Allele-specfic raw data for RMS Mapping Quality\">\n"
+            + "##INFO=<ID=AS_RAW_MQRankSum,Number=1,Type=String,Description=\"Allele-specfic raw data for Mapping Quality Rank Sum\">\n"
+            + "##INFO=<ID=AS_RAW_ReadPosRankSum,Number=1,Type=String,Description=\"allele specific raw data for rank sum test of read position bias\">\n"
+            + "##INFO=<ID=AS_SB_TABLE,Number=1,Type=String,Description=\"Allele-specific forward/reverse read counts for strand bias tests. Includes the reference and alleles separated by |.\">\n"
+            + "##INFO=<ID=BaseQRankSum,Number=1,Type=Float,Description=\"Z-score from Wilcoxon rank sum test of Alt Vs. Ref base qualities\">\n"
+            + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth; some reads may have been filtered\">\n"
+            + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n"
+            + "##INFO=<ID=ExcessHet,Number=1,Type=Float,Description=\"Phred-scaled p-value for exact test of excess heterozygosity\">\n"
+            + "##INFO=<ID=InbreedingCoeff,Number=1,Type=Float,Description=\"Inbreeding coefficient as estimated from the genotype likelihoods per-sample when compared against the Hardy-Weinberg expectation\">\n"
+            + "##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed\">\n"
+            + "##INFO=<ID=MLEAF,Number=A,Type=Float,Description=\"Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed\">\n"
+            + "##INFO=<ID=MQRankSum,Number=1,Type=Float,Description=\"Z-score From Wilcoxon rank sum test of Alt vs. Ref read mapping qualities\">\n"
+            + "##INFO=<ID=RAW_MQandDP,Number=2,Type=Integer,Description=\"Raw data (sum of squared MQ and total depth) for improved RMS Mapping Quality calculation. Incompatible with deprecated RAW_MQ formulation.\">\n"
+            + "##INFO=<ID=ReadPosRankSum,Number=1,Type=Float,Description=\"Z-score from Wilcoxon rank sum test of Alt vs. Ref read position bias\">\n"
+            + "##contig=<ID=chr1,length=3000>\n"
+            + "##contig=<ID=chr2,length=500>\n";
+
+    /** The FORMAT of a diploid variant site, and of one HaplotypeCaller phased with its neighbour. */
+    static final String CG_FORMAT = "GT:AD:DP:GQ:PL:SB";
+    static final String CG_PHASED_FORMAT = "GT:AD:DP:GQ:PGT:PID:PL:PS:SB";
+
+    /**
+     * What `CombineGVCFs` merges: GVCFs over a two-contig reference, whose reference blocks and
+     * variant sites overlap in every way the merger tells apart, and two inputs it refuses.
+     *
+     * `cgv_ref.fasta` is `mutect_ref.fasta`'s chr1 (the same seeded draws) and a fixed 500-base chr2,
+     * so the REF of every block is a real base and the merger's reference checks pass. `cg_a` is a
+     * diploid sample with a known deletion at chr1:100, a multiallelic SNP at 140, a phased pair at
+     * 210 and 211 (PGT, PID and PS), a zero-depth block at 250 and a hom-var SNP on chr2. `cg_b` cuts
+     * the same stretch into other blocks at other GQs: a block runs into `cg_a`'s deletion, a known SNP
+     * at 102 sits under it (a spanning deletion), an insertion at 140 meets `cg_a`'s two SNPs, and one
+     * block covers all of chr2. `cg_c` is HAPLOID, with a longer deletion at 100 that outlasts the
+     * others and a SNP at 210 against `cg_a`'s phased one, so the merged sites mix ploidies. All three
+     * carry the allele-specific raw annotations, so the default annotation groups and `-G
+     * AS_StandardAnnotation` each have something to combine. `cg_mnp` holds an MNP, which `apply`
+     * refuses, and `cg_nonref` a variant with no `<NON_REF>`, which the merger refuses. Each file is
+     * indexed: a variant walker refuses `--intervals` over an input with no random access. The
+     * `.list` files group them into the sets one row merges, and `cg_dbsnp.vcf` is the `--dbsnp`.
+     */
+    static void combineGvcfsFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20260923L);
+        final StringBuilder first = new StringBuilder();
+        for (int i = 0; i < 3000; i++) {
+            first.append("ACGT".charAt(random.nextInt(4)));
+        }
+        final String chr1 = first.toString();
+        final String chr2 = "GCTAAAGACAATTACATAACATACACGTCAGCACGAAACTTGTTGGCCCAGTGTGAATCGCTTAAGGGTTAAGTAAGTGTGATGCATACGCCTTTACTTG"
+                + "CTGTGTCCACCCCATCGGACTGGCATTTTTATTACACTCAGAAACAGAACTCGGGTAATTTTGACAGGTCACGCAGAGGCGCGCCCTCCTGAAGTGCGTG"
+                + "GACACTCGCTATGAATCTCTGATTTACCCACTCTGCCAAACTCCAGCGCGGTCAGTTCCATCACCCTAAGTAACCGAATAATGCGTTCGCTCTATTGACT"
+                + "ACGACGCGCTCATTCCCTTGTCGGAGAGTTATGGAACAAGGACGCTGTCTGAGACTAGAAGACAGATAGTGCACACGACCGGCGTCGGAGAAACTCTATT"
+                + "TGCCGCCTGACAAGTCAATGCGATCCGTAGGGGCAGCGCAGTATGCCAAGACTATAGGCACTGTCGCATCACAAACGATTAACTGATAAATGAGCCCTTT";
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("cgv_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            reference.startSequence("chr1").appendBases(chr1);
+            reference.startSequence("chr2").appendBases(chr2);
+        }
+        final java.util.Map<String, String> bases = java.util.Map.of("chr1", chr1, "chr2", chr2);
+        // chr2:21 is a hom-var SNP to whichever base the reference does not hold there.
+        final String chr2Ref = chr2.substring(20, 21);
+        final String[][] files = {
+                {"cg_a.g.vcf", "sA",
+                        cgBlock(bases, "chr1", 90, 99, 45),
+                        cgVariant("chr1", 100, "rs100", "GGC", "G", "120.5", CG_FORMAT,
+                                "0/1:11,10,0:21:99:230,0,260,263,290,553:6,5,5,5"),
+                        cgBlock(bases, "chr1", 103, 139, 45),
+                        cgVariant("chr1", 140, ".", "G", "A,C", "120.5", CG_FORMAT,
+                                "1/2:1,9,8,0:21:99:400,300,290,310,0,320,420,330,340,600:6,5,5,5"),
+                        cgBlock(bases, "chr1", 141, 209, 45),
+                        cgVariant("chr1", 210, ".", "T", "C", "120.5", CG_PHASED_FORMAT,
+                                "0|1:10,11,0:21:99:0|1:210_T_C:250,0,240,280,270,550:210:6,5,5,5"),
+                        cgVariant("chr1", 211, ".", "C", "A", "120.5", CG_PHASED_FORMAT,
+                                "0|1:10,11,0:21:99:0|1:210_T_C:250,0,240,280,270,550:210:6,5,5,5"),
+                        cgBlock(bases, "chr1", 212, 249, 45),
+                        cgBlock(bases, "chr1", 250, 260, "0/0:0:0:0:0,0,0"),
+                        cgBlock(bases, "chr1", 261, 300, 45),
+                        cgBlock(bases, "chr2", 1, 20, 45),
+                        cgVariant("chr2", 21, ".", chr2Ref, chr2Ref.equals("T") ? "A" : "T", "600.3",
+                                CG_FORMAT, "1/1:0,20,0:21:99:600,60,0,600,60,600:6,5,5,5"),
+                        cgBlock(bases, "chr2", 22, 60, 45)},
+                {"cg_b.g.vcf", "sB",
+                        cgBlock(bases, "chr1", 90, 101, 30),
+                        cgVariant("chr1", 102, "rs102", "C", "T", "120.5", CG_FORMAT,
+                                "0/1:12,9,0:21:99:200,0,280,236,307,543:6,5,5,5"),
+                        cgBlock(bases, "chr1", 103, 139, 30),
+                        cgVariant("chr1", 140, ".", "G", "GA", "120.5", CG_FORMAT,
+                                "0/1:12,8,0:21:99:180,0,300,216,324,540:6,5,5,5"),
+                        cgBlock(bases, "chr1", 141, 249, 33),
+                        cgBlock(bases, "chr1", 250, 300, "0/0:0:0:0:0,0,0"),
+                        cgBlock(bases, "chr2", 1, 60, 25)},
+                {"cg_c.g.vcf", "sC",
+                        cgBlock(bases, "chr1", 90, 99, "0:20:90:20:0,90"),
+                        "chr1\t100\t.\tGGCT\tG,<NON_REF>\t300.2\t.\tDP=9;ExcessHet=3.0103;MLEAC=1,0;"
+                                + "MLEAF=1.00,0.00;RAW_MQandDP=32400,9;BaseQRankSum=0.842\t"
+                                + "GT:AD:DP:GQ:PL\t1:0,8,0:8:99:300,0,320",
+                        cgBlock(bases, "chr1", 104, 209, "0:20:90:20:0,90"),
+                        "chr1\t210\t.\tT\tC,<NON_REF>\t250.1\t.\tDP=12;ExcessHet=3.0103;MLEAC=1,0;"
+                                + "MLEAF=1.00,0.00;RAW_MQandDP=43200,12;BaseQRankSum=-1.1\t"
+                                + "GT:AD:DP:GQ:PL\t1:0,12,0:12:99:260,0,270",
+                        cgBlock(bases, "chr1", 211, 300, "0:20:90:20:0,90")},
+                {"cg_mnp.g.vcf", "sD",
+                        cgBlock(bases, "chr1", 90, 99, 45),
+                        "chr1\t100\t.\tGG\tTT,<NON_REF>\t50\t.\tDP=5\tGT:AD:DP:GQ:PL\t"
+                                + "0/1:3,2,0:5:50:50,0,60,60,70,130",
+                        cgBlock(bases, "chr1", 102, 120, 45)},
+                {"cg_nonref.g.vcf", "sE",
+                        cgBlock(bases, "chr1", 90, 99, 45),
+                        "chr1\t100\t.\tG\tA\t50\t.\tDP=5\tGT:AD:DP:GQ:PL\t0/1:3,2:5:50:50,0,60",
+                        cgBlock(bases, "chr1", 101, 120, 45)},
+        };
+        for (final String[] file : files) {
+            final StringBuilder text = new StringBuilder(COMBINE_GVCFS_HEADER)
+                    .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t")
+                    .append(file[1]).append('\n');
+            for (int i = 2; i < file.length; i++) {
+                text.append(file[i]).append('\n');
+            }
+            Files.writeString(dir.resolve(file[0]), text.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(file[0]).toString()});
+        }
+        // `--variant` is a collection, and a covering array gives each argument one value per row,
+        // so the inputs a row merges together are one `.list` value: the three that merge, and
+        // `cg_a` beside each of the two the tool refuses.
+        for (final String[] list : new String[][] {
+                {"cg_abc.list", "cg_a", "cg_b", "cg_c"},
+                {"cg_ab.list", "cg_a", "cg_b"},
+                {"cg_bc.list", "cg_b", "cg_c"},
+                {"cg_mnp_pair.list", "cg_a", "cg_mnp"},
+                {"cg_nonref_pair.list", "cg_a", "cg_nonref"}}) {
+            final StringBuilder paths = new StringBuilder();
+            for (int i = 1; i < list.length; i++) {
+                paths.append("/work/fixtures/").append(list[i]).append(".g.vcf\n");
+            }
+            Files.writeString(dir.resolve(list[0]), paths.toString(), StandardCharsets.UTF_8);
+        }
+        // A dbSNP over the same reference, at sites the inputs call and one they do not. The
+        // merger never reads its records; what it changes is the header, which gains the DB line.
+        // Indexed, because a feature input is queried by interval under `--intervals`.
+        Files.writeString(dir.resolve("cg_dbsnp.vcf"), "##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t102\trs9102\tC\tT\t.\t.\t.\n"
+                + "chr1\t140\trs9140\tG\tA\t.\t.\t.\n"
+                + "chr1\t500\trs9500\t" + chr1.charAt(499) + "\t" + (chr1.charAt(499) == 'A' ? "C" : "A")
+                + "\t.\t.\t.\n"
+                + "chr2\t21\trs9021\t" + chr2Ref + "\t" + (chr2Ref.equals("T") ? "A" : "T")
+                + "\t.\t.\t.\n",
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("cg_dbsnp.vcf").toString()});
+    }
+
+    /** A diploid hom-ref block at the given GQ, one read short of MIN_DP, with its PL from the GQ. */
+    static String cgBlock(final java.util.Map<String, String> bases, final String contig,
+                          final int start, final int end, final int quality) {
+        return cgBlock(bases, contig, start, end,
+                "0/0:19:" + quality + ":18:0," + quality + "," + quality * 15);
+    }
+
+    /** A reference block from `start` to `end`, its REF read from the reference. */
+    static String cgBlock(final java.util.Map<String, String> bases, final String contig,
+                          final int start, final int end, final String sample) {
+        return contig + "\t" + start + "\t.\t" + bases.get(contig).charAt(start - 1)
+                + "\t<NON_REF>\t.\t.\tEND=" + end + "\tGT:DP:GQ:MIN_DP:PL\t" + sample;
+    }
+
+    /**
+     * A diploid variant site with the INFO a HaplotypeCaller GVCF writes, the allele-specific raw
+     * annotations carrying one entry per alternate and none for `<NON_REF>`.
+     */
+    static String cgVariant(final String contig, final int position, final String id,
+                            final String reference, final String alternates, final String quality,
+                            final String format, final String sample) {
+        final int count = alternates.split(",").length;
+        final String each = String.join(",", java.util.Collections.nCopies(count, "1"));
+        final String frequencies = String.join(",", java.util.Collections.nCopies(count, "0.500"));
+        final String info = "AS_RAW_BaseQRankSum=|" + cgRepeat("-0.5,1", count) + "|NaN"
+                + ";AS_RAW_MQ=39600.00|" + cgRepeat("36000.00", count) + "|0.00"
+                + ";AS_RAW_MQRankSum=|" + cgRepeat("0.0,1", count) + "|NaN"
+                + ";AS_RAW_ReadPosRankSum=|" + cgRepeat("1.3,1", count) + "|NaN"
+                + ";AS_SB_TABLE=6,5|" + cgRepeat("5,5", count) + "|0,0"
+                + ";BaseQRankSum=-0.524;DP=21;ExcessHet=3.0103;MLEAC=" + each + ",0;MLEAF="
+                + frequencies + ",0.00;MQRankSum=0.000;RAW_MQandDP=75600,21;ReadPosRankSum=1.253";
+        return contig + "\t" + position + "\t" + id + "\t" + reference + "\t" + alternates
+                + ",<NON_REF>\t" + quality + "\t.\t" + info + "\t" + format + "\t" + sample;
+    }
+
+    static String cgRepeat(final String value, final int count) {
+        return String.join("|", java.util.Collections.nCopies(count, value));
     }
 
     /**

@@ -390,6 +390,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "RemoveNearbyIndels" => Some(run_remove_nearby_indels),
         "UpdateVCFSequenceDictionary" => Some(run_update_vcf_sequence_dictionary),
         "SelectVariants" => Some(run_select_variants),
+        "CombineGVCFs" => Some(run_combine_gvcfs),
         _ => None,
     }
 }
@@ -481,6 +482,10 @@ fn run_remove_nearby_indels(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::update_vcf_sequence_dictionary(&parsed("UpdateVCFSequenceDictionary", args)?)
+}
+
+fn run_combine_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::combine_gvcfs(&parsed("CombineGVCFs", args)?)
 }
 
 fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {

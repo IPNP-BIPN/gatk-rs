@@ -4789,6 +4789,147 @@
         "0"
       ]
     },
+    "CRAMIssue8768Detector": {
+      "$why": [
+        "issue8768.cram has its first container on each of two contigs opening at position 1, so the",
+        "second is suspected, with four mismatches in every third read; multislice.cram is the same",
+        "reads two slices a container, which the detector calls foreign and stops on; split.cram opens",
+        "at 100 and has nothing to suspect. two_contigs.fasta is the reference the first two were",
+        "written against; reference.fasta disagrees with them base for base."
+      ],
+      "--input": [
+        "/work/fixtures/issue8768.cram",
+        "/work/fixtures/multislice.cram",
+        "/work/fixtures/split.cram"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--output": [
+        "/work/out/cram8768.txt"
+      ],
+      "--output-tsv": [
+        "/work/out/cram8768.tsv",
+        "null"
+      ],
+      "--mismatch-rate-threshold": [
+        "0.05",
+        "0.0"
+      ]
+    },
+    "CombineGVCFs": {
+      "$why": [
+        "The corpus is combineGvcfsFixtures in MakeFixtures.java: GVCFs over cgv_ref.fasta, whose",
+        "chr1 is mutect_ref.fasta's and whose chr2 is 500 fixed bases. --variant is a collection and a",
+        "row gives it one value, so each value is a .list of the files one run merges: cg_abc.list is",
+        "the three that merge (a diploid sample with a deletion, a multiallelic SNP, a phased pair and",
+        "a zero-depth block; a second diploid sample whose blocks run into that deletion, with a SNP",
+        "under it and an insertion at the multiallelic site; and a haploid sample with a longer",
+        "deletion), cg_ab.list and cg_bc.list two of them each, so the diploid pair merges without the",
+        "haploid sample and the haploid one merges with a single diploid. cg_mnp_pair.list puts",
+        "cg_a beside an MNP, which apply() refuses, and",
+        "cg_nonref_pair.list beside a variant with no <NON_REF>, which the merger refuses. Both",
+        "refusals sit at chr1:100, so a row whose interval misses that site answers instead.",
+        "--intervals is absent, a window starting inside cg_a's deletion (so",
+        "--ignore-variants-starting-outside-interval has a record to drop and the merger a deletion",
+        "to trim), or a window on chr2 over the hom-var SNP. --exclude-intervals cuts the phased pair",
+        "out or nothing. --break-bands-at-multiples-of is 0 or 100, which splits the chr1 blocks at",
+        "100, 200 and 300; --convert-to-base-pair-resolution is the special case of 1.",
+        "--annotation-group, --annotation and --annotations-to-exclude decide which raw keys the",
+        "merger combines: the default group, the allele-specific one, AS_RMSMappingQuality added, and",
+        "ExcessHet or RMSMappingQuality removed. Every input carries both the raw and the",
+        "allele-specific keys. Removing RMSMappingQuality is refused whenever a group selects it:",
+        "Barclay records every selected annotation that declares an argument as a predecessor, given",
+        "or not, and GATK refuses to disable one the tool does not name individually.",
+        "--dbsnp is cg_dbsnp.vcf or absent. The merger never reads its records; it adds the DB header",
+        "line, which is what a row can observe.",
+        "--reference is held at cgv_ref.fasta: the corpus has no second reference carrying both",
+        "contigs at these lengths, and any other refuses every row on the dictionary check.",
+        "--sequence-dictionary is held out for the same reason: both shared dictionaries name chr1 at",
+        "100 kb or chrOther, which the dictionary check refuses on every row.",
+        "--input and --read-index are held out: this tool reads no reads.",
+        "--pedigree and --founder-id are held out: they feed only the pedigree annotations",
+        "(InbreedingCoeff, ExcessHet, PossibleDeNovo), none of which is reducible, and the merger",
+        "combines reducible annotations alone, so no row could observe them.",
+        "--flow-order-for-annotations is held out: it feeds only the flow-based annotations, and the",
+        "corpus holds no flow data.",
+        "--variant-output-filtering is held at ANYWHERE: any other mode needs -L, and a third of the",
+        "rows have none. --max-variants-per-shard is held at 0: above it the reference writes one file",
+        "per shard, a writer this port does not carry, and the generator's other value is -1, which the",
+        "parser refuses. --disable-read-filter is held at WellformedReadFilter: the shared",
+        "MappedReadFilter is also a --read-filter value, and a row naming it on both sides is refused",
+        "for the conflict. No read filter reaches a variant walker.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index."
+      ],
+      "--variant": [
+        "/work/fixtures/cg_abc.list",
+        "/work/fixtures/cg_ab.list",
+        "/work/fixtures/cg_bc.list",
+        "/work/fixtures/cg_mnp_pair.list",
+        "/work/fixtures/cg_nonref_pair.list"
+      ],
+      "--output": [
+        "/work/out/combined.g.vcf",
+        "/work/out/combined2.g.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:101-215",
+        "chr2:10-40"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:205-215"
+      ],
+      "--break-bands-at-multiples-of": [
+        "0",
+        "100"
+      ],
+      "--dbsnp": [
+        "/work/fixtures/cg_dbsnp.vcf",
+        "null"
+      ],
+      "--annotation-group": [
+        "StandardAnnotation",
+        "AS_StandardAnnotation"
+      ],
+      "--annotation": [
+        "null",
+        "AS_RMSMappingQuality"
+      ],
+      "--annotations-to-exclude": [
+        "null",
+        "ExcessHet",
+        "RMSMappingQuality"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--pedigree": [],
+      "--founder-id": [],
+      "--flow-order-for-annotations": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ]
+    },
     "AddFlowBaseQuality": {
       "$why": [
         "flow.bam is Ultima reads in two flow groups (TGCA at the default maximal class, TACG at mc 8),",
@@ -5240,35 +5381,6 @@
       ],
       "--create-output-variant-index": [
         "false"
-      ]
-    },
-    "CRAMIssue8768Detector": {
-      "$why": [
-        "issue8768.cram has its first container on each of two contigs opening at position 1, so the",
-        "second is suspected, with four mismatches in every third read; multislice.cram is the same",
-        "reads two slices a container, which the detector calls foreign and stops on; split.cram opens",
-        "at 100 and has nothing to suspect. two_contigs.fasta is the reference the first two were",
-        "written against; reference.fasta disagrees with them base for base."
-      ],
-      "--input": [
-        "/work/fixtures/issue8768.cram",
-        "/work/fixtures/multislice.cram",
-        "/work/fixtures/split.cram"
-      ],
-      "--reference": [
-        "/work/fixtures/two_contigs.fasta",
-        "/work/fixtures/reference.fasta"
-      ],
-      "--output": [
-        "/work/out/cram8768.txt"
-      ],
-      "--output-tsv": [
-        "/work/out/cram8768.tsv",
-        "null"
-      ],
-      "--mismatch-rate-threshold": [
-        "0.05",
-        "0.0"
       ]
     },
     "VCFComparator": {

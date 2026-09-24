@@ -305,6 +305,7 @@ jobs:
             --tool FlowPairHMMAlignReadsToHaplotypes \
             --tool FlowFeatureMapper \
             --tool CRAMIssue8768Detector \
+            --tool CombineGVCFs \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
