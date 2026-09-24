@@ -2,7 +2,8 @@
 //!
 //! A flow-based read carries the probability that each homopolymer was read one base too short or
 //! too long. This turns those into a per-base quality by enumerating the ways the flow key could
-//! have been misread. Building the flow matrix is not ported; everything the tool does with it is.
+//! have been misread. The flow matrix itself is `crate::flow_based_read`, built with the boundary
+//! flows kept, which `onTraversalStart` forces whatever the command line says.
 //!
 //! # The middle bases of an hmer are never computed
 //!
@@ -327,4 +328,118 @@ pub fn add_base_quality(
             qualities: original_qualities.to_string(),
         }
     })
+}
+
+/// `GATKTool.getToolName()` for this tool.
+pub const TOOL_NAME: &str = "GATK AddFlowBaseQuality";
+/// `BASE_QUALITY_ATTRIBUTE_NAME`.
+pub const BASE_QUALITY_ATTRIBUTE: &[u8; 2] = b"XQ";
+/// `OLD_QUALITY_ATTRIBUTE_NAME`.
+pub const OLD_QUALITY_ATTRIBUTE: &[u8; 2] = b"OQ";
+
+/// The tool's own arguments, beside the flow matrix's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings {
+    pub min_error_rate: f64,
+    pub max_quality_score: i32,
+    pub replace_quality_mode: bool,
+    pub flow: crate::flow_based_read::FlowArguments,
+}
+
+/// The three probabilities `extractErrorProbBands` reads off a built matrix, one flow at a time.
+pub fn raw_probs(read: &crate::flow_based_read::FlowRead) -> Vec<RawProbs> {
+    read.key
+        .iter()
+        .enumerate()
+        .map(|(flow, key)| RawProbs {
+            minus: (*key > 0).then(|| read.prob(flow, key - 1)),
+            key: read.prob(flow, *key),
+            plus: (*key < read.max_hmer).then(|| read.prob(flow, key + 1)),
+        })
+        .collect()
+}
+
+impl From<FlowError> for crate::flow_based_read::FlowReadError {
+    fn from(error: FlowError) -> Self {
+        crate::flow_based_read::FlowReadError {
+            class: error.java_class(),
+            message: error.message(),
+            port_limitation: false,
+        }
+    }
+}
+
+/// `addBaseQuality` over one record, in place.
+pub fn add_base_quality_to_record(
+    record: &mut htsjdk_bam::record::BamRecord,
+    header: &htsjdk_bam::header::SamHeader,
+    settings: &Settings,
+) -> Result<(), crate::flow_based_read::FlowReadError> {
+    use crate::flow_based_read::{has_flow_tags, read_group_info, FlowRead, FlowReadError};
+    use htsjdk_bam::tag::{Tag, TagValue};
+    if !has_flow_tags(record) {
+        return Err(FlowReadError {
+            class: "java.lang.IllegalArgumentException",
+            message: "a read without flow tags".to_string(),
+            port_limitation: true,
+        });
+    }
+    let info = read_group_info(record, header)?;
+    // onTraversalStart: "do not trim the boundary homopolymers as the default".
+    let mut flow = settings.flow.clone();
+    flow.keep_boundary_flows = true;
+    let flow_read = FlowRead::new(record, &info.flow_order, info.max_class, &flow)?;
+    let bands = extract_error_prob_bands(&raw_probs(&flow_read), settings.min_error_rate);
+    let error_prob = generate_base_error_probability(
+        &flow_read.key,
+        &bands,
+        record.read_bases.len(),
+        calc_flow_order_length(&info.flow_order),
+    )?;
+    let phred = convert_error_prob_to_phred(&error_prob, settings.max_quality_score);
+    if settings.replace_quality_mode {
+        let old = convert_phred_to_string(&record.base_qualities);
+        record
+            .tags
+            .insert(Tag::new(OLD_QUALITY_ATTRIBUTE), TagValue::Str(old));
+        record.base_qualities = phred;
+    } else {
+        record.tags.insert(
+            Tag::new(BASE_QUALITY_ATTRIBUTE),
+            TagValue::Str(convert_phred_to_string(&phred)),
+        );
+    }
+    Ok(())
+}
+
+/// What a run produces: the output BAM and its index, or the first read's refusal.
+pub type RunResult = Result<
+    Result<(Vec<u8>, Option<Vec<u8>>), crate::flow_based_read::FlowReadError>,
+    gatk_engine::reads::ReadsError,
+>;
+
+/// `AddFlowBaseQuality`: every read the traversal reaches, with its flow base quality.
+pub fn add_flow_base_quality_with(
+    source: &gatk_engine::reads::ReadsDataSource,
+    options: &crate::sam_output::Options,
+    filter: &dyn Fn(&htsjdk_bam::record::BamRecord) -> bool,
+    settings: &Settings,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
+    let mut records = crate::read_walker::traverse(source, &options.intervals, filter)?;
+    let input_header = source.header().clone();
+    for record in &mut records {
+        if let Err(error) = add_base_quality_to_record(record, &input_header, settings) {
+            return Ok(Err(error));
+        }
+    }
+    let header = crate::sam_output::header_for_sam_writer(source.header(), TOOL_NAME, options);
+    Ok(Ok(crate::sam_output::write_records_with(
+        &header,
+        &records,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )?))
 }

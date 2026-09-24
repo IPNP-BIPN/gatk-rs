@@ -926,6 +926,185 @@ public class MakeFixtures {
      * across the first gene's intron, one in seven maps twice (`NH` 2), one in eleven maps at 5, and one in thirteen
      * is a duplicate.
      */
+    /**
+     * flow.bam: Ultima flow reads over mutect_ref.fasta. Two read groups, one under TGCA with the
+     * default maximal class and one under TACG with mc 8, so the matrix has two shapes. Every read
+     * carries a signed tp array (mostly zero, some +-1 and +-2) and varied qualities; every third
+     * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class. One read is
+     * supplementary and one fails the vendor check, which AddFlowSNVQuality's switches drop.
+     */
+    static void flowFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final java.util.Random random = new java.util.Random(8768);
+        final List<SAMRecord> records = new ArrayList<>();
+        int n = 0;
+        for (int start = 50; start + 60 < bases.length() && n < 60; start += 37, n++) {
+            final int length = 30 + random.nextInt(20);
+            String read = bases.substring(start - 1, start - 1 + length);
+            if (n == 4) {
+                read = read.substring(0, 10) + "A".repeat(13) + read.substring(23);
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("F:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(length + "M");
+            record.setReadString(read);
+            final byte[] quals = new byte[length];
+            final byte[] tp = new byte[length];
+            final StringBuilder t0 = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : roll < 9 ? -1 : (random.nextBoolean() ? 2 : -2));
+                quals[i] = (byte) (tp[i] == 0 ? 30 + random.nextInt(11) : 5 + random.nextInt(20));
+                t0.append((char) ('!' + 10 + random.nextInt(31)));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(60);
+            record.setSupplementaryAlignmentFlag(n == 7);
+            record.setReadFailsVendorQualityCheckFlag(n == 11);
+            record.setAttribute("RG", n % 2 == 0 ? "rgU" : "rgV");
+            record.setAttribute("tp", tp);
+            if (n % 3 == 0) {
+                record.setAttribute("t0", t0.toString());
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("flow.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        // Haplotypes for FlowPairHMMAlignReadsToHaplotypes over the same stretch of chr1: the
+        // reference, one with three substitutions, one with a three-base deletion and one shorter
+        // than any read. The second file repeats the reference's bases under another name, which
+        // the writer's name-by-bases map resolves to the last.
+        final String ref = bases.substring(0, 2400);
+        final StringBuilder snp = new StringBuilder(ref);
+        for (final int at : new int[] {200, 700, 1300}) {
+            snp.setCharAt(at, snp.charAt(at) == 'A' ? 'C' : 'A');
+        }
+        final String del = ref.substring(0, 1000) + ref.substring(1003);
+        Files.writeString(dir.resolve("haplotypes.fasta"),
+                ">ref\n" + ref + "\n>snp\n" + snp + "\n>del\n" + del + "\n>short\n" + ref.substring(100, 125) + "\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("haplotypes_dup.fasta"),
+                ">ref\n" + ref + "\n>snp\n" + snp + "\n>copy\n" + ref + "\n",
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * flow_snv.bam: overlapping Ultima reads over mutect_ref.fasta that carry substitutions, for
+     * FlowFeatureMapper. The substitutions sit at a few shared sites, so several reads report a
+     * feature at the same position and the queue decides their order. One read is soft-clipped,
+     * one carries an insertion, every third is on the reverse strand, one is a duplicate and one
+     * in five holds an integer XI tag; every other one carries a t0 string.
+     */
+    static void flowSnvFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final int[] sites = {230, 255, 301, 322, 377, 420, 461, 503, 555, 610};
+        final java.util.Random random = new java.util.Random(1223);
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int n = 0; n < 40; n++) {
+            final int start = 200 + n * 11;
+            final int length = 40 + random.nextInt(21);
+            final StringBuilder read = new StringBuilder(bases.substring(start - 1, start - 1 + length));
+            for (final int site : sites) {
+                if (site >= start + 2 && site < start + length - 2 && random.nextInt(3) != 0) {
+                    final int at = site - start;
+                    final char was = read.charAt(at);
+                    read.setCharAt(at, was == 'A' ? 'G' : was == 'G' ? 'T' : was == 'T' ? 'C' : 'A');
+                }
+            }
+            String cigar = length + "M";
+            String sequence = read.toString();
+            int alignmentStart = start;
+            if (n == 6) {
+                cigar = "5S" + (length - 5) + "M";
+                alignmentStart = start + 5;
+            } else if (n == 9) {
+                sequence = read.substring(0, 20) + "TT" + read.substring(20);
+                cigar = "20M2I" + (length - 20) + "M";
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("S:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(alignmentStart);
+            record.setCigarString(cigar);
+            record.setReadString(sequence);
+            final int total = sequence.length();
+            final byte[] quals = new byte[total];
+            final byte[] tp = new byte[total];
+            final StringBuilder t0 = new StringBuilder();
+            for (int i = 0; i < total; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : -1);
+                quals[i] = (byte) (tp[i] == 0 ? 25 + random.nextInt(16) : 5 + random.nextInt(20));
+                t0.append((char) ('!' + 10 + random.nextInt(31)));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(60);
+            record.setReadNegativeStrandFlag(n % 3 == 2);
+            record.setDuplicateReadFlag(n == 13);
+            record.setAttribute("RG", n % 4 == 3 ? "rgV" : "rgU");
+            record.setAttribute("tp", tp);
+            if (n % 2 == 0) {
+                record.setAttribute("t0", t0.toString());
+            }
+            if (n % 5 == 0) {
+                record.setAttribute("XI", n * 3);
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("flow_snv.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -1934,6 +2113,8 @@ public class MakeFixtures {
         mutectFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
+        flowFixtures(dir);
+        flowSnvFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.
@@ -2411,6 +2592,7 @@ public class MakeFixtures {
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
         combineGvcfsFixtures(dir);
+        vcfComparatorFixtures(dir);
         // `FilterFuncotations`: a Funcotated VCF whose records match each filter once (ClinVar,
         // LoF, LMM, an autosomal recessive compound het pair and a hom-var, nothing at all, and a
         // multiallelic site), and the same records under a header with no FUNCOTATION line.
@@ -2721,6 +2903,184 @@ public class MakeFixtures {
      * the same stretch differently and at different confidences, each with a variant site the
      * hom-ref filter drops, and a two-sample GVCF the length extraction refuses.
      */
+    /**
+     * What `VCFComparator` compares: a single-sample GVCF pair and a two-sample VCF pair, each
+     * actual one difference away from its expected per site, in position order, so the tolerances
+     * peel the complaints off one at a time.
+     *
+     * The GVCF actual changes, in order: the QUAL at 100, `ReadPosRankSum` at 200, the PLs (and
+     * with them the GQ) at 400, the genotype DP at 500, the phasing at 600, the dbSNP id at 700, a
+     * variant with a GQ of zero at 800 that actual does not have at all, the alleles at 900 (a
+     * `1/2` becomes `0/1`) and the filter at 1000. The deletion at 300 is identical on both sides
+     * and trims from `TAC/TC` to `TA/T`. No site calls fewer alternates than it carries, which is
+     * the path whose annotations the port does not subset.
+     *
+     * The two-sample actual changes the site DP at 200, `InbreedingCoeff` at 300, `QD` at 400, the
+     * `AC` of a multiallelic site at 500 and the first sample's GQ at 600. `vcfc_same.g.vcf` is
+     * the expected GVCF again, and `vcfc_plain.vcf` a single-sample VCF with no `<NON_REF>`.
+     */
+    static void vcfComparatorFixtures(final Path dir) throws Exception {
+        final String gvcfHeader = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=NON_REF,Description=\"Any other allele\">\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"Minimum depth\">\n"
+                + "##FORMAT=<ID=PGT,Number=1,Type=String,Description=\"Physical phasing\">\n"
+                + "##FORMAT=<ID=PID,Number=1,Type=String,Description=\"Phasing id\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Likelihoods\">\n"
+                + "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set\">\n"
+                + "##INFO=<ID=BaseQRankSum,Number=1,Type=Float,Description=\"BaseQRankSum\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ExcessHet,Number=1,Type=Float,Description=\"ExcessHet\">\n"
+                + "##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"MLEAC\">\n"
+                + "##INFO=<ID=MLEAF,Number=A,Type=Float,Description=\"MLEAF\">\n"
+                + "##INFO=<ID=MQRankSum,Number=1,Type=Float,Description=\"MQRankSum\">\n"
+                + "##INFO=<ID=RAW_MQandDP,Number=2,Type=Integer,Description=\"RAW_MQandDP\">\n"
+                + "##INFO=<ID=ReadPosRankSum,Number=1,Type=Float,Description=\"ReadPosRankSum\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\n";
+        final String block = "\t.\t.\tEND=%d\tGT:DP:GQ:MIN_DP:PL\t0/0:30:90:28:0,90,900\n";
+        final String[][] expected = {
+                {"chr1\t1\t.\tA\t<NON_REF>" + String.format(block, 99)},
+                {"chr1\t100\t.\tT\tC,<NON_REF>\t250.64\t.\tBaseQRankSum=0.500;DP=30;"
+                        + "ExcessHet=3.0103;MLEAC=1,0;MLEAF=0.500,0.00;MQRankSum=0.000;"
+                        + "RAW_MQandDP=108000,30;ReadPosRankSum=-0.300\tGT:AD:DP:GQ:PL\t"
+                        + "0/1:15,15,0:30:99:279,0,300,324,345,669\n",
+                 "chr1\t100\t.\tT\tC,<NON_REF>\t251.64\t.\tBaseQRankSum=0.500;DP=30;"
+                        + "ExcessHet=3.0103;MLEAC=1,0;MLEAF=0.500,0.00;MQRankSum=0.000;"
+                        + "RAW_MQandDP=108000,30;ReadPosRankSum=-0.300\tGT:AD:DP:GQ:PL\t"
+                        + "0/1:15,15,0:30:99:279,0,300,324,345,669\n"},
+                {"chr1\t101\t.\tA\t<NON_REF>" + String.format(block, 199)},
+                {"chr1\t200\t.\tT\tG,<NON_REF>\t900.77\t.\tDP=25;ExcessHet=3.0103;MLEAC=2,0;"
+                        + "MLEAF=1.00,0.00;RAW_MQandDP=90000,25;ReadPosRankSum=1.200\t"
+                        + "GT:AD:DP:GQ:PL\t1/1:0,25,0:25:75:914,75,0,914,75,914\n",
+                 "chr1\t200\t.\tT\tG,<NON_REF>\t900.77\t.\tDP=25;ExcessHet=3.0103;MLEAC=2,0;"
+                        + "MLEAF=1.00,0.00;RAW_MQandDP=90000,25;ReadPosRankSum=1.500\t"
+                        + "GT:AD:DP:GQ:PL\t1/1:0,25,0:25:75:914,75,0,914,75,914\n"},
+                {"chr1\t201\t.\tA\t<NON_REF>" + String.format(block, 299)},
+                {"chr1\t300\t.\tTAC\tTC,<NON_REF>\t400.60\t.\tDP=22;MLEAC=1,0;"
+                        + "MLEAF=0.500,0.00\tGT:AD:DP:GQ:PL\t0/1:10,12,0:22:99:408,0,300,438,336,774\n"},
+                {"chr1\t303\t.\tT\t<NON_REF>" + String.format(block, 399)},
+                {"chr1\t400\t.\tT\tA,<NON_REF>\t300.60\t.\tDP=28;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:14,14,0:28:60:60,0,80,150,170,230\n",
+                 "chr1\t400\t.\tT\tA,<NON_REF>\t300.60\t.\tDP=28;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:14,14,0:28:50:50,0,80,150,170,230\n"},
+                {"chr1\t401\t.\tA\t<NON_REF>" + String.format(block, 499)},
+                {"chr1\t500\t.\tT\tC,<NON_REF>\t320.00\t.\tDP=26;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:13,13,0:26:99:330,0,330,370,370,740\n",
+                 "chr1\t500\t.\tT\tC,<NON_REF>\t320.00\t.\tDP=26;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:13,13,0:27:99:330,0,330,370,370,740\n"},
+                {"chr1\t501\t.\tA\t<NON_REF>" + String.format(block, 599)},
+                {"chr1\t600\t.\tT\tG,<NON_REF>\t350.00\t.\tDP=24;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PGT:PID:PL:PS\t0|1:12,12,0:24:99:0|1:600_T_G:360,0,360,400,400,800:600\n",
+                 "chr1\t600\t.\tT\tG,<NON_REF>\t350.00\t.\tDP=24;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,12,0:24:99:360,0,360,400,400,800\n"},
+                {"chr1\t601\t.\tA\t<NON_REF>" + String.format(block, 699)},
+                {"chr1\t700\trs700\tT\tC,<NON_REF>\t310.00\t.\tDP=23;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:11,12,0:23:99:320,0,300,350,340,690\n",
+                 "chr1\t700\t.\tT\tC,<NON_REF>\t310.00\t.\tDP=23;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:11,12,0:23:99:320,0,300,350,340,690\n"},
+                {"chr1\t701\t.\tA\t<NON_REF>" + String.format(block, 799)},
+                {"chr1\t800\t.\tT\tA,<NON_REF>\t30.00\t.\tDP=5;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:3,2,0:5:0:0,0,40,9,46,55\n", ""},
+                {"chr1\t801\t.\tA\t<NON_REF>" + String.format(block, 899)},
+                {"chr1\t900\t.\tT\tC,G,<NON_REF>\t500.00\t.\tDP=30;MLEAC=1,1,0;"
+                        + "MLEAF=0.500,0.500,0.00\tGT:AD:DP:GQ:PL\t"
+                        + "1/2:0,15,15,0:30:99:900,450,450,450,0,450,900,450,450,900\n",
+                 "chr1\t900\t.\tT\tC,<NON_REF>\t500.00\t.\tDP=30;MLEAC=1,0;"
+                        + "MLEAF=0.500,0.00\tGT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:450,0,450,500,500,950\n"},
+                {"chr1\t901\t.\tA\t<NON_REF>" + String.format(block, 999)},
+                {"chr1\t1000\t.\tT\tA,<NON_REF>\t280.00\tPASS\tDP=20;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:10,10,0:20:99:290,0,290,320,320,610\n",
+                 "chr1\t1000\t.\tT\tA,<NON_REF>\t280.00\tLowQual\tDP=20;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:10,10,0:20:99:290,0,290,320,320,610\n"},
+                {"chr1\t1001\t.\tA\t<NON_REF>" + String.format(block, 2000)},
+        };
+        final StringBuilder expectedText = new StringBuilder(gvcfHeader);
+        final StringBuilder actualText = new StringBuilder(gvcfHeader);
+        for (final String[] site : expected) {
+            expectedText.append(site[0]);
+            actualText.append(site.length > 1 ? site[1] : site[0]);
+        }
+        // Actual has no record at 800 at all: the blocks either side of it already stop short.
+        final String actualGvcf = actualText.toString();
+        Files.writeString(dir.resolve("vcfc_expected.g.vcf"), expectedText.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_same.g.vcf"), expectedText.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_actual.g.vcf"), actualGvcf, StandardCharsets.UTF_8);
+
+        final String vcfHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Likelihoods\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##INFO=<ID=InbreedingCoeff,Number=1,Type=Float,Description=\"Inbreeding\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n";
+        final String het = "0/1:15,15:30:99:300,0,300";
+        final String[][] sites = {
+                {"chr1\t100\t.\tT\tC\t500.30\tPASS\tAC=2;AF=0.500;AN=4;DP=60;"
+                        + "InbreedingCoeff=-0.3333;QD=8.34\tGT:AD:DP:GQ:PL\t" + het + "\t"
+                        + "0/1:14,16:30:99:320,0,280\n"},
+                {"chr1\t200\t.\tT\tG\t400.00\tPASS\tAC=1;AF=0.250;AN=4;DP=50;QD=8.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:20,0:20:60:0,60,900\n",
+                 "chr1\t200\t.\tT\tG\t400.00\tPASS\tAC=1;AF=0.250;AN=4;DP=52;QD=8.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:20,0:20:60:0,60,900\n"},
+                {"chr1\t300\t.\tT\tA\t350.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40;"
+                        + "InbreedingCoeff=-0.1000;QD=8.75\tGT:AD:DP:GQ:PL\t" + het
+                        + "\t0/0:10,0:10:30:0,30,450\n",
+                 "chr1\t300\t.\tT\tA\t350.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40;"
+                        + "InbreedingCoeff=-0.1100;QD=8.75\tGT:AD:DP:GQ:PL\t" + het
+                        + "\t0/0:10,0:10:30:0,30,450\n"},
+                {"chr1\t400\t.\tT\tC\t300.00\tPASS\tAC=1;AF=0.250;AN=4;DP=30;QD=10.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:12,0:12:36:0,36,500\n",
+                 "chr1\t400\t.\tT\tC\t300.00\tPASS\tAC=1;AF=0.250;AN=4;DP=30;QD=12.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:12,0:12:36:0,36,500\n"},
+                {"chr1\t500\t.\tT\tC,G\t600.00\tPASS\tAC=1,1;AF=0.250,0.250;AN=4;DP=60\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:300,0,300,345,345,690\t"
+                        + "0/2:15,0,15:30:99:300,345,690,0,345,300\n",
+                 "chr1\t500\t.\tT\tC,G\t600.00\tPASS\tAC=1;AF=0.250,0.250;AN=4;DP=60\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:300,0,300,345,345,690\t"
+                        + "0/2:15,0,15:30:99:300,345,690,0,345,300\n"},
+                {"chr1\t600\t.\tT\tA\t250.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,13:25:70:70,0,300\t0/0:15,0:15:45:0,45,600\n",
+                 "chr1\t600\t.\tT\tA\t250.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,13:25:55:55,0,300\t0/0:15,0:15:45:0,45,600\n"},
+        };
+        final StringBuilder vcfExpected = new StringBuilder(vcfHeader);
+        final StringBuilder vcfActual = new StringBuilder(vcfHeader);
+        for (final String[] site : sites) {
+            vcfExpected.append(site[0]);
+            vcfActual.append(site.length > 1 ? site[1] : site[0]);
+        }
+        Files.writeString(dir.resolve("vcfc_expected.vcf"), vcfExpected.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_actual.vcf"), vcfActual.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_plain.vcf"), vcfHeader.replace("\ts2\n", "\n")
+                + "chr1\t100\t.\tT\tC\t500.30\tPASS\tAC=1;AF=0.500;AN=2;DP=30\t"
+                + "GT:AD:DP:GQ:PL\t" + het + "\n", StandardCharsets.UTF_8);
+        for (final String name : new String[] {"vcfc_expected.g.vcf", "vcfc_same.g.vcf",
+                "vcfc_actual.g.vcf", "vcfc_expected.vcf", "vcfc_actual.vcf", "vcfc_plain.vcf"}) {
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            dir.resolve(name), new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(dir.resolve(name + ".idx"));
+        }
+    }
+
     static void referenceBlockFixtures(final Path dir) throws Exception {
         final String header = "##fileformat=VCFv4.2\n"
                 + "##ALT=<ID=NON_REF,Description=\"Any other allele\">\n"

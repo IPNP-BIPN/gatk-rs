@@ -78,6 +78,27 @@ mutually exclusive arguments. The empty list drops the argument from the rows an
 the exclusion list, which is the same bargain `exclude` makes for `--help` and `--version`: a
 narrower claim, stated rather than implied.
 
+## Tagged inputs
+
+Some tools tell their inputs apart by TAG rather than by argument: `VCFComparator` reads two
+`--variant`s and compares the one tagged `expected` with the one tagged `actual`. A tag is written
+on the argument name (`--variant:expected file.vcf`), so no value the array assigns can carry it.
+A tool lists such arguments under `$tagged`, and each of their values is then a whole set of
+tagged inputs, written as `tag:path` words that `run_array.py` expands:
+
+```json
+{
+  "per_tool": {
+    "VCFComparator": {
+      "$tagged": ["--variant"],
+      "--variant": ["expected:/work/fixtures/a.vcf actual:/work/fixtures/b.vcf"]
+    }
+  }
+}
+```
+
+The set is covered as one value, like any other: a pair, the pair reversed, one input alone.
+
 ## One value is not a domain
 
 An argument with a single fixture value is *held* at it: every row carries it, no row varies it,

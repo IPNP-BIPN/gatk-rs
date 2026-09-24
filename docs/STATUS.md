@@ -119,8 +119,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | tool | archetype | state | suites | cases | argument coverage |
 |---|---|---|---|---:|---|
 | `ASEReadCounter` | locus-walker | oracle-backed | ase-read-counter | 1 | t=2, 20/20 rows (100%) |
-| `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | not measured |
-| `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | not measured |
+| `AddFlowBaseQuality` | unclassified | oracle-backed | add-flow-base-quality | 1 | t=2, 24/24 rows (100%) |
+| `AddFlowSNVQuality` | flow-based | oracle-backed | add-flow-snv-quality | 1 | t=2, 26/26 rows (100%) |
 | `AddOriginalAlignmentTags` | unclassified | oracle-backed | add-oa-tags | 1 | t=2, 18/18 rows (100%) |
 | `AlleleFrequencyQC` | unclassified | oracle-backed | allele-frequency-qc | 1 | not measured |
 | `AnalyzeCovariates` | reporting-walker | oracle-backed | analyze-covariates | 1 | t=2, 11/11 rows (100%) |
@@ -132,7 +132,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | t=2, 25/25 rows (100%) |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | not measured |
-| `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | not measured |
+| `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | t=2, 11/11 rows (100%) |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | t=2, 16/16 rows (100%) |
 | `CalculateContamination` | reporting-walker | oracle-backed | calculate-contamination | 1 | t=2, 8/8 rows (100%) |
 | `CalculateGenotypePosteriors` | variant-walker | oracle-backed | calculate-genotype-posteriors, family-priors | 2 | t=2, 23/23 rows (100%) |
@@ -180,8 +180,8 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FilterVariantTranches` | variant-transform | oracle-backed | filter-variant-tranches | 1 | t=2, 15/15 rows (100%) |
 | `FixMisencodedBaseQualityReads` | record-transform | oracle-backed | fix-misencoded | 1 | t=2, 21/21 rows (100%) |
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) |
-| `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | not measured |
-| `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | not measured |
+| `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | t=2, 25/25 rows (100%) |
+| `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | t=2, 38/38 rows (100%) |
 | `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | not measured |
 | `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | not measured |
 | `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
@@ -249,7 +249,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `TransferReadTags` | record-transform | oracle-backed | transfer-read-tags | 1 | t=2, 19/19 rows (100%) |
 | `UnmarkDuplicates` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |
 | `UpdateVCFSequenceDictionary` | variant-transform | oracle-backed | update-vcf-sequence-dictionary | 1 | t=2, 24/24 rows (100%) |
-| `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | not measured |
+| `VCFComparator` | unclassified | oracle-backed | vcf-comparator | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
 | `ValidateBasicSomaticShortMutations` | variant-walker | oracle-backed | validate-basic-somatic-short-mutations | 1 | t=2, 22/22 rows (100%) |
 | `ValidateVariants` | variant-walker | oracle-backed | validate-variants | 1 | t=2, 40/40 rows (100%), **1 distinct output** |
 | `VariantAnnotator` | unclassified | oracle-backed | variant-annotator | 1 | not measured |

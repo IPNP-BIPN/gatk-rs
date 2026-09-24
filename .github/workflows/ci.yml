@@ -607,11 +607,16 @@ jobs:
             --tool CalibrateDragstrModel \
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
+            --tool AddFlowBaseQuality \
+            --tool AddFlowSNVQuality \
+            --tool FlowPairHMMAlignReadsToHaplotypes \
+            --tool FlowFeatureMapper \
             --tool CRAMIssue8768Detector \
             --tool CombineGVCFs \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
+            --tool VCFComparator \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
