@@ -4,15 +4,15 @@
 //! Golden from `tools/annotation-conformance/AlleleSpecificSiteStatisticsDump.java`.
 //!
 //! ```text
-//! asqd       one-alt-read  AS_QD=25.36[java.lang.String]     <- a random draw, refused here
+//! asqd       one-alt-read  AS_QD=25.36[java.lang.String]     <- a random draw
 //! asmq       no-ad         AS_MQ=Infinity[java.lang.String]
 //! asmqfinal  3600.00|      AS_MQ=.[...];AS_RAW_MQ=3600.00|0.00[...]
 //! ```
 //!
-//! Three `AS_QD` rows are values the reference randomised, for the same reason `QD` does: the
-//! replacement at thirty-five goes through `StrictMath.log`, which is fdlibm. The suite asserts
-//! that the port refuses exactly those rows, that the raw ratio really was at or past the
-//! threshold, and that what the reference wrote is not that ratio.
+//! Three `AS_QD` rows are values the reference randomised, for the same reason `QD` does: past
+//! thirty-five the entry is replaced by a Gaussian from the JVM's one seeded generator, drawn
+//! through `StrictMath.log`. The port draws the same Gaussians in the same order, so those rows
+//! are compared exactly, and the test counts which rows advanced the generator.
 //!
 //! The heterozygosity counts are compared as raw bits, because they are sums of normalised
 //! likelihoods and a decimal rendering would hide the last ulp.
@@ -26,15 +26,14 @@ use gatk_annotation::allele_specific_site_statistics::{
     AS_RMS_MAPPING_QUALITY_KEY,
 };
 use gatk_annotation::heterozygosity::heterozygosity_counts;
-use gatk_annotation::site_statistics::QualByDepthError;
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_list::{AlleleList, SampleList};
+use gatk_engine::java_random::JavaRandom;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::variant::{Genotype, VariantContext};
 
 const START: i64 = 105;
-const MAX_QD_BEFORE_FIXING: f64 = 35.0;
 
 const HOM_REF: [i32; 3] = [0, 60, 600];
 const HET: [i32; 3] = [60, 0, 60];
@@ -352,10 +351,13 @@ fn rendered(entries: &[(String, String)]) -> String {
 }
 
 #[test]
-fn every_quality_by_depth_matches_or_is_refused_as_randomised() {
+fn every_quality_by_depth_matches_the_reference_the_randomised_ones_included() {
+    // One generator for the whole walk: the dump drew its Gaussians in golden order from the
+    // JVM's one `Random(47382911)`, alternate by alternate.
     let text = golden();
+    let mut random = JavaRandom::gatk();
     let mut identical = 0;
-    let mut refused = 0;
+    let mut randomised = 0;
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("asqd\t") else {
             continue;
@@ -366,64 +368,39 @@ fn every_quality_by_depth_matches_or_is_refused_as_randomised() {
         };
         let vc = qd_context(label);
         let quals = qd_as_qual(label);
+        let before = random.clone();
         let ours = as_qual_by_depth(
             &vc,
             quals.as_deref(),
             qd_as_qual_approx(label),
             qd_as_vardp(label),
+            &mut random,
         );
+        if random != before {
+            randomised += 1;
+        }
         match ours {
             Err(AsSiteStatisticError::QualCountMismatch { .. })
             | Err(AsSiteStatisticError::QualApproxCountMismatch { .. }) => {
                 assert_eq!(expected, "E:java.lang.IllegalStateException", "{label}");
-                identical += 1;
             }
             Err(other) => panic!("{label}: {other:?}"),
-            Ok(None) => {
-                assert_eq!(expected, "", "{label}");
-                identical += 1;
-            }
-            Ok(Some(entries)) => {
-                if entries.iter().any(|entry| entry.is_err()) {
-                    // Every refused entry must be one the reference randomised, and what it wrote
-                    // must not be the raw ratio.
-                    let written = expected
-                        .strip_prefix("AS_QD=")
-                        .and_then(|rest| rest.strip_suffix("[java.lang.String]"))
-                        .expect("a written value");
-                    for entry in &entries {
-                        let Err(QualByDepthError::RandomisedAboveThreshold { raw }) = entry else {
-                            continue;
-                        };
-                        assert!(
-                            *raw >= MAX_QD_BEFORE_FIXING,
-                            "{label} refused a ratio of {raw}, which is below the threshold"
-                        );
-                        let as_written = format!("{raw:.2}");
-                        assert_ne!(
-                            written, as_written,
-                            "{label}: the reference wrote the raw ratio, so nothing was randomised"
-                        );
-                    }
-                    refused += 1;
-                } else {
-                    let values: Vec<f64> = entries
-                        .iter()
-                        .map(|entry| *entry.as_ref().unwrap())
-                        .collect();
-                    let ours = rendered(&[(
-                        AS_QUAL_BY_DEPTH_KEY.to_string(),
-                        encode_value_list(&values, 2),
-                    )]);
-                    assert_eq!(ours, expected, "AS_QD on {label}");
-                    identical += 1;
-                }
+            Ok(None) => assert_eq!(expected, "", "{label}"),
+            Ok(Some(values)) => {
+                let ours = rendered(&[(
+                    AS_QUAL_BY_DEPTH_KEY.to_string(),
+                    encode_value_list(&values, 2),
+                )]);
+                assert_eq!(ours, expected, "AS_QD on {label}");
             }
         }
+        identical += 1;
     }
     assert!(identical > 0, "the golden carries no AS_QD rows");
-    assert!(refused > 0, "the golden carries no randomised AS_QD rows");
-    println!("{identical} AS_QD answers identical, {refused} refused as randomised");
+    assert!(
+        randomised > 0,
+        "the golden carries no randomised AS_QD rows"
+    );
 }
 
 #[test]

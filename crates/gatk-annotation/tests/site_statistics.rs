@@ -9,17 +9,15 @@
 //! ```
 //!
 //! The last two rows are the point. At and above 35 the reference replaces `QD` with 30 plus a
-//! Gaussian jitter, so the value is not reproducible from the input. The port refuses those rows,
-//! and this test asserts that it refuses **exactly** the rows the reference randomised: the raw
-//! ratio is recomputed here and compared against the threshold, so the boundary itself is
-//! measured even though what lies past it is not.
+//! Gaussian jitter drawn from its one seeded generator. The port draws the same Gaussians, through
+//! FDLIBM's logarithm, so those rows are compared exactly like the others, and the test also
+//! counts which rows advanced the generator so the boundary itself stays measured.
 
 use std::io::Read;
 
 use gatk_annotation::info_annotation::{AnnotationValue, InfoFieldAnnotation};
-use gatk_annotation::site_statistics::{
-    qual_by_depth, qual_by_depth_depth, GenotypeSummaries, QualByDepthError,
-};
+use gatk_annotation::site_statistics::{qual_by_depth, qual_by_depth_depth, GenotypeSummaries};
+use gatk_engine::java_random::JavaRandom;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::variant::{Genotype, VariantContext};
 
@@ -149,51 +147,38 @@ fn every_depth_matches_the_reference() {
     println!("{count} depths identical");
 }
 
+/// Every QD row, the randomised ones included.
+///
+/// The dump runs every case in one JVM, and `Utils.getRandomGenerator()` is one static stream
+/// seeded at class initialisation, so the rows past 35 drew their Gaussians in golden order from a
+/// fresh `Random(47382911)`. Walking the rows in that order with one generator reproduces them.
 #[test]
-fn qd_matches_below_the_threshold_and_is_refused_at_and_above_it() {
+fn every_qd_matches_the_reference_the_randomised_ones_included() {
     let text = golden();
+    let mut random = JavaRandom::gatk();
     let mut compared = 0;
-    let mut refused = 0;
+    let mut randomised = 0;
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("qd\t") else {
             continue;
         };
         let (label, expected) = rest.split_once('\t').expect("a label and a value");
         let (vc, raw) = qd_case(label);
-        match qual_by_depth(&vc, None, raw) {
-            Ok(Some(value)) => {
-                assert_eq!(format!("QD={value}"), expected, "QD on {label}");
-                compared += 1;
-            }
-            Ok(None) => {
-                assert_eq!(expected, "", "QD on {label} should be absent");
-                compared += 1;
-            }
-            Err(QualByDepthError::RandomisedAboveThreshold { raw }) => {
-                // The reference wrote *something* here, and it was a random draw. What the suite
-                // can check is that the raw ratio really was at or past the threshold, and that
-                // the value the reference produced is the jittered one rather than the ratio.
-                assert!(raw >= 35.0, "{label} was refused with a raw QD of {raw}");
-                assert!(expected.starts_with("QD="), "{label} produced {expected}");
-                let written: f64 = expected
-                    .trim_start_matches("QD=")
-                    .parse()
-                    .expect("a number");
-                assert_ne!(
-                    format!("{written:.2}"),
-                    format!("{raw:.2}"),
-                    "{label}: the reference wrote the raw ratio after all"
-                );
-                refused += 1;
-            }
+        let before = random.clone();
+        match qual_by_depth(&vc, None, raw, &mut random) {
+            Some(value) => assert_eq!(format!("QD={value}"), expected, "QD on {label}"),
+            None => assert_eq!(expected, "", "QD on {label} should be absent"),
         }
+        if random != before {
+            randomised += 1;
+        }
+        compared += 1;
     }
     assert!(compared > 0, "the golden carries no QD rows");
     assert_eq!(
-        refused, 2,
+        randomised, 2,
         "the number of randomised rows changed; the threshold moved or a fixture did"
     );
-    println!("{compared} QD values identical, {refused} refused as randomised");
 }
 
 #[test]
