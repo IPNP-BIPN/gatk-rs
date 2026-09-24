@@ -1009,6 +1009,15 @@
       "t": 2,
       "share": 1.0
     },
+    "CombineGVCFs": {
+      "rows": 26,
+      "accepted": 14,
+      "rejected": 12,
+      "distinct_outputs": 13,
+      "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
