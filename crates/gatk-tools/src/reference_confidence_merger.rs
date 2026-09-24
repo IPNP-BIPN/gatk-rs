@@ -1112,12 +1112,12 @@ pub enum Method {
 }
 
 /// `GenotypeLikelihoods.fromPLs(pl).getAsVector()`: each PL over minus ten.
-fn likelihoods_of(pls: &[i32]) -> Vec<f64> {
+pub(crate) fn likelihoods_of(pls: &[i32]) -> Vec<f64> {
     pls.iter().map(|pl| *pl as f64 / -10.0).collect()
 }
 
 /// `MathUtils.maxElementIndex`: the first index of the maximum.
-fn max_element_index(values: &[f64]) -> usize {
+pub(crate) fn max_element_index(values: &[f64]) -> usize {
     let mut best = 0;
     for (index, value) in values.iter().enumerate() {
         if *value > values[best] {
@@ -1128,7 +1128,7 @@ fn max_element_index(values: &[f64]) -> usize {
 }
 
 /// `GenotypeLikelihoods.getGQLog10FromLikelihoods`.
-fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f64 {
+pub(crate) fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f64 {
     let mut other = f64::NEG_INFINITY;
     for (index, value) in likelihoods.iter().enumerate() {
         if index != chosen && *value >= other {
@@ -1153,13 +1153,13 @@ fn gq_log10_from_likelihoods(chosen: usize, likelihoods: &[f64]) -> f64 {
 }
 
 /// `Math.round`, which is `floor(x + 0.5)`.
-fn java_round(value: f64) -> i64 {
+pub(crate) fn java_round(value: f64) -> i64 {
     (value + 0.5).floor() as i64
 }
 
 /// `bestMatchToOriginalGT`: each original allele the new list still holds, or a no-call, or the
 /// reference in place of anything else.
-fn best_match_to_original(targets: &[Allele], original: &[Allele]) -> Vec<Allele> {
+pub(crate) fn best_match_to_original(targets: &[Allele], original: &[Allele]) -> Vec<Allele> {
     original
         .iter()
         .map(|allele| {
@@ -1232,10 +1232,11 @@ pub fn make_genotype_call(
                         genotype.alleles = called;
                     }
                     if targets.len() > 1 {
+                        // `gb.log10PError(gq)`, which caps the GQ at 99.
                         genotype.gq = if gq == NO_LOG10_PERROR {
                             None
                         } else {
-                            Some(java_round(gq * -10.0) as i32)
+                            Some(crate::genotyping_engine::gq_of_log10(gq))
                         };
                     }
                 }

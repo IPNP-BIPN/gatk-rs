@@ -2857,6 +2857,17 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("cg_dbsnp.vcf").toString()});
+        // What `GenotypeGVCFs` reads beside the single-sample files: the three merged by the
+        // reference's own `CombineGVCFs`, so a site holds a spanning deletion, a haploid sample
+        // beside two diploid ones, and blocks cut at every other sample's edges. Written with its
+        // Tribble index, which `--intervals` needs.
+        new org.broadinstitute.hellbender.tools.walkers.CombineGVCFs().instanceMain(new String[] {
+                "-V", dir.resolve("cg_a.g.vcf").toString(),
+                "-V", dir.resolve("cg_b.g.vcf").toString(),
+                "-V", dir.resolve("cg_c.g.vcf").toString(),
+                "-R", dir.resolve("cgv_ref.fasta").toString(),
+                "-O", dir.resolve("cg_combined.g.vcf").toString(),
+                "--add-output-vcf-command-line", "false"});
     }
 
     /** A diploid hom-ref block at the given GQ, one read short of MIN_DP, with its PL from the GQ. */

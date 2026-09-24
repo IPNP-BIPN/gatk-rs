@@ -161,10 +161,21 @@ fn strand_counts(genotype: &htsjdk_vcf::variant::Genotype) -> Option<[i32; 4]> {
         .iter()
         .find(|(key, _)| key == STRAND_BIAS_BY_SAMPLE_KEY)
         .map(|(_, value)| value)?;
+    // A field read back from a file can also arrive as a list holding the one comma-separated
+    // string the codec kept, which is the reference's String under another shape: every piece is
+    // split on the comma, so the three shapes give the same four tokens.
     let parts: Vec<String> = match value {
         Value::Str(text) => text.split(',').map(|part| part.to_string()).collect(),
         Value::Int(number) => vec![number.to_string()],
-        Value::List(values) => values.iter().map(render_value).collect(),
+        Value::List(values) => values
+            .iter()
+            .flat_map(|value| {
+                render_value(value)
+                    .split(',')
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect(),
         other => vec![render_value(other)],
     };
     let mut counts = [0i32; 4];

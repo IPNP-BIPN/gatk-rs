@@ -391,6 +391,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "UpdateVCFSequenceDictionary" => Some(run_update_vcf_sequence_dictionary),
         "SelectVariants" => Some(run_select_variants),
         "CombineGVCFs" => Some(run_combine_gvcfs),
+        "GenotypeGVCFs" => Some(run_genotype_gvcfs),
         _ => None,
     }
 }
@@ -486,6 +487,10 @@ fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>,
 
 fn run_combine_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::combine_gvcfs(&parsed("CombineGVCFs", args)?)
+}
+
+fn run_genotype_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::genotype_gvcfs(&parsed("GenotypeGVCFs", args)?)
 }
 
 fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {

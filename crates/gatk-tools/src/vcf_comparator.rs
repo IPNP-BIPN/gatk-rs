@@ -46,9 +46,6 @@ use gatk_engine::java_format::format_decimals;
 use gatk_engine::java_hash::JavaHashMap;
 use gatk_engine::subset_alleles::{subset_alleles, AssignmentMethod, Genotype as EngineGenotype};
 use gatk_engine::tsv_table::java_double_to_string;
-use gatk_engine::variant_context_utils::{
-    trim_alleles, Allele as EngineAllele, Variant as EngineVariant,
-};
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
@@ -2114,64 +2111,12 @@ fn vcf_genotype(original: &Genotype, subset: &EngineGenotype, alleles: &[Allele]
     }
 }
 
-/// `GATKVariantContextUtils.reverseTrimAlleles`: the bases every allele shares at its end, cut.
-/// Genotypes hold alleles by value, so each is replaced by the allele at its index.
+/// `GATKVariantContextUtils.reverseTrimAlleles`, shared with GenotypeGVCFs.
 fn reverse_trim(vc: &VariantContext) -> Result<VariantContext, Failure> {
-    let engine = EngineVariant {
-        contig: vc.contig.clone(),
-        start: vc.start as i32,
-        stop: vc.stop as i32,
-        alleles: vc
-            .alleles
-            .iter()
-            .map(|allele| {
-                EngineAllele::new(allele.display_string().as_bytes(), allele.is_reference())
-            })
-            .collect(),
-        genotypes: Vec::new(),
-        attributes: Vec::new(),
-    };
-    let trimmed = trim_alleles(&engine, false, true).map_err(|error| Failure::Runtime {
+    crate::variant_trim::reverse_trim_alleles(vc).map_err(|message| Failure::Runtime {
         class: "java.lang.IllegalStateException",
-        message: format!("{error:?}"),
-    })?;
-    if trimmed.alleles == engine.alleles && trimmed.stop == engine.stop {
-        return Ok(vc.clone());
-    }
-    let alleles: Vec<Allele> = vc
-        .alleles
-        .iter()
-        .zip(&trimmed.alleles)
-        .map(|(original, cut)| {
-            if original.is_symbolic() || is_span_del(original) {
-                original.clone()
-            } else {
-                Allele::create(&cut.bases, original.is_reference())
-                    .unwrap_or_else(|_| original.clone())
-            }
-        })
-        .collect();
-    let genotypes: Vec<Genotype> = vc
-        .genotypes
-        .iter()
-        .map(|genotype| {
-            let mut genotype = genotype.clone();
-            genotype.alleles = genotype
-                .alleles
-                .iter()
-                .map(|allele| match vc.alleles.iter().position(|a| a == allele) {
-                    Some(index) => alleles[index].clone(),
-                    None => allele.clone(),
-                })
-                .collect();
-            genotype
-        })
-        .collect();
-    let mut out = vc.clone();
-    out.stop = i64::from(trimmed.stop);
-    out.alleles = alleles;
-    out.genotypes = GenotypesContext::new(genotypes);
-    Ok(out)
+        message,
+    })
 }
 
 /// The merge of the two inputs: `(input, record)` in the order the priority queue hands them out.

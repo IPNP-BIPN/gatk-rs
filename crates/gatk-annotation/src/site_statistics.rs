@@ -79,17 +79,11 @@ pub fn fix_too_high_qd(qd: f64, random: &mut JavaRandom) -> f64 {
 }
 
 /// Whether a genotype is het or hom-var, which is the only kind `QD` counts.
+///
+/// htsjdk's own `getType()`, which a haploid call answers too: a lone alternate is `HOM_VAR`, so
+/// a haploid variant sample's depth counts, and a mixed call such as `./1` is neither.
 fn is_het_or_hom_var(genotype: &Genotype) -> bool {
-    let called: Vec<&htsjdk_vcf::allele::Allele> = genotype
-        .alleles
-        .iter()
-        .filter(|a| !a.is_no_call())
-        .collect();
-    if called.len() < 2 {
-        return false;
-    }
-    let all_ref = called.iter().all(|a| a.is_reference());
-    !all_ref
+    genotype.is_het() || genotype.is_hom_var()
 }
 
 /// `QualByDepth.getDepth`.

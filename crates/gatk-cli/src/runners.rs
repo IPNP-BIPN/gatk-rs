@@ -13482,6 +13482,365 @@ pub fn combine_gvcfs(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `Utils.getRandomGenerator()`: ONE generator for the whole process, as the JVM's static one is.
+///
+/// The reference seeds it once, when `Utils` is loaded, and never again, so a tool run inside a
+/// JVM that has already drawn from it continues the stream. The goldens are dumped that way, six
+/// runs in one process, and a port that made a fresh generator per run would reproduce only the
+/// first. `GenotypeGVCFs` is the runner that draws from it, for `QD` above 35.
+fn gatk_random() -> std::sync::MutexGuard<'static, gatk_engine::java_random::JavaRandom> {
+    static RANDOM: std::sync::OnceLock<std::sync::Mutex<gatk_engine::java_random::JavaRandom>> =
+        std::sync::OnceLock::new();
+    RANDOM
+        .get_or_init(|| std::sync::Mutex::new(gatk_engine::java_random::JavaRandom::gatk()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// `GenotypeGVCFs`: one GVCF re-genotyped, a record or a locus at a time.
+///
+/// The merge, the genotyping and the annotations are [`gatk_tools::genotype_gvcfs`]; this is the
+/// `VariantLocusWalker` around them and the header `setupVCFWriter` builds. GenomicsDB input and
+/// `--input-is-somatic` are the port's limitations, and so is any annotation the engine would have
+/// to compute from reads it is never given.
+pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
+    use gatk_annotation::catalogue;
+    use gatk_tools::genotype_gvcfs as ggvcfs;
+    use gatk_tools::genotyping_engine as genotyping;
+    use gatk_tools::reference_confidence_merger as merger;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
+
+    let resolved = catalogue::resolve(
+        &catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &["StandardAnnotation"],
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
+            return Err(limitation(&format!(
+                "--{configured} configures a pedigree or flow annotation, which this port does not \
+                 carry for GenotypeGVCFs yet."
+            )));
+        }
+    }
+    if let Some(variant) = argument(parser, "variant") {
+        if variant.starts_with("gendb:") {
+            return Err(limitation("GenomicsDB input is not ported."));
+        }
+    }
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "GenotypeGVCFs")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    if flag(parser, "input-is-somatic") {
+        return Err(limitation(
+            "--input-is-somatic, the Mutect2 reference-confidence path, is not ported.",
+        ));
+    }
+    let dbsnp = argument(parser, "dbsnp");
+    if let Some(path) = &dbsnp {
+        open_feature_input(path)?;
+        return Err(limitation(
+            "--dbsnp's rsID and DB annotation is not ported for GenotypeGVCFs yet.",
+        ));
+    }
+    if argument(parser, "population-callset").is_some() {
+        return Err(limitation("--population-callset is not ported."));
+    }
+
+    // `onTraversalStart`.
+    let include_non_variants = flag(parser, "include-non-variant-sites");
+    let force_output_strings = arguments(parser, "force-output-intervals");
+    if include_non_variants && !force_output_strings.is_empty() {
+        return Err(Thrown::command_line(
+            "Illegal argument value: Force output (--force-output-intervals) is incompatible with \
+             including non-variants (--include-non-variant-sites and --all-sites).  Use the latter \
+             to force genotyping at all sites and the former to force genotyping only at given \
+             sites.In both cases, variant sites are genotyped as usual.",
+        ));
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+    let dictionary = vcf_dictionary(&text);
+    let mut force_output: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
+    for query in &force_output_strings {
+        force_output.push(
+            gatk_engine::interval::parse_interval(query, &dictionary)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        );
+    }
+    let keep_specified = arguments(parser, "keep-specific-combined-raw-annotation");
+    let mut raw_keys_to_keep: Vec<&'static str> = Vec::new();
+    for name in &keep_specified {
+        let Some(entry) = resolved.iter().find(|entry| entry.name == name) else {
+            return Err(Thrown::user(format!(
+                "Requested --keep-specific-combined-raw-annotation: {name} was not found in \
+                 annotation list. Was it excluded with --annotations-to-exclude or not provided \
+                 with --annotation?"
+            )));
+        };
+        raw_keys_to_keep.extend(entry.raw_keys.unwrap_or(&[]).iter().copied());
+    }
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    // `--only-output-calls-starting-in-intervals` is STARTS_IN by another name.
+    let starts_in = flag(parser, "only-output-calls-starting-in-intervals");
+    if starts_in && intervals.as_ref().is_none_or(|list| list.is_empty()) {
+        return Err(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    }
+    let traversal: Option<Vec<gatk_engine::interval::SimpleInterval>> =
+        if flag(parser, "merge-input-intervals") {
+            intervals.as_ref().map(|list| {
+                // `IntervalUtils.getSpanningIntervals`: one interval per contig, first start to
+                // last end.
+                let mut spanning: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
+                for interval in list {
+                    match spanning.iter_mut().find(|s| s.contig == interval.contig) {
+                        Some(span) => {
+                            span.start = span.start.min(interval.start);
+                            span.end = span.end.max(interval.end);
+                        }
+                        None => spanning.push(interval.clone()),
+                    }
+                }
+                spanning
+            })
+        } else {
+            intervals.clone()
+        };
+    let kept = variants_in_traversal(&file.records, traversal.as_deref(), &input)?;
+    let records: Vec<htsjdk_vcf::variant::VariantContext> = kept.into_iter().cloned().collect();
+
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // `setupVCFWriter`.
+    let input_header = VcfHeader {
+        lines: file.header.lines.clone(),
+        samples: Vec::new(),
+    };
+    let annotations = ggvcfs::AnnotationEngine {
+        resolved: resolved.clone(),
+        keep_combined: flag(parser, "keep-combined-raw-annotations"),
+        raw_keys_to_keep,
+    };
+    let allele_specific = annotations.any_allele_specific();
+    let annotate_discovered = flag(parser, "annotate-with-num-discovered-alleles");
+    let compound =
+        |key: &str, id: &str, number: Cardinality, line_type: LineType, description: &str| {
+            HeaderLine::Compound {
+                key: key.to_string(),
+                id: id.to_string(),
+                number,
+                line_type,
+                description: description.to_string(),
+                extra: Vec::new(),
+            }
+        };
+    let mut lines: Vec<HeaderLine> = file.header.lines.clone();
+    lines.extend(default_tool_vcf_header_lines(parser, "GenotypeGVCFs"));
+    lines.retain(|line| !matches!(line, HeaderLine::Unstructured { key, .. } if key.starts_with("GVCFBlock")));
+    lines.extend(catalogue::descriptions(&resolved, false, false));
+    if annotate_discovered {
+        lines.push(compound(
+            "INFO",
+            "NDA",
+            Cardinality::Fixed(1),
+            LineType::Integer,
+            "Number of alternate alleles discovered (but not necessarily genotyped) at this site",
+        ));
+    }
+    lines.push(compound("INFO", "MLEAC", Cardinality::A, LineType::Integer, "Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed"));
+    lines.push(compound("INFO", "MLEAF", Cardinality::A, LineType::Float, "Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed"));
+    lines.push(compound("FORMAT", "RGQ", Cardinality::Fixed(1), LineType::Integer, "Unconditional reference genotype confidence, encoded as a phred quality -10*log10 p(genotype call is wrong)"));
+    lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DP"));
+    if annotations.keep_combined {
+        lines.push(compound(
+            "INFO",
+            "AS_QUAL",
+            Cardinality::Fixed(1),
+            LineType::Float,
+            "Allele-specific Variant Qual Score",
+        ));
+        lines.push(compound(
+            "INFO",
+            "AS_QUALapprox",
+            Cardinality::Fixed(1),
+            LineType::String,
+            "Allele-specific QUAL approximations",
+        ));
+    }
+    lines.push(HeaderLine::Filter {
+        id: "LowQual".to_string(),
+        description: "Low quality".to_string(),
+    });
+    // `LinkedHashSet`: a line identical to one already there is not added twice.
+    let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
+    for line in lines {
+        if !unique.contains(&line) {
+            unique.push(line);
+        }
+    }
+    let mut samples = file.header.samples.clone();
+    samples.sort();
+    samples.dedup();
+    let mut header = VcfHeader {
+        lines: unique,
+        samples,
+    };
+
+    let genotype_arguments = |emit_all_active_sites: bool| genotyping::Configuration {
+        standard_confidence_for_calling: double_or(
+            parser,
+            "standard-min-confidence-threshold-for-calling",
+            30.0,
+        ),
+        max_alternate_alleles: number_or(parser, "max-alternate-alleles", 6).max(0) as usize,
+        sample_ploidy: number_or(parser, "sample-ploidy", 2).max(0) as usize,
+        annotate_number_of_alleles_discovered: annotate_discovered,
+        emit_all_active_sites,
+        allele_specific,
+    };
+    let priors = gatk_engine::allele_frequency_calculator::Priors {
+        snp_heterozygosity: double_or(parser, "heterozygosity", 1e-3),
+        indel_heterozygosity: double_or(parser, "indel-heterozygosity", 1.0 / 8000.0),
+        heterozygosity_standard_deviation: double_or(parser, "heterozygosity-stdev", 0.01),
+        sample_ploidy: number_or(parser, "sample-ploidy", 2).max(0) as usize,
+    };
+    let calculator =
+        gatk_engine::allele_frequency_calculator::AlleleFrequencyCalculator::make_calculator(
+            &priors,
+        );
+    let keep_sb = resolved
+        .iter()
+        .any(|entry| entry.name == "StrandBiasBySample");
+    let mut engine = ggvcfs::Engine {
+        merger: merger::Merger {
+            header: &input_header,
+            annotations: resolved.clone(),
+            somatic: false,
+            drop_somatic_filtering_annotations: false,
+            call_genotypes: true,
+        },
+        genotyping: genotyping::GenotypingEngine::new(genotype_arguments(false), calculator),
+        forced: genotyping::GenotypingEngine::new(genotype_arguments(true), calculator),
+        annotations,
+        arguments: ggvcfs::Arguments {
+            include_non_variants,
+            keep_sb,
+        },
+        output_header: header.clone(),
+        notes: merger::MergeNotes::default(),
+    };
+
+    let by_locus = include_non_variants || !force_output.is_empty();
+    let traversed = |contig: &str, position: i64| -> bool {
+        traversal.as_ref().is_none_or(|list| {
+            list.iter().any(|interval| {
+                interval.contig == contig
+                    && i64::from(interval.start) <= position
+                    && position <= i64::from(interval.end)
+            })
+        })
+    };
+    let forced = |contig: &str, position: i64| -> bool {
+        force_output.iter().any(|interval| {
+            interval.contig == contig
+                && i64::from(interval.start) <= position
+                && position <= i64::from(interval.end)
+        })
+    };
+    let mut reference_base = |contig: &str, position: i64| -> u8 {
+        reference
+            .query(contig, position as i32, position as i32)
+            .ok()
+            .and_then(|bases| bases.first().copied())
+            .unwrap_or(b'N')
+    };
+    let mut random = gatk_random();
+    let called = ggvcfs::walk(
+        &mut engine,
+        &records,
+        by_locus,
+        &traversed,
+        &forced,
+        &mut reference_base,
+        &mut random,
+    );
+    drop(random);
+    let mut written = called.map_err(|failure| {
+        let thrown = match &failure.error {
+            genotyping::EngineError::Limitation(what) => limitation(what),
+            genotyping::EngineError::Runtime { class, message } => {
+                Thrown::non_user(java_class_name(class), message.clone())
+            }
+        };
+        match failure.record {
+            Some((contig, start, by_locus)) => {
+                let record = records
+                    .iter()
+                    .find(|r| r.contig == contig && r.start == start)
+                    .expect("the record the failure names");
+                let lead = if by_locus {
+                    "Exception thrown at first variant start"
+                } else {
+                    "Exception thrown at"
+                };
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "{lead} {}:{} {}",
+                        contig,
+                        start,
+                        java_variant_context_string(record, &input)
+                    ),
+                )
+            }
+            None => thrown,
+        }
+    })?;
+    written.retain(|record| {
+        keep(record)
+            && (!starts_in
+                || intervals.as_ref().is_some_and(|list| {
+                    list.iter().any(|interval| {
+                        interval.contig == record.contig
+                            && i64::from(interval.start) <= record.start
+                            && record.start <= i64::from(interval.end)
+                    })
+                }))
+    });
+    apply_sites_only(parser, &mut header, &mut written);
+    let text = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output(parser, &output, &text)?;
+    Ok(None)
+}
+
 /// The reference as the walker reads it, which is the engine's source queried base by base.
 struct ReferenceBases<'a>(&'a mut gatk_engine::reference::ReferenceFileSource);
 
