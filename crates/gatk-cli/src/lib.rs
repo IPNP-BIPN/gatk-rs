@@ -392,6 +392,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SelectVariants" => Some(run_select_variants),
         "CombineGVCFs" => Some(run_combine_gvcfs),
         "GenotypeGVCFs" => Some(run_genotype_gvcfs),
+        "ReblockGVCF" => Some(run_reblock_gvcf),
         _ => None,
     }
 }
@@ -491,6 +492,10 @@ fn run_combine_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_genotype_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::genotype_gvcfs(&parsed("GenotypeGVCFs", args)?)
+}
+
+fn run_reblock_gvcf(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::reblock_gvcf(&parsed("ReblockGVCF", args)?)
 }
 
 fn run_select_variants(args: &[String]) -> Result<Option<String>, Thrown> {

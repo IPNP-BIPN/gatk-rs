@@ -13488,6 +13488,517 @@ pub fn combine_gvcfs(parser: &Parser) -> Outcome {
 /// JVM that has already drawn from it continues the stream. The goldens are dumped that way, six
 /// runs in one process, and a port that made a fresh generator per run would reproduce only the
 /// first. `GenotypeGVCFs` is the runner that draws from it, for `QD` above 35.
+/// `ReblockGVCF`, a multi-variant walker over the shards of one sample's GVCF.
+pub fn reblock_gvcf(parser: &Parser) -> Outcome {
+    use gatk_annotation::catalogue;
+    use gatk_tools::genotyping_engine as genotyping;
+    use gatk_tools::gvcf_blocks as blocks;
+    use gatk_tools::reblock_gvcf as reblock;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
+
+    let _ = resolve_read_filters(parser, "ReblockGVCF")?;
+    let resolved = catalogue::resolve(
+        &catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &["StandardAnnotation", "AS_StandardAnnotation"],
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
+            return Err(limitation(&format!(
+                "--{configured} configures a pedigree or flow annotation, which this port does not \
+                 carry for ReblockGVCF yet."
+            )));
+        }
+    }
+    if argument(parser, "population-callset").is_some() {
+        return Err(limitation("--population-callset is not ported."));
+    }
+
+    let paths = arguments(parser, "variant");
+    if paths.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument variant was missing: Argument 'variant' is required",
+        ));
+    }
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+
+    // `initializeDrivingVariants`: a repeated input is refused before any is opened.
+    let names: Vec<String> = paths.iter().map(|path| absolute_input_name(path)).collect();
+    for (index, name) in names.iter().enumerate() {
+        if names[..index].contains(name) {
+            return Err(Thrown::user(format!(
+                "Bad input: Feature inputs must be unique: {name}"
+            )));
+        }
+    }
+    let mut opened = Vec::new();
+    for path in &paths {
+        let (codec, text) = open_feature_input(path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        opened.push((path.clone(), codec, text, file));
+    }
+    let dictionaries: Vec<SamHeader> = opened
+        .iter()
+        .map(|(_, _, text, _)| vcf_dictionary(text))
+        .collect();
+    let names_of = |header: &SamHeader| -> Vec<(String, i32)> {
+        header
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect()
+    };
+    if dictionaries
+        .iter()
+        .any(|header| names_of(header) != names_of(&dictionaries[0]))
+    {
+        return Err(limitation(
+            "--variant inputs whose sequence dictionaries differ are merged into one by GATK, \
+             which this port does not carry yet.",
+        ));
+    }
+    if dictionaries[0].sequences.is_empty() {
+        return Err(limitation(
+            "--variant inputs with no ##contig line have their dictionary derived from an index \
+             by GATK, which this port does not carry yet.",
+        ));
+    }
+    let (first_path, first_codec, first_text, _) = &opened[0];
+    let VariantWalkerStart { intervals, .. } = variant_walker_validation(
+        parser,
+        first_path.clone(),
+        first_text.clone(),
+        *first_codec,
+        dictionaries[0].clone(),
+    )?;
+    // `--dbsnp` is opened at startup; the tool never queries it, and only its header line shows.
+    let dbsnp = argument(parser, "dbsnp");
+    if let Some(path) = &dbsnp {
+        open_feature_input(path)?;
+    }
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    // `MultiVariantDataSource.getMergedHeader`.
+    let merged_lines: Vec<HeaderLine> = if opened.len() > 1 {
+        let versions: Vec<Option<String>> = opened
+            .iter()
+            .map(|(_, _, _, file)| {
+                file.header_version
+                    .map(|version| version.version_string().to_string())
+            })
+            .collect();
+        let sources: Vec<htsjdk_vcf::merge::Source> = opened
+            .iter()
+            .zip(&versions)
+            .map(|((_, _, _, file), version)| htsjdk_vcf::merge::Source {
+                header: &file.header,
+                version: version.as_deref(),
+            })
+            .collect();
+        htsjdk_vcf::merge::smart_merge_headers(&sources, true)
+            .map_err(|error| Thrown::non_user("java.lang.IllegalStateException", error.message()))?
+            .0
+    } else {
+        opened[0].3.header.lines.clone()
+    };
+    let has_info = |id: &str| {
+        merged_lines.iter().find(|line| {
+            matches!(line, HeaderLine::Compound { key, id: line_id, .. } if key == "INFO" && line_id == id)
+        })
+    };
+
+    // `onTraversalStart`.
+    let mut samples: Vec<String> = opened
+        .iter()
+        .flat_map(|(_, _, _, file)| file.header.samples.clone())
+        .collect();
+    samples.sort();
+    samples.dedup();
+    if samples.len() != 1 {
+        return Err(Thrown::user(format!(
+            "Bad input: ReblockGVCF can take multiple input GVCFs, but they must be non-overlapping \
+             shards from the same sample.  Found samples [{}]",
+            samples.join(", ")
+        )));
+    }
+    let tree_score_threshold = double_or(parser, "tree-score-threshold-to-no-call", 0.0);
+    if tree_score_threshold > 0.0 && has_info(reblock::TREE_SCORE).is_none() {
+        return Err(Thrown::user(format!(
+            "-tree-score-threshold-to-no-call is set to value greater than 0: {}, but the \
+             TREE_SCORE annotation is not present in the input GVCF.",
+            gatk_engine::tsv_table::java_double_to_string(tree_score_threshold)
+        )));
+    }
+    let format_to_remove = arguments(parser, "format-annotations-to-remove");
+    let mut lines: Vec<HeaderLine> = merged_lines
+        .iter()
+        .filter(|line| match line {
+            HeaderLine::Compound { key, id, .. } if key == "INFO" => {
+                !(id == reblock::RAW_RMS_MAPPING_QUALITY_DEPRECATED
+                    || reblock::INFO_KEYS_TO_REMOVE.contains(&id.as_str()))
+            }
+            HeaderLine::Compound { key, id, .. } if key == "FORMAT" => {
+                !format_to_remove.contains(id)
+            }
+            HeaderLine::Unstructured { key, .. } => !key.starts_with(blocks::GVCF_BLOCK),
+            _ => true,
+        })
+        .cloned()
+        .collect();
+    lines.extend(default_tool_vcf_header_lines(parser, "ReblockGVCF"));
+    lines.extend(catalogue::descriptions(&resolved, false, false));
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
+    }
+    let compound = |id: &str, number: Cardinality, line_type: LineType, description: &str| {
+        HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DP"));
+    lines.push(compound(
+        reblock::RAW_QUAL_APPROX_KEY,
+        Cardinality::Fixed(1),
+        LineType::Integer,
+        "Sum of PL[0] values; used to approximate the QUAL score",
+    ));
+    lines.push(compound(
+        reblock::AS_RAW_QUAL_APPROX_KEY,
+        Cardinality::Fixed(1),
+        LineType::String,
+        "Allele-specific QUAL approximations",
+    ));
+    lines.push(compound(
+        reblock::VARIANT_DEPTH_KEY,
+        Cardinality::Fixed(1),
+        LineType::Integer,
+        "(informative) depth over variant genotypes",
+    ));
+    lines.push(compound(
+        reblock::AS_VARIANT_DEPTH_KEY,
+        Cardinality::Fixed(1),
+        LineType::String,
+        "Allele-specific (informative) depth over variant genotypes -- including ref, RAW format",
+    ));
+    lines.push(compound(
+        reblock::RAW_GENOTYPE_COUNT_KEY,
+        Cardinality::Fixed(3),
+        LineType::Integer,
+        "Counts of genotypes w.r.t. the reference allele in the following order: 0/0, 0/*, */*, \
+         i.e. all alts lumped together; for use in calculating excess heterozygosity",
+    ));
+    lines.push(compound(
+        reblock::RAW_MAPPING_QUALITY_WITH_DEPTH_KEY,
+        Cardinality::Fixed(2),
+        LineType::Integer,
+        "Raw data (sum of squared MQ and total depth) for improved RMS Mapping Quality \
+         calculation. Incompatible with deprecated RAW_MQ formulation.",
+    ));
+    lines.push(compound(
+        reblock::MAPPING_QUALITY_DEPTH_DEPRECATED,
+        Cardinality::Fixed(1),
+        LineType::Integer,
+        "Depth over variant samples for better MQ calculation (deprecated -- use RAW_MQandDP \
+         instead.)",
+    ));
+    if has_info(reblock::RAW_RMS_MAPPING_QUALITY_DEPRECATED).is_some() {
+        lines.push(compound(
+            reblock::RAW_RMS_MAPPING_QUALITY_DEPRECATED,
+            Cardinality::Fixed(1),
+            LineType::Float,
+            "Raw data for RMS Mapping Quality (deprecated -- use RAW_MQandDP instead.)",
+        ));
+    }
+    let annotations_to_keep = arguments(parser, "annotations-to-keep");
+    for annotation in &annotations_to_keep {
+        match has_info(annotation) {
+            Some(line) => {
+                if matches!(
+                    line,
+                    HeaderLine::Compound {
+                        number: Cardinality::A,
+                        ..
+                    }
+                ) {
+                    return Err(Thrown::user(format!(
+                        "{annotation} is an allele specific annotation which is currently \
+                         unsupported. Only fixed length annotations may be kept in reblocking."
+                    )));
+                }
+                lines.push(line.clone());
+            }
+            None => {
+                return Err(Thrown::user(format!(
+                    "{annotation} is not in header of input GVCF but was requested to be kept by \
+                     annotations-to-keep argument."
+                )));
+            }
+        }
+    }
+    let add_filters_to_format = flag(parser, "add-site-filters-to-genotype");
+    if add_filters_to_format {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_format_line(
+            "FT",
+        ));
+    }
+    let allele_based_length_annotations: Vec<String> = merged_lines
+        .iter()
+        .filter_map(|line| match line {
+            HeaderLine::Compound {
+                key, id, number, ..
+            } if key == "FORMAT"
+                && matches!(number, Cardinality::A | Cardinality::R | Cardinality::G) =>
+            {
+                Some(id.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    if dbsnp.is_some() {
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line("DB"));
+    }
+
+    let drop_low_quals = flag(parser, "drop-low-quals");
+    let assignment = scalar(parser, "genotype-assignment-method")
+        .unwrap_or_else(|| "USE_PLS_TO_ASSIGN".to_string());
+    let configuration = genotyping::Configuration {
+        standard_confidence_for_calling: if drop_low_quals {
+            double_or(
+                parser,
+                "standard-min-confidence-threshold-for-calling",
+                30.0,
+            )
+        } else {
+            0.0
+        },
+        max_alternate_alleles: number_or(parser, "max-alternate-alleles", 6).max(0) as usize,
+        sample_ploidy: number_or(parser, "sample-ploidy", 2).max(0) as usize,
+        annotate_number_of_alleles_discovered: flag(parser, "annotate-with-num-discovered-alleles"),
+        emit_all_active_sites: false,
+        allele_specific: false,
+        emit_all_confident_sites: true,
+        annotate_all_sites_with_pls: true,
+        force_keep_all_alleles: true,
+        assignment_method: genotyping::SubsetMethod::from_name(&assignment)
+            .unwrap_or(genotyping::SubsetMethod::UsePlsToAssign),
+    };
+    let priors = gatk_engine::allele_frequency_calculator::Priors {
+        snp_heterozygosity: double_or(parser, "heterozygosity", 1e-3),
+        indel_heterozygosity: double_or(parser, "indel-heterozygosity", 1.0 / 8000.0),
+        heterozygosity_standard_deviation: double_or(parser, "heterozygosity-stdev", 0.01),
+        sample_ploidy: number_or(parser, "sample-ploidy", 2).max(0) as usize,
+    };
+    let calculator =
+        gatk_engine::allele_frequency_calculator::AlleleFrequencyCalculator::make_calculator(
+            &priors,
+        );
+
+    // `createVcfWriter`.
+    let bands: Vec<i32> = arguments(parser, "gvcf-gq-bands")
+        .iter()
+        .map(|band| band.trim().parse().unwrap_or(0))
+        .collect();
+    // `createVCFWriter(outputFile)` has created the file, empty, when the bands are refused.
+    let partitions = match blocks::parse_partitions(&bands) {
+        Ok(partitions) => partitions,
+        Err(message) => {
+            write_file(&output, b"")?;
+            return Err(Thrown::user(format!(
+                "Bad input: GQBands are malformed: {message}"
+            )));
+        }
+    };
+    let writer = blocks::ReblockingWriter::new(
+        partitions.clone(),
+        flag(parser, "floor-blocks"),
+        blocks::ReblockingOptions {
+            drop_low_quals,
+            allow_missing_hom_ref_data: flag(parser, "allow-missing-hom-ref-data"),
+            rgq_threshold: double_or(parser, "rgq-threshold-to-no-call", 0.0),
+        },
+    );
+    let mut header = VcfHeader {
+        lines,
+        samples: samples.clone(),
+    };
+    blocks::add_ranges_to_header(&mut header, &partitions);
+
+    let mut reblocker = reblock::Reblocker::new(
+        reblock::Arguments {
+            drop_low_quals,
+            rgq_threshold: double_or(parser, "rgq-threshold-to-no-call", 0.0),
+            tree_score_threshold,
+            annotations_to_keep,
+            format_annotations_to_remove: format_to_remove,
+            do_qual_approx: flag(parser, "do-qual-score-approximation"),
+            allow_missing_hom_ref_data: flag(parser, "allow-missing-hom-ref-data"),
+            keep_all_alts: flag(parser, "keep-all-alts"),
+            keep_filters: flag(parser, "keep-site-filters"),
+            add_filters_to_format_field: add_filters_to_format,
+        },
+        genotyping::GenotypingEngine::new(configuration, calculator),
+        &resolved,
+        allele_based_length_annotations,
+        writer,
+    );
+
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    if spans.is_some() {
+        if let Some((path, ..)) = opened.iter().find(|(path, ..)| !has_feature_index(path)) {
+            return Err(Thrown::user(
+                gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                    path: path.clone(),
+                }
+                .message(),
+            ));
+        }
+    }
+    let reached: Vec<Vec<htsjdk_vcf::variant::VariantContext>> = opened
+        .iter()
+        .map(|(_, _, _, file)| {
+            let loci: Vec<Locus> = file
+                .records
+                .iter()
+                .map(|record| Locus {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    stop: record.stop as i32,
+                })
+                .collect();
+            gatk_engine::variant_source::traverse(&loci, spans)
+                .iter()
+                .filter_map(|locus| {
+                    let index = loci.iter().position(|other| std::ptr::eq(other, *locus))?;
+                    Some(file.records[index].clone())
+                })
+                .collect()
+        })
+        .collect();
+    let merged_contigs: Vec<String> = dictionaries[0]
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let keys: Vec<Vec<(i64, i64)>> = reached
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .map(|record| {
+                    let index = merged_contigs
+                        .iter()
+                        .position(|name| *name == record.contig)
+                        .map_or(-1, |index| index as i64);
+                    (index, record.start)
+                })
+                .collect()
+        })
+        .collect();
+    let failed = |failure: gatk_tools::combine_gvcfs::Failure| match failure {
+        gatk_tools::combine_gvcfs::Failure::User(message) => Thrown::user(message),
+        gatk_tools::combine_gvcfs::Failure::Runtime { class, message } => {
+            Thrown::non_user(java_class_name(&class), message)
+        }
+    };
+    let order = gatk_tools::combine_gvcfs::merging_order(&keys).map_err(failed)?;
+    let mut source = ReferenceBases(&mut reference);
+    let mut failure: Option<Thrown> = None;
+    for (input, index) in order {
+        let record = &reached[input][index];
+        let has_non_ref = record
+            .alleles
+            .iter()
+            .any(|allele| allele.display_string() == "<NON_REF>");
+        if let Err(error) = reblocker.apply(record.clone(), &mut source) {
+            failure = Some(match error {
+                genotyping::EngineError::Limitation(what) => limitation(&what),
+                genotyping::EngineError::Runtime { .. } => {
+                    // The genotype was read before anything but the `<NON_REF>` check could
+                    // throw, and `toString` prints it decoded from then on.
+                    let text = if has_non_ref {
+                        java_variant_context_string_decoded(record, &names[input])
+                    } else {
+                        java_variant_context_string(record, &names[input])
+                    };
+                    Thrown::non_user(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        format!(
+                            "Exception thrown at {}:{} {text}",
+                            record.contig, record.start
+                        ),
+                    )
+                }
+            });
+            break;
+        }
+    }
+    // `closeTool`, which runs in a `finally`: the buffer and the open block are written after a
+    // failed traversal too, and the file with its index is what the failed run leaves.
+    if let Err(error) = reblocker.writer.close() {
+        if failure.is_none() {
+            failure = Some(match error {
+                genotyping::EngineError::Limitation(what) => limitation(&what),
+                genotyping::EngineError::Runtime { class, message } => {
+                    Thrown::non_user(java_class_name(&class), message)
+                }
+            });
+        }
+    }
+
+    let mut written = std::mem::take(&mut reblocker.writer.written);
+    for record in &written {
+        record.genotypes.decode();
+    }
+    written.retain(|record| keep(record));
+    apply_sites_only(parser, &mut header, &mut written);
+    let text = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output(parser, &output, &text)?;
+    match failure {
+        Some(thrown) => Err(thrown),
+        None => Ok(None),
+    }
+}
+
+impl gatk_tools::gvcf_blocks::ReferenceBase for ReferenceBases<'_> {
+    fn base(&mut self, contig: &str, position: i64) -> u8 {
+        self.0
+            .query(contig, position as i32, position as i32)
+            .ok()
+            .and_then(|bases| bases.first().copied())
+            .unwrap_or(b'N')
+    }
+}
+
 fn gatk_random() -> std::sync::MutexGuard<'static, gatk_engine::java_random::JavaRandom> {
     static RANDOM: std::sync::OnceLock<std::sync::Mutex<gatk_engine::java_random::JavaRandom>> =
         std::sync::OnceLock::new();
@@ -13738,6 +14249,11 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         annotate_number_of_alleles_discovered: annotate_discovered,
         emit_all_active_sites,
         allele_specific,
+        emit_all_confident_sites: false,
+        annotate_all_sites_with_pls: false,
+        force_keep_all_alleles: false,
+        // `createMinimalArgs` sets PREFER_PLS whatever `--genotype-assignment-method` says.
+        assignment_method: genotyping::SubsetMethod::PreferPls,
     };
     let priors = gatk_engine::allele_frequency_calculator::Priors {
         snp_heterozygosity: double_or(parser, "heterozygosity", 1e-3),
