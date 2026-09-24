@@ -11,6 +11,7 @@ pub mod alignment_state;
 pub mod alignment_utils;
 pub mod allele_filter;
 pub mod allele_fraction_cluster;
+pub mod allele_frequency_calculator;
 pub mod allele_likelihoods;
 pub mod allele_list;
 pub mod allele_pileup_counter;

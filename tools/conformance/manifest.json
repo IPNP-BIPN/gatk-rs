@@ -2659,6 +2659,30 @@
       ]
     },
     {
+      "id": "allele-frequency-calculator",
+      "status": "golden-pending",
+      "title": "The Dirichlet fit behind QUAL, the allele-absent probabilities and MLEAC",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "What GenotypeGVCFs asks before it calls anything: the probability that the site holds no variant, which is its QUAL, the probability that each alternate is absent, which decides the alleles it keeps, and the integer allele counts that become MLEAC. THE FIRST ITERATION USES A FLAT PRIOR and the pseudocounts only enter from the second; THE PSEUDOCOUNT DEPENDS ON THE ALLELE'S LENGTH, SNP when it matches the reference and indel otherwise; A BIALLELIC SITE SHORT-CIRCUITS and its one allele-absent probability is the no-variant probability; A SPANNING DELETION COUNTS AS NO VARIANT, summed and capped at zero; A DIPLOID HOM-REF WITH ONLY A GQ is given likelihoods invented from it and any other genotype without likelihoods is skipped; THE MLE COUNTS ARE THE ROUNDED EFFECTIVE COUNTS of the last iteration; AND passesThreshold ADDS AN EPSILON of 1e-10.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 28,
+      "expect_contains": [
+        "calc\tspan-del-only\t0000000000000000\tfff0000000000000\t1",
+        "calc\treference-best\tbea84ad755c59800",
+        "error\tinconsistent-pl\tjava.lang.IllegalStateException:Ploidy, allele count, and genotype likelihoods are inconsistent"
+      ],
+      "cases": [
+        {
+          "dump": "AlleleFrequencyCalculatorDump",
+          "golden": null,
+          "why": "Twenty-five fits and three refusals: one diploid sample in five shapes, a cohort, a rare het among nineteen hom-refs, three and five alleles with a SNP beside an indel, four ploidies, a spanning deletion alone and beside a SNP, hom-refs carrying only a GQ, no-calls with and without likelihoods, a second calculator with wider priors, and the three argument checks. Every double is printed as its raw bits."
+        }
+      ]
+    },
+    {
       "id": "subset-alleles",
       "status": "oracle-backed",
       "title": "subsetAlleles, what a split does to a genotype's likelihoods",
