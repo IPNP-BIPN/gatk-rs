@@ -5776,6 +5776,91 @@
         "--variant-output-filtering is held at ANYWHERE: every other mode needs -L, and a row",
         "without one refuses the whole command line before the tool runs."
       ]
+    },
+    "GnarlyGenotyper": {
+      "--variant": [
+        "/work/fixtures/gn_sites.g.vcf",
+        "/work/fixtures/gn_combined.g.vcf"
+      ],
+      "--output": [
+        "/work/out/gnarly.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--output-database-name": [
+        "null",
+        "/work/out/gnarly_db.vcf"
+      ],
+      "--keep-all-sites": [
+        "false",
+        "true"
+      ],
+      "--strip-allele-specific-annotations": [
+        "false",
+        "true"
+      ],
+      "--max-alternate-alleles": [
+        "6",
+        "1"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:95-175",
+        "chr2:1-60"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:135-155"
+      ],
+      "--only-output-calls-starting-in-intervals": [
+        "false"
+      ],
+      "--merge-input-intervals": [
+        "false",
+        "true"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/cg_dbsnp.vcf"
+      ],
+      "--population-callset": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--variant-output-filtering": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "$why": [
+        "gn_sites.g.vcf is three reblocked samples in the shape GenomicsDB exports: a SNP over the",
+        "floor of 60, one under it, an indel between the floors, an indel with the allele-specific",
+        "raw keys, a triallelic SNP, a spanning deletion, a site with no QUALapprox, one with no",
+        "concrete alternate, one with DP=0, one with no RAW_GT_COUNT, a call on <NON_REF>, a",
+        "GenomicsDB no-call and a GQ-0, DP-0 reference call. gn_combined.g.vcf is the reference's",
+        "own ReblockGVCF and CombineGVCFs over rb_s, cg_a and cg_c, whose merged RAW_GT_COUNT the",
+        "engine refuses at its first site.",
+        "--only-output-calls-starting-in-intervals is held at false, since any other value needs -L,",
+        "and --variant-output-filtering is held out: the two are mutually exclusive, and every row",
+        "sets every argument.",
+        "--population-callset is held out: the port does not carry the population priors.",
+        "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
+        "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index.",
+        "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
+        "the reasons CombineGVCFs gives."
+      ]
     }
   },
   "constraints": [

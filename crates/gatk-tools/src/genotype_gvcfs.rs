@@ -282,7 +282,7 @@ fn finalize_as_qual_by_depth(
 }
 
 /// One reducible annotation's `finalizeRawData(vc, originalVC)`.
-fn finalize_raw_data(
+pub(crate) fn finalize_raw_data(
     entry: &Entry,
     vc: &VariantContext,
     original: &VariantContext,
@@ -501,7 +501,7 @@ fn is_polymorphic_in_samples(vc: &VariantContext) -> bool {
 }
 
 /// `GATKVariantContextUtils.isProperlyPolymorphic`.
-fn is_properly_polymorphic(vc: &VariantContext) -> bool {
+pub fn is_properly_polymorphic(vc: &VariantContext) -> bool {
     let alternates = &vc.alleles[1..];
     if alternates.is_empty() {
         return false;

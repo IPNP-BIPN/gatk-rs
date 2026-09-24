@@ -2891,6 +2891,75 @@ public class MakeFixtures {
                 .instanceMain(new String[] {"-I", dir.resolve("gg_dbsnp.vcf").toString()});
         Files.writeString(dir.resolve("gg_dbsnp_noidx.vcf"), ggDbsnp, StandardCharsets.UTF_8);
         reblockGvcfFixtures(dir, chr1);
+        gnarlyGenotyperFixtures(dir);
+    }
+
+    /**
+     * What `GnarlyGenotyper` reads: a combined GVCF of three reblocked samples in the shape
+     * GenomicsDB exports, with `QUALapprox`, `VarDP`, `RAW_GT_COUNT` and `RAW_MQandDP` merged.
+     * A SNP over the floor of 60; one under it; an indel between the two floors; an indel with the
+     * allele-specific raw keys; a triallelic SNP; a spanning deletion beside a SNP; a site with no
+     * `QUALapprox`; a site with no concrete alternate; a site with DP=0; a site with no
+     * `RAW_GT_COUNT`, a call on `<NON_REF>` and a GenomicsDB no-call; and a chr2 hom-var beside a
+     * GQ-0, DP-0 reference call.
+     */
+    static void gnarlyGenotyperFixtures(final Path dir) throws Exception {
+        final String text = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=NON_REF,Description=\"Represents any possible alternative allele not already represented at this location by REF and ALT\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth (reads with MQ=255 or with bad mates are filtered)\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"Minimum DP observed within the GVCF block\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification\">\n"
+                + "##FORMAT=<ID=SB,Number=4,Type=Integer,Description=\"Per-sample component statistics which comprise the Fisher's Exact Test to detect strand bias.\">\n"
+                + "##GVCFBlock0-20=minGQ=0(inclusive),maxGQ=20(exclusive)\n"
+                + "##INFO=<ID=AS_QUALapprox,Number=1,Type=String,Description=\"Allele-specific QUAL approximations\">\n"
+                + "##INFO=<ID=AS_RAW_BaseQRankSum,Number=1,Type=String,Description=\"raw data for allele specific rank sum test of base qualities\">\n"
+                + "##INFO=<ID=AS_RAW_MQ,Number=1,Type=String,Description=\"Allele-specfic raw data for RMS Mapping Quality\">\n"
+                + "##INFO=<ID=AS_RAW_MQRankSum,Number=1,Type=String,Description=\"Allele-specfic raw data for Mapping Quality Rank Sum\">\n"
+                + "##INFO=<ID=AS_RAW_ReadPosRankSum,Number=1,Type=String,Description=\"allele specific raw data for rank sum test of read position bias\">\n"
+                + "##INFO=<ID=AS_SB_TABLE,Number=1,Type=String,Description=\"Allele-specific forward/reverse read counts for strand bias tests. Includes the reference and alleles separated by |.\">\n"
+                + "##INFO=<ID=AS_VarDP,Number=1,Type=String,Description=\"Allele-specific (informative) depth over variant genotypes -- including ref, RAW format\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth; some reads may have been filtered\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Stop position of the interval\">\n"
+                + "##INFO=<ID=QUALapprox,Number=1,Type=Integer,Description=\"Sum of PL[0] values; used to approximate the QUAL score\">\n"
+                + "##INFO=<ID=RAW_GT_COUNT,Number=3,Type=Integer,Description=\"Counts of genotypes w.r.t. the reference allele in the following order: 0/0, 0/*, */*, i.e. all alts lumped together; for use in calculating excess heterozygosity\">\n"
+                + "##INFO=<ID=RAW_MQandDP,Number=2,Type=Integer,Description=\"Raw data (sum of squared MQ and total depth) for improved RMS Mapping Quality calculation. Incompatible with deprecated RAW_MQ formulation.\">\n"
+                + "##INFO=<ID=VarDP,Number=1,Type=Integer,Description=\"(informative) depth over variant genotypes\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsA\tsB\tsC\n"
+                + "chr1\t100\t.\tA\tG,<NON_REF>\t.\t.\tDP=40;QUALapprox=900;RAW_GT_COUNT=0,1,1;RAW_MQandDP=108000,30;VarDP=30\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/1:10,8,0:18:99:.:300,0,400,330,420,700:5,5,4,4\t1/1:0,12,0:12:60:.:600,60,0,610,70,620:0,0,6,6\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t110\t.\tC\tT,<NON_REF>\t.\t.\tDP=20;QUALapprox=40;RAW_GT_COUNT=0,1,0;RAW_MQandDP=36000,10;VarDP=10\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/1:5,5,0:10:40:.:40,0,90,55,100,150:3,2,3,2\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t120\t.\tA\tAT,<NON_REF>\t.\t.\tDP=20;QUALapprox=65;RAW_GT_COUNT=0,1,0;RAW_MQandDP=36000,10;VarDP=10\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/1:5,5,0:10:65:.:65,0,90,80,100,170:3,2,3,2\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t130\t.\tG\tGTT,<NON_REF>\t.\t.\tAS_QUALapprox=|200|0;AS_RAW_BaseQRankSum=|-0.5,1|;AS_RAW_MQ=39600.00|36000.00|0.00;AS_RAW_MQRankSum=|0.0,1|;AS_RAW_ReadPosRankSum=|1.3,1|;AS_SB_TABLE=6,5|5,5|0,0;AS_VarDP=5|8|0;DP=30;QUALapprox=200;RAW_GT_COUNT=0,1,0;RAW_MQandDP=75600,21;VarDP=13\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/1:5,8,0:13:99:.:200,0,150,215,170,380:6,5,5,5\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t140\t.\tT\tG,C,<NON_REF>\t.\t.\tDP=45;QUALapprox=700;RAW_GT_COUNT=0,1,1;RAW_MQandDP=144000,40;VarDP=35\tGT:AD:DP:GQ:MIN_DP:PL:SB\t1/2:0,9,8,0:17:99:.:500,300,290,310,0,320,520,330,340,600:4,4,5,4\t0/1:10,10,0,0:20:99:.:200,0,250,260,280,540,260,280,540,540:5,5,5,5\t0/0:.:8:15:8:0,15,150,15,150,150,15,150,150,150:.\n"
+                + "chr1\t150\t.\tA\t*,C,<NON_REF>\t.\t.\tDP=30;QUALapprox=300;RAW_GT_COUNT=0,1,1;RAW_MQandDP=108000,30;VarDP=25\tGT:AD:DP:GQ:MIN_DP:PL:SB\t1/1:0,10,0,0:10:30:.:300,30,0,310,40,320,330,50,340,360:.\t0/2:6,0,9,0:15:99:.:250,260,280,0,290,300,270,300,310,560:.\t0/0:.:10:20:9:0,20,200,20,200,200,20,200,200,200:.\n"
+                + "chr1\t160\t.\tC\tT,<NON_REF>\t.\t.\tDP=20;RAW_MQandDP=36000,10;VarDP=10\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/1:5,5,0:10:99:.:200,0,190,215,205,420:3,2,3,2\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t170\t.\tG\t<NON_REF>\t.\t.\tDP=20;RAW_MQandDP=36000,10\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t180\t.\tT\tA,<NON_REF>\t.\t.\tDP=0;QUALapprox=300;RAW_GT_COUNT=0,1,0;RAW_MQandDP=36000,10;VarDP=10\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/1:5,5,0:10:99:.:300,0,190,315,205,520:3,2,3,2\t0/0:.:10:20:9:0,20,200,20,200,200:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n"
+                + "chr1\t190\t.\tC\tG,<NON_REF>\t.\t.\tDP=30;QUALapprox=500;RAW_MQandDP=90000,25;VarDP=25\tGT:AD:DP:GQ:MIN_DP:PL:SB\t0/2:10,0,5:15:30:.:300,330,600,0,280,290:.\t1/1:0,10,0:10:30:.:500,30,0,510,40,520:4,6,4,6\t./.:.:.:.:.:.:.\n"
+                + "chr2\t20\t.\tA\tC,<NON_REF>\t.\t.\tDP=15;QUALapprox=300;RAW_GT_COUNT=0,0,1;RAW_MQandDP=54000,15;VarDP=15\tGT:AD:DP:GQ:MIN_DP:PL:SB\t1/1:0,15,0:15:45:.:300,45,0,320,50,330:0,0,8,7\t0/0:.:0:0:0:0,0,0,0,0,0:.\t0/0:.:10:20:9:0,20,200,20,200,200:.\n";
+        Files.writeString(dir.resolve("gn_sites.g.vcf"), text, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("gn_sites.g.vcf").toString()});
+        // The same samples through the reference's own ReblockGVCF and CombineGVCFs, whose merge
+        // keeps one sample's RAW_GT_COUNT as a single value: the engine refuses the first site.
+        final String reference = dir.resolve("cgv_ref.fasta").toString();
+        for (final String sample : new String[] {"rb_s", "cg_a", "cg_c"}) {
+            new org.broadinstitute.hellbender.tools.walkers.variantutils.ReblockGVCF().instanceMain(
+                    new String[] {"-R", reference, "-V", dir.resolve(sample + ".g.vcf").toString(),
+                            "-O", dir.resolve("gn_" + sample + ".g.vcf").toString(), "-do-qual-approx",
+                            "--add-output-vcf-command-line", "false"});
+        }
+        new org.broadinstitute.hellbender.tools.walkers.CombineGVCFs().instanceMain(new String[] {
+                "-R", reference,
+                "-V", dir.resolve("gn_rb_s.g.vcf").toString(),
+                "-V", dir.resolve("gn_cg_a.g.vcf").toString(),
+                "-V", dir.resolve("gn_cg_c.g.vcf").toString(),
+                "-O", dir.resolve("gn_combined.g.vcf").toString(),
+                "--add-output-vcf-command-line", "false"});
     }
 
     /**

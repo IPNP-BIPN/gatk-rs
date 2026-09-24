@@ -13999,6 +13999,296 @@ impl gatk_tools::gvcf_blocks::ReferenceBase for ReferenceBases<'_> {
     }
 }
 
+/// `GnarlyGenotyper`, a variant walker over a combined GVCF of reblocked samples.
+pub fn gnarly_genotyper(parser: &Parser) -> Outcome {
+    use gatk_tools::genotyping_engine as genotyping;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
+
+    let _ = resolve_read_filters(parser, "GnarlyGenotyper")?;
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    if let Some(variant) = argument(parser, "variant") {
+        if variant.starts_with("gendb:") {
+            return Err(limitation("GenomicsDB input is not ported."));
+        }
+    }
+    if argument(parser, "population-callset").is_some() {
+        return Err(limitation("--population-callset is not ported."));
+    }
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "GnarlyGenotyper")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    if argument(parser, "reference").is_none() {
+        return Err(Thrown::command_line(
+            "Argument reference was missing: Argument 'reference' is required",
+        ));
+    }
+    let dbsnp = argument(parser, "dbsnp");
+    if let Some(path) = &dbsnp {
+        open_feature_input(path)?;
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&text)
+        .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+
+    // `--only-output-calls-starting-in-intervals` is STARTS_IN by another name.
+    let starts_in = flag(parser, "only-output-calls-starting-in-intervals");
+    if starts_in && intervals.as_ref().is_none_or(|list| list.is_empty()) {
+        return Err(Thrown::command_line(
+            "Argument -L or -XL was missing: Intervals are required if --variant-output-filtering \
+             was specified or if the tool uses interval filtering.",
+        ));
+    }
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    let traversal: Option<Vec<gatk_engine::interval::SimpleInterval>> =
+        if flag(parser, "merge-input-intervals") {
+            intervals.as_ref().map(|list| {
+                let mut spanning: Vec<gatk_engine::interval::SimpleInterval> = Vec::new();
+                for interval in list {
+                    match spanning.iter_mut().find(|s| s.contig == interval.contig) {
+                        Some(span) => {
+                            span.start = span.start.min(interval.start);
+                            span.end = span.end.max(interval.end);
+                        }
+                        None => spanning.push(interval.clone()),
+                    }
+                }
+                spanning
+            })
+        } else {
+            intervals.clone()
+        };
+    let kept = variants_in_traversal(&file.records, traversal.as_deref(), &input)?;
+    let records: Vec<htsjdk_vcf::variant::VariantContext> = kept.into_iter().cloned().collect();
+
+    // `setupVCFWriter`.
+    let info = |id: &str, number: Cardinality, line_type: LineType, description: &str| {
+        HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let standard = |id: &str| htsjdk_vcf::standard_header_lines::standard_info_line(id);
+    let mut lines: Vec<HeaderLine> = file.header.lines.clone();
+    lines.extend(default_tool_vcf_header_lines(parser, "GnarlyGenotyper"));
+    lines.retain(|line| !matches!(line, HeaderLine::Unstructured { key, .. } if key.starts_with("GVCFBlock")));
+    lines.push(HeaderLine::Filter {
+        id: "LowQual".to_string(),
+        description: "Low quality".to_string(),
+    });
+    lines.extend(standard("AC"));
+    lines.extend(standard("AF"));
+    lines.extend(standard("AN"));
+    lines.push(info(
+        "AC_adj",
+        Cardinality::A,
+        LineType::Integer,
+        "Allele count for each ALT, adjusted to represent high quality genotypes only",
+    ));
+    lines.push(info(
+        "FS",
+        Cardinality::Fixed(1),
+        LineType::Float,
+        "Phred-scaled p-value using Fisher's exact test to detect strand bias",
+    ));
+    lines.push(info(
+        "SOR",
+        Cardinality::Fixed(1),
+        LineType::Float,
+        "Symmetric Odds Ratio of 2x2 contingency table to detect strand bias",
+    ));
+    lines.push(info(
+        "SB_TABLE",
+        Cardinality::Fixed(4),
+        LineType::Integer,
+        "Forward/reverse read counts for strand bias tests",
+    ));
+    lines.push(info(
+        "ExcessHet",
+        Cardinality::Fixed(1),
+        LineType::Float,
+        "Phred-scaled p-value for exact test of excess heterozygosity",
+    ));
+    lines.push(info(
+        "QD",
+        Cardinality::Fixed(1),
+        LineType::Float,
+        "Variant Confidence/Quality by Depth",
+    ));
+    lines.extend(standard("MQ"));
+    lines.extend(standard("DP"));
+    let has_info = |id: &str| {
+        file.header.lines.iter().any(|line| {
+            matches!(line, HeaderLine::Compound { key, id: line_id, .. } if key == "INFO" && line_id == id)
+        })
+    };
+    if has_info("AS_QUAL") || has_info("AS_QUALapprox") {
+        for (id, line_type, description) in [
+            ("AS_AltDP", LineType::Integer, "Allele-specific (informative) depth for alt alleles over variant genotypes; effectively sum of ADs"),
+            ("AS_BaseQRankSum", LineType::Float, "allele specific Z-score from Wilcoxon rank sum test of each Alt Vs. Ref base qualities"),
+            ("AS_FS", LineType::Float, "allele specific phred-scaled p-value using Fisher's exact test to detect strand bias of each alt allele"),
+            ("AS_MQ", LineType::Float, "Allele-specific RMS Mapping Quality"),
+            ("AS_MQRankSum", LineType::Float, "Allele-specific Mapping Quality Rank Sum"),
+            ("AS_QD", LineType::Float, "Allele-specific Variant Confidence/Quality by Depth"),
+            ("AS_ReadPosRankSum", LineType::Float, "allele specific Z-score from Wilcoxon rank sum test of each Alt vs. Ref read position bias"),
+            ("AS_SOR", LineType::Float, "Allele specific strand Odds Ratio of 2x|Alts| contingency table to detect allele specific strand bias"),
+        ] {
+            lines.push(info(id, Cardinality::A, line_type, description));
+        }
+    }
+    if dbsnp.is_some() {
+        lines.extend(standard("DB"));
+    }
+    lines.push(info(
+        "RAW_GT_COUNT",
+        Cardinality::Fixed(3),
+        LineType::Integer,
+        "Counts of genotypes w.r.t. the reference allele in the following order: 0/0, 0/*, */*, \
+         i.e. all alts lumped together; for use in calculating excess heterozygosity",
+    ));
+    // `LinkedHashSet`: a line identical to one already there is not added twice.
+    let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
+    for line in lines {
+        if !unique.contains(&line) {
+            unique.push(line);
+        }
+    }
+    let mut samples = file.header.samples.clone();
+    samples.sort();
+    samples.dedup();
+    let mut header = VcfHeader {
+        lines: unique.clone(),
+        samples,
+    };
+    let database_output = argument(parser, "output-database-name");
+    // `new VCFHeader(headerLines)`, with no samples. htsjdk still writes a record whose genotypes
+    // nothing decoded from the file's own text, whatever the header holds, so the records are
+    // encoded under the input's samples and only the `#CHROM` line is the sample-less one.
+    let database_header = VcfHeader {
+        lines: unique,
+        samples: header.samples.clone(),
+    };
+
+    let engine = gatk_tools::gnarly_engine::GnarlyEngine {
+        keep_all_sites: flag(parser, "keep-all-sites"),
+        max_alt_alleles_to_output: number_or(parser, "max-alternate-alleles", 6).max(0) as usize,
+        strip_as_annotations: flag(parser, "strip-allele-specific-annotations"),
+    };
+    let mut written = Vec::new();
+    let mut database = Vec::new();
+    let mut failure: Option<Thrown> = None;
+    let mut random = gatk_random();
+    for record in &records {
+        let depth = record
+            .attributes
+            .iter()
+            .find(|(key, _)| key == "DP")
+            .map(|(_, value)| gatk_tools::reference_confidence_merger::value_to_string(value))
+            .and_then(|text| text.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let outcome = (|| -> Result<(), genotyping::EngineError> {
+            if !record.is_variant()
+                || !gatk_tools::genotype_gvcfs::is_properly_polymorphic(record)
+                || depth == 0
+            {
+                if engine.keep_all_sites {
+                    let mut kept = gatk_tools::gnarly_engine::finalize_raw_mq(record)?;
+                    kept.filters = Some(vec!["LowQual".to_string()]);
+                    kept.attributes.retain(|(key, _)| key != "AC_adj");
+                    kept.attributes
+                        .push(("AC_adj".to_string(), htsjdk_vcf::variant::Value::Int(0)));
+                    written.push(kept);
+                }
+                return Ok(());
+            }
+            if !record.attributes.iter().any(|(key, _)| key == "QUALapprox") {
+                return Ok(());
+            }
+            let (called, db) =
+                engine.finalize_genotype(record, database_output.is_some(), &mut random)?;
+            if let Some(db) = db {
+                database.push(db);
+            }
+            if let Some(called) = called {
+                written.push(called);
+            }
+            Ok(())
+        })();
+        // `VariantWalker.traverse` calls `apply` with no wrapper, so the exception is its own.
+        if let Err(error) = outcome {
+            failure = Some(match error {
+                genotyping::EngineError::Limitation(what) => limitation(&what),
+                genotyping::EngineError::Runtime { class, message } => {
+                    Thrown::non_user(java_class_name(&class), message)
+                }
+            });
+            break;
+        }
+    }
+    // A site under the floor, or kept by `--keep-all-sites`, is written with the genotypes it was
+    // read with, which stay the file's own text: nothing decoded them.
+    drop(random);
+    written.retain(|record| {
+        keep(record)
+            && (!starts_in
+                || intervals.as_ref().is_some_and(|list| {
+                    list.iter().any(|interval| {
+                        interval.contig == record.contig
+                            && i64::from(interval.start) <= record.start
+                            && record.start <= i64::from(interval.end)
+                    })
+                }))
+    });
+    apply_sites_only(parser, &mut header, &mut written);
+    let text = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output(parser, &output, &text)?;
+    if let Some(path) = &database_output {
+        // `createVCFWriter` gives the database the same `--sites-only-vcf-output` as the output.
+        let mut database_header = database_header;
+        apply_sites_only(parser, &mut database_header, &mut database);
+        let text = write_vcf_honouring_lenient(parser, &database_header, &database)?;
+        // A record whose genotypes `noGenotypes()` cleared has no sample column under a header
+        // with no samples; one written from its file text keeps every column.
+        let mut records = database.iter();
+        let text: String = text
+            .split_inclusive('\n')
+            .map(|line| {
+                if line.starts_with("#CHROM") {
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n".to_string()
+                } else if line.starts_with('#') {
+                    line.to_string()
+                } else if records
+                    .next()
+                    .is_some_and(|record| record.genotypes.is_empty())
+                {
+                    let columns: Vec<&str> = line.trim_end_matches('\n').split('\t').collect();
+                    format!("{}\n", columns[..columns.len().min(8)].join("\t"))
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect();
+        write_variant_output(parser, path, &text)?;
+    }
+    match failure {
+        Some(thrown) => Err(thrown),
+        None => Ok(None),
+    }
+}
+
 fn gatk_random() -> std::sync::MutexGuard<'static, gatk_engine::java_random::JavaRandom> {
     static RANDOM: std::sync::OnceLock<std::sync::Mutex<gatk_engine::java_random::JavaRandom>> =
         std::sync::OnceLock::new();

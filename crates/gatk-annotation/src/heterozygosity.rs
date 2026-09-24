@@ -348,6 +348,11 @@ pub fn calculate_eh(counts: GenotypeCounts, sample_count: usize) -> Option<(usiz
     Some((sample_count, -10.0 * jmath::math::log10(pval) + 0.))
 }
 
+/// `String.format("%.4f", calculateEH(counts, sampleCount).getRight())`.
+pub fn excess_het_value(counts: GenotypeCounts, sample_count: usize) -> Option<String> {
+    calculate_eh(counts, sample_count).map(|(_, eh)| format_decimals(eh, 4))
+}
+
 /// `ExcessHet.annotate`: `ExcessHet`, or nothing.
 pub fn excess_het(vc: &VariantContext) -> Option<String> {
     let genotypes: Vec<&Genotype> = vc.genotypes.iter().collect();
