@@ -191,11 +191,11 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GatherTranches` | unclassified | oracle-backed | gather-tranches | 1 | t=2, 8/8 rows (100%) |
 | `GatherVcfsCloud` | variant-transform | oracle-backed | gather-vcfs, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 11/11 rows (100%) |
 | `GeneExpressionEvaluation` | locus-walker | oracle-backed | gene-expression-evaluation | 1 | t=2, 19/19 rows (100%) |
-| `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | not measured |
+| `GenotypeGVCFs` | assembly-caller | oracle-backed | genotype-gvcfs | 1 | t=2, 34/34 rows (100%) |
 | `GetNormalArtifactData` | locus-walker | oracle-backed | normal-artifact-data | 1 | t=2, 19/19 rows (100%) |
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) |
-| `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | not measured |
+| `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | t=2, 27/27 rows (100%) |
 | `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | not measured |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) |
@@ -229,7 +229,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | t=2, 17/17 rows (100%) |
 | `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) |
-| `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | not measured |
+| `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | t=2, 56/56 rows (100%) |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) |
 | `RemoveNearbyIndels` | variant-transform | oracle-backed | remove-nearby-indels | 1 | t=2, 24/24 rows (100%) |
 | `RevertBaseQualityScores` | record-transform | oracle-backed | record-transform | 1 | t=2, 19/19 rows (100%) |

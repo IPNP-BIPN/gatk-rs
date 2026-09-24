@@ -1018,6 +1018,33 @@
       "t": 2,
       "share": 1.0
     },
+    "GenotypeGVCFs": {
+      "rows": 34,
+      "accepted": 24,
+      "rejected": 10,
+      "distinct_outputs": 21,
+      "matched": 34,
+      "t": 2,
+      "share": 1.0
+    },
+    "ReblockGVCF": {
+      "rows": 56,
+      "accepted": 28,
+      "rejected": 28,
+      "distinct_outputs": 12,
+      "matched": 56,
+      "t": 2,
+      "share": 1.0
+    },
+    "GnarlyGenotyper": {
+      "rows": 27,
+      "accepted": 18,
+      "rejected": 9,
+      "distinct_outputs": 11,
+      "matched": 27,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
