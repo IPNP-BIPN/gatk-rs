@@ -2410,6 +2410,7 @@ public class MakeFixtures {
         svClusterFixtures(dir);
         svAnnotateFixtures(dir);
         referenceBlockFixtures(dir);
+        vcfComparatorFixtures(dir);
         // `FilterFuncotations`: a Funcotated VCF whose records match each filter once (ClinVar,
         // LoF, LMM, an autosomal recessive compound het pair and a hom-var, nothing at all, and a
         // multiallelic site), and the same records under a header with no FUNCOTATION line.
@@ -2503,6 +2504,184 @@ public class MakeFixtures {
      * the same stretch differently and at different confidences, each with a variant site the
      * hom-ref filter drops, and a two-sample GVCF the length extraction refuses.
      */
+    /**
+     * What `VCFComparator` compares: a single-sample GVCF pair and a two-sample VCF pair, each
+     * actual one difference away from its expected per site, in position order, so the tolerances
+     * peel the complaints off one at a time.
+     *
+     * The GVCF actual changes, in order: the QUAL at 100, `ReadPosRankSum` at 200, the PLs (and
+     * with them the GQ) at 400, the genotype DP at 500, the phasing at 600, the dbSNP id at 700, a
+     * variant with a GQ of zero at 800 that actual does not have at all, the alleles at 900 (a
+     * `1/2` becomes `0/1`) and the filter at 1000. The deletion at 300 is identical on both sides
+     * and trims from `TAC/TC` to `TA/T`. No site calls fewer alternates than it carries, which is
+     * the path whose annotations the port does not subset.
+     *
+     * The two-sample actual changes the site DP at 200, `InbreedingCoeff` at 300, `QD` at 400, the
+     * `AC` of a multiallelic site at 500 and the first sample's GQ at 600. `vcfc_same.g.vcf` is
+     * the expected GVCF again, and `vcfc_plain.vcf` a single-sample VCF with no `<NON_REF>`.
+     */
+    static void vcfComparatorFixtures(final Path dir) throws Exception {
+        final String gvcfHeader = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=NON_REF,Description=\"Any other allele\">\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description=\"Minimum depth\">\n"
+                + "##FORMAT=<ID=PGT,Number=1,Type=String,Description=\"Physical phasing\">\n"
+                + "##FORMAT=<ID=PID,Number=1,Type=String,Description=\"Phasing id\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Likelihoods\">\n"
+                + "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set\">\n"
+                + "##INFO=<ID=BaseQRankSum,Number=1,Type=Float,Description=\"BaseQRankSum\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##INFO=<ID=ExcessHet,Number=1,Type=Float,Description=\"ExcessHet\">\n"
+                + "##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"MLEAC\">\n"
+                + "##INFO=<ID=MLEAF,Number=A,Type=Float,Description=\"MLEAF\">\n"
+                + "##INFO=<ID=MQRankSum,Number=1,Type=Float,Description=\"MQRankSum\">\n"
+                + "##INFO=<ID=RAW_MQandDP,Number=2,Type=Integer,Description=\"RAW_MQandDP\">\n"
+                + "##INFO=<ID=ReadPosRankSum,Number=1,Type=Float,Description=\"ReadPosRankSum\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\n";
+        final String block = "\t.\t.\tEND=%d\tGT:DP:GQ:MIN_DP:PL\t0/0:30:90:28:0,90,900\n";
+        final String[][] expected = {
+                {"chr1\t1\t.\tA\t<NON_REF>" + String.format(block, 99)},
+                {"chr1\t100\t.\tT\tC,<NON_REF>\t250.64\t.\tBaseQRankSum=0.500;DP=30;"
+                        + "ExcessHet=3.0103;MLEAC=1,0;MLEAF=0.500,0.00;MQRankSum=0.000;"
+                        + "RAW_MQandDP=108000,30;ReadPosRankSum=-0.300\tGT:AD:DP:GQ:PL\t"
+                        + "0/1:15,15,0:30:99:279,0,300,324,345,669\n",
+                 "chr1\t100\t.\tT\tC,<NON_REF>\t251.64\t.\tBaseQRankSum=0.500;DP=30;"
+                        + "ExcessHet=3.0103;MLEAC=1,0;MLEAF=0.500,0.00;MQRankSum=0.000;"
+                        + "RAW_MQandDP=108000,30;ReadPosRankSum=-0.300\tGT:AD:DP:GQ:PL\t"
+                        + "0/1:15,15,0:30:99:279,0,300,324,345,669\n"},
+                {"chr1\t101\t.\tA\t<NON_REF>" + String.format(block, 199)},
+                {"chr1\t200\t.\tT\tG,<NON_REF>\t900.77\t.\tDP=25;ExcessHet=3.0103;MLEAC=2,0;"
+                        + "MLEAF=1.00,0.00;RAW_MQandDP=90000,25;ReadPosRankSum=1.200\t"
+                        + "GT:AD:DP:GQ:PL\t1/1:0,25,0:25:75:914,75,0,914,75,914\n",
+                 "chr1\t200\t.\tT\tG,<NON_REF>\t900.77\t.\tDP=25;ExcessHet=3.0103;MLEAC=2,0;"
+                        + "MLEAF=1.00,0.00;RAW_MQandDP=90000,25;ReadPosRankSum=1.500\t"
+                        + "GT:AD:DP:GQ:PL\t1/1:0,25,0:25:75:914,75,0,914,75,914\n"},
+                {"chr1\t201\t.\tA\t<NON_REF>" + String.format(block, 299)},
+                {"chr1\t300\t.\tTAC\tTC,<NON_REF>\t400.60\t.\tDP=22;MLEAC=1,0;"
+                        + "MLEAF=0.500,0.00\tGT:AD:DP:GQ:PL\t0/1:10,12,0:22:99:408,0,300,438,336,774\n"},
+                {"chr1\t303\t.\tT\t<NON_REF>" + String.format(block, 399)},
+                {"chr1\t400\t.\tT\tA,<NON_REF>\t300.60\t.\tDP=28;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:14,14,0:28:60:60,0,80,150,170,230\n",
+                 "chr1\t400\t.\tT\tA,<NON_REF>\t300.60\t.\tDP=28;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:14,14,0:28:50:50,0,80,150,170,230\n"},
+                {"chr1\t401\t.\tA\t<NON_REF>" + String.format(block, 499)},
+                {"chr1\t500\t.\tT\tC,<NON_REF>\t320.00\t.\tDP=26;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:13,13,0:26:99:330,0,330,370,370,740\n",
+                 "chr1\t500\t.\tT\tC,<NON_REF>\t320.00\t.\tDP=26;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:13,13,0:27:99:330,0,330,370,370,740\n"},
+                {"chr1\t501\t.\tA\t<NON_REF>" + String.format(block, 599)},
+                {"chr1\t600\t.\tT\tG,<NON_REF>\t350.00\t.\tDP=24;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PGT:PID:PL:PS\t0|1:12,12,0:24:99:0|1:600_T_G:360,0,360,400,400,800:600\n",
+                 "chr1\t600\t.\tT\tG,<NON_REF>\t350.00\t.\tDP=24;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,12,0:24:99:360,0,360,400,400,800\n"},
+                {"chr1\t601\t.\tA\t<NON_REF>" + String.format(block, 699)},
+                {"chr1\t700\trs700\tT\tC,<NON_REF>\t310.00\t.\tDP=23;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:11,12,0:23:99:320,0,300,350,340,690\n",
+                 "chr1\t700\t.\tT\tC,<NON_REF>\t310.00\t.\tDP=23;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:11,12,0:23:99:320,0,300,350,340,690\n"},
+                {"chr1\t701\t.\tA\t<NON_REF>" + String.format(block, 799)},
+                {"chr1\t800\t.\tT\tA,<NON_REF>\t30.00\t.\tDP=5;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:3,2,0:5:0:0,0,40,9,46,55\n", ""},
+                {"chr1\t801\t.\tA\t<NON_REF>" + String.format(block, 899)},
+                {"chr1\t900\t.\tT\tC,G,<NON_REF>\t500.00\t.\tDP=30;MLEAC=1,1,0;"
+                        + "MLEAF=0.500,0.500,0.00\tGT:AD:DP:GQ:PL\t"
+                        + "1/2:0,15,15,0:30:99:900,450,450,450,0,450,900,450,450,900\n",
+                 "chr1\t900\t.\tT\tC,<NON_REF>\t500.00\t.\tDP=30;MLEAC=1,0;"
+                        + "MLEAF=0.500,0.00\tGT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:450,0,450,500,500,950\n"},
+                {"chr1\t901\t.\tA\t<NON_REF>" + String.format(block, 999)},
+                {"chr1\t1000\t.\tT\tA,<NON_REF>\t280.00\tPASS\tDP=20;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:10,10,0:20:99:290,0,290,320,320,610\n",
+                 "chr1\t1000\t.\tT\tA,<NON_REF>\t280.00\tLowQual\tDP=20;MLEAC=1,0;MLEAF=0.500,0.00\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:10,10,0:20:99:290,0,290,320,320,610\n"},
+                {"chr1\t1001\t.\tA\t<NON_REF>" + String.format(block, 2000)},
+        };
+        final StringBuilder expectedText = new StringBuilder(gvcfHeader);
+        final StringBuilder actualText = new StringBuilder(gvcfHeader);
+        for (final String[] site : expected) {
+            expectedText.append(site[0]);
+            actualText.append(site.length > 1 ? site[1] : site[0]);
+        }
+        // Actual has no record at 800 at all: the blocks either side of it already stop short.
+        final String actualGvcf = actualText.toString();
+        Files.writeString(dir.resolve("vcfc_expected.g.vcf"), expectedText.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_same.g.vcf"), expectedText.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_actual.g.vcf"), actualGvcf, StandardCharsets.UTF_8);
+
+        final String vcfHeader = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Likelihoods\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##INFO=<ID=InbreedingCoeff,Number=1,Type=Float,Description=\"Inbreeding\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n"
+                + "##contig=<ID=chr1,length=100000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n";
+        final String het = "0/1:15,15:30:99:300,0,300";
+        final String[][] sites = {
+                {"chr1\t100\t.\tT\tC\t500.30\tPASS\tAC=2;AF=0.500;AN=4;DP=60;"
+                        + "InbreedingCoeff=-0.3333;QD=8.34\tGT:AD:DP:GQ:PL\t" + het + "\t"
+                        + "0/1:14,16:30:99:320,0,280\n"},
+                {"chr1\t200\t.\tT\tG\t400.00\tPASS\tAC=1;AF=0.250;AN=4;DP=50;QD=8.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:20,0:20:60:0,60,900\n",
+                 "chr1\t200\t.\tT\tG\t400.00\tPASS\tAC=1;AF=0.250;AN=4;DP=52;QD=8.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:20,0:20:60:0,60,900\n"},
+                {"chr1\t300\t.\tT\tA\t350.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40;"
+                        + "InbreedingCoeff=-0.1000;QD=8.75\tGT:AD:DP:GQ:PL\t" + het
+                        + "\t0/0:10,0:10:30:0,30,450\n",
+                 "chr1\t300\t.\tT\tA\t350.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40;"
+                        + "InbreedingCoeff=-0.1100;QD=8.75\tGT:AD:DP:GQ:PL\t" + het
+                        + "\t0/0:10,0:10:30:0,30,450\n"},
+                {"chr1\t400\t.\tT\tC\t300.00\tPASS\tAC=1;AF=0.250;AN=4;DP=30;QD=10.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:12,0:12:36:0,36,500\n",
+                 "chr1\t400\t.\tT\tC\t300.00\tPASS\tAC=1;AF=0.250;AN=4;DP=30;QD=12.00\t"
+                        + "GT:AD:DP:GQ:PL\t" + het + "\t0/0:12,0:12:36:0,36,500\n"},
+                {"chr1\t500\t.\tT\tC,G\t600.00\tPASS\tAC=1,1;AF=0.250,0.250;AN=4;DP=60\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:300,0,300,345,345,690\t"
+                        + "0/2:15,0,15:30:99:300,345,690,0,345,300\n",
+                 "chr1\t500\t.\tT\tC,G\t600.00\tPASS\tAC=1;AF=0.250,0.250;AN=4;DP=60\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:15,15,0:30:99:300,0,300,345,345,690\t"
+                        + "0/2:15,0,15:30:99:300,345,690,0,345,300\n"},
+                {"chr1\t600\t.\tT\tA\t250.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,13:25:70:70,0,300\t0/0:15,0:15:45:0,45,600\n",
+                 "chr1\t600\t.\tT\tA\t250.00\tPASS\tAC=1;AF=0.250;AN=4;DP=40\t"
+                        + "GT:AD:DP:GQ:PL\t0/1:12,13:25:55:55,0,300\t0/0:15,0:15:45:0,45,600\n"},
+        };
+        final StringBuilder vcfExpected = new StringBuilder(vcfHeader);
+        final StringBuilder vcfActual = new StringBuilder(vcfHeader);
+        for (final String[] site : sites) {
+            vcfExpected.append(site[0]);
+            vcfActual.append(site.length > 1 ? site[1] : site[0]);
+        }
+        Files.writeString(dir.resolve("vcfc_expected.vcf"), vcfExpected.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_actual.vcf"), vcfActual.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vcfc_plain.vcf"), vcfHeader.replace("\ts2\n", "\n")
+                + "chr1\t100\t.\tT\tC\t500.30\tPASS\tAC=1;AF=0.500;AN=2;DP=30\t"
+                + "GT:AD:DP:GQ:PL\t" + het + "\n", StandardCharsets.UTF_8);
+        for (final String name : new String[] {"vcfc_expected.g.vcf", "vcfc_same.g.vcf",
+                "vcfc_actual.g.vcf", "vcfc_expected.vcf", "vcfc_actual.vcf", "vcfc_plain.vcf"}) {
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                            dir.resolve(name), new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(dir.resolve(name + ".idx"));
+        }
+    }
+
     static void referenceBlockFixtures(final Path dir) throws Exception {
         final String header = "##fileformat=VCFv4.2\n"
                 + "##ALT=<ID=NON_REF,Description=\"Any other allele\">\n"

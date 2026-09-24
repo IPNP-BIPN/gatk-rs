@@ -933,6 +933,15 @@ fn variant_walker_startup_over(
     parser: &Parser,
     input: String,
 ) -> Result<VariantWalkerStart, Thrown> {
+    let (codec, text) = open_feature_input(&input)?;
+    let header = vcf_dictionary(&text);
+    variant_walker_validation(parser, input, text, codec, header)
+}
+
+/// A driving feature file opened: the codec its name resolves to and its text, decompressed when
+/// it is block compressed.
+fn open_feature_input(input: &str) -> Result<(gatk_tools::feature_codec::Codec, String), Thrown> {
+    let input = input.to_string();
     let codec = gatk_tools::feature_codec::codec_for(&input).ok_or_else(|| {
         Thrown::user(
             index_feature_file::Refusal::NoSuitableCodecs {
@@ -964,9 +973,21 @@ fn variant_walker_startup_over(
     } else {
         String::from_utf8_lossy(&bytes).into_owned()
     };
+    Ok((codec, text))
+}
 
-    let header = vcf_dictionary(&text);
-
+/// The half of a variant walker's startup that follows the driving file's opening: the reads,
+/// the dictionaries compared, and `-L` resolved, against `header` as the features' dictionary.
+///
+/// A `MultiVariantWalker` reaches it with the dictionary its inputs' headers merge into, which is
+/// the one its data source reports.
+fn variant_walker_validation(
+    parser: &Parser,
+    input: String,
+    text: String,
+    codec: gatk_tools::feature_codec::Codec,
+    header: SamHeader,
+) -> Result<VariantWalkerStart, Thrown> {
     // `--read-index` is counted against the READS inputs, and both its refusals fire while they
     // are opened -- which a variant walker does whenever a command line names any, and before
     // anything decides whether the dictionaries are compared at all.
@@ -6469,6 +6490,270 @@ pub fn collect_sv_evidence(parser: &Parser) -> Outcome {
         write_file(path, text.as_bytes())?;
     }
     Ok(None)
+}
+
+/// `VCFComparator`: two VCFs walked together, and the first difference no argument tolerates.
+///
+/// The merge, the grouping by overlap, the trim and every comparison are
+/// [`gatk_tools::vcf_comparator`], replayed against its golden. The runner is the
+/// `MultiVariantWalker` around them:
+///
+/// * **each `--variant` is named by its tag**, which is what every record carries as its source and
+///   what `expected` and `actual` are tested against; an untagged one is named by its path;
+/// * **the inputs' dictionaries merge into the features' dictionary**, and the startup that
+///   validates it against the reference and resolves `-L` is a variant walker's. Two inputs whose
+///   dictionaries differ are the port's limitation rather than a merge;
+/// * **`onTraversalStart` counts the inputs before it looks for `expected`**, and builds the
+///   annotation engine after both; an argument that configures that engine is the port's
+///   limitation, since the engine is only ever reached through the trim this port refuses;
+/// * **a difference inside the traversal is wrapped** as a `GATKException` naming the record the
+///   walker was on, and one in the last group is the plain user error.
+pub fn vcf_comparator(parser: &Parser) -> Outcome {
+    use gatk_tools::vcf_comparator as comparator;
+
+    let _ = resolve_read_filters(parser, "VCFComparator")?;
+    let tagged: Vec<(String, String)> = parser
+        .definitions()
+        .iter()
+        .find(|definition| definition.long_name() == "variant")
+        .map(|definition| {
+            let one = |value: &Value| match value {
+                Value::Tagged { value, tag, .. } => Some((
+                    value.clone(),
+                    tag.clone().unwrap_or_else(|| absolute_path(value)),
+                )),
+                Value::Str(text) => Some((text.clone(), absolute_path(text))),
+                _ => None,
+            };
+            match &definition.value {
+                Value::List(values) => values.iter().filter_map(one).collect(),
+                other => one(other).into_iter().collect(),
+            }
+        })
+        .unwrap_or_default();
+    if tagged.is_empty() {
+        return Err(Thrown::command_line(
+            "Argument variant was missing: Argument 'variant' is required",
+        ));
+    }
+
+    // `MultiVariantDataSource`: every input opened, then the merged header and its samples.
+    let mut opened = Vec::new();
+    for (path, name) in &tagged {
+        let (codec, text) = open_feature_input(path)?;
+        let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+            failure: Failure::User,
+            exception: "htsjdk.tribble.TribbleException",
+            message: Some(failure.error.message()),
+        })?;
+        opened.push((path.clone(), name.clone(), codec, text, file));
+    }
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    for (index, (_, name, ..)) in opened.iter().enumerate() {
+        if opened[..index].iter().any(|(_, other, ..)| other == name) {
+            return Err(limitation(&format!(
+                "Two --variant inputs named {name} are merged by name in GATK, which this port \
+                 does not carry yet."
+            )));
+        }
+    }
+    let dictionaries: Vec<SamHeader> = opened
+        .iter()
+        .map(|(_, _, _, text, _)| vcf_dictionary(text))
+        .collect();
+    let names_of = |header: &SamHeader| -> Vec<(String, i32)> {
+        header
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length))
+            .collect()
+    };
+    if dictionaries
+        .iter()
+        .any(|header| names_of(header) != names_of(&dictionaries[0]))
+    {
+        return Err(limitation(
+            "--variant inputs whose sequence dictionaries differ are merged into one by GATK, \
+             which this port does not carry yet.",
+        ));
+    }
+    if dictionaries[0].sequences.is_empty() {
+        return Err(limitation(
+            "--variant inputs with no ##contig line have their dictionary derived from an index \
+             by GATK, which this port does not carry yet for more than one input.",
+        ));
+    }
+    let contigs: Vec<String> = dictionaries[0]
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let (first_path, _, first_codec, first_text, _) = &opened[0];
+    let VariantWalkerStart { intervals, .. } = variant_walker_validation(
+        parser,
+        first_path.clone(),
+        first_text.clone(),
+        *first_codec,
+        dictionaries[0].clone(),
+    )?;
+
+    // `onTraversalStart`: the count, then the tag, then the annotation engine.
+    let names: Vec<String> = opened.iter().map(|(_, name, ..)| name.clone()).collect();
+    comparator::check_inputs(&names).map_err(|error| Thrown::user(error.message()))?;
+    for configured in [
+        "annotation",
+        "annotation-group",
+        "annotations-to-exclude",
+        "pedigree",
+        "founder-id",
+    ] {
+        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
+            return Err(limitation(&format!(
+                "--{configured} configures GATK's annotation engine, which this port does not \
+                 carry yet."
+            )));
+        }
+    }
+
+    // `-L` queries every input by interval, so each needs an index before a record is read.
+    let spans = gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref());
+    if spans.is_some() {
+        if let Some((path, ..)) = opened.iter().find(|(path, ..)| !has_feature_index(path)) {
+            return Err(Thrown::user(
+                gatk_tools::count_variants::CountVariantsError::IntervalsWithoutRandomAccess {
+                    path: path.clone(),
+                }
+                .message(),
+            ));
+        }
+    }
+    let inputs: Vec<comparator::Input> = opened
+        .iter()
+        .map(|(_, name, _, _, file)| {
+            let loci: Vec<Locus> = file
+                .records
+                .iter()
+                .map(|record| Locus {
+                    contig: record.contig.clone(),
+                    start: record.start as i32,
+                    stop: record.stop as i32,
+                })
+                .collect();
+            let reached = gatk_engine::variant_source::traverse(&loci, spans);
+            let records = reached
+                .iter()
+                .filter_map(|locus| {
+                    let index = loci.iter().position(|other| std::ptr::eq(other, *locus))?;
+                    Some(file.records[index].clone())
+                })
+                .collect();
+            comparator::Input {
+                name: name.clone(),
+                samples: file.header.samples.clone(),
+                records,
+            }
+        })
+        .collect();
+
+    let number = |name: &str, default: i32| number_or(parser, name, default);
+    let real = |name: &str, default: f64| {
+        scalar(parser, name)
+            .and_then(|text| text.parse::<f64>().ok())
+            .unwrap_or(default)
+    };
+    let defaults = comparator::Options::default();
+    let options = comparator::Options {
+        warn_on_errors: flag(parser, "warn-on-errors"),
+        finish_before_failing: flag(parser, "finish-before-failing"),
+        default_ploidy: number("default-ploidy", 2).max(0) as usize,
+        ignore_quals: flag(parser, "ignore-quals"),
+        qual_change_allowed: real("qual-change-allowed", defaults.qual_change_allowed),
+        inbreeding_coeff_change_allowed: real(
+            "inbreeding-coeff-change-allowed",
+            defaults.inbreeding_coeff_change_allowed,
+        ),
+        good_qual_threshold: real("good-qual-threshold", defaults.good_qual_threshold),
+        dp_change_allowed: number("dp-change-allowed", 0),
+        ranksum_change_allowed: real("ranksum-change-allowed", 0.0),
+        likelihood_change_allowed: number("likelihood-change-allowed", 0),
+        ignore_non_ref_data: flag(parser, "ignore-non-ref-data"),
+        ignore_annotations: flag(parser, "ignore-annotations"),
+        ignore_genotype_annotations: flag(parser, "ignore-genotype-annotations"),
+        ignore_genotype_phasing: flag(parser, "ignore-genotype-phasing"),
+        ignore_filters: flag(parser, "ignore-filters"),
+        ignore_attributes: arguments(parser, "ignore-attribute"),
+        positions_only: flag(parser, "positions-only"),
+        allow_new_stars: flag(parser, "allow-new-stars"),
+        allow_extra_alleles: flag(parser, "allow-extra-alleles"),
+        allow_missing_stars: flag(parser, "allow-missing-stars"),
+        ignore_star_attributes: flag(parser, "ignore-star-attributes"),
+        allow_nan_mismatch: flag(parser, "allow-nan-mismatch"),
+        mute_acceptable_diffs: flag(parser, "mute-acceptable-diffs"),
+        ignore_hom_ref_attributes: flag(parser, "ignore-hom-ref-attributes"),
+        ignore_dbsnp_ids: flag(parser, "ignore-dbsnp-ids"),
+        ignore_gq0: flag(parser, "ignore-gq0"),
+        ignore_some_multi_allelics: flag(parser, "ignore-some-multi-allelics"),
+        annotations_to_keep: arguments(parser, "annotations-to-keep"),
+        enable_all_annotations: flag(parser, "enable-all-annotations"),
+        disable_tool_default_annotations: flag(parser, "disable-tool-default-annotations"),
+        reference_padding: number("ref-padding", 1),
+        ignore_variants_starting_outside_interval: flag(
+            parser,
+            "ignore-variants-starting-outside-interval",
+        ),
+        ignore_reference_blocks: flag(parser, "ignore-reference-blocks"),
+    };
+
+    let reference: Option<Vec<String>> = reference_dictionary(parser)?.map(|header| {
+        header
+            .sequences
+            .iter()
+            .map(|sequence| sequence.name.clone())
+            .collect()
+    });
+    match comparator::compare(&inputs, &contigs, spans, reference.as_deref(), &options) {
+        Ok(finished) => {
+            for warning in finished.warnings {
+                eprintln!("WARN  VCFComparator - {warning}");
+            }
+            Ok(None)
+        }
+        Err(stopped) => Err(match (stopped.failure, stopped.at) {
+            (comparator::Failure::Limitation(message), _) => {
+                Thrown::non_user(PORT_LIMITATION, message)
+            }
+            // `MultiVariantWalker.traverse` wraps whatever `apply` throws, naming the record it
+            // was on, and the cause is not what prints.
+            (_, Some((input, index))) => {
+                let record = &inputs[input].records[index];
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "Exception thrown at {}:{} {}",
+                        record.contig,
+                        record.start,
+                        java_variant_context_string(record, &inputs[input].name)
+                    ),
+                )
+            }
+            (comparator::Failure::User(message), None) => Thrown::user(message),
+            (comparator::Failure::Runtime { class, message }, None) => {
+                Thrown::non_user(class, message)
+            }
+        }),
+    }
+}
+
+/// `FeatureInput.getName()` for an untagged input: its path made absolute.
+fn absolute_path(path: &str) -> String {
+    std::path::absolute(path)
+        .map(|absolute| absolute.display().to_string())
+        .unwrap_or_else(|_| path.to_string())
 }
 
 /// The name `VariantContext.Type` prints, which the two GVCF messages quote.
