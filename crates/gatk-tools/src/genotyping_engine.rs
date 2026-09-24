@@ -142,10 +142,19 @@ pub(crate) fn gq_of_log10(log10: f64) -> i32 {
 /// `VCFConstants.MAX_GENOTYPE_QUAL`.
 const MAX_GENOTYPE_QUAL: f64 = 99.0;
 
-/// `makeGenotypeCall(ploidy, gb, PREFER_PLS, likelihoods, allelesToUse, originalGT, gpc)`.
-fn make_genotype_call_prefer_pls(
+/// The two `GenotypeAssignmentMethod`s the genotyper reaches: `PREFER_PLS` for the calls it
+/// emits, `BEST_MATCH_TO_ORIGINAL` for the reduction to `--max-alternate-alleles`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubsetMethod {
+    PreferPls,
+    BestMatchToOriginal,
+}
+
+/// `makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse, originalGT, gpc)`.
+fn make_genotype_call(
     ploidy: usize,
     genotype: &mut Genotype,
+    method: SubsetMethod,
     likelihoods: Option<&[f64]>,
     targets: &[Allele],
     original: &Genotype,
@@ -162,6 +171,18 @@ fn make_genotype_call_prefer_pls(
             genotype.extended.clear();
             return;
         }
+    }
+    if method == SubsetMethod::BestMatchToOriginal {
+        // "no-calls are just going to cause problems": a GQ-0 call whose best likelihood was
+        // already the reference stays uncalled.
+        let uninformative =
+            original.gq == Some(0) && original.pl.as_ref().is_none_or(|pl| pl.first() == Some(&0));
+        genotype.alleles = if uninformative {
+            vec![Allele::no_call(); ploidy]
+        } else {
+            best_match_to_original(targets, &original.alleles)
+        };
+        return;
     }
     let informative = likelihoods.filter(|gls| gls.iter().sum::<f64>() < SUM_GL_THRESH_NOCALL);
     let Some(gls) = informative else {
@@ -198,6 +219,24 @@ pub fn subset_alleles_prefer_pls(
     default_ploidy: usize,
     original_alleles: &[Allele],
     alleles_to_keep: &[Allele],
+) -> Result<Vec<Genotype>, EngineError> {
+    subset_alleles(
+        genotypes,
+        default_ploidy,
+        original_alleles,
+        alleles_to_keep,
+        SubsetMethod::PreferPls,
+    )
+}
+
+/// `AlleleSubsettingUtils.subsetAlleles(genotypes, defaultPloidy, originalAlleles, allelesToKeep,
+/// null, method)`.
+pub fn subset_alleles(
+    genotypes: &[Genotype],
+    default_ploidy: usize,
+    original_alleles: &[Allele],
+    alleles_to_keep: &[Allele],
+    method: SubsetMethod,
 ) -> Result<Vec<Genotype>, EngineError> {
     let kept: Vec<usize> = alleles_to_keep
         .iter()
@@ -259,9 +298,10 @@ pub fn subset_alleles_prefer_pls(
         }
         built.pl = new_likelihoods.as_deref().map(pls_of);
 
-        make_genotype_call_prefer_pls(
+        make_genotype_call(
             g.ploidy(),
             &mut built,
+            method,
             new_likelihoods.as_deref(),
             alleles_to_keep,
             g,
@@ -278,6 +318,63 @@ pub fn subset_alleles_prefer_pls(
         out.push(built);
     }
     Ok(out)
+}
+
+/// `AlleleSubsettingUtils.calculateMostLikelyAlleles(vc, defaultPloidy, numAltAllelesToKeep,
+/// false)`: the reference, `<NON_REF>` if present, and the alternates whose summed likelihood
+/// margins are largest.
+///
+/// Each sample adds, to every alternate of its most likely genotype, how far that genotype's
+/// likelihood is from the hom-ref's. The samples are visited in name order, which is the order
+/// the sums are accumulated in. Ties keep the lower index: the sort is stable and descending.
+pub fn most_likely_alleles(
+    vc: &VariantContext,
+    default_ploidy: usize,
+    keep: usize,
+) -> Result<Vec<Allele>, EngineError> {
+    let has_non_ref = vc.alleles.contains(&non_ref());
+    let proper_alternates = vc.alleles.len() - if has_non_ref { 2 } else { 1 };
+    if keep >= proper_alternates {
+        return Ok(vc.alleles.clone());
+    }
+    let mut sums = vec![0.0f64; vc.alleles.len()];
+    let mut ordered: Vec<&Genotype> = vc.genotypes.iter().collect();
+    ordered.sort_by(|a, b| a.sample_name.cmp(&b.sample_name));
+    for genotype in ordered {
+        let Some(pl) = &genotype.pl else { continue };
+        let gls: Vec<f64> = pl.iter().map(|p| *p as f64 / -10.0).collect();
+        let best = max_element_index(&gls);
+        let margin = (gls[best] - gls[0]).abs();
+        let ploidy = if genotype.ploidy() > 0 {
+            genotype.ploidy()
+        } else {
+            default_ploidy
+        };
+        let called = genotypes_in_canonical_order(ploidy, vc.alleles.len())
+            .into_iter()
+            .nth(best)
+            .unwrap_or_default();
+        for (allele, sum) in sums.iter_mut().enumerate().skip(1) {
+            if called.contains(&allele) {
+                *sum += margin;
+            }
+        }
+    }
+    let non_ref_index = vc.alleles.iter().position(|a| *a == non_ref());
+    let mut candidates: Vec<usize> = (1..vc.alleles.len())
+        .filter(|index| Some(*index) != non_ref_index)
+        .collect();
+    candidates.sort_by(|a, b| sums[*b].total_cmp(&sums[*a]));
+    candidates.truncate(keep);
+    Ok(vc
+        .alleles
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            *index == 0 || Some(*index) == non_ref_index || candidates.contains(index)
+        })
+        .map(|(_, allele)| allele.clone())
+        .collect())
 }
 
 /// `GATKVariantContextUtils.subsetToRefOnly`: every sample the reference, keeping only DP and GQ.
@@ -385,22 +482,38 @@ impl GenotypingEngine {
             return Ok(None);
         }
         let default_ploidy = self.configuration.sample_ploidy;
-        if self.configuration.max_alternate_alleles < vc.alleles.len() - 1 {
-            return Err(EngineError::Limitation(format!(
-                "a site with more alternates than --max-alternate-alleles ({}) is reduced to the \
-                 most likely ones by GATK, which this port does not carry yet.",
-                self.configuration.max_alternate_alleles
-            )));
-        }
+        // The reduction to `--max-alternate-alleles`: the AF calculation sees only the most likely
+        // alternates, with the genotypes matched to them, while everything after it still reads
+        // the ORIGINAL record.
+        let (reduced_alleles, reduced_genotypes) = if self.configuration.max_alternate_alleles
+            < vc.alleles.len() - 1
+        {
+            let keep =
+                most_likely_alleles(vc, default_ploidy, self.configuration.max_alternate_alleles)?;
+            let genotypes = if keep.len() == 1 {
+                subset_to_ref_only(vc, default_ploidy)
+            } else {
+                subset_alleles(
+                    &vc.genotypes,
+                    default_ploidy,
+                    &vc.alleles,
+                    &keep,
+                    SubsetMethod::BestMatchToOriginal,
+                )?
+            };
+            (keep, genotypes)
+        } else {
+            (vc.alleles.clone(), vc.genotypes.to_vec())
+        };
         let result = self.calculator.calculate_with_ploidy(
             &vc.contig,
             vc.start,
-            &vc.alleles,
-            &vc.genotypes,
+            &reduced_alleles,
+            &reduced_genotypes,
             default_ploidy,
         )?;
         let (alternatives, mle_counts, monomorphic) =
-            self.output_allele_subset(&result, &vc.alleles, vc);
+            self.output_allele_subset(&result, &reduced_alleles, vc);
 
         // `+ 0.0` turns a -0.0 into 0.0, twice, as the reference writes it.
         let log10_confidence = if !monomorphic {
@@ -439,8 +552,14 @@ impl GenotypingEngine {
         } else {
             subset_alleles_prefer_pls(&vc.genotypes, default_ploidy, &vc.alleles, &output_alleles)?
         };
-        out.attributes =
-            self.compose_call_attributes(vc, &mle_counts, &result, &output_alleles, &genotypes);
+        out.attributes = self.compose_call_attributes(
+            vc,
+            &reduced_alleles,
+            &mle_counts,
+            &result,
+            &output_alleles,
+            &genotypes,
+        );
         out.genotypes = GenotypesContext::new(genotypes);
         Ok(Some(out))
     }
@@ -449,6 +568,7 @@ impl GenotypingEngine {
     fn compose_call_attributes(
         &self,
         vc: &VariantContext,
+        genotyped_alleles: &[Allele],
         mle_counts: &[i32],
         result: &AfCalculationResult,
         output_alleles: &[Allele],
@@ -480,11 +600,10 @@ impl GenotypingEngine {
             let mut quals: Vec<i32> = Vec::new();
             if result.log10_p_ref_by_allele.len() > 1 {
                 for allele in output_alleles.iter().skip(1) {
-                    let index = vc
-                        .alleles
+                    let index = genotyped_alleles
                         .iter()
                         .position(|a| a == allele)
-                        .expect("an allele of the site")
+                        .expect("an allele the AF calculation saw")
                         - 1;
                     quals.push(java_round(result.log10_p_ref_by_allele[index] * -10.0) as i32);
                 }
