@@ -41,6 +41,8 @@ const MASK: i64 = (1 << 48) - 1;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JavaRandom {
     seed: i64,
+    /// `nextNextGaussian` while `haveNextNextGaussian` holds, kept as bits so the type stays `Eq`.
+    next_next_gaussian: Option<u64>,
 }
 
 impl JavaRandom {
@@ -48,6 +50,7 @@ impl JavaRandom {
     pub fn new(seed: i64) -> Self {
         JavaRandom {
             seed: (seed ^ MULTIPLIER) & MASK,
+            next_next_gaussian: None,
         }
     }
 
@@ -59,6 +62,8 @@ impl JavaRandom {
     /// `setSeed`, which is what `Utils.resetRandomGenerator` calls.
     pub fn set_seed(&mut self, seed: i64) {
         self.seed = (seed ^ MULTIPLIER) & MASK;
+        // `haveNextNextGaussian = false`: a reseed discards the cached second deviate.
+        self.next_next_gaussian = None;
     }
 
     /// `protected int next(int bits)`.
@@ -111,6 +116,36 @@ impl JavaRandom {
         let high = (self.next(26) as i64) << 27;
         let low = self.next(27) as i64;
         (high.wrapping_add(low) as f64) * (1.0f64 / (1u64 << 53) as f64)
+    }
+
+    /// `nextGaussian()`: Marsaglia's polar method, as the specification states it.
+    ///
+    /// ```text
+    /// do { v1 = 2 * nextDouble() - 1; v2 = 2 * nextDouble() - 1; s = v1 * v1 + v2 * v2; }
+    /// while (s >= 1 || s == 0);
+    /// multiplier = StrictMath.sqrt(-2 * StrictMath.log(s) / s);
+    /// nextNextGaussian = v2 * multiplier; haveNextNextGaussian = true; return v1 * multiplier;
+    /// ```
+    ///
+    /// Each accepted pair yields two deviates: the first is returned and the second is cached for
+    /// the next call, so a consumer drawing one Gaussian moves the stream by a whole pair only
+    /// every other time. The logarithm is `StrictMath`'s, which is FDLIBM and not the correctly
+    /// rounded one ([`jmath::strict_math::log`], htsjdk-rs decision 0044).
+    pub fn next_gaussian(&mut self) -> f64 {
+        if let Some(bits) = self.next_next_gaussian.take() {
+            return f64::from_bits(bits);
+        }
+        loop {
+            let v1 = 2.0 * self.next_double() - 1.0;
+            let v2 = 2.0 * self.next_double() - 1.0;
+            let s = v1 * v1 + v2 * v2;
+            if s >= 1.0 || s == 0.0 {
+                continue;
+            }
+            let multiplier = jmath::strict_math::sqrt(-2.0 * jmath::strict_math::log(s) / s);
+            self.next_next_gaussian = Some((v2 * multiplier).to_bits());
+            return v1 * multiplier;
+        }
     }
 
     /// `nextFloat()`: 24 bits scaled by 2^-24.

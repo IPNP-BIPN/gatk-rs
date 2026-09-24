@@ -22,8 +22,8 @@
 //!
 //! Each alternate's quality-by-depth goes through the same replacement at 35 that `QD` does, so a
 //! multiallelic site can have one deterministic entry and one drawn from a random generator in the
-//! same comma-separated field. This port refuses each entry that reaches the branch, for the reason
-//! recorded in [`crate::site_statistics`], and reports which ones.
+//! same comma-separated field. The alternates draw in their order, from the generator the caller
+//! passes, which is how [`crate::site_statistics::fix_too_high_qd`] reproduces the reference.
 //!
 //! # The reference depth is added to **every** alternate's denominator
 //!
@@ -63,7 +63,8 @@ use htsjdk_vcf::variant::VariantContext;
 
 use crate::heterozygosity::{heterozygosity_counts, HeterozygosityCounts};
 use crate::rank_sum::format_decimals;
-use crate::site_statistics::QualByDepthError;
+use crate::site_statistics::fix_too_high_qd;
+use gatk_engine::java_random::JavaRandom;
 
 /// `GATKVCFConstants.AS_QUAL_BY_DEPTH_KEY`.
 pub const AS_QUAL_BY_DEPTH_KEY: &str = "AS_QD";
@@ -88,8 +89,6 @@ const LIST_DELIMITER: char = ',';
 const MISSING_VALUE: &str = ".";
 /// `AS_InbreedingCoeff.MIN_SAMPLES`.
 const MIN_SAMPLES: usize = 10;
-/// `QualByDepth.MAX_QD_BEFORE_FIXING`.
-const MAX_QD_BEFORE_FIXING: f64 = 35.0;
 
 /// What this family refuses.
 #[derive(Debug, Clone, PartialEq)]
@@ -212,20 +211,17 @@ fn is_het_or_hom_var(genotype: &htsjdk_vcf::variant::Genotype) -> bool {
     called.len() >= 2 && !called.iter().all(|a| a.is_reference())
 }
 
-/// One `AS_QD` entry: either a value or the refusal of the randomised branch.
-pub type AsQualByDepthEntry = Result<f64, QualByDepthError>;
-
 /// `AS_QualByDepth.finalizeRawData`: one quality-by-depth per alternate.
 ///
 /// `None` is the reference's null: neither quality key present, or no genotypes, or no `AD`
 /// anywhere.
-#[allow(clippy::type_complexity)]
 pub fn as_qual_by_depth(
     vc: &VariantContext,
     as_qual: Option<&[String]>,
     as_raw_qual_approx: Option<&str>,
     as_variant_depth: Option<&str>,
-) -> Result<Option<Vec<AsQualByDepthEntry>>, AsSiteStatisticError> {
+    random: &mut JavaRandom,
+) -> Result<Option<Vec<f64>>, AsSiteStatisticError> {
     if as_qual.is_none() && as_raw_qual_approx.is_none() {
         return Ok(None);
     }
@@ -257,14 +253,7 @@ pub fn as_qual_by_depth(
     for (index, qual) in quals.iter().enumerate() {
         // The reference's depth is added to every alternate's denominator; see the module note.
         let denominator = depths[index + 1] as f64 + reference_depth;
-        let value = *qual as f64 / denominator;
-        if value >= MAX_QD_BEFORE_FIXING {
-            out.push(Err(QualByDepthError::RandomisedAboveThreshold {
-                raw: value,
-            }));
-        } else {
-            out.push(Ok(value));
-        }
+        out.push(fix_too_high_qd(*qual as f64 / denominator, random));
     }
     Ok(Some(out))
 }
@@ -516,11 +505,10 @@ mod tests {
         genotype.ad = Some(vec![10, 4, 6]);
         vc.genotypes.push(genotype);
         let quals = vec!["70".to_string(), "140".to_string()];
-        let out = as_qual_by_depth(&vc, Some(&quals), None, None)
+        let out = as_qual_by_depth(&vc, Some(&quals), None, None, &mut JavaRandom::gatk())
             .expect("a parse")
             .expect("a value");
         // 70 / (4 + 10) = 5, and 140 / (6 + 10) = 8.75: the ten reference reads count twice.
-        assert_eq!(out[0], Ok(5.0));
-        assert_eq!(out[1], Ok(8.75));
+        assert_eq!(out, vec![5.0, 8.75]);
     }
 }

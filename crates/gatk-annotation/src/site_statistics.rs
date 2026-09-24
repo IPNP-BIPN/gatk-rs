@@ -18,11 +18,14 @@
 //! Gaussian jitter. The value written to the VCF is then a draw from a random generator, and two
 //! runs of the same tool on the same data agree only because the generator is seeded.
 //!
-//! This port **refuses** that branch rather than approximating it: `nextGaussian` goes through
-//! `StrictMath.log`, which is fdlibm and not the correctly-rounded logarithm this crate has.
-//! Measured on the jmath corpus, `Math.log` and `StrictMath.log` differ on 186 of 44,996 points,
-//! so the ported logarithm is not a substitute. [`QualByDepthError::RandomisedAboveThreshold`] is
-//! that refusal, and the suite measures where the boundary is rather than what is past it.
+//! The draw is reproduced, not refused. `nextGaussian` goes through `StrictMath.log`, which is
+//! FDLIBM and differs from the correctly rounded `Math.log` on 186 of the jmath corpus's 44,996
+//! points; with `jmath::strict_math::log` (htsjdk-rs decision 0044) it is exact, and
+//! [`gatk_engine::java_random::JavaRandom::next_gaussian`] is the polar method on top of it. What
+//! the caller owns is the generator: `Utils.getRandomGenerator()` is one static stream per JVM, so
+//! the value a site gets depends on how many Gaussians every earlier site drew. [`qual_by_depth`]
+//! therefore takes the generator rather than making one, and [`fix_too_high_qd`] advances it only
+//! when the ratio reaches 35.
 //!
 //! # The depth `QD` divides by is not `DP`
 //!
@@ -39,6 +42,7 @@
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::context::ReferenceContext;
+use gatk_engine::java_random::JavaRandom;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::{Genotype, VariantContext};
 
@@ -58,11 +62,20 @@ pub const LIKELIHOOD_RANK_SUM_KEY: &str = "LikelihoodRankSum";
 /// `QualByDepth.MAX_QD_BEFORE_FIXING`.
 const MAX_QD_BEFORE_FIXING: f64 = 35.0;
 
-/// What this port refuses rather than inventing.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum QualByDepthError {
-    /// `QD >= 35`, where the reference replaces the value with a random draw. See the module note.
-    RandomisedAboveThreshold { raw: f64 },
+/// `QualByDepth.IDEAL_HIGH_QD`.
+const IDEAL_HIGH_QD: f64 = 30.0;
+
+/// `QualByDepth.JITTER_SIGMA`.
+const JITTER_SIGMA: f64 = 3.0;
+
+/// `QualByDepth.fixTooHighQD`: a ratio at or above 35 becomes 30 plus a Gaussian with a standard
+/// deviation of 3, drawn from the run's one generator. Below 35 the generator is not touched.
+pub fn fix_too_high_qd(qd: f64, random: &mut JavaRandom) -> f64 {
+    if qd < MAX_QD_BEFORE_FIXING {
+        qd
+    } else {
+        IDEAL_HIGH_QD + random.next_gaussian() * JITTER_SIGMA
+    }
 }
 
 /// Whether a genotype is het or hom-var, which is the only kind `QD` counts.
@@ -116,24 +129,25 @@ pub fn qual_by_depth_depth(
     depth
 }
 
-/// `QualByDepth.annotate`, with the randomised branch refused.
+/// `QualByDepth.annotate`, drawing from `random` when the ratio reaches 35.
 pub fn qual_by_depth(
     vc: &VariantContext,
     likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     raw_qual_approx: Option<i32>,
-) -> Result<Option<String>, QualByDepthError> {
+    random: &mut JavaRandom,
+) -> Option<String> {
     // `vc.hasLog10PError()` is false for a QUAL of `.`, which htsjdk stores as
     // `NO_LOG10_PERROR`.
     let has_log10_perror = vc.log10_p_error != 1.0;
     if !has_log10_perror && raw_qual_approx.is_none() {
-        return Ok(None);
+        return None;
     }
     if vc.genotypes.is_empty() {
-        return Ok(None);
+        return None;
     }
     let depth = qual_by_depth_depth(vc, likelihoods);
     if depth == 0 {
-        return Ok(None);
+        return None;
     }
     let qual = if has_log10_perror {
         -10.0 * vc.log10_p_error
@@ -141,10 +155,7 @@ pub fn qual_by_depth(
         raw_qual_approx.unwrap_or(0) as f64
     };
     let qd = qual / depth as f64;
-    if qd >= MAX_QD_BEFORE_FIXING {
-        return Err(QualByDepthError::RandomisedAboveThreshold { raw: qd });
-    }
-    Ok(Some(format_two_decimals(qd)))
+    Some(format_two_decimals(fix_too_high_qd(qd, random)))
 }
 
 /// `String.format("%.2f", value)`, half-up on the decimal expansion as Java rounds it.
@@ -243,31 +254,35 @@ impl crate::rank_sum::RankSumTest for LikelihoodRankSumTest {
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_randomised_branch_is_refused_rather_than_drawn() {
-        let mut vc = VariantContext::new(
-            "chr1",
-            100,
-            vec![
-                htsjdk_vcf::allele::Allele::from_str("A", true).unwrap(),
-                htsjdk_vcf::allele::Allele::from_str("C", false).unwrap(),
-            ],
-        );
+    fn site(qual: f64, ad: [i32; 2]) -> VariantContext {
+        let alleles = vec![
+            htsjdk_vcf::allele::Allele::from_str("A", true).unwrap(),
+            htsjdk_vcf::allele::Allele::from_str("C", false).unwrap(),
+        ];
+        let mut vc = VariantContext::new("chr1", 100, alleles.clone());
         vc.stop = 100;
-        vc.log10_p_error = -100.0;
-        let mut genotype = Genotype::new(
-            "s1",
-            vec![
-                htsjdk_vcf::allele::Allele::from_str("A", true).unwrap(),
-                htsjdk_vcf::allele::Allele::from_str("C", false).unwrap(),
-            ],
-        );
-        genotype.ad = Some(vec![5, 5]);
+        vc.log10_p_error = qual / -10.0;
+        let mut genotype = Genotype::new("s1", alleles);
+        genotype.ad = Some(ad.to_vec());
         vc.genotypes.push(genotype);
-        // 1000 / 10 = 100, well past the threshold.
-        assert!(matches!(
-            qual_by_depth(&vc, None, None),
-            Err(QualByDepthError::RandomisedAboveThreshold { .. })
-        ));
+        vc
+    }
+
+    #[test]
+    fn a_ratio_past_35_is_replaced_by_a_draw_and_one_below_draws_nothing() {
+        let mut random = JavaRandom::gatk();
+        // 300 / 10 = 30: written as is, and the generator is not touched.
+        assert_eq!(
+            qual_by_depth(&site(300.0, [5, 5]), None, None, &mut random).as_deref(),
+            Some("30.00")
+        );
+        assert_eq!(random, JavaRandom::gatk());
+        // 1000 / 10 = 100: replaced by 30 plus three times the stream's first Gaussian.
+        let expected = 30.0 + JavaRandom::gatk().next_gaussian() * 3.0;
+        assert_eq!(
+            qual_by_depth(&site(1000.0, [5, 5]), None, None, &mut random),
+            Some(format_two_decimals(expected))
+        );
+        assert_ne!(random, JavaRandom::gatk());
     }
 }
