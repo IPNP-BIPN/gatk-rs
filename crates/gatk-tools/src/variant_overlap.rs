@@ -72,36 +72,41 @@ fn events(vc: &VariantContext) -> Result<Vec<Event>, String> {
     vc.alleles[1..]
         .iter()
         .map(|alternate| {
-            let pair = EngineVariant {
-                contig: vc.contig.clone(),
-                start: vc.start as i32,
-                stop: vc.stop as i32,
-                alleles: vec![
-                    EngineAllele::new(vc.alleles[0].display_string().as_bytes(), true),
-                    EngineAllele::new(alternate.display_string().as_bytes(), false),
-                ],
-                genotypes: Vec::new(),
-                attributes: Vec::new(),
-            };
-            let trimmed = trim_alleles(&pair, true, true).map_err(|error| format!("{error:?}"))?;
-            // A symbolic allele or a spanning deletion comes back as it went in.
-            let cut = |index: usize, original: &Allele| {
-                if original.is_symbolic()
-                    || trimmed.alleles[index].bases == pair.alleles[index].bases
-                {
-                    Ok(original.clone())
-                } else {
-                    Allele::create(&trimmed.alleles[index].bases, index == 0)
-                        .map_err(|_| "Null alleles are not supported".to_string())
-                }
-            };
-            event(
-                i64::from(trimmed.start),
-                &cut(0, &vc.alleles[0])?,
-                &cut(1, alternate)?,
-            )
+            let (start, reference, alternate) = trim_pair(vc, alternate)?;
+            event(start, &reference, &alternate)
         })
         .collect()
+}
+
+/// `trimAlleles(new VariantContextBuilder(vc).alleles(ref, alternate).make(), true, true)`: the
+/// start and the two alleles of one pair cut out of a record. A symbolic allele or a spanning
+/// deletion comes back as it went in.
+pub fn trim_pair(vc: &VariantContext, alternate: &Allele) -> Result<(i64, Allele, Allele), String> {
+    let pair = EngineVariant {
+        contig: vc.contig.clone(),
+        start: vc.start as i32,
+        stop: vc.stop as i32,
+        alleles: vec![
+            EngineAllele::new(vc.alleles[0].display_string().as_bytes(), true),
+            EngineAllele::new(alternate.display_string().as_bytes(), false),
+        ],
+        genotypes: Vec::new(),
+        attributes: Vec::new(),
+    };
+    let trimmed = trim_alleles(&pair, true, true).map_err(|error| format!("{error:?}"))?;
+    let cut = |index: usize, original: &Allele| {
+        if original.is_symbolic() || trimmed.alleles[index].bases == pair.alleles[index].bases {
+            Ok(original.clone())
+        } else {
+            Allele::create(&trimmed.alleles[index].bases, index == 0)
+                .map_err(|_| "Null alleles are not supported".to_string())
+        }
+    };
+    Ok((
+        i64::from(trimmed.start),
+        cut(0, &vc.alleles[0])?,
+        cut(1, alternate)?,
+    ))
 }
 
 /// `getRsID(rsIDSourceVCs, vcToAnnotate)`: the IDs of every unfiltered source sharing an event

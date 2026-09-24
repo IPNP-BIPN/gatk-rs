@@ -179,6 +179,7 @@ pub mod usage_text;
 pub mod validate_basic_somatic_short_mutations;
 pub mod validate_variants;
 pub mod variant_annotator;
+pub mod variant_annotator_engine;
 pub mod variant_eval;
 pub mod variant_eval_engine;
 pub mod variant_filtration;

@@ -5998,6 +5998,169 @@
         "--input, --read-index, --sequence-dictionary and --variant-output-filtering are held out,",
         "as for CombineGVCFs, and the writer holds are the ones every variant tool keeps."
       ]
+    },
+    "VariantAnnotator": {
+      "$tagged": [
+        "--resource"
+      ],
+      "--variant": [
+        "/work/fixtures/va.vcf",
+        "/work/fixtures/va_noidx.vcf"
+      ],
+      "--output": [
+        "/work/out/annotated.vcf",
+        "/work/out/annotated.vcf.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/va_ref.fasta",
+        "null"
+      ],
+      "--input": [
+        "/work/fixtures/va.bam",
+        "null",
+        "/work/fixtures/va2.bam"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:290-610",
+        "chr1:640-760"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:445-455"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/va_dbsnp.vcf",
+        "/work/fixtures/va_dbsnp_noidx.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/va_comp.vcf",
+        "/work/fixtures/va_dbsnp.vcf"
+      ],
+      "--resource": [
+        "res:/work/fixtures/va_res.vcf res2:/work/fixtures/va_res2.vcf",
+        "res:/work/fixtures/va_res.vcf"
+      ],
+      "--expression": [
+        "null",
+        "res.AF",
+        "res.RC",
+        "res.NOTE",
+        "res.ID",
+        "res.FILTER",
+        "res.FLAGX",
+        "res2.AC",
+        "res.CNT"
+      ],
+      "--resource-allele-concordance": [
+        "false",
+        "true"
+      ],
+      "--min-base-quality-score": [
+        "10",
+        "0",
+        "25"
+      ],
+      "--annotation": [
+        "Coverage",
+        "null",
+        "DepthPerAlleleBySample",
+        "AlleleFraction",
+        "StrandBiasBySample",
+        "FisherStrand",
+        "ReadPosRankSumTest",
+        "TandemRepeat",
+        "ReferenceBases"
+      ],
+      "--annotation-group": [
+        "null",
+        "StandardAnnotation",
+        "StandardHCAnnotation",
+        "JumboGenotypeAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "null",
+        "FisherStrand"
+      ],
+      "--enable-all-annotations": [
+        "false"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [],
+      "--assembly-complexity-reference-mode": [],
+      "--dirichlet-keep-prior-in-count": [],
+      "--pedigree": [],
+      "--founder-id": [],
+      "--flow-order-for-annotations": [],
+      "--read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter",
+        "GoodCigarReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "NotDuplicateReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "FirstOfPairReadFilter"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--read-validation-stringency": [],
+      "--sequence-dictionary": [],
+      "--read-index": [],
+      "--variant-output-filtering": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "$why": [
+        "va.vcf is three samples written out of order over va_ref.fasta (an AC repeat at 501-520 and an",
+        "N at 700): a SNP, a three-base deletion, a two-base insertion, a deletion of one repeat unit, a",
+        "triallelic SNP, an MNP, a SNP over the N, a filtered SNP with an rsID, a record with no",
+        "alternate and a SNP no read reaches. Every called genotype carries PLs but the one over the N,",
+        "so a -G StandardAnnotation row runs with the reference, which skips that site, and is refused",
+        "by ExcessHet without it. va_noidx.vcf is the same file with no index, refused under -L.",
+        "va.bam is the three samples' reads with varied mapping and base qualities, soft clips,",
+        "duplicates, QC failures, secondary and supplementary lines, reads starting inside the deletion",
+        "and varied fragment lengths; va2.bam is two of the samples at another length and step.",
+        "--min-base-quality-score, --disable-read-filter NotDuplicateReadFilter and the two enabled",
+        "filters change which pileup elements pick an allele, and the pileup's rank is the likelihood",
+        "row it fills, whichever read that row belongs to.",
+        "--annotation names one annotation per row among those whose output the reads decide; the",
+        "rest the port carries were compared by hand against the oracle, one run each, over this",
+        "corpus. --annotation-group is limited to the groups every member of which the port carries:",
+        "StandardMutectAnnotation, GenotypeAnnotation and AS_StandardAnnotation each hold one it does",
+        "not (AS_StrandBiasMutectAnnotation, AllelePseudoDepth, the allele-specific rank sums), and",
+        "--enable-all-annotations is held at false for the same reason and the flow annotations.",
+        "--resource is tagged res (va_res.vcf) or res and res2 (va_res2.vcf), and --expression reads one",
+        "field per row: per-allele, per-reference-and-allele, scalar, ID, FILTER, a flag, the second",
+        "resource's field (refused when only res is given) and an unbounded field, which",
+        "--resource-allele-concordance refuses at the multiallelic site it cannot index into.",
+        "--comparison is untagged, so its flag is named by the file's absolute path: va_comp.vcf, or",
+        "va_dbsnp.vcf; a comparison tagged DB, refused, and one tagged after a standard key were",
+        "compared by hand. --dbsnp is va_dbsnp.vcf, which matches some sites and not others, or its",
+        "copy with no index, refused at the first site annotated.",
+        "--allow-old-rms-mapping-quality-annotation-data, --assembly-complexity-reference-mode and",
+        "--dirichlet-keep-prior-in-count are held out: each is refused without its annotation, and",
+        "the port's parser does not yet tie an annotation's arguments to it. --pedigree, --founder-id",
+        "and --flow-order-for-annotations are held out: the port carries no pedigree or flow",
+        "annotation for this tool. --read-filter-tag-op, --keep-reverse-strand-only and",
+        "--dont-require-soft-clips-both-ends belong to filters no row enables, and each is refused without it;",
+        "--read-validation-stringency, --sequence-dictionary and --read-index are held out, as for the",
+        "other variant walkers that read BAMs. --variant-output-filtering is held out: every mode but",
+        "ANYWHERE needs -L, and was compared by hand.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them, and --max-variants-per-shard at 0."
+      ]
     }
   },
   "constraints": [

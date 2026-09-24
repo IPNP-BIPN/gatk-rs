@@ -134,6 +134,21 @@ pub fn is_called_and_diploid_with_likelihoods_or_with_gq(genotype: &Genotype) ->
         && (genotype.pl.is_some() || genotype.gq.is_some())
 }
 
+/// The genotype `computeDiploidGenotypeCounts` throws on, if any: the first that passes its guard
+/// with a GQ and no likelihoods while not being hom-ref, which `IllegalStateException("Genotype has
+/// no likelihoods: " + g)` names.
+pub fn genotype_without_likelihoods<'a>(genotypes: &[&'a Genotype]) -> Option<&'a Genotype> {
+    genotypes.iter().copied().find(|genotype| {
+        (is_diploid_with_likelihoods(genotype)
+            || is_called_and_diploid_with_likelihoods_or_with_gq(genotype))
+            && genotype.pl.is_none()
+            && !is_hom_ref(genotype)
+    })
+}
+
+/// `InbreedingCoeff.MIN_SAMPLES`, which gates whether the counts are asked for at all.
+pub const INBREEDING_MIN_SAMPLES: usize = MIN_SAMPLES;
+
 /// `GenotypeLikelihoods.getAsVector()` for a genotype whose likelihoods came from PLs.
 fn log10_likelihoods(genotype: &Genotype) -> Option<Vec<f64>> {
     genotype
@@ -184,8 +199,10 @@ pub fn compute_diploid_genotype_counts(
             continue;
         }
 
-        // `throw new IllegalStateException("Genotype has no likelihoods")` otherwise, unreachable
-        // because the guard above already required likelihoods or a hom-ref GQ.
+        // `throw new IllegalStateException("Genotype has no likelihoods")` otherwise: a called
+        // diploid genotype with a GQ and no PL that is not hom-ref passes the guard above and throws
+        // here. This function skips it; a caller that can meet one asks
+        // [`genotype_without_likelihoods`] first.
         let Some(log10) = log10_likelihoods(genotype) else {
             continue;
         };

@@ -2893,6 +2893,7 @@ public class MakeFixtures {
         reblockGvcfFixtures(dir, chr1);
         gnarlyGenotyperFixtures(dir);
         variantEvalFixtures(dir, chr1);
+        variantAnnotatorFixtures(dir);
     }
 
     /**
@@ -2970,6 +2971,309 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("ve_cnv.bed").toString()});
+    }
+
+    /**
+     * What `VariantAnnotator` reads, over `va_ref.fasta`: two thousand random bases on chr1 with an
+     * `AC` repeat at 501-520 and an `N` at 700. `va.vcf` has three samples, written out of order
+     * (s2, s1, s3), and a SNP, a three-base deletion, a two-base insertion, a deletion of one
+     * repeat unit, a triallelic SNP, an MNP, a SNP over the `N`, a filtered SNP with an rsID, a
+     * record with no alternate and a SNP no read reaches, with FORMAT columns that are not in
+     * sorted order and some without `AD`; every called genotype carries PLs except over the `N`,
+     * where `ExcessHet` refuses a GQ with none unless the reference skips the site. `va_noidx.vcf` is the same file with no index.
+     * `va.bam` tiles 60-base reads of the three samples every three bases from 240 to 1100 with the
+     * alternates in per-sample proportions: varied mapping and base qualities, soft clips at either
+     * end, duplicates, QC failures, secondary and supplementary lines, reads that start inside the
+     * deletion, and pairs with varied fragment lengths. `va2.bam` is s1 and s2 alone, at 40 bases
+     * every five. `va_dbsnp.vcf` (and `va_dbsnp_noidx.vcf`, unindexed) and `va_comp.vcf` match some
+     * of those sites and miss others; `va_res.vcf` and `va_res2.vcf` are the resources the
+     * expressions read, with per-allele, per-genotype, flag and unbounded INFO fields, a
+     * multiallelic record in the other order, a discordant insertion, two records at one position
+     * and, in the second file, a record with no alternate.
+     */
+    static void variantAnnotatorFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20260924L);
+        final StringBuilder sequence = new StringBuilder();
+        for (int i = 0; i < 2000; i++) {
+            sequence.append("ACGT".charAt(random.nextInt(4)));
+        }
+        for (int i = 500; i < 520; i++) {
+            sequence.setCharAt(i, "AC".charAt(i % 2));
+        }
+        sequence.setCharAt(699, 'N');
+        final String chr1 = sequence.toString();
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("va_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            reference.addSequence(new htsjdk.samtools.reference.ReferenceSequence("chr1", 0,
+                    chr1.getBytes(StandardCharsets.US_ASCII)));
+        }
+        final java.util.function.BiFunction<Integer, Integer, String> ref =
+                (position, length) -> chr1.substring(position - 1, position - 1 + length);
+        final java.util.function.Function<String, String> other =
+                base -> base.equals("A") ? "C" : "A";
+        final java.util.function.Function<String, String> third =
+                base -> base.equals("G") ? "T" : "G";
+        final String r300 = ref.apply(300, 1);
+        final String r600 = ref.apply(600, 1);
+        final String r750 = ref.apply(750, 1);
+        final String r1500 = ref.apply(1500, 1);
+        final String mnp = other.apply(ref.apply(650, 1)) + other.apply(ref.apply(651, 1));
+
+        // The reads: one sample per read in turn, each site's alternate in its own proportions.
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 2000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        for (final String sample : new String[] {"s1", "s2", "s3"}) {
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rg" + sample);
+            group.setSample(sample);
+            group.setLibrary("lib" + sample);
+            group.setPlatform("ILLUMINA");
+            header.addReadGroup(group);
+        }
+        for (final Object[] bam : new Object[][] {
+                {"va.bam", new String[] {"s1", "s2", "s3"}, 60, 3},
+                {"va2.bam", new String[] {"s1", "s2"}, 40, 5}}) {
+            final String[] samples = (String[]) bam[1];
+            final int length = (Integer) bam[2];
+            final int step = (Integer) bam[3];
+            final SAMFileHeader own = header.clone();
+            own.setReadGroups(new ArrayList<>());
+            for (final String sample : samples) {
+                own.addReadGroup(header.getReadGroup("rg" + sample));
+            }
+            final java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+            final List<SAMRecord> records = new ArrayList<>();
+            int counter = 0;
+            for (int start = 240; start <= 1100; start += step) {
+                final String sample = samples[counter % samples.length];
+                final boolean reverse = (counter / samples.length) % 2 == 1;
+                final StringBuilder bases = new StringBuilder();
+                final StringBuilder quals = new StringBuilder();
+                final List<htsjdk.samtools.CigarElement> cigar = new ArrayList<>();
+                final java.util.function.BiConsumer<htsjdk.samtools.CigarOperator, Integer> add =
+                        (operator, count) -> {
+                            final int last = cigar.size() - 1;
+                            if (last >= 0 && cigar.get(last).getOperator() == operator) {
+                                cigar.set(last, new htsjdk.samtools.CigarElement(
+                                        cigar.get(last).getLength() + count, operator));
+                            } else {
+                                cigar.add(new htsjdk.samtools.CigarElement(count, operator));
+                            }
+                        };
+                final int clip = counter % 7 == 3 ? 4 : 0;
+                final int tailClip = counter % 11 == 5 ? 4 : 0;
+                if (clip > 0) {
+                    bases.append("GGGG");
+                    add.accept(htsjdk.samtools.CigarOperator.S, clip);
+                }
+                int position = start;
+                while (bases.length() < length - tailClip && position <= 2000) {
+                    final String key = sample + position;
+                    String base = ref.apply(position, 1);
+                    if (position == 400 || position == 450 || position == 504 || position == 300
+                            || position == 600 || position == 650 || position == 750) {
+                        final int count = seen.merge(key, 1, Integer::sum);
+                        final boolean s1 = sample.equals("s1");
+                        final boolean s2 = sample.equals("s2");
+                        final boolean s3 = sample.equals("s3");
+                        final int room = length - tailClip - bases.length();
+                        if (position == 400 && room > 1 && ((s1 && count % 3 == 0) || (s2 && count % 2 == 0))) {
+                            bases.append(base);
+                            add.accept(htsjdk.samtools.CigarOperator.M, 1);
+                            add.accept(htsjdk.samtools.CigarOperator.D, 3);
+                            position += 4;
+                            continue;
+                        }
+                        if (position == 504 && room > 1 && ((s1 && count % 2 == 0) || (s3 && count % 4 == 0))) {
+                            bases.append(base);
+                            add.accept(htsjdk.samtools.CigarOperator.M, 1);
+                            add.accept(htsjdk.samtools.CigarOperator.D, 2);
+                            position += 3;
+                            continue;
+                        }
+                        if (position == 450 && room > 3 && ((s2 && count % 2 == 1) || (s3 && count % 3 == 0))) {
+                            bases.append(base).append("TT");
+                            add.accept(htsjdk.samtools.CigarOperator.M, 1);
+                            add.accept(htsjdk.samtools.CigarOperator.I, 2);
+                            position += 1;
+                            continue;
+                        }
+                        if (position == 300 && ((s1 && count % 2 == 0) || s3)) {
+                            base = other.apply(base);
+                        }
+                        if (position == 600 && ((s1 && count % 3 == 0) || (s2 && count % 2 == 0))) {
+                            base = other.apply(base);
+                        } else if (position == 600 && s1 && count % 3 == 1) {
+                            base = third.apply(base);
+                        }
+                        if (position == 650 && !s1 && count % 2 == 0) {
+                            base = mnp.substring(0, 1);
+                        }
+                        if (position == 750 && count % 4 == 0) {
+                            base = other.apply(base);
+                        }
+                    }
+                    if (position == 651 && start <= 650 && !sample.equals("s1") && seen.getOrDefault(sample + 650, 0) % 2 == 0) {
+                        base = mnp.substring(1, 2);
+                    }
+                    bases.append(base);
+                    add.accept(htsjdk.samtools.CigarOperator.M, 1);
+                    position++;
+                }
+                if (tailClip > 0) {
+                    bases.append("TTTT");
+                    add.accept(htsjdk.samtools.CigarOperator.S, tailClip);
+                }
+                for (int i = 0; i < bases.length(); i++) {
+                    char quality = 'I';
+                    if ((counter + i) % 9 == 0) {
+                        quality = '+';
+                    } else if ((counter + i) % 13 == 0) {
+                        quality = '5';
+                    } else if ((counter + i) % 17 == 0) {
+                        quality = '(';
+                    }
+                    quals.append(quality);
+                }
+                final SAMRecord record = new SAMRecord(own);
+                record.setReadName(sample + ":" + start + ":" + counter);
+                record.setReferenceName("chr1");
+                record.setAlignmentStart(start);
+                record.setCigar(new htsjdk.samtools.Cigar(cigar));
+                record.setMappingQuality(new int[] {60, 60, 29, 0, 60, 45, 60, 12}[counter % 8]);
+                record.setReadPairedFlag(true);
+                record.setProperPairFlag(true);
+                record.setFirstOfPairFlag(counter % 2 == 0);
+                record.setSecondOfPairFlag(counter % 2 == 1);
+                record.setReadNegativeStrandFlag(reverse);
+                record.setMateReferenceName("chr1");
+                record.setMateAlignmentStart(reverse ? Math.max(1, start - 200) : start + 200);
+                record.setMateNegativeStrandFlag(!reverse);
+                record.setInferredInsertSize((reverse ? -1 : 1) * (260 + counter % 7));
+                record.setDuplicateReadFlag(counter % 13 == 5);
+                record.setReadFailsVendorQualityCheckFlag(counter % 17 == 3);
+                record.setSecondaryAlignment(counter % 19 == 7);
+                record.setSupplementaryAlignmentFlag(counter % 23 == 11);
+                record.setReadString(bases.toString());
+                record.setBaseQualityString(quals.toString());
+                record.setAttribute("RG", "rg" + sample);
+                if (counter % 10 == 4) {
+                    record.setAttribute("OA", "chr1," + (start + 1000) + ",+,60M,30,0;");
+                }
+                records.add(record);
+                counter++;
+            }
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(own, true, dir.resolve((String) bam[0]).toFile())) {
+                records.forEach(writer::addAlignment);
+            }
+        }
+
+        final String contig = "##contig=<ID=chr1,length=2000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String variants = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">\n"
+                + "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth (reads with MQ=255 or with bad mates are filtered)\">\n"
+                + "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes, for each ALT allele, in the same order as listed\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency, for each ALT allele, in the same order as listed\">\n"
+                + "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles in called genotypes\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + contig
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts2\ts1\ts3\n"
+                + "chr1\t300\t.\t" + r300 + "\t" + other.apply(r300)
+                + "\t250.50\tPASS\tAC=3;AF=0.500;AN=6;DP=60\tGT:GQ:AD:DP:PL\t0/0:40:20,0:20:0,40,400\t0/1:60:10,10:20:60,0,90\t1/1:30:0,20:20:300,30,0\n"
+                + "chr1\t400\t.\t" + ref.apply(400, 4) + "\t" + ref.apply(400, 1)
+                + "\t120.00\t.\tAC=2;AF=0.333;AN=6;DP=58\tGT:GQ:AD:DP:PL\t0/1:50:12,8:20:50,0,120\t0/1:45:14,6:20:45,0,150\t0/0:30:18,0:18:0,30,300\n"
+                + "chr1\t450\t.\t" + ref.apply(450, 1) + "\t" + ref.apply(450, 1) + "TT"
+                + "\t80.25\t.\tAC=2;AF=0.333;AN=6\tGT:GQ:PL\t0/1:40:40,0,200\t0/0:50:0,50,500\t0/1:35:35,0,150\n"
+                + "chr1\t504\t.\tCAC\tC\t60.00\tPASS\tAC=2;AF=0.333;AN=6;DP=55\tGT:GQ:AD:DP:PL\t0/0:20:18,0:18:0,20,200\t0/1:40:10,9:19:40,0,120\t0/1:25:14,4:18:25,0,90\n"
+                + "chr1\t600\t.\t" + r600 + "\t" + other.apply(r600) + "," + third.apply(r600)
+                + "\t400.00\tPASS\tAC=2,1;AF=0.333,0.167;AN=6;DP=60\tGT:AD:DP:GQ:PL\t0/1:10,10,0:20:60:200,0,150,230,180,400\t1/2:7,7,6:20:50:300,120,200,90,0,210\t0/0:20,0,0:20:60:0,60,600,60,600,600\n"
+                + "chr1\t650\t.\t" + ref.apply(650, 2) + "\t" + mnp
+                + "\t33.00\tPASS\tAC=2;AF=0.500;AN=4;DP=40\tGT:GQ:AD:DP:PL\t0/1:33:10,10:20:33,0,99\t0/0:20:20,0:20:0,20,200\t./.:.:.:.:.\n"
+                + "chr1\t700\t.\tA\tC\t50.00\tPASS\tAC=1;AF=0.167;AN=6\tGT:GQ\t0/1:50\t0/0:30\t0/0:30\n"
+                + "chr1\t750\trs750\t" + r750 + "\t" + other.apply(r750)
+                + "\t10.00\tLowQual\tAC=1;AF=0.167;AN=6;DP=60\tGT\t0/1\t0/0\t0/0\n"
+                + "chr1\t850\t.\t" + ref.apply(850, 1) + "\t.\t.\t.\tAN=6;DP=60\tGT:DP\t0/0:20\t0/0:20\t0/0:20\n"
+                + "chr1\t1500\t.\t" + r1500 + "\t" + other.apply(r1500)
+                + "\t99.00\tPASS\tAC=1;AF=0.500;AN=2\tGT:GQ\t./.:.\t1:99\t./.:.\n";
+        Files.writeString(dir.resolve("va.vcf"), variants, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("va.vcf").toString()});
+        Files.writeString(dir.resolve("va_noidx.vcf"), variants, StandardCharsets.UTF_8);
+
+        final String dbsnp = "##fileformat=VCFv4.2\n" + contig + columns
+                + "chr1\t300\trs300\t" + r300 + "\t" + other.apply(r300) + "\t.\t.\t.\n"
+                + "chr1\t400\trs400\t" + ref.apply(400, 4) + "\t" + ref.apply(400, 1) + "\t.\t.\t.\n"
+                + "chr1\t450\trs450a\t" + ref.apply(450, 1) + "\t" + ref.apply(450, 1) + "GG\t.\t.\t.\n"
+                + "chr1\t450\trs450b\t" + ref.apply(450, 1) + "\t" + ref.apply(450, 1) + "TT\t.\t.\t.\n"
+                + "chr1\t600\trs600\t" + r600 + "\t" + third.apply(r600) + "\t.\t.\t.\n"
+                + "chr1\t650\trs650\t" + ref.apply(650, 2) + "\t" + mnp + "\t.\tFAIL\t.\n"
+                + "chr1\t750\trs750\t" + r750 + "\t" + other.apply(r750) + "\t.\t.\t.\n"
+                + "chr1\t1500\trs1500\t" + r1500 + "\t" + other.apply(r1500) + "\t.\t.\t.\n";
+        Files.writeString(dir.resolve("va_dbsnp.vcf"), dbsnp, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("va_dbsnp.vcf").toString()});
+        Files.writeString(dir.resolve("va_dbsnp_noidx.vcf"), dbsnp, StandardCharsets.UTF_8);
+
+        final String comp = "##fileformat=VCFv4.2\n" + contig + columns
+                + "chr1\t300\tc300\t" + r300 + "\t" + other.apply(r300) + "\t.\t.\t.\n"
+                + "chr1\t504\tc504\tCAC\tC\t.\t.\t.\n"
+                + "chr1\t600\tc600\t" + r600 + "\t" + other.apply(r600) + "\t.\t.\t.\n"
+                + "chr1\t1500\tc1500\t" + r1500 + "\t" + third.apply(r1500) + "\t.\t.\t.\n";
+        Files.writeString(dir.resolve("va_comp.vcf"), comp, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("va_comp.vcf").toString()});
+
+        final String resource = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=lowq,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=other,Description=\"Another filter\">\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency in the resource\">\n"
+                + "##INFO=<ID=CNT,Number=.,Type=Integer,Description=\"Counts\",Source=\"va\",Version=\"1\">\n"
+                + "##INFO=<ID=FLAGX,Number=0,Type=Flag,Description=\"A flag\">\n"
+                + "##INFO=<ID=GC,Number=G,Type=Integer,Description=\"Per genotype\">\n"
+                + "##INFO=<ID=NOTE,Number=1,Type=String,Description=\"A note\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Never carried\">\n"
+                + "##INFO=<ID=RC,Number=R,Type=Integer,Description=\"Reference and alternate counts\">\n"
+                + contig + columns
+                + "chr1\t300\trsR300\t" + r300 + "\t" + other.apply(r300)
+                + "\t.\tPASS\tAC=5;AF=0.25;CNT=1,2,3;FLAGX;GC=1,2,3;NOTE=first;RC=10,5\n"
+                + "chr1\t400\t.\t" + ref.apply(400, 4) + "\t" + ref.apply(400, 1) + "," + ref.apply(400, 4) + "G"
+                + "\t.\t.\tAC=1,2;AF=0.1,0.2;RC=3,1,2\n"
+                + "chr1\t450\trsR450\t" + ref.apply(450, 1) + "\t" + ref.apply(450, 1) + "GG"
+                + "\t.\t.\tAC=4;AF=0.5;NOTE=discordant;RC=4,4\n"
+                + "chr1\t504\t.\tCACAC\tCAC\t.\t.\tAC=6;AF=0.6;RC=4,6\n"
+                + "chr1\t600\trsR600\t" + r600 + "\t" + third.apply(r600) + "," + other.apply(r600)
+                + "\t.\t.\tAC=3,4;AF=0.3,0.4;CNT=7;GC=1,2,3,4,5,6;RC=1,3,4\n"
+                + "chr1\t650\t.\t" + ref.apply(650, 2) + "\t" + mnp
+                + "\t.\tlowq;other\tAF=0.05;FLAGX;NOTE=mnp\n"
+                + "chr1\t700\trsR700\tA\tC\t.\tPASS\tAF=0.7\n"
+                + "chr1\t750\trsR750a\t" + r750 + "\t" + other.apply(r750) + "\t.\t.\tAF=0.75;NOTE=firstof2\n"
+                + "chr1\t750\trsR750b\t" + r750 + "\t" + third.apply(r750) + "\t.\t.\tAF=0.76;NOTE=secondof2\n"
+                + "chr1\t1500\t.\t" + r1500 + "\t" + other.apply(r1500) + "\t.\t.\tAC=9;AF=0.9;RC=1,9\n";
+        Files.writeString(dir.resolve("va_res.vcf"), resource, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("va_res.vcf").toString()});
+        final String resource2 = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in the second resource\">\n"
+                + contig + columns
+                + "chr1\t300\trsS300\t" + r300 + "\t" + other.apply(r300) + "\t.\t.\tAC=7\n"
+                + "chr1\t600\t.\t" + r600 + "\t" + other.apply(r600) + "," + third.apply(r600) + "\t.\t.\tAC=1,2\n"
+                + "chr1\t850\trsS850\t" + ref.apply(850, 1) + "\t.\t.\t.\tAC=0\n";
+        Files.writeString(dir.resolve("va_res2.vcf"), resource2, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("va_res2.vcf").toString()});
     }
 
     /**
