@@ -1,8 +1,9 @@
 //! `AddFlowSNVQuality`, ported from the tool (GATK 4.6.2.0).
 //!
 //! The sibling of [`crate::add_flow_base_quality`]: the same enumeration over the ways a flow key
-//! could have been misread, but producing a probability for each base that was NOT called. Building
-//! the flow matrix is not ported; everything the tool does with it is.
+//! could have been misread, but producing a probability for each base that was NOT called. The
+//! flow matrix is `crate::flow_based_read`, with the boundary flows spread unless the command line
+//! keeps them: unlike its sibling, this tool does not force `keepBoundaryFlows`.
 //!
 //! # The computed base quality is discarded
 //!
@@ -88,6 +89,8 @@ pub enum SnvError {
     CalledBaseNotInOrder { index: i64, length: usize },
     /// `sliceProbs` given a slice more than one away from the key.
     SliceTooFar { slice: i32, hmer: i32 },
+    /// `SAMUtils.phredToFastq` on a score past 93, which a rounding of a tiny snvq reaches.
+    CannotEncode { phred: i32 },
 }
 
 impl SnvError {
@@ -97,6 +100,7 @@ impl SnvError {
             SnvError::SliceTooFar { .. } => {
                 "org.broadinstitute.hellbender.exceptions.GATKException"
             }
+            SnvError::CannotEncode { .. } => "java.lang.IllegalArgumentException",
         }
     }
 
@@ -108,6 +112,7 @@ impl SnvError {
             SnvError::SliceTooFar { slice, hmer } => {
                 format!("slice[i] and hmer are too far apart: {slice} {hmer}")
             }
+            SnvError::CannotEncode { phred } => format!("Cannot encode phred score: {phred}"),
         }
     }
 }
@@ -389,6 +394,22 @@ pub fn phred_to_fastq(phred: &[u8]) -> String {
         .collect()
 }
 
+/// `SAMUtils.phredToFastq`, which refuses a score past `MAX_PHRED_SCORE` rather than wrapping.
+pub fn phred_to_fastq_checked(phred: &[u8]) -> Result<String, SnvError> {
+    phred
+        .iter()
+        .map(|value| {
+            if *value > 93 {
+                Err(SnvError::CannotEncode {
+                    phred: i32::from(*value),
+                })
+            } else {
+                Ok((value + PHRED_ASCII_BASE) as char)
+            }
+        })
+        .collect()
+}
+
 /// What one read carries after the run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadOutput {
@@ -428,21 +449,18 @@ pub fn add_base_quality(
     let read_probs =
         generate_read_probs(key, &bands, bases, order, flow_order_length, min_rate, mode)?;
 
-    let base_quality = phred_to_fastq(&convert_error_prob_to_phred(
-        &read_probs.base_probs,
-        max_quality_score,
-    ));
-    let snvq_attributes = read_probs
-        .snvq_probs
-        .iter()
-        .enumerate()
-        .map(|(index, row)| {
-            (
-                attr_name_for_non_called_base(order[index]),
-                phred_to_fastq(&convert_error_prob_to_phred(row, max_quality_score)),
-            )
-        })
-        .collect();
+    let base_phred = convert_error_prob_to_phred(&read_probs.base_probs, max_quality_score);
+    let base_quality = match output_quality_attribute {
+        Some(_) => phred_to_fastq_checked(&base_phred)?,
+        None => phred_to_fastq(&base_phred),
+    };
+    let mut snvq_attributes = Vec::new();
+    for (index, row) in read_probs.snvq_probs.iter().enumerate() {
+        snvq_attributes.push((
+            attr_name_for_non_called_base(order[index]),
+            phred_to_fastq_checked(&convert_error_prob_to_phred(row, max_quality_score))?,
+        ));
+    }
 
     Ok(match output_quality_attribute {
         Some(_) => ReadOutput {
@@ -456,4 +474,125 @@ pub fn add_base_quality(
             snvq_attributes,
         },
     })
+}
+
+/// `GATKTool.getToolName()` for this tool.
+pub const TOOL_NAME: &str = "GATK AddFlowSNVQuality";
+
+/// The tool's own arguments, beside the flow matrix's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings {
+    pub max_phred_score: Option<f64>,
+    pub keep_supplementary_alignments: bool,
+    pub include_qc_failed_reads: bool,
+    pub mode: SnvqMode,
+    pub output_quality_attribute: Option<String>,
+    pub flow: crate::flow_based_read::FlowArguments,
+}
+
+impl From<SnvError> for crate::flow_based_read::FlowReadError {
+    fn from(error: SnvError) -> Self {
+        crate::flow_based_read::FlowReadError {
+            class: error.java_class(),
+            message: error.message(),
+            port_limitation: false,
+        }
+    }
+}
+
+/// `apply` over one record: `false` for a read the tool skips without writing.
+pub fn add_snv_quality_to_record(
+    record: &mut htsjdk_bam::record::BamRecord,
+    header: &htsjdk_bam::header::SamHeader,
+    settings: &Settings,
+) -> Result<bool, crate::flow_based_read::FlowReadError> {
+    use crate::flow_based_read::{has_flow_tags, read_group_info, FlowRead, FlowReadError};
+    use htsjdk_bam::tag::{Tag, TagValue};
+    const SUPPLEMENTARY: u16 = 0x800;
+    const QC_FAIL: u16 = 0x200;
+    if record.flags & SUPPLEMENTARY != 0 && !settings.keep_supplementary_alignments {
+        return Ok(false);
+    }
+    if record.flags & QC_FAIL != 0 && !settings.include_qc_failed_reads {
+        return Ok(false);
+    }
+    if !has_flow_tags(record) {
+        return Err(FlowReadError {
+            class: "java.lang.IllegalArgumentException",
+            message: "a read without flow tags".to_string(),
+            port_limitation: true,
+        });
+    }
+    let info = read_group_info(record, header)?;
+    let flow_read = FlowRead::new(record, &info.flow_order, info.max_class, &settings.flow)?;
+    let probs = crate::add_flow_base_quality::raw_probs(&flow_read);
+    let flow_order_length = crate::add_flow_base_quality::calc_flow_order_length(&info.flow_order);
+    let output = add_base_quality(
+        &flow_read.key,
+        &probs,
+        &record.read_bases,
+        "",
+        &info.flow_order,
+        flow_order_length,
+        settings.max_phred_score,
+        settings.mode,
+        settings.output_quality_attribute.as_deref(),
+    )?;
+    match (&settings.output_quality_attribute, output.quality_attribute) {
+        (Some(name), Some(quality)) => {
+            // SAMTag.makeBinaryTag.
+            let Ok(tag) = <[u8; 2]>::try_from(name.as_bytes()) else {
+                return Err(FlowReadError {
+                    class: "java.lang.IllegalArgumentException",
+                    message: format!("String tag does not have length() == 2: {name}"),
+                    port_limitation: false,
+                });
+            };
+            record.tags.insert(Tag::new(&tag), TagValue::Str(quality));
+        }
+        _ => {
+            record.base_qualities = output
+                .qualities
+                .bytes()
+                .map(|value| value.wrapping_sub(PHRED_ASCII_BASE))
+                .collect();
+        }
+    }
+    for (name, value) in output.snvq_attributes {
+        let tag = [name.as_bytes()[0], name.as_bytes()[1]];
+        record.tags.insert(Tag::new(&tag), TagValue::Str(value));
+    }
+    Ok(true)
+}
+
+/// What a run produces: the output BAM and its index, or the first read's refusal.
+pub type RunResult = crate::add_flow_base_quality::RunResult;
+
+/// `AddFlowSNVQuality`: every read the traversal reaches and `apply` keeps, with its snvq tags.
+pub fn add_flow_snv_quality_with(
+    source: &gatk_engine::reads::ReadsDataSource,
+    options: &crate::sam_output::Options,
+    filter: &dyn Fn(&htsjdk_bam::record::BamRecord) -> bool,
+    settings: &Settings,
+    level: u32,
+    deflater: htsjdk_bgzf::Deflater,
+) -> RunResult {
+    let records = crate::read_walker::traverse(source, &options.intervals, filter)?;
+    let input_header = source.header().clone();
+    let mut kept = Vec::with_capacity(records.len());
+    for mut record in records {
+        match add_snv_quality_to_record(&mut record, &input_header, settings) {
+            Ok(true) => kept.push(record),
+            Ok(false) => {}
+            Err(error) => return Ok(Err(error)),
+        }
+    }
+    let header = crate::sam_output::header_for_sam_writer(source.header(), TOOL_NAME, options);
+    Ok(Ok(crate::sam_output::write_records_with(
+        &header,
+        &kept,
+        options.create_output_bam_index,
+        level,
+        deflater,
+    )?))
 }

@@ -345,6 +345,10 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ComposeSTRTableFile" => Some(run_compose_str_table_file),
         "CalibrateDragstrModel" => Some(run_calibrate_dragstr_model),
         "LearnReadOrientationModel" => Some(run_learn_read_orientation_model),
+        "AddFlowBaseQuality" => Some(run_add_flow_base_quality),
+        "AddFlowSNVQuality" => Some(run_add_flow_snv_quality),
+        "FlowPairHMMAlignReadsToHaplotypes" => Some(run_flow_pairhmm_align_reads_to_haplotypes),
+        "FlowFeatureMapper" => Some(run_flow_feature_mapper),
         "GeneExpressionEvaluation" => Some(run_gene_expression_evaluation),
         "CRAMIssue8768Detector" => Some(run_cram_issue_8768_detector),
         "ValidateVariants" => Some(run_validate_variants),
@@ -717,6 +721,25 @@ fn run_calibrate_dragstr_model(args: &[String]) -> Result<Option<String>, Thrown
 
 fn run_learn_read_orientation_model(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::learn_read_orientation_model(&parsed("LearnReadOrientationModel", args)?)
+}
+
+fn run_flow_feature_mapper(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::flow_feature_mapper(&parsed("FlowFeatureMapper", args)?)
+}
+
+fn run_flow_pairhmm_align_reads_to_haplotypes(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::flow_pairhmm_align_reads_to_haplotypes(&parsed(
+        "FlowPairHMMAlignReadsToHaplotypes",
+        args,
+    )?)
+}
+
+fn run_add_flow_snv_quality(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::add_flow_snv_quality(&parsed("AddFlowSNVQuality", args)?)
+}
+
+fn run_add_flow_base_quality(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::add_flow_base_quality(&parsed("AddFlowBaseQuality", args)?)
 }
 
 fn run_gene_expression_evaluation(args: &[String]) -> Result<Option<String>, Thrown> {

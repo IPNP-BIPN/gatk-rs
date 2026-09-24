@@ -1,9 +1,10 @@
 //! `FlowPairHMMAlignReadsToHaplotypes`: every read scored against every haplotype, and what the
 //! concise format makes of it.
 //!
-//! The alignment engine's arithmetic is not ported. What is ported is the two output formats, and
-//! above all the concise one's reference score, which is recorded from inside the branch that
-//! raises the best score and so depends on the order of the haplotype FASTA.
+//! The `FlowBased` engine is ported as the tool runs it, with exact matching: the read's flow
+//! matrix read off along the haplotype's key, the start stepped by four flows. The `FlowBasedHMM`
+//! engine is not. Above all the concise format's reference score is recorded from inside the branch
+//! that raises the best score, and so depends on the order of the haplotype FASTA.
 //!
 //! Ported from
 //! `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.AlleleLikelihoodWriter`,
@@ -195,4 +196,116 @@ pub const UNKNOWN_ENGINE_MESSAGE: &str = "Accepted engines are FlowBasedHMM or F
 
 pub fn is_known_engine(name: &str) -> bool {
     ENGINES.contains(&name)
+}
+
+// ================================================================================================
+// The FlowBased engine.
+// ================================================================================================
+
+/// `FlowBasedAlignmentLikelihoodEngine.ALIGNMENT_UNCERTAINTY`, the step of the start search.
+const ALIGNMENT_UNCERTAINTY: usize = 4;
+/// `COMMON_PROB_VALUE_1` and `_2`, whose logarithms the optimised computation looks up.
+const COMMON_PROB_VALUE_1: f64 = 0.988;
+const COMMON_PROB_VALUE_2: f64 = 0.001;
+
+/// `Precision.equals(x, y)`: equal to within one ulp.
+fn within_one_ulp(x: f64, y: f64) -> bool {
+    if x.is_nan() || y.is_nan() {
+        return false;
+    }
+    let order = |value: f64| {
+        let bits = value.to_bits() as i64;
+        if bits < 0 {
+            i64::MIN - bits
+        } else {
+            bits
+        }
+    };
+    (order(x) - order(y)).abs() <= 1
+}
+
+/// `Math.log10`, at run time.
+fn log10(value: f64) -> f64 {
+    std::hint::black_box(value).log10()
+}
+
+/// `FlowBasedHaplotype`: the haplotype's key and the base each of its flows reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowHaplotype {
+    pub key: Vec<i32>,
+    pub flow_order: Vec<u8>,
+}
+
+impl FlowHaplotype {
+    /// `None` where `baseArrayToKey`'s period guard trips.
+    pub fn new(bases: &[u8], flow_order: &str) -> Option<FlowHaplotype> {
+        let key = crate::flow_based_read::base_array_to_key(bases, flow_order)?;
+        let order = flow_order.as_bytes();
+        let flow_order = (0..key.len()).map(|i| order[i % order.len()]).collect();
+        Some(FlowHaplotype { key, flow_order })
+    }
+}
+
+/// `haplotypeReadMatchingExactLength`: the whole haplotype key, from the first flow reading the
+/// read's first base, stepping by four flows, the best sum of the read's log probabilities.
+///
+/// A haplotype whose key is shorter than the read's never fits, and scores negative infinity.
+pub fn exact_length_score(
+    haplotype: &FlowHaplotype,
+    read: &crate::flow_based_read::FlowRead,
+    optimized: bool,
+) -> f64 {
+    let key_length = haplotype.key.len();
+    let read_first = read.flow_order.first().copied().unwrap_or(0);
+    let starting_point = haplotype
+        .flow_order
+        .iter()
+        .position(|base| *base == read_first)
+        .unwrap_or(0);
+    let read_key_length = read.key.len();
+    let cap = read.max_hmer + 1;
+    let mut best = f64::NEG_INFINITY;
+    let mut s = starting_point;
+    let mut locations = vec![0i32; read_key_length];
+    while s + read_key_length <= key_length {
+        for i in s..s + read_key_length {
+            locations[i - s] = (haplotype.key[i] & 0xff).min(cap);
+        }
+        let mut result = 0.0;
+        for (i, location) in locations.iter().enumerate() {
+            let prob = read.prob(i, *location);
+            if optimized {
+                result += if within_one_ulp(prob, COMMON_PROB_VALUE_1) {
+                    log10(COMMON_PROB_VALUE_1)
+                } else if within_one_ulp(prob, COMMON_PROB_VALUE_2) {
+                    log10(COMMON_PROB_VALUE_2)
+                } else {
+                    log10(prob)
+                };
+                if result < best {
+                    break;
+                }
+            } else {
+                result += log10(prob);
+            }
+        }
+        if result > best {
+            best = result;
+        }
+        s += ALIGNMENT_UNCERTAINTY;
+    }
+    best
+}
+
+/// `FastaSequenceFile(path, false)`: every record, its name the whole header line.
+pub fn read_haplotype_fasta(text: &str) -> Vec<(String, Vec<u8>)> {
+    let mut records: Vec<(String, Vec<u8>)> = Vec::new();
+    for line in text.lines() {
+        if let Some(name) = line.strip_prefix('>') {
+            records.push((name.trim_end().to_string(), Vec::new()));
+        } else if let Some((_, bases)) = records.last_mut() {
+            bases.extend(line.trim_end().bytes());
+        }
+    }
+    records
 }

@@ -4789,6 +4789,488 @@
         "0"
       ]
     },
+    "AddFlowBaseQuality": {
+      "$why": [
+        "flow.bam is Ultima reads in two flow groups (TGCA at the default maximal class, TACG at mc 8),",
+        "every read with a signed tp array and varied qualities, every third with a t0 string, and one",
+        "holding a 13-base hmer longer than either class. Each flow-matrix argument moves the matrix",
+        "the tool reads its bands from; --replace-quality-mode moves the answer from XQ to OQ and QUAL.",
+        "--flow-matrix-mods carries two instruction lists valid under both classes; --reference is the",
+        "reads' own or none. --flow-fill-empty-bins-value 0 is the",
+        "mode that estimates the floor from the read's own best quality."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--output": [
+        "/work/out/flow_quality.bam"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--minimal-error-rate": [
+        "0.001",
+        "0.01",
+        "0.0001"
+      ],
+      "--maximal-quality-score": [
+        "93",
+        "40",
+        "20"
+      ],
+      "--replace-quality-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--create-output-bam-index": [
+        "true",
+        "false"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "AddFlowSNVQuality": {
+      "$why": [
+        "flow.bam as for AddFlowBaseQuality, with one supplementary and one QC-failed read so the two",
+        "keep switches drop them. --max-phred-score moves both the clamp and the floor, 90 dropping",
+        "the floor to 1e-9 and 30 raising it to 1e-3. --snvq-mode picks one of four",
+        "formulae; --output-quality-attribute moves the base quality to a tag and leaves QUAL. The",
+        "boundary flows are spread unless --keep-boundary-flows. The debug switches are held out: one",
+        "writes a statistics file beside the output, the other only matters with it."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--output": [
+        "/work/out/flow_snvq.bam"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--max-phred-score": [
+        "NaN",
+        "30",
+        "90"
+      ],
+      "--snvq-mode": [
+        "Geometric",
+        "Legacy",
+        "Optimistic",
+        "Pessimistic"
+      ],
+      "--output-quality-attribute": [
+        "null",
+        "BQ"
+      ],
+      "--keep-supplementary-alignments": [
+        "true",
+        "false"
+      ],
+      "--include-qc-failed-read": [
+        "true",
+        "false"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--create-output-bam-index": [
+        "true",
+        "false"
+      ],
+      "--debug-read-name": [],
+      "--debug-collect-stats-into": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "FlowPairHMMAlignReadsToHaplotypes": {
+      "$why": [
+        "flow.bam as for AddFlowBaseQuality: 60 reads, so one full buffer of fifty and a final one of ten,",
+        "each taking the flow order and class of its first read. haplotypes.fasta is the reference stretch,",
+        "a copy with three substitutions, one with a three-base deletion and one shorter than any read;",
+        "haplotypes_dup.fasta repeats the reference's bases under a second name. --ref-haplotype names",
+        "the first, the second, or nothing in the file. --aligner PairHMM is the engine refusal;",
+        "FlowBasedHMM is not ported and left out. The PairHMM engine's own paths are held."
+      ],
+      "--input": [
+        "/work/fixtures/flow.bam"
+      ],
+      "--haplotypes": [
+        "/work/fixtures/haplotypes.fasta",
+        "/work/fixtures/haplotypes_dup.fasta"
+      ],
+      "--output": [
+        "/work/out/likelihoods.tsv"
+      ],
+      "--reference": [
+        "null",
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:200-600"
+      ],
+      "--ref-haplotype": [
+        "null",
+        "ref",
+        "snp",
+        "missing"
+      ],
+      "--concise-output-format": [
+        "false",
+        "true"
+      ],
+      "--aligner": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--dragstr-params-path": [],
+      "--pair-hmm-results-file": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "FlowFeatureMapper": {
+      "$why": [
+        "flow_snv.bam is overlapping Ultima reads carrying substitutions at a few shared sites, so the",
+        "feature queue emits several records at one position; one read is soft-clipped, one has an",
+        "insertion, every third is reverse, one is a duplicate and one in five carries an integer XI tag.",
+        "--reference is required in practice: without it the mapper indexes an empty array. The",
+        "surround, the score bounds and the read switches each move which features are written;",
+        "--copy-attr copies XI as an Integer or t0 as a String. GVCF output is not ported and left out.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index."
+      ],
+      "--input": [
+        "/work/fixtures/flow_snv.bam"
+      ],
+      "--output": [
+        "/work/out/features.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:300-500"
+      ],
+      "--snv-identical-bases": [
+        "1",
+        "2",
+        "0"
+      ],
+      "--snv-identical-bases-after": [
+        "0",
+        "1",
+        "3"
+      ],
+      "--limit-score": [
+        "NaN",
+        "5"
+      ],
+      "--max-score": [
+        "Infinity",
+        "10"
+      ],
+      "--min-score": [
+        "-Infinity",
+        "1"
+      ],
+      "--exclude-nan-scores": [
+        "false",
+        "true"
+      ],
+      "--include-dup-reads": [
+        "false",
+        "true"
+      ],
+      "--keep-negatives": [
+        "false",
+        "true"
+      ],
+      "--keep-supplementary-alignments": [
+        "false",
+        "true"
+      ],
+      "--include-qc-failed-reads": [
+        "false",
+        "true"
+      ],
+      "--copy-attr": [
+        "null",
+        "XI,Integer,xi",
+        "t0"
+      ],
+      "--copy-attr-prefix": [
+        "",
+        "bam_"
+      ],
+      "--emit-ref-confidence": [
+        "NONE",
+        "BP_RESOLUTION"
+      ],
+      "--mapping-feature": [
+        "SNV"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--gvcf-gq-bands": [],
+      "--floor-blocks": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ]
+    },
+    "CRAMIssue8768Detector": {
+      "$why": [
+        "issue8768.cram has its first container on each of two contigs opening at position 1, so the",
+        "second is suspected, with four mismatches in every third read; multislice.cram is the same",
+        "reads two slices a container, which the detector calls foreign and stops on; split.cram opens",
+        "at 100 and has nothing to suspect. two_contigs.fasta is the reference the first two were",
+        "written against; reference.fasta disagrees with them base for base."
+      ],
+      "--input": [
+        "/work/fixtures/issue8768.cram",
+        "/work/fixtures/multislice.cram",
+        "/work/fixtures/split.cram"
+      ],
+      "--reference": [
+        "/work/fixtures/two_contigs.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--output": [
+        "/work/out/cram8768.txt"
+      ],
+      "--output-tsv": [
+        "/work/out/cram8768.tsv",
+        "null"
+      ],
+      "--mismatch-rate-threshold": [
+        "0.05",
+        "0.0"
+      ]
+    },
     "VCFComparator": {
       "$why": [
         "Two pairs of inputs, each actual one difference away from its expected per site, in position",
@@ -4885,35 +5367,6 @@
       "--allow-old-rms-mapping-quality-annotation-data": [],
       "--assembly-complexity-reference-mode": [],
       "--dirichlet-keep-prior-in-count": []
-    },
-    "CRAMIssue8768Detector": {
-      "$why": [
-        "issue8768.cram has its first container on each of two contigs opening at position 1, so the",
-        "second is suspected, with four mismatches in every third read; multislice.cram is the same",
-        "reads two slices a container, which the detector calls foreign and stops on; split.cram opens",
-        "at 100 and has nothing to suspect. two_contigs.fasta is the reference the first two were",
-        "written against; reference.fasta disagrees with them base for base."
-      ],
-      "--input": [
-        "/work/fixtures/issue8768.cram",
-        "/work/fixtures/multislice.cram",
-        "/work/fixtures/split.cram"
-      ],
-      "--reference": [
-        "/work/fixtures/two_contigs.fasta",
-        "/work/fixtures/reference.fasta"
-      ],
-      "--output": [
-        "/work/out/cram8768.txt"
-      ],
-      "--output-tsv": [
-        "/work/out/cram8768.tsv",
-        "null"
-      ],
-      "--mismatch-rate-threshold": [
-        "0.05",
-        "0.0"
-      ]
     }
   },
   "constraints": [

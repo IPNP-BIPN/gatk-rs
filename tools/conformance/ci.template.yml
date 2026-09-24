@@ -300,6 +300,10 @@ jobs:
             --tool CalibrateDragstrModel \
             --tool LearnReadOrientationModel \
             --tool GeneExpressionEvaluation \
+            --tool AddFlowBaseQuality \
+            --tool AddFlowSNVQuality \
+            --tool FlowPairHMMAlignReadsToHaplotypes \
+            --tool FlowFeatureMapper \
             --tool CRAMIssue8768Detector \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
