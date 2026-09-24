@@ -5479,6 +5479,128 @@
       "--allow-old-rms-mapping-quality-annotation-data": [],
       "--assembly-complexity-reference-mode": [],
       "--dirichlet-keep-prior-in-count": []
+    },
+    "GenotypeGVCFs": {
+      "$why": [
+        "The inputs are the CombineGVCFs corpus: cg_a.g.vcf, a diploid sample with a known deletion, a",
+        "multiallelic SNP, a phased pair and a zero-depth block; cg_c.g.vcf, a haploid one; and",
+        "cg_combined.g.vcf, the three merged by the reference's own CombineGVCFs, so a site holds a",
+        "spanning deletion and a haploid sample beside two diploid ones. Each carries SB and",
+        "RAW_MQandDP, which the default annotations finalise into FS, SOR and MQ.",
+        "--include-non-variant-sites switches the walk from one record at a time to every base a",
+        "record covers; --force-output-intervals does the same inside its interval and is refused",
+        "with it. --standard-min-confidence-threshold-for-calling moves the LowQual line and, below",
+        "the QUAL of a site, what is emitted.",
+        "--annotation-group is held at StandardAnnotation: the allele-specific finalisation of",
+        "AS_StandardAnnotation is the port's limitation for now. --keep-specific-combined-raw-",
+        "annotation is held out: it is mutually exclusive with --keep-combined-raw-annotations, and",
+        "every row sets every argument.",
+        "--enable-all-annotations is held at false: with every annotation enabled, OriginalAlignment",
+        "throws on the null reads GenotypeGVCFs hands it at the first variant site, and reproducing",
+        "that needs every annotation's no-reads path, which the port does not carry.",
+        "--only-output-calls-starting-in-intervals is STARTS_IN by another name and mutually",
+        "exclusive with --variant-output-filtering, which is held out for it.",
+        "--dbsnp, --population-callset, --pedigree, --founder-id and --flow-order-for-annotations",
+        "are held out: the port does not carry the overlap annotator, the population priors or the",
+        "pedigree and flow annotations for this tool. --input-is-somatic is held at false, for the",
+        "same reason.",
+        "--max-alternate-alleles is held at its default: a site above it is reduced to the most likely",
+        "alleles, which the port does not carry.",
+        "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
+        "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
+        "reason every variant writer holds them: one writes the run's own time into the header and",
+        "the other writes the output file's last-modified time into an index.",
+        "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
+        "the reasons CombineGVCFs gives."
+      ],
+      "--variant": [
+        "/work/fixtures/cg_combined.g.vcf",
+        "/work/fixtures/cg_a.g.vcf",
+        "/work/fixtures/cg_c.g.vcf"
+      ],
+      "--output": [
+        "/work/out/genotyped.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:90-215",
+        "chr2:1-60"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:205-215"
+      ],
+      "--force-output-intervals": [
+        "null",
+        "chr1:95-105"
+      ],
+      "--standard-min-confidence-threshold-for-calling": [
+        "30.0",
+        "10.0",
+        "400.0"
+      ],
+      "--sample-ploidy": [
+        "2",
+        "1"
+      ],
+      "--heterozygosity": [
+        "0.001",
+        "0.01"
+      ],
+      "--indel-heterozygosity": [
+        "1.25E-4",
+        "0.001"
+      ],
+      "--heterozygosity-stdev": [
+        "0.01",
+        "0.05"
+      ],
+      "--annotation-group": [
+        "StandardAnnotation"
+      ],
+      "--annotation": [
+        "null",
+        "StrandBiasBySample"
+      ],
+      "--annotations-to-exclude": [
+        "null",
+        "ExcessHet"
+      ],
+      "--keep-specific-combined-raw-annotation": [],
+      "--variant-output-filtering": [],
+      "--dbsnp": [],
+      "--population-callset": [],
+      "--pedigree": [],
+      "--founder-id": [],
+      "--flow-order-for-annotations": [],
+      "--input-is-somatic": [
+        "false"
+      ],
+      "--max-alternate-alleles": [
+        "6"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--disable-read-filter": [
+        "WellformedReadFilter"
+      ],
+      "--enable-all-annotations": [
+        "false"
+      ]
     }
   },
   "constraints": [
