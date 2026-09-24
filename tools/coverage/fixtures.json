@@ -5491,8 +5491,9 @@
         "record covers; --force-output-intervals does the same inside its interval and is refused",
         "with it. --standard-min-confidence-threshold-for-calling moves the LowQual line and, below",
         "the QUAL of a site, what is emitted.",
-        "--annotation-group is held at StandardAnnotation: the allele-specific finalisation of",
-        "AS_StandardAnnotation is the port's limitation for now. --keep-specific-combined-raw-",
+        "--annotation-group is the default group or the allele-specific one, whose finalisation turns",
+        "each input's AS_RAW_ keys and the genotyper's AS_QUAL into AS_QD, AS_MQ, AS_FS, AS_SOR and the",
+        "allele-specific rank sums. --keep-specific-combined-raw-",
         "annotation is held out: it is mutually exclusive with --keep-combined-raw-annotations, and",
         "every row sets every argument.",
         "--enable-all-annotations is held at false: with every annotation enabled, OriginalAlignment",
@@ -5560,7 +5561,8 @@
         "0.05"
       ],
       "--annotation-group": [
-        "StandardAnnotation"
+        "StandardAnnotation",
+        "AS_StandardAnnotation"
       ],
       "--annotation": [
         "null",

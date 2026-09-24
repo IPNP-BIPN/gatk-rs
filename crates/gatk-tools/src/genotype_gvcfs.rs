@@ -133,7 +133,12 @@ impl AnnotationEngine {
     }
 
     /// `finalizeAnnotations(vc, originalVC)`.
-    pub fn finalize_annotations(&self, vc: &VariantContext) -> Result<VariantContext, EngineError> {
+    pub fn finalize_annotations(
+        &self,
+        vc: &VariantContext,
+        original: &VariantContext,
+        random: &mut JavaRandom,
+    ) -> Result<VariantContext, EngineError> {
         let mut attributes = vc.attributes.clone();
         let saved: Vec<(String, Value)> = self
             .raw_keys_to_keep
@@ -141,7 +146,7 @@ impl AnnotationEngine {
             .filter_map(|key| attribute(vc, key).map(|value| ((*key).to_string(), value.clone())))
             .collect();
         for entry in self.info_annotations().filter(|entry| entry.is_reducible()) {
-            for (key, value) in finalize_raw_data(entry, vc)? {
+            for (key, value) in finalize_raw_data(entry, vc, original, random)? {
                 put(&mut attributes, &key, value);
             }
             if !self.keep_combined {
@@ -207,11 +212,121 @@ fn limitation(what: String) -> EngineError {
     EngineError::Limitation(what)
 }
 
+/// A failure of an allele-specific annotation, as the reference class it stands for.
+fn annotation_failure(class: &str, detail: impl std::fmt::Debug) -> EngineError {
+    EngineError::Runtime {
+        class: class.to_string(),
+        message: format!("{detail:?}"),
+    }
+}
+
+/// `AS_QualByDepth.finalizeRawData(vc, originalVC)`, which `annotate` also runs with the same
+/// record twice: `AS_QD` from the genotyper's `AS_QUAL` (or the GVCF's `AS_QUALapprox`) over the
+/// original record's `AS_VarDP`, or the called genotypes' depths when it has none.
+fn finalize_as_qual_by_depth(
+    vc: &VariantContext,
+    original: &VariantContext,
+    random: &mut JavaRandom,
+) -> Result<Vec<(String, Value)>, EngineError> {
+    use gatk_annotation::allele_specific_site_statistics as site;
+    let as_qual: Option<Vec<String>> = attribute(vc, site::AS_QUAL_KEY).map(|value| match value {
+        Value::List(values) => values
+            .iter()
+            .map(crate::reference_confidence_merger::value_to_string)
+            .collect(),
+        other => vec![crate::reference_confidence_merger::value_to_string(other)],
+    });
+    let approx = attribute_string(vc, site::AS_RAW_QUAL_APPROX_KEY);
+    let depth = attribute_string(original, site::AS_VARIANT_DEPTH_KEY);
+    let values = site::as_qual_by_depth(
+        vc,
+        as_qual.as_deref(),
+        approx.as_deref(),
+        depth.as_deref(),
+        random,
+    )
+    .map_err(|error| annotation_failure("java.lang.IllegalStateException", error))?;
+    let Some(values) = values else {
+        return Ok(Vec::new());
+    };
+    let mut out = vec![(
+        site::AS_QUAL_BY_DEPTH_KEY.to_string(),
+        Value::Str(site::encode_value_list(&values, 2)),
+    )];
+    if let Some(approx) = &approx {
+        let quals = site::parse_qual_list(vc.alleles.len(), as_qual.as_deref(), Some(approx))
+            .map_err(|error| annotation_failure("java.lang.IllegalStateException", error))?;
+        let joined: Vec<String> = quals.iter().map(|q| q.to_string()).collect();
+        out.push((
+            site::AS_RAW_QUAL_APPROX_KEY.to_string(),
+            Value::Str(joined.join(",")),
+        ));
+    }
+    Ok(out)
+}
+
 /// One reducible annotation's `finalizeRawData(vc, originalVC)`.
 fn finalize_raw_data(
     entry: &Entry,
     vc: &VariantContext,
+    original: &VariantContext,
+    random: &mut JavaRandom,
 ) -> Result<Vec<(String, Value)>, EngineError> {
+    use gatk_annotation::allele_specific_rank_sum::{self as rank_sum, AsRankSum};
+    use gatk_annotation::allele_specific_site_statistics as site;
+    use gatk_annotation::allele_specific_strand_bias::{self as strand_bias, AsStrandBias};
+    let pair = |found: Option<(String, String, String, String)>| -> Vec<(String, Value)> {
+        found
+            .map(|(key, value, raw_key, raw)| {
+                vec![(key, Value::Str(value)), (raw_key, Value::Str(raw))]
+            })
+            .unwrap_or_default()
+    };
+    let rank_sum = |annotation: AsRankSum| -> Result<Vec<(String, Value)>, EngineError> {
+        let raw = attribute_string(vc, annotation.raw_key());
+        let alternates: Vec<Allele> = vc.alleles[1..].to_vec();
+        rank_sum::finalize_raw_data(annotation, &alternates, &original.alleles, raw.as_deref())
+            .map(pair)
+            .map_err(|error| annotation_failure("java.lang.IllegalStateException", error))
+    };
+    let strand = |annotation: AsStrandBias| -> Result<Vec<(String, Value)>, EngineError> {
+        let raw = attribute_string(vc, annotation.raw_key());
+        strand_bias::finalize_raw_data(annotation, &vc.alleles, &original.alleles, raw.as_deref())
+            .map(pair)
+            .map_err(|error| annotation_failure("java.lang.IllegalStateException", error))
+    };
+    match entry.name {
+        "AS_BaseQualityRankSumTest" => return rank_sum(AsRankSum::BaseQuality),
+        "AS_MappingQualityRankSumTest" => return rank_sum(AsRankSum::MappingQuality),
+        "AS_ReadPosRankSumTest" => return rank_sum(AsRankSum::ReadPosition),
+        "AS_FisherStrand" => return strand(AsStrandBias::Fisher),
+        "AS_StrandOddsRatio" => return strand(AsStrandBias::OddsRatio),
+        "AS_QualByDepth" => return finalize_as_qual_by_depth(vc, original, random),
+        "AS_RMSMappingQuality" => {
+            let Some(raw) = attribute_string(vc, site::AS_RAW_RMS_MAPPING_QUALITY_KEY) else {
+                return Ok(Vec::new());
+            };
+            let per_allele = site::as_rms_parse_raw(&original.alleles, &raw)
+                .map_err(|error| annotation_failure("java.lang.NumberFormatException", error))?;
+            let Some(finalized) = site::as_rms_finalized_string(vc, &per_allele) else {
+                return Err(annotation_failure(
+                    "java.lang.NullPointerException",
+                    "AS_RMSMappingQuality over a record with no genotypes",
+                ));
+            };
+            return Ok(vec![
+                (
+                    site::AS_RMS_MAPPING_QUALITY_KEY.to_string(),
+                    Value::Str(finalized),
+                ),
+                (
+                    site::AS_RAW_RMS_MAPPING_QUALITY_KEY.to_string(),
+                    Value::Str(site::as_rms_raw_string(&vc.alleles, &per_allele)),
+                ),
+            ]);
+        }
+        _ => {}
+    }
     match entry.name {
         "RMSMappingQuality" => {
             if let Some(raw) = attribute_string(vc, "RAW_MQandDP") {
@@ -277,6 +392,34 @@ fn annotate(
         "InbreedingCoeff" => a::heterozygosity::inbreeding_coeff(vc)
             .map(|value| vec![("InbreedingCoeff".to_string(), Value::Str(value))])
             .unwrap_or_default(),
+        "AS_QualByDepth" => finalize_as_qual_by_depth(vc, vc, random)?
+            .into_iter()
+            .filter(|(key, _)| key == "AS_QD")
+            .collect(),
+        "AS_InbreedingCoeff" => a::allele_specific_site_statistics::as_inbreeding_coefficient(vc)
+            .map(|value| vec![("AS_InbreedingCoeff".to_string(), Value::Str(value))])
+            .unwrap_or_default(),
+        "AS_FisherStrand" => a::allele_specific_strand_bias::annotate_direct(
+            a::allele_specific_strand_bias::AsStrandBias::Fisher,
+            vc,
+            None,
+        )
+        .into_iter()
+        .map(|(key, value)| (key, value_of(value)))
+        .collect(),
+        "AS_StrandOddsRatio" => a::allele_specific_strand_bias::annotate_direct(
+            a::allele_specific_strand_bias::AsStrandBias::OddsRatio,
+            vc,
+            None,
+        )
+        .into_iter()
+        .map(|(key, value)| (key, value_of(value)))
+        .collect(),
+        // With no reads, the allele-specific rank sums and MQ write nothing.
+        "AS_BaseQualityRankSumTest"
+        | "AS_MappingQualityRankSumTest"
+        | "AS_ReadPosRankSumTest"
+        | "AS_RMSMappingQuality" => Vec::new(),
         "QualByDepth" => {
             let raw =
                 attribute(vc, "QUALapprox").map(|_| attribute_int(vc, "QUALapprox", 0) as i32);
@@ -555,7 +698,9 @@ impl Engine<'_> {
             if is_properly_polymorphic(&regenotyped) || include_non_variants {
                 let with_genotyping =
                     add_genotyping_annotations(&original.attributes, &regenotyped);
-                let with_annotations = self.annotations.finalize_annotations(&with_genotyping)?;
+                let with_annotations =
+                    self.annotations
+                        .finalize_annotations(&with_genotyping, original, random)?;
                 let relevant: Vec<usize> = regenotyped
                     .alleles
                     .iter()

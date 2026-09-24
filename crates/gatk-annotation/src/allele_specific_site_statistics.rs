@@ -201,14 +201,10 @@ pub fn allele_depths(vc: &VariantContext) -> Option<Vec<i32>> {
     Some(depths)
 }
 
-/// `Genotype.isHet() || isHomVar()`, which is the same test `QualByDepth` uses.
+/// `Genotype.isHet() || isHomVar()`, which is the same test `QualByDepth` uses: htsjdk's own
+/// type, so a haploid variant call, a lone alternate, is `HOM_VAR` and counts.
 fn is_het_or_hom_var(genotype: &htsjdk_vcf::variant::Genotype) -> bool {
-    let called: Vec<&Allele> = genotype
-        .alleles
-        .iter()
-        .filter(|a| !a.is_no_call())
-        .collect();
-    called.len() >= 2 && !called.iter().all(|a| a.is_reference())
+    genotype.is_het() || genotype.is_hom_var()
 }
 
 /// `AS_QualByDepth.finalizeRawData`: one quality-by-depth per alternate.
