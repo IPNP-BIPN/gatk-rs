@@ -1045,6 +1045,15 @@
       "t": 2,
       "share": 1.0
     },
+    "VariantEval": {
+      "rows": 68,
+      "accepted": 39,
+      "rejected": 29,
+      "distinct_outputs": 35,
+      "matched": 68,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
