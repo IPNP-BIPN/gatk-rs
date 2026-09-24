@@ -5861,6 +5861,143 @@
         "--max-variants-per-shard is held at 0 and --disable-read-filter at WellformedReadFilter, for",
         "the reasons CombineGVCFs gives."
       ]
+    },
+    "VariantEval": {
+      "--eval": [
+        "/work/fixtures/ve_eval2.vcf",
+        "/work/fixtures/ve_eval.vcf"
+      ],
+      "--output": [
+        "/work/out/ve.txt",
+        "/work/out/ve.txt.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/gg_dbsnp.vcf",
+        "/work/fixtures/ve_eval.vcf"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/gg_dbsnp.vcf"
+      ],
+      "--gold-standard": [
+        "null",
+        "/work/fixtures/ve_eval.vcf"
+      ],
+      "--known-cnvs": [
+        "null",
+        "/work/fixtures/ve_cnv.bed"
+      ],
+      "--strat-intervals": [
+        "null",
+        "/work/fixtures/ve_strat.bed",
+        "/work/fixtures/ve_strat_noidx.bed"
+      ],
+      "--stratification-module": [
+        "null",
+        "IntervalStratification",
+        "AlleleCount",
+        "IndelSize",
+        "FilterType",
+        "Sample",
+        "JexlExpression",
+        "OneBPIndel"
+      ],
+      "--eval-module": [
+        "null",
+        "VariantSummary",
+        "MultiallelicSummary",
+        "IndelSummary",
+        "ValidationReport",
+        "GenotypeFilterSummary",
+        "IndelLengthHistogram"
+      ],
+      "--selectExps": [
+        "QD > 5.0",
+        "DP < 30"
+      ],
+      "--selectNames": [
+        "hq",
+        "lowdp"
+      ],
+      "--knownNames": [
+        "null",
+        "comp"
+      ],
+      "--sample": [
+        "null",
+        "sA",
+        "s[AC]"
+      ],
+      "--sample-ploidy": [
+        "2",
+        "1"
+      ],
+      "--combine-variants-distance": [
+        "0",
+        "50"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "100"
+      ],
+      "--min-phase-quality": [
+        "10.0",
+        "30.0"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "50.0",
+        "10.0"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:95-345",
+        "chr2:1-60"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:300-320"
+      ],
+      "--list": [
+        "false"
+      ],
+      "--pedigree": [],
+      "--ancestral-alignments": [],
+      "--input": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--variant-output-filtering": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "$why": [
+        "ve_eval2.vcf is two diploid samples written by hand over cgv_ref.fasta: a SNP shared with",
+        "ve_eval.vcf, a LowQual SNP, a deletion, an insertion, an MNP, an AC0 site, a doubly filtered",
+        "triallelic SNP, a mixed site, a symbolic deletion, a phased SNP and a 20-base deletion on",
+        "chr2. ve_eval.vcf is the reference's own GenotypeGVCFs over cg_combined.g.vcf, whose haploid",
+        "sample VariantAFEvaluator refuses. It comes second, since the first value fills the rows.",
+        "--stratification-module and --eval-module each name one module per row beside the standard",
+        "ones, and not every module: AlleleFrequency, CpG, Contig and the rest cross into tens of",
+        "thousands of states, and the reference ran out of heap on five of them together. Each was",
+        "compared by hand against the oracle instead. Family and MendelianViolationEvaluator need a",
+        "pedigree, which the port refuses, so --pedigree and --ancestral-alignments are held out and",
+        "--list is held at false: all three are port limitations.",
+        "--selectExps and --selectNames carry two paired values and no null, because a row pairing",
+        "one with the other's absence measures one IllegalArgumentException on every such row.",
+        "ve_strat_noidx.bed is refused at the first eval IntervalStratification queries, and",
+        "ve_cnv.bed is indexed because VariantSummary queries it for a CNV with no comp.",
+        "--input, --read-index, --sequence-dictionary and --variant-output-filtering are held out,",
+        "as for CombineGVCFs, and the writer holds are the ones every variant tool keeps."
+      ]
     }
   },
   "constraints": [

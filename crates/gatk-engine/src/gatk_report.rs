@@ -63,17 +63,27 @@ pub enum DataType {
 
 impl DataType {
     /// `GATKReportDataType.fromFormatString`, matched on the conversion character.
+    ///
+    /// `format.matches(regex)` is a WHOLE-string match: `%[Dd]` is `%d` and nothing longer, and a
+    /// format that does not start with `%` is `Unknown` whatever it ends with. VariantEval's first
+    /// column takes the table's name as its format, and `CountVariants` is not `%s`.
     pub fn from_format(format: &str) -> DataType {
-        if format.is_empty() {
-            return DataType::Unknown;
-        }
-        match format.chars().last() {
-            Some('b') | Some('B') => DataType::Boolean,
-            Some('c') | Some('C') => DataType::Character,
-            Some('e') | Some('E') | Some('f') | Some('F') => DataType::Decimal,
-            Some('d') | Some('D') => DataType::Integer,
-            Some('s') | Some('S') => DataType::String,
-            _ => DataType::Unknown,
+        let exact = |kinds: &[&str]| kinds.contains(&format);
+        if exact(&["%b", "%B"]) {
+            DataType::Boolean
+        } else if exact(&["%c", "%C"]) {
+            DataType::Character
+        } else if format.starts_with('%')
+            && format.len() >= 2
+            && matches!(format.chars().last(), Some('e' | 'E' | 'f' | 'F'))
+        {
+            DataType::Decimal
+        } else if exact(&["%d", "%D"]) {
+            DataType::Integer
+        } else if exact(&["%s", "%S"]) {
+            DataType::String
+        } else {
+            DataType::Unknown
         }
     }
 }
@@ -237,8 +247,62 @@ fn apply_format(format: &str, number: f64) -> String {
             }
         }
     }
+    if let Some(rest) = format.strip_prefix("%.") {
+        if let Some(digits) = rest.strip_suffix('e') {
+            if let Ok(places) = digits.parse::<usize>() {
+                return format_scientific(number, places);
+            }
+        }
+    }
     // `%s` on a Double is `Double.toString`, which this port only needs for whole values.
     format_decimals(number, 0).trim_end_matches('.').to_string()
+}
+
+/// `String.format("%.Ne", value)`: the exact decimal expansion rounded HALF_UP to `places`
+/// digits after the point, and an exponent of at least two digits with its sign.
+pub fn format_scientific(value: f64, places: usize) -> String {
+    if value == 0.0 {
+        let sign = if value.is_sign_negative() { "-" } else { "" };
+        return format!("{sign}{:.*}e+00", places, 0.0);
+    }
+    // Enough digits to hold the double's exact binary value, which is what BigDecimal rounds.
+    let exact = format!("{:.80e}", value.abs());
+    let (mantissa, exponent) = exact.split_once('e').expect("an exponent");
+    let mut exponent: i32 = exponent.parse().expect("a numeric exponent");
+    let digits: Vec<u8> = mantissa.bytes().filter(|b| b.is_ascii_digit()).collect();
+    let mut kept: Vec<u8> = digits[..=places].to_vec();
+    if digits[places + 1] >= b'5' {
+        let mut index = kept.len();
+        loop {
+            if index == 0 {
+                kept.insert(0, b'1');
+                kept.pop();
+                exponent += 1;
+                break;
+            }
+            index -= 1;
+            if kept[index] == b'9' {
+                kept[index] = b'0';
+            } else {
+                kept[index] += 1;
+                break;
+            }
+        }
+    }
+    let mut out = String::new();
+    if value < 0.0 {
+        out.push('-');
+    }
+    out.push(kept[0] as char);
+    if places > 0 {
+        out.push('.');
+        for digit in &kept[1..] {
+            out.push(*digit as char);
+        }
+    }
+    let sign = if exponent < 0 { '-' } else { '+' };
+    out.push_str(&format!("e{sign}{:02}", exponent.abs()));
+    out
 }
 
 /// `GATKReportTable.Sorting`.
@@ -338,7 +402,13 @@ impl Table {
             self.rows.len()
         );
         for column in &self.columns {
-            let _ = write!(out, ":{}", column.format);
+            // `getFormat()`, which is `%s` for any column whose format names no known type.
+            let format = if column.data_type == DataType::Unknown {
+                "%s"
+            } else {
+                column.format.as_str()
+            };
+            let _ = write!(out, ":{format}");
         }
         // `ENDLINE` is ":;", printed by `println(ENDLINE)` after the last `:<format>`, so the line
         // ends with a separator the formats do not account for. Measured, not read off the source.
