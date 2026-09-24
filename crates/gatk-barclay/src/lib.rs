@@ -1698,10 +1698,20 @@ impl Parser {
 
         while cursor < argv.len() {
             let token = argv[cursor];
-            let name = if let Some(rest) = token.strip_prefix("--") {
-                rest
-            } else if token.len() > 1 && token.starts_with('-') && !looks_like_number(token) {
-                &token[1..]
+            // `OptionParserState.moreOptions` and `ParserRules`: `--` ends the options and every
+            // later token is positional; a lone `-` is positional; anything else that starts with
+            // a dash is an option, a negative number included.
+            if token == "--" {
+                positionals.extend(argv[cursor + 1..].iter().map(|t| (*t).to_string()));
+                break;
+            }
+            let (name, unrecognized) = if let Some(rest) = token.strip_prefix("--") {
+                // `handleLongOptionToken` reports the key, without its dashes.
+                (rest, rest)
+            } else if token.len() > 1 && token.starts_with('-') {
+                // `BarclayOptionParser.handleShortOptionToken` throws
+                // `new UnrecognizedOptionException(candidate)`: the whole token, dash included.
+                (&token[1..], token)
             } else {
                 positionals.push(token.to_string());
                 cursor += 1;
@@ -1715,7 +1725,7 @@ impl Parser {
                 // jopt-simple's `UnrecognizedOptionException`, whose message Barclay re-wraps in a
                 // plain `CommandLineException`.
                 return Err(Error::command_line(format!(
-                    "{name} is not a recognized option"
+                    "{unrecognized} is not a recognized option"
                 )));
             };
             let definition = &self.definitions[index];
@@ -1927,13 +1937,6 @@ fn reject_hybrid_syntax(option_name: &str) -> Result<(), Error> {
 /// character.
 fn looks_like_an_option(token: &str) -> bool {
     token.len() > 1 && token.starts_with('-')
-}
-
-/// A lone `-` is not an option, and neither is a negative number: jopt-simple's short-option
-/// recognition is what decides, and Barclay disables clustering so a single dash introduces one
-/// name.
-fn looks_like_number(token: &str) -> bool {
-    token[1..].parse::<f64>().is_ok()
 }
 
 /// `StrictBooleanConverter.convert`, which is case-insensitive and accepts the single letters.
