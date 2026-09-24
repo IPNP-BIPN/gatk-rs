@@ -423,7 +423,9 @@ pub fn make_combined_annotation_string(
 /// `None` when the raw key is absent. The reduced string is written over the **current** variant's
 /// alternates while the histograms were parsed over the **original** variant's alleles, so an
 /// alternate that survived trimming under a different representation is written as the missing
-/// value rather than dropped, keeping the field's arity equal to the alternate count.
+/// value rather than dropped, keeping the field's arity equal to the alternate count. The combined
+/// raw string is written over the current alleles as well, `makeCombinedAnnotationString(
+/// vc.getAlleles(), ...)`, so an alternate the genotyper dropped leaves it.
 pub fn finalize_raw_data(
     annotation: AsRankSum,
     vc_alternates: &[Allele],
@@ -456,7 +458,12 @@ pub fn finalize_raw_data(
             Some((_, Some(median))) => reduced.push_str(&format_decimals(*median, 3)),
         }
     }
-    let combined = make_combined_annotation_string(original_alleles, &per_allele)?;
+    // Over the CURRENT alleles too, so an alternate `--max-alternate-alleles` dropped leaves the
+    // raw key `--keep-combined-raw-annotations` writes.
+    let current: Vec<Allele> = std::iter::once(reference.clone())
+        .chain(vc_alternates.iter().cloned())
+        .collect();
+    let combined = make_combined_annotation_string(&current, &per_allele)?;
     Ok(Some((
         annotation.vcf_key().to_string(),
         reduced,
@@ -475,6 +482,20 @@ mod tests {
             Allele::from_str("C", false).expect("an allele"),
             Allele::from_str("G", false).expect("an allele"),
         ]
+    }
+
+    #[test]
+    fn a_dropped_alternate_leaves_the_combined_raw_string() {
+        let alleles = alleles();
+        let finalized = finalize_raw_data(
+            AsRankSum::BaseQuality,
+            &alleles[1..2],
+            &alleles,
+            Some("|-0.5,1|-0.5,1"),
+        )
+        .expect("a finalized pair")
+        .expect("both keys");
+        assert_eq!(finalized.3, "|-0.5,1");
     }
 
     #[test]

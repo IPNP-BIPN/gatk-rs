@@ -2868,6 +2868,28 @@ public class MakeFixtures {
                 "-R", dir.resolve("cgv_ref.fasta").toString(),
                 "-O", dir.resolve("cg_combined.g.vcf").toString(),
                 "--add-output-vcf-command-line", "false"});
+        // The `--dbsnp` of `GenotypeGVCFs`, at the sites it calls on cg_combined: at chr1:100
+        // (GGCT to GT,G) the pair its split trims to GGC>G, and the untrimmed GGCT>GT, which
+        // matches nothing; two records at chr1:102, one without an ID; a two-alternate record at
+        // chr1:140; a filtered one at chr1:210; another alternate at chr1:211. The copy with no
+        // index is refused at the first site the annotation engine queries it.
+        final String ggDbsnp = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=q10,Description=\"Quality below 10\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                + "chr1\t100\trs9100\tGGC\tG\t.\t.\t.\n"
+                + "chr1\t100\trs9101\tGGCT\tGT\t.\t.\t.\n"
+                + "chr1\t102\trs9102\tC\tT\t.\t.\t.\n"
+                + "chr1\t102\t.\tC\tT\t.\t.\t.\n"
+                + "chr1\t140\trs9140\tG\tC,T\t.\t.\t.\n"
+                + "chr1\t210\trs9210\tT\tC\t.\tq10\t.\n"
+                + "chr1\t211\trs9211\tC\tG\t.\t.\t.\n"
+                + "chr2\t21\trs9021\tA\tT\t.\tPASS\t.\n";
+        Files.writeString(dir.resolve("gg_dbsnp.vcf"), ggDbsnp, StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("gg_dbsnp.vcf").toString()});
+        Files.writeString(dir.resolve("gg_dbsnp_noidx.vcf"), ggDbsnp, StandardCharsets.UTF_8);
     }
 
     /** A diploid hom-ref block at the given GQ, one read short of MIN_DP, with its PL from the GQ. */

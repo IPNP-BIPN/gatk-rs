@@ -69,6 +69,8 @@ pub struct AnnotationEngine {
     /// `rawAnnotationsToKeep`: the raw keys of the annotations `--keep-specific-combined-raw-
     /// annotation` named.
     pub raw_keys_to_keep: Vec<&'static str>,
+    /// The `--dbsnp` records, in file order, when the argument was given.
+    pub dbsnp: Option<Vec<VariantContext>>,
 }
 
 fn value_of(annotation: AnnotationValue) -> Value {
@@ -190,6 +192,20 @@ impl AnnotationEngine {
         }
         let mut out = vc.clone();
         out.attributes = attributes;
+        // `variantOverlapAnnotator.annotateOverlaps(features, annotateRsID(features, annotated))`,
+        // over the `--dbsnp` records `getValues(dbSNP, start)` returns: those starting here.
+        if let Some(dbsnp) = &self.dbsnp {
+            let sources: Vec<&VariantContext> = dbsnp
+                .iter()
+                .filter(|record| record.contig == out.contig && record.start == out.start)
+                .collect();
+            out = crate::variant_overlap::annotate(&sources, &out).map_err(|message| {
+                EngineError::Runtime {
+                    class: "java.lang.IllegalArgumentException".to_string(),
+                    message,
+                }
+            })?;
+        }
         Ok(out)
     }
 }
