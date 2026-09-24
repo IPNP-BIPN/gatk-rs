@@ -964,6 +964,51 @@
       "t": 2,
       "share": 1.0
     },
+    "AddFlowBaseQuality": {
+      "rows": 24,
+      "accepted": 23,
+      "rejected": 1,
+      "distinct_outputs": 23,
+      "matched": 24,
+      "t": 2,
+      "share": 1.0
+    },
+    "AddFlowSNVQuality": {
+      "rows": 26,
+      "accepted": 24,
+      "rejected": 2,
+      "distinct_outputs": 24,
+      "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "FlowPairHMMAlignReadsToHaplotypes": {
+      "rows": 38,
+      "accepted": 26,
+      "rejected": 12,
+      "distinct_outputs": 15,
+      "matched": 38,
+      "t": 2,
+      "share": 1.0
+    },
+    "FlowFeatureMapper": {
+      "rows": 25,
+      "accepted": 18,
+      "rejected": 7,
+      "distinct_outputs": 15,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
+    "CRAMIssue8768Detector": {
+      "rows": 11,
+      "accepted": 10,
+      "rejected": 1,
+      "distinct_outputs": 6,
+      "matched": 11,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
@@ -988,6 +1033,15 @@
       "rejected": 6,
       "distinct_outputs": 6,
       "matched": 12,
+      "t": 2,
+      "share": 1.0
+    },
+    "VCFComparator": {
+      "rows": 40,
+      "accepted": 14,
+      "rejected": 26,
+      "distinct_outputs": 1,
+      "matched": 40,
       "t": 2,
       "share": 1.0
     }
