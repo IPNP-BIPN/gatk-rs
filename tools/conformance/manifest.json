@@ -6662,7 +6662,7 @@
     },
     {
       "id": "tool-argument-declarations",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "what one tool declares, and therefore which command lines it accepts",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 35839898955, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: a hundred and thirty-seven declared tools. The twenty-seven added are the fifth lot of #1225, from AddFlowBaseQuality to VariantRecalibrator."
+          "why": "Re-measured with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: a hundred and thirty-seven declared tools. The twenty-seven added are the fifth lot of #1225, from AddFlowBaseQuality to VariantRecalibrator."
         }
       ]
     },
@@ -6730,7 +6730,7 @@
     },
     {
       "id": "tool-argument-enums",
-      "status": "oracle-backed",
+      "status": "golden-pending",
       "title": "the constants an enum-valued argument accepts, and what a value outside them costs",
       "harness": "tools/argument-conformance",
       "tools": [
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced."
+          "why": "Re-measured with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced."
         }
       ]
     },
