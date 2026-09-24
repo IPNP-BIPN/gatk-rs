@@ -5505,8 +5505,9 @@
         "are held out: the port does not carry the overlap annotator, the population priors or the",
         "pedigree and flow annotations for this tool. --input-is-somatic is held at false, for the",
         "same reason.",
-        "--max-alternate-alleles is held at its default: a site above it is reduced to the most likely",
-        "alleles, which the port does not carry.",
+        "--max-alternate-alleles is the default or 1, which reduces every two-alternate site to the",
+        "one whose likelihood margins are largest before the AF calculation, matching the genotypes",
+        "to it best-to-original, while the calls are still made against the site's own alleles.",
         "--reference is held at cgv_ref.fasta, the one reference carrying both contigs.",
         "--sequence-dictionary, --input and --read-index are held out, as for CombineGVCFs.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
@@ -5583,7 +5584,8 @@
         "false"
       ],
       "--max-alternate-alleles": [
-        "6"
+        "6",
+        "1"
       ],
       "--sequence-dictionary": [],
       "--input": [],
