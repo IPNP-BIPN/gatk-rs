@@ -395,9 +395,9 @@ public class ToolArgumentEnumDump {
         // Thirteen tools whose ports are oracle-backed and whose inputs are VCFs or GVCFs: the GVCF
         // genotyper, combiner and reblocker, VQSR's application, the DRAGstr calibration,
         // an allele-specific read counter, the structural-variant clusterers and their concordance
-        // and stratification, and two undocumented ones, a VCF comparator and the annotator. `GenotypeGVCFs` is not
-        // among them: the parser it hands out refuses its own definitions, `keep-combined` naming a
-        // mutex argument, `keep-specific-combined-raw-annotation`, that the parser does not hold.
+        // and stratification, and two undocumented ones, a VCF comparator and the annotator.
+        // `GenotypeGVCFs` too: this dump reads only the tool's own parser, which holds the mutex
+        // target its annotation plugin contributes.
         declarations("ASEReadCounter",
                 new org.broadinstitute.hellbender.tools.walkers.rnaseq.ASEReadCounter());
         declarations("ApplyVQSR",
@@ -406,6 +406,8 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.dragstr.CalibrateDragstrModel());
         declarations("CombineGVCFs",
                 new org.broadinstitute.hellbender.tools.walkers.CombineGVCFs());
+        declarations("GenotypeGVCFs",
+                new org.broadinstitute.hellbender.tools.walkers.GenotypeGVCFs());
         declarations("GnarlyGenotyper",
                 new org.broadinstitute.hellbender.tools.walkers.gnarlyGenotyper.GnarlyGenotyper());
         declarations("ReblockGVCF",

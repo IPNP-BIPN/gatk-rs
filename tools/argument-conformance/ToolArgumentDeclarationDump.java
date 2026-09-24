@@ -445,9 +445,7 @@ public class ToolArgumentDeclarationDump {
         // Thirteen tools whose ports are oracle-backed and whose inputs are VCFs or GVCFs: the GVCF
         // genotyper, combiner and reblocker, VQSR's application, the DRAGstr calibration,
         // an allele-specific read counter, the structural-variant clusterers and their concordance
-        // and stratification, and two undocumented ones, a VCF comparator and the annotator. `GenotypeGVCFs` is not
-        // among them: the parser it hands out refuses its own definitions, `keep-combined` naming a
-        // mutex argument, `keep-specific-combined-raw-annotation`, that the parser does not hold.
+        // and stratification, and two undocumented ones, a VCF comparator and the annotator.
         declarations("ASEReadCounter",
                 new org.broadinstitute.hellbender.tools.walkers.rnaseq.ASEReadCounter());
         declarations("ApplyVQSR",
@@ -456,6 +454,10 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.dragstr.CalibrateDragstrModel());
         declarations("CombineGVCFs",
                 new org.broadinstitute.hellbender.tools.walkers.CombineGVCFs());
+        // `GenotypeGVCFs`, whose instance-built parser refuses its own definitions: the count row
+        // says so, and the tool's own parser, plugins included, is what is declared.
+        declarations("GenotypeGVCFs",
+                new org.broadinstitute.hellbender.tools.walkers.GenotypeGVCFs());
         declarations("GnarlyGenotyper",
                 new org.broadinstitute.hellbender.tools.walkers.gnarlyGenotyper.GnarlyGenotyper());
         declarations("ReblockGVCF",
@@ -595,17 +597,29 @@ public class ToolArgumentDeclarationDump {
      * does not print either.
      */
     static void declarations(final String tool, final Object target) {
-        final List<NamedArgumentDefinition> instance =
-                new CommandLineArgumentParser(target).getNamedArgumentDefinitions();
+        // The parser built over the instance alone holds no plugin arguments, and `GenotypeGVCFs`
+        // declares a mutex, `keep-combined-raw-annotations` against
+        // `keep-specific-combined-raw-annotation`, whose target only its annotation plugin
+        // contributes. That parser refuses the definition outright, so its count is recorded as
+        // refused rather than as a number, and no argument is reported as the tool's alone.
+        List<NamedArgumentDefinition> instance = null;
+        try {
+            instance = new CommandLineArgumentParser(target).getNamedArgumentDefinitions();
+        } catch (final org.broadinstitute.barclay.argparser.CommandLineException.CommandLineParserInternalException e) {
+            instance = null;
+        }
         final List<NamedArgumentDefinition> definitions =
                 ((CommandLineArgumentParser) ((org.broadinstitute.hellbender.cmdline
                         .CommandLineProgram) target).getCommandLineParser())
                         .getNamedArgumentDefinitions();
-        System.out.printf("count\t%s\tinstance=%d tool=%d%n", tool, instance.size(),
+        System.out.printf("count\t%s\tinstance=%s tool=%d%n", tool,
+                instance == null ? "refused" : String.valueOf(instance.size()),
                 definitions.size());
         final List<String> seen = new ArrayList<>();
-        for (final NamedArgumentDefinition definition : instance) {
-            seen.add(definition.getLongName());
+        if (instance != null) {
+            for (final NamedArgumentDefinition definition : instance) {
+                seen.add(definition.getLongName());
+            }
         }
         for (int i = 0; i < definitions.size(); i++) {
             final NamedArgumentDefinition definition = definitions.get(i);
@@ -655,7 +669,7 @@ public class ToolArgumentDeclarationDump {
             // line above uses as its separator.
             System.out.printf("doc\t%s\t%d\t%s%n", tool, i,
                     escape(String.valueOf(definition.getDocString())));
-            if (!seen.contains(definition.getLongName())) {
+            if (instance != null && !seen.contains(definition.getLongName())) {
                 System.out.printf("only-on-the-tool\t%s\t%s%n", tool,
                         definition.getLongName());
             }
