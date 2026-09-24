@@ -236,11 +236,8 @@ fn read_position(read: &BamRecord, vc: &VariantContext) -> Option<f64> {
     if read_utils::start(read) == vc.stop as i32 + 1 && opens_with_insertion(read) {
         return Some(0.0);
     }
-    let (index, _) = read_utils::read_index_for_reference_coordinate(
-        read_utils::start(read),
-        &read.cigar,
-        vc.start as i32,
-    );
+    // `getReadIndexForReferenceCoordinate(read, ...)` walks from the SOFT start.
+    let (index, _) = read_utils::read_index_for_read(read, vc.start as i32);
     if index < 0 {
         return None;
     }

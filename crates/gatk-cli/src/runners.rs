@@ -14783,6 +14783,457 @@ impl gatk_tools::variant_eval_engine::ReferenceBases for ReferenceBases<'_> {
     }
 }
 
+/// `VariantAnnotator`: a VCF walked record by record, each annotated from the reads, the
+/// reference and the feature inputs that overlap it.
+///
+/// The annotations, the expressions and the overlap flags are
+/// [`gatk_tools::variant_annotator_engine`]; this is the `VariantWalker` around them:
+///
+/// * **the header is the annotations' descriptions, the overlap lines and the expression lines
+///   beside the input's own**, collapsed where two are identical, with the contig lines rebuilt;
+/// * **each record is annotated from the reads overlapping it**, after the tool's read filters,
+///   and a record whose first reference base is ambiguous is written as it was read;
+/// * **a feature input with no index is refused at its first query**, which is the first record
+///   annotated: the expressions' resources first, then `--dbsnp`, then every `--comparison`.
+///
+/// More than one `--input`, a pedigree and the flow annotations' arguments are the port's
+/// limitations, and so is any annotation the engine does not carry.
+pub fn variant_annotator(parser: &Parser) -> Outcome {
+    use gatk_annotation::catalogue;
+    use gatk_tools::genotyping_engine::EngineError;
+    use gatk_tools::variant_annotator_engine as va;
+    use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
+
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let _ = resolve_read_filters(parser, "VariantAnnotator")?;
+    // `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`, which runs while the command line
+    // is parsed. The tool enables nothing by default: only `-A` and `-G` reach the engine.
+    let resolved = catalogue::resolve(
+        &catalogue::AnnotationArguments {
+            annotations: arguments(parser, "annotation"),
+            groups: arguments(parser, "annotation-group"),
+            excluded: arguments(parser, "annotations-to-exclude"),
+            disable_tool_defaults: flag(parser, "disable-tool-default-annotations"),
+            enable_all: flag(parser, "enable-all-annotations"),
+        },
+        &[],
+        &[],
+    )
+    .map_err(|error| Thrown::command_line(error.message()))?;
+    let limitation = |what: &str| {
+        Thrown::non_user(
+            PORT_LIMITATION,
+            format!("{what} This message is the port's own and not GATK's."),
+        )
+    };
+    for configured in ["pedigree", "founder-id", "flow-order-for-annotations"] {
+        if !arguments(parser, configured).is_empty() || argument(parser, configured).is_some() {
+            return Err(limitation(&format!(
+                "--{configured} configures a pedigree or flow annotation, which this port does not \
+                 carry for VariantAnnotator yet."
+            )));
+        }
+    }
+    let reads_paths = arguments(parser, "input");
+    if reads_paths.len() > 1 {
+        return Err(limitation(
+            "more than one --input is merged by coordinate, which is not ported for \
+             VariantAnnotator.",
+        ));
+    }
+
+    let VariantWalkerStart {
+        input,
+        text,
+        intervals,
+        ..
+    } = variant_walker_startup(parser, "VariantAnnotator")?;
+    // `VariantWalker.onStartup` bounds the driving variants to `-L` before `onTraversalStart`
+    // reads a single expression, which is where an input with no index is refused.
+    if gatk_engine::variant_source::intervals_for_traversal(intervals.as_deref()).is_some()
+        && !has_feature_index(&input)
+    {
+        return Err(Thrown::user(format!(
+            "Input {input} must support random access to enable traversal by intervals. If it's a \
+             file, please index it using the bundled tool IndexFeatureFile"
+        )));
+    }
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+
+    // The feature inputs, opened at startup and queried later. `FeatureInput.getName()` is the
+    // tag, or the absolute path when there is none.
+    let open_features = |path: &str| -> Result<Vec<htsjdk_vcf::variant::VariantContext>, Thrown> {
+        let (_, text) = open_feature_input(path)?;
+        Ok(htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?
+            .records)
+    };
+    let dbsnp = argument(parser, "dbsnp");
+    let dbsnp_records = match &dbsnp {
+        Some(path) => Some(open_features(path)?),
+        None => None,
+    };
+    let comps = tagged_values(parser, "comparison");
+    let mut comp_records = Vec::new();
+    for (path, _) in &comps {
+        comp_records.push(open_features(path)?);
+    }
+    let resources = tagged_values(parser, "resource");
+    let mut resource_headers = Vec::new();
+    let mut resource_records = Vec::new();
+    for (path, _) in &resources {
+        let (_, text) = open_feature_input(path)?;
+        let parsed = htsjdk_vcf::reader::read_vcf(&text)
+            .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?;
+        resource_headers.push(parsed.header);
+        resource_records.push(parsed.records);
+    }
+    let name_of =
+        |(path, tag): &(String, Option<String>)| tag.clone().unwrap_or_else(|| absolute_path(path));
+
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    let reads = match reads_paths.first() {
+        Some(path) => {
+            let path = std::path::Path::new(path);
+            let source = match htsjdk_bam::sam_files::find_index(path) {
+                Some(index) => gatk_engine::reads::ReadsDataSource::open(path, &index),
+                None => gatk_engine::reads::ReadsDataSource::open_unindexed(path),
+            }
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            let indexed = htsjdk_bam::sam_files::find_index(path).is_some();
+            Some((source, indexed))
+        }
+        None => None,
+    };
+    let read_filters = resolve_read_filters(parser, "VariantAnnotator")?;
+    let reads_header = reads.as_ref().map(|(source, _)| source.header().clone());
+
+    // `onTraversalStart`.
+    let samples = file.header.samples.clone();
+    if let Some(header) = &reads_header {
+        // A `HashSet` of the read groups' samples, walked in its own order.
+        let mut read_samples: Vec<String> = Vec::new();
+        for group in &header.read_groups {
+            let sample = group.attributes.get("SM").unwrap_or("null").to_string();
+            if !read_samples.contains(&sample) {
+                read_samples.push(sample);
+            }
+        }
+        let order = gatk_engine::java_hash::hash_set_order(&read_samples)
+            .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+        if let Some(stranger) = order.iter().find(|sample| !samples.contains(sample)) {
+            return Err(Thrown::user(format!(
+                "Reads sample '{stranger}' from readgroups tags does not match any sample in the \
+                 variant genotypes"
+            )));
+        }
+    }
+    // `initializeOverlapAnnotator`: every comparison under its name, then dbSNP under `DB`.
+    // The map is a `LinkedHashMap` keyed by `FeatureInput`, which is equal to another naming the
+    // same path under the same tag: a repeated comparison keeps its first slot and its last name,
+    // and one that is the dbSNP file itself, untagged, is renamed `DB` where it stands.
+    let mut overlaps: Vec<((String, Option<String>), String, usize)> = Vec::new();
+    for (index, comp) in comps.iter().enumerate() {
+        match overlaps.iter_mut().find(|(key, ..)| key == comp) {
+            Some(slot) => slot.1 = name_of(comp),
+            None => overlaps.push((comp.clone(), name_of(comp), index)),
+        }
+    }
+    if overlaps.iter().any(|(_, name, _)| name == va::DBSNP_KEY) {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "The map of overlaps must not contain DB",
+        ));
+    }
+    if let Some(path) = &dbsnp {
+        let key = (path.clone(), None);
+        match overlaps.iter_mut().find(|(other, ..)| *other == key) {
+            Some(slot) => slot.1 = va::DBSNP_KEY.to_string(),
+            None => overlaps.push((key, va::DBSNP_KEY.to_string(), comps.len())),
+        }
+    }
+    let overlap_names: Vec<String> = overlaps.iter().map(|(_, name, _)| name.clone()).collect();
+    // `addExpressions`, over the `HashSet` the argument is.
+    let resource_names: Vec<String> = resources.iter().map(name_of).collect();
+    let mut requested: Vec<String> = Vec::new();
+    for text in arguments(parser, "expression") {
+        if !requested.contains(&text) {
+            requested.push(text);
+        }
+    }
+    let requested = gatk_engine::java_hash::hash_set_order(&requested)
+        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+    let engine_thrown = |error: EngineError| match error {
+        EngineError::Limitation(what) => limitation(&what),
+        EngineError::Runtime { class, message } => {
+            if class.starts_with("org.broadinstitute.hellbender.exceptions.UserException") {
+                Thrown::user(message)
+            } else {
+                Thrown::non_user(java_class_name(&class), message)
+            }
+        }
+    };
+    let mut expressions = Vec::new();
+    for text in &requested {
+        expressions.push(va::expression(text, &resource_names).map_err(engine_thrown)?);
+    }
+
+    // `getVCFAnnotationDescriptions(false)`, then the input's own lines.
+    let compound = |id: &str, number: Cardinality, line_type: LineType, description: &str| {
+        HeaderLine::Compound {
+            key: "INFO".to_string(),
+            id: id.to_string(),
+            number,
+            line_type,
+            description: description.to_string(),
+            extra: Vec::new(),
+        }
+    };
+    let mut lines: Vec<HeaderLine> = catalogue::descriptions(&resolved, false, false);
+    for name in &overlap_names {
+        lines.push(
+            htsjdk_vcf::standard_header_lines::standard_info_line(name).unwrap_or_else(|| {
+                compound(
+                    name,
+                    Cardinality::Fixed(0),
+                    LineType::Flag,
+                    &format!("{name} Membership"),
+                )
+            }),
+        );
+    }
+    for expression in &mut expressions {
+        if expression.field_name == "ID" {
+            lines.push(compound(
+                &expression.full_name,
+                Cardinality::Fixed(1),
+                LineType::String,
+                "ID field transferred from external VCF resource",
+            ));
+            continue;
+        }
+        let target =
+            resource_headers[expression.binding]
+                .lines
+                .iter()
+                .find_map(|line| match line {
+                    HeaderLine::Compound {
+                        key,
+                        id,
+                        number,
+                        line_type,
+                        description,
+                        ..
+                    } if key == "INFO" && *id == expression.field_name => {
+                        Some((*number, *line_type, description.clone()))
+                    }
+                    _ => None,
+                });
+        let (number, line_type, description) = target.unwrap_or((
+            Cardinality::Unbounded,
+            LineType::String,
+            "Value transferred from another external VCF resource".to_string(),
+        ));
+        expression.count = Some(number);
+        lines.push(compound(
+            &expression.full_name,
+            number,
+            line_type,
+            &description,
+        ));
+    }
+    lines.extend(file.header.lines.iter().cloned());
+    let mut unique: Vec<HeaderLine> = Vec::with_capacity(lines.len());
+    for line in lines {
+        if !unique.contains(&line) {
+            unique.push(line);
+        }
+    }
+    let header = update_header_contig_lines(
+        parser,
+        VcfHeader {
+            lines: unique,
+            samples: samples.clone(),
+        },
+    )?;
+    let engine = va::Engine {
+        resolved: resolved.clone(),
+        overlap_names: overlap_names.clone(),
+        expressions,
+        allele_concordance: flag(parser, "resource-allele-concordance"),
+    };
+    let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
+
+    // The traversal.
+    let kept = variants_in_traversal(&file.records, intervals.as_deref(), &input)?;
+    let filter = match &reads_header {
+        Some(header) => Some(read_filter(parser, &read_filters, header)?),
+        None => None,
+    };
+    // `getBestAvailableSequenceDictionary`, which bounds the reference window: the driving
+    // variants' contig lines, and the reference's when they carry no length.
+    let contig_length = |contig: &str, reference: &gatk_engine::reference::ReferenceFileSource| {
+        let declared = file.header.lines.iter().find_map(|line| match line {
+            HeaderLine::Contig { fields, .. } => {
+                let id = fields.iter().find(|(key, _)| key == "ID")?;
+                if id.1 != contig {
+                    return None;
+                }
+                fields
+                    .iter()
+                    .find(|(key, _)| key == "length")
+                    .and_then(|(_, value)| value.parse::<i64>().ok())
+            }
+            _ => None,
+        });
+        declared
+            .filter(|length| *length > 0)
+            .unwrap_or_else(|| reference.sequence_length(contig).unwrap_or(0) as i64)
+    };
+    let unindexed = |path: &str| {
+        Thrown::user(format!(
+            "Input {path} must support random access to enable queries by interval. If it's a \
+             file, please index it using the bundled tool IndexFeatureFile"
+        ))
+    };
+    let at = |records: &[htsjdk_vcf::variant::VariantContext],
+              vc: &htsjdk_vcf::variant::VariantContext|
+     -> Vec<usize> {
+        records
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.contig == vc.contig && record.start == vc.start)
+            .map(|(index, _)| index)
+            .collect()
+    };
+    let mut written: Vec<htsjdk_vcf::variant::VariantContext> = Vec::new();
+    let mut random = gatk_random();
+    for vc in kept {
+        // `refContext.getBases().length == 0 || simpleBaseToBaseIndex(refContext.getBase()) != -1`.
+        let mut window: Option<(i64, Vec<u8>)> = None;
+        if let Some(reference) = reference.as_mut() {
+            let base = reference
+                .query(&vc.contig, vc.start as i32, vc.start as i32)
+                .ok()
+                .and_then(|bases| bases.first().copied());
+            if !matches!(
+                base.map(|base| base.to_ascii_uppercase()),
+                Some(b'A' | b'C' | b'G' | b'T')
+            ) {
+                written.push(vc.clone());
+                continue;
+            }
+            // `new SimpleInterval(vc).expandWithinContig(REFERENCE_PADDING, sequenceDictionary)`.
+            let length = contig_length(&vc.contig, reference);
+            let start = (vc.start - 100).max(1);
+            let end = (vc.stop + 100).min(length.max(1));
+            let bases = reference
+                .query(&vc.contig, start as i32, end as i32)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            window = Some((start, bases));
+        }
+
+        // `ReadsContext(reads, variantInterval, readFilter)`.
+        let overlapping: Vec<htsjdk_bam::record::BamRecord> = match (&reads, &filter) {
+            (Some((source, indexed)), Some(filter)) => {
+                if !indexed {
+                    return Err(Thrown::user(
+                        "Cannot query reads data source by interval unless all files are indexed",
+                    ));
+                }
+                source
+                    .query(&[gatk_engine::interval::SimpleInterval {
+                        contig: vc.contig.clone(),
+                        start: vc.start as i32,
+                        end: vc.stop as i32,
+                    }])
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?
+                    .into_iter()
+                    .filter(|read| filter(read))
+                    .collect()
+            }
+            _ => Vec::new(),
+        };
+        let likelihoods = va::make_likelihoods(
+            vc,
+            &samples,
+            &overlapping,
+            reads_header.as_ref(),
+            minimum_base_quality,
+        )
+        .map_err(|failure| Thrown::non_user(java_class_name(failure.class()), failure.message()))?;
+
+        // The first queries: each expression's resource, in the expressions' order.
+        for expression in &engine.expressions {
+            let (path, _) = &resources[expression.binding];
+            if !has_feature_index(path) {
+                return Err(unindexed(path));
+            }
+        }
+        let site = va::Site {
+            likelihoods: &likelihoods,
+            window: window
+                .as_ref()
+                .map_or((vc.start, &[][..]), |(start, bases)| {
+                    (*start, bases.as_slice())
+                }),
+            overlaps: overlaps
+                .iter()
+                .map(|(_, _, source)| {
+                    let records = comp_records
+                        .get(*source)
+                        .or(dbsnp_records.as_ref())
+                        .expect("every overlap is a comparison or dbSNP");
+                    at(records, vc).into_iter().map(|i| &records[i]).collect()
+                })
+                .collect(),
+            dbsnp: dbsnp_records
+                .as_ref()
+                .map(|records| at(records, vc).into_iter().map(|i| &records[i]).collect()),
+            resources: resource_records
+                .iter()
+                .map(|records| at(records, vc).into_iter().map(|i| &records[i]).collect())
+                .collect(),
+        };
+        let annotated = engine
+            .annotate_context(vc, &site, &mut random)
+            .map_err(engine_thrown)?;
+        // Then `annotateRsID` queries dbSNP and `annotateOverlaps` every entry of its map.
+        if let Some(path) = &dbsnp {
+            if !has_feature_index(path) {
+                return Err(unindexed(path));
+            }
+        }
+        for ((path, _), ..) in &overlaps {
+            if !has_feature_index(path) {
+                return Err(unindexed(path));
+            }
+        }
+        written.push(annotated);
+    }
+    drop(random);
+
+    let keep = variant_output_filter(parser, intervals.as_deref())?;
+    written.retain(|record| keep(record));
+    let mut header = header;
+    apply_sites_only(parser, &mut header, &mut written);
+    let rendered = write_vcf_honouring_lenient(parser, &header, &written)?;
+    write_variant_output(parser, &output, &rendered)?;
+    Ok(None)
+}
+
 fn gatk_random() -> std::sync::MutexGuard<'static, gatk_engine::java_random::JavaRandom> {
     static RANDOM: std::sync::OnceLock<std::sync::Mutex<gatk_engine::java_random::JavaRandom>> =
         std::sync::OnceLock::new();
@@ -20994,103 +21445,12 @@ fn java_variant_context_string_decoded(
     record: &htsjdk_vcf::variant::VariantContext,
     source: &str,
 ) -> String {
-    use htsjdk_vcf::variant::Value;
     let lazy = java_variant_context_string(record, source);
     let mut genotypes: Vec<&htsjdk_vcf::variant::Genotype> = record.genotypes.iter().collect();
     genotypes.sort_by(|a, b| a.sample_name.cmp(&b.sample_name));
-    fn java(value: &Value) -> String {
-        match value {
-            Value::Missing => "null".to_string(),
-            Value::Bool(flag) => flag.to_string(),
-            Value::Str(text) => text.clone(),
-            Value::List(items) => format!(
-                "[{}]",
-                items.iter().map(java).collect::<Vec<String>>().join(", ")
-            ),
-            other => other.format().unwrap_or_default(),
-        }
-    }
     let rendered: Vec<String> = genotypes
         .iter()
-        .map(|genotype| {
-            let allele = |a: &htsjdk_vcf::allele::Allele| {
-                if a.is_no_call() {
-                    ".".to_string()
-                } else if a.is_reference() {
-                    format!("{}*", a.display_string())
-                } else {
-                    a.display_string()
-                }
-            };
-            let calls = if genotype.alleles.is_empty() {
-                "NA".to_string()
-            } else {
-                let mut alleles: Vec<&htsjdk_vcf::allele::Allele> =
-                    genotype.alleles.iter().collect();
-                if !genotype.phased {
-                    alleles.sort_by(|a, b| {
-                        b.is_reference()
-                            .cmp(&a.is_reference())
-                            .then(a.display_string().cmp(&b.display_string()))
-                    });
-                }
-                alleles
-                    .into_iter()
-                    .map(allele)
-                    .collect::<Vec<String>>()
-                    .join(if genotype.phased { "|" } else { "/" })
-            };
-            let int = |name: &str, value: Option<i32>| {
-                value.map(|v| format!(" {name} {v}")).unwrap_or_default()
-            };
-            let ints = |name: &str, values: &Option<Vec<i32>>| {
-                values
-                    .as_ref()
-                    .map(|v| {
-                        format!(
-                            " {name} {}",
-                            v.iter()
-                                .map(i32::to_string)
-                                .collect::<Vec<String>>()
-                                .join(",")
-                        )
-                    })
-                    .unwrap_or_default()
-            };
-            let mut extended: Vec<(String, String)> = genotype
-                .extended
-                .iter()
-                .map(|(key, value)| (key.clone(), java(value)))
-                .collect();
-            extended.sort();
-            let extended = if extended.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " {{{}}}",
-                    extended
-                        .iter()
-                        .map(|(key, value)| format!("{key}={value}"))
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )
-            };
-            format!(
-                "[{} {}{}{}{}{}{}{}]",
-                genotype.sample_name,
-                calls,
-                int("GQ", genotype.gq),
-                int("DP", genotype.dp),
-                ints("AD", &genotype.ad),
-                ints("PL", &genotype.pl),
-                genotype
-                    .filters
-                    .as_ref()
-                    .map(|f| format!(" FT {f}"))
-                    .unwrap_or_default(),
-                extended
-            )
-        })
+        .map(|genotype| gatk_tools::variant_annotator_engine::java_genotype_string(genotype))
         .collect();
     let decoded = format!("[{}]", rendered.join(","));
     // Everything but the genotypes is the lazy form's.

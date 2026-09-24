@@ -395,6 +395,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ReblockGVCF" => Some(run_reblock_gvcf),
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
+        "VariantAnnotator" => Some(run_variant_annotator),
         _ => None,
     }
 }
@@ -502,6 +503,10 @@ fn run_gnarly_genotyper(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_eval(&parsed("VariantEval", args)?)
+}
+
+fn run_variant_annotator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_annotator(&parsed("VariantAnnotator", args)?)
 }
 
 fn run_reblock_gvcf(args: &[String]) -> Result<Option<String>, Thrown> {

@@ -343,6 +343,15 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "NotDuplicateReadFilter",
             "MappingQualityReadFilter",
         ]),
+        // `VariantAnnotator.getDefaultReadFilters`: the reads whose pileup the likelihoods are
+        // built from, in the tool's own order.
+        "VariantAnnotator" => Some(&[
+            "WellformedReadFilter",
+            "NotDuplicateReadFilter",
+            "PrimaryLineReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "MappedReadFilter",
+        ]),
         _ => None,
     }
 }

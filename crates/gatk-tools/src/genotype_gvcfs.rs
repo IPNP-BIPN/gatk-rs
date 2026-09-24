@@ -73,7 +73,7 @@ pub struct AnnotationEngine {
     pub dbsnp: Option<Vec<VariantContext>>,
 }
 
-fn value_of(annotation: AnnotationValue) -> Value {
+pub(crate) fn value_of(annotation: AnnotationValue) -> Value {
     match annotation {
         AnnotationValue::Int(value) => Value::Int(value as i64),
         AnnotationValue::Long(value) => Value::Int(value),
@@ -85,14 +85,14 @@ fn value_of(annotation: AnnotationValue) -> Value {
 }
 
 /// `LinkedHashMap.put`: replace in place, or append.
-fn put(attributes: &mut Vec<(String, Value)>, key: &str, value: Value) {
+pub(crate) fn put(attributes: &mut Vec<(String, Value)>, key: &str, value: Value) {
     match attributes.iter_mut().find(|(name, _)| name == key) {
         Some(slot) => slot.1 = value,
         None => attributes.push((key.to_string(), value)),
     }
 }
 
-fn attribute<'a>(vc: &'a VariantContext, key: &str) -> Option<&'a Value> {
+pub(crate) fn attribute<'a>(vc: &'a VariantContext, key: &str) -> Option<&'a Value> {
     vc.attributes
         .iter()
         .find(|(name, _)| name == key)
@@ -105,7 +105,7 @@ fn attribute_string(vc: &VariantContext, key: &str) -> Option<String> {
 }
 
 /// `getAttributeAsInt(key, default)`.
-fn attribute_int(vc: &VariantContext, key: &str, default: i64) -> i64 {
+pub(crate) fn attribute_int(vc: &VariantContext, key: &str, default: i64) -> i64 {
     match attribute(vc, key) {
         Some(Value::Int(value)) => *value,
         Some(Value::Double(value)) => *value as i64,
@@ -239,7 +239,7 @@ fn annotation_failure(class: &str, detail: impl std::fmt::Debug) -> EngineError 
 /// `AS_QualByDepth.finalizeRawData(vc, originalVC)`, which `annotate` also runs with the same
 /// record twice: `AS_QD` from the genotyper's `AS_QUAL` (or the GVCF's `AS_QUALapprox`) over the
 /// original record's `AS_VarDP`, or the called genotypes' depths when it has none.
-fn finalize_as_qual_by_depth(
+pub(crate) fn finalize_as_qual_by_depth(
     vc: &VariantContext,
     original: &VariantContext,
     random: &mut JavaRandom,
