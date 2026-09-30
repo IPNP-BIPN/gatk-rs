@@ -11018,9 +11018,9 @@ fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments
 /// * **a read soft-clipped at one end only** is hard-clipped there, or with
 ///   `--use-softclipped-bases` reverted and scored over a window widened by the clip; a read
 ///   clipped at both ends is scored as it is;
-/// * **the key stays in the synthesis direction**: the tool never applies the alignment, so a
-///   reverse read's key, flow order and error probabilities run against the bases as stored, and
-///   `LowestQBaseTP` walks one over the other;
+/// * **the alignment is never applied**: the key is read off the bases as stored, which is the
+///   reference direction for either strand, and nothing flips it for a reverse read or drops the
+///   zero flows at its ends;
 /// * **the CSV and the report are written by `closeTool`**, which runs after a failure too.
 pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
     use gatk_tools::ground_truth_scorer as gts;
