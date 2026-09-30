@@ -6161,6 +6161,53 @@
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
+    },
+    "FuncotatorDataSourceDownloader": {
+      "$why": [
+        "Every archive this tool copies is in the Broad bucket (gs://), and the oracle container has no",
+        "network, so the claim is the part of the tool that answers before the bucket is reached. The",
+        "testing override that copies a local file instead is @Hidden, so the inventory does not carry",
+        "it and no row can name it: the copy, the checksum and the extraction are measured by the",
+        "funcotator-data-source-downloader suite through that override, and not here.",
+        "--germline and --hg19 are held out because each is mutually exclusive with the other side of its",
+        "pair, and Barclay's mutex fires on an argument being SET: a row carrying --somatic false and",
+        "--germline false is refused at the parser, so both sides in the array would refuse every row.",
+        "--somatic and --hg38 are the sides kept, which reaches the same code (the reference picks the",
+        "bucket path from them and nothing else differs).",
+        "What the rows reach offline: onStartup's two refusals (no data source kind, no reference) and,",
+        "with both chosen, the copier's refusal of an EXISTING destination, which initiateCopy makes",
+        "before it opens the source. Both --output values therefore exist (a previous download and its",
+        "checksum), and the constraints keep a row with --somatic true from carrying",
+        "--validate-integrity true (the checksum is read from the bucket first) or",
+        "--overwrite-output-file true (the copy would start). No row is accepted: an accepted row is a",
+        "download."
+      ],
+      "--somatic": [
+        "true",
+        "false"
+      ],
+      "--germline": [],
+      "--hg38": [
+        "true",
+        "false"
+      ],
+      "--hg19": [],
+      "--output": [
+        "/work/fixtures/funco_ds.tar.gz",
+        "/work/fixtures/funco_ds.sha256"
+      ],
+      "--validate-integrity": [
+        "false",
+        "true"
+      ],
+      "--extract-after-download": [
+        "true",
+        "false"
+      ],
+      "--overwrite-output-file": [
+        "false",
+        "true"
+      ]
     }
   },
   "constraints": [
@@ -6284,6 +6331,26 @@
         "--track-name": "RM"
       },
       "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
+    },
+    {
+      "tools": [
+        "FuncotatorDataSourceDownloader"
+      ],
+      "forbid": {
+        "--somatic": "true",
+        "--validate-integrity": "true"
+      },
+      "why": "A row that picks a data source kind and a reference reaches the gs:// bucket once it gets past the existing-destination check, and the oracle has no network."
+    },
+    {
+      "tools": [
+        "FuncotatorDataSourceDownloader"
+      ],
+      "forbid": {
+        "--somatic": "true",
+        "--overwrite-output-file": "true"
+      },
+      "why": "A row that picks a data source kind and a reference reaches the gs:// bucket once it gets past the existing-destination check, and the oracle has no network."
     }
   ],
   "exclude": {

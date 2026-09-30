@@ -331,6 +331,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
         "MergeMutect2CallsWithMC3" => Some(run_merge_mutect2_calls_with_mc3),
         "FilterFuncotations" => Some(run_filter_funcotations),
+        "FuncotatorDataSourceDownloader" => Some(run_funcotator_data_source_downloader),
         "AnalyzeCovariates" => Some(run_analyze_covariates),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
@@ -645,6 +646,10 @@ fn run_merge_mutect2_calls_with_mc3(args: &[String]) -> Result<Option<String>, T
 
 fn run_filter_funcotations(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_funcotations(&parsed("FilterFuncotations", args)?)
+}
+
+fn run_funcotator_data_source_downloader(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::funcotator_data_source_downloader(&parsed("FuncotatorDataSourceDownloader", args)?)
 }
 
 fn run_analyze_covariates(args: &[String]) -> Result<Option<String>, Thrown> {

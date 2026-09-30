@@ -2678,6 +2678,7 @@ public class MakeFixtures {
                 + "@CO\tafter the first record, so not header\n",
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
+        funcotatorDownloaderFixtures(dir);
         System.out.println("wrote " + dir);
     }
 
@@ -4139,5 +4140,52 @@ public class MakeFixtures {
                 tar.closeArchiveEntry();
             }
         }
+    }
+
+    /**
+     * A previous `FuncotatorDataSourceDownloader` download and its checksum, which the array names
+     * as `--output`: the copier refuses an existing destination before it opens the source, and the
+     * source is always in the gs:// bucket, which the oracle cannot reach. A folder packed with a
+     * directory entry and two files, and an upper-case sum with the name after two spaces.
+     */
+    static void funcotatorDownloaderFixtures(final Path dir) throws Exception {
+        final byte[] ds = tarGz(new String[][] {
+                {"funco_ds/", null},
+                {"funco_ds/MANIFEST.txt", "Version: 1.7.hg38.20220101\nSource: test\n"},
+                {"funco_ds/README.txt", "A data source folder, packed.\n"}});
+        Files.write(dir.resolve("funco_ds.tar.gz"), ds);
+        Files.writeString(dir.resolve("funco_ds.sha256"),
+                sha256Hex(ds).toUpperCase() + "  funco_ds.tar.gz\n", StandardCharsets.UTF_8);
+    }
+
+    /** A tar.gz of the given entries, a null content being a directory, stamped at time zero. */
+    static byte[] tarGz(final String[][] entries) throws Exception {
+        final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(bytes))) {
+            for (final String[] entry : entries) {
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry header =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                header.setModTime(0L);
+                final byte[] content = entry[1] == null ? new byte[0]
+                        : entry[1].getBytes(StandardCharsets.UTF_8);
+                if (entry[1] != null) {
+                    header.setSize(content.length);
+                }
+                tar.putArchiveEntry(header);
+                tar.write(content);
+                tar.closeArchiveEntry();
+            }
+        }
+        return bytes.toByteArray();
+    }
+
+    static String sha256Hex(final byte[] bytes) throws Exception {
+        final StringBuilder hex = new StringBuilder();
+        for (final byte b : java.security.MessageDigest.getInstance("SHA-256").digest(bytes)) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
     }
 }
