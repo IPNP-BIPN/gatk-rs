@@ -396,11 +396,16 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         _ => None,
     }
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_mem_index_image_creator(&parsed("BwaMemIndexImageCreator", args)?)
+}
+
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
 }

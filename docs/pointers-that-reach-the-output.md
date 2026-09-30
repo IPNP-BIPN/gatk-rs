@@ -26,10 +26,15 @@ it on every run. A golden holding those bytes would go red on a run that changed
 
 ## What that means for the port
 
-The port cannot claim byte-identity for this tool and the dashboard must not imply one. What it can
-reproduce is the naming, the refusal and the size, and the size only if the port builds the index
-the same way, which it does not: the index is BWA's.
+The port builds the image itself (`crates/gatk-tools/src/bwa_index_image.rs`): the same packing,
+the same random replacement of ambiguous bases, the same transform, occurrence counts and sampled
+suffix array, laid out the way `bwa_idx2mem` lays them out, with zero where BWA writes an address.
 
-The honest position is the one [the ML surface](the-ml-surface-cannot-be-bit-identical.md) already
-takes for a different reason: the claim is scoped to what is a function of the input, and the rest
-is named rather than quietly dropped.
+Masking turned out to be possible after all, but not from the bytes alone: it needs the layout.
+`bwt_size` and `n_sa` sit at fixed offsets and place the `bntseq_t` block, whose `n_seqs` and
+`n_holes` place everything after it, so the address fields (the `sa` pointer of `bwt_t`, the
+`anns`, `ambs` and `fp_pac` pointers of `bntseq_t`, and the `name` and `anno` pointers of each
+contig) and the structures' padding are known exactly. `tools/coverage/run_array.py` zeroes those
+and compares every other byte, which is what the covering array measures. The golden above still
+holds the size and the instability, because the conformance dump reads the image without the
+layout.
