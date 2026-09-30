@@ -2678,7 +2678,53 @@ public class MakeFixtures {
                 + "@CO\tafter the first record, so not header\n",
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
+        bwaIndexImage(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * The FASTAs `BwaMemIndexImageCreator` is handed. The image is BWA's, built through JNI, and
+     * its addresses are masked by `run_array.py`; everything else in it is a function of the FASTA,
+     * so the inputs are chosen to reach every part of the layout: two contigs, one with a comment,
+     * a run of `N`, an IUPAC code and a lower-case stretch (the `.amb` holes, and the bases BWA
+     * replaces with `lrand48`), and a one-contig `.fa` of another length. The refusals are a FASTA
+     * with no header line, one that is not there, and a name with neither extension.
+     */
+    static void bwaIndexImage(final Path dir) throws java.io.IOException {
+        final java.util.Random random = new java.util.Random(20260930L);
+        final String bases = "ACGT";
+        final StringBuilder first = new StringBuilder();
+        for (int i = 0; i < 1500; i++) {
+            first.append(bases.charAt(random.nextInt(4)));
+        }
+        first.replace(400, 412, "NNNNNNNNNNNN");
+        first.setCharAt(700, 'R');
+        final String lower = first.substring(900, 1000).toLowerCase();
+        first.replace(900, 1000, lower);
+        final StringBuilder second = new StringBuilder();
+        for (int i = 0; i < 777; i++) {
+            second.append(bases.charAt(random.nextInt(4)));
+        }
+        final StringBuilder small = new StringBuilder();
+        for (int i = 0; i < 230; i++) {
+            small.append(bases.charAt(random.nextInt(4)));
+        }
+        Files.writeString(dir.resolve("bwa_ref.fasta"),
+                ">chrA assembled contig\n" + wrapped(first) + ">chrB\n" + wrapped(second),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_small.fa"), ">only\n" + wrapped(small),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_noheader.fasta"), wrapped(small), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_ref.fa.gz"), ">chrA\n" + wrapped(small),
+                StandardCharsets.UTF_8);
+    }
+
+    static String wrapped(final CharSequence sequence) {
+        final StringBuilder text = new StringBuilder();
+        for (int at = 0; at < sequence.length(); at += 60) {
+            text.append(sequence, at, Math.min(at + 60, sequence.length())).append('\n');
+        }
+        return text.toString();
     }
 
     /**

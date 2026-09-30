@@ -200,6 +200,12 @@ def read_output(out_dir):
         if name.endswith(".zip"):
             parts.append(f"{name}: {zip_members(raw)}")
             continue
+        if name.endswith(".img"):
+            masked = bwa_image_masked(raw)
+            if masked is not None:
+                digest = hashlib.sha256(masked).hexdigest()
+                parts.append(f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)")
+                continue
         try:
             parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
         except UnicodeDecodeError:
@@ -268,6 +274,47 @@ def zip_members(raw):
             text = f"BINARY sha256={hashlib.sha256(content).hexdigest()} bytes={len(content)}"
         rendered.append(f"[{name}: {text}]")
     return "ZIP " + " ".join(rendered)
+
+
+def bwa_image_masked(raw):
+    """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
+
+    `BwaMemIndexImageCreator` writes the block `bwa_idx2mem` lays out, which copies BWA's C
+    structures as they stand: the `sa` pointer of `bwt_t`, the `anns`, `ambs` and `fp_pac` pointers
+    of `bntseq_t` and the `name` and `anno` pointers of every `bntann1_t` are addresses of the
+    process that wrote them, and two runs of the reference already differ there
+    (docs/pointers-that-reach-the-output.md). Which bytes they are is known from the layout, so
+    they are masked here, with the structures' padding, and every other byte -- the transform, the
+    occurrence counts, the sampled suffix array, the contigs, the holes and the packed bases -- is
+    compared.
+    """
+    import struct
+
+    try:
+        bwt_size = struct.unpack_from("<Q", raw, 56)[0]
+        n_sa = struct.unpack_from("<Q", raw, 1104)[0]
+        bns = 1120 + bwt_size * 4 + n_sa * 8
+        n_seqs = struct.unpack_from("<i", raw, bns + 8)[0]
+        n_holes = struct.unpack_from("<i", raw, bns + 24)[0]
+    except struct.error:
+        return None
+    if n_seqs < 0 or n_holes < 0:
+        return None
+    # bwt_t: the `bwt` pointer, the padding after `sa_intv`, the `sa` pointer. bntseq_t: `anns`,
+    # then the padding after `n_holes`, `ambs` and `fp_pac`.
+    fields = [(64, 72), (1100, 1104), (1112, 1120), (bns + 16, bns + 24), (bns + 28, bns + 48)]
+    holes = bns + 48
+    # bntamb1_t: the three bytes of padding after `amb`.
+    fields += [(holes + 16 * h + 13, holes + 16 * h + 16) for h in range(n_holes)]
+    anns = holes + 16 * n_holes
+    # bntann1_t: `name` and `anno`.
+    fields += [(anns + 40 * a + 24, anns + 40 * a + 40) for a in range(n_seqs)]
+    if any(end > len(raw) for _, end in fields):
+        return None
+    masked = bytearray(raw)
+    for start, end in fields:
+        masked[start:end] = bytes(end - start)
+    return bytes(masked)
 
 
 def histogram_columns_sorted(text):

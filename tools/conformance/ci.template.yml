@@ -309,6 +309,7 @@ jobs:
             --tool CombineGVCFs \
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
+            --tool BwaMemIndexImageCreator \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
