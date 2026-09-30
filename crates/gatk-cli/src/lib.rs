@@ -396,6 +396,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
+        "LocalAssembler" => Some(run_local_assembler),
         _ => None,
     }
 }
@@ -507,6 +509,14 @@ fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_annotator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_annotator(&parsed("VariantAnnotator", args)?)
+}
+
+fn run_local_assembler(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::local_assembler(&parsed("LocalAssembler", args)?)
+}
+
+fn run_analyze_saturation_mutagenesis(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::analyze_saturation_mutagenesis(&parsed("AnalyzeSaturationMutagenesis", args)?)
 }
 
 fn run_reblock_gvcf(args: &[String]) -> Result<Option<String>, Thrown> {

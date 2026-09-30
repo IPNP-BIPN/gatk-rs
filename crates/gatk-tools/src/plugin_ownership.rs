@@ -230,6 +230,13 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // NOT_DUPLICATE and the parameterised mate-distance filter. Without them an unpaired read
         // reaches the mate query, which is what `Cannot get mate information for an unpaired read`
         // is.
+        // `PairWalker.getDefaultReadFilters`: the walker's, then PRIMARY_LINE and NOT_DUPLICATE,
+        // which `LocalAssembler` inherits whole.
+        "LocalAssembler" => Some(&[
+            "WellformedReadFilter",
+            "PrimaryLineReadFilter",
+            "NotDuplicateReadFilter",
+        ]),
         "PrintDistantMates" => Some(&[
             "WellformedReadFilter",
             "PairedReadFilter",
@@ -304,7 +311,9 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // It is declared here rather than left to the fallback because the tool APPLIES NONE of it:
         // `traverse()` iterates the data source directly, so the chain is selected, listed by
         // `--disable-read-filter`, and never consulted.
-        "TransferReadTags" => Some(&["WellformedReadFilter"]),
+        // `AnalyzeSaturationMutagenesis` is the same shape: `traverse()` streams the reads through
+        // `PRIMARY_LINE` alone, so the chain the command line resolves is never applied.
+        "TransferReadTags" | "AnalyzeSaturationMutagenesis" => Some(&["WellformedReadFilter"]),
         // `Mutect2Engine.makeStandardMutect2ReadFilters`, which does not call super either: twelve
         // filters with the wellformed one LAST, two of them parameterised at thresholds that are
         // the ENGINE's rather than the library's (mapping quality twenty, read length thirty).
