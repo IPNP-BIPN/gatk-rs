@@ -6161,6 +6161,157 @@
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
+    },
+    "GroundTruthScorer": {
+      "$why": [
+        "gts.bam is twenty-four Ultima reads over mutect_ref.fasta with none, one, three or six substitutions,",
+        "so the normalized scores fall either side of the threshold; one read is soft-clipped at each end",
+        "and one at both, one holds an insertion and one a deletion, every third is reverse and every",
+        "other one carries an rq float. The features file has five sites, two of them where odd reads",
+        "carry a substitution, and a copy without an index that the first query refuses. The genome",
+        "prior covers T, G and C only. Without --reference the window's bases are empty and the first",
+        "read reaching the haplotype refuses. The PairHMM engine is the tool's own refusal; FlowBasedHMM",
+        "fails the same instanceof test with the same message and is left out. --omit-zeros-from-report is held at true: without it the reference allocates and",
+        "writes the whole 61 x 101 x 202 x 4 table, and the container is killed before it finishes.",
+        "--pair-hmm-implementation leaves out the two AVX names, which a machine without AVX refuses",
+        "and one with it accepts, so the answer would be the runner's hardware."
+      ],
+      "--input": [
+        "/work/fixtures/gts.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gt.csv",
+        "/work/out/gt.csv.gz"
+      ],
+      "--report-file": [
+        "/work/out/report.txt",
+        "null"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:400-900",
+        "chr1:1200-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:600-700"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE",
+        "LOGLESS_CACHING",
+        "EXACT",
+        "ORIGINAL"
+      ],
+      "--features-file": [
+        "null",
+        "/work/fixtures/gts_features.vcf",
+        "/work/fixtures/gts_features_noidx.vcf"
+      ],
+      "--genome-prior": [
+        "null",
+        "/work/fixtures/gts_prior.csv"
+      ],
+      "--normalized-score-threshold": [
+        "-0.1",
+        "-1.0",
+        "-0.05"
+      ],
+      "--quality-percentiles": [
+        "10,25,50,75,90",
+        "50",
+        "5,95,99"
+      ],
+      "--omit-zeros-from-report": [
+        "true"
+      ],
+      "--add-mean-call": [
+        "false",
+        "true"
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--exclude-zero-flows": [
+        "false",
+        "true"
+      ],
+      "--use-softclipped-bases": [
+        "false",
+        "true"
+      ],
+      "--read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter",
+        "GoodCigarReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "WellformedReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
@@ -6284,6 +6435,16 @@
         "--track-name": "RM"
       },
       "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
+    },
+    {
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "forbid": {
+        "--read-filter": "MappingQualityNotZeroReadFilter",
+        "--inverted-read-filter": "MappingQualityNotZeroReadFilter"
+      },
+      "why": "One filter both enabled and inverted is refused by the plugin descriptor before the tool runs; the refusal belongs to the filter-resolution suite."
     }
   ],
   "exclude": {

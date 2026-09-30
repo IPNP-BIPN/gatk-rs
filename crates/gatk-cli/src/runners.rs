@@ -10615,6 +10615,418 @@ pub fn flow_pairhmm_align_reads_to_haplotypes(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `Float.toString` for a read attribute, which is shortest-round-trip for a float as
+/// `Double.toString` is for a double, with the same switch to `E` notation outside `[1e-3, 1e7)`.
+fn java_float_to_string(value: f32) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    let magnitude = value.abs();
+    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
+        let rendered = format!("{value:e}");
+        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        return format!("{mantissa}E{exponent}");
+    }
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        format!("{rendered}.0")
+    }
+}
+
+/// `GATKRead.getAttributeAsFloat`: a float as it is, anything else through `Float.parseFloat` of
+/// its text, and an absent tag as Java's `null`.
+fn attribute_as_float(read: &BamRecord, name: &[u8; 2]) -> Result<Option<f32>, Thrown> {
+    use htsjdk_bam::tag::{Tag, TagValue};
+    let Some(value) = read.tags.get(Tag::new(name)) else {
+        return Ok(None);
+    };
+    let text = match value {
+        TagValue::Float(value) => return Ok(Some(*value)),
+        TagValue::Int(value) => value.to_string(),
+        TagValue::Str(value) => value.clone(),
+        TagValue::Char(value) => (*value as char).to_string(),
+        _ => String::new(),
+    };
+    text.trim().parse::<f32>().map(Some).map_err(|_| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException$ReadAttributeTypeMismatch",
+            format!(
+                "Attribute {} not of (or convertible to) type integer",
+                String::from_utf8_lossy(name)
+            ),
+        )
+    })
+}
+
+/// A read's unclipped start and end, soft and hard clips both counted.
+fn unclipped_span(read: &BamRecord) -> (i32, i32) {
+    use htsjdk_bam::cigar::Op;
+    let elements = &read.cigar.elements;
+    let end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
+    let clipped = |element: &htsjdk_bam::cigar::CigarElement| matches!(element.op, Op::S | Op::H);
+    let leading: i32 = elements
+        .iter()
+        .take_while(|element| clipped(element))
+        .map(|element| element.length as i32)
+        .sum();
+    let trailing: i32 = elements
+        .iter()
+        .rev()
+        .take_while(|element| clipped(element))
+        .map(|element| element.length as i32)
+        .sum();
+    (read.alignment_start - leading, end + trailing)
+}
+
+/// `GroundTruthScorer`: every mapped read scored in flow space against the reference it aligns to,
+/// one CSV line each, and a report of the error rate by quality, hmer, deviation and base.
+///
+/// The per-read steps are the reference's, in its order: the soft clip reverted or hard clipped
+/// (only when EXACTLY one end is clipped), the features filter, the flow read and the reference's
+/// flow haplotype, the score and its normalized form against the threshold, the error
+/// probabilities (which feed the percentile report whatever the threshold decided after), the
+/// cycle skip, the quality report unless the read is a cycle skip, and the line.
+pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
+    use gatk_tools::flow_based_read::{read_group_info, FlowRead};
+    use gatk_tools::ground_truth_scorer as gts;
+    use htsjdk_bam::tag::{Tag, TagValue};
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GroundTruthScorer")?;
+    let output = argument(parser, "output-csv").ok_or_else(|| {
+        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    // onTraversalStart: the engine first, then the genome prior, then the output.
+    match scalar(parser, "likelihood-calculation-engine").as_deref() {
+        Some("FlowBased") => {}
+        _ => {
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                "must use a flow based likelihood calculation engine".to_string(),
+            ))
+        }
+    }
+    let prior = match argument(parser, "genome-prior") {
+        None => None,
+        Some(path) => {
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!("failed to open genome-prior file: {path}"),
+                )
+            })?;
+            Some(gts::GenomePrior::parse(&text).map_err(|(class, message)| {
+                Thrown::non_user(Box::leak(class.into_boxed_str()), message)
+            })?)
+        }
+    };
+    write_file(&output, b"")?;
+    let report_path = argument(parser, "report-file");
+    let add_mean_call = flag(parser, "add-mean-call");
+    let no_output = flag(parser, "gt-no-output");
+    let omit_zeros = flag(parser, "omit-zeros-from-report");
+    let exclude_zero_flows = flag(parser, "exclude-zero-flows");
+    let quality_percentiles = scalar(parser, "quality-percentiles")
+        .unwrap_or_else(|| gts::DEFAULT_QUALITY_PERCENTILES.to_string());
+    let threshold = double_or(
+        parser,
+        "normalized-score-threshold",
+        gts::NORMALIZED_SCORE_THRESHOLD_DEFAULT,
+    );
+    let use_softclipped = flag(parser, "use-softclipped-bases");
+    let flow = flow_arguments(parser);
+    let features_path = argument(parser, "features-file");
+    let features = match &features_path {
+        None => None,
+        Some(path) => Some(feature_variants(path)?.0),
+    };
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+
+    let mut columns: Vec<&str> = vec![
+        "ReadName",
+        "ReadKey",
+        "ReadIsReversed",
+        "ReadMQ",
+        "ReadRQ",
+        "GroundTruthKey",
+        "ReadSequence",
+        "Score",
+        "NormalizedScore",
+        "ErrorProbability",
+        "ReadKeyLength",
+        "GroundTruthKeyLength",
+        "CycleSkipStatus",
+        "Cigar",
+        "LowestQBaseTP",
+    ];
+    if add_mean_call {
+        columns.extend(gts::MEAN_CALL_COLUMNS);
+    }
+    let mut csv = columns.join(",");
+    csv.push('\n');
+    let mut qual_report = report_path.as_ref().map(|_| gts::QualReport::new());
+    let mut percentiles: Vec<gts::PercentileReport> = Vec::new();
+    let join_ints = |values: &[i32]| {
+        values
+            .iter()
+            .map(i32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let join_formatted = |values: &[f64]| {
+        values
+            .iter()
+            .map(|v| gts::error_format(*v))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    for read in &reads {
+        if read.flags & 0x4 != 0 || read.reference_index < 0 {
+            continue;
+        }
+        // Without a reference the window is still the read's span, and its bases are EMPTY: the
+        // walk goes on until something indexes them or builds a haplotype out of nothing.
+        let contig = header.sequences[read.reference_index as usize].name.clone();
+        let end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
+        let contig_length = reference
+            .as_ref()
+            .map(|reference| reference.sequence_length(&contig).unwrap_or(0) as i32);
+
+        // The clipping, and the window that goes with a reverted clip.
+        let (mut window_start, mut window_end) = (read.alignment_start, end);
+        let clipped = if gts::is_soft_clipped(false, &read.cigar.elements) {
+            if use_softclipped {
+                let (unclipped_start, unclipped_end) = unclipped_span(read);
+                let leading = read.alignment_start - unclipped_start;
+                let trailing = unclipped_end - end;
+                if leading != 0 || trailing != 0 {
+                    // `trimToContigLength` asks the data source for its dictionary.
+                    let Some(contig_length) = contig_length else {
+                        return Err(Thrown::non_user(
+                            "java.lang.NullPointerException",
+                            "Cannot invoke \"org.broadinstitute.hellbender.engine.ReferenceDataSource.getSequenceDictionary()\" because \"this.dataSource\" is null".to_string(),
+                        ));
+                    };
+                    window_start = (read.alignment_start - leading).max(1);
+                    window_end = (end + trailing).min(contig_length);
+                }
+                gatk_engine::clipping::revert_soft_clipped_bases(read, Some(&header))
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?
+            } else {
+                gatk_engine::clipping::hard_clip_soft_clipped_bases(read, Some(&header), 0)
+                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?
+            }
+        } else {
+            read.clone()
+        };
+        let window = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, window_start, window_end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
+
+        // The features filter: every base of every feature the read overlaps must be the
+        // reference's own on the read.
+        if let (Some(features), Some(path)) = (&features, &features_path) {
+            if !has_feature_index(path) {
+                return Err(Thrown::user(format!(
+                    "Input {path} must support random access to enable queries by interval. If \
+                     it's a file, please index it using the bundled tool IndexFeatureFile"
+                )));
+            }
+            let clipped_end = clipped.alignment_start + clipped.cigar.reference_length() as i32 - 1;
+            let mut keep = true;
+            'features: for vc in features.iter().filter(|vc| {
+                vc.contig == contig
+                    && vc.start as i32 <= clipped_end
+                    && vc.stop as i32 >= clipped.alignment_start
+            }) {
+                for coordinate in vc.start as i32..=vc.stop as i32 {
+                    use gatk_engine::read_utils::BaseAt;
+                    let base = match gatk_engine::read_utils::read_base_at_reference_coordinate(
+                        &clipped, coordinate,
+                    ) {
+                        BaseAt::Present(base) => Some(base),
+                        BaseAt::Absent => None,
+                        BaseAt::Threw => {
+                            return Err(Thrown::non_user(
+                                "java.lang.ArrayIndexOutOfBoundsException",
+                                "a feature base past the read's end".to_string(),
+                            ))
+                        }
+                    };
+                    let Some(base) = base else {
+                        keep = false;
+                        break 'features;
+                    };
+                    let offset = coordinate - window_start;
+                    let reference_base = usize::try_from(offset)
+                        .ok()
+                        .and_then(|at| window.get(at).copied())
+                        .ok_or_else(|| {
+                            Thrown::non_user(
+                                "java.lang.ArrayIndexOutOfBoundsException",
+                                format!("Index {offset} out of bounds for length {}", window.len()),
+                            )
+                        })?;
+                    if base != reference_base {
+                        keep = false;
+                        break 'features;
+                    }
+                }
+            }
+            if !keep {
+                continue;
+            }
+        }
+
+        let info = read_group_info(&clipped, &header).map_err(flow_refusal)?;
+        let flow_read = FlowRead::new(&clipped, &info.flow_order, info.max_class, &flow)
+            .map_err(flow_refusal)?;
+        if window.is_empty() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Null alleles are not supported".to_string(),
+            ));
+        }
+        let haplotype = gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype::new(
+            &window,
+            &info.flow_order,
+        )
+        .ok_or_else(|| {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "baseArrayToKey periodGuard tripped, on {}, flowOrder: {} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                    String::from_utf8_lossy(&window),
+                    info.flow_order
+                ),
+            )
+        })?;
+        if !flow_read.valid {
+            continue;
+        }
+        let score = gatk_tools::flow_feature_mapper::compute_likelihood_local(
+            &flow_read,
+            &haplotype,
+            haplotype.key.len(),
+        )
+        .map_err(flow_refusal)?;
+        let normalized = score / flow_read.key.len() as f64;
+        if normalized < threshold {
+            continue;
+        }
+        let error = gts::error_probabilities(
+            &flow_read,
+            prior.as_ref(),
+            qual_report.as_ref().map(|_| &mut percentiles),
+            exclude_zero_flows,
+        );
+        // `getFlowOrder`: the first cycle of the read's flows.
+        let cycle: String = flow_read
+            .flow_order
+            .iter()
+            .take(4)
+            .map(|base| *base as char)
+            .collect();
+        let status = gts::cycle_skip_status(
+            &clipped.read_bases,
+            &clipped.cigar.elements,
+            &window,
+            &cycle,
+        );
+        let reverse = read.flags & 0x10 != 0;
+        if status != gts::CycleSkipStatus::CS {
+            if let Some(report) = qual_report.as_mut() {
+                report.add_read(&flow_read, &window, &cycle, reverse, &error);
+            }
+        }
+
+        let tp: Vec<i8> = match clipped.tags.get(Tag::new(b"tp")) {
+            Some(TagValue::ByteArray { values, .. }) => values.clone(),
+            Some(TagValue::Str(text)) => text.bytes().map(|b| b as i8).collect(),
+            _ => Vec::new(),
+        };
+        let lowest = gts::lowest_q_base_tp(&flow_read.key, &tp, &clipped.base_qualities).map_err(
+            |message| Thrown::non_user("java.lang.ArrayIndexOutOfBoundsException", message),
+        )?;
+        let rq = match attribute_as_float(&clipped, b"rq")? {
+            Some(value) => java_float_to_string(value),
+            None => "null".to_string(),
+        };
+        let mut line = vec![
+            clipped.read_name.clone(),
+            format!("\"{}\"", join_ints(&flow_read.key)),
+            if reverse { "1" } else { "0" }.to_string(),
+            clipped.mapping_quality.to_string(),
+            rq,
+            format!("\"{}\"", join_ints(&haplotype.key)),
+            String::from_utf8_lossy(&clipped.read_bases).into_owned(),
+            gatk_engine::tsv_table::java_double_to_string(score),
+            gatk_engine::tsv_table::java_double_to_string(normalized),
+            format!("\"{}\"", join_formatted(&error)),
+            flow_read.key.len().to_string(),
+            haplotype.key.len().to_string(),
+            status.name().to_string(),
+            read.cigar.to_text(),
+            format!(
+                "\"{}\"",
+                lowest
+                    .iter()
+                    .map(i8::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ];
+        if add_mean_call {
+            let (probs, mean) = gts::read_probs_and_mean_call(&flow_read);
+            line.push(format!("\"{}\"", join_formatted(&probs)));
+            line.push(format!("\"{}\"", join_formatted(&mean)));
+        }
+        if !no_output {
+            csv.push_str(&line.join(","));
+            csv.push('\n');
+        }
+    }
+
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(csv.as_bytes(), 6)
+    } else {
+        csv.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    if let (Some(path), Some(report)) = (report_path, qual_report.as_ref()) {
+        let text = gts::report_text(report, &percentiles, omit_zeros, &quality_percentiles);
+        write_file(&path, text.as_bytes())?;
+    }
+    Ok(None)
+}
+
 /// `FlowFeatureMapper` with its one mapper, `SNVMapper`: every mismatch surrounded by matching
 /// bases, scored by the flow matrix as the read's haplotype against the reference's, and written
 /// once the traversal has passed it, with the reads still queued over it counted.

@@ -832,7 +832,7 @@ fn no_feature_but_filter_at(
 }
 
 /// `computeLikelihoodLocal`.
-fn compute_likelihood_local(
+pub fn compute_likelihood_local(
     read: &FlowRead,
     haplotype: &crate::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype,
     hap_key_length: usize,
@@ -855,7 +855,7 @@ fn compute_likelihood_local(
         if prob.abs() <= f64::from_bits(1) {
             prob = LOWEST_PROB;
         }
-        result += std::hint::black_box(prob).log10();
+        result += jmath::math::log10(prob);
     }
     Ok(result)
 }
