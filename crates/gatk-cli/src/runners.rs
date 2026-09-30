@@ -22806,3 +22806,104 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
     }
     Ok(Some("Optional.empty".to_string()))
 }
+
+/// An I/O error as the JDK words it: the C library's `strerror`, which is what Rust prints before
+/// its own ` (os error N)`.
+fn java_io_reason(error: &std::io::Error) -> String {
+    let text = error.to_string();
+    match text.rfind(" (os error ") {
+        Some(at) => text[..at].to_string(),
+        None => text,
+    }
+}
+
+/// `BwaMemIndexImageCreator.doWork`, which is `BwaMemIndex.createIndexImageFromFastaFile`: the
+/// checks GATK's Java side makes, in its order, and then the image BWA would build.
+///
+/// The image's addresses are written as zero: see `gatk_tools::bwa_index_image`.
+pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
+    use gatk_tools::bwa_mem_index_image_creator as tool;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").unwrap_or_else(|| tool::default_output(&input));
+
+    // `CommandLineProgram.instanceMainPostParseArgs` judges `--tmp-dir` before `doWork` runs:
+    // it must be a directory this process can read and write.
+    if let Some(tmp) = argument(parser, "tmp-dir") {
+        let usable = std::fs::metadata(&tmp)
+            .map(|m| m.is_dir() && !m.permissions().readonly())
+            .unwrap_or(false);
+        if !usable {
+            return Err(Thrown::user(format!(
+                "Failure working with the tmp directory {tmp}. Try changing the tmp dir with with \
+                 --tmp-dir on the command line.  Exact error was should exist and have read/write \
+                 access"
+            )));
+        }
+    }
+
+    // `assertLooksLikeFastaFile`: the extension, then a non-empty readable regular file, then a
+    // `>` as the first non-space character.
+    tool::check_extension(&input)
+        .map_err(|message| Thrown::non_user("java.lang.IllegalArgumentException", message))?;
+    let unreachable = || {
+        Thrown::non_user(
+            tool::COULD_NOT_READ_REFERENCE,
+            tool::unreachable_reference(&input),
+        )
+    };
+    let metadata = std::fs::metadata(&input).map_err(|_| unreachable())?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(unreachable());
+    }
+    let bytes = std::fs::read(&input).map_err(|_| unreachable())?;
+    if !tool::looks_like_fasta(&String::from_utf8_lossy(&bytes)) {
+        return Err(Thrown::non_user(
+            tool::INVALID_FILE_FORMAT,
+            tool::invalid_format(&input),
+        ));
+    }
+
+    // `assertCanCreateOrOverwriteImageFile`: `File.createNewFile`, deleted again at once when it
+    // made one, and an existing path must be a regular file this process can write.
+    let cannot_create = |reason: String| {
+        Thrown::non_user(
+            tool::COULD_NOT_CREATE_INDEX_IMAGE,
+            tool::cannot_create_image(&output, &reason),
+        )
+    };
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&output);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let regular = std::fs::metadata(&output)
+                .map(|m| m.is_file())
+                .unwrap_or(false);
+            let writable = regular
+                && std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&output)
+                    .is_ok();
+            if !writable {
+                return Err(cannot_create(tool::EXISTS_UNWRITABLE.to_string()));
+            }
+        }
+        Err(error) => return Err(cannot_create(java_io_reason(&error))),
+    }
+
+    let image = gatk_tools::bwa_index_image::build_image(&bytes).map_err(|_| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            "[bns_restore_core] Parse error reading the .amb file: an ambiguous base is white space",
+        )
+    })?;
+    std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
+    Ok(None)
+}

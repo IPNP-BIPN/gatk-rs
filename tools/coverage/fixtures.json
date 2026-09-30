@@ -6161,6 +6161,36 @@
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
+    },
+    "BwaMemIndexImageCreator": {
+      "--input": [
+        "/work/fixtures/bwa_ref.fasta",
+        "/work/fixtures/bwa_small.fa",
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/bwa_noheader.fasta",
+        "/work/fixtures/bwa_ref.fa.gz"
+      ],
+      "--output": [
+        "/work/out/reference.img",
+        "/work/out/other.img",
+        "null"
+      ],
+      "--tmp-dir": [
+        "/work/tmp",
+        "/work/tmp2",
+        "/work/tmp-missing"
+      ],
+      "$why": [
+        "The image is BWA's own, built through JNI, and carries in-process addresses; run_array.py",
+        "masks those fields (and the structures' padding) by the layout bwa_idx2mem writes, so what",
+        "is compared is every byte that is a function of the FASTA. bwa_ref.fasta is two contigs, one",
+        "with a comment, with a run of N, an IUPAC R and a lower-case stretch; bwa_small.fa is one",
+        "contig under the other accepted extension, and reference.fasta is the corpus's own.",
+        "bwa_noheader.fasta has no header line and bwa_ref.fa.gz is refused for its name. A null",
+        "--output is the default name next to the input, which the read-only corpus refuses to create.",
+        "/work/tmp-missing is the tmp-dir the command line refuses before the tool runs. A missing",
+        "FASTA is the bwa-index-image suite's missing-fasta case and is not repeated here."
+      ]
     }
   },
   "constraints": [
@@ -6284,6 +6314,56 @@
         "--track-name": "RM"
       },
       "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_noheader.fasta",
+        "--output": "null"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_noheader.fasta",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_ref.fa.gz",
+        "--output": "null"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_ref.fa.gz",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--output": "null",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
     }
   ],
   "exclude": {
