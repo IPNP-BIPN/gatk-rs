@@ -2940,6 +2940,7 @@ public class MakeFixtures {
         gnarlyGenotyperFixtures(dir);
         variantEvalFixtures(dir, chr1);
         variantAnnotatorFixtures(dir);
+        jointGermlineCnvFixtures(dir);
     }
 
     /**
@@ -4185,5 +4186,115 @@ public class MakeFixtures {
                 tar.closeArchiveEntry();
             }
         }
+    }
+
+    /**
+     * What `JointGermlineCNVSegmentation` reads: gCNV segment VCFs, a pedigree and the model's bins.
+     *
+     * `jgcs_ref.fasta` names chr1, chrX and chrY at 200 kb, so the allosomal ploidy rules have
+     * contigs to act on. `jgcs_male1.vcf` is ONE sample, which is the only input the defragmenter
+     * runs on, written the way GermlineCNVCaller writes segments: `<DEL>,<DUP>` on every record and a
+     * haploid GT that the tool pads to the sample's ploidy. It carries each of the four entry
+     * filters (a hom-ref, a no-call without CN, a null call, a QS below the higher threshold), two
+     * pairs of neighbours a hundred bases apart whose own lengths decide whether the padding joins
+     * them, two adjacent deletions of different copy number that must not join, a single no-call
+     * allele that becomes a full no-call, one genotype that already carries ECN, and a call on each
+     * allosome. `jgcs_cohort.vcf` is THREE samples with single-allele records, which skips the
+     * defragmenter and is clustered by max clique: two deletions that cluster, a duplication
+     * overlapping them, two deletions that overlap without clustering, and the allosomes. Both are
+     * indexed, because `-L` queries them. `jgcs.ped` names the three sexes; `jgcs_swapped.ped`
+     * moves them round. `jgcs_bins.interval_list` is the model's 500-base bins over all three
+     * contigs, which turns the defragmenter into the binned one.
+     */
+    static void jointGermlineCnvFixtures(final Path dir) throws Exception {
+        final int length = 200000;
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("jgcs_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            for (final String contig : new String[] {"chr1", "chrX", "chrY"}) {
+                writer.startSequence(contig).appendBases(bases.toString());
+            }
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##ALT=<ID=DUP,Description=\"Duplication\">\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##FORMAT=<ID=ECN,Number=1,Type=Integer,Description=\"Expected copy number\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=NP,Number=1,Type=Integer,Description=\"Number of points\">\n"
+                + "##FORMAT=<ID=QS,Number=1,Type=Integer,Description=\"Quality, some\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##contig=<ID=chr1,length=" + length + ">\n"
+                + "##contig=<ID=chrX,length=" + length + ">\n"
+                + "##contig=<ID=chrY,length=" + length + ">\n";
+        final String[][] male = {
+            {"chr1", "1000", "2000", "GT:CN:NP:QS", "0:2:5:100"},
+            {"chr1", "3000", "4000", "GT:CN:NP:QS", ".:.:5:100"},
+            {"chr1", "5000", "6000", "GT:CN:NP:QS", ".:0:5:100"},
+            {"chr1", "7000", "8000", "GT:CN:NP:QS", "1:1:5:30"},
+            {"chr1", "9000", "10000", "GT:CN:NP:QS", "1:1:5:60"},
+            {"chr1", "20000", "20500", "GT:CN:NP:QS", "1:1:5:100"},
+            {"chr1", "20600", "21100", "GT:CN:NP:QS", "1:1:5:100"},
+            {"chr1", "40000", "60000", "GT:CN:NP:QS", "2:3:40:100"},
+            {"chr1", "60100", "80100", "GT:CN:NP:QS", "2:3:40:100"},
+            {"chr1", "90000", "91000", "GT:CN:NP:QS", ".:1:2:100"},
+            {"chr1", "120000", "130000", "GT:CN:NP:QS", "1:0:20:100"},
+            {"chr1", "130200", "140000", "GT:CN:NP:QS", "1:1:20:100"},
+            {"chrX", "1000", "2000", "GT:CN:NP:QS", "1:0:2:100"},
+            {"chrX", "5000", "6000", "GT:CN:NP:QS:ECN", "1:0:2:100:2"},
+            {"chrY", "1000", "2000", "GT:CN:NP:QS", "1:0:2:100"},
+        };
+        final StringBuilder maleVcf = new StringBuilder(header)
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmale1\n");
+        for (final String[] r : male) {
+            maleVcf.append(r[0]).append('\t').append(r[1]).append("\tCNV_").append(r[0]).append('_')
+                    .append(r[1]).append('_').append(r[2]).append("\tN\t<DEL>,<DUP>\t.\t.\tEND=")
+                    .append(r[2]).append('\t').append(r[3]).append('\t').append(r[4]).append('\n');
+        }
+        Files.writeString(dir.resolve("jgcs_male1.vcf"), maleVcf.toString(), StandardCharsets.UTF_8);
+        final String[][] cohort = {
+            {"chr1", "20000", "21000", "<DEL>", "1:1:100", "0:2:100", "1:1:80"},
+            {"chr1", "20050", "21000", "<DEL>", "0:2:100", "1:1:100", "0:2:100"},
+            {"chr1", "20500", "30000", "<DUP>", "0:2:100", "0:2:100", "1:3:100"},
+            {"chr1", "50000", "52000", "<DEL>", "1:1:100", "1:0:100", "1:1:100"},
+            {"chr1", "50100", "60000", "<DEL>", "1:1:100", "0:2:100", "0:2:100"},
+            {"chrX", "1000", "2000", "<DEL>", "1:0:100", "1:1:100", "1:0:100"},
+            {"chrY", "1000", "2000", "<DEL>", "1:0:100", ".:0:100", ".:0:100"},
+        };
+        final StringBuilder cohortVcf = new StringBuilder(header)
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmale1\tfemale1\tunknown1\n");
+        for (final String[] r : cohort) {
+            cohortVcf.append(r[0]).append('\t').append(r[1]).append("\tjoint_").append(r[0]).append('_')
+                    .append(r[1]).append("\tN\t").append(r[3]).append("\t.\t.\tEND=").append(r[2])
+                    .append("\tGT:CN:QS\t").append(r[4]).append('\t').append(r[5]).append('\t')
+                    .append(r[6]).append('\n');
+        }
+        Files.writeString(dir.resolve("jgcs_cohort.vcf"), cohortVcf.toString(), StandardCharsets.UTF_8);
+        for (final String name : new String[] {"jgcs_male1.vcf", "jgcs_cohort.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(name).toString()});
+        }
+        Files.writeString(dir.resolve("jgcs.ped"),
+                "fam\tmale1\t0\t0\t1\t0\nfam\tfemale1\t0\t0\t2\t0\nfam\tunknown1\t0\t0\t0\t0\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("jgcs_swapped.ped"),
+                "fam\tmale1\t0\t0\t0\t0\nfam\tfemale1\t0\t0\t1\t0\nfam\tunknown1\t0\t0\t2\t0\n",
+                StandardCharsets.UTF_8);
+        final StringBuilder bins = new StringBuilder(
+                Files.readString(dir.resolve("jgcs_ref.dict"), StandardCharsets.UTF_8));
+        for (final String contig : new String[] {"chr1", "chrX", "chrY"}) {
+            for (int start = 1; start <= length; start += 500) {
+                bins.append(contig).append('\t').append(start).append('\t').append(start + 499)
+                        .append("\t+\t.\n");
+            }
+        }
+        Files.writeString(dir.resolve("jgcs_bins.interval_list"), bins.toString(), StandardCharsets.UTF_8);
     }
 }

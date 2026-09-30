@@ -326,6 +326,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SVConcordance" => Some(run_sv_concordance),
         "SVCluster" => Some(run_sv_cluster),
         "GroupedSVCluster" => Some(run_grouped_sv_cluster),
+        "JointGermlineCNVSegmentation" => Some(run_joint_germline_cnv_segmentation),
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
@@ -630,6 +631,10 @@ fn run_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_grouped_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::grouped_sv_cluster(&parsed("GroupedSVCluster", args)?)
+}
+
+fn run_joint_germline_cnv_segmentation(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::joint_germline_cnv_segmentation(&parsed("JointGermlineCNVSegmentation", args)?)
 }
 
 fn run_sv_annotate(args: &[String]) -> Result<Option<String>, Thrown> {
