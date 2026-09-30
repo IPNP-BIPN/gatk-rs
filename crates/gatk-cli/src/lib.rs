@@ -327,6 +327,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "SVConcordance" => Some(run_sv_concordance),
         "SVCluster" => Some(run_sv_cluster),
         "GroupedSVCluster" => Some(run_grouped_sv_cluster),
+        "JointGermlineCNVSegmentation" => Some(run_joint_germline_cnv_segmentation),
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
@@ -397,11 +398,16 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         _ => None,
     }
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_mem_index_image_creator(&parsed("BwaMemIndexImageCreator", args)?)
+}
+
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
 }
@@ -630,6 +636,10 @@ fn run_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_grouped_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::grouped_sv_cluster(&parsed("GroupedSVCluster", args)?)
+}
+
+fn run_joint_germline_cnv_segmentation(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::joint_germline_cnv_segmentation(&parsed("JointGermlineCNVSegmentation", args)?)
 }
 
 fn run_sv_annotate(args: &[String]) -> Result<Option<String>, Thrown> {

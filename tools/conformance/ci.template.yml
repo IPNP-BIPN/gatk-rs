@@ -286,6 +286,7 @@ jobs:
             --tool SVConcordance \
             --tool SVCluster \
             --tool GroupedSVCluster \
+            --tool JointGermlineCNVSegmentation \
             --tool SVAnnotate \
             --tool ReferenceBlockConcordance \
             --tool CombineSegmentBreakpoints \
@@ -308,6 +309,7 @@ jobs:
             --tool CombineGVCFs \
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
+            --tool BwaMemIndexImageCreator \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
