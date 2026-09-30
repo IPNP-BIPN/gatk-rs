@@ -6161,6 +6161,126 @@
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
+    },
+    "JointGermlineCNVSegmentation": {
+      "$why": [
+        "--variant is jgcs_male1.vcf, ONE sample written as GermlineCNVCaller writes segments, which is the",
+        "only input the defragmenter runs on; and jgcs_cohort.vcf, three samples, which skips it and is",
+        "clustered by max clique alone. The pedigree names the three sexes, or moves them round, which is",
+        "what the allosomal ploidy reads. --model-call-intervals turns the defragmenter into the binned one.",
+        "Every clustering and defragmentation threshold carries its default and a value that moves the",
+        "answer on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one.",
+        "--combine-variants-distance, --max-distance and --ref-padding only regroup the records or pad a",
+        "reference window the tool never reads, and --max-records-in-ram is declared and never read: each is",
+        "varied to show it changes nothing. --reference is jgcs_ref.fasta, the only reference the calls fit.",
+        "--input and --read-index are held out: the tool reads no reads, and a BAM would add a dictionary",
+        "check over a different reference. --sequence-dictionary is held out for the same reason: the tool",
+        "disables cross-validation, and the reference's own dictionary is the only one the calls fit.",
+        "The command-line header line and the output index are held as for the other VCF writers.",
+        "--variant-output-filtering is held out: any value is refused without -L, which would make it a",
+        "one-line refusal pair with the intervals' first value rather than a measurement of the filter."
+      ],
+      "--variant": [
+        "/work/fixtures/jgcs_male1.vcf",
+        "/work/fixtures/jgcs_cohort.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/jgcs_ref.fasta"
+      ],
+      "--pedigree": [
+        "/work/fixtures/jgcs.ped",
+        "/work/fixtures/jgcs_swapped.ped"
+      ],
+      "--output": [
+        "/work/out/joint.vcf",
+        "/work/out/joint.vcf.gz"
+      ],
+      "--model-call-intervals": [
+        "null",
+        "/work/fixtures/jgcs_bins.interval_list"
+      ],
+      "--minimum-qs-score": [
+        "20",
+        "60"
+      ],
+      "--defragmentation-padding-fraction": [
+        "0.25",
+        "0.0",
+        "1.0"
+      ],
+      "--min-sample-set-fraction-overlap": [
+        "0.0",
+        "0.9"
+      ],
+      "--clustering-interval-overlap": [
+        "0.8",
+        "0.1"
+      ],
+      "--clustering-breakend-window": [
+        "10000000",
+        "100"
+      ],
+      "--clustering-size-similarity": [
+        "0.0",
+        "0.9"
+      ],
+      "--autosomal-ref-copy-number": [
+        "2",
+        "3"
+      ],
+      "--combine-variants-distance": [
+        "0",
+        "1000"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "500"
+      ],
+      "--ref-padding": [
+        "1",
+        "10"
+      ],
+      "--max-records-in-ram": [
+        "10000",
+        "1"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:15000-70000"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:45000-55000"
+      ],
+      "--read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "NotDuplicateReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "FirstOfPairReadFilter"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--read-validation-stringency": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--variant-output-filtering": []
     }
   },
   "constraints": [

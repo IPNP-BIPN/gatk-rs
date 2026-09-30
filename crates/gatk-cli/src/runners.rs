@@ -30,6 +30,9 @@ use htsjdk_bam::record::BamRecord;
 /// dispatcher with one banner to print for both (`main-non-user`).
 pub type Outcome = Result<Option<String>, Thrown>;
 
+mod joint_germline_cnv;
+pub use joint_germline_cnv::joint_germline_cnv_segmentation;
+
 /// The value of one named argument, as the parser left it.
 ///
 /// A path argument holds a `Tagged` value, whose tag is `None` when nobody wrote one; a plain

@@ -597,6 +597,7 @@ jobs:
             --tool SVConcordance \
             --tool SVCluster \
             --tool GroupedSVCluster \
+            --tool JointGermlineCNVSegmentation \
             --tool SVAnnotate \
             --tool ReferenceBlockConcordance \
             --tool CombineSegmentBreakpoints \

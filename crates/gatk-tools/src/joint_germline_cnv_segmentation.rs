@@ -5,9 +5,9 @@
 //! one site. More than one input sample skips the defragmenter entirely, the input being assumed
 //! pre-clustered, so the two are never both visible in the same run.
 //!
-//! Reading and writing the VCFs and the cross-sample clustering, which is
-//! [`crate::sv_cluster`]'s, are not ported. The entry filter, the ploidy rules, the genotype
-//! padding and the defragmenter's own linkage are.
+//! This module is the golden's model of the rules. The tool itself, with the streaming engines of
+//! [`crate::sv_cluster_engine`], the VCFs read and written and the genotypes squared off, is the
+//! `JointGermlineCNVSegmentation` runner in `gatk-cli`.
 
 use crate::sv_stratify::SvType;
 
