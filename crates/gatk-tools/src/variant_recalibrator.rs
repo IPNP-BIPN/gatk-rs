@@ -21,11 +21,12 @@ pub struct Datum {
     pub is_transition: bool,
 }
 
-/// `SNP` or `INDEL`, which is only ever written into the filter name and the model column.
+/// `SNP`, `INDEL` or `BOTH`, which is only ever written into the filter name and the model column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Snp,
     Indel,
+    Both,
 }
 
 impl Mode {
@@ -33,6 +34,7 @@ impl Mode {
         match self {
             Mode::Snp => "SNP",
             Mode::Indel => "INDEL",
+            Mode::Both => "BOTH",
         }
     }
 }
@@ -225,8 +227,9 @@ pub fn find_vqslod_tranche(data: &[Datum], threshold: f64, model: Mode) -> Tranc
 /// The refusal a first target that no tranche reaches produces.
 pub fn no_tranche_refusal(metric: &str, threshold: f64) -> String {
     format!(
-        "Couldn't find any tranche containing variants with a {metric} > {threshold:.2}. Are you \
-         sure the truth files contain unfiltered variants which overlap the input data?"
+        "Couldn't find any tranche containing variants with a {metric} > {}. Are you \
+         sure the truth files contain unfiltered variants which overlap the input data?",
+        gatk_engine::java_format::format_decimals(threshold, 2)
     )
 }
 
@@ -306,22 +309,26 @@ pub fn tranche_order(a: &Tranche, b: &Tranche) -> std::cmp::Ordering {
 /// The bound is the previous row's own index whatever that index is, so a list that is not in
 /// increasing order produces a band that runs backwards. The first row has no previous row and
 /// so is bounded at 0.00.
+///
+/// Every decimal is `String.format`'s, which rounds half-up on `Double.toString`'s digits: a Ti/Tv
+/// of 363/160 is `2.26875` there and prints `2.2688`, where Rust's own `{:.4}` prints `2.2687`.
 pub fn tranche_row(tranche: &Tranche, previous: Option<&Tranche>) -> String {
+    use gatk_engine::java_format::format_decimals as f;
     format!(
-        "{:.2},{},{},{:.4},{:.4},{:.4},VQSRTranche{}{:.2}to{:.2},{},{},{},{:.4}\n",
-        tranche.index,
+        "{},{},{},{},{},{},VQSRTranche{}{}to{},{},{},{},{}\n",
+        f(tranche.index, 2),
         tranche.num_known,
         tranche.num_novel,
-        tranche.known_ti_tv,
-        tranche.novel_ti_tv,
-        tranche.min_vqs_lod,
+        f(tranche.known_ti_tv, 4),
+        f(tranche.novel_ti_tv, 4),
+        f(tranche.min_vqs_lod, 4),
         tranche.model.name(),
-        previous.map_or(0.0, |previous| previous.index),
-        tranche.index,
+        f(previous.map_or(0.0, |previous| previous.index), 2),
+        f(tranche.index, 2),
         tranche.model.name(),
         tranche.accessible_truth_sites,
         tranche.calls_at_truth_sites,
-        tranche.truth_sensitivity()
+        f(tranche.truth_sensitivity(), 4)
     )
 }
 

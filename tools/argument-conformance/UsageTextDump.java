@@ -121,6 +121,9 @@ public class UsageTextDump {
                 new org.broadinstitute.hellbender.tools.walkers.readorientation.CollectF1R2Counts());
         usage("SplitCRAM",
                 new org.broadinstitute.hellbender.tools.SplitCRAM());
+        // Undocumented as well, declared on its own.
+        usage("StructuralVariantDiscoverer",
+                new org.broadinstitute.hellbender.tools.StructuralVariantDiscoverer());
     }
 
     /** The text the tool's own parser renders, and the two spellings that ask for it. */

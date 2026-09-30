@@ -99,6 +99,25 @@ tagged inputs, written as `tag:path` words that `run_array.py` expands:
 
 The set is covered as one value, like any other: a pair, the pair reversed, one input alone.
 
+## Whole lists
+
+A repeated argument is one `List` to Barclay, and some tools read that list as a unit rather than
+as a sample: `VariantRecalibrator` builds one model over every `--use-annotation` it is given, so
+two annotations are a two-dimensional model and not two runs of a one-dimensional one. A tool lists
+such arguments under `$lists`, and each of their values is the whole list, its elements separated
+by spaces; `run_array.py` writes each element as its own `--name element`:
+
+```json
+{
+  "per_tool": {
+    "VariantRecalibrator": {
+      "$lists": ["--use-annotation"],
+      "--use-annotation": ["QD MQ FS SOR", "MQ SOR"]
+    }
+  }
+}
+```
+
 ## A refusal that comes after the answer
 
 A refused row is compared on its exit status and its error line, because for most tools a failed

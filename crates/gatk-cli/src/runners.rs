@@ -30,6 +30,9 @@ use htsjdk_bam::record::BamRecord;
 /// dispatcher with one banner to print for both (`main-non-user`).
 pub type Outcome = Result<Option<String>, Thrown>;
 
+mod joint_germline_cnv;
+pub use joint_germline_cnv::joint_germline_cnv_segmentation;
+
 /// The value of one named argument, as the parser left it.
 ///
 /// A path argument holds a `Tagged` value, whose tag is `None` when nobody wrote one; a plain
@@ -619,10 +622,28 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "TransferReadTags"
             | "PostProcessReadsForRSEM"
             | "CalibrateDragstrModel"
+            | "AnalyzeSaturationMutagenesis"
     )
 }
 
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
+    read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
+}
+
+/// The traversal intervals as `GATKTool.initializeIntervals` hands them over, before the
+/// dictionaries are validated: a tool that overrides `transformTraversalIntervals` changes them
+/// there, and a refusal of its own comes in that place.
+type IntervalTransform<'a> = dyn FnMut(
+        Vec<gatk_engine::interval::SimpleInterval>,
+        &SamHeader,
+    ) -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown>
+    + 'a;
+
+fn read_walker_startup_with(
+    parser: &Parser,
+    tool: &str,
+    transform: &mut IntervalTransform,
+) -> Result<ReadWalkerStart, Thrown> {
     let resolved_filters = resolve_read_filters(parser, tool)?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
     // BAM and merges their headers. This port reads one, which is what every case of the golden
@@ -738,9 +759,10 @@ fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, T
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => transform(parameters.intervals, &best)?,
+        None => Vec::new(),
+    };
 
     // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
     // runs first and checks the reference before the reads; then the reference is checked against
@@ -22919,4 +22941,330 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
         ));
     }
     Ok(Some("Optional.empty".to_string()))
+}
+
+/// `AnalyzeSaturationMutagenesis`, a `GATKTool` whose `traverse()` streams the reads itself.
+///
+/// The startup is a read tool's, in its order, so the dictionaries, the intervals and the read
+/// filters are all validated. What the tool then does differently is what a row measures: `-L`
+/// bounds nothing, the filter chain is never consulted (the stream is `PRIMARY_LINE` alone), and
+/// the refusals of `onTraversalStart` come in the tool's order, the sort order first, then the
+/// translation, the reference and the ORF.
+pub fn analyze_saturation_mutagenesis(parser: &Parser) -> Outcome {
+    use gatk_tools::analyze_saturation_mutagenesis_engine as asm;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        filters,
+        ..
+    } = read_walker_startup(parser, "AnalyzeSaturationMutagenesis")?;
+    // Resolved for its refusals, which are the parser's, and then not applied.
+    let _ = read_filter(parser, &filters, &header)?;
+    let prefix = argument(parser, "output-file-prefix").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument output-file-prefix was missing: Argument 'output-file-prefix' is required",
+        )
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let orf = argument(parser, "orf").ok_or_else(|| {
+        Thrown::command_line("Argument orf was missing: Argument 'orf' is required")
+    })?;
+    let defaults = asm::Settings::default();
+    let settings = asm::Settings {
+        min_q: number_or(parser, "min-q", defaults.min_q),
+        min_length: number_or(parser, "min-length", defaults.min_length),
+        min_flanking_length: number_or(parser, "min-flanking-length", defaults.min_flanking_length),
+        min_mapq: number_or(parser, "min-mapq", defaults.min_mapq),
+        orf,
+        min_variant_observations: scalar(parser, "min-variant-obs")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.min_variant_observations),
+        find_large_deletions: flag(parser, "find-large-deletions"),
+        min_alt_length: number_or(parser, "min-alt-length", defaults.min_alt_length),
+        codon_translation: argument(parser, "codon-translation")
+            .map(|text| text.encode_utf16().collect())
+            .unwrap_or(defaults.codon_translation),
+        paired_mode: flag(parser, "paired-mode"),
+        dont_ignore_disjoint_pairs: flag(parser, "dont-ignore-disjoint-pairs"),
+        write_rejected_reads: flag(parser, "write-rejected-reads"),
+    };
+    let thrown = |error: asm::AsmError| match error {
+        asm::AsmError::User(message) => Thrown::user(message),
+        asm::AsmError::Internal { class, message } => Thrown::non_user(class, message),
+    };
+
+    // `onTraversalStart` refuses the sort order and the translation before it reads the reference,
+    // and the reference before it parses the ORF against it; `Run::start` keeps that order. The
+    // FASTA itself was opened by the startup already, so reading it here refuses nothing new.
+    let coordinate_sorted = header.attributes.get("SO") == Some("coordinate");
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs = reference.sequences().len();
+    let bases = match reference.sequences().first().cloned() {
+        Some((name, length)) if contigs == 1 => reference
+            .query(&name, 1, length as i32)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        _ => Vec::new(),
+    };
+    let mut run = asm::Run::start(settings, coordinate_sorted, contigs, &bases).map_err(thrown)?;
+
+    let reads = source.iter_all().map_err(reads_traversal_error)?;
+    run.traverse(reads).map_err(thrown)?;
+
+    // `onTraversalSuccess`: the eight reports in their order, then the rejected reads' writer is
+    // closed.
+    for (suffix, text) in run.reports().map_err(thrown)? {
+        write_file(&format!("{prefix}{suffix}"), text.as_bytes())?;
+    }
+    if let Some(rejected) = run.rejected_reads() {
+        let command_line = crate::command_line::expanded("AnalyzeSaturationMutagenesis", parser);
+        let options = gatk_tools::sam_output::Options {
+            intervals: Vec::new(),
+            create_output_bam_index: flag(parser, "create-output-bam-index"),
+            add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+            command_line: &command_line,
+            version: crate::TOOLKIT_VERSION,
+        };
+        // `getHeaderForSAMWriter` is overridden to mark the output unsorted, after the `@PG`
+        // record the engine adds.
+        let mut out_header =
+            gatk_tools::sam_output::header_for_sam_writer(&header, asm::TOOL_NAME, &options);
+        out_header.attributes.set("SO", "unsorted");
+        let (level, deflater) = output_compression(parser);
+        let (bytes, bai) = gatk_tools::sam_output::write_records_with(
+            &out_header,
+            rejected,
+            false,
+            level,
+            deflater,
+        )
+        .map_err(reads_traversal_error)?;
+        write_bam(parser, &format!("{prefix}.rejected.bam"), &bytes, bai)?;
+    }
+    Ok(None)
+}
+
+/// `LocalAssembler`, a `PairWalker`: the reads over the padded intervals paired, assembled, and
+/// the graph and its paths written.
+///
+/// `PairWalker.transformTraversalIntervals` pads every `-L` interval by `--pair-padding` and folds
+/// it into the one before it, in `initializeIntervals`, so its refusal comes before the
+/// dictionaries are validated; the unpadded intervals are what `RegionChecker` asks a read about.
+/// The two files are written in `onTraversalSuccess` and nowhere else: a traversal too complex to
+/// finish writes no GFA at all, and the FASTA of its contigs.
+pub fn local_assembler(parser: &Parser) -> Outcome {
+    use gatk_tools::local_assembler_engine as la;
+
+    let padding = number_or(parser, "pair-padding", 1000);
+    let mut original: Vec<la::Span> = Vec::new();
+    let mut transform = |intervals: Vec<gatk_engine::interval::SimpleInterval>,
+                         best: &SamHeader|
+     -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown> {
+        original = intervals
+            .iter()
+            .map(|interval| la::Span {
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect();
+        let padded = la::pad_intervals(&original, padding, |contig| {
+            best.sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map(|sequence| sequence.length)
+        })
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+        Ok(padded
+            .into_iter()
+            .map(|span| gatk_engine::interval::SimpleInterval {
+                contig: span.contig,
+                start: span.start,
+                end: span.end,
+            })
+            .collect())
+    };
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup_with(parser, "LocalAssembler", &mut transform)?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    let assembly_name = argument(parser, "assembly-name").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument assembly-name was missing: Argument 'assembly-name' is required",
+        )
+    })?;
+    let defaults = la::Settings::default();
+    let settings = la::Settings {
+        assembly_name: assembly_name.clone(),
+        q_min: scalar(parser, "q-min")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.q_min),
+        min_thin_observations: number_or(
+            parser,
+            "min-thin-observations",
+            defaults.min_thin_observations,
+        ),
+        min_gapfill_count: number_or(parser, "min-gapfill-count", defaults.min_gapfill_count),
+        too_many_traversals: number_or(parser, "too-many-traversals", defaults.too_many_traversals),
+        too_many_scaffolds: number_or(parser, "too-many-scaffolds", defaults.too_many_scaffolds),
+        min_sv_size: number_or(parser, "min-sv-size", defaults.min_sv_size),
+        no_scaffolding: flag(parser, "no-scaffolding"),
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let names: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let contig_of = |index: i32| names.get(usize::try_from(index).ok()?).cloned();
+    let index_of = |name: &str| {
+        names
+            .iter()
+            .position(|candidate| candidate == name)
+            .map_or(-1, |index| index as i32)
+    };
+    let reads = la::pair_reads(reads, &original, &contig_of, &index_of);
+    let region_size: i32 = intervals
+        .iter()
+        .map(|interval| interval.end - interval.start + 1)
+        .sum();
+    let assembly = la::assemble(&reads, region_size, &settings)
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+
+    // `onTraversalSuccess` defaults both paths to the assembly's name, gzipped.
+    let gfa_path =
+        argument(parser, "gfa-file").unwrap_or_else(|| format!("{assembly_name}.gfa.gz"));
+    let fasta_path =
+        argument(parser, "fasta-file").unwrap_or_else(|| format!("{assembly_name}.fa.gz"));
+    // `createBufferedWriter`: a `GZIPOutputStream` when the name ends in `.gz` or `.GZ`.
+    let encoded = |path: &str, text: &str| {
+        if path.ends_with(".gz") || path.ends_with(".GZ") {
+            java_gzip(text.as_bytes(), 6)
+        } else {
+            text.as_bytes().to_vec()
+        }
+    };
+    if let Some(gfa) = &assembly.gfa {
+        std::fs::write(&gfa_path, encoded(&gfa_path, gfa))
+            .map_err(|_| Thrown::user(format!("Failed to write gfa-file {gfa_path}")))?;
+    }
+    std::fs::write(&fasta_path, encoded(&fasta_path, &assembly.fasta))
+        .map_err(|_| Thrown::user(format!("Failed to write fasta-file {fasta_path}")))?;
+    Ok(None)
+}
+
+/// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+#[path = "runners_variant_recalibrator.rs"]
+mod variant_recalibrator_runner;
+pub use variant_recalibrator_runner::variant_recalibrator;
+
+/// An I/O error as the JDK words it: the C library's `strerror`, which is what Rust prints before
+/// its own ` (os error N)`.
+fn java_io_reason(error: &std::io::Error) -> String {
+    let text = error.to_string();
+    match text.rfind(" (os error ") {
+        Some(at) => text[..at].to_string(),
+        None => text,
+    }
+}
+
+/// `BwaMemIndexImageCreator.doWork`, which is `BwaMemIndex.createIndexImageFromFastaFile`: the
+/// checks GATK's Java side makes, in its order, and then the image BWA would build.
+///
+/// The image's addresses are written as zero: see `gatk_tools::bwa_index_image`.
+pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
+    use gatk_tools::bwa_mem_index_image_creator as tool;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").unwrap_or_else(|| tool::default_output(&input));
+
+    // `CommandLineProgram.instanceMainPostParseArgs` judges `--tmp-dir` before `doWork` runs:
+    // it must be a directory this process can read and write.
+    if let Some(tmp) = argument(parser, "tmp-dir") {
+        let usable = std::fs::metadata(&tmp)
+            .map(|m| m.is_dir() && !m.permissions().readonly())
+            .unwrap_or(false);
+        if !usable {
+            return Err(Thrown::user(format!(
+                "Failure working with the tmp directory {tmp}. Try changing the tmp dir with with \
+                 --tmp-dir on the command line.  Exact error was should exist and have read/write \
+                 access"
+            )));
+        }
+    }
+
+    // `assertLooksLikeFastaFile`: the extension, then a non-empty readable regular file, then a
+    // `>` as the first non-space character.
+    tool::check_extension(&input)
+        .map_err(|message| Thrown::non_user("java.lang.IllegalArgumentException", message))?;
+    let unreachable = || {
+        Thrown::non_user(
+            tool::COULD_NOT_READ_REFERENCE,
+            tool::unreachable_reference(&input),
+        )
+    };
+    let metadata = std::fs::metadata(&input).map_err(|_| unreachable())?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(unreachable());
+    }
+    let bytes = std::fs::read(&input).map_err(|_| unreachable())?;
+    if !tool::looks_like_fasta(&String::from_utf8_lossy(&bytes)) {
+        return Err(Thrown::non_user(
+            tool::INVALID_FILE_FORMAT,
+            tool::invalid_format(&input),
+        ));
+    }
+
+    // `assertCanCreateOrOverwriteImageFile`: `File.createNewFile`, deleted again at once when it
+    // made one, and an existing path must be a regular file this process can write.
+    let cannot_create = |reason: String| {
+        Thrown::non_user(
+            tool::COULD_NOT_CREATE_INDEX_IMAGE,
+            tool::cannot_create_image(&output, &reason),
+        )
+    };
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&output);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let regular = std::fs::metadata(&output)
+                .map(|m| m.is_file())
+                .unwrap_or(false);
+            let writable = regular
+                && std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&output)
+                    .is_ok();
+            if !writable {
+                return Err(cannot_create(tool::EXISTS_UNWRITABLE.to_string()));
+            }
+        }
+        Err(error) => return Err(cannot_create(java_io_reason(&error))),
+    }
+
+    let image = gatk_tools::bwa_index_image::build_image(&bytes).map_err(|_| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            "[bns_restore_core] Parse error reading the .amb file: an ambiguous base is white space",
+        )
+    })?;
+    std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
+    Ok(None)
 }
