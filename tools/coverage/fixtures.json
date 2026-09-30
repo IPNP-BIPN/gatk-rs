@@ -6639,6 +6639,146 @@
       ],
       "--read-index": []
     },
+    "AlleleFrequencyQC": {
+      "$output_on_failure": true,
+      "$tagged": [
+        "--eval"
+      ],
+      "--eval": [
+        "calls:/work/fixtures/afqc_eval.vcf thousand_genomes:/work/fixtures/afqc_1kg.vcf",
+        "calls:/work/fixtures/afqc_eval.vcf thousand_genomes:/work/fixtures/afqc_1kg2.vcf",
+        "calls:/work/fixtures/afqc_eval.vcf",
+        "thousand_genomes:/work/fixtures/afqc_1kg.vcf calls:/work/fixtures/afqc_eval.vcf",
+        "calls:/work/fixtures/afqc_eval_noalias.vcf thousand_genomes:/work/fixtures/afqc_1kg.vcf"
+      ],
+      "--output": [
+        "/work/out/afqc.txt",
+        "/work/out/afqc_metrics.txt"
+      ],
+      "--debugFile": [
+        "null",
+        "/work/out/afqc_report.txt"
+      ],
+      "--allowedVariance": [
+        "0.01",
+        "0.1",
+        "0.001"
+      ],
+      "--threshold": [
+        "0.05",
+        "0.99"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--comparison": [
+        "/work/fixtures/afqc_1kg.vcf",
+        "/work/fixtures/afqc_1kg2.vcf",
+        "null"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/gg_dbsnp.vcf"
+      ],
+      "--gold-standard": [
+        "null",
+        "/work/fixtures/afqc_1kg.vcf"
+      ],
+      "--known-cnvs": [
+        "null",
+        "/work/fixtures/ve_cnv.bed"
+      ],
+      "--strat-intervals": [
+        "null",
+        "/work/fixtures/ve_strat.bed"
+      ],
+      "--stratification-module": [
+        "null",
+        "Sample",
+        "IntervalStratification"
+      ],
+      "--eval-module": [
+        "null",
+        "VariantSummary",
+        "IndelSummary"
+      ],
+      "--selectExps": [
+        "QD > 5.0",
+        "DP < 30"
+      ],
+      "--selectNames": [
+        "hq",
+        "lowdp"
+      ],
+      "--knownNames": [
+        "null",
+        "comp"
+      ],
+      "--sample": [
+        "null",
+        "sA"
+      ],
+      "--sample-ploidy": [
+        "2",
+        "1"
+      ],
+      "--combine-variants-distance": [
+        "0",
+        "50"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "100"
+      ],
+      "--min-phase-quality": [
+        "10.0",
+        "30.0"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "50.0",
+        "10.0"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:395-445",
+        "chr2:1-60"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:405-425"
+      ],
+      "--list": [
+        "false"
+      ],
+      "--pedigree": [],
+      "--ancestral-alignments": [],
+      "--input": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--variant-output-filtering": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "$why": [
+        "AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval",
+        "argument is still declared and still parsed, and --eval-module, --stratification-module and",
+        "the two do-not-use flags are varied to show that the presets override them. -O is the metrics",
+        "file; --debugFile is where the report goes, and null sends it to a temporary file nothing",
+        "compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track,",
+        "which is what puts two rows in each allele-frequency bin, in either order; the call set alone",
+        "leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias",
+        "line and is the NullPointerException the tool raises before VariantEval starts. --comparison",
+        "null leaves the comp-AF stratifier without a comp. Every run that gets as far as the plot",
+        "ends on the Rscript user error, since the image carries no R, after the metrics are written.",
+        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
+      ]
+    },
     "GroundTruthScorer": {
       "--input": [
         "/work/fixtures/gt.bam",
