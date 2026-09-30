@@ -402,6 +402,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "LocalAssembler" => Some(run_local_assembler),
         "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         "GroundTruthScorer" => Some(run_ground_truth_scorer),
+        "GroundTruthReadsBuilder" => Some(run_ground_truth_reads_builder),
         _ => None,
     }
 }
@@ -509,6 +510,10 @@ fn run_genotype_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_gnarly_genotyper(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::gnarly_genotyper(&parsed("GnarlyGenotyper", args)?)
+}
+
+fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::ground_truth_reads_builder(&parsed("GroundTruthReadsBuilder", args)?)
 }
 
 fn run_ground_truth_scorer(args: &[String]) -> Result<Option<String>, Thrown> {
