@@ -181,12 +181,12 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout),
         first_error(result.stderr or result.stdout),
     )
 
 
-def read_output(out_dir):
+def read_output(out_dir, row_args=()):
     """The row's output, as text where it is text and as a digest where it is not.
 
     An index is binary, so hashing it is what keeps the row measurable: the comparison needs to
@@ -207,6 +207,9 @@ def read_output(out_dir):
         if name.endswith(".zip"):
             parts.append(f"{name}: {zip_members(raw)}")
             continue
+        if unordered_traversals(name, row_args):
+            parts.append(f"{name}: {traversals_unordered(raw)}")
+            continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
@@ -219,6 +222,62 @@ def read_output(out_dir):
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def unordered_traversals(name, row_args):
+    """Whether this file is `LocalAssembler` output whose record order is the JVM's.
+
+    The tool keeps its traversals in a `HashSet<Traversal>` whose hash is the list hash of the
+    contigs', and a contig has no `hashCode` of its own: it is an identity hash. So the GFA's `O`
+    lines, and under `--no-scaffolding` the FASTA's records, come out in an order (and a traversal
+    found from both of its ends in an orientation) that changes from one JVM to the next. The
+    scaffolds of the default FASTA are sorted by contig id before they are written, so that file
+    is compared byte for byte, gzipped or not.
+    """
+    if name.endswith(".gfa"):
+        return True
+    no_scaffolding = any(arg == "--no-scaffolding=true" for arg in row_args)
+    return no_scaffolding and (name.endswith(".fa") or name.endswith(".fa.gz"))
+
+
+def traversals_unordered(raw):
+    """A GFA's `O` lines, or a traversal FASTA's records, each in one orientation and sorted.
+
+    A traversal read backwards is the same traversal: its contigs reversed, each in the other
+    orientation, and its sequence reverse-complemented. The lesser of the two spellings stands for
+    both. A FASTA record's `_t<n>` counter follows the order, so it is replaced by `_t*`.
+    """
+    import gzip
+
+    data = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    text = data.decode("utf-8")
+    lines = text.split("\n")
+    if lines and lines[0].startswith("H\t"):
+        paths = [line for line in lines if line.startswith("O\t")]
+        others = [line for line in lines if not line.startswith("O\t")]
+        flip = {"+": "-", "-": "+"}
+
+        def canonical(line):
+            steps = line[len("O\t*\t"):].split(" ")
+            reverse = [step[:-1] + flip[step[-1]] for step in reversed(steps)]
+            return "O\t*\t" + min(" ".join(steps), " ".join(reverse))
+
+        body = [line for line in others if line != ""]
+        return "UNORDERED " + "\n".join(body + sorted(canonical(line) for line in paths))
+    complement = str.maketrans("ACGTN", "TGCAN")
+    records = []
+    for header, sequence in zip(lines[0::2], lines[1::2]):
+        name, _, path = header.partition(" ")
+        prefix = re.sub(r"_t\d+$", "_t*", name)
+        steps = path.split("+")
+        reverse = "+".join(
+            step[:-2] if step.endswith("RC") else step + "RC" for step in reversed(steps)
+        )
+        forward = (path, sequence)
+        backward = (reverse, sequence.translate(complement)[::-1])
+        chosen = min(forward, backward)
+        records.append(f"{prefix} {chosen[0]}\n{chosen[1]}")
+    return "UNORDERED " + "\n".join(sorted(records))
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
@@ -406,7 +465,7 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout),
         first_error(result.stderr or result.stdout),
     )
 

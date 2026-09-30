@@ -1505,6 +1505,365 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * The amplicon corpus `AnalyzeSaturationMutagenesis` reads: a single-contig reference whose
+     * contig is an ORF between two UTRs, and reads over it that land in every report type.
+     *
+     * `amplicon.fasta` is 150 bases: a 12-base 5' UTR, an ORF from 13 to 132 (ATG, 38 codons with
+     * no stop, TAA) and an 18-base 3' UTR, so both `--orf 13-132` and the two-exon
+     * `--orf 13-60,64-132` (codon 17 spliced out) parse without an upstream stop.
+     * `amplicon_alt.fasta` is the same contig with two bases changed, at 40 (GAA to CAA) and 140,
+     * so every read disagrees with it there and the variant table is a different one.
+     *
+     * `asm.bam` is unsorted, with the mates adjacent, which paired mode needs; each group
+     * of three is there so the default `--min-variant-obs 3` reports it:
+     *  - wt: overlapping pairs with no variant; snvA: overlapping pairs sharing a missense at 75;
+     *    inc: a pair whose mates disagree at 75; del: pairs whose second read deletes codon 30;
+     *  - ins and fs: unpaired reads with a three-base and a one-base insertion; syn: a synonymous
+     *    change at 30; lqv: a change at 44 whose base quality is 20, so `--min-q 20` counts it;
+     *    nb: an N call; mq: a change at 110 on MAPQ 20 reads, which `--min-mapq 30` rejects;
+     *  - dis: disjoint pairs with a change in each mate, so `--dont-ignore-disjoint-pairs` decides
+     *    whether one variant or two is counted; nf: a change one base into the read, which has no
+     *    flank; edge: a change four bases in, which `--min-flanking-length 5` rejects;
+     *  - clip: a leading soft clip treated as a match; ld: a primary alignment whose SA tag names
+     *    the rest of the read 35 bases further on, which `--find-large-deletions` joins into one
+     *    alignment and `--min-alt-length 40` leaves alone; trimq: a read whose best high-quality run
+     *    is 20 bases, which `--min-length 30` rejects;
+     *  - short: a proper pair whose TLEN is shorter than the reads; unm, dup, qc: reads rejected as
+     *    unmapped; half: a pair whose second read is unmapped; orph: a paired read with no mate;
+     *    sec: a secondary alignment, which the tool's stream drops.
+     * `asm_coord.bam` holds the same records coordinate-sorted, which paired mode refuses.
+     */
+    static final String AMPLICON =
+            "GCTAGCCGACTTATGGCTAAAGACCTGGTTCGCAAGTTCGAAACCCAGGGTATCTACCCAGAGCACTGGATGAACCGTGCAGTCC"
+            + "TCAAGGATTCGCCTGGAATCTTTCACGCGAAAGTGCTGACCGAGTAAGGATCCATTGCAGTCGAC";
+
+    static void saturationMutagenesis(final Path dir) throws Exception {
+        for (final String[] fasta : new String[][] {{"amplicon.fasta", AMPLICON},
+                {"amplicon_alt.fasta", substitute(substitute(AMPLICON, 40, 'C'), 140, 'A')}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve(fasta[0]))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                writer.startSequence("amp").appendBases(fasta[1]);
+            }
+        }
+        Files.writeString(dir.resolve("amplicon_plus.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:amp\tLN:150\n@SQ\tSN:ampExtra\tLN:1000\n", StandardCharsets.UTF_8);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("amp", AMPLICON.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+
+        final List<SAMRecord> records = new ArrayList<>();
+        final String withSnv75 = substitute(AMPLICON, 75, 'G');
+        for (int i = 1; i <= 3; i++) {
+            records.addAll(pair(header, "wt" + i, AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150));
+        }
+        for (int i = 1; i <= 4; i++) {
+            records.addAll(pair(header, "snvA" + i, withSnv75, 1, "80M", withSnv75, 71, "80M", 150));
+        }
+        records.addAll(pair(header, "inc1", withSnv75, 1, "80M", AMPLICON, 71, "80M", 150));
+        final String deleted = AMPLICON.substring(0, 99) + AMPLICON.substring(102);
+        for (int i = 1; i <= 3; i++) {
+            final List<SAMRecord> mates = pair(header, "del" + i, AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150);
+            final SAMRecord second = mates.get(1);
+            second.setReadString(deleted.substring(70, 147));
+            second.setBaseQualityString("I".repeat(77));
+            second.setCigarString("29M3D48M");
+            records.addAll(mates);
+        }
+        for (int i = 1; i <= 3; i++) {
+            records.add(single(header, "ins" + i, 21,
+                    AMPLICON.substring(20, 60) + "GGC" + AMPLICON.substring(60, 87), "40M3I27M", null, 60));
+            records.add(single(header, "fs" + i, 51,
+                    AMPLICON.substring(50, 90) + "T" + AMPLICON.substring(90, 119), "40M1I29M", null, 60));
+            records.add(single(header, "syn" + i, 11,
+                    substitute(AMPLICON, 30, 'C').substring(10, 80), "70M", null, 60));
+            final SAMRecord lowVariant = single(header, "lqv" + i, 11,
+                    substitute(AMPLICON, 44, 'G').substring(10, 80), "70M", null, 60);
+            lowVariant.setBaseQualityString("I".repeat(33) + "5" + "I".repeat(36));
+            records.add(lowVariant);
+            records.add(single(header, "mq" + i, 71,
+                    substitute(AMPLICON, 110, 'T').substring(70, 140), "70M", null, 20));
+            records.addAll(pair(header, "dis" + i, substitute(AMPLICON, 20, 'T'), 1, "60M",
+                    substitute(AMPLICON, 120, 'A'), 91, "60M", 150));
+            records.add(single(header, "nf" + i, 21,
+                    substitute(AMPLICON, 22, 'T').substring(20, 90), "70M", null, 60));
+            records.add(single(header, "edge" + i, 21,
+                    substitute(AMPLICON, 24, 'A').substring(20, 90), "70M", null, 60));
+            records.add(single(header, "clip" + i, 6,
+                    substitute(AMPLICON, 3, 'A').substring(0, 70), "5S65M", null, 60));
+            records.add(single(header, "ld" + i, 1,
+                    AMPLICON.substring(0, 35) + AMPLICON.substring(70, 105), "35M35S",
+                    "amp,71,+,35S35M,60,0;", 60));
+            final SAMRecord supplementary = single(header, "ld" + i, 71,
+                    AMPLICON.substring(0, 35) + AMPLICON.substring(70, 105), "35S35M",
+                    "amp,1,+,35M35S,60,0;", 60);
+            supplementary.setSupplementaryAlignmentFlag(true);
+            records.add(supplementary);
+        }
+        final SAMRecord lowQuality = single(header, "lowq1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        lowQuality.setBaseQualityString("+".repeat(70));
+        records.add(lowQuality);
+        final SAMRecord withN = single(header, "nb1", 11, substitute(AMPLICON, 50, 'N').substring(10, 80), "70M", null, 60);
+        records.add(withN);
+        final SAMRecord trimmed = single(header, "trimq1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        trimmed.setBaseQualityString("I".repeat(20) + "+".repeat(10) + "I".repeat(20) + "+".repeat(20));
+        records.add(trimmed);
+        final List<SAMRecord> shortPair = pair(header, "short1", AMPLICON, 21, "60M", AMPLICON, 11, "60M", 50);
+        records.addAll(shortPair);
+        final List<SAMRecord> unmapped = pair(header, "unm1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 0);
+        for (final SAMRecord record : unmapped) {
+            record.setReadUnmappedFlag(true);
+            record.setMateUnmappedFlag(true);
+            record.setProperPairFlag(false);
+            record.setReferenceIndex(SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX);
+            record.setAlignmentStart(SAMRecord.NO_ALIGNMENT_START);
+            record.setMateReferenceIndex(SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX);
+            record.setMateAlignmentStart(SAMRecord.NO_ALIGNMENT_START);
+            record.setCigarString("*");
+            record.setMappingQuality(0);
+            record.setInferredInsertSize(0);
+            record.setReadNegativeStrandFlag(false);
+            record.setMateNegativeStrandFlag(false);
+        }
+        records.addAll(unmapped);
+        final SAMRecord duplicate = single(header, "dup1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        duplicate.setDuplicateReadFlag(true);
+        records.add(duplicate);
+        final SAMRecord failed = single(header, "qc1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        failed.setReadFailsVendorQualityCheckFlag(true);
+        records.add(failed);
+        final List<SAMRecord> half = pair(header, "half1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 0);
+        final SAMRecord halfMate = half.get(1);
+        halfMate.setReadUnmappedFlag(true);
+        halfMate.setAlignmentStart(1);
+        halfMate.setCigarString("*");
+        halfMate.setMappingQuality(0);
+        halfMate.setReadNegativeStrandFlag(false);
+        halfMate.setInferredInsertSize(0);
+        half.get(0).setMateUnmappedFlag(true);
+        half.get(0).setMateAlignmentStart(1);
+        half.get(0).setMateNegativeStrandFlag(false);
+        half.get(0).setProperPairFlag(false);
+        half.get(0).setInferredInsertSize(0);
+        halfMate.setProperPairFlag(false);
+        records.addAll(half);
+        final SAMRecord orphan = pair(header, "orph1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150).get(0);
+        records.add(orphan);
+        final SAMRecord secondary = single(header, "sec1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        secondary.setSecondaryAlignment(true);
+        records.add(secondary);
+
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("asm.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader coordinate = header.clone();
+        coordinate.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(coordinate, false, dir.resolve("asm_coord.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * The corpus `LocalAssembler` assembles: a 3000-base contig `la` and reads over 1000-2400 that
+     * give each of its arguments something to decide.
+     *
+     * The contig is drawn from a linear congruential generator whose state carries forward, as the
+     * conformance dump's is: a periodic sequence repeats every 31-mer and the graph collapses.
+     * `la.bam` is coordinate-sorted and indexed, since the tool requires intervals:
+     *  - p, v, q: pairs over 1000-1359, five of them (v) with a substitution at 1150, so the graph
+     *    has a bubble and the reads' transits phase it;
+     *  - lq: five reads at 1320 whose bases are all at quality 30, which `--q-min 35` drops;
+     *  - thin: two reads at 1600, a contig `--min-thin-observations 2` keeps and 4 removes;
+     *  - w and sv: reads over 1650-1810, five of them (sv) deleting 60 bases, a bubble whose two
+     *    paths differ by more than `--min-sv-size 50` and by less than 100;
+     *  - n: five reads at 1800 with an `N` at their fiftieth base, a gap `--min-gapfill-count 3`
+     *    fills and 6 does not;
+     *  - ov: five pairs whose mates both start at 2000 with ten bases of adapter past the fragment,
+     *    which `trimOverruns` hard-clips away;
+     *  - far: five pairs at 1450 whose mate lies at 2800, outside every padded interval, so each
+     *    first read is left in the pair buffer and assembled unpaired at the end;
+     *  - d: five duplicates at 2300, which only `--disable-tool-default-read-filters` lets in; and
+     *    one secondary alignment, which the same argument lets through as an unpaired read.
+     * `la2.bam` is the same reads without the two bubbles (v, sv). `la_plus.dict` adds a contig.
+     */
+    static void localAssembler(final Path dir) throws Exception {
+        final StringBuilder bases = new StringBuilder(3000);
+        long state = 20260930L;
+        for (int i = 0; i < 3000; i++) {
+            state = state * 6364136223846793005L + 1442695040888963407L;
+            bases.append("ACGT".charAt((int) ((state >>> 33) & 3L)));
+        }
+        final String ref = bases.toString();
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("la_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            writer.startSequence("la").appendBases(ref);
+        }
+        Files.writeString(dir.resolve("la_plus.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:la\tLN:3000\n@SQ\tSN:laExtra\tLN:1000\n", StandardCharsets.UTF_8);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("la", ref.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+
+        final String snv = substitute(ref, 1150, ref.charAt(1149) == 'A' ? 'C' : 'A');
+        final String deleted = ref.substring(0, 1699) + ref.substring(1759);
+        final List<SAMRecord> records = new ArrayList<>();
+        final List<SAMRecord> bubbles = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            records.addAll(laPair(header, "p" + i, ref, 1000, ref, 1100, 100));
+        }
+        for (int i = 1; i <= 5; i++) {
+            bubbles.addAll(laPair(header, "v" + i, snv, 1000, snv, 1100, 100));
+            records.addAll(laPair(header, "q" + i, ref, 1180, ref, 1260, 100));
+            final SAMRecord lowQuality = laRead(header, "lq" + i, 1320, ref.substring(1319, 1419), "100M");
+            lowQuality.setBaseQualityString("?".repeat(100));
+            records.add(lowQuality);
+            records.add(laRead(header, "w" + i, 1650, ref.substring(1649, 1749), "100M"));
+            records.add(laRead(header, "wb" + i, 1720, ref.substring(1719, 1819), "100M"));
+            bubbles.add(laRead(header, "sv" + i, 1650,
+                    ref.substring(1649, 1699) + ref.substring(1759, 1809), "50M60D50M"));
+            final char[] withN = ref.substring(1799, 1899).toCharArray();
+            withN[49] = 'N';
+            records.add(laRead(header, "n" + i, 1800, new String(withN), "100M"));
+            final List<SAMRecord> overrun = laPair(header, "ov" + i, ref, 2000, ref, 2000, 90);
+            overrun.get(0).setReadString(ref.substring(1999, 2089) + "ACGTTGCAAC");
+            overrun.get(0).setBaseQualityString("I".repeat(100));
+            overrun.get(0).setCigarString("90M10S");
+            overrun.get(1).setReadString("GTTGCAACGT" + ref.substring(1999, 2089));
+            overrun.get(1).setBaseQualityString("I".repeat(100));
+            overrun.get(1).setCigarString("10S90M");
+            records.addAll(overrun);
+            records.addAll(laPair(header, "far" + i, ref, 1450, ref, 2800, 100));
+            final SAMRecord duplicate = laRead(header, "d" + i, 2300, ref.substring(2299, 2399), "100M");
+            duplicate.setDuplicateReadFlag(true);
+            records.add(duplicate);
+        }
+        for (int i = 1; i <= 2; i++) {
+            records.add(laRead(header, "thin" + i, 1600, ref.substring(1599, 1699), "100M"));
+        }
+        final SAMRecord secondary = laRead(header, "sec1", 2200, ref.substring(2199, 2299), "100M");
+        secondary.setSecondaryAlignment(true);
+        records.add(secondary);
+
+        final List<SAMRecord> all = new ArrayList<>(records);
+        all.addAll(bubbles);
+        for (final String[] output : new String[][] {{"la.bam", "all"}, {"la2.bam", "plain"}}) {
+            try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                    .setCreateIndex(true)
+                    .makeBAMWriter(header, false, dir.resolve(output[0]).toFile())) {
+                (output[1].equals("all") ? all : records).forEach(writer::addAlignment);
+            }
+        }
+    }
+
+    /** A read of {@link #localAssembler} on `la`, every base at quality 40. */
+    static SAMRecord laRead(final SAMFileHeader header, final String name, final int start,
+                            final String bases, final String cigar) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString(bases);
+        record.setBaseQualityString("I".repeat(bases.length()));
+        record.setAttribute("RG", "rg1");
+        record.setReferenceName("la");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(60);
+        return record;
+    }
+
+    /** A forward first read and a reverse second read of {@link #localAssembler}, mates set. */
+    static List<SAMRecord> laPair(final SAMFileHeader header, final String name,
+                                  final String firstSequence, final int firstStart,
+                                  final String secondSequence, final int secondStart, final int length) {
+        final SAMRecord first = laRead(header, name, firstStart,
+                firstSequence.substring(firstStart - 1, firstStart - 1 + length), length + "M");
+        final SAMRecord second = laRead(header, name, secondStart,
+                secondSequence.substring(secondStart - 1, secondStart - 1 + length), length + "M");
+        second.setReadNegativeStrandFlag(true);
+        for (final SAMRecord record : List.of(first, second)) {
+            record.setReadPairedFlag(true);
+            record.setProperPairFlag(true);
+        }
+        first.setFirstOfPairFlag(true);
+        second.setSecondOfPairFlag(true);
+        htsjdk.samtools.SamPairUtil.setMateInfo(first, second, true);
+        return new ArrayList<>(List.of(first, second));
+    }
+
+    /** The sequence with its 1-based position {@code position} replaced by {@code base}. */
+    static String substitute(final String sequence, final int position, final char base) {
+        if (sequence.charAt(position - 1) == base) {
+            throw new IllegalArgumentException("not a substitution at " + position);
+        }
+        return sequence.substring(0, position - 1) + base + sequence.substring(position);
+    }
+
+    /** An unpaired read of {@link #saturationMutagenesis}, every base at quality 40. */
+    static SAMRecord single(final SAMFileHeader header, final String name, final int start,
+                            final String bases, final String cigar, final String sa, final int mapq) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString(bases);
+        record.setBaseQualityString("I".repeat(bases.length()));
+        record.setAttribute("RG", "rg1");
+        record.setReferenceName("amp");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(mapq);
+        if (sa != null) {
+            record.setAttribute("SA", sa);
+        }
+        return record;
+    }
+
+    /**
+     * A forward first read and a reverse second read of one molecule, each cut from its own copy
+     * of the amplicon, with the mate fields htsjdk's pairing utility sets and the TLEN given.
+     */
+    static List<SAMRecord> pair(final SAMFileHeader header, final String name,
+                                final String firstSequence, final int firstStart, final String firstCigar,
+                                final String secondSequence, final int secondStart, final String secondCigar,
+                                final int templateLength) {
+        final int firstLength = Integer.parseInt(firstCigar.substring(0, firstCigar.length() - 1));
+        final int secondLength = Integer.parseInt(secondCigar.substring(0, secondCigar.length() - 1));
+        final SAMRecord first = single(header, name, firstStart,
+                firstSequence.substring(firstStart - 1, firstStart - 1 + firstLength), firstCigar, null, 60);
+        final SAMRecord second = single(header, name, secondStart,
+                secondSequence.substring(secondStart - 1, secondStart - 1 + secondLength), secondCigar, null, 60);
+        second.setReadNegativeStrandFlag(true);
+        for (final SAMRecord record : List.of(first, second)) {
+            record.setReadPairedFlag(true);
+            record.setProperPairFlag(true);
+        }
+        first.setFirstOfPairFlag(true);
+        second.setSecondOfPairFlag(true);
+        htsjdk.samtools.SamPairUtil.setMateInfo(first, second, true);
+        first.setInferredInsertSize(templateLength);
+        second.setInferredInsertSize(-templateLength);
+        return new ArrayList<>(List.of(first, second));
+    }
+
     /** One record of {@link #queryNameSorted}, with the flags the group it belongs to needs. */
     static SAMRecord mate(final SAMFileHeader header, final String name, final int start,
                           final int mateStart, final String cigar, final boolean first,
@@ -1912,6 +2271,8 @@ public class MakeFixtures {
                 ">adapterOne\nACGTACGT\n>adapterTwo\nTTTTGGGG\n", StandardCharsets.UTF_8);
         pairs(dir.resolve("pairs.bam"));
         queryNameSorted(dir.resolve("qname.bam"));
+        saturationMutagenesis(dir);
+        localAssembler(dir);
         umi(dir.resolve("umi.bam"));
         aseBam(dir.resolve("ase.bam"));
         moleculeGroups(dir.resolve("molecules.bam"), false);

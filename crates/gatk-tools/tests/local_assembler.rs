@@ -5,8 +5,10 @@
 //! a linear congruential generator: a periodic one collapses the assembly into a single forty-base
 //! contig looping on itself.
 //!
-//! The assembly is not ported. What the port is asked for is everything the two files are made of:
-//! given the GFA's own segments and paths, it must spell out the FASTA the tool wrote.
+//! The assembly itself is measured by the last test: every case's reads assembled by
+//! `local_assembler_engine` into the same GFA (its `O` lines sorted, as the dump writes them) and
+//! the same FASTA. The others ask for everything the two files are made of: given the GFA's own
+//! segments and paths, the port must spell out the FASTA the tool wrote.
 //!
 //! # What this suite is for
 //!
@@ -282,4 +284,74 @@ fn the_reverse_complement_turns_the_sequence_round() {
     assert_eq!(reverse_complement(""), "");
     // A base the alphabet does not name is carried through untouched.
     assert_eq!(reverse_complement("ANT"), "ANT");
+}
+
+/// The GFA with its `O` lines sorted, which is how the dump writes it: their order is a hash of
+/// identity hashes and is not the tool's.
+fn sorted_paths(gfa: &str) -> String {
+    let mut lines: Vec<&str> = gfa.split('\n').collect();
+    let positions: Vec<usize> = (0..lines.len())
+        .filter(|index| lines[*index].starts_with("O\t"))
+        .collect();
+    let mut paths: Vec<&str> = positions.iter().map(|index| lines[*index]).collect();
+    paths.sort();
+    for (position, path) in positions.iter().zip(paths) {
+        lines[*position] = path;
+    }
+    lines.join("\n")
+}
+
+/// Every case of the golden assembled by the port, from the reads the dump wrote.
+#[test]
+fn the_port_assembles_every_case_as_the_reference_does() {
+    use gatk_tools::local_assembler_engine::{assemble, AssemblyRead, Settings};
+    let text = golden();
+    let cases = [
+        ("one-read", vec![]),
+        ("overlapping-reads", vec![]),
+        ("disjoint-reads", vec![]),
+        ("read-shorter-than-k", vec![]),
+        ("bubble", vec![]),
+        ("low-quality-base", vec!["q-min"]),
+        ("n-in-the-middle", vec![]),
+        ("thin-observations-ten", vec!["thin"]),
+        ("no-scaffolding", vec!["no-scaffolding"]),
+        ("empty-interval", vec!["empty"]),
+    ];
+    for (label, extras) in cases {
+        let sam = payload(&text, "sam", label).expect("the reads");
+        let empty = extras.contains(&"empty");
+        let reads: Vec<AssemblyRead> = if empty {
+            Vec::new()
+        } else {
+            sam.lines()
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let columns: Vec<&str> = line.split('\t').collect();
+                    AssemblyRead {
+                        bases: columns[9].as_bytes().to_vec(),
+                        qualities: columns[10].bytes().map(|q| q - 33).collect(),
+                    }
+                })
+                .collect()
+        };
+        // `-L chr1:900-1700` padded by a thousand within a 6000-base contig, or `chr1:4000-4100`.
+        let region_size = if empty { 5100 - 3000 + 1 } else { 2700 };
+        let settings = Settings {
+            assembly_name: label.to_string(),
+            q_min: if extras.contains(&"q-min") { 45 } else { 25 },
+            min_thin_observations: if extras.contains(&"thin") { 10 } else { 4 },
+            no_scaffolding: extras.contains(&"no-scaffolding"),
+            ..Settings::default()
+        };
+        let assembly = assemble(&reads, region_size, &settings).expect("an assembly");
+        let gfa = payload(&text, "gfa", label).expect("a gfa");
+        assert_eq!(
+            sorted_paths(assembly.gfa.as_deref().expect("a gfa written")),
+            gfa,
+            "{label}: gfa"
+        );
+        let fasta = payload(&text, "fasta", label).expect("a fasta");
+        assert_eq!(assembly.fasta, fasta, "{label}: fasta");
+    }
 }

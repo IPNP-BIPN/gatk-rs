@@ -6478,6 +6478,166 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "AnalyzeSaturationMutagenesis": {
+      "$why": [
+        "The amplicon corpus MakeFixtures.saturationMutagenesis writes: a 150-base single-contig",
+        "reference whose ORF is 13-132, and asm.bam, whose reads land in every report type and whose",
+        "variant groups come in threes so the default --min-variant-obs reports them. asm_coord.bam is",
+        "the same reads coordinate-sorted, which paired mode refuses and unpaired mode reads.",
+        "amplicon_alt.fasta differs from the amplicon at two bases, so every read carries two more",
+        "variants against it; the two-exon --orf splices codon 17 out. Each numeric threshold has a",
+        "second value some group of reads crosses: a base at quality 20 (--min-q), a 20-base",
+        "high-quality run (--min-length), a change four bases into a read (--min-flanking-length),",
+        "MAPQ 20 reads (--min-mapq), singleton variants (--min-variant-obs), and a 35-base",
+        "supplementary alignment (--min-alt-length). The second --codon-translation is the vertebrate",
+        "mitochondrial code, which renames four codons.",
+        "-L and -XL are on the amplicon's contig: the tool bounds nothing with them, but they are still",
+        "resolved against the dictionary, so the shared chr1 values would only measure that refusal.",
+        "--read-index is held out: neither BAM has an index."
+      ],
+      "--input": [
+        "/work/fixtures/asm.bam",
+        "/work/fixtures/asm_coord.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/amplicon.fasta",
+        "/work/fixtures/amplicon_alt.fasta"
+      ],
+      "--orf": [
+        "13-132",
+        "13-60,64-132"
+      ],
+      "--output-file-prefix": [
+        "/work/out/asm",
+        "/work/out/asm2"
+      ],
+      "--codon-translation": [
+        "KNKNTTTTRSRSIIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVVXYXYSSSSXCWCLFLF",
+        "KNKNTTTTXSXSMIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVVXYXYSSSSWCWCLFLF"
+      ],
+      "--min-q": [
+        "30",
+        "20"
+      ],
+      "--min-length": [
+        "15",
+        "30"
+      ],
+      "--min-flanking-length": [
+        "2",
+        "5"
+      ],
+      "--min-mapq": [
+        "4",
+        "30"
+      ],
+      "--min-variant-obs": [
+        "3",
+        "1"
+      ],
+      "--min-alt-length": [
+        "15",
+        "40"
+      ],
+      "--intervals": [
+        "amp:1-150",
+        "amp:20-60"
+      ],
+      "--exclude-intervals": [
+        "amp:1-10",
+        "amp:100-110"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/amplicon.dict",
+        "/work/fixtures/amplicon_plus.dict"
+      ],
+      "--read-index": []
+    },
+    "LocalAssembler": {
+      "$why": [
+        "The corpus MakeFixtures.localAssembler writes: a 3000-base contig la drawn from a generator whose",
+        "state carries forward, and la.bam, whose reads make two bubbles (a substitution and a 60-base",
+        "deletion), a gap an N leaves, a thin contig, an overrun pair, mates outside every padded interval,",
+        "duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles.",
+        "Each numeric argument has a second value some group of reads crosses: --q-min 35 drops the",
+        "quality-30 reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves",
+        "the gap open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1",
+        "and --too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out",
+        "(and refuses the two intervals -XL splits, which no longer touch).",
+        "--gfa-file is plain text in both values: its O lines are written in the order of a HashSet keyed by",
+        "identity hashes, which run_array.py sorts, and a gzipped file could only be compared as a digest.",
+        "--fasta-file is plain and gzipped: the scaffolds are written sorted, so the gzip bytes are compared.",
+        "-L and -XL are on la; --reference is given or not, since the tool reads only its dictionary.",
+        "--no-scaffolding is listed false first, so the rows it fills write the sorted scaffolds.",
+        "--read-index is held out: each of the two inputs has its own index beside it, and one named index",
+        "would belong to only one of them."
+      ],
+      "--input": [
+        "/work/fixtures/la.bam",
+        "/work/fixtures/la2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/la_ref.fasta",
+        "null"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/la_ref.dict",
+        "/work/fixtures/la_plus.dict"
+      ],
+      "--assembly-name": [
+        "la",
+        "asm2"
+      ],
+      "--gfa-file": [
+        "/work/out/la.gfa",
+        "/work/out/graph.gfa"
+      ],
+      "--fasta-file": [
+        "/work/out/la.fa",
+        "/work/out/la.fa.gz"
+      ],
+      "--q-min": [
+        "25",
+        "35"
+      ],
+      "--min-thin-observations": [
+        "4",
+        "2"
+      ],
+      "--min-gapfill-count": [
+        "3",
+        "6"
+      ],
+      "--no-scaffolding": [
+        "false",
+        "true"
+      ],
+      "--too-many-traversals": [
+        "100000",
+        "1"
+      ],
+      "--too-many-scaffolds": [
+        "50000",
+        "1"
+      ],
+      "--min-sv-size": [
+        "50",
+        "100"
+      ],
+      "--pair-padding": [
+        "1000",
+        "0"
+      ],
+      "--intervals": [
+        "la:1000-1500",
+        "la:1100-1300"
+      ],
+      "--exclude-intervals": [
+        "la:1-10",
+        "la:1200-1210"
+      ],
+      "--read-index": []
     }
   },
   "constraints": [
