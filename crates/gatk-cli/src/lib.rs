@@ -321,11 +321,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
+        "VariantRecalibrator" => Some(run_variant_recalibrator),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
         "SVCluster" => Some(run_sv_cluster),
         "GroupedSVCluster" => Some(run_grouped_sv_cluster),
+        "JointGermlineCNVSegmentation" => Some(run_joint_germline_cnv_segmentation),
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
@@ -398,11 +400,16 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantAnnotator" => Some(run_variant_annotator),
         "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
         "LocalAssembler" => Some(run_local_assembler),
+        "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         _ => None,
     }
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_mem_index_image_creator(&parsed("BwaMemIndexImageCreator", args)?)
+}
+
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
 }
@@ -617,6 +624,10 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
 }
 
+fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
+}
+
 fn run_vcf_comparator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::vcf_comparator(&parsed("VCFComparator", args)?)
 }
@@ -635,6 +646,10 @@ fn run_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_grouped_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::grouped_sv_cluster(&parsed("GroupedSVCluster", args)?)
+}
+
+fn run_joint_germline_cnv_segmentation(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::joint_germline_cnv_segmentation(&parsed("JointGermlineCNVSegmentation", args)?)
 }
 
 fn run_sv_annotate(args: &[String]) -> Result<Option<String>, Thrown> {
