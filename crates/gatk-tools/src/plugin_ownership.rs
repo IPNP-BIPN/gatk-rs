@@ -306,7 +306,7 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `--disable-read-filter`, and never consulted.
         "TransferReadTags" => Some(&["WellformedReadFilter"]),
         // `GroundTruthScorer` is a plain `ReadWalker` and keeps `GATKTool`'s wellformed filter.
-        "GroundTruthScorer" => Some(&["WellformedReadFilter"]),
+        "GroundTruthScorer" | "GroundTruthReadsBuilder" => Some(&["WellformedReadFilter"]),
         // `Mutect2Engine.makeStandardMutect2ReadFilters`, which does not call super either: twelve
         // filters with the wellformed one LAST, two of them parameterised at thresholds that are
         // the ENGINE's rather than the library's (mapping quality twenty, read length thirty).

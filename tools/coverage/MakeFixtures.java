@@ -1242,6 +1242,129 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("gts_prior.csv"), prior.toString(), StandardCharsets.UTF_8);
     }
 
+    /**
+     * GroundTruthReadsBuilder's inputs over mutect_ref.fasta. gtrb_maternal.fasta is chr1 with
+     * three substitutions, named chr1_maternal; gtrb_paternal.fasta has two others and five bases
+     * inserted before 1600, named chr1_paternal. gtrb/ holds the translation tables, identity for
+     * the maternal side and a shift of five from 1600 for the paternal; gtrb_alt/ shifts the
+     * paternal side back 300 from 1000, which collapses every read spanning 1000 and moves the
+     * rest onto other bases.
+     *
+     * gtrb.bam: twenty Ultima reads, one every 80 from 400, 60 to 90 bases. Every third is
+     * reverse; reads 2 and 6 are soft-clipped at their front, 4 at its end with a poly-T clip, 8
+     * at its front and 11 at its end with a poly-A clip; reads 1, 5, 7, 9 and 10 carry tm tags
+     * A, Q, Z, QZ and AQ; read 12 has mapping quality 10, read 13 is supplementary; one in four
+     * carries a substitution, and one in five is under the TACG group with mc 8.
+     */
+    static void groundTruthReadsBuilderFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final StringBuilder maternal = new StringBuilder(bases);
+        for (final int at : new int[] {650, 1210, 1777}) {
+            maternal.setCharAt(at, maternal.charAt(at) == 'A' ? 'C' : 'A');
+        }
+        final StringBuilder paternal = new StringBuilder(bases);
+        for (final int at : new int[] {900, 1400}) {
+            paternal.setCharAt(at, paternal.charAt(at) == 'G' ? 'T' : 'G');
+        }
+        paternal.insert(1599, "ACGTA");
+        for (final String[] ancestor : new String[][] {
+                {"gtrb_maternal.fasta", "chr1_maternal", maternal.toString()},
+                {"gtrb_paternal.fasta", "chr1_paternal", paternal.toString()}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve(ancestor[0]))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                writer.addSequence(new htsjdk.samtools.reference.ReferenceSequence(ancestor[1], 0,
+                        ancestor[2].getBytes(StandardCharsets.US_ASCII)));
+            }
+        }
+        Files.createDirectories(dir.resolve("gtrb"));
+        Files.createDirectories(dir.resolve("gtrb_alt"));
+        Files.writeString(dir.resolve("gtrb/maternal.chr1.csv"), "pos,offset\n1,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb/paternal.chr1.csv"), "pos,offset\n1,0\n1600,5\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb_alt/maternal.chr1.csv"), "pos,offset\n1,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb_alt/paternal.chr1.csv"), "pos,offset\n1,0\n1000,-300\n", StandardCharsets.UTF_8);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("gtrb");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("gtrb");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final java.util.Random random = new java.util.Random(986);
+        final String[] tms = {null, "A", null, null, null, "Q", null, "Z", null, "QZ", "AQ"};
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int n = 0; n < 20; n++) {
+            final int start = 400 + n * 80;
+            final int length = 60 + random.nextInt(31);
+            final StringBuilder read = new StringBuilder(bases.substring(start - 1, start - 1 + length));
+            if (n % 4 == 1) {
+                final int at = 10 + random.nextInt(length - 20);
+                read.setCharAt(at, read.charAt(at) == 'T' ? 'G' : 'T');
+            }
+            String sequence = read.toString();
+            String cigar = length + "M";
+            int alignmentStart = start;
+            if (n == 2 || n == 6 || n == 8) {
+                final int clip = n == 2 ? 5 : n == 6 ? 3 : 4;
+                sequence = "GACTG".substring(0, clip) + sequence.substring(clip);
+                cigar = clip + "S" + (length - clip) + "M";
+                alignmentStart = start + clip;
+            } else if (n == 4) {
+                sequence = sequence.substring(0, length - 4) + "TTTT";
+                cigar = (length - 4) + "M4S";
+            } else if (n == 11) {
+                sequence = sequence.substring(0, length - 5) + "AAAAA";
+                cigar = (length - 5) + "M5S";
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("B:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(alignmentStart);
+            record.setCigarString(cigar);
+            record.setReadString(sequence);
+            final byte[] quals = new byte[length];
+            final byte[] tp = new byte[length];
+            for (int i = 0; i < length; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : -1);
+                quals[i] = (byte) (tp[i] == 0 ? 28 + random.nextInt(13) : 4 + random.nextInt(21));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(n == 12 ? 10 : 60);
+            record.setReadNegativeStrandFlag(n % 3 == 2);
+            record.setSupplementaryAlignmentFlag(n == 13);
+            record.setAttribute("RG", n % 5 == 4 ? "rgV" : "rgU");
+            record.setAttribute("tp", tp);
+            if (n < tms.length && tms[n] != null) {
+                record.setAttribute("tm", tms[n]);
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("gtrb.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -2253,6 +2376,7 @@ public class MakeFixtures {
         flowFixtures(dir);
         flowSnvFixtures(dir);
         groundTruthScorerFixtures(dir);
+        groundTruthReadsBuilderFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.

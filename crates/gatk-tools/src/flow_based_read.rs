@@ -268,6 +268,31 @@ impl FlowRead {
     }
 
     /// `applyAlignment` on a read already in reference direction and in base format, which is
+    /// `setDirection(SYNTHESIS)` then `applyAlignment()` on a reverse-strand read: the matrix's
+    /// columns and the key reversed, the flow order reverse-complemented, and then the zero flows
+    /// at either end dropped as [`FlowRead::apply_alignment`] drops them.
+    pub fn apply_alignment_from_synthesis(&mut self) -> Result<(), FlowReadError> {
+        for row in self.matrix.iter_mut() {
+            row.reverse();
+        }
+        self.key.reverse();
+        self.flow_order.reverse();
+        for base in self.flow_order.iter_mut() {
+            *base = match *base {
+                b'A' => b'T',
+                b'T' => b'A',
+                b'C' => b'G',
+                b'G' => b'C',
+                b'a' => b't',
+                b't' => b'a',
+                b'c' => b'g',
+                b'g' => b'c',
+                other => other,
+            };
+        }
+        self.apply_alignment()
+    }
+
     /// `applyClipping(0, 0, 0, 0, false)`: nothing is clipped, but the zero flows at either end
     /// of the key are dropped, with their columns and their bases of the flow order.
     pub fn apply_alignment(&mut self) -> Result<(), FlowReadError> {

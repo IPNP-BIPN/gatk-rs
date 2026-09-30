@@ -11027,6 +11027,570 @@ pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// One ancestral side of a read: its translated interval, the haplotype built from it, the two
+/// extended windows the output is written from, and its score.
+struct ScoredHaplotype {
+    interval: gatk_engine::interval::SimpleInterval,
+    haplotype: Vec<u8>,
+    clipped_ref: Option<Vec<u8>>,
+    unclipped_ref: Vec<u8>,
+    softclip_front_fill_count: usize,
+    score: f64,
+}
+
+/// `GroundTruthReadsBuilder`: every read translated onto its two ancestral references, scored in
+/// flow space against the reference and against both ancestral haplotypes, and written with the
+/// keys of the haplotype that fits it best.
+///
+/// The steps are the reference's, in its order: the mapping-quality, supplementary and soft-clip
+/// filters, the subsampling (a ratio below one is a draw from an unseeded `Random`, which only its
+/// two ends make deterministic), the read-quality filter, the translation (a read that collapses
+/// is skipped and counted), the haplotypes and their extended windows, the three scores, the two
+/// score filters, then the row. The traversal stops once `--max-output-reads` rows are written.
+pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
+    use gatk_engine::interval::SimpleInterval;
+    use gatk_tools::flow_based_read::{read_group_info, FlowRead};
+    use gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype;
+    use gatk_tools::ground_truth_reads_builder as gtrb;
+    use htsjdk_bam::cigar::Op;
+    use htsjdk_bam::tag::{Tag, TagValue};
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GroundTruthReadsBuilder")?;
+    let output = argument(parser, "output-csv").ok_or_else(|| {
+        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let open_reference =
+        |name: &str| -> Result<gatk_engine::reference::ReferenceFileSource, Thrown> {
+            let path = argument(parser, name).unwrap_or_default();
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))
+        };
+    // onTraversalStart: the two ancestral references, the translator, the engine, the output.
+    let mut maternal_reference = open_reference("maternal-ref")?;
+    let mut paternal_reference = open_reference("paternal-ref")?;
+    let base_path = argument(parser, "ancestral-translators-base-path").unwrap_or_default();
+    // `GATKPath.getURIString()` of a directory ends with a separator, which the table names are
+    // appended to; anything else is a prefix.
+    let base_path = if !base_path.ends_with('/') && std::path::Path::new(&base_path).is_dir() {
+        format!("{base_path}/")
+    } else {
+        base_path
+    };
+    match scalar(parser, "likelihood-calculation-engine").as_deref() {
+        Some("FlowBased") => {}
+        _ => {
+            return Err(Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                "must use a flow based likelihood calculation engine".to_string(),
+            ))
+        }
+    }
+    write_file(&output, b"")?;
+
+    let subsampling_ratio = double_or(parser, "subsampling-ratio", 1.0);
+    let max_output_reads = number_or(parser, "max-output-reads", 20_000_000);
+    let output_flow_length = number_or(parser, "output-flow-length", 0);
+    let prepend = scalar(parser, "prepend-sequence");
+    let append = scalar(parser, "append-sequence");
+    let min_mq = double_or(parser, "min-mq", 0.0);
+    let max_rq = double_or(parser, "max-rq", 0.0);
+    let include_supp = flag(parser, "include-supp-align");
+    let min_score = double_or(parser, "min-haplotype-score", 0.0);
+    let min_score_delta = double_or(parser, "min-haplotype-score-delta", 0.0);
+    let padding = number_or(parser, "haplotype-output-padding-size", 8);
+    let discard_non_polyt = flag(parser, "discard-non-polyt-softclipped-reads");
+    let fill_trimmed_q = flag(parser, "fill-trimmed-reads-Q");
+    let fill_trimmed_z = flag(parser, "fill-trimmed-reads-Z");
+    let fill_trimmed = flag(parser, "fill-trimmed-reads");
+    let fill_softclipped = flag(parser, "fill-softclipped-reads");
+    let false_snp_compensation = flag(parser, "false-snp-compensation");
+    let no_output = flag(parser, "gt-no-output");
+    let flow = flow_arguments(parser);
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    if subsampling_ratio > 0.0 && subsampling_ratio < 1.0 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "a subsampling ratio strictly between zero and one draws from an unseeded Random. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+
+    let mut csv = gtrb::header();
+    csv.push('\n');
+    let mut translators: std::collections::HashMap<String, gtrb::Translator> =
+        std::collections::HashMap::new();
+    let null_alleles = || {
+        Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "Null alleles are not supported".to_string(),
+        )
+    };
+    let key_error = |sequence: &[u8], order: &str| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "baseArrayToKey periodGuard tripped, on {}, flowOrder: {order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                String::from_utf8_lossy(sequence)
+            ),
+        )
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let mut written = 0i32;
+    for read in &reads {
+        if max_output_reads != 0 && written >= max_output_reads {
+            break;
+        }
+        let reverse = read.flags & 0x10 != 0;
+        let elements = &read.cigar.elements;
+        let first_op = elements.first().map(|element| element.op);
+        let last_op = elements.last().map(|element| element.op);
+        let end_softclipped = if reverse {
+            first_op == Some(Op::S)
+        } else {
+            last_op == Some(Op::S)
+        };
+        let start_softclipped = if reverse {
+            last_op == Some(Op::S)
+        } else {
+            first_op == Some(Op::S)
+        };
+        if min_mq != 0.0 && f64::from(read.mapping_quality) < min_mq {
+            continue;
+        }
+        if read.flags & 0x800 != 0 && !include_supp {
+            continue;
+        }
+        if discard_non_polyt && end_softclipped {
+            // `isEndPolyTSoftclipped`, which measures the clip by the OTHER end's element.
+            let bases = &read.read_bases;
+            let polyt = if !reverse {
+                let length = elements.first().map(|e| e.length as usize).unwrap_or(0);
+                (0..length).all(|n| bases.get(n) == Some(&b'T'))
+            } else {
+                let length = elements.last().map(|e| e.length as usize).unwrap_or(0);
+                (0..length).all(|n| bases.len() > n && bases[bases.len() - n - 1] == b'A')
+            };
+            if !polyt {
+                continue;
+            }
+        }
+        if subsampling_ratio <= 0.0 {
+            continue;
+        }
+        let info = read_group_info(read, &header).map_err(flow_refusal)?;
+        let flow_read =
+            FlowRead::new(read, &info.flow_order, info.max_class, &flow).map_err(flow_refusal)?;
+        if max_rq != 0.0 {
+            let quality: f64 = (0..flow_read.key.len())
+                .map(|n| flow_read.prob(n, flow_read.max_hmer))
+                .sum();
+            if quality > max_rq {
+                continue;
+            }
+        }
+
+        // The translation, maternal then paternal, each start then end.
+        let contig = header.sequences[read.reference_index as usize].name.clone();
+        let read_end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
+        let mut translate = |ancestor: &str| -> Result<Result<SimpleInterval, String>, Thrown> {
+            let key = format!("{ancestor}.{contig}.csv");
+            if !translators.contains_key(&key) {
+                let path = format!("{base_path}{key}");
+                let text = std::fs::read_to_string(&path).map_err(|_| {
+                    Thrown::user(format!(
+                        "Couldn't read file {path}. Error was: It doesn't exist."
+                    ))
+                })?;
+                translators.insert(key.clone(), gtrb::Translator::parse(&text));
+            }
+            let translator = &translators[&key];
+            let at = |from: i32| {
+                translator.translate(from).ok_or_else(|| {
+                    Thrown::non_user(
+                        "java.lang.ArrayIndexOutOfBoundsException",
+                        format!(
+                            "Index -1 out of bounds for length {}",
+                            translator.positions.len()
+                        ),
+                    )
+                })
+            };
+            let start = at(read.alignment_start)?;
+            let end = at(read_end)?;
+            Ok(if end > start {
+                Ok(SimpleInterval {
+                    contig: format!("{contig}_{ancestor}"),
+                    start,
+                    end,
+                })
+            } else {
+                Err(format!("{start},{end}"))
+            })
+        };
+        let maternal_interval = match translate(gtrb::MATERNAL)? {
+            Ok(interval) => interval,
+            Err(_) => continue,
+        };
+        let paternal_interval = match translate(gtrb::PATERNAL)? {
+            Ok(interval) => interval,
+            Err(_) => continue,
+        };
+
+        // The aligned bases, oriented, which the false-SNP skip compares against.
+        let start_clip = if first_op == Some(Op::S) {
+            elements[0].length as usize
+        } else {
+            0
+        };
+        let end_clip = if last_op == Some(Op::S) {
+            elements[elements.len() - 1].length as usize
+        } else {
+            0
+        };
+        let aligned = &read.read_bases[start_clip..read.read_bases.len() - end_clip];
+        let read_oriented = gtrb::oriented(aligned, reverse);
+        // `buildReferenceHaplotype`: the window's bases oriented, a false SNP skipped.
+        let build_haplotype =
+            |window: &[u8], interval: &SimpleInterval| -> Result<(Vec<u8>, i32), Thrown> {
+                let mut bases = gtrb::oriented(window, reverse);
+                let mut length = interval.end - interval.start + 1;
+                if false_snp_compensation {
+                    let first = *bases.first().ok_or_else(|| {
+                        Thrown::non_user(
+                            "java.lang.ArrayIndexOutOfBoundsException",
+                            "Index 0 out of bounds for length 0".to_string(),
+                        )
+                    })?;
+                    if Some(&first) != read_oriented.first() {
+                        let skip = gtrb::detect_false_snp(&bases, &read_oriented);
+                        if skip != 0 {
+                            bases = bases[skip..].to_vec();
+                            length -= skip as i32;
+                        }
+                    }
+                }
+                if bases.is_empty() {
+                    return Err(null_alleles());
+                }
+                Ok((bases, length))
+            };
+        let query = |source: &mut gatk_engine::reference::ReferenceFileSource,
+                     interval: &SimpleInterval|
+         -> Result<Vec<u8>, Thrown> {
+            source
+                .query(&interval.contig, interval.start, interval.end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))
+        };
+        let mut scored = Vec::with_capacity(2);
+        for (interval, source) in [
+            (maternal_interval, &mut maternal_reference),
+            (paternal_interval, &mut paternal_reference),
+        ] {
+            let window = query(source, &interval)?;
+            let (haplotype, span) = build_haplotype(&window, &interval)?;
+            scored.push((interval, window, haplotype, span));
+        }
+        // `buildExtendedRef`, for each side.
+        let mut sides: Vec<ScoredHaplotype> = Vec::with_capacity(2);
+        for (index, (interval, _window, haplotype, span)) in scored.into_iter().enumerate() {
+            let source: &mut gatk_engine::reference::ReferenceFileSource = if index == 0 {
+                &mut maternal_reference
+            } else {
+                &mut paternal_reference
+            };
+            let mut extend_start = 0i32;
+            let mut extend_end = 0i32;
+            if fill_softclipped {
+                let element = if !reverse {
+                    elements.last()
+                } else {
+                    elements.first()
+                };
+                if let Some(element) = element.filter(|e| e.op == Op::S) {
+                    if !reverse {
+                        extend_end += element.length as i32;
+                    } else {
+                        extend_start += element.length as i32;
+                    }
+                }
+            }
+            if !reverse {
+                extend_end += padding;
+            } else {
+                extend_start += padding;
+            }
+            let fill_from_haplotype = if end_softclipped {
+                fill_softclipped
+            } else {
+                match read.tags.get(Tag::new(b"tm")) {
+                    None => true,
+                    Some(value) => {
+                        let tm = match value {
+                            TagValue::Str(text) => text.clone(),
+                            TagValue::Char(c) => (*c as char).to_string(),
+                            TagValue::Int(i) => i.to_string(),
+                            _ => String::new(),
+                        };
+                        if tm.contains('A') {
+                            false
+                        } else {
+                            (tm.contains('Z') && (fill_trimmed || fill_trimmed_z))
+                                || (tm.contains('Q') && (fill_trimmed || fill_trimmed_q))
+                        }
+                    }
+                }
+            };
+            if output_flow_length != 0 && fill_from_haplotype {
+                let length = (interval.end + extend_end) - (interval.start - extend_start);
+                let delta = (output_flow_length - length).max(0) + 50;
+                if !reverse {
+                    extend_end += delta;
+                } else {
+                    extend_start += delta;
+                }
+            }
+            let delta = (interval.end - interval.start + 1) - span;
+            if delta != 0 {
+                if !reverse {
+                    extend_start -= delta;
+                } else {
+                    extend_end -= delta;
+                }
+            }
+            let contig_length = source.sequence_length(&interval.contig).unwrap_or(0) as i32;
+            let clamp = |from: i32, to: i32| SimpleInterval {
+                contig: interval.contig.clone(),
+                start: from.max(1),
+                end: to.min(contig_length),
+            };
+            let clipped_ref = if start_softclipped {
+                Some(query(
+                    source,
+                    &clamp(interval.start - extend_start, interval.end + extend_end),
+                )?)
+            } else {
+                None
+            };
+            let front = if !reverse {
+                elements.first()
+            } else {
+                elements.last()
+            };
+            if let Some(front) = front.filter(|e| e.op == Op::S) {
+                if !reverse {
+                    extend_start += front.length as i32;
+                } else {
+                    extend_end += front.length as i32;
+                }
+            }
+            let unclipped_ref = query(
+                source,
+                &clamp(interval.start - extend_start, interval.end + extend_end),
+            )?;
+            sides.push(ScoredHaplotype {
+                interval,
+                haplotype,
+                clipped_ref,
+                unclipped_ref,
+                softclip_front_fill_count: 0,
+                score: 0.0,
+            });
+        }
+
+        // The three scores, each against a flow read of its own.
+        let score_against = |haplotype: &[u8]| -> Result<f64, Thrown> {
+            let flow_haplotype = FlowHaplotype::new(haplotype, &info.flow_order)
+                .ok_or_else(|| key_error(haplotype, &info.flow_order))?;
+            let mut flow_read = FlowRead::new(read, &info.flow_order, info.max_class, &flow)
+                .map_err(flow_refusal)?;
+            if reverse {
+                flow_read
+                    .apply_alignment_from_synthesis()
+                    .map_err(flow_refusal)?;
+            }
+            if !flow_read.valid {
+                return Ok(-1.0);
+            }
+            gatk_tools::flow_feature_mapper::compute_likelihood_local(
+                &flow_read,
+                &flow_haplotype,
+                flow_haplotype.key.len(),
+            )
+            .map_err(flow_refusal)
+        };
+        let reference_window = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, read.alignment_start, read_end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
+        let reference_interval = SimpleInterval {
+            contig: contig.clone(),
+            start: read.alignment_start,
+            end: read_end,
+        };
+        let (reference_haplotype, _) = build_haplotype(&reference_window, &reference_interval)?;
+        let reference_score = score_against(&reference_haplotype)?;
+        let reference_oriented = gtrb::oriented(&reference_window, reverse);
+        sides[0].score = if sides[0].haplotype == reference_oriented {
+            reference_score
+        } else {
+            score_against(&sides[0].haplotype)?
+        };
+        sides[1].score = if sides[1].haplotype == reference_oriented {
+            reference_score
+        } else {
+            score_against(&sides[1].haplotype)?
+        };
+        let (maternal_score, paternal_score) = (sides[0].score, sides[1].score);
+        if min_score != 0.0 && maternal_score.min(paternal_score) > min_score {
+            continue;
+        }
+        if min_score_delta != 0.0 && (maternal_score - paternal_score).abs() > min_score_delta {
+            continue;
+        }
+        written += 1;
+
+        // emit
+        let tm = match read.tags.get(Tag::new(b"tm")) {
+            Some(TagValue::Str(text)) => Some(text.clone()),
+            Some(TagValue::Char(c)) => Some((*c as char).to_string()),
+            Some(TagValue::Int(i)) => Some(i.to_string()),
+            _ => None,
+        };
+        let fill = gtrb::fill_value(end_softclipped, tm.as_deref());
+        let order_for_key = if reverse {
+            String::from_utf8(gtrb::reverse_complement(info.flow_order.as_bytes()))
+                .unwrap_or_default()
+        } else {
+            info.flow_order.clone()
+        };
+        let mut output_keys: Vec<Vec<i32>> = vec![Vec::new(), Vec::new()];
+        // Paternal first, as the reference builds them.
+        for index in [1usize, 0] {
+            let side = &mut sides[index];
+            let sequence = gtrb::oriented(&side.unclipped_ref, reverse);
+            let key = gtrb::haplotype_key(&sequence, &order_for_key)
+                .ok_or_else(|| key_error(&sequence, &order_for_key))?;
+            side.softclip_front_fill_count = match &side.clipped_ref {
+                Some(clipped) if start_softclipped => {
+                    let sequence = gtrb::oriented(clipped, reverse);
+                    let clipped_key = gtrb::haplotype_key(&sequence, &order_for_key)
+                        .ok_or_else(|| key_error(&sequence, &order_for_key))?;
+                    key.len().saturating_sub(clipped_key.len())
+                }
+                _ => 0,
+            };
+            let flow_length = if output_flow_length != 0 {
+                output_flow_length as usize
+            } else {
+                key.len()
+            };
+            let mut out = vec![fill; flow_length];
+            let kept = flow_length.min(key.len());
+            out[..kept].copy_from_slice(&key[..kept]);
+            output_keys[index] = out;
+        }
+        let mut sequences: Vec<String> = vec![String::new(), String::new()];
+        for index in [1usize, 0] {
+            let side = &sides[index];
+            let sequence = gtrb::oriented(&side.unclipped_ref, reverse);
+            let count = gtrb::key_bases(&output_keys[index]);
+            let body = sequence.get(..count).ok_or_else(|| {
+                Thrown::non_user(
+                    "java.lang.StringIndexOutOfBoundsException",
+                    format!("begin 0, end {count}, length {}", sequence.len()),
+                )
+            })?;
+            let mut text = prepend.clone().unwrap_or_default();
+            text.push_str(&String::from_utf8_lossy(body));
+            text.push_str(append.as_deref().unwrap_or(""));
+            sequences[index] = text;
+        }
+        if !fill_softclipped {
+            for index in [1usize, 0] {
+                let limit = sides[index]
+                    .softclip_front_fill_count
+                    .min(output_keys[index].len());
+                for cell in output_keys[index].iter_mut().take(limit) {
+                    *cell = gtrb::SOFTCLIP_FILL_VALUE;
+                }
+            }
+        }
+        let same = sequences[0] == sequences[1];
+        let best = if paternal_score > maternal_score {
+            1
+        } else {
+            0
+        };
+        let consensus = gtrb::consensus_key(&output_keys[1], &output_keys[0]);
+        let best_key = if !same {
+            gtrb::key_csv(&output_keys[best])
+        } else {
+            gtrb::key_csv(&consensus)
+        };
+        let (unclipped_start, unclipped_end) = unclipped_span(read);
+        let read_sequence = gtrb::oriented(&read.read_bases, reverse);
+        let mut read_key = flow_read.key.clone();
+        if reverse {
+            read_key.reverse();
+        }
+        let read_order = gtrb::oriented(info.flow_order.as_bytes(), reverse);
+        let interval_text = |interval: &SimpleInterval| {
+            format!("{}:{}-{}", interval.contig, interval.start, interval.end)
+        };
+        let fields: Vec<String> = vec![
+            read.read_name.clone(),
+            contig.clone(),
+            read.alignment_start.to_string(),
+            read_end.to_string(),
+            gatk_engine::java_format::format_decimals(paternal_score, 6),
+            gatk_engine::java_format::format_decimals(maternal_score, 6),
+            gatk_engine::java_format::format_decimals(reference_score, 6),
+            gtrb::read_key_csv(&read_key, &read_sequence, &read_order),
+            best_key,
+            gtrb::key_csv(&consensus),
+            tm.unwrap_or_default(),
+            read.mapping_quality.to_string(),
+            read.flags.to_string(),
+            read.cigar.to_text(),
+            String::from_utf8_lossy(&read_sequence).into_owned(),
+            sequences[1].clone(),
+            sequences[0].clone(),
+            sequences[best].clone(),
+            unclipped_start.to_string(),
+            unclipped_end.to_string(),
+            interval_text(&sides[1].interval),
+            interval_text(&sides[0].interval),
+        ];
+        if !no_output {
+            csv.push_str(&fields.join(","));
+            csv.push('\n');
+        }
+    }
+
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(csv.as_bytes(), 6)
+    } else {
+        csv.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    Ok(None)
+}
+
 /// `FlowFeatureMapper` with its one mapper, `SNVMapper`: every mismatch surrounded by matching
 /// bases, scored by the flow matrix as the read's haplotype against the reference's, and written
 /// once the traversal has passed it, with the reads still queued over it counted.

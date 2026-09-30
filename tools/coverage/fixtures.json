@@ -6312,6 +6312,197 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "GroundTruthReadsBuilder": {
+      "$why": [
+        "gtrb.bam is twenty Ultima reads over mutect_ref.fasta, every third reverse, five of them",
+        "soft-clipped at one end or the other (one with a poly-T clip, one with a poly-A clip), five",
+        "carrying tm tags A, Q, Z, QZ and AQ, one with mapping quality 10 and one supplementary. The",
+        "maternal reference carries three substitutions and the paternal two more and five inserted",
+        "bases; gtrb/ translates the paternal side past the insertion and gtrb_alt/ pulls it back 300",
+        "from 1000, which collapses one read and moves the rest. Without --reference the reference",
+        "haplotype is empty and the first read refuses. --subsampling-ratio is held at 1.0: any value",
+        "strictly between zero and one is a draw from an unseeded java.util.Random, so the reference",
+        "does not answer the same way twice. The PairHMM engine is the tool's own refusal."
+      ],
+      "--input": [
+        "/work/fixtures/gtrb.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gtrb.csv",
+        "/work/out/gtrb.csv.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--maternal-ref": [
+        "/work/fixtures/gtrb_maternal.fasta"
+      ],
+      "--paternal-ref": [
+        "/work/fixtures/gtrb_paternal.fasta"
+      ],
+      "--ancestral-translators-base-path": [
+        "/work/fixtures/gtrb/",
+        "/work/fixtures/gtrb_alt"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1700"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1100-1300"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE",
+        "LOGLESS_CACHING",
+        "EXACT",
+        "ORIGINAL"
+      ],
+      "--subsampling-ratio": [
+        "1.0"
+      ],
+      "--max-output-reads": [
+        "20000000",
+        "5",
+        "0"
+      ],
+      "--output-flow-length": [
+        "0",
+        "30",
+        "400"
+      ],
+      "--prepend-sequence": [
+        "null",
+        "TTTT"
+      ],
+      "--append-sequence": [
+        "null",
+        "CCCC"
+      ],
+      "--min-mq": [
+        "0",
+        "30"
+      ],
+      "--max-rq": [
+        "0",
+        "2.5",
+        "30"
+      ],
+      "--include-supp-align": [
+        "false",
+        "true"
+      ],
+      "--min-haplotype-score": [
+        "0",
+        "-6.0"
+      ],
+      "--min-haplotype-score-delta": [
+        "0",
+        "2.0"
+      ],
+      "--haplotype-output-padding-size": [
+        "8",
+        "0",
+        "20"
+      ],
+      "--discard-non-polyt-softclipped-reads": [
+        "false",
+        "true"
+      ],
+      "--fill-trimmed-reads-Q": [
+        "false",
+        "true"
+      ],
+      "--fill-trimmed-reads-Z": [
+        "false",
+        "true"
+      ],
+      "--fill-trimmed-reads": [
+        "false",
+        "true"
+      ],
+      "--fill-softclipped-reads": [
+        "false",
+        "true"
+      ],
+      "--false-snp-compensation": [
+        "false",
+        "true"
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter",
+        "GoodCigarReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "WellformedReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
@@ -6438,7 +6629,8 @@
     },
     {
       "tools": [
-        "GroundTruthScorer"
+        "GroundTruthScorer",
+        "GroundTruthReadsBuilder"
       ],
       "forbid": {
         "--read-filter": "MappingQualityNotZeroReadFilter",

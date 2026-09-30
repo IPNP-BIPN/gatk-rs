@@ -279,3 +279,160 @@ pub fn split_row(line: &str) -> Vec<String> {
     fields.push(current);
     fields
 }
+
+// ================================================================================================
+// The walk's pieces: the haplotypes, their keys, and the row.
+// ================================================================================================
+
+/// `SequenceUtil.reverseComplement`, which complements the four bases in either case and leaves
+/// anything else where it is.
+pub fn reverse_complement(bases: &[u8]) -> Vec<u8> {
+    bases
+        .iter()
+        .rev()
+        .map(|base| match *base {
+            b'A' => b'T',
+            b'T' => b'A',
+            b'C' => b'G',
+            b'G' => b'C',
+            b'a' => b't',
+            b't' => b'a',
+            b'c' => b'g',
+            b'g' => b'c',
+            other => other,
+        })
+        .collect()
+}
+
+/// `reverseComplement(bases, isReversed)`.
+pub fn oriented(bases: &[u8], reverse: bool) -> Vec<u8> {
+    if reverse {
+        reverse_complement(bases)
+    } else {
+        bases.to_vec()
+    }
+}
+
+/// `detectFalseSNP`: how many haplotype bases to skip so that five bases after the skip match the
+/// read, the skip staying inside the read's first homopolymer and never past five.
+pub fn detect_false_snp(haplotype: &[u8], read: &[u8]) -> usize {
+    const MAX_SKIP: usize = 5;
+    const REMAINING: usize = 5;
+    if haplotype.first() == read.first() {
+        return 0;
+    }
+    let mut homopolymer = 0;
+    while homopolymer < read.len() && read[homopolymer] == read[0] {
+        homopolymer += 1;
+    }
+    for skip in 1..=MAX_SKIP {
+        if skip + REMAINING > haplotype.len() {
+            break;
+        }
+        if (skip + 1).max(REMAINING) > read.len() {
+            break;
+        }
+        if skip + 1 > homopolymer {
+            break;
+        }
+        if read[skip..skip + REMAINING] == haplotype[skip..skip + REMAINING] {
+            return skip;
+        }
+    }
+    0
+}
+
+/// The fill value a row's short keys are padded with: soft clip first, then trimming, told apart
+/// by whether the `tm` tag also names an adapter.
+pub fn fill_value(end_softclipped: bool, tm: Option<&str>) -> i32 {
+    let has = |c: char| tm.is_some_and(|tm| tm.contains(c));
+    if end_softclipped {
+        SOFTCLIP_FILL_VALUE
+    } else if has('Q') || has('Z') {
+        if has('A') {
+            UNKNOWN_FILL_VALUE
+        } else {
+            NONREF_FILL_VALUE
+        }
+    } else {
+        DEFAULT_FILL_VALUE
+    }
+}
+
+/// `buildHaplotypeKey`: the sequence's key in its own direction, its leading zero flows dropped,
+/// then as many zeros put back as it takes the flow order to get from `T` to the first base.
+///
+/// `flow_order` is the key's own cycled flow order, so the walk from `T` wraps at the KEY's
+/// length rather than at four.
+pub fn haplotype_key(sequence: &[u8], flow_order: &str) -> Option<Vec<i32>> {
+    let key = crate::flow_based_read::base_array_to_key(sequence, flow_order)?;
+    let order = flow_order.as_bytes();
+    let cycled: Vec<u8> = (0..key.len()).map(|i| order[i % order.len()]).collect();
+    let mut start = 0;
+    while start < key.len() && key[start] == 0 {
+        start += 1;
+    }
+    let mut out = Vec::new();
+    if let Some(&first) = sequence.first() {
+        if first != b'T' && first != b'N' {
+            let mut at = cycled.iter().position(|base| *base == b'T')?;
+            let mut guard = 0;
+            while cycled[at] != first {
+                out.push(0);
+                at = (at + 1) % cycled.len();
+                guard += 1;
+                if guard > cycled.len() {
+                    return None;
+                }
+            }
+        }
+    }
+    out.extend_from_slice(&key[start..]);
+    Some(out)
+}
+
+/// `flowKeyAsCsvString(key)`: the key's elements joined by commas, in quotes.
+pub fn key_csv(key: &[i32]) -> String {
+    let joined: Vec<String> = key.iter().map(i32::to_string).collect();
+    format!("\"{}\"", joined.join(","))
+}
+
+/// `flowKeyAsCsvString(key, seq, flowOrder)`: the read's key with its leading zeros replaced by
+/// the zeros that walk the four-base flow order from `T` to the sequence's first base.
+pub fn read_key_csv(key: &[i32], sequence: &[u8], flow_order: &[u8]) -> String {
+    let mut start = 0;
+    while start < key.len() && key[start] == 0 {
+        start += 1;
+    }
+    let mut out = String::from("\"");
+    if let Some(&first) = sequence.first() {
+        if first != b'T' && first != b'N' {
+            if let Some(mut at) = flow_order.iter().position(|base| *base == b'T') {
+                let mut guard = 0;
+                while flow_order[at] != first && guard <= flow_order.len() {
+                    out.push_str("0,");
+                    at = (at + 1) % flow_order.len();
+                    guard += 1;
+                }
+            }
+        }
+    }
+    let joined: Vec<String> = key[start..].iter().map(i32::to_string).collect();
+    out.push_str(&joined.join(","));
+    out.push('"');
+    out
+}
+
+/// `buildConsensusKey`: the two keys where they agree, `-72` where they do not.
+pub fn consensus_key(first: &[i32], second: &[i32]) -> Vec<i32> {
+    first
+        .iter()
+        .zip(second)
+        .map(|(a, b)| if a == b { *a } else { -72 })
+        .collect()
+}
+
+/// `keyBases`: the bases a key reads, its fill values not counted.
+pub fn key_bases(key: &[i32]) -> usize {
+    key.iter().filter(|c| **c > 0).map(|c| *c as usize).sum()
+}
