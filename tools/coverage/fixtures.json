@@ -6161,6 +6161,173 @@
         "--add-output-vcf-command-line and --create-output-variant-index are held at FALSE for the",
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
+    },
+    "VariantRecalibrator": {
+      "$why": [
+        "--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both,",
+        "which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs,",
+        "MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged",
+        "resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which",
+        "--trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split",
+        "over two files. --use-annotation, --variant and",
+        "--truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model.",
+        "--input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a",
+        ".idx records the output's modification time; the command line is held off because it records the date.",
+        "--rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript.",
+        "--input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
+        "and no read, and a reference only rewrites the ##contig lines' assembly.",
+        "--output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean,",
+        "covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow",
+        "millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of",
+        "calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's",
+        "to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there",
+        "and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script",
+        "do not reach those digits and are measured on every row; --input-model reads the reference's own report."
+      ],
+      "$tagged": [
+        "--resource"
+      ],
+      "$lists": [
+        "--variant",
+        "--use-annotation",
+        "--truth-sensitivity-tranche"
+      ],
+      "--variant": [
+        "/work/fixtures/vr_calls.vcf",
+        "/work/fixtures/vr_calls2.vcf",
+        "/work/fixtures/vr_calls.vcf /work/fixtures/vr_calls2.vcf"
+      ],
+      "--resource": [
+        "train,known=false,training=true,truth=true,prior=15.0:/work/fixtures/vr_train.vcf known,known=true,training=false,truth=false,prior=2.0:/work/fixtures/vr_known.vcf",
+        "train,training=true,truth=true,prior=10.0:/work/fixtures/vr_train.vcf bad,bad=true:/work/fixtures/vr_bad.vcf",
+        "train,training=true,truth=false,prior=12.0:/work/fixtures/vr_train.vcf truth,truth=true,known=true,prior=6.0:/work/fixtures/vr_known.vcf"
+      ],
+      "--use-annotation": [
+        "QD MQ FS SOR",
+        "QD FS MQRankSum",
+        "MQ SOR",
+        "AS_QD MQ FS"
+      ],
+      "--truth-sensitivity-tranche": [
+        "100.0 99.9 99.0 90.0",
+        "99.0",
+        "90.0 99.5 100.0"
+      ],
+      "--ignore-filter": [
+        "null",
+        "LowQual"
+      ],
+      "--aggregate": [
+        "null",
+        "/work/fixtures/vr_aggregate.vcf"
+      ],
+      "--output": [
+        "/work/out/vr.recal",
+        "/work/out/vr.recal.vcf.gz"
+      ],
+      "--tranches-file": [
+        "/work/out/vr.tranches"
+      ],
+      "--rscript-file": [
+        "null",
+        "/work/out/vr_plots.R"
+      ],
+      "--dont-run-rscript": [
+        "true",
+        "false"
+      ],
+      "--output-model": [
+        "null"
+      ],
+      "--input-model": [
+        "null",
+        "/work/fixtures/vr_model.report"
+      ],
+      "--max-gaussians": [
+        "8",
+        "4"
+      ],
+      "--max-negative-gaussians": [
+        "2",
+        "1"
+      ],
+      "--max-iterations": [
+        "150",
+        "20"
+      ],
+      "--k-means-iterations": [
+        "100",
+        "5"
+      ],
+      "--standard-deviation-threshold": [
+        "10.0",
+        "4.0"
+      ],
+      "--shrinkage": [
+        "1.0",
+        "0.5"
+      ],
+      "--dirichlet": [
+        "0.001",
+        "0.01"
+      ],
+      "--prior-counts": [
+        "20.0",
+        "5.0"
+      ],
+      "--maximum-training-variants": [
+        "2500000",
+        "400"
+      ],
+      "--minimum-bad-variants": [
+        "1000",
+        "100"
+      ],
+      "--bad-lod-score-cutoff": [
+        "-5.0",
+        "-2.0"
+      ],
+      "--mq-cap-for-logit-jitter-transform": [
+        "0",
+        "60"
+      ],
+      "--mq-jitter": [
+        "0.05",
+        "0.2"
+      ],
+      "--target-titv": [
+        "2.15",
+        "3.0"
+      ],
+      "--max-attempts": [
+        "1",
+        "2"
+      ],
+      "--intervals": [
+        "null",
+        "chr1"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr2:1-300000"
+      ],
+      "--variant-output-filtering": [
+        "null",
+        "CONTAINED"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
     }
   },
   "constraints": [
@@ -6284,6 +6451,56 @@
         "--track-name": "RM"
       },
       "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "CONTAINED",
+        "--intervals": "null"
+      },
+      "why": "An output filtering mode without -L is refused while the command line is checked."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "QD FS MQRankSum"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "MQ SOR"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "AS_QD MQ FS"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
     }
   ],
   "exclude": {

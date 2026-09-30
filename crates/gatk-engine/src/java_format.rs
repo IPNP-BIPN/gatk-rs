@@ -72,6 +72,88 @@ pub fn format_decimals(value: f64, places: usize) -> String {
     format!("{sign}{whole}.{fraction}")
 }
 
+/// `String.format("%.NE", value)`: scientific notation over the SAME shortest digits `%f` starts
+/// from, rounded half-up to `places` digits after the point and padded with zeros past them.
+///
+/// It is not the exact expansion rounded: `FormattedFloatingDecimal` never sees more digits than
+/// `Double.toString` has, so a value whose shortest form holds sixteen significant digits prints a
+/// seventeenth that is always `0` at `%.16E`. `VariantRecalibrator`'s model report is written this
+/// way, `7.0276012385529370E-01` where the exact value continues `...53703...`.
+///
+/// The exponent is signed and at least two digits wide, and a non-finite value is Java's own
+/// upper-cased spelling, since `%E` upper-cases the whole conversion.
+pub fn format_scientific_upper(value: f64, places: usize) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "INFINITY" } else { "-INFINITY" }.to_string();
+    }
+    let sign = if value.is_sign_negative() { "-" } else { "" };
+    if value == 0.0 {
+        let zeros = "0".repeat(places);
+        return if places == 0 {
+            format!("{sign}0E+00")
+        } else {
+            format!("{sign}0.{zeros}E+00")
+        };
+    }
+    let shortest = crate::tsv_table::java_double_to_string(value.abs());
+    let (mantissa, exponent) = match shortest.split_once('E') {
+        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().expect("an exponent")),
+        None => (shortest.as_str(), 0),
+    };
+    let point = mantissa
+        .find('.')
+        .expect("Double.toString always has a point") as i32;
+    let all: Vec<u8> = mantissa
+        .bytes()
+        .filter(|b| *b != b'.')
+        .map(|b| b - b'0')
+        .collect();
+    // The value is 0.<all> times ten to the (point + exponent); leading zeros move the exponent.
+    let leading = all.iter().take_while(|digit| **digit == 0).count();
+    let mut digits: Vec<u8> = all[leading..].to_vec();
+    while digits.last() == Some(&0) && digits.len() > 1 {
+        digits.pop();
+    }
+    let mut scientific = point + exponent - leading as i32 - 1;
+    let wanted = places + 1;
+    if digits.len() > wanted {
+        let round_up = digits[wanted] >= 5;
+        digits.truncate(wanted);
+        if round_up {
+            let mut index = wanted;
+            loop {
+                if index == 0 {
+                    digits.insert(0, 1);
+                    digits.pop();
+                    scientific += 1;
+                    break;
+                }
+                index -= 1;
+                if digits[index] == 9 {
+                    digits[index] = 0;
+                } else {
+                    digits[index] += 1;
+                    break;
+                }
+            }
+        }
+    }
+    while digits.len() < wanted {
+        digits.push(0);
+    }
+    let rendered: String = digits.iter().map(|d| (d + b'0') as char).collect();
+    let body = if places == 0 {
+        rendered
+    } else {
+        format!("{}.{}", &rendered[..1], &rendered[1..])
+    };
+    let exponent_sign = if scientific < 0 { '-' } else { '+' };
+    format!("{sign}{body}E{exponent_sign}{:02}", scientific.abs())
+}
+
 /// `Double.toString(value)` laid out as a plain decimal, with at least `places` fraction digits.
 ///
 /// `Double.toString` answers `1.0E300` for a large value and `4.9E-324` for a tiny one; the exponent

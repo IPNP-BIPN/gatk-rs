@@ -2586,6 +2586,7 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
         vqsrFixtures(dir);
+        variantRecalibratorFixtures(dir);
         svStratifyFixtures(dir);
         svConcordanceFixtures(dir);
         svClusterFixtures(dir);
@@ -3920,6 +3921,191 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("sv_track_names.list"), "RM\nSD\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("sv_track_files.list"),
                 "/work/fixtures/sv_rm.bed\n/work/fixtures/sv_sd.bed\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What `VariantRecalibrator` trains on: two call sets large enough for a Gaussian mixture, and
+     * the resources that label them.
+     *
+     * `vr_calls.vcf` and `vr_calls2.vcf` are drawn from one `java.util.Random` each, so the corpus
+     * is the same on every run. Three quarters of the records are drawn from a "good" cluster and
+     * the rest from a "bad" one, over QD, MQ, FS, SOR, MQRankSum (absent on some records, which is
+     * what the marginalised evaluation reads) and a per-allele AS_QD. Some FS values are exactly
+     * 0 and some MQ values exactly 60, which is where the tool jitters; a few records are filtered
+     * `LowQual` or `LowDepth`. The kinds are SNPs, indels, two-allele SNPs, MIXED sites and SNPs
+     * beside a spanning deletion, on two contigs.
+     *
+     * `vr_train.vcf` holds most good records (and one filtered), `vr_known.vcf` half of all records
+     * with a genotype column in which some are `0/0`, which `--trust-all-polymorphic` decides,
+     * `vr_bad.vcf` a handful of bad records for a `bad=true` set, and `vr_aggregate.vcf` extra
+     * annotated records for `--aggregate`. Every resource is indexed, since the tool queries it.
+     * `vr_model.report` is the reference's own `--output-model` over QD, MQ, FS and SOR, which
+     * `--input-model` reads back.
+     */
+    static void variantRecalibratorFixtures(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=LowDepth,Description=\"Low depth\">\n"
+                + "##FILTER=<ID=Fail,Description=\"Failed\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AS_QD,Number=A,Type=Float,Description=\"Allele-specific QD\">\n"
+                + "##INFO=<ID=FS,Number=1,Type=Float,Description=\"Fisher strand\">\n"
+                + "##INFO=<ID=MQ,Number=1,Type=Float,Description=\"RMS mapping quality\">\n"
+                + "##INFO=<ID=MQRankSum,Number=1,Type=Float,Description=\"MQ rank sum\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n"
+                + "##INFO=<ID=SOR,Number=1,Type=Float,Description=\"Strand odds ratio\">\n"
+                + "##contig=<ID=chr1,length=2000000>\n"
+                + "##contig=<ID=chr2,length=600000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        final List<String[]> calls = vrCalls(new java.util.Random(20260930L), 2600, 0);
+        final List<String[]> calls2 = vrCalls(new java.util.Random(19700101L), 2200, 1);
+        final StringBuilder one = new StringBuilder(header).append(columns);
+        final StringBuilder two = new StringBuilder(header).append(columns);
+        final StringBuilder train = new StringBuilder(header).append(columns);
+        final StringBuilder known = new StringBuilder(header).append(columns);
+        final StringBuilder bad = new StringBuilder(header).append(columns);
+        final StringBuilder aggregate = new StringBuilder(header).append(columns);
+        final java.util.Random pick = new java.util.Random(4242L);
+        int trained = 0;
+        for (final String[] call : calls) {
+            one.append(call[0]);
+            final boolean good = call[1].equals("good");
+            if (good && pick.nextDouble() < 0.6) {
+                // One training record is filtered, which the resource check skips.
+                train.append(trained++ == 7 ? call[0].replaceFirst("\tPASS\t", "\tFail\t") : call[0]);
+            }
+            if (pick.nextDouble() < 0.5) {
+                known.append(pick.nextDouble() < 0.2 ? call[0].replaceFirst("\t[01]/[12]\n$", "\t0/0\n") : call[0]);
+            }
+            if (!good && pick.nextDouble() < 0.1) {
+                bad.append(call[0]);
+            }
+        }
+        for (final String[] call : calls2) {
+            two.append(call[0]);
+            if (call[1].equals("good") && pick.nextDouble() < 0.6) {
+                // The second call set's own training records go into the same resource, so both
+                // inputs are labelled by one file; the resource stays coordinate sorted below.
+                train.append(call[0]);
+            }
+        }
+        final List<String[]> extra = vrCalls(new java.util.Random(31337L), 300, 0);
+        for (final String[] call : extra) {
+            aggregate.append(call[0]);
+        }
+        Files.writeString(dir.resolve("vr_calls.vcf"), one.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vr_calls2.vcf"), two.toString(), StandardCharsets.UTF_8);
+        // The call sets are indexed too, so `-L` can query them.
+        for (final String callSet : new String[] {"vr_calls.vcf", "vr_calls2.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(callSet).toString()});
+        }
+        for (final String[] resource : new String[][] {
+                {"vr_train.vcf", sortVcf(train.toString())}, {"vr_known.vcf", known.toString()},
+                {"vr_bad.vcf", bad.toString()}, {"vr_aggregate.vcf", aggregate.toString()}}) {
+            Files.writeString(dir.resolve(resource[0]), resource[1], StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(resource[0]).toString()});
+        }
+        new org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibrator().instanceMain(new String[] {
+                "-V", dir.resolve("vr_calls.vcf").toString(),
+                "--resource:train,known=false,training=true,truth=true,prior=15.0",
+                dir.resolve("vr_train.vcf").toString(),
+                "-an", "QD", "-an", "MQ", "-an", "FS", "-an", "SOR", "--mode", "SNP",
+                "--max-gaussians", "4",
+                "--output-model", dir.resolve("vr_model.report").toString(),
+                "--add-output-vcf-command-line", "false",
+                "--create-output-variant-index", "false",
+                "-O", dir.resolve("vr_model_run.recal").toString(),
+                "--tranches-file", dir.resolve("vr_model_run.tranches").toString()});
+    }
+
+    /** A VCF's body lines sorted by contig and position, the header kept in front. */
+    static String sortVcf(final String text) {
+        final List<String> head = new ArrayList<>();
+        final List<String> body = new ArrayList<>();
+        for (final String line : text.split("\n")) {
+            (line.startsWith("#") ? head : body).add(line);
+        }
+        body.sort(Comparator.comparing((String line) -> line.split("\t")[0])
+                .thenComparingInt(line -> Integer.parseInt(line.split("\t")[1])));
+        return String.join("\n", head) + "\n" + String.join("\n", body) + "\n";
+    }
+
+    /** `n` annotated calls over chr1 then chr2, each as {line, "good" or "bad"}, on positions of one parity. */
+    static List<String[]> vrCalls(final java.util.Random random, final int n, final int parity) {
+        final String bases = "ACGT";
+        final List<String[]> calls = new ArrayList<>();
+        int position = 100;
+        String contig = "chr1";
+        for (int i = 0; i < n; i++) {
+            if (i == n * 5 / 6) {
+                contig = "chr2";
+                position = 100;
+            }
+            position += 150 + random.nextInt(450);
+            // The two call sets sit on positions of different parity, so the one training file
+            // that labels both never holds two records at one position.
+            position += (position - parity) % 2;
+            final char ref = bases.charAt(random.nextInt(4));
+            final char transition = "GTAC".charAt(bases.indexOf(ref));
+            final boolean good = random.nextDouble() < 0.75;
+            final double kind = random.nextDouble();
+            String refAllele = String.valueOf(ref);
+            final List<String> alts = new ArrayList<>();
+            final List<Character> transversions = new ArrayList<>();
+            for (final char base : bases.toCharArray()) {
+                if (base != ref && base != transition) {
+                    transversions.add(base);
+                }
+            }
+            final char snp = random.nextDouble() < (good ? 0.68 : 0.45)
+                    ? transition : transversions.get(random.nextInt(2));
+            final char other = snp == transition ? transversions.get(0) : transition;
+            if (kind < 0.70) {
+                alts.add(String.valueOf(snp));
+            } else if (kind < 0.80) {
+                alts.add(ref + String.valueOf(bases.charAt(random.nextInt(4))));
+            } else if (kind < 0.88) {
+                refAllele = ref + String.valueOf(bases.charAt(random.nextInt(4)));
+                alts.add(String.valueOf(ref));
+            } else if (kind < 0.93) {
+                alts.add(String.valueOf(snp));
+                alts.add(String.valueOf(other));
+            } else if (kind < 0.97) {
+                alts.add(String.valueOf(snp));
+                alts.add(ref + "T");
+            } else {
+                alts.add(String.valueOf(snp));
+                alts.add("*");
+            }
+            final double qd = good ? 18 + 5 * random.nextGaussian() : 5 + 3 * random.nextGaussian();
+            final double mq = good
+                    ? (random.nextDouble() < 0.4 ? 60.0 : Math.min(60.0, 58.5 + 1.2 * random.nextGaussian()))
+                    : Math.max(5.0, Math.min(60.0, 42 + 9 * random.nextGaussian()));
+            final double fs = good ? (random.nextDouble() < 0.12 ? 0.0 : Math.abs(1.5 * random.nextGaussian()))
+                    : Math.abs(14 + 9 * random.nextGaussian());
+            final double sor = good ? Math.abs(0.7 + 0.25 * random.nextGaussian())
+                    : Math.abs(2.4 + 0.9 * random.nextGaussian());
+            final StringBuilder info = new StringBuilder("AS_QD=");
+            for (int a = 0; a < alts.size(); a++) {
+                info.append(a == 0 ? "" : ",").append(String.format("%.2f",
+                        alts.get(a).equals("*") ? 0.0 : qd + (a == 0 ? 0.0 : -2.0 + random.nextGaussian())));
+            }
+            info.append(String.format(";FS=%.3f;MQ=%.2f", fs, mq));
+            if (random.nextDouble() < 0.85) {
+                info.append(String.format(";MQRankSum=%.3f", good ? 0.2 * random.nextGaussian() : -2.0 + random.nextGaussian()));
+            }
+            info.append(String.format(";QD=%.2f;SOR=%.3f", qd, sor));
+            final double f = random.nextDouble();
+            final String filter = f < 0.03 ? "LowQual" : f < 0.05 ? "LowDepth" : "PASS";
+            final String genotype = alts.size() > 1 ? "1/2" : random.nextDouble() < 0.3 ? "1/1" : "0/1";
+            final String line = String.join("\t", contig, Integer.toString(position), ".", refAllele,
+                    String.join(",", alts), Integer.toString(30 + random.nextInt(900)), filter,
+                    info.toString(), "GT", genotype) + "\n";
+            calls.add(new String[] {line, good ? "good" : "bad"});
+        }
+        return calls;
     }
 
     /**
