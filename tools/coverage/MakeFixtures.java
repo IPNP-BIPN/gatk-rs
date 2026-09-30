@@ -2893,6 +2893,7 @@ public class MakeFixtures {
         reblockGvcfFixtures(dir, chr1);
         gnarlyGenotyperFixtures(dir);
         variantEvalFixtures(dir, chr1);
+        alleleFrequencyQCFixtures(dir, chr1);
         variantAnnotatorFixtures(dir);
     }
 
@@ -2971,6 +2972,75 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("ve_cnv.bed").toString()});
+    }
+
+    /**
+     * What `AlleleFrequencyQC` reads, over `cgv_ref.fasta`. `afqc_eval.vcf` is a call set of two
+     * diploid samples carrying the `##sampleAlias` line the tool takes its sample from: SNPs whose
+     * genotypes put the observed frequency near the expected one in some bins and far from it in
+     * others, an AC0 site, a LowQual site the `called` filter drops, a site the comparison sets do
+     * not carry and a chr2 SNP with a no-call. `afqc_eval_noalias.vcf` is the same file without the
+     * alias. `afqc_1kg.vcf` and `afqc_1kg2.vcf` are sites-only sets with an `AF` over the same
+     * alleles, spread across the logarithmic ladder, the second with other frequencies, a site the
+     * call set lacks and one it has that the first omits. All four are indexed, because `-L`
+     * queries them.
+     */
+    static void alleleFrequencyQCFixtures(final Path dir, final String chr1) throws Exception {
+        final java.util.function.Function<Integer, String> ref =
+                position -> chr1.substring(position - 1, position);
+        final java.util.function.Function<String, String> other =
+                base -> base.equals("A") ? "C" : "A";
+        final String chr2 = new String(java.nio.file.Files.readAllBytes(dir.resolve("cgv_ref.fasta")),
+                StandardCharsets.UTF_8).split(">chr2")[1].split("\n", 2)[1].replace("\n", "");
+        final int[] positions = {400, 410, 420, 430, 440, 450, 460, 470, 480, 490};
+        final String[][] genotypes = {
+                {"0/1", "0/1"}, {"0/1", "0/0"}, {"0/0", "0/0"}, {"0/1", "0/0"}, {"1/1", "0/1"},
+                {"1/1", "1/1"}, {"0/1", "0/0"}, {"0/1", "0/1"}, null, {"1/1", "0/0"}};
+        final String[] filters = {"PASS", "PASS", "PASS", "LowQual", "PASS", ".", "PASS", "PASS",
+                null, "PASS"};
+        final String[] expected = {"0.5", "0.3", "0.1", "0.02", "0.8", "0.97", "0.003", null,
+                "0.0005", null};
+        final String[] expected2 = {"0.45", "0.05", "0.2", "0.02", "0.6", "0.99", null, "0.4",
+                "0.001", "0.25"};
+        final String head = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n";
+        final StringBuilder calls = new StringBuilder();
+        final StringBuilder sites = new StringBuilder();
+        final StringBuilder sites2 = new StringBuilder();
+        for (int i = 0; i < positions.length; i++) {
+            final String base = ref.apply(positions[i]);
+            final String alleles = "chr1\t" + positions[i] + "\t.\t" + base + "\t" + other.apply(base);
+            if (genotypes[i] != null) {
+                calls.append(alleles).append("\t100.00\t").append(filters[i]).append("\t.\tGT\t")
+                        .append(genotypes[i][0]).append("\t").append(genotypes[i][1]).append("\n");
+            }
+            if (expected[i] != null) {
+                sites.append(alleles).append("\t.\tPASS\tAF=").append(expected[i]).append("\n");
+            }
+            if (expected2[i] != null) {
+                sites2.append(alleles).append("\t.\tPASS\tAF=").append(expected2[i]).append("\n");
+            }
+        }
+        final String chr2Site = "chr2\t50\t.\t" + chr2.charAt(49) + "\t"
+                + other.apply(String.valueOf(chr2.charAt(49)));
+        calls.append(chr2Site).append("\t60.00\tPASS\t.\tGT\t0/1\t./.\n");
+        sites.append(chr2Site).append("\t.\tPASS\tAF=0.25\n");
+        sites2.append(chr2Site).append("\t.\tPASS\tAF=0.3\n");
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsA\tsB\n";
+        final java.util.Map<String, String> files = new java.util.LinkedHashMap<>();
+        files.put("afqc_eval.vcf", head + "##sampleAlias=NA12878\n" + columns + calls);
+        files.put("afqc_eval_noalias.vcf", head + columns + calls);
+        files.put("afqc_1kg.vcf", head + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" + sites);
+        files.put("afqc_1kg2.vcf", head + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" + sites2);
+        for (final java.util.Map.Entry<String, String> file : files.entrySet()) {
+            Files.writeString(dir.resolve(file.getKey()), file.getValue(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(file.getKey()).toString()});
+        }
     }
 
     /**

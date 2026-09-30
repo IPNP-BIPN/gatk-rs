@@ -396,6 +396,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "AlleleFrequencyQC" => Some(run_allele_frequency_qc),
         _ => None,
     }
 }
@@ -499,6 +500,10 @@ fn run_genotype_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_gnarly_genotyper(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::gnarly_genotyper(&parsed("GnarlyGenotyper", args)?)
+}
+
+fn run_allele_frequency_qc(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::allele_frequency_qc(&parsed("AlleleFrequencyQC", args)?)
 }
 
 fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
