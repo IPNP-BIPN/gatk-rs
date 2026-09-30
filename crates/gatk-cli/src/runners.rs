@@ -14366,6 +14366,32 @@ fn read_bed_features(path: &str) -> Result<Vec<gatk_tools::variant_eval_engine::
 
 /// `VariantEval`, a multi-variant walker grouped on start over its evals, `--dbsnp` and comps.
 pub fn variant_eval(parser: &Parser) -> Outcome {
+    let (output, report) = variant_eval_report(parser, None)?;
+    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(report.as_bytes(), 6)
+    } else {
+        report.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    Ok(None)
+}
+
+/// What `AlleleFrequencyQC.onTraversalStart` does before handing over to `VariantEval`'s: every
+/// module and stratifier knob preset, whatever the command line said, and the sample name read out
+/// of the merged header, which is a `NullPointerException` when no input carries one.
+struct AlleleFrequencyQcPresets<'a> {
+    /// Where the sample name goes once it is read.
+    sample: &'a mut Option<String>,
+}
+
+/// `VariantEval`'s traversal, from the parsed command line to the report text, with the `-O` it was
+/// given. `AlleleFrequencyQC` passes its presets, which override the module and stratifier
+/// arguments and read the sample alias at the point its `onTraversalStart` does.
+fn variant_eval_report(
+    parser: &Parser,
+    mut qc: Option<AlleleFrequencyQcPresets>,
+) -> Result<(String, String), Thrown> {
     use gatk_tools::variant_eval_engine as ve;
 
     let limitation = |what: &str| {
@@ -14490,6 +14516,31 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
         .iter()
         .map(|(contig, _, _)| contig.clone())
         .collect();
+
+    // `AlleleFrequencyQC.onTraversalStart` reads the alias before `super.onTraversalStart()`, so a
+    // header without one fails ahead of everything `VariantEval` validates there. The merged
+    // header keeps one line per key, the last input's where several carry it.
+    if let Some(presets) = qc.as_mut() {
+        let alias = opened.iter().rev().find_map(|(_, _, _, _, file)| {
+            file.header.lines.iter().rev().find_map(|line| match line {
+                htsjdk_vcf::header::HeaderLine::Unstructured { key, value }
+                    if key == gatk_tools::allele_frequency_qc::SAMPLE_ALIAS_KEY =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+        });
+        match alias {
+            Some(value) => *presets.sample = Some(value),
+            None => {
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    gatk_tools::allele_frequency_qc::NO_ALIAS_MESSAGE,
+                ))
+            }
+        }
+    }
 
     // The samples of the eval headers, filtered by `--sample` and sorted.
     let mut eval_samples: Vec<String> = Vec::new();
@@ -14636,6 +14687,18 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .filter(|path| !has_feature_index(path)),
         gold_standard,
     };
+    let mut arguments_for_engine = arguments_for_engine;
+    if qc.is_some() {
+        arguments_for_engine.no_standard_modules = true;
+        arguments_for_engine.modules_to_use =
+            vec![gatk_tools::allele_frequency_qc::MODULE.to_string()];
+        arguments_for_engine.keep_ac0 = true;
+        arguments_for_engine.no_standard_strats = true;
+        arguments_for_engine.strats_to_use =
+            vec!["AlleleFrequency".to_string(), "Filter".to_string()];
+        arguments_for_engine.af_scale = ve::AfScale::Logarithmic;
+        arguments_for_engine.use_comp_af = true;
+    }
     let mut engine =
         ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
 
@@ -14753,15 +14816,66 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .apply(&group, &mut source)
             .map_err(variant_eval_thrown)?;
     }
-    let report = engine.finalize_report();
-    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
-    let bytes = if output.ends_with(".gz") {
-        java_gzip(report.as_bytes(), 6)
-    } else {
-        report.into_bytes()
-    };
-    write_file(&output, &bytes)?;
-    Ok(None)
+    Ok((output, engine.finalize_report()))
+}
+
+/// `AlleleFrequencyQC`: `VariantEval` with one module and two stratifiers preset, and a statistic
+/// read back out of the report it wrote.
+///
+/// * **`-O` is the metrics file, not the report.** The report goes to `--debug-file`, or to a
+///   temporary file the run deletes, and `onTraversalSuccess` reads it back as a `GATKReport`, so
+///   the averages the statistic sums are the eight decimals the report printed.
+/// * **the sample is the `##sampleAlias` header line**, read before `VariantEval` starts: without
+///   one the run is a `NullPointerException` and writes nothing.
+/// * **the plot comes last and fails in an image without R**: the metrics are already written, and
+///   the run then ends on the user error `RScriptExecutor` raises. With `Rscript` on the path the
+///   reference would draw the plot, which the port does not, so that is its limitation.
+pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
+    use gatk_tools::allele_frequency_qc as qc;
+
+    let mut sample = None;
+    let (metrics_output, report) = variant_eval_report(
+        parser,
+        Some(AlleleFrequencyQcPresets {
+            sample: &mut sample,
+        }),
+    )?;
+    if let Some(debug) = argument(parser, "debugFile") {
+        write_file(&debug, report.as_bytes())?;
+    }
+    let bins = qc::bins_from_report(&report, qc::MODULE)
+        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+    if bins.len() < 2 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "fewer than two allele-frequency bins leave the chi-squared distribution without a \
+             positive degree of freedom. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    let sample = sample.unwrap_or_default();
+    let variance = double_or(parser, "allowedVariance", qc::DEFAULT_ALLOWED_VARIANCE);
+    write_file(
+        &metrics_output,
+        qc::metrics_file(&sample, &bins, variance).as_bytes(),
+    )?;
+
+    // `RScriptExecutor.exec`: the executable is looked for on the path when the script runs.
+    let rscript_found = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|directory| directory.join("Rscript").is_file())
+    });
+    if rscript_found {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "plotAlleleFrequencyQC.R is not ported. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    Err(Thrown::user(
+        "Unable to execute Rscript command: Please add the Rscript directory to your environment \
+         ${PATH}"
+            .to_string(),
+    ))
 }
 
 /// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between

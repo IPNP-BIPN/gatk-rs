@@ -484,9 +484,16 @@ def with_stdout(text, stdout):
     return f"{text}\n{printed}" if text else printed
 
 
-def outcome(code, text, error):
-    """One row's result, as the thing that will be compared: an output, or a refusal."""
+def outcome(code, text, error, keep_output=False):
+    """One row's result, as the thing that will be compared: an output, or a refusal.
+
+    A refusal is its exit status and its line, and for most tools that is all a failed run leaves
+    worth comparing. A tool under `$output_on_failure` fails AFTER writing its answer, so the files
+    it left are compared with the refusal rather than thrown away with it.
+    """
     if code != 0:
+        if keep_output and text:
+            return f"EXIT={code} {error}\n{text}"
         return f"EXIT={code} {error}"
     return text
 
@@ -565,6 +572,21 @@ def positional_values(tool):
     return list(fixtures.get("per_tool", {}).get(tool, {}).get("$positional", []))
 
 
+def output_on_failure(tool):
+    """Whether a failed row's output files are part of its answer, per tool under
+    `$output_on_failure`.
+
+    `AlleleFrequencyQC` writes its metrics and only then runs an R script, which the image cannot,
+    so EVERY row it accepts ends on a user error. Comparing the error alone would count twenty rows
+    matched without reading the statistic once.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return False
+    fixtures = json.loads(path.read_text())
+    return bool(fixtures.get("per_tool", {}).get(tool, {}).get("$output_on_failure", False))
+
+
 def tagged_arguments(tool):
     """The arguments whose fixture values are `tag:path` words, per tool under `$tagged`.
 
@@ -599,6 +621,7 @@ def run_rows(options, array, held, workdir):
     rows, matched, rejected = [], 0, 0
     positional = positional_values(options.tool)
     tagged = tagged_arguments(options.tool)
+    keep_output = output_on_failure(options.tool)
     lists = list_arguments(options.tool)
     outputs = set()
     if True:  # keeps the body's indentation while it lives in its own function
@@ -608,9 +631,11 @@ def run_rows(options, array, held, workdir):
         for row in array["array"]:
             args = row_arguments(row, held)
             code, text, error = run_oracle(options.tool, args, workdir, positional, tagged, lists)
-            reference = outcome(code, text, error)
+            reference = outcome(code, text, error, keep_output)
             if code != 0:
                 rejected += 1
+                if keep_output and text:
+                    outputs.add(reference)
             else:
                 outputs.add(reference)
             record = {"row": row["row"], "arguments": args, "reference": reference}
@@ -618,7 +643,7 @@ def run_rows(options, array, held, workdir):
                 port_code, port_text, port_error = run_port(
                     options.port, options.tool, args, workdir, positional, tagged, lists
                 )
-                ours = outcome(port_code, port_text, port_error)
+                ours = outcome(port_code, port_text, port_error, keep_output)
                 record["port"] = ours
                 record["matched"] = ours == reference
                 matched += 1 if ours == reference else 0
