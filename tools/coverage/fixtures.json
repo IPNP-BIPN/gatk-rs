@@ -6638,6 +6638,149 @@
         "la:1200-1210"
       ],
       "--read-index": []
+    },
+    "GroundTruthScorer": {
+      "--input": [
+        "/work/fixtures/gt.bam",
+        "/work/fixtures/flow_snv.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gt.csv",
+        "/work/out/gt.csv.gz"
+      ],
+      "--report-file": [
+        "null",
+        "/work/out/gt.report"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--genome-prior": [
+        "null",
+        "/work/fixtures/gt_prior.csv",
+        "/work/fixtures/gt_prior_short.csv"
+      ],
+      "--features-file": [
+        "null",
+        "/work/fixtures/gt_features.vcf"
+      ],
+      "--normalized-score-threshold": [
+        "-0.1",
+        "-0.05",
+        "-1.0"
+      ],
+      "--quality-percentiles": [
+        "10,25,50,75,90",
+        "5,95"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:650-700"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE"
+      ],
+      "--pair-hmm-results-file": [],
+      "--dragstr-params-path": [],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "$why": [
+        "gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that",
+        "make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped),",
+        "reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's.",
+        "--likelihood-calculation-engine must be FlowBased: PairHMM is the refusal",
+        "onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior",
+        "reader runs past. --report-file is never paired with --omit-zeros-from-report false: the",
+        "four-level table is then five million rows whatever the reads say, so the pair measures the",
+        "writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path",
+        "belong to the PairHMM engine, which the tool refuses, and the implementation is held at its",
+        "default for the same reason.",
+        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV."
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--add-mean-call": [
+        "false",
+        "true"
+      ],
+      "--omit-zeros-from-report": [
+        "true",
+        "false"
+      ],
+      "--use-softclipped-bases": [
+        "false",
+        "true"
+      ],
+      "--exclude-zero-flows": [
+        "false",
+        "true"
+      ]
     }
   },
   "constraints": [
@@ -6861,6 +7004,16 @@
         "--use-annotation": "AS_QD MQ FS"
       },
       "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "forbid": {
+        "--report-file": "/work/out/gt.report",
+        "--omit-zeros-from-report": "false"
+      },
+      "why": "Without omitting zeros the four-level table is five million rows on any input, so every such row would compare a quarter of a gigabyte of zeros."
     }
   ],
   "exclude": {

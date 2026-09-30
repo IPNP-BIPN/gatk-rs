@@ -1,9 +1,12 @@
 //! `GroundTruthScorer`: every read scored against the reference it aligns to, and the report that
 //! summarises them.
 //!
-//! The flow-based scoring is not ported. What is ported is the report the tool builds out of the
-//! scores: the accumulators, the four table shapes, the phred each row carries, and the bins the
-//! deviation and the base are folded into.
+//! The report the tool builds out of the scores (the accumulators, the four table shapes, the
+//! phred each row carries, and the bins the deviation and the base are folded into), and what the
+//! scoring needs besides `computeLikelihoodLocal`, which is `FlowFeatureMapper`'s: the cycle-skip
+//! status, the error probabilities with and without a genome prior, `LowestQBaseTP`, the read
+//! probabilities, and the two number formats the CSV is written in. The walk itself is the
+//! `gatk-cli` runner's.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.groundtruth.GroundTruthScorer` in
 //! GATK 4.6.2.0.

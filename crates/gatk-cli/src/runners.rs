@@ -11190,15 +11190,21 @@ fn ground_truth_scorer_traverse(
         if read.flags & 0x4 != 0 {
             continue;
         }
-        let Some(reference) = reference.as_mut() else {
-            continue;
-        };
         let contig = usize::try_from(read.reference_index)
             .ok()
             .and_then(|at| header.sequences.get(at))
             .map(|sequence| sequence.name.clone())
             .unwrap_or_default();
-        let contig_length = reference.sequence_length(&contig).unwrap_or(0) as i32;
+        // Without a reference the context still has its window, over no bases, so the read goes on
+        // to the haplotype its empty bases make.
+        let contig_length = match reference.as_ref() {
+            Some(reference) => reference.sequence_length(&contig).unwrap_or(0) as i32,
+            None => header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map_or(0, |sequence| sequence.length),
+        };
         let (mut window_start, mut window_end) = (read_utils::start(read), read_utils::end(read));
 
         // `isSoftClipped`: soft-clipped at exactly one end.
@@ -11233,9 +11239,12 @@ fn ground_truth_scorer_traverse(
         } else {
             read.clone()
         };
-        let window = reference
-            .query(&contig, window_start, window_end)
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        let window = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, window_start, window_end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
 
         if let Some(records) = &features {
             let (start, end) = (read_utils::start(&clipped), read_utils::end(&clipped));
@@ -11262,7 +11271,16 @@ fn ground_truth_scorer_traverse(
                             ))
                         }
                     };
-                    if window.get((coordinate - i64::from(window_start)) as usize) != Some(&base) {
+                    let index = coordinate - i64::from(window_start);
+                    let Some(reference_base) =
+                        usize::try_from(index).ok().and_then(|at| window.get(at))
+                    else {
+                        return Err(Thrown::non_user(
+                            "java.lang.ArrayIndexOutOfBoundsException",
+                            format!("Index {index} out of bounds for length {}", window.len()),
+                        ));
+                    };
+                    if *reference_base != base {
                         agrees = false;
                         break 'records;
                     }
@@ -11277,6 +11295,13 @@ fn ground_truth_scorer_traverse(
             gatk_tools::flow_based_read::read_group_info(&clipped, header).map_err(flow_refusal)?;
         let flow_read = FlowRead::new(&clipped, &info.flow_order, info.max_class, &flow)
             .map_err(flow_refusal)?;
+        // `new Haplotype(bases, true)`: an empty allele is a null one.
+        if window.is_empty() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Null alleles are not supported".to_string(),
+            ));
+        }
         let haplotype = FlowHaplotype::new(&window, &info.flow_order)
             .ok_or_else(|| period_guard(&window, &info.flow_order))?;
         if !flow_read.valid {
