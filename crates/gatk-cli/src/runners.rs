@@ -22810,6 +22810,11 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
     Ok(Some("Optional.empty".to_string()))
 }
 
+/// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+#[path = "runners_variant_recalibrator.rs"]
+mod variant_recalibrator_runner;
+pub use variant_recalibrator_runner::variant_recalibrator;
+
 /// An I/O error as the JDK words it: the C library's `strerror`, which is what Rust prints before
 /// its own ` (os error N)`.
 fn java_io_reason(error: &std::io::Error) -> String {

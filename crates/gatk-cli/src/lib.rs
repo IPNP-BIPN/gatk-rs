@@ -321,6 +321,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
+        "VariantRecalibrator" => Some(run_variant_recalibrator),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
@@ -611,6 +612,10 @@ fn run_filter_variant_tranches(args: &[String]) -> Result<Option<String>, Thrown
 
 fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
+}
+
+fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
 }
 
 fn run_vcf_comparator(args: &[String]) -> Result<Option<String>, Thrown> {
