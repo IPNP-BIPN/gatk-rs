@@ -99,6 +99,24 @@ tagged inputs, written as `tag:path` words that `run_array.py` expands:
 
 The set is covered as one value, like any other: a pair, the pair reversed, one input alone.
 
+## Repeated inputs
+
+A list argument given several times is the same problem without the tags: `ModelSegments` runs
+its multi-sample mode only when `--denoised-copy-ratios` or `--allelic-counts` names more than
+one file. A tool lists such arguments under `$repeated`, and each word of their values becomes one
+`--name word` on the command line:
+
+```json
+{
+  "per_tool": {
+    "ModelSegments": {
+      "$repeated": ["--allelic-counts"],
+      "--allelic-counts": ["/work/fixtures/ms/tumor.ac.tsv /work/fixtures/ms/tumorB.ac.tsv"]
+    }
+  }
+}
+```
+
 ## One value is not a domain
 
 An argument with a single fixture value is *held* at it: every row carries it, no row varies it,

@@ -36,6 +36,7 @@ pub mod contamination_segmenter;
 pub mod contamination_tables;
 pub mod context;
 pub mod context_iterator;
+pub mod copy_number_mcmc;
 pub mod covariates;
 pub mod downsampling;
 pub mod error_probabilities;

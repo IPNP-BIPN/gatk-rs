@@ -117,6 +117,8 @@ pub mod merge_mutect2_mc3;
 pub mod merge_vcfs;
 pub mod methylation_type_caller;
 pub mod model_segments;
+pub mod model_segments_models;
+pub mod model_segments_tool;
 pub mod mt_low_heteroplasmy;
 pub mod multi_pass;
 pub mod mutect_gathers;

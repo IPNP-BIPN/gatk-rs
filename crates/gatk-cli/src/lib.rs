@@ -300,6 +300,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountFalsePositives" => Some(run_count_false_positives),
         "EvaluateInfoFieldConcordance" => Some(run_evaluate_info_field_concordance),
         "CallCopyRatioSegments" => Some(run_call_copy_ratio_segments),
+        "ModelSegments" => Some(run_model_segments),
         "VariantFiltration" => Some(run_variant_filtration),
         "CollectAllelicCounts" => Some(run_collect_allelic_counts),
         "FilterIntervals" => Some(run_filter_intervals),
@@ -568,6 +569,10 @@ fn run_evaluate_info_field_concordance(args: &[String]) -> Result<Option<String>
 
 fn run_call_copy_ratio_segments(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::call_copy_ratio_segments(&parsed("CallCopyRatioSegments", args)?)
+}
+
+fn run_model_segments(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::model_segments(&parsed("ModelSegments", args)?)
 }
 
 fn run_variant_filtration(args: &[String]) -> Result<Option<String>, Thrown> {

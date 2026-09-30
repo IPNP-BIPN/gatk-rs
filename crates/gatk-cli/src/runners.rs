@@ -22806,3 +22806,68 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
     }
     Ok(Some("Optional.empty".to_string()))
 }
+
+/// `ModelSegments.doWork`. The tool is [`gatk_tools::model_segments_tool::run`]; this reads the
+/// command line into its options, every number through [`scalar`] and every list through
+/// [`arguments`], with the reference's field initialisers as the fallbacks.
+pub fn model_segments(parser: &Parser) -> Outcome {
+    let int = |name: &str, default: i32| -> i32 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let double = |name: &str, default: f64| -> f64 {
+        scalar(parser, name)
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(default)
+    };
+    let window_sizes: Vec<i32> = arguments(parser, "window-size")
+        .iter()
+        .filter_map(|text| text.parse().ok())
+        .collect();
+    let options = gatk_tools::model_segments_tool::Options {
+        denoised_copy_ratios: arguments(parser, "denoised-copy-ratios"),
+        allelic_counts: arguments(parser, "allelic-counts"),
+        normal_allelic_counts: argument(parser, "normal-allelic-counts"),
+        segments: argument(parser, "segments"),
+        output_prefix: argument(parser, "output-prefix").unwrap_or_default(),
+        output_dir: argument(parser, "output").unwrap_or_default(),
+        minimum_total_allele_count_case: int("minimum-total-allele-count-case", 0),
+        minimum_total_allele_count_normal: int("minimum-total-allele-count-normal", 30),
+        genotyping_homozygous_log_ratio_threshold: double(
+            "genotyping-homozygous-log-ratio-threshold",
+            -10.0,
+        ),
+        genotyping_base_error_rate: double("genotyping-base-error-rate", 5e-2),
+        maximum_number_of_segments_per_chromosome: int(
+            "maximum-number-of-segments-per-chromosome",
+            1000,
+        ),
+        kernel_variance_copy_ratio: double("kernel-variance-copy-ratio", 0.0),
+        kernel_variance_allele_fraction: double("kernel-variance-allele-fraction", 0.025),
+        kernel_scaling_allele_fraction: double("kernel-scaling-allele-fraction", 1.0),
+        kernel_approximation_dimension: int("kernel-approximation-dimension", 100),
+        window_sizes,
+        number_of_changepoints_penalty_factor: double("number-of-changepoints-penalty-factor", 1.0),
+        minor_allele_fraction_prior_alpha: double("minor-allele-fraction-prior-alpha", 25.0),
+        number_of_samples_copy_ratio: int("number-of-samples-copy-ratio", 100),
+        number_of_burn_in_samples_copy_ratio: int("number-of-burn-in-samples-copy-ratio", 50),
+        number_of_samples_allele_fraction: int("number-of-samples-allele-fraction", 100),
+        number_of_burn_in_samples_allele_fraction: int(
+            "number-of-burn-in-samples-allele-fraction",
+            50,
+        ),
+        smoothing_credible_interval_threshold_copy_ratio: double(
+            "smoothing-credible-interval-threshold-copy-ratio",
+            2.0,
+        ),
+        smoothing_credible_interval_threshold_allele_fraction: double(
+            "smoothing-credible-interval-threshold-allele-fraction",
+            2.0,
+        ),
+        maximum_number_of_smoothing_iterations: int("maximum-number-of-smoothing-iterations", 25),
+        number_of_smoothing_iterations_per_fit: int("number-of-smoothing-iterations-per-fit", 0),
+    };
+    gatk_tools::model_segments_tool::run(&options)?;
+    Ok(None)
+}

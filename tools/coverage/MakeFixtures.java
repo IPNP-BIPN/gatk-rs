@@ -2678,6 +2678,7 @@ public class MakeFixtures {
                 + "@CO\tafter the first record, so not header\n",
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
+        modelSegments(dir);
         System.out.println("wrote " + dir);
     }
 
@@ -4139,5 +4140,104 @@ public class MakeFixtures {
                 tar.closeArchiveEntry();
             }
         }
+    }
+
+    /**
+     * ModelSegments' corpus, under ms/: two case samples and a matched normal over one sequence
+     * dictionary, all written by the reference's own copy-number writers.
+     *
+     * The copy ratios step where the allele fractions do not, so the kernel segmenter has
+     * something to find in each signal and the joint segmentation differs from either alone. The
+     * first chromosome carries 240 bins, more than the default kernel-approximation dimension of
+     * 100, so the subsample is drawn. The sites are one per bin,
+     * some of them homozygous in every sample and some below the normal's default total-count
+     * floor, so the genotyping filters each remove something. The second sample shares the
+     * intervals and the sites, which multi-sample segmentation requires, and differs in its
+     * values. The segments list is what --segments reads in place of the kernel segmentation.
+     */
+    static void modelSegments(final Path root) throws Exception {
+        final Path dir = root.resolve("ms");
+        Files.createDirectories(dir);
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary(List.of(
+                new SAMSequenceRecord("chr1", 300000), new SAMSequenceRecord("chr2", 100000)));
+        final String[] contigs = {"chr1", "chr2"};
+        final int[] bins = {240, 80};
+        // Per contig, the copy-ratio level changes at these bin indices, and so does the minor
+        // allele fraction, at other indices.
+        final double[][] tumorLevels = {{0.0, 0.5, -0.4}, {0.0, 0.3}};
+        final int[][] tumorLevelSteps = {{80, 160}, {40}};
+        final double[][] tumorFractions = {{0.5, 0.3, 0.5}, {0.5, 0.35}};
+        final int[][] tumorFractionSteps = {{60, 180}, {40}};
+        final double[][] secondLevels = {{0.1, -0.3, 0.2}, {0.0, -0.2}};
+        final int[][] secondLevelSteps = {{100, 200}, {20}};
+        final double[][] secondFractions = {{0.4, 0.5, 0.25}, {0.45, 0.5}};
+        final int[][] secondFractionSteps = {{30, 120}, {60}};
+        writeModelSegmentsSample(dir, dictionary, contigs, bins, "tumor", 11L,
+                tumorLevels, tumorLevelSteps, tumorFractions, tumorFractionSteps, 20, 60);
+        writeModelSegmentsSample(dir, dictionary, contigs, bins, "tumorB", 23L,
+                secondLevels, secondLevelSteps, secondFractions, secondFractionSteps, 25, 55);
+        writeModelSegmentsSample(dir, dictionary, contigs, bins, "normal", 37L,
+                new double[][] {{0.0}, {0.0}}, new int[][] {{}, {}},
+                new double[][] {{0.5}, {0.5}}, new int[][] {{}, {}}, 15, 50);
+        final htsjdk.samtools.util.IntervalList segments = new htsjdk.samtools.util.IntervalList(dictionary);
+        // One segment spans the whole first chromosome, so it holds all 240 copy-ratio points and
+        // the copy-ratio sampler draws them in more than one minibatch.
+        segments.add(new htsjdk.samtools.util.Interval("chr1", 1, 240000));
+        segments.add(new htsjdk.samtools.util.Interval("chr2", 1, 40000));
+        segments.add(new htsjdk.samtools.util.Interval("chr2", 40001, 80000));
+        segments.write(dir.resolve("segments.interval_list").toFile());
+    }
+
+    static int modelSegmentsStepIndex(final int[] steps, final int bin) {
+        int index = 0;
+        for (final int step : steps) {
+            if (bin >= step) {
+                index++;
+            }
+        }
+        return index;
+    }
+
+    static void writeModelSegmentsSample(final Path dir, final SAMSequenceDictionary dictionary,
+                                         final String[] contigs, final int[] bins, final String sample,
+                                         final long seed, final double[][] levels, final int[][] levelSteps,
+                                         final double[][] fractions, final int[][] fractionSteps,
+                                         final int minimumDepth, final int depthSpan) {
+        final java.util.Random random = new java.util.Random(seed);
+        final org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SimpleSampleLocatableMetadata metadata =
+                new org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SimpleSampleLocatableMetadata(sample, dictionary);
+        final List<org.broadinstitute.hellbender.tools.copynumber.formats.records.CopyRatio> ratios = new ArrayList<>();
+        final List<org.broadinstitute.hellbender.tools.copynumber.formats.records.AllelicCount> counts = new ArrayList<>();
+        for (int c = 0; c < contigs.length; c++) {
+            for (int bin = 0; bin < bins[c]; bin++) {
+                final int start = bin * 1000 + 1;
+                final double level = levels[c][modelSegmentsStepIndex(levelSteps[c], bin)];
+                ratios.add(new org.broadinstitute.hellbender.tools.copynumber.formats.records.CopyRatio(
+                        new org.broadinstitute.hellbender.utils.SimpleInterval(contigs[c], start, start + 999),
+                        level + 0.15 * random.nextGaussian()));
+                // Every eighth site is homozygous in every sample, and the depth varies so that
+                // some sites fall under a total-count floor.
+                final int depth = minimumDepth + random.nextInt(depthSpan);
+                final double minor = fractions[c][modelSegmentsStepIndex(fractionSteps[c], bin)];
+                final double alternateFraction = bin % 8 == 3 ? 0.002 : (random.nextBoolean() ? minor : 1. - minor);
+                int alternate = 0;
+                for (int read = 0; read < depth; read++) {
+                    if (random.nextDouble() < alternateFraction) {
+                        alternate++;
+                    }
+                }
+                counts.add(new org.broadinstitute.hellbender.tools.copynumber.formats.records.AllelicCount(
+                        new org.broadinstitute.hellbender.utils.SimpleInterval(contigs[c], start + 500, start + 500),
+                        depth - alternate, alternate,
+                        org.broadinstitute.hellbender.utils.Nucleotide.A,
+                        org.broadinstitute.hellbender.utils.Nucleotide.G));
+            }
+        }
+        if (!sample.equals("normal")) {
+            new org.broadinstitute.hellbender.tools.copynumber.formats.collections.CopyRatioCollection(metadata, ratios)
+                    .write(dir.resolve(sample + ".cr.tsv").toFile());
+        }
+        new org.broadinstitute.hellbender.tools.copynumber.formats.collections.AllelicCountCollection(metadata, counts)
+                .write(dir.resolve(sample + ".ac.tsv").toFile());
     }
 }
