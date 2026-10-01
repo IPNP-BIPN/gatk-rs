@@ -1072,12 +1072,30 @@
       "t": 2,
       "share": 1.0
     },
+    "GroundTruthScorer": {
+      "rows": 25,
+      "accepted": 13,
+      "rejected": 12,
+      "distinct_outputs": 11,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
     "AlleleFrequencyQC": {
       "rows": 26,
       "accepted": 0,
       "rejected": 26,
       "distinct_outputs": 8,
       "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnalyzeSaturationMutagenesis": {
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     },
