@@ -196,7 +196,7 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `GetPileupSummaries` | locus-walker | oracle-backed | get-pileup-summaries | 1 | t=2, 19/19 rows (100%) |
 | `GetSampleName` | reporting-walker | oracle-backed | get-sample-name | 1 | t=2, 21/21 rows (100%) |
 | `GnarlyGenotyper` | assembly-caller | oracle-backed | gnarly-genotyper | 1 | t=2, 27/27 rows (100%) |
-| `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | not measured |
+| `GroundTruthReadsBuilder` | flow-based | oracle-backed | ground-truth-reads-builder | 1 | t=2, 29/29 rows (100%) |
 | `GroundTruthScorer` | flow-based | oracle-backed | ground-truth-scorer, series-stats | 2 | t=2, 25/25 rows (100%) |
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) |

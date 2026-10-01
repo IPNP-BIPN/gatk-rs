@@ -1161,6 +1161,15 @@
       "matched": 26,
       "t": 2,
       "share": 1.0
+    },
+    "GroundTruthReadsBuilder": {
+      "rows": 29,
+      "accepted": 20,
+      "rejected": 9,
+      "distinct_outputs": 14,
+      "matched": 29,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
