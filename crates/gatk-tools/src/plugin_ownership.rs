@@ -307,6 +307,20 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         "TransferReadTags" => Some(&["WellformedReadFilter"]),
         // `GroundTruthScorer` is a plain `ReadWalker` and keeps `GATKTool`'s wellformed filter.
         "GroundTruthScorer" | "GroundTruthReadsBuilder" => Some(&["WellformedReadFilter"]),
+        // `HaplotypeCallerEngine.makeStandardHCReadFilters`, which `HaplotypeBasedVariantRecaller`
+        // returns as its own: the engine's mapping-quality floor of twenty first, the wellformed
+        // filter last.
+        "HaplotypeBasedVariantRecaller" => Some(&[
+            "MappingQualityReadFilter",
+            "MappingQualityAvailableReadFilter",
+            "MappedReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "NonZeroReferenceLengthAlignmentReadFilter",
+            "GoodCigarReadFilter",
+            "WellformedReadFilter",
+        ]),
         // `Mutect2Engine.makeStandardMutect2ReadFilters`, which does not call super either: twelve
         // filters with the wellformed one LAST, two of them parameterised at thresholds that are
         // the ENGINE's rather than the library's (mapping quality twenty, read length thirty).

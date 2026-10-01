@@ -350,6 +350,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FlowPairHMMAlignReadsToHaplotypes" => Some(run_flow_pairhmm_align_reads_to_haplotypes),
         "FlowFeatureMapper" => Some(run_flow_feature_mapper),
         "GroundTruthScorer" => Some(run_ground_truth_scorer),
+        "HaplotypeBasedVariantRecaller" => Some(run_haplotype_based_variant_recaller),
         "GroundTruthReadsBuilder" => Some(run_ground_truth_reads_builder),
         "GeneExpressionEvaluation" => Some(run_gene_expression_evaluation),
         "CRAMIssue8768Detector" => Some(run_cram_issue_8768_detector),
@@ -757,6 +758,10 @@ fn run_learn_read_orientation_model(args: &[String]) -> Result<Option<String>, T
 
 fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::ground_truth_reads_builder(&parsed("GroundTruthReadsBuilder", args)?)
+}
+
+fn run_haplotype_based_variant_recaller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::haplotype_based_variant_recaller(&parsed("HaplotypeBasedVariantRecaller", args)?)
 }
 
 fn run_ground_truth_scorer(args: &[String]) -> Result<Option<String>, Thrown> {

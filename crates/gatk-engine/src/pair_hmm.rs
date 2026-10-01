@@ -61,9 +61,12 @@ pub fn fast_round(value: f64) -> i32 {
 /// The reference builds the table once and reads it by index; reading it by index is what this
 /// reproduces, so the value is the table's entry and not `log10(1 + 10^-difference)`.
 pub fn jacobian_log(difference: f64) -> f64 {
-    let index = fast_round(difference / JACOBIAN_TABLE_STEP);
-    let quantised = f64::from(index) * JACOBIAN_TABLE_STEP;
-    (1.0 + 10f64.powf(-quantised)).log10()
+    // `fastRound(difference * INV_STEP)`, a product by `1.0 / TABLE_STEP` rather than a quotient
+    // by the step, then the entry `Math.log10(1.0 + Math.pow(10.0, -k * TABLE_STEP))`, whose
+    // `Math.log10` is correctly rounded.
+    let index = fast_round(difference * (1.0 / JACOBIAN_TABLE_STEP));
+    let quantised = f64::from(-index) * JACOBIAN_TABLE_STEP;
+    jmath::math::log10(1.0 + std::hint::black_box(10f64).powf(quantised))
 }
 
 /// `MathUtils.approximateLog10SumLog10`.
@@ -101,7 +104,9 @@ pub fn match_to_match_prob(insertion_qual: i32, deletion_qual: i32) -> f64 {
         return 1.0 - 10f64.powf(log10_sum);
     }
     // `Math.log1p(-Math.min(1, Math.pow(10, log10Sum))) * INV_LN10`, then `Math.pow(10, that)`.
-    let log10 = (-(10f64.powf(log10_sum)).min(1.0)).ln_1p() * std::f64::consts::LOG10_E;
+    // `INV_LN10` is `1.0 / Math.log(10)`, which is one ulp below `LOG10_E`.
+    let inv_ln10 = 1.0 / std::f64::consts::LN_10;
+    let log10 = (-(10f64.powf(log10_sum)).min(1.0)).ln_1p() * inv_ln10;
     10f64.powf(log10)
 }
 

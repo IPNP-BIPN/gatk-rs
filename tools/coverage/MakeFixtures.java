@@ -1365,6 +1365,245 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * One column of an alignment to mutect_ref.fasta: a base at a reference position (M), a base
+     * between two positions (I), or a position with no base (D).
+     */
+    static final class Column {
+        final char op;
+        final int position;
+        final char base;
+
+        Column(final char op, final int position, final char base) {
+            this.op = op;
+            this.position = position;
+            this.base = base;
+        }
+    }
+
+    /**
+     * The reference from `start` to `end` with edits applied, as alignment columns. An edit is
+     * {position, kind, argument}: kind 0 substitutes the base at the position (the argument steps
+     * through ACGT), kind 1 inserts `argument` bases after it, kind 2 deletes the `argument` bases
+     * after it, so a VCF record for the event is anchored at the position.
+     */
+    static List<Column> edited(final String bases, final int start, final int end, final int[][] edits) {
+        final List<Column> columns = new ArrayList<>();
+        int position = start;
+        while (position <= end) {
+            char base = bases.charAt(position - 1);
+            int insert = 0;
+            int delete = 0;
+            for (final int[] edit : edits) {
+                if (edit[0] != position) {
+                    continue;
+                }
+                if (edit[1] == 0) {
+                    base = "ACGT".charAt(("ACGT".indexOf(base) + edit[2]) % 4);
+                } else if (edit[1] == 1) {
+                    insert = edit[2];
+                } else {
+                    delete = edit[2];
+                }
+            }
+            columns.add(new Column('M', position, base));
+            for (int i = 0; i < insert; i++) {
+                columns.add(new Column('I', position, "GATC".charAt(i % 4)));
+            }
+            for (int i = 1; i <= delete; i++) {
+                columns.add(new Column('D', position + i, '-'));
+            }
+            position += 1 + delete;
+        }
+        return columns;
+    }
+
+    /** The columns' bases and cigar, and the reference position the first of them aligns to. */
+    static Object[] alignment(final List<Column> columns) {
+        final StringBuilder sequence = new StringBuilder();
+        final StringBuilder cigar = new StringBuilder();
+        char op = 0;
+        int run = 0;
+        for (final Column column : columns) {
+            if (column.op != 'D') {
+                sequence.append(column.base);
+            }
+            if (column.op != op && run > 0) {
+                cigar.append(run).append(op);
+                run = 0;
+            }
+            op = column.op;
+            run++;
+        }
+        cigar.append(run).append(op);
+        return new Object[] {sequence.toString(), cigar.toString(), columns.get(0).position};
+    }
+
+    /** The columns a read over [from, to] of a haplotype carries: M to M, what lies between too. */
+    static List<Column> window(final List<Column> columns, final int from, final int to) {
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < columns.size(); i++) {
+            final Column column = columns.get(i);
+            if (column.op == 'M' && column.position >= from && column.position <= to) {
+                if (first < 0) {
+                    first = i;
+                }
+                last = i;
+            }
+        }
+        return columns.subList(first, last + 1);
+    }
+
+    /**
+     * HaplotypeBasedVariantRecaller's inputs over mutect_ref.fasta.
+     *
+     * hbvr_haps.bam holds four groups of HC_ haplotypes. Over 1000-1099: the reference, a
+     * substitution at 1050, the other substitution there with a two-base insertion after 1070, and
+     * a three-base deletion after 1029. Over 1000-1199, the same site off-centre, so the fitness
+     * score passes it over. Over 1500-1649: the reference, a four-base deletion after 1558 that
+     * spans 1562, a substitution at 1562, and two substitutions at 1600 and 1601 that a max MNP
+     * distance merges. Over 2200-2299: an insertion and a deletion after 2249 and a substitution at
+     * 2249. One record over 1000-1099 is not named HC_ and is passed over.
+     *
+     * hbvr_reads.bam: sixty reads of 60 to 80 bases, each taken from one haplotype of the group it
+     * falls in, with a sequencing error in one in four at a low quality; every third is reverse,
+     * one in eleven is a duplicate, one in thirteen has mapping quality 10 and one in seventeen 25,
+     * and one in nine is soft-clipped at its start. hbvr_alleles.vcf (indexed, and a copy without
+     * an index) names the sites, with one at 1700 that no haplotype covers.
+     */
+    static void haplotypeRecallerFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sm1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+
+        // {start, end, name, edits}
+        final Object[][] haplotypes = {
+                {1000, 1099, "HC_a_ref", new int[][] {}},
+                {1000, 1099, "HC_a_snp", new int[][] {{1050, 0, 1}}},
+                {1000, 1099, "HC_a_snp_ins", new int[][] {{1050, 0, 2}, {1070, 1, 2}}},
+                {1000, 1099, "HC_a_del", new int[][] {{1029, 2, 3}}},
+                {1000, 1099, "a_not_haplotype", new int[][] {{1050, 0, 3}}},
+                {1000, 1199, "HC_b_ref", new int[][] {}},
+                {1000, 1199, "HC_b_snp", new int[][] {{1050, 0, 3}}},
+                {1500, 1649, "HC_c_ref", new int[][] {}},
+                {1500, 1649, "HC_c_del", new int[][] {{1558, 2, 4}}},
+                {1500, 1649, "HC_c_snp", new int[][] {{1562, 0, 1}}},
+                {1500, 1649, "HC_c_mnp", new int[][] {{1600, 0, 1}, {1601, 0, 2}}},
+                {2200, 2299, "HC_d_ref", new int[][] {}},
+                {2200, 2299, "HC_d_ins", new int[][] {{2249, 1, 3}}},
+                {2200, 2299, "HC_d_del", new int[][] {{2249, 2, 2}}},
+                {2200, 2299, "HC_d_snp", new int[][] {{2249, 0, 1}, {2275, 0, 2}}},
+        };
+        final List<SAMRecord> haps = new ArrayList<>();
+        for (final Object[] haplotype : haplotypes) {
+            final Object[] aligned = alignment(edited(bases, (Integer) haplotype[0], (Integer) haplotype[1], (int[][]) haplotype[3]));
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName((String) haplotype[2]);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart((Integer) aligned[2]);
+            record.setCigarString((String) aligned[1]);
+            record.setReadString((String) aligned[0]);
+            final byte[] quals = new byte[((String) aligned[0]).length()];
+            java.util.Arrays.fill(quals, (byte) 60);
+            record.setBaseQualities(quals);
+            record.setMappingQuality(60);
+            record.setAttribute("RG", "rg1");
+            haps.add(record);
+        }
+        haps.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, true, dir.resolve("hbvr_haps.bam").toFile())) {
+            haps.forEach(writer::addAlignment);
+        }
+
+        final java.util.Random random = new java.util.Random(2026);
+        final int[][] regions = {{1000, 1099}, {1500, 1649}, {2200, 2299}};
+        final int[][] members = {{0, 1, 2, 3}, {7, 8, 9, 10}, {11, 12, 13, 14}};
+        final List<SAMRecord> reads = new ArrayList<>();
+        for (int n = 0; n < 60; n++) {
+            final int region = n % 3;
+            final Object[] haplotype = haplotypes[members[region][(n / 3) % 4]];
+            final List<Column> columns = edited(bases, (Integer) haplotype[0], (Integer) haplotype[1], (int[][]) haplotype[3]);
+            final int length = 60 + random.nextInt(21);
+            final int span = regions[region][1] - regions[region][0] + 1;
+            final int from = regions[region][0] + random.nextInt(Math.max(1, span - length + 1));
+            final Object[] aligned = alignment(window(columns, from, from + length - 1));
+            final StringBuilder sequence = new StringBuilder((String) aligned[0]);
+            String cigar = (String) aligned[1];
+            int start = (Integer) aligned[2];
+            final byte[] quals = new byte[sequence.length()];
+            for (int i = 0; i < quals.length; i++) {
+                quals[i] = (byte) (25 + random.nextInt(16));
+            }
+            if (n % 4 == 1) {
+                final int at = 5 + random.nextInt(sequence.length() - 10);
+                sequence.setCharAt(at, sequence.charAt(at) == 'A' ? 'C' : 'A');
+                quals[at] = (byte) (8 + random.nextInt(8));
+            }
+            if (n % 9 == 4 && cigar.matches("\\d+M.*")) {
+                final int first = Integer.parseInt(cigar.substring(0, cigar.indexOf('M')));
+                if (first > 10) {
+                    for (int i = 0; i < 4; i++) {
+                        sequence.setCharAt(i, "TTGA".charAt(i));
+                    }
+                    cigar = "4S" + (first - 4) + cigar.substring(cigar.indexOf('M'));
+                    start += 4;
+                }
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("V:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(start);
+            record.setCigarString(cigar);
+            record.setReadString(sequence.toString());
+            record.setBaseQualities(quals);
+            record.setMappingQuality(n % 13 == 6 ? 10 : n % 17 == 8 ? 25 : 60);
+            record.setReadNegativeStrandFlag(n % 3 == 1);
+            record.setDuplicateReadFlag(n % 11 == 5);
+            record.setAttribute("RG", "rg1");
+            reads.add(record);
+        }
+        reads.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, true, dir.resolve("hbvr_reads.bam").toFile())) {
+            reads.forEach(writer::addAlignment);
+        }
+
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n"
+                + "##contig=<ID=chr1,length=" + bases.length() + ">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        final java.util.function.IntFunction<String> at = p -> String.valueOf(bases.charAt(p - 1));
+        vcf.append("chr1\t1029\t.\t").append(bases, 1028, 1032).append('\t').append(at.apply(1029)).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1050\t.\t").append(at.apply(1050)).append("\tA,C\t.\t.\t.\n");
+        vcf.append("chr1\t1070\t.\t").append(at.apply(1070)).append('\t').append(at.apply(1070)).append("GA\t.\t.\t.\n");
+        vcf.append("chr1\t1558\t.\t").append(bases, 1557, 1562).append('\t').append(at.apply(1558)).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1562\t.\t").append(at.apply(1562)).append("\tT\t.\t.\t.\n");
+        vcf.append("chr1\t1600\t.\t").append(bases, 1599, 1601).append("\tAA\t.\t.\t.\n");
+        vcf.append("chr1\t1700\t.\t").append(at.apply(1700)).append("\tG\t.\t.\t.\n");
+        vcf.append("chr1\t2249\t.\t").append(bases, 2248, 2251).append('\t').append(at.apply(2249))
+                .append(',').append(at.apply(2249)).append("GAT").append(bases, 2249, 2251).append("\t.\t.\t.\n");
+        vcf.append("chr1\t2275\t.\t").append(at.apply(2275)).append("\tA\t.\t.\t.\n");
+        for (final String name : new String[] {"hbvr_alleles.vcf", "hbvr_alleles_noidx.vcf"}) {
+            Files.writeString(dir.resolve(name), vcf.toString(), StandardCharsets.UTF_8);
+        }
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(
+                        dir.resolve("hbvr_alleles.vcf"), new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(dir.resolve("hbvr_alleles.vcf.idx"));
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -2377,6 +2616,7 @@ public class MakeFixtures {
         flowSnvFixtures(dir);
         groundTruthScorerFixtures(dir);
         groundTruthReadsBuilderFixtures(dir);
+        haplotypeRecallerFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.
