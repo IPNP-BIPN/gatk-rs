@@ -91,6 +91,16 @@ def main():
     step("the usage catalogue is generated, not written",
          ["python3", "tools/declarations/generate_usage.py", "--check"])
 
+    # Every covering array starts by compiling MakeFixtures.java, so a corpus that does not compile
+    # fails all of them at once. Two PRs each added a reverseComplement and main stopped compiling
+    # it with nothing local noticing. The class file is checked because a docker run can exit 0
+    # having done nothing.
+    step("MakeFixtures.java compiles against the oracle's classpath",
+         'out=$(mktemp -d) && docker run --rm --platform linux/amd64 '
+         '-v "$PWD/tools/coverage:/harness:ro" -v "$out:/out" -w /work gatk-rs-oracle:4.6.2.0 '
+         '\'javac -cp "$ORACLE_CP" -d /out /harness/MakeFixtures.java\' '
+         '&& test -f "$out/MakeFixtures.class"', shell=True)
+
     # The suites, last, because they are the slowest and need the oracle image.
     suites = [s for s in arguments.suites.split(",") if s]
     if suites:
