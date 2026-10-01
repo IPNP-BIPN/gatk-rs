@@ -28,8 +28,9 @@
 //! proposal lies on the slice and where Brent's search steps next, and no likelihood is printed.
 
 use gatk_engine::copy_number_mcmc::{
-    beta_log_density, beta_sample, commons_mean, double_stream_sum, commons_variance, deciles, double_stream_average,
-    java_max, java_min, IllegalArgument, MinibatchSliceSampler, GIBBS_RANDOM_SEED,
+    beta_log_density, beta_sample, commons_mean, commons_variance, deciles, double_stream_average,
+    double_stream_sum, java_max, java_min, IllegalArgument, MinibatchSliceSampler,
+    GIBBS_RANDOM_SEED,
 };
 use gatk_engine::java_random::JavaRandom;
 
@@ -244,9 +245,7 @@ impl CopyRatioModeller {
             range_or_nan
         };
         let variances: Vec<f64> = (0..num_segments)
-            .map(|s| {
-                commons_variance(&data.segment(s).iter().map(|p| p.0).collect::<Vec<f64>>())
-            })
+            .map(|s| commons_variance(&data.segment(s).iter().map(|p| p.0).collect::<Vec<f64>>()))
             .filter(|v| !v.is_nan())
             .collect();
         let variance_or_nan = double_stream_average(&variances).unwrap_or(f64::NAN);
@@ -257,7 +256,8 @@ impl CopyRatioModeller {
         };
         let variance_width = 2.0 * variance_estimate;
         let variance_max = java_max(10.0 * variance_estimate, data_range * data_range);
-        let mean_width = (variance_estimate * num_segments as f64 / data.num_points() as f64).sqrt();
+        let mean_width =
+            (variance_estimate * num_segments as f64 / data.num_points() as f64).sqrt();
         let segment_means: Vec<f64> = (0..num_segments)
             .map(|s| commons_mean(&data.segment(s).iter().map(|p| p.0).collect::<Vec<f64>>()))
             .map(|m| java_max(LOG2_COPY_RATIO_MIN, java_min(LOG2_COPY_RATIO_MAX, m)))
@@ -321,8 +321,9 @@ impl CopyRatioModeller {
                     new_means.push(f64::NAN);
                     continue;
                 }
-                let indexed: Vec<(f64, usize)> =
-                    (start..end).map(|index| (data.points[index].0, index)).collect();
+                let indexed: Vec<(f64, usize)> = (start..end)
+                    .map(|index| (data.points[index].0, index))
+                    .collect();
                 let indicators = &state.outlier_indicators;
                 let variance = state.variance;
                 let mean = MinibatchSliceSampler::new(
@@ -341,7 +342,9 @@ impl CopyRatioModeller {
                     100,
                     APPROX_THRESHOLD,
                 )
-                .and_then(|mut sampler| sampler.sample(&mut rng, state.segment_means[segment_index]))
+                .and_then(|mut sampler| {
+                    sampler.sample(&mut rng, state.segment_means[segment_index])
+                })
                 .map_err(from_illegal)?;
                 new_means.push(mean);
             }
@@ -358,11 +361,7 @@ impl CopyRatioModeller {
             for segment_index in 0..num_segments {
                 for point in data.segment(segment_index) {
                     let not_outlier = prefactor
-                        - normal_term(
-                            point.0,
-                            state.segment_means[segment_index],
-                            state.variance,
-                        );
+                        - normal_term(point.0, state.segment_means[segment_index], state.variance);
                     let conditional = jmath::fast_math::exp(
                         outlier_log_probability - log_sum_log(outlier_log_probability, not_outlier),
                     );
@@ -484,23 +483,27 @@ fn het_log_likelihood(parameters: &GlobalParameters, minor_fraction: f64, het: &
     let kappa_alt = bias_posterior_curvature(alpha, minor_fraction, r, n, lambda0_alt);
     let rho_alt = java_max(1.0 - kappa_alt * lambda0_alt * lambda0_alt, AF_EPSILON);
     let tau_alt = java_max(-kappa_alt * lambda0_alt, AF_EPSILON);
-    let logc_alt = logc_common + af * log_minor + rf * log_major
+    let logc_alt = logc_common
+        + af * log_minor
+        + rf * log_major
         + (rf + alpha - rho_alt) * af_log(lambda0_alt)
         + (tau_alt - beta) * lambda0_alt
         - nf * af_log(minor_fraction + major_fraction * lambda0_alt);
-    let alt_minor = log_not_pi + logc_alt + jmath::gamma::log_gamma(rho_alt)
-        - rho_alt * af_log(tau_alt);
+    let alt_minor =
+        log_not_pi + logc_alt + jmath::gamma::log_gamma(rho_alt) - rho_alt * af_log(tau_alt);
 
     let lambda0_ref = bias_posterior_mode(alpha, beta, major_fraction, a, r);
     let kappa_ref = bias_posterior_curvature(alpha, major_fraction, r, n, lambda0_ref);
     let rho_ref = java_max(1.0 - kappa_ref * lambda0_ref * lambda0_ref, AF_EPSILON);
     let tau_ref = java_max(-kappa_ref * lambda0_ref, AF_EPSILON);
-    let logc_ref = logc_common + af * log_major + rf * log_minor
+    let logc_ref = logc_common
+        + af * log_major
+        + rf * log_minor
         + (rf + alpha - rho_ref) * af_log(lambda0_ref)
         + (tau_ref - beta) * lambda0_ref
         - nf * af_log(major_fraction + minor_fraction * lambda0_ref);
-    let ref_minor = log_not_pi + logc_ref + jmath::gamma::log_gamma(rho_ref)
-        - rho_ref * af_log(tau_ref);
+    let ref_minor =
+        log_not_pi + logc_ref + jmath::gamma::log_gamma(rho_ref) - rho_ref * af_log(tau_ref);
 
     let binomial = binomial_coefficient_log(n, a);
     let outlier = log_pi - jmath::math::log(f64::from(a + r + 1)) - binomial;
@@ -560,7 +563,12 @@ fn log_sum_exp(values: &[f64]) -> f64 {
     if sum.is_nan() || sum == f64::INFINITY {
         return f64::NAN;
     }
-    max_value + if sum != 1.0 { jmath::math::log(sum) } else { 0.0 }
+    max_value
+        + if sum != 1.0 {
+            jmath::math::log(sum)
+        } else {
+            0.0
+        }
 }
 
 /// `segmentLogLikelihood`, a stream sum over the segment's hets.
@@ -660,7 +668,8 @@ fn initialize(data: &AlleleFractionData) -> Result<(GlobalParameters, Vec<f64>),
                         }
                     }
                 };
-                minor_count += responsibility * f64::from(a) + (1.0 - responsibility) * f64::from(r);
+                minor_count +=
+                    responsibility * f64::from(a) + (1.0 - responsibility) * f64::from(r);
                 total_count += f64::from(a + r);
             }
             (minor_count + 1.0) / (total_count + 2.0)
@@ -748,8 +757,9 @@ fn width_at_mode(log_pdf: impl Fn(f64) -> f64, mode: f64) -> f64 {
     let abs_mode = mode.abs();
     let epsilon = java_min(1e-6, abs_mode / 2.0);
     let default_width = abs_mode / 10.0;
-    let second_derivative =
-        (log_pdf(mode + epsilon) - 2.0 * log_pdf(mode) + log_pdf(mode - epsilon)) / (epsilon * epsilon);
+    let second_derivative = (log_pdf(mode + epsilon) - 2.0 * log_pdf(mode)
+        + log_pdf(mode - epsilon))
+        / (epsilon * epsilon);
     if second_derivative < 0.0 {
         (-1.0 / second_derivative).sqrt()
     } else {
@@ -910,7 +920,9 @@ impl AlleleFractionModeller {
                     1000,
                     APPROX_THRESHOLD,
                 )
-                .and_then(|mut sampler| sampler.sample(&mut rng, current.global.outlier_probability))
+                .and_then(|mut sampler| {
+                    sampler.sample(&mut rng, current.global.outlier_probability)
+                })
                 .map_err(from_illegal)?;
             }
             // Minor fractions.
@@ -970,7 +982,13 @@ impl AlleleFractionModeller {
 
     fn global_deciles(&self) -> ParameterDeciles {
         let pick = |f: fn(&GlobalParameters) -> f64| -> [f64; 9] {
-            deciles(&self.kept().iter().map(|s| f(&s.global)).collect::<Vec<f64>>())
+            deciles(
+                &self
+                    .kept()
+                    .iter()
+                    .map(|s| f(&s.global))
+                    .collect::<Vec<f64>>(),
+            )
         };
         vec![
             ("MEAN_BIAS", pick(|g| g.mean_bias)),
@@ -1050,7 +1068,9 @@ impl<'a> MultidimensionalModeller<'a> {
             let num_copy_ratio = self
                 .copy_ratios
                 .iter()
-                .filter(|(span, _)| segment.contains_position(&span.contig, (span.start + span.end) / 2))
+                .filter(|(span, _)| {
+                    segment.contains_position(&span.contig, (span.start + span.end) / 2)
+                })
                 .count() as i32;
             let num_allele_fraction = self
                 .hets
@@ -1165,7 +1185,11 @@ fn merge_similar_segments(
         let first = &merged[i];
         let second = &merged[i + 1];
         if first.span.contig == second.span.contig
-            && are_similar(&first.log2_copy_ratio, &second.log2_copy_ratio, threshold_copy_ratio)
+            && are_similar(
+                &first.log2_copy_ratio,
+                &second.log2_copy_ratio,
+                threshold_copy_ratio,
+            )
             && are_similar(
                 &first.minor_allele_fraction,
                 &second.minor_allele_fraction,

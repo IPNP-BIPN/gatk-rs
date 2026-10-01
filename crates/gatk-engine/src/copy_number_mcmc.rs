@@ -67,8 +67,8 @@ pub fn fast_math_pow_int(d: f64, e: i32) -> f64 {
             let c_rh = split_factor * result_high;
             let r_hh = c_rh - (c_rh - result_high);
             let r_hl = result_high - r_hh;
-            let tmp_low =
-                r_hl * d2p_low - (((tmp_high - r_hh * d2p_high) - r_hl * d2p_high) - r_hh * d2p_low);
+            let tmp_low = r_hl * d2p_low
+                - (((tmp_high - r_hh * d2p_high) - r_hl * d2p_high) - r_hh * d2p_low);
             result_high = tmp_high;
             result_low = result_low * d2p + tmp_low;
         }
@@ -76,8 +76,8 @@ pub fn fast_math_pow_int(d: f64, e: i32) -> f64 {
         let c_d2p_h = split_factor * d2p_high;
         let d2p_hh = c_d2p_h - (c_d2p_h - d2p_high);
         let d2p_hl = d2p_high - d2p_hh;
-        let tmp_low =
-            d2p_hl * d2p_low - (((tmp_high - d2p_hh * d2p_high) - d2p_hl * d2p_high) - d2p_hh * d2p_low);
+        let tmp_low = d2p_hl * d2p_low
+            - (((tmp_high - d2p_hh * d2p_high) - d2p_hl * d2p_high) - d2p_hh * d2p_low);
         let c_tmp_h = split_factor * tmp_high;
         d2p_high = c_tmp_h - (c_tmp_h - tmp_high);
         d2p_low = d2p_low * d2p + tmp_low + (tmp_high - d2p_high);
@@ -182,28 +182,24 @@ pub fn brent_solve(f: impl Fn(f64) -> f64, min: f64, max: f64, absolute: f64) ->
         return Some(min);
     }
     if y_initial * y_min < 0.0 {
-        return Some(brent(&f, min, initial, y_min, y_initial, absolute, relative));
+        return Some(brent(
+            &f, min, initial, y_min, y_initial, absolute, relative,
+        ));
     }
     let y_max = f(max);
     if y_max.abs() <= function_value_accuracy {
         return Some(max);
     }
     if y_initial * y_max < 0.0 {
-        return Some(brent(&f, initial, max, y_initial, y_max, absolute, relative));
+        return Some(brent(
+            &f, initial, max, y_initial, y_max, absolute, relative,
+        ));
     }
     None
 }
 
 #[allow(clippy::too_many_arguments)]
-fn brent(
-    f: &impl Fn(f64) -> f64,
-    lo: f64,
-    hi: f64,
-    f_lo: f64,
-    f_hi: f64,
-    t: f64,
-    eps: f64,
-) -> f64 {
+fn brent(f: &impl Fn(f64) -> f64, lo: f64, hi: f64, f_lo: f64, f_hi: f64, t: f64, eps: f64) -> f64 {
     let mut a = lo;
     let mut fa = f_lo;
     let mut b = hi;
@@ -606,7 +602,8 @@ where
         if num_data_points == 0 {
             return Ok((self.log_prior)(x_proposed)? > self.log_prior_cache - z);
         }
-        let mu0 = (self.log_prior_cache - (self.log_prior)(x_proposed)? - z) / num_data_points as f64;
+        let mu0 =
+            (self.log_prior_cache - (self.log_prior)(x_proposed)? - z) / num_data_points as f64;
 
         let num_minibatches = (num_data_points / self.minibatch_size).max(1);
         let mut order = if num_minibatches > 1 {

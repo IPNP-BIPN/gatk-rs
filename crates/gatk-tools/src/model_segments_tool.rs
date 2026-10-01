@@ -145,7 +145,9 @@ fn write(path: &str, text: &str) -> Result<(), Thrown> {
     std::fs::write(path, text).map_err(|error| Thrown {
         failure: Failure::User,
         exception: crate::main_entry::USER_EXCEPTION,
-        message: Some(format!("Couldn't write file {path} because exception {error}")),
+        message: Some(format!(
+            "Couldn't write file {path} because exception {error}"
+        )),
     })
 }
 
@@ -210,7 +212,11 @@ impl Table {
         }
         let mut samples: Vec<String> = Vec::new();
         for read_group in &self.header.read_groups {
-            let sample = read_group.attributes.get("SM").unwrap_or("null").to_string();
+            let sample = read_group
+                .attributes
+                .get("SM")
+                .unwrap_or("null")
+                .to_string();
             if !samples.contains(&sample) {
                 samples.push(sample);
             }
@@ -229,9 +235,11 @@ impl Table {
 }
 
 fn parse_int(text: &str) -> Result<i32, Thrown> {
-    text.trim()
-        .parse()
-        .map_err(|_| Thrown::user(format!("Bad input: Expected an integer value but found {text}")))
+    text.trim().parse().map_err(|_| {
+        Thrown::user(format!(
+            "Bad input: Expected an integer value but found {text}"
+        ))
+    })
 }
 
 fn parse_double(text: &str) -> Result<f64, Thrown> {
@@ -240,9 +248,11 @@ fn parse_double(text: &str) -> Result<f64, Thrown> {
         "NaN" => Ok(f64::NAN),
         "Infinity" | "+Infinity" => Ok(f64::INFINITY),
         "-Infinity" => Ok(f64::NEG_INFINITY),
-        _ => trimmed
-            .parse()
-            .map_err(|_| Thrown::user(format!("Bad input: Expected a double value but found {text}"))),
+        _ => trimmed.parse().map_err(|_| {
+            Thrown::user(format!(
+                "Bad input: Expected a double value but found {text}"
+            ))
+        }),
     }
 }
 
@@ -324,7 +334,10 @@ fn read_interval_list(path: &str) -> Result<(Vec<SequenceRecord>, Vec<Span>), Th
             .collect::<String>(),
     );
     let mut intervals = Vec::new();
-    for line in text.lines().filter(|line| !line.starts_with('@') && !line.is_empty()) {
+    for line in text
+        .lines()
+        .filter(|line| !line.starts_with('@') && !line.is_empty())
+    {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() < 3 {
             continue;
@@ -480,7 +493,8 @@ fn copy_ratio_segments_text(
             ),
         })?;
         let values: Vec<f64> = order.iter().map(|index| copy_ratios[*index].1).collect();
-        let mean = gatk_engine::copy_number_mcmc::double_stream_average(&values).unwrap_or(f64::NAN);
+        let mean =
+            gatk_engine::copy_number_mcmc::double_stream_average(&values).unwrap_or(f64::NAN);
         text.push_str(&row(&[
             segment.span.contig.clone(),
             segment.span.start.to_string(),
@@ -562,7 +576,9 @@ fn genotype_hets(
             .collect();
         hets = hets
             .iter()
-            .map(|counts| counts.filtered(|het| common.contains(&(het.contig.clone(), het.position))))
+            .map(|counts| {
+                counts.filtered(|het| common.contains(&(het.contig.clone(), het.position)))
+            })
             .collect();
     }
     (hets, het_normal)
@@ -635,7 +651,10 @@ fn find_segmentation(
                         end: hets[0][i].position,
                     },
                     copy_ratios: Vec::new(),
-                    fractions: hets.iter().map(|sample| alternate_fraction(&sample[i])).collect(),
+                    fractions: hets
+                        .iter()
+                        .map(|sample| alternate_fraction(&sample[i]))
+                        .collect(),
                 })
                 .collect(),
         )
@@ -645,7 +664,9 @@ fn find_segmentation(
             .iter()
             .map(|(span, _)| {
                 hets[0].iter().position(|het| {
-                    het.contig == span.contig && span.start <= het.position && het.position <= span.end
+                    het.contig == span.contig
+                        && span.start <= het.position
+                        && het.position <= span.end
                 })
             })
             .collect();
@@ -676,19 +697,30 @@ fn find_segmentation(
         for sample in 0..num_samples {
             match mode {
                 SegmenterMode::CopyRatioOnly => {
-                    sum += kernel_value(sd_copy_ratio, p1.copy_ratios[sample], p2.copy_ratios[sample]);
+                    sum += kernel_value(
+                        sd_copy_ratio,
+                        p1.copy_ratios[sample],
+                        p2.copy_ratios[sample],
+                    );
                 }
                 SegmenterMode::AlleleFractionOnly => {
-                    sum += kernel_value(sd_allele_fraction, p1.fractions[sample], p2.fractions[sample]);
+                    sum += kernel_value(
+                        sd_allele_fraction,
+                        p1.fractions[sample],
+                        p2.fractions[sample],
+                    );
                 }
                 SegmenterMode::Both => {
-                    sum += kernel_value(sd_copy_ratio, p1.copy_ratios[sample], p2.copy_ratios[sample])
-                        + scaling
-                            * kernel_value(
-                                sd_allele_fraction,
-                                p1.fractions[sample],
-                                p2.fractions[sample],
-                            );
+                    sum += kernel_value(
+                        sd_copy_ratio,
+                        p1.copy_ratios[sample],
+                        p2.copy_ratios[sample],
+                    ) + scaling
+                        * kernel_value(
+                            sd_allele_fraction,
+                            p1.fractions[sample],
+                            p2.fractions[sample],
+                        );
                 }
             }
         }
@@ -737,7 +769,9 @@ fn find_segmentation(
             .iter()
             .map(|point| (point.span.start, point.span.end))
             .collect();
-        for (start, end) in crate::model_segments::segments_from_changepoints(&bounds, &changepoints) {
+        for (start, end) in
+            crate::model_segments::segments_from_changepoints(&bounds, &changepoints)
+        {
             segments.push(Span {
                 contig: contig.clone(),
                 start,
@@ -750,10 +784,14 @@ fn find_segmentation(
 
 /// The dictionary-order check `AbstractLocatableCollection` makes of the segments it is given,
 /// after sorting them, which is the one a segments file can fail.
-fn sorted_segments(dictionary: &[SequenceRecord], mut segments: Vec<Span>) -> Result<Vec<Span>, Thrown> {
+fn sorted_segments(
+    dictionary: &[SequenceRecord],
+    mut segments: Vec<Span>,
+) -> Result<Vec<Span>, Thrown> {
     let index_of = |contig: &str| dictionary.iter().position(|s| s.name == contig);
     if segments.iter().any(|s| {
-        index_of(&s.contig).is_none_or(|i| s.start < 1 || s.end > dictionary[i].length || s.start > s.end)
+        index_of(&s.contig)
+            .is_none_or(|i| s.start < 1 || s.end > dictionary[i].length || s.start > s.end)
     }) {
         return Err(illegal(
             "Records contained at least one interval that did not validate against the sequence dictionary.",
@@ -762,7 +800,9 @@ fn sorted_segments(dictionary: &[SequenceRecord], mut segments: Vec<Span>) -> Re
     segments.sort_by_key(|s| (index_of(&s.contig), s.start, s.end));
     for pair in segments.windows(2) {
         if pair[0] == pair[1] {
-            return Err(illegal("Records were not strictly sorted in dictionary order."));
+            return Err(illegal(
+                "Records were not strictly sorted in dictionary order.",
+            ));
         }
         if pair[0].contig == pair[1].contig && pair[1].start <= pair[0].end {
             return Err(illegal(format!(
@@ -824,7 +864,9 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
             ));
         }
         if options.segments.is_some() {
-            return Err(illegal("Segments file cannot be specified in multisample mode."));
+            return Err(illegal(
+                "Segments file cannot be specified in multisample mode.",
+            ));
         }
     }
     if options.number_of_samples_copy_ratio <= options.number_of_burn_in_samples_copy_ratio {
@@ -832,7 +874,9 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
             "Number of copy-ratio samples must be greater than number of copy-ratio burn-in samples.",
         ));
     }
-    if options.number_of_samples_allele_fraction <= options.number_of_burn_in_samples_allele_fraction {
+    if options.number_of_samples_allele_fraction
+        <= options.number_of_burn_in_samples_allele_fraction
+    {
         return Err(illegal(
             "Number of allele-fraction samples must be greater than number of allele-fraction burn-in samples.",
         ));
@@ -904,7 +948,9 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
         .iter()
         .any(|r| r.records.iter().map(|x| &x.0).ne(first_intervals.iter()))
     {
-        return Err(illegal("Copy-ratio intervals must be identical across all case samples."));
+        return Err(illegal(
+            "Copy-ratio intervals must be identical across all case samples.",
+        ));
     }
     let first_sites = allelic_counts[0].sites();
     if allelic_counts
@@ -912,16 +958,22 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
         .chain(normal.iter())
         .any(|counts| counts.sites() != first_sites)
     {
-        return Err(illegal("Allelic-count sites must be identical across all samples."));
+        return Err(illegal(
+            "Allelic-count sites must be identical across all samples.",
+        ));
     }
 
-    let (hets, het_normal) = genotype_hets(options, &allelic_counts, normal.as_ref(), &first_intervals);
+    let (hets, het_normal) =
+        genotype_hets(options, &allelic_counts, normal.as_ref(), &first_intervals);
     let path = |suffix: &str| format!("{output_dir}/{}{suffix}", options.output_prefix);
 
     if multiple {
         let segments = find_segmentation(
             options,
-            &copy_ratios.iter().map(|r| r.records.clone()).collect::<Vec<_>>(),
+            &copy_ratios
+                .iter()
+                .map(|r| r.records.clone())
+                .collect::<Vec<_>>(),
             &hets.iter().map(AllelicCounts::hets).collect::<Vec<_>>(),
         )?;
         write(
@@ -985,7 +1037,13 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
     )?;
     let copy_ratio_legacy: Vec<(Span, i32, f64)> = modeled
         .iter()
-        .map(|s| (s.span.clone(), s.num_points_copy_ratio, s.log2_copy_ratio.decile50))
+        .map(|s| {
+            (
+                s.span.clone(),
+                s.num_points_copy_ratio,
+                s.log2_copy_ratio.decile50,
+            )
+        })
         .collect();
     let allele_fraction_legacy: Vec<(Span, i32, f64)> = modeled
         .iter()
@@ -997,7 +1055,10 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
             )
         })
         .collect();
-    write(&path(".cr.igv.seg"), &legacy_text(&metadata.sample, &copy_ratio_legacy))?;
+    write(
+        &path(".cr.igv.seg"),
+        &legacy_text(&metadata.sample, &copy_ratio_legacy),
+    )?;
     write(
         &path(".af.igv.seg"),
         &legacy_text(&metadata.sample, &allele_fraction_legacy),
