@@ -254,6 +254,13 @@ fn apply_format(format: &str, number: f64) -> String {
             }
         }
     }
+    if let Some(rest) = format.strip_prefix("%.") {
+        if let Some(digits) = rest.strip_suffix('E') {
+            if let Ok(places) = digits.parse::<usize>() {
+                return crate::java_format::format_scientific_upper(number, places);
+            }
+        }
+    }
     // `%s` on a Double is `Double.toString`, which this port only needs for whole values.
     format_decimals(number, 0).trim_end_matches('.').to_string()
 }

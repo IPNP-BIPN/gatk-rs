@@ -287,6 +287,7 @@ jobs:
             --tool SVConcordance \
             --tool SVCluster \
             --tool GroupedSVCluster \
+            --tool JointGermlineCNVSegmentation \
             --tool SVAnnotate \
             --tool ReferenceBlockConcordance \
             --tool CombineSegmentBreakpoints \
@@ -309,10 +310,15 @@ jobs:
             --tool CombineGVCFs \
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
+            --tool GroundTruthScorer --tool GroundTruthReadsBuilder \
+            --tool AlleleFrequencyQC \
+            --tool AnalyzeSaturationMutagenesis --tool LocalAssembler \
+            --tool BwaMemIndexImageCreator \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
             --tool VCFComparator \
+            --tool VariantRecalibrator \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

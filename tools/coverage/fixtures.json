@@ -6162,6 +6162,929 @@
         "reason every variant writer holds them, and --max-variants-per-shard at 0."
       ]
     },
+    "BwaMemIndexImageCreator": {
+      "--input": [
+        "/work/fixtures/bwa_ref.fasta",
+        "/work/fixtures/bwa_small.fa",
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/bwa_noheader.fasta",
+        "/work/fixtures/bwa_ref.fa.gz"
+      ],
+      "--output": [
+        "/work/out/reference.img",
+        "/work/out/other.img",
+        "null"
+      ],
+      "--tmp-dir": [
+        "/work/tmp",
+        "/work/tmp2",
+        "/work/tmp-missing"
+      ],
+      "$why": [
+        "The image is BWA's own, built through JNI, and carries in-process addresses; run_array.py",
+        "masks those fields (and the structures' padding) by the layout bwa_idx2mem writes, so what",
+        "is compared is every byte that is a function of the FASTA. bwa_ref.fasta is two contigs, one",
+        "with a comment, with a run of N, an IUPAC R and a lower-case stretch; bwa_small.fa is one",
+        "contig under the other accepted extension, and reference.fasta is the corpus's own.",
+        "bwa_noheader.fasta has no header line and bwa_ref.fa.gz is refused for its name. A null",
+        "--output is the default name next to the input, which the read-only corpus refuses to create.",
+        "/work/tmp-missing is the tmp-dir the command line refuses before the tool runs. A missing",
+        "FASTA is the bwa-index-image suite's missing-fasta case and is not repeated here."
+      ]
+    },
+    "JointGermlineCNVSegmentation": {
+      "$why": [
+        "--variant is jgcs_male1.vcf, ONE sample written as GermlineCNVCaller writes segments, which is the",
+        "only input the defragmenter runs on; and jgcs_cohort.vcf, three samples, which skips it and is",
+        "clustered by max clique alone. The pedigree names the three sexes, or moves them round, which is",
+        "what the allosomal ploidy reads. --model-call-intervals turns the defragmenter into the binned one.",
+        "Every clustering and defragmentation threshold carries its default and a value that moves the",
+        "answer on this corpus; --minimum-qs-score 60 drops the QS 30 call and keeps the QS 60 one.",
+        "--combine-variants-distance, --max-distance and --ref-padding only regroup the records or pad a",
+        "reference window the tool never reads, and --max-records-in-ram is declared and never read: each is",
+        "varied to show it changes nothing. --reference is jgcs_ref.fasta, the only reference the calls fit.",
+        "--input and --read-index are held out: the tool reads no reads, and a BAM would add a dictionary",
+        "check over a different reference. --sequence-dictionary is held out for the same reason: the tool",
+        "disables cross-validation, and the reference's own dictionary is the only one the calls fit.",
+        "The command-line header line and the output index are held as for the other VCF writers.",
+        "--variant-output-filtering is held out: any value is refused without -L, which would make it a",
+        "one-line refusal pair with the intervals' first value rather than a measurement of the filter."
+      ],
+      "--variant": [
+        "/work/fixtures/jgcs_male1.vcf",
+        "/work/fixtures/jgcs_cohort.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/jgcs_ref.fasta"
+      ],
+      "--pedigree": [
+        "/work/fixtures/jgcs.ped",
+        "/work/fixtures/jgcs_swapped.ped"
+      ],
+      "--output": [
+        "/work/out/joint.vcf",
+        "/work/out/joint.vcf.gz"
+      ],
+      "--model-call-intervals": [
+        "null",
+        "/work/fixtures/jgcs_bins.interval_list"
+      ],
+      "--minimum-qs-score": [
+        "20",
+        "60"
+      ],
+      "--defragmentation-padding-fraction": [
+        "0.25",
+        "0.0",
+        "1.0"
+      ],
+      "--min-sample-set-fraction-overlap": [
+        "0.0",
+        "0.9"
+      ],
+      "--clustering-interval-overlap": [
+        "0.8",
+        "0.1"
+      ],
+      "--clustering-breakend-window": [
+        "10000000",
+        "100"
+      ],
+      "--clustering-size-similarity": [
+        "0.0",
+        "0.9"
+      ],
+      "--autosomal-ref-copy-number": [
+        "2",
+        "3"
+      ],
+      "--combine-variants-distance": [
+        "0",
+        "1000"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "500"
+      ],
+      "--ref-padding": [
+        "1",
+        "10"
+      ],
+      "--max-records-in-ram": [
+        "10000",
+        "1"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:15000-70000"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:45000-55000"
+      ],
+      "--read-filter": [
+        "null",
+        "MappingQualityNotZeroReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "NotDuplicateReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "FirstOfPairReadFilter"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--read-validation-stringency": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--variant-output-filtering": []
+    },
+    "VariantRecalibrator": {
+      "$why": [
+        "--variant is vr_calls.vcf, vr_calls2.vcf (drawn from another seed, on positions of the other parity) or both,",
+        "which MakeFixtures draws as 2,600 and 2,200 annotated calls over two contigs: SNPs, indels, two-allele SNPs,",
+        "MIXED sites and spanning deletions, three quarters from a good cluster. --resource is a set of tagged",
+        "resources: a training and truth set with a known set whose genotypes are sometimes 0/0 (which",
+        "--trust-all-polymorphic decides), the same training set with a bad=true set, training and truth split",
+        "over two files. --use-annotation, --variant and",
+        "--truth-sensitivity-tranche are whole lists ($lists), since a model over one annotation is another model.",
+        "--input-model is the reference's own --output-model over QD MQ FS SOR. The index is held off because a",
+        ".idx records the output's modification time; the command line is held off because it records the date.",
+        "--rscript-file without --dont-run-rscript is refused, the pinned container having no Rscript.",
+        "--input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
+        "and no read, and a reference only rewrites the ##contig lines' assembly.",
+        "--output-model is held absent, and the reason is a-rank-is-not-a-byte's: the report prints every mean,",
+        "covariance and weight at %.16E, and those digits come out of a variational Bayes loop that calls Math.pow",
+        "millions of times. The port's pow is the host libm, which agrees with HotSpot's intrinsic on 99.94% of",
+        "calls (docs/numeric-functions-a-ported-call-site-reaches.md), so a trained model matches the reference's",
+        "to fifteen or sixteen digits and not always to seventeen: two of the first array's rows differed there",
+        "and nowhere else. The scores the recal file carries at four decimals, the tranches and the plotting script",
+        "do not reach those digits and are measured on every row; --input-model reads the reference's own report."
+      ],
+      "$tagged": [
+        "--resource"
+      ],
+      "$lists": [
+        "--variant",
+        "--use-annotation",
+        "--truth-sensitivity-tranche"
+      ],
+      "--variant": [
+        "/work/fixtures/vr_calls.vcf",
+        "/work/fixtures/vr_calls2.vcf",
+        "/work/fixtures/vr_calls.vcf /work/fixtures/vr_calls2.vcf"
+      ],
+      "--resource": [
+        "train,known=false,training=true,truth=true,prior=15.0:/work/fixtures/vr_train.vcf known,known=true,training=false,truth=false,prior=2.0:/work/fixtures/vr_known.vcf",
+        "train,training=true,truth=true,prior=10.0:/work/fixtures/vr_train.vcf bad,bad=true:/work/fixtures/vr_bad.vcf",
+        "train,training=true,truth=false,prior=12.0:/work/fixtures/vr_train.vcf truth,truth=true,known=true,prior=6.0:/work/fixtures/vr_known.vcf"
+      ],
+      "--use-annotation": [
+        "QD MQ FS SOR",
+        "QD FS MQRankSum",
+        "MQ SOR",
+        "AS_QD MQ FS"
+      ],
+      "--truth-sensitivity-tranche": [
+        "100.0 99.9 99.0 90.0",
+        "99.0",
+        "90.0 99.5 100.0"
+      ],
+      "--ignore-filter": [
+        "null",
+        "LowQual"
+      ],
+      "--aggregate": [
+        "null",
+        "/work/fixtures/vr_aggregate.vcf"
+      ],
+      "--output": [
+        "/work/out/vr.recal",
+        "/work/out/vr.recal.vcf.gz"
+      ],
+      "--tranches-file": [
+        "/work/out/vr.tranches"
+      ],
+      "--rscript-file": [
+        "null",
+        "/work/out/vr_plots.R"
+      ],
+      "--dont-run-rscript": [
+        "true",
+        "false"
+      ],
+      "--output-model": [
+        "null"
+      ],
+      "--input-model": [
+        "null",
+        "/work/fixtures/vr_model.report"
+      ],
+      "--max-gaussians": [
+        "8",
+        "4"
+      ],
+      "--max-negative-gaussians": [
+        "2",
+        "1"
+      ],
+      "--max-iterations": [
+        "150",
+        "20"
+      ],
+      "--k-means-iterations": [
+        "100",
+        "5"
+      ],
+      "--standard-deviation-threshold": [
+        "10.0",
+        "4.0"
+      ],
+      "--shrinkage": [
+        "1.0",
+        "0.5"
+      ],
+      "--dirichlet": [
+        "0.001",
+        "0.01"
+      ],
+      "--prior-counts": [
+        "20.0",
+        "5.0"
+      ],
+      "--maximum-training-variants": [
+        "2500000",
+        "400"
+      ],
+      "--minimum-bad-variants": [
+        "1000",
+        "100"
+      ],
+      "--bad-lod-score-cutoff": [
+        "-5.0",
+        "-2.0"
+      ],
+      "--mq-cap-for-logit-jitter-transform": [
+        "0",
+        "60"
+      ],
+      "--mq-jitter": [
+        "0.05",
+        "0.2"
+      ],
+      "--target-titv": [
+        "2.15",
+        "3.0"
+      ],
+      "--max-attempts": [
+        "1",
+        "2"
+      ],
+      "--intervals": [
+        "null",
+        "chr1"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr2:1-300000"
+      ],
+      "--variant-output-filtering": [
+        "null",
+        "CONTAINED"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--reference": [],
+      "--sequence-dictionary": [],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
+    "AnalyzeSaturationMutagenesis": {
+      "$why": [
+        "The amplicon corpus MakeFixtures.saturationMutagenesis writes: a 150-base single-contig",
+        "reference whose ORF is 13-132, and asm.bam, whose reads land in every report type and whose",
+        "variant groups come in threes so the default --min-variant-obs reports them. asm_coord.bam is",
+        "the same reads coordinate-sorted, which paired mode refuses and unpaired mode reads.",
+        "amplicon_alt.fasta differs from the amplicon at two bases, so every read carries two more",
+        "variants against it; the two-exon --orf splices codon 17 out. Each numeric threshold has a",
+        "second value some group of reads crosses: a base at quality 20 (--min-q), a 20-base",
+        "high-quality run (--min-length), a change four bases into a read (--min-flanking-length),",
+        "MAPQ 20 reads (--min-mapq), singleton variants (--min-variant-obs), and a 35-base",
+        "supplementary alignment (--min-alt-length). The second --codon-translation is the vertebrate",
+        "mitochondrial code, which renames four codons.",
+        "-L and -XL are on the amplicon's contig: the tool bounds nothing with them, but they are still",
+        "resolved against the dictionary, so the shared chr1 values would only measure that refusal.",
+        "--read-index is held out: neither BAM has an index.",
+        "--write-rejected-reads is held at false: GATK writes BAMs asynchronously, and a read rejected",
+        "before its report exists is added to the rejected BAM twice, once tagged XX:unmapped and then,",
+        "after processReport retags the same object XX:lowQ, again. Whether the first copy was encoded",
+        "before the retag depends on the writer thread, so the reference itself answers either way from",
+        "run to run (4 of 18 runs under load kept XX:unmapped on dup1 and qc1)."
+      ],
+      "--input": [
+        "/work/fixtures/asm.bam",
+        "/work/fixtures/asm_coord.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/amplicon.fasta",
+        "/work/fixtures/amplicon_alt.fasta"
+      ],
+      "--orf": [
+        "13-132",
+        "13-60,64-132"
+      ],
+      "--output-file-prefix": [
+        "/work/out/asm",
+        "/work/out/asm2"
+      ],
+      "--codon-translation": [
+        "KNKNTTTTRSRSIIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVVXYXYSSSSXCWCLFLF",
+        "KNKNTTTTXSXSMIMIQHQHPPPPRRRRLLLLEDEDAAAAGGGGVVVVXYXYSSSSWCWCLFLF"
+      ],
+      "--min-q": [
+        "30",
+        "20"
+      ],
+      "--min-length": [
+        "15",
+        "30"
+      ],
+      "--min-flanking-length": [
+        "2",
+        "5"
+      ],
+      "--min-mapq": [
+        "4",
+        "30"
+      ],
+      "--min-variant-obs": [
+        "3",
+        "1"
+      ],
+      "--min-alt-length": [
+        "15",
+        "40"
+      ],
+      "--intervals": [
+        "amp:1-150",
+        "amp:20-60"
+      ],
+      "--exclude-intervals": [
+        "amp:1-10",
+        "amp:100-110"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/amplicon.dict",
+        "/work/fixtures/amplicon_plus.dict"
+      ],
+      "--read-index": [],
+      "--write-rejected-reads": [
+        "false"
+      ]
+    },
+    "LocalAssembler": {
+      "$why": [
+        "The corpus MakeFixtures.localAssembler writes: a 3000-base contig la drawn from a generator whose",
+        "state carries forward, and la.bam, whose reads make two bubbles (a substitution and a 60-base",
+        "deletion), a gap an N leaves, a thin contig, an overrun pair, mates outside every padded interval,",
+        "duplicates and a secondary alignment. la2.bam is the same reads without the two bubbles.",
+        "Each numeric argument has a second value some group of reads crosses: --q-min 35 drops the",
+        "quality-30 reads, --min-thin-observations 2 keeps the two-read contig, --min-gapfill-count 6 leaves",
+        "the gap open, --min-sv-size 100 finds the deletion trivially different, --too-many-traversals 1",
+        "and --too-many-scaffolds 1 take the two fallbacks, and --pair-padding 0 leaves the far mates out",
+        "(and refuses the two intervals -XL splits, which no longer touch).",
+        "--gfa-file is plain text in both values: its O lines are written in the order of a HashSet keyed by",
+        "identity hashes, which run_array.py sorts, and a gzipped file could only be compared as a digest.",
+        "--fasta-file is plain and gzipped: the scaffolds are written sorted, so the gzip bytes are compared.",
+        "-L and -XL are on la; --reference is given or not, since the tool reads only its dictionary.",
+        "--no-scaffolding is listed false first, so the rows it fills write the sorted scaffolds.",
+        "--read-index is held out: each of the two inputs has its own index beside it, and one named index",
+        "would belong to only one of them."
+      ],
+      "--input": [
+        "/work/fixtures/la.bam",
+        "/work/fixtures/la2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/la_ref.fasta",
+        "null"
+      ],
+      "--sequence-dictionary": [
+        "/work/fixtures/la_ref.dict",
+        "/work/fixtures/la_plus.dict"
+      ],
+      "--assembly-name": [
+        "la",
+        "asm2"
+      ],
+      "--gfa-file": [
+        "/work/out/la.gfa",
+        "/work/out/graph.gfa"
+      ],
+      "--fasta-file": [
+        "/work/out/la.fa",
+        "/work/out/la.fa.gz"
+      ],
+      "--q-min": [
+        "25",
+        "35"
+      ],
+      "--min-thin-observations": [
+        "4",
+        "2"
+      ],
+      "--min-gapfill-count": [
+        "3",
+        "6"
+      ],
+      "--no-scaffolding": [
+        "false",
+        "true"
+      ],
+      "--too-many-traversals": [
+        "100000",
+        "1"
+      ],
+      "--too-many-scaffolds": [
+        "50000",
+        "1"
+      ],
+      "--min-sv-size": [
+        "50",
+        "100"
+      ],
+      "--pair-padding": [
+        "1000",
+        "0"
+      ],
+      "--intervals": [
+        "la:1000-1500",
+        "la:1100-1300"
+      ],
+      "--exclude-intervals": [
+        "la:1-10",
+        "la:1200-1210"
+      ],
+      "--read-index": []
+    },
+    "AlleleFrequencyQC": {
+      "$output_on_failure": true,
+      "$tagged": [
+        "--eval"
+      ],
+      "--eval": [
+        "calls:/work/fixtures/afqc_eval.vcf thousand_genomes:/work/fixtures/afqc_1kg.vcf",
+        "calls:/work/fixtures/afqc_eval.vcf thousand_genomes:/work/fixtures/afqc_1kg2.vcf",
+        "calls:/work/fixtures/afqc_eval.vcf",
+        "thousand_genomes:/work/fixtures/afqc_1kg.vcf calls:/work/fixtures/afqc_eval.vcf",
+        "calls:/work/fixtures/afqc_eval_noalias.vcf thousand_genomes:/work/fixtures/afqc_1kg.vcf"
+      ],
+      "--output": [
+        "/work/out/afqc.txt",
+        "/work/out/afqc_metrics.txt"
+      ],
+      "--debugFile": [
+        "null",
+        "/work/out/afqc_report.txt"
+      ],
+      "--allowedVariance": [
+        "0.01",
+        "0.1",
+        "0.001"
+      ],
+      "--threshold": [
+        "0.05",
+        "0.99"
+      ],
+      "--reference": [
+        "/work/fixtures/cgv_ref.fasta"
+      ],
+      "--comparison": [
+        "/work/fixtures/afqc_1kg.vcf",
+        "/work/fixtures/afqc_1kg2.vcf",
+        "null"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/gg_dbsnp.vcf"
+      ],
+      "--gold-standard": [
+        "null",
+        "/work/fixtures/afqc_1kg.vcf"
+      ],
+      "--known-cnvs": [
+        "null",
+        "/work/fixtures/ve_cnv.bed"
+      ],
+      "--strat-intervals": [
+        "null",
+        "/work/fixtures/ve_strat.bed"
+      ],
+      "--stratification-module": [
+        "null",
+        "Sample",
+        "IntervalStratification"
+      ],
+      "--eval-module": [
+        "null",
+        "VariantSummary",
+        "IndelSummary"
+      ],
+      "--selectExps": [
+        "QD > 5.0",
+        "DP < 30"
+      ],
+      "--selectNames": [
+        "hq",
+        "lowdp"
+      ],
+      "--knownNames": [
+        "null",
+        "comp"
+      ],
+      "--sample": [
+        "null",
+        "sA"
+      ],
+      "--sample-ploidy": [
+        "2",
+        "1"
+      ],
+      "--combine-variants-distance": [
+        "0",
+        "50"
+      ],
+      "--max-distance": [
+        "2147483647",
+        "100"
+      ],
+      "--min-phase-quality": [
+        "10.0",
+        "30.0"
+      ],
+      "--mendelian-violation-qual-threshold": [
+        "50.0",
+        "10.0"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:395-445",
+        "chr2:1-60"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:405-425"
+      ],
+      "--list": [
+        "false"
+      ],
+      "--pedigree": [],
+      "--ancestral-alignments": [],
+      "--input": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--variant-output-filtering": [],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "$why": [
+        "AlleleFrequencyQC is VariantEval with its modules and stratifiers preset, so every VariantEval",
+        "argument is still declared and still parsed, and --eval-module, --stratification-module and",
+        "the two do-not-use flags are varied to show that the presets override them. -O is the metrics",
+        "file; --debugFile is where the report goes, and null sends it to a temporary file nothing",
+        "compares. --eval is tagged: the Thousand Genomes set is given again as a second eval track,",
+        "which is what puts two rows in each allele-frequency bin, in either order; the call set alone",
+        "leaves one row per bin and a statistic of nought; afqc_eval_noalias.vcf has no ##sampleAlias",
+        "line and is the NullPointerException the tool raises before VariantEval starts. --comparison",
+        "null leaves the comp-AF stratifier without a comp. Every run that gets as far as the plot",
+        "ends on the Rscript user error, since the image carries no R, after the metrics are written.",
+        "--pedigree, --ancestral-alignments and --list are held out as for VariantEval."
+      ]
+    },
+    "GroundTruthScorer": {
+      "--input": [
+        "/work/fixtures/gt.bam",
+        "/work/fixtures/flow_snv.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gt.csv",
+        "/work/out/gt.csv.gz"
+      ],
+      "--report-file": [
+        "null",
+        "/work/out/gt.report"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--genome-prior": [
+        "null",
+        "/work/fixtures/gt_prior.csv",
+        "/work/fixtures/gt_prior_short.csv"
+      ],
+      "--features-file": [
+        "null",
+        "/work/fixtures/gt_features.vcf"
+      ],
+      "--normalized-score-threshold": [
+        "-0.1",
+        "-0.05",
+        "-1.0"
+      ],
+      "--quality-percentiles": [
+        "10,25,50,75,90",
+        "5,95"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:650-700"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE"
+      ],
+      "--pair-hmm-results-file": [],
+      "--dragstr-params-path": [],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "$why": [
+        "gt.bam is the tool's own corpus: substitutions at shared sites, an insertion and a deletion that",
+        "make cycle skips, a left, a right and a two-sided soft clip (only a one-sided clip is clipped),",
+        "reverse reads and an rq tag that is a float, an integer or absent; flow_snv.bam is the mapper's.",
+        "--likelihood-calculation-engine must be FlowBased: PairHMM is the refusal",
+        "onTraversalStart makes before the CSV is opened. gt_prior_short.csv is the index the prior",
+        "reader runs past. --report-file is never paired with --omit-zeros-from-report false: the",
+        "four-level table is then five million rows whatever the reads say, so the pair measures the",
+        "writer's patience; the constraint says so. --pair-hmm-results-file and --dragstr-params-path",
+        "belong to the PairHMM engine, which the tool refuses, and the implementation is held at its",
+        "default for the same reason.",
+        "--gt-no-output, --add-mean-call and the other switches name false first, so the rows the generator fills write the CSV."
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--add-mean-call": [
+        "false",
+        "true"
+      ],
+      "--omit-zeros-from-report": [
+        "true",
+        "false"
+      ],
+      "--use-softclipped-bases": [
+        "false",
+        "true"
+      ],
+      "--exclude-zero-flows": [
+        "false",
+        "true"
+      ]
+    },
+    "GroundTruthReadsBuilder": {
+      "--input": [
+        "/work/fixtures/gt.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gtrb.csv",
+        "/work/out/gtrb.csv.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--maternal-ref": [
+        "/work/fixtures/gt_maternal.fasta"
+      ],
+      "--paternal-ref": [
+        "/work/fixtures/gt_paternal.fasta"
+      ],
+      "--ancestral-translators-base-path": [
+        "/work/fixtures/gtrb/",
+        "/work/fixtures/gtrb_late/"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--subsampling-ratio": [
+        "1.0"
+      ],
+      "--max-output-reads": [
+        "20000000",
+        "5",
+        "0"
+      ],
+      "--output-flow-length": [
+        "0",
+        "120"
+      ],
+      "--prepend-sequence": [
+        "null",
+        "TTTT"
+      ],
+      "--append-sequence": [
+        "null",
+        "CCCC"
+      ],
+      "--min-mq": [
+        "0.0",
+        "30.0"
+      ],
+      "--max-rq": [
+        "0.0",
+        "12.0"
+      ],
+      "--min-haplotype-score": [
+        "0.0",
+        "-3.0"
+      ],
+      "--min-haplotype-score-delta": [
+        "0.0",
+        "0.5"
+      ],
+      "--haplotype-output-padding-size": [
+        "8",
+        "0",
+        "20"
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--gt-debug": [
+        "false"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:650-760"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE"
+      ],
+      "--pair-hmm-results-file": [],
+      "--dragstr-params-path": [],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "$why": [
+        "gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820,",
+        "gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between",
+        "them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one.",
+        "The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands.",
+        "--subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any",
+        "other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug",
+        "is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after",
+        "opening both ancestral references."
+      ]
+    },
     "ModelSegments": {
       "$why": [
         "ms/ holds two case samples (tumor, tumorB) and a matched normal over one two-contig dictionary,",
@@ -6169,7 +7092,7 @@
         "interval list of segments. The copy ratios and the allele fractions step at different bins, so",
         "each data mode segments differently, and the first contig has more bins than the default",
         "kernel-approximation dimension, so the subsample is drawn.",
-        "--denoised-copy-ratios and --allelic-counts are $repeated: a value of two words is the",
+        "--denoised-copy-ratios and --allelic-counts are $lists: a value of two words is the",
         "argument given twice, which is the multi-sample mode (segmentation only, one interval list).",
         "Each takes one sample, two samples, or null, so a row can be copy-ratio only, allele-fraction",
         "only, or both. The pairs that refuse are measured refusals: two files against one, and null",
@@ -6183,10 +7106,10 @@
         "out-of-range neighbours: a covering array fills every other cell with the first value, and a",
         "refusing value paired with every other argument would turn most rows into the parser's",
         "refusal. The chain lengths stay short enough that a row runs in seconds and the burn-in",
-        "values stay below both sample counts. --window-size is $repeated too: three sizes, and one",
+        "values stay below both sample counts. --window-size is $lists too: three sizes, and one",
         "size named twice, which the tool deduplicates. --genotyping-base-error-rate takes 0, which calls every site heterozygous, and 0.2, which calls fewer."
       ],
-      "$repeated": [
+      "$lists": [
         "--denoised-copy-ratios",
         "--allelic-counts",
         "--window-size"
@@ -6421,6 +7344,116 @@
         "--track-name": "RM"
       },
       "why": "sv_overlap.tsv names the SD track, which RM alone does not register."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_noheader.fasta",
+        "--output": "null"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_noheader.fasta",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_ref.fa.gz",
+        "--output": "null"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/bwa_ref.fa.gz",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "BwaMemIndexImageCreator"
+      ],
+      "forbid": {
+        "--output": "null",
+        "--tmp-dir": "/work/tmp-missing"
+      },
+      "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "CONTAINED",
+        "--intervals": "null"
+      },
+      "why": "An output filtering mode without -L is refused while the command line is checked."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "QD FS MQRankSum"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "MQ SOR"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "VariantRecalibrator"
+      ],
+      "forbid": {
+        "--input-model": "/work/fixtures/vr_model.report",
+        "--use-annotation": "AS_QD MQ FS"
+      },
+      "why": "The serialised model is over QD, MQ, FS and SOR, and any other set of annotations is refused as the model is read."
+    },
+    {
+      "tools": [
+        "GroundTruthScorer"
+      ],
+      "forbid": {
+        "--report-file": "/work/out/gt.report",
+        "--omit-zeros-from-report": "false"
+      },
+      "why": "Without omitting zeros the four-level table is five million rows on any input, so every such row would compare a quarter of a gigabyte of zeros."
     }
   ],
   "exclude": {

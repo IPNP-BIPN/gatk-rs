@@ -322,11 +322,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CalculateAverageCombinedAnnotations" => Some(run_calculate_average_combined_annotations),
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
+        "VariantRecalibrator" => Some(run_variant_recalibrator),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
         "SVCluster" => Some(run_sv_cluster),
         "GroupedSVCluster" => Some(run_grouped_sv_cluster),
+        "JointGermlineCNVSegmentation" => Some(run_joint_germline_cnv_segmentation),
         "SVAnnotate" => Some(run_sv_annotate),
         "ReferenceBlockConcordance" => Some(run_reference_block_concordance),
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
@@ -397,11 +399,21 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "AlleleFrequencyQC" => Some(run_allele_frequency_qc),
+        "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
+        "LocalAssembler" => Some(run_local_assembler),
+        "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
+        "GroundTruthScorer" => Some(run_ground_truth_scorer),
+        "GroundTruthReadsBuilder" => Some(run_ground_truth_reads_builder),
         _ => None,
     }
 }
 
 /// The runners, each of which needs the parsed command line rather than the raw one.
+fn run_bwa_mem_index_image_creator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::bwa_mem_index_image_creator(&parsed("BwaMemIndexImageCreator", args)?)
+}
+
 fn run_apply_bqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_bqsr(&parsed("ApplyBQSR", args)?)
 }
@@ -502,12 +514,32 @@ fn run_gnarly_genotyper(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::gnarly_genotyper(&parsed("GnarlyGenotyper", args)?)
 }
 
+fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::ground_truth_reads_builder(&parsed("GroundTruthReadsBuilder", args)?)
+}
+
+fn run_ground_truth_scorer(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::ground_truth_scorer(&parsed("GroundTruthScorer", args)?)
+}
+
+fn run_allele_frequency_qc(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::allele_frequency_qc(&parsed("AlleleFrequencyQC", args)?)
+}
+
 fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_eval(&parsed("VariantEval", args)?)
 }
 
 fn run_variant_annotator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_annotator(&parsed("VariantAnnotator", args)?)
+}
+
+fn run_local_assembler(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::local_assembler(&parsed("LocalAssembler", args)?)
+}
+
+fn run_analyze_saturation_mutagenesis(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::analyze_saturation_mutagenesis(&parsed("AnalyzeSaturationMutagenesis", args)?)
 }
 
 fn run_reblock_gvcf(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -612,6 +644,10 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::apply_vqsr(&parsed("ApplyVQSR", args)?)
 }
 
+fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
+}
+
 fn run_vcf_comparator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::vcf_comparator(&parsed("VCFComparator", args)?)
 }
@@ -630,6 +666,10 @@ fn run_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_grouped_sv_cluster(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::grouped_sv_cluster(&parsed("GroupedSVCluster", args)?)
+}
+
+fn run_joint_germline_cnv_segmentation(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::joint_germline_cnv_segmentation(&parsed("JointGermlineCNVSegmentation", args)?)
 }
 
 fn run_sv_annotate(args: &[String]) -> Result<Option<String>, Thrown> {

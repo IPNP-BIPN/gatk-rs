@@ -95,7 +95,7 @@ def row_arguments(row, held):
     return args
 
 
-def as_cli(args, positional=(), tagged=(), repeated=()):
+def as_cli(args, positional=(), tagged=(), lists=()):
     """Barclay long form: `--name value`, which is the syntax the claim is defined against.
 
     A POSITIONAL argument has no name to write, so it cannot come out of the array at all: every
@@ -115,11 +115,10 @@ def as_cli(args, positional=(), tagged=(), repeated=()):
                 tag, _, path = word.partition(":")
                 out += [f"{name}:{tag}", path]
             continue
-        if name in repeated:
-            # One value naming several values of a LIST argument: each word is written as its
-            # own `--name word`. `ModelSegments` runs its multi-sample mode only when
-            # `--denoised-copy-ratios` or `--allelic-counts` is given more than once, and a row
-            # assigns one value per argument.
+        if name in lists:
+            # One value naming a whole list, each word its own `--name word`: `VariantRecalibrator`
+            # models every `--use-annotation` it is given together, so a list of one is a
+            # different model and not a smaller sample of the same one.
             for word in value.split():
                 out += [name, word]
             continue
@@ -160,13 +159,13 @@ def clear(out_dir):
             pass
 
 
-def run_oracle(tool, row_args, workdir, positional=(), tagged=(), repeated=()):
+def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     """Run one row in the container. Returns (exit code, output as text or digest, error line)."""
     out_dir = workdir / "out"
     out_dir.mkdir(exist_ok=True)
     clear(out_dir)
 
-    cli = " ".join(as_cli(row_args, positional, tagged, repeated))
+    cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
     command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
@@ -182,12 +181,12 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), repeated=()):
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout),
         first_error(result.stderr or result.stdout),
     )
 
 
-def read_output(out_dir):
+def read_output(out_dir, row_args=()):
     """The row's output, as text where it is text and as a digest where it is not.
 
     An index is binary, so hashing it is what keeps the row measurable: the comparison needs to
@@ -208,12 +207,77 @@ def read_output(out_dir):
         if name.endswith(".zip"):
             parts.append(f"{name}: {zip_members(raw)}")
             continue
+        if unordered_traversals(name, row_args):
+            parts.append(f"{name}: {traversals_unordered(raw)}")
+            continue
+        if name.endswith(".img"):
+            masked = bwa_image_masked(raw)
+            if masked is not None:
+                digest = hashlib.sha256(masked).hexdigest()
+                parts.append(f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)")
+                continue
         try:
             parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
         except UnicodeDecodeError:
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def unordered_traversals(name, row_args):
+    """Whether this file is `LocalAssembler` output whose record order is the JVM's.
+
+    The tool keeps its traversals in a `HashSet<Traversal>` whose hash is the list hash of the
+    contigs', and a contig has no `hashCode` of its own: it is an identity hash. So the GFA's `O`
+    lines, and under `--no-scaffolding` the FASTA's records, come out in an order (and a traversal
+    found from both of its ends in an orientation) that changes from one JVM to the next. The
+    scaffolds of the default FASTA are sorted by contig id before they are written, so that file
+    is compared byte for byte, gzipped or not.
+    """
+    if name.endswith(".gfa"):
+        return True
+    no_scaffolding = any(arg == "--no-scaffolding=true" for arg in row_args)
+    return no_scaffolding and (name.endswith(".fa") or name.endswith(".fa.gz"))
+
+
+def traversals_unordered(raw):
+    """A GFA's `O` lines, or a traversal FASTA's records, each in one orientation and sorted.
+
+    A traversal read backwards is the same traversal: its contigs reversed, each in the other
+    orientation, and its sequence reverse-complemented. The lesser of the two spellings stands for
+    both. A FASTA record's `_t<n>` counter follows the order, so it is replaced by `_t*`.
+    """
+    import gzip
+
+    data = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    text = data.decode("utf-8")
+    lines = text.split("\n")
+    if lines and lines[0].startswith("H\t"):
+        paths = [line for line in lines if line.startswith("O\t")]
+        others = [line for line in lines if not line.startswith("O\t")]
+        flip = {"+": "-", "-": "+"}
+
+        def canonical(line):
+            steps = line[len("O\t*\t"):].split(" ")
+            reverse = [step[:-1] + flip[step[-1]] for step in reversed(steps)]
+            return "O\t*\t" + min(" ".join(steps), " ".join(reverse))
+
+        body = [line for line in others if line != ""]
+        return "UNORDERED " + "\n".join(body + sorted(canonical(line) for line in paths))
+    complement = str.maketrans("ACGTN", "TGCAN")
+    records = []
+    for header, sequence in zip(lines[0::2], lines[1::2]):
+        name, _, path = header.partition(" ")
+        prefix = re.sub(r"_t\d+$", "_t*", name)
+        steps = path.split("+")
+        reverse = "+".join(
+            step[:-2] if step.endswith("RC") else step + "RC" for step in reversed(steps)
+        )
+        forward = (path, sequence)
+        backward = (reverse, sequence.translate(complement)[::-1])
+        chosen = min(forward, backward)
+        records.append(f"{prefix} {chosen[0]}\n{chosen[1]}")
+    return "UNORDERED " + "\n".join(sorted(records))
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
@@ -278,6 +342,47 @@ def zip_members(raw):
     return "ZIP " + " ".join(rendered)
 
 
+def bwa_image_masked(raw):
+    """A BWA-MEM index image with its addresses and padding zeroed, or None if it is not one.
+
+    `BwaMemIndexImageCreator` writes the block `bwa_idx2mem` lays out, which copies BWA's C
+    structures as they stand: the `sa` pointer of `bwt_t`, the `anns`, `ambs` and `fp_pac` pointers
+    of `bntseq_t` and the `name` and `anno` pointers of every `bntann1_t` are addresses of the
+    process that wrote them, and two runs of the reference already differ there
+    (docs/pointers-that-reach-the-output.md). Which bytes they are is known from the layout, so
+    they are masked here, with the structures' padding, and every other byte -- the transform, the
+    occurrence counts, the sampled suffix array, the contigs, the holes and the packed bases -- is
+    compared.
+    """
+    import struct
+
+    try:
+        bwt_size = struct.unpack_from("<Q", raw, 56)[0]
+        n_sa = struct.unpack_from("<Q", raw, 1104)[0]
+        bns = 1120 + bwt_size * 4 + n_sa * 8
+        n_seqs = struct.unpack_from("<i", raw, bns + 8)[0]
+        n_holes = struct.unpack_from("<i", raw, bns + 24)[0]
+    except struct.error:
+        return None
+    if n_seqs < 0 or n_holes < 0:
+        return None
+    # bwt_t: the `bwt` pointer, the padding after `sa_intv`, the `sa` pointer. bntseq_t: `anns`,
+    # then the padding after `n_holes`, `ambs` and `fp_pac`.
+    fields = [(64, 72), (1100, 1104), (1112, 1120), (bns + 16, bns + 24), (bns + 28, bns + 48)]
+    holes = bns + 48
+    # bntamb1_t: the three bytes of padding after `amb`.
+    fields += [(holes + 16 * h + 13, holes + 16 * h + 16) for h in range(n_holes)]
+    anns = holes + 16 * n_holes
+    # bntann1_t: `name` and `anno`.
+    fields += [(anns + 40 * a + 24, anns + 40 * a + 40) for a in range(n_seqs)]
+    if any(end > len(raw) for _, end in fields):
+        return None
+    masked = bytearray(raw)
+    for start, end in fields:
+        masked[start:end] = bytes(end - start)
+    return bytes(masked)
+
+
 def histogram_columns_sorted(text):
     """A metrics file whose histogram columns are put in label order, the bin column first.
 
@@ -326,7 +431,7 @@ def first_error(text):
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 
-def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), repeated=()):
+def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), lists=()):
     """Run the port binary on the same row, IN THE CONTAINER, at the same paths.
 
     Not on the host, and the reason is the output itself: a Tribble index records the file it was
@@ -345,7 +450,7 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), repeated
     clear(out_dir)
 
     binary = Path(binary).resolve()
-    cli = " ".join(as_cli(row_args, positional, tagged, repeated))
+    cli = " ".join(as_cli(row_args, positional, tagged, lists))
     command = f"rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && /work/port-binary/{binary.name} {tool} {cli}"
     result = subprocess.run(
         [
@@ -360,7 +465,7 @@ def run_port(binary, tool, row_args, workdir, positional=(), tagged=(), repeated
     )
     return (
         result.returncode,
-        with_stdout(read_output(out_dir), result.stdout),
+        with_stdout(read_output(out_dir, row_args), result.stdout),
         first_error(result.stderr or result.stdout),
     )
 
@@ -379,9 +484,16 @@ def with_stdout(text, stdout):
     return f"{text}\n{printed}" if text else printed
 
 
-def outcome(code, text, error):
-    """One row's result, as the thing that will be compared: an output, or a refusal."""
+def outcome(code, text, error, keep_output=False):
+    """One row's result, as the thing that will be compared: an output, or a refusal.
+
+    A refusal is its exit status and its line, and for most tools that is all a failed run leaves
+    worth comparing. A tool under `$output_on_failure` fails AFTER writing its answer, so the files
+    it left are compared with the refusal rather than thrown away with it.
+    """
     if code != 0:
+        if keep_output and text:
+            return f"EXIT={code} {error}\n{text}"
         return f"EXIT={code} {error}"
     return text
 
@@ -460,6 +572,21 @@ def positional_values(tool):
     return list(fixtures.get("per_tool", {}).get(tool, {}).get("$positional", []))
 
 
+def output_on_failure(tool):
+    """Whether a failed row's output files are part of its answer, per tool under
+    `$output_on_failure`.
+
+    `AlleleFrequencyQC` writes its metrics and only then runs an R script, which the image cannot,
+    so EVERY row it accepts ends on a user error. Comparing the error alone would count twenty rows
+    matched without reading the statistic once.
+    """
+    path = REPO / "tools" / "coverage" / "fixtures.json"
+    if not path.exists():
+        return False
+    fixtures = json.loads(path.read_text())
+    return bool(fixtures.get("per_tool", {}).get(tool, {}).get("$output_on_failure", False))
+
+
 def tagged_arguments(tool):
     """The arguments whose fixture values are `tag:path` words, per tool under `$tagged`.
 
@@ -474,17 +601,19 @@ def tagged_arguments(tool):
     return tuple(fixtures.get("per_tool", {}).get(tool, {}).get("$tagged", []))
 
 
-def repeated_arguments(tool):
-    """The list arguments whose fixture values are several words, per tool under `$repeated`.
+def list_arguments(tool):
+    """The arguments whose fixture values are whole lists, per tool under `$lists`.
 
-    Each word of such a value becomes one `--name word`, so one value stands for the argument given
-    several times. It is `$tagged` without the tags.
+    Barclay collects a repeated argument into one list, and the array assigns one value per
+    argument, so a list the tool reads as a unit (the annotations a model is built over, the
+    sensitivities a tranche file is cut at) can only be varied as a unit: each value is its
+    elements separated by spaces, and each element is written as its own `--name element`.
     """
     path = REPO / "tools" / "coverage" / "fixtures.json"
     if not path.exists():
         return ()
     fixtures = json.loads(path.read_text())
-    return tuple(fixtures.get("per_tool", {}).get(tool, {}).get("$repeated", []))
+    return tuple(fixtures.get("per_tool", {}).get(tool, {}).get("$lists", []))
 
 
 def run_rows(options, array, held, workdir):
@@ -492,7 +621,8 @@ def run_rows(options, array, held, workdir):
     rows, matched, rejected = [], 0, 0
     positional = positional_values(options.tool)
     tagged = tagged_arguments(options.tool)
-    repeated = repeated_arguments(options.tool)
+    keep_output = output_on_failure(options.tool)
+    lists = list_arguments(options.tool)
     outputs = set()
     if True:  # keeps the body's indentation while it lives in its own function
         if FIXTURES_DIR is None:
@@ -500,18 +630,20 @@ def run_rows(options, array, held, workdir):
         (workdir / "tmp").mkdir(exist_ok=True)
         for row in array["array"]:
             args = row_arguments(row, held)
-            code, text, error = run_oracle(options.tool, args, workdir, positional, tagged, repeated)
-            reference = outcome(code, text, error)
+            code, text, error = run_oracle(options.tool, args, workdir, positional, tagged, lists)
+            reference = outcome(code, text, error, keep_output)
             if code != 0:
                 rejected += 1
+                if keep_output and text:
+                    outputs.add(reference)
             else:
                 outputs.add(reference)
             record = {"row": row["row"], "arguments": args, "reference": reference}
             if options.port:
                 port_code, port_text, port_error = run_port(
-                    options.port, options.tool, args, workdir, positional, tagged, repeated
+                    options.port, options.tool, args, workdir, positional, tagged, lists
                 )
-                ours = outcome(port_code, port_text, port_error)
+                ours = outcome(port_code, port_text, port_error, keep_output)
                 record["port"] = ours
                 record["matched"] = ours == reference
                 matched += 1 if ours == reference else 0

@@ -1,7 +1,7 @@
 //! `LocalAssembler`: the graph it writes and the sequences it reads off it.
 //!
-//! The de Bruijn assembly itself is not ported. What is ported is everything the two output files
-//! are made of: the kmer size the overlaps rest on, a contig's orientation and its reverse
+//! The de Bruijn assembly lives in `local_assembler_engine`. What is here is everything the two
+//! output files are made of: the kmer size the overlaps rest on, a contig's orientation and its reverse
 //! complement, the sequence a traversal spells out, and the shape of every line in the GFA and
 //! the FASTA.
 //!
