@@ -1195,6 +1195,13 @@ public class MakeFixtures {
             } else if (n == 6) {
                 record.setAttribute("rq", 1);
             }
+            if (n % 6 == 2) {
+                record.setAttribute("tm", "Q");
+            } else if (n % 6 == 4) {
+                record.setAttribute("tm", "Z");
+            } else if (n == 9) {
+                record.setAttribute("tm", "AQ");
+            }
             records.add(record);
         }
         records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
@@ -1228,6 +1235,32 @@ public class MakeFixtures {
                     .append(ref == 'A' ? 'C' : 'A').append("\t50\tPASS\t.\n");
         }
         Files.writeString(dir.resolve("gt_features.vcf"), vcf.toString(), StandardCharsets.UTF_8);
+        // GroundTruthReadsBuilder's two ancestors of chr1: the maternal one carries substitutions
+        // and keeps every position, the paternal one carries a two-base insertion after 760 and
+        // a translation table that moves every later position two to the right. The tables sit
+        // under a base path the tool appends `<ancestor>.<contig>.csv` to, header line first.
+        final StringBuilder maternal = new StringBuilder(bases);
+        for (final int at : new int[] {650, 700, 820}) {
+            maternal.setCharAt(at - 1, maternal.charAt(at - 1) == 'A' ? 'G' : 'A');
+        }
+        final String paternal = bases.substring(0, 760) + "TT" + bases.substring(760);
+        for (final String[] ancestor : new String[][] {{"maternal", maternal.toString()}, {"paternal", paternal}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve("gt_" + ancestor[0] + ".fasta"))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                writer.startSequence("chr1_" + ancestor[0]).appendBases(ancestor[1]);
+            }
+        }
+        Files.createDirectories(dir.resolve("gtrb"));
+        Files.writeString(dir.resolve("gtrb/maternal.chr1.csv"), "pos,offset\n1,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb/paternal.chr1.csv"), "pos,offset\n1,0\n761,2\n", StandardCharsets.UTF_8);
+        // A second base whose tables start at 620, so the reads before it index the table at -1.
+        Files.createDirectories(dir.resolve("gtrb_late"));
+        Files.writeString(dir.resolve("gtrb_late/maternal.chr1.csv"), "pos,offset\n620,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb_late/paternal.chr1.csv"), "pos,offset\n620,0\n761,2\n", StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("gt_features.vcf").toString()});
     }
