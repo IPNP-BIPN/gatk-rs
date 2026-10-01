@@ -1105,6 +1105,166 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * What GroundTruthScorer reads, over mutect_ref.fasta. gt.bam holds Ultima reads under the two
+     * flow orders of flow.bam, carrying substitutions at shared sites, one insertion and one
+     * deletion (cycle-skip material), a left, a right and a two-sided soft clip, reverse reads,
+     * and an rq tag that is a float on some reads and an integer on one. gt_prior.csv is a genome
+     * prior, one row per base with a hundred and two columns; gt_prior_short.csv has too few
+     * columns. gt_features.vcf (indexed) holds SNPs at the substitution sites and elsewhere, so the
+     * feature filter keeps some reads and drops others.
+     */
+    static void groundTruthFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final int[] sites = {612, 640, 677, 703, 741, 779, 820};
+        final java.util.Random random = new java.util.Random(20260930L);
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int n = 0; n < 36; n++) {
+            final int start = 600 + n * 7;
+            final int length = 36 + random.nextInt(20);
+            final StringBuilder read = new StringBuilder(bases.substring(start - 1, start - 1 + length));
+            for (final int site : sites) {
+                if (site >= start + 3 && site < start + length - 3 && random.nextInt(3) == 0) {
+                    final int at = site - start;
+                    final char was = read.charAt(at);
+                    read.setCharAt(at, was == 'A' ? 'C' : was == 'C' ? 'G' : was == 'G' ? 'T' : 'A');
+                }
+            }
+            String cigar = length + "M";
+            String sequence = read.toString();
+            int alignmentStart = start;
+            if (n == 3) {
+                cigar = "4S" + (length - 4) + "M";
+                alignmentStart = start + 4;
+            } else if (n == 5) {
+                cigar = (length - 6) + "M6S";
+            } else if (n == 8) {
+                cigar = "3S" + (length - 6) + "M3S";
+                alignmentStart = start + 3;
+            } else if (n == 11) {
+                sequence = read.substring(0, 15) + "GG" + read.substring(15);
+                cigar = "15M2I" + (length - 15) + "M";
+            } else if (n == 14) {
+                sequence = read.substring(0, 12) + read.substring(15);
+                cigar = "12M3D" + (length - 15) + "M";
+            } else if (n == 17) {
+                cigar = "5S" + (length - 5) + "M";
+                alignmentStart = start + 5;
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("G:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(alignmentStart);
+            record.setCigarString(cigar);
+            record.setReadString(sequence);
+            final int total = sequence.length();
+            final byte[] quals = new byte[total];
+            final byte[] tp = new byte[total];
+            for (int i = 0; i < total; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : -1);
+                quals[i] = (byte) (tp[i] == 0 ? 25 + random.nextInt(16) : 5 + random.nextInt(20));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(n % 5 == 0 ? 20 : 60);
+            record.setReadNegativeStrandFlag(n % 3 == 1);
+            record.setAttribute("RG", n % 4 == 2 ? "rgV" : "rgU");
+            record.setAttribute("tp", tp);
+            if (n % 4 == 1) {
+                record.setAttribute("rq", 0.9f + random.nextInt(1000) / 10000f);
+            } else if (n == 6) {
+                record.setAttribute("rq", 1);
+            }
+            if (n % 6 == 2) {
+                record.setAttribute("tm", "Q");
+            } else if (n % 6 == 4) {
+                record.setAttribute("tm", "Z");
+            } else if (n == 9) {
+                record.setAttribute("tm", "AQ");
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("gt.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        final StringBuilder prior = new StringBuilder();
+        final StringBuilder shortPrior = new StringBuilder();
+        for (final char base : new char[] {'T', 'G', 'C', 'A'}) {
+            prior.append(base);
+            shortPrior.append(base);
+            for (int i = 0; i <= 101; i++) {
+                final long count = i == 0 ? 400 + random.nextInt(200) : Math.max(1, 1000000 >> (2 * i)) + random.nextInt(50);
+                prior.append(',').append(count);
+                if (i < 30) {
+                    shortPrior.append(',').append(count);
+                }
+            }
+            prior.append('\n');
+            shortPrior.append('\n');
+        }
+        Files.writeString(dir.resolve("gt_prior.csv"), prior.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gt_prior_short.csv"), shortPrior.toString(), StandardCharsets.UTF_8);
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n##contig=<ID=chr1,length="
+                + bases.length() + ">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        for (final int site : new int[] {640, 703, 760, 820}) {
+            final char ref = bases.charAt(site - 1);
+            vcf.append("chr1\t").append(site).append("\t.\t").append(ref).append('\t')
+                    .append(ref == 'A' ? 'C' : 'A').append("\t50\tPASS\t.\n");
+        }
+        Files.writeString(dir.resolve("gt_features.vcf"), vcf.toString(), StandardCharsets.UTF_8);
+        // GroundTruthReadsBuilder's two ancestors of chr1: the maternal one carries substitutions
+        // and keeps every position, the paternal one carries a two-base insertion after 760 and
+        // a translation table that moves every later position two to the right. The tables sit
+        // under a base path the tool appends `<ancestor>.<contig>.csv` to, header line first.
+        final StringBuilder maternal = new StringBuilder(bases);
+        for (final int at : new int[] {650, 700, 820}) {
+            maternal.setCharAt(at - 1, maternal.charAt(at - 1) == 'A' ? 'G' : 'A');
+        }
+        final String paternal = bases.substring(0, 760) + "TT" + bases.substring(760);
+        for (final String[] ancestor : new String[][] {{"maternal", maternal.toString()}, {"paternal", paternal}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve("gt_" + ancestor[0] + ".fasta"))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                writer.startSequence("chr1_" + ancestor[0]).appendBases(ancestor[1]);
+            }
+        }
+        Files.createDirectories(dir.resolve("gtrb"));
+        Files.writeString(dir.resolve("gtrb/maternal.chr1.csv"), "pos,offset\n1,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb/paternal.chr1.csv"), "pos,offset\n1,0\n761,2\n", StandardCharsets.UTF_8);
+        // A second base whose tables start at 620, so the reads before it index the table at -1.
+        Files.createDirectories(dir.resolve("gtrb_late"));
+        Files.writeString(dir.resolve("gtrb_late/maternal.chr1.csv"), "pos,offset\n620,0\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gtrb_late/paternal.chr1.csv"), "pos,offset\n620,0\n761,2\n", StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("gt_features.vcf").toString()});
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -1503,6 +1663,365 @@ public class MakeFixtures {
             // PAIR:4, a first of pair with no second.
             writer.addAlignment(mate(header, "PAIR:4", 3000, 3200, "10M", true, false, false));
         }
+    }
+
+    /**
+     * The amplicon corpus `AnalyzeSaturationMutagenesis` reads: a single-contig reference whose
+     * contig is an ORF between two UTRs, and reads over it that land in every report type.
+     *
+     * `amplicon.fasta` is 150 bases: a 12-base 5' UTR, an ORF from 13 to 132 (ATG, 38 codons with
+     * no stop, TAA) and an 18-base 3' UTR, so both `--orf 13-132` and the two-exon
+     * `--orf 13-60,64-132` (codon 17 spliced out) parse without an upstream stop.
+     * `amplicon_alt.fasta` is the same contig with two bases changed, at 40 (GAA to CAA) and 140,
+     * so every read disagrees with it there and the variant table is a different one.
+     *
+     * `asm.bam` is unsorted, with the mates adjacent, which paired mode needs; each group
+     * of three is there so the default `--min-variant-obs 3` reports it:
+     *  - wt: overlapping pairs with no variant; snvA: overlapping pairs sharing a missense at 75;
+     *    inc: a pair whose mates disagree at 75; del: pairs whose second read deletes codon 30;
+     *  - ins and fs: unpaired reads with a three-base and a one-base insertion; syn: a synonymous
+     *    change at 30; lqv: a change at 44 whose base quality is 20, so `--min-q 20` counts it;
+     *    nb: an N call; mq: a change at 110 on MAPQ 20 reads, which `--min-mapq 30` rejects;
+     *  - dis: disjoint pairs with a change in each mate, so `--dont-ignore-disjoint-pairs` decides
+     *    whether one variant or two is counted; nf: a change one base into the read, which has no
+     *    flank; edge: a change four bases in, which `--min-flanking-length 5` rejects;
+     *  - clip: a leading soft clip treated as a match; ld: a primary alignment whose SA tag names
+     *    the rest of the read 35 bases further on, which `--find-large-deletions` joins into one
+     *    alignment and `--min-alt-length 40` leaves alone; trimq: a read whose best high-quality run
+     *    is 20 bases, which `--min-length 30` rejects;
+     *  - short: a proper pair whose TLEN is shorter than the reads; unm, dup, qc: reads rejected as
+     *    unmapped; half: a pair whose second read is unmapped; orph: a paired read with no mate;
+     *    sec: a secondary alignment, which the tool's stream drops.
+     * `asm_coord.bam` holds the same records coordinate-sorted, which paired mode refuses.
+     */
+    static final String AMPLICON =
+            "GCTAGCCGACTTATGGCTAAAGACCTGGTTCGCAAGTTCGAAACCCAGGGTATCTACCCAGAGCACTGGATGAACCGTGCAGTCC"
+            + "TCAAGGATTCGCCTGGAATCTTTCACGCGAAAGTGCTGACCGAGTAAGGATCCATTGCAGTCGAC";
+
+    static void saturationMutagenesis(final Path dir) throws Exception {
+        for (final String[] fasta : new String[][] {{"amplicon.fasta", AMPLICON},
+                {"amplicon_alt.fasta", substitute(substitute(AMPLICON, 40, 'C'), 140, 'A')}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve(fasta[0]))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                writer.startSequence("amp").appendBases(fasta[1]);
+            }
+        }
+        Files.writeString(dir.resolve("amplicon_plus.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:amp\tLN:150\n@SQ\tSN:ampExtra\tLN:1000\n", StandardCharsets.UTF_8);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("amp", AMPLICON.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.unsorted);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+
+        final List<SAMRecord> records = new ArrayList<>();
+        final String withSnv75 = substitute(AMPLICON, 75, 'G');
+        for (int i = 1; i <= 3; i++) {
+            records.addAll(pair(header, "wt" + i, AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150));
+        }
+        for (int i = 1; i <= 4; i++) {
+            records.addAll(pair(header, "snvA" + i, withSnv75, 1, "80M", withSnv75, 71, "80M", 150));
+        }
+        records.addAll(pair(header, "inc1", withSnv75, 1, "80M", AMPLICON, 71, "80M", 150));
+        final String deleted = AMPLICON.substring(0, 99) + AMPLICON.substring(102);
+        for (int i = 1; i <= 3; i++) {
+            final List<SAMRecord> mates = pair(header, "del" + i, AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150);
+            final SAMRecord second = mates.get(1);
+            second.setReadString(deleted.substring(70, 147));
+            second.setBaseQualityString("I".repeat(77));
+            second.setCigarString("29M3D48M");
+            records.addAll(mates);
+        }
+        for (int i = 1; i <= 3; i++) {
+            records.add(single(header, "ins" + i, 21,
+                    AMPLICON.substring(20, 60) + "GGC" + AMPLICON.substring(60, 87), "40M3I27M", null, 60));
+            records.add(single(header, "fs" + i, 51,
+                    AMPLICON.substring(50, 90) + "T" + AMPLICON.substring(90, 119), "40M1I29M", null, 60));
+            records.add(single(header, "syn" + i, 11,
+                    substitute(AMPLICON, 30, 'C').substring(10, 80), "70M", null, 60));
+            final SAMRecord lowVariant = single(header, "lqv" + i, 11,
+                    substitute(AMPLICON, 44, 'G').substring(10, 80), "70M", null, 60);
+            lowVariant.setBaseQualityString("I".repeat(33) + "5" + "I".repeat(36));
+            records.add(lowVariant);
+            records.add(single(header, "mq" + i, 71,
+                    substitute(AMPLICON, 110, 'T').substring(70, 140), "70M", null, 20));
+            records.addAll(pair(header, "dis" + i, substitute(AMPLICON, 20, 'T'), 1, "60M",
+                    substitute(AMPLICON, 120, 'A'), 91, "60M", 150));
+            records.add(single(header, "nf" + i, 21,
+                    substitute(AMPLICON, 22, 'T').substring(20, 90), "70M", null, 60));
+            records.add(single(header, "edge" + i, 21,
+                    substitute(AMPLICON, 24, 'A').substring(20, 90), "70M", null, 60));
+            records.add(single(header, "clip" + i, 6,
+                    substitute(AMPLICON, 3, 'A').substring(0, 70), "5S65M", null, 60));
+            records.add(single(header, "ld" + i, 1,
+                    AMPLICON.substring(0, 35) + AMPLICON.substring(70, 105), "35M35S",
+                    "amp,71,+,35S35M,60,0;", 60));
+            final SAMRecord supplementary = single(header, "ld" + i, 71,
+                    AMPLICON.substring(0, 35) + AMPLICON.substring(70, 105), "35S35M",
+                    "amp,1,+,35M35S,60,0;", 60);
+            supplementary.setSupplementaryAlignmentFlag(true);
+            records.add(supplementary);
+        }
+        final SAMRecord lowQuality = single(header, "lowq1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        lowQuality.setBaseQualityString("+".repeat(70));
+        records.add(lowQuality);
+        final SAMRecord withN = single(header, "nb1", 11, substitute(AMPLICON, 50, 'N').substring(10, 80), "70M", null, 60);
+        records.add(withN);
+        final SAMRecord trimmed = single(header, "trimq1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        trimmed.setBaseQualityString("I".repeat(20) + "+".repeat(10) + "I".repeat(20) + "+".repeat(20));
+        records.add(trimmed);
+        final List<SAMRecord> shortPair = pair(header, "short1", AMPLICON, 21, "60M", AMPLICON, 11, "60M", 50);
+        records.addAll(shortPair);
+        final List<SAMRecord> unmapped = pair(header, "unm1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 0);
+        for (final SAMRecord record : unmapped) {
+            record.setReadUnmappedFlag(true);
+            record.setMateUnmappedFlag(true);
+            record.setProperPairFlag(false);
+            record.setReferenceIndex(SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX);
+            record.setAlignmentStart(SAMRecord.NO_ALIGNMENT_START);
+            record.setMateReferenceIndex(SAMRecord.NO_ALIGNMENT_REFERENCE_INDEX);
+            record.setMateAlignmentStart(SAMRecord.NO_ALIGNMENT_START);
+            record.setCigarString("*");
+            record.setMappingQuality(0);
+            record.setInferredInsertSize(0);
+            record.setReadNegativeStrandFlag(false);
+            record.setMateNegativeStrandFlag(false);
+        }
+        records.addAll(unmapped);
+        final SAMRecord duplicate = single(header, "dup1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        duplicate.setDuplicateReadFlag(true);
+        records.add(duplicate);
+        final SAMRecord failed = single(header, "qc1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        failed.setReadFailsVendorQualityCheckFlag(true);
+        records.add(failed);
+        final List<SAMRecord> half = pair(header, "half1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 0);
+        final SAMRecord halfMate = half.get(1);
+        halfMate.setReadUnmappedFlag(true);
+        halfMate.setAlignmentStart(1);
+        halfMate.setCigarString("*");
+        halfMate.setMappingQuality(0);
+        halfMate.setReadNegativeStrandFlag(false);
+        halfMate.setInferredInsertSize(0);
+        half.get(0).setMateUnmappedFlag(true);
+        half.get(0).setMateAlignmentStart(1);
+        half.get(0).setMateNegativeStrandFlag(false);
+        half.get(0).setProperPairFlag(false);
+        half.get(0).setInferredInsertSize(0);
+        halfMate.setProperPairFlag(false);
+        records.addAll(half);
+        final SAMRecord orphan = pair(header, "orph1", AMPLICON, 1, "80M", AMPLICON, 71, "80M", 150).get(0);
+        records.add(orphan);
+        final SAMRecord secondary = single(header, "sec1", 11, AMPLICON.substring(10, 80), "70M", null, 60);
+        secondary.setSecondaryAlignment(true);
+        records.add(secondary);
+
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().makeBAMWriter(header, true, dir.resolve("asm.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        final SAMFileHeader coordinate = header.clone();
+        coordinate.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                .makeBAMWriter(coordinate, false, dir.resolve("asm_coord.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * The corpus `LocalAssembler` assembles: a 3000-base contig `la` and reads over 1000-2400 that
+     * give each of its arguments something to decide.
+     *
+     * The contig is drawn from a linear congruential generator whose state carries forward, as the
+     * conformance dump's is: a periodic sequence repeats every 31-mer and the graph collapses.
+     * `la.bam` is coordinate-sorted and indexed, since the tool requires intervals:
+     *  - p, v, q: pairs over 1000-1359, five of them (v) with a substitution at 1150, so the graph
+     *    has a bubble and the reads' transits phase it;
+     *  - lq: five reads at 1320 whose bases are all at quality 30, which `--q-min 35` drops;
+     *  - thin: two reads at 1600, a contig `--min-thin-observations 2` keeps and 4 removes;
+     *  - w and sv: reads over 1650-1810, five of them (sv) deleting 60 bases, a bubble whose two
+     *    paths differ by more than `--min-sv-size 50` and by less than 100;
+     *  - n: five reads at 1800 with an `N` at their fiftieth base, a gap `--min-gapfill-count 3`
+     *    fills and 6 does not;
+     *  - ov: five pairs whose mates both start at 2000 with ten bases of adapter past the fragment,
+     *    which `trimOverruns` hard-clips away;
+     *  - far: five pairs at 1450 whose mate lies at 2800, outside every padded interval, so each
+     *    first read is left in the pair buffer and assembled unpaired at the end;
+     *  - d: five duplicates at 2300, which only `--disable-tool-default-read-filters` lets in; and
+     *    one secondary alignment, which the same argument lets through as an unpaired read.
+     * `la2.bam` is the same reads without the two bubbles (v, sv). `la_plus.dict` adds a contig.
+     */
+    static void localAssembler(final Path dir) throws Exception {
+        final StringBuilder bases = new StringBuilder(3000);
+        long state = 20260930L;
+        for (int i = 0; i < 3000; i++) {
+            state = state * 6364136223846793005L + 1442695040888963407L;
+            bases.append("ACGT".charAt((int) ((state >>> 33) & 3L)));
+        }
+        final String ref = bases.toString();
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("la_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            writer.startSequence("la").appendBases(ref);
+        }
+        Files.writeString(dir.resolve("la_plus.dict"),
+                "@HD\tVN:1.6\n@SQ\tSN:la\tLN:3000\n@SQ\tSN:laExtra\tLN:1000\n", StandardCharsets.UTF_8);
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("la", ref.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        header.addReadGroup(group);
+
+        final String snv = substitute(ref, 1150, ref.charAt(1149) == 'A' ? 'C' : 'A');
+        final String deleted = ref.substring(0, 1699) + ref.substring(1759);
+        final List<SAMRecord> records = new ArrayList<>();
+        final List<SAMRecord> bubbles = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            records.addAll(laPair(header, "p" + i, ref, 1000, ref, 1100, 100));
+        }
+        for (int i = 1; i <= 5; i++) {
+            bubbles.addAll(laPair(header, "v" + i, snv, 1000, snv, 1100, 100));
+            records.addAll(laPair(header, "q" + i, ref, 1180, ref, 1260, 100));
+            final SAMRecord lowQuality = laRead(header, "lq" + i, 1320, ref.substring(1319, 1419), "100M");
+            lowQuality.setBaseQualityString("?".repeat(100));
+            records.add(lowQuality);
+            records.add(laRead(header, "w" + i, 1650, ref.substring(1649, 1749), "100M"));
+            records.add(laRead(header, "wb" + i, 1720, ref.substring(1719, 1819), "100M"));
+            bubbles.add(laRead(header, "sv" + i, 1650,
+                    ref.substring(1649, 1699) + ref.substring(1759, 1809), "50M60D50M"));
+            final char[] withN = ref.substring(1799, 1899).toCharArray();
+            withN[49] = 'N';
+            records.add(laRead(header, "n" + i, 1800, new String(withN), "100M"));
+            final List<SAMRecord> overrun = laPair(header, "ov" + i, ref, 2000, ref, 2000, 90);
+            overrun.get(0).setReadString(ref.substring(1999, 2089) + "ACGTTGCAAC");
+            overrun.get(0).setBaseQualityString("I".repeat(100));
+            overrun.get(0).setCigarString("90M10S");
+            overrun.get(1).setReadString("GTTGCAACGT" + ref.substring(1999, 2089));
+            overrun.get(1).setBaseQualityString("I".repeat(100));
+            overrun.get(1).setCigarString("10S90M");
+            records.addAll(overrun);
+            records.addAll(laPair(header, "far" + i, ref, 1450, ref, 2800, 100));
+            final SAMRecord duplicate = laRead(header, "d" + i, 2300, ref.substring(2299, 2399), "100M");
+            duplicate.setDuplicateReadFlag(true);
+            records.add(duplicate);
+        }
+        for (int i = 1; i <= 2; i++) {
+            records.add(laRead(header, "thin" + i, 1600, ref.substring(1599, 1699), "100M"));
+        }
+        final SAMRecord secondary = laRead(header, "sec1", 2200, ref.substring(2199, 2299), "100M");
+        secondary.setSecondaryAlignment(true);
+        records.add(secondary);
+
+        final List<SAMRecord> all = new ArrayList<>(records);
+        all.addAll(bubbles);
+        for (final String[] output : new String[][] {{"la.bam", "all"}, {"la2.bam", "plain"}}) {
+            try (final SAMFileWriter writer = new SAMFileWriterFactory()
+                    .setCreateIndex(true)
+                    .makeBAMWriter(header, false, dir.resolve(output[0]).toFile())) {
+                (output[1].equals("all") ? all : records).forEach(writer::addAlignment);
+            }
+        }
+    }
+
+    /** A read of {@link #localAssembler} on `la`, every base at quality 40. */
+    static SAMRecord laRead(final SAMFileHeader header, final String name, final int start,
+                            final String bases, final String cigar) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString(bases);
+        record.setBaseQualityString("I".repeat(bases.length()));
+        record.setAttribute("RG", "rg1");
+        record.setReferenceName("la");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(60);
+        return record;
+    }
+
+    /** A forward first read and a reverse second read of {@link #localAssembler}, mates set. */
+    static List<SAMRecord> laPair(final SAMFileHeader header, final String name,
+                                  final String firstSequence, final int firstStart,
+                                  final String secondSequence, final int secondStart, final int length) {
+        final SAMRecord first = laRead(header, name, firstStart,
+                firstSequence.substring(firstStart - 1, firstStart - 1 + length), length + "M");
+        final SAMRecord second = laRead(header, name, secondStart,
+                secondSequence.substring(secondStart - 1, secondStart - 1 + length), length + "M");
+        second.setReadNegativeStrandFlag(true);
+        for (final SAMRecord record : List.of(first, second)) {
+            record.setReadPairedFlag(true);
+            record.setProperPairFlag(true);
+        }
+        first.setFirstOfPairFlag(true);
+        second.setSecondOfPairFlag(true);
+        htsjdk.samtools.SamPairUtil.setMateInfo(first, second, true);
+        return new ArrayList<>(List.of(first, second));
+    }
+
+    /** The sequence with its 1-based position {@code position} replaced by {@code base}. */
+    static String substitute(final String sequence, final int position, final char base) {
+        if (sequence.charAt(position - 1) == base) {
+            throw new IllegalArgumentException("not a substitution at " + position);
+        }
+        return sequence.substring(0, position - 1) + base + sequence.substring(position);
+    }
+
+    /** An unpaired read of {@link #saturationMutagenesis}, every base at quality 40. */
+    static SAMRecord single(final SAMFileHeader header, final String name, final int start,
+                            final String bases, final String cigar, final String sa, final int mapq) {
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        record.setReadString(bases);
+        record.setBaseQualityString("I".repeat(bases.length()));
+        record.setAttribute("RG", "rg1");
+        record.setReferenceName("amp");
+        record.setAlignmentStart(start);
+        record.setCigarString(cigar);
+        record.setMappingQuality(mapq);
+        if (sa != null) {
+            record.setAttribute("SA", sa);
+        }
+        return record;
+    }
+
+    /**
+     * A forward first read and a reverse second read of one molecule, each cut from its own copy
+     * of the amplicon, with the mate fields htsjdk's pairing utility sets and the TLEN given.
+     */
+    static List<SAMRecord> pair(final SAMFileHeader header, final String name,
+                                final String firstSequence, final int firstStart, final String firstCigar,
+                                final String secondSequence, final int secondStart, final String secondCigar,
+                                final int templateLength) {
+        final int firstLength = Integer.parseInt(firstCigar.substring(0, firstCigar.length() - 1));
+        final int secondLength = Integer.parseInt(secondCigar.substring(0, secondCigar.length() - 1));
+        final SAMRecord first = single(header, name, firstStart,
+                firstSequence.substring(firstStart - 1, firstStart - 1 + firstLength), firstCigar, null, 60);
+        final SAMRecord second = single(header, name, secondStart,
+                secondSequence.substring(secondStart - 1, secondStart - 1 + secondLength), secondCigar, null, 60);
+        second.setReadNegativeStrandFlag(true);
+        for (final SAMRecord record : List.of(first, second)) {
+            record.setReadPairedFlag(true);
+            record.setProperPairFlag(true);
+        }
+        first.setFirstOfPairFlag(true);
+        second.setSecondOfPairFlag(true);
+        htsjdk.samtools.SamPairUtil.setMateInfo(first, second, true);
+        first.setInferredInsertSize(templateLength);
+        second.setInferredInsertSize(-templateLength);
+        return new ArrayList<>(List.of(first, second));
     }
 
     /** One record of {@link #queryNameSorted}, with the flags the group it belongs to needs. */
@@ -1912,6 +2431,8 @@ public class MakeFixtures {
                 ">adapterOne\nACGTACGT\n>adapterTwo\nTTTTGGGG\n", StandardCharsets.UTF_8);
         pairs(dir.resolve("pairs.bam"));
         queryNameSorted(dir.resolve("qname.bam"));
+        saturationMutagenesis(dir);
+        localAssembler(dir);
         umi(dir.resolve("umi.bam"));
         aseBam(dir.resolve("ase.bam"));
         moleculeGroups(dir.resolve("molecules.bam"), false);
@@ -2115,6 +2636,7 @@ public class MakeFixtures {
         geneExpressionFixtures(dir);
         flowFixtures(dir);
         flowSnvFixtures(dir);
+        groundTruthFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.
@@ -2586,6 +3108,7 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("snp_tranches.list"), "99.0\n90.0\n99.0\n",
                 StandardCharsets.UTF_8);
         vqsrFixtures(dir);
+        variantRecalibratorFixtures(dir);
         svStratifyFixtures(dir);
         svConcordanceFixtures(dir);
         svClusterFixtures(dir);
@@ -2680,7 +3203,53 @@ public class MakeFixtures {
         pathSeqTaxonomy(dir);
         funcotatorDownloaderFixtures(dir);
         funcotatorFixtures(dir);
+        bwaIndexImage(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * The FASTAs `BwaMemIndexImageCreator` is handed. The image is BWA's, built through JNI, and
+     * its addresses are masked by `run_array.py`; everything else in it is a function of the FASTA,
+     * so the inputs are chosen to reach every part of the layout: two contigs, one with a comment,
+     * a run of `N`, an IUPAC code and a lower-case stretch (the `.amb` holes, and the bases BWA
+     * replaces with `lrand48`), and a one-contig `.fa` of another length. The refusals are a FASTA
+     * with no header line, one that is not there, and a name with neither extension.
+     */
+    static void bwaIndexImage(final Path dir) throws java.io.IOException {
+        final java.util.Random random = new java.util.Random(20260930L);
+        final String bases = "ACGT";
+        final StringBuilder first = new StringBuilder();
+        for (int i = 0; i < 1500; i++) {
+            first.append(bases.charAt(random.nextInt(4)));
+        }
+        first.replace(400, 412, "NNNNNNNNNNNN");
+        first.setCharAt(700, 'R');
+        final String lower = first.substring(900, 1000).toLowerCase();
+        first.replace(900, 1000, lower);
+        final StringBuilder second = new StringBuilder();
+        for (int i = 0; i < 777; i++) {
+            second.append(bases.charAt(random.nextInt(4)));
+        }
+        final StringBuilder small = new StringBuilder();
+        for (int i = 0; i < 230; i++) {
+            small.append(bases.charAt(random.nextInt(4)));
+        }
+        Files.writeString(dir.resolve("bwa_ref.fasta"),
+                ">chrA assembled contig\n" + wrapped(first) + ">chrB\n" + wrapped(second),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_small.fa"), ">only\n" + wrapped(small),
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_noheader.fasta"), wrapped(small), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("bwa_ref.fa.gz"), ">chrA\n" + wrapped(small),
+                StandardCharsets.UTF_8);
+    }
+
+    static String wrapped(final CharSequence sequence) {
+        final StringBuilder text = new StringBuilder();
+        for (int at = 0; at < sequence.length(); at += 60) {
+            text.append(sequence, at, Math.min(at + 60, sequence.length())).append('\n');
+        }
+        return text.toString();
     }
 
     /**
@@ -2895,7 +3464,9 @@ public class MakeFixtures {
         reblockGvcfFixtures(dir, chr1);
         gnarlyGenotyperFixtures(dir);
         variantEvalFixtures(dir, chr1);
+        alleleFrequencyQCFixtures(dir, chr1);
         variantAnnotatorFixtures(dir);
+        jointGermlineCnvFixtures(dir);
     }
 
     /**
@@ -2973,6 +3544,75 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         new org.broadinstitute.hellbender.tools.IndexFeatureFile()
                 .instanceMain(new String[] {"-I", dir.resolve("ve_cnv.bed").toString()});
+    }
+
+    /**
+     * What `AlleleFrequencyQC` reads, over `cgv_ref.fasta`. `afqc_eval.vcf` is a call set of two
+     * diploid samples carrying the `##sampleAlias` line the tool takes its sample from: SNPs whose
+     * genotypes put the observed frequency near the expected one in some bins and far from it in
+     * others, an AC0 site, a LowQual site the `called` filter drops, a site the comparison sets do
+     * not carry and a chr2 SNP with a no-call. `afqc_eval_noalias.vcf` is the same file without the
+     * alias. `afqc_1kg.vcf` and `afqc_1kg2.vcf` are sites-only sets with an `AF` over the same
+     * alleles, spread across the logarithmic ladder, the second with other frequencies, a site the
+     * call set lacks and one it has that the first omits. All four are indexed, because `-L`
+     * queries them.
+     */
+    static void alleleFrequencyQCFixtures(final Path dir, final String chr1) throws Exception {
+        final java.util.function.Function<Integer, String> ref =
+                position -> chr1.substring(position - 1, position);
+        final java.util.function.Function<String, String> other =
+                base -> base.equals("A") ? "C" : "A";
+        final String chr2 = new String(java.nio.file.Files.readAllBytes(dir.resolve("cgv_ref.fasta")),
+                StandardCharsets.UTF_8).split(">chr2")[1].split("\n", 2)[1].replace("\n", "");
+        final int[] positions = {400, 410, 420, 430, 440, 450, 460, 470, 480, 490};
+        final String[][] genotypes = {
+                {"0/1", "0/1"}, {"0/1", "0/0"}, {"0/0", "0/0"}, {"0/1", "0/0"}, {"1/1", "0/1"},
+                {"1/1", "1/1"}, {"0/1", "0/0"}, {"0/1", "0/1"}, null, {"1/1", "0/0"}};
+        final String[] filters = {"PASS", "PASS", "PASS", "LowQual", "PASS", ".", "PASS", "PASS",
+                null, "PASS"};
+        final String[] expected = {"0.5", "0.3", "0.1", "0.02", "0.8", "0.97", "0.003", null,
+                "0.0005", null};
+        final String[] expected2 = {"0.45", "0.05", "0.2", "0.02", "0.6", "0.99", null, "0.4",
+                "0.001", "0.25"};
+        final String head = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##contig=<ID=chr1,length=3000>\n"
+                + "##contig=<ID=chr2,length=500>\n";
+        final StringBuilder calls = new StringBuilder();
+        final StringBuilder sites = new StringBuilder();
+        final StringBuilder sites2 = new StringBuilder();
+        for (int i = 0; i < positions.length; i++) {
+            final String base = ref.apply(positions[i]);
+            final String alleles = "chr1\t" + positions[i] + "\t.\t" + base + "\t" + other.apply(base);
+            if (genotypes[i] != null) {
+                calls.append(alleles).append("\t100.00\t").append(filters[i]).append("\t.\tGT\t")
+                        .append(genotypes[i][0]).append("\t").append(genotypes[i][1]).append("\n");
+            }
+            if (expected[i] != null) {
+                sites.append(alleles).append("\t.\tPASS\tAF=").append(expected[i]).append("\n");
+            }
+            if (expected2[i] != null) {
+                sites2.append(alleles).append("\t.\tPASS\tAF=").append(expected2[i]).append("\n");
+            }
+        }
+        final String chr2Site = "chr2\t50\t.\t" + chr2.charAt(49) + "\t"
+                + other.apply(String.valueOf(chr2.charAt(49)));
+        calls.append(chr2Site).append("\t60.00\tPASS\t.\tGT\t0/1\t./.\n");
+        sites.append(chr2Site).append("\t.\tPASS\tAF=0.25\n");
+        sites2.append(chr2Site).append("\t.\tPASS\tAF=0.3\n");
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsA\tsB\n";
+        final java.util.Map<String, String> files = new java.util.LinkedHashMap<>();
+        files.put("afqc_eval.vcf", head + "##sampleAlias=NA12878\n" + columns + calls);
+        files.put("afqc_eval_noalias.vcf", head + columns + calls);
+        files.put("afqc_1kg.vcf", head + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" + sites);
+        files.put("afqc_1kg2.vcf", head + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" + sites2);
+        for (final java.util.Map.Entry<String, String> file : files.entrySet()) {
+            Files.writeString(dir.resolve(file.getKey()), file.getValue(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(file.getKey()).toString()});
+        }
     }
 
     /**
@@ -3925,6 +4565,191 @@ public class MakeFixtures {
     }
 
     /**
+     * What `VariantRecalibrator` trains on: two call sets large enough for a Gaussian mixture, and
+     * the resources that label them.
+     *
+     * `vr_calls.vcf` and `vr_calls2.vcf` are drawn from one `java.util.Random` each, so the corpus
+     * is the same on every run. Three quarters of the records are drawn from a "good" cluster and
+     * the rest from a "bad" one, over QD, MQ, FS, SOR, MQRankSum (absent on some records, which is
+     * what the marginalised evaluation reads) and a per-allele AS_QD. Some FS values are exactly
+     * 0 and some MQ values exactly 60, which is where the tool jitters; a few records are filtered
+     * `LowQual` or `LowDepth`. The kinds are SNPs, indels, two-allele SNPs, MIXED sites and SNPs
+     * beside a spanning deletion, on two contigs.
+     *
+     * `vr_train.vcf` holds most good records (and one filtered), `vr_known.vcf` half of all records
+     * with a genotype column in which some are `0/0`, which `--trust-all-polymorphic` decides,
+     * `vr_bad.vcf` a handful of bad records for a `bad=true` set, and `vr_aggregate.vcf` extra
+     * annotated records for `--aggregate`. Every resource is indexed, since the tool queries it.
+     * `vr_model.report` is the reference's own `--output-model` over QD, MQ, FS and SOR, which
+     * `--input-model` reads back.
+     */
+    static void variantRecalibratorFixtures(final Path dir) throws Exception {
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FILTER=<ID=LowDepth,Description=\"Low depth\">\n"
+                + "##FILTER=<ID=Fail,Description=\"Failed\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##INFO=<ID=AS_QD,Number=A,Type=Float,Description=\"Allele-specific QD\">\n"
+                + "##INFO=<ID=FS,Number=1,Type=Float,Description=\"Fisher strand\">\n"
+                + "##INFO=<ID=MQ,Number=1,Type=Float,Description=\"RMS mapping quality\">\n"
+                + "##INFO=<ID=MQRankSum,Number=1,Type=Float,Description=\"MQ rank sum\">\n"
+                + "##INFO=<ID=QD,Number=1,Type=Float,Description=\"Quality by depth\">\n"
+                + "##INFO=<ID=SOR,Number=1,Type=Float,Description=\"Strand odds ratio\">\n"
+                + "##contig=<ID=chr1,length=2000000>\n"
+                + "##contig=<ID=chr2,length=600000>\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n";
+        final List<String[]> calls = vrCalls(new java.util.Random(20260930L), 2600, 0);
+        final List<String[]> calls2 = vrCalls(new java.util.Random(19700101L), 2200, 1);
+        final StringBuilder one = new StringBuilder(header).append(columns);
+        final StringBuilder two = new StringBuilder(header).append(columns);
+        final StringBuilder train = new StringBuilder(header).append(columns);
+        final StringBuilder known = new StringBuilder(header).append(columns);
+        final StringBuilder bad = new StringBuilder(header).append(columns);
+        final StringBuilder aggregate = new StringBuilder(header).append(columns);
+        final java.util.Random pick = new java.util.Random(4242L);
+        int trained = 0;
+        for (final String[] call : calls) {
+            one.append(call[0]);
+            final boolean good = call[1].equals("good");
+            if (good && pick.nextDouble() < 0.6) {
+                // One training record is filtered, which the resource check skips.
+                train.append(trained++ == 7 ? call[0].replaceFirst("\tPASS\t", "\tFail\t") : call[0]);
+            }
+            if (pick.nextDouble() < 0.5) {
+                known.append(pick.nextDouble() < 0.2 ? call[0].replaceFirst("\t[01]/[12]\n$", "\t0/0\n") : call[0]);
+            }
+            if (!good && pick.nextDouble() < 0.1) {
+                bad.append(call[0]);
+            }
+        }
+        for (final String[] call : calls2) {
+            two.append(call[0]);
+            if (call[1].equals("good") && pick.nextDouble() < 0.6) {
+                // The second call set's own training records go into the same resource, so both
+                // inputs are labelled by one file; the resource stays coordinate sorted below.
+                train.append(call[0]);
+            }
+        }
+        final List<String[]> extra = vrCalls(new java.util.Random(31337L), 300, 0);
+        for (final String[] call : extra) {
+            aggregate.append(call[0]);
+        }
+        Files.writeString(dir.resolve("vr_calls.vcf"), one.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("vr_calls2.vcf"), two.toString(), StandardCharsets.UTF_8);
+        // The call sets are indexed too, so `-L` can query them.
+        for (final String callSet : new String[] {"vr_calls.vcf", "vr_calls2.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(callSet).toString()});
+        }
+        for (final String[] resource : new String[][] {
+                {"vr_train.vcf", sortVcf(train.toString())}, {"vr_known.vcf", known.toString()},
+                {"vr_bad.vcf", bad.toString()}, {"vr_aggregate.vcf", aggregate.toString()}}) {
+            Files.writeString(dir.resolve(resource[0]), resource[1], StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(resource[0]).toString()});
+        }
+        new org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibrator().instanceMain(new String[] {
+                "-V", dir.resolve("vr_calls.vcf").toString(),
+                "--resource:train,known=false,training=true,truth=true,prior=15.0",
+                dir.resolve("vr_train.vcf").toString(),
+                "-an", "QD", "-an", "MQ", "-an", "FS", "-an", "SOR", "--mode", "SNP",
+                "--max-gaussians", "4",
+                "--output-model", dir.resolve("vr_model.report").toString(),
+                "--add-output-vcf-command-line", "false",
+                "--create-output-variant-index", "false",
+                "-O", dir.resolve("vr_model_run.recal").toString(),
+                "--tranches-file", dir.resolve("vr_model_run.tranches").toString()});
+    }
+
+    /** A VCF's body lines sorted by contig and position, the header kept in front. */
+    static String sortVcf(final String text) {
+        final List<String> head = new ArrayList<>();
+        final List<String> body = new ArrayList<>();
+        for (final String line : text.split("\n")) {
+            (line.startsWith("#") ? head : body).add(line);
+        }
+        body.sort(Comparator.comparing((String line) -> line.split("\t")[0])
+                .thenComparingInt(line -> Integer.parseInt(line.split("\t")[1])));
+        return String.join("\n", head) + "\n" + String.join("\n", body) + "\n";
+    }
+
+    /** `n` annotated calls over chr1 then chr2, each as {line, "good" or "bad"}, on positions of one parity. */
+    static List<String[]> vrCalls(final java.util.Random random, final int n, final int parity) {
+        final String bases = "ACGT";
+        final List<String[]> calls = new ArrayList<>();
+        int position = 100;
+        String contig = "chr1";
+        for (int i = 0; i < n; i++) {
+            if (i == n * 5 / 6) {
+                contig = "chr2";
+                position = 100;
+            }
+            position += 150 + random.nextInt(450);
+            // The two call sets sit on positions of different parity, so the one training file
+            // that labels both never holds two records at one position.
+            position += (position - parity) % 2;
+            final char ref = bases.charAt(random.nextInt(4));
+            final char transition = "GTAC".charAt(bases.indexOf(ref));
+            final boolean good = random.nextDouble() < 0.75;
+            final double kind = random.nextDouble();
+            String refAllele = String.valueOf(ref);
+            final List<String> alts = new ArrayList<>();
+            final List<Character> transversions = new ArrayList<>();
+            for (final char base : bases.toCharArray()) {
+                if (base != ref && base != transition) {
+                    transversions.add(base);
+                }
+            }
+            final char snp = random.nextDouble() < (good ? 0.68 : 0.45)
+                    ? transition : transversions.get(random.nextInt(2));
+            final char other = snp == transition ? transversions.get(0) : transition;
+            if (kind < 0.70) {
+                alts.add(String.valueOf(snp));
+            } else if (kind < 0.80) {
+                alts.add(ref + String.valueOf(bases.charAt(random.nextInt(4))));
+            } else if (kind < 0.88) {
+                refAllele = ref + String.valueOf(bases.charAt(random.nextInt(4)));
+                alts.add(String.valueOf(ref));
+            } else if (kind < 0.93) {
+                alts.add(String.valueOf(snp));
+                alts.add(String.valueOf(other));
+            } else if (kind < 0.97) {
+                alts.add(String.valueOf(snp));
+                alts.add(ref + "T");
+            } else {
+                alts.add(String.valueOf(snp));
+                alts.add("*");
+            }
+            final double qd = good ? 18 + 5 * random.nextGaussian() : 5 + 3 * random.nextGaussian();
+            final double mq = good
+                    ? (random.nextDouble() < 0.4 ? 60.0 : Math.min(60.0, 58.5 + 1.2 * random.nextGaussian()))
+                    : Math.max(5.0, Math.min(60.0, 42 + 9 * random.nextGaussian()));
+            final double fs = good ? (random.nextDouble() < 0.12 ? 0.0 : Math.abs(1.5 * random.nextGaussian()))
+                    : Math.abs(14 + 9 * random.nextGaussian());
+            final double sor = good ? Math.abs(0.7 + 0.25 * random.nextGaussian())
+                    : Math.abs(2.4 + 0.9 * random.nextGaussian());
+            final StringBuilder info = new StringBuilder("AS_QD=");
+            for (int a = 0; a < alts.size(); a++) {
+                info.append(a == 0 ? "" : ",").append(String.format("%.2f",
+                        alts.get(a).equals("*") ? 0.0 : qd + (a == 0 ? 0.0 : -2.0 + random.nextGaussian())));
+            }
+            info.append(String.format(";FS=%.3f;MQ=%.2f", fs, mq));
+            if (random.nextDouble() < 0.85) {
+                info.append(String.format(";MQRankSum=%.3f", good ? 0.2 * random.nextGaussian() : -2.0 + random.nextGaussian()));
+            }
+            info.append(String.format(";QD=%.2f;SOR=%.3f", qd, sor));
+            final double f = random.nextDouble();
+            final String filter = f < 0.03 ? "LowQual" : f < 0.05 ? "LowDepth" : "PASS";
+            final String genotype = alts.size() > 1 ? "1/2" : random.nextDouble() < 0.3 ? "1/1" : "0/1";
+            final String line = String.join("\t", contig, Integer.toString(position), ".", refAllele,
+                    String.join(",", alts), Integer.toString(30 + random.nextInt(900)), filter,
+                    info.toString(), "GT", genotype) + "\n";
+            calls.add(new String[] {line, good ? "good" : "bad"});
+        }
+        return calls;
+    }
+
+    /**
      * What `ApplyVQSR` reads: variants, the recal file `VariantRecalibrator` would have written for
      * them, and a tranches file per mode.
      *
@@ -4482,5 +5307,115 @@ public class MakeFixtures {
     static String span(final char[] bases, final int start, final int end, final boolean reverse) {
         final String forward = new String(bases, start, end - start + 1);
         return reverse ? reverseComplement(forward) : forward;
+    }
+
+    /**
+     * What `JointGermlineCNVSegmentation` reads: gCNV segment VCFs, a pedigree and the model's bins.
+     *
+     * `jgcs_ref.fasta` names chr1, chrX and chrY at 200 kb, so the allosomal ploidy rules have
+     * contigs to act on. `jgcs_male1.vcf` is ONE sample, which is the only input the defragmenter
+     * runs on, written the way GermlineCNVCaller writes segments: `<DEL>,<DUP>` on every record and a
+     * haploid GT that the tool pads to the sample's ploidy. It carries each of the four entry
+     * filters (a hom-ref, a no-call without CN, a null call, a QS below the higher threshold), two
+     * pairs of neighbours a hundred bases apart whose own lengths decide whether the padding joins
+     * them, two adjacent deletions of different copy number that must not join, a single no-call
+     * allele that becomes a full no-call, one genotype that already carries ECN, and a call on each
+     * allosome. `jgcs_cohort.vcf` is THREE samples with single-allele records, which skips the
+     * defragmenter and is clustered by max clique: two deletions that cluster, a duplication
+     * overlapping them, two deletions that overlap without clustering, and the allosomes. Both are
+     * indexed, because `-L` queries them. `jgcs.ped` names the three sexes; `jgcs_swapped.ped`
+     * moves them round. `jgcs_bins.interval_list` is the model's 500-base bins over all three
+     * contigs, which turns the defragmenter into the binned one.
+     */
+    static void jointGermlineCnvFixtures(final Path dir) throws Exception {
+        final int length = 200000;
+        try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("jgcs_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            final StringBuilder bases = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                bases.append("ACGT".charAt(i % 4));
+            }
+            for (final String contig : new String[] {"chr1", "chrX", "chrY"}) {
+                writer.startSequence(contig).appendBases(bases.toString());
+            }
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##ALT=<ID=DEL,Description=\"Deletion\">\n"
+                + "##ALT=<ID=DUP,Description=\"Duplication\">\n"
+                + "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n"
+                + "##FORMAT=<ID=ECN,Number=1,Type=Integer,Description=\"Expected copy number\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=NP,Number=1,Type=Integer,Description=\"Number of points\">\n"
+                + "##FORMAT=<ID=QS,Number=1,Type=Integer,Description=\"Quality, some\">\n"
+                + "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n"
+                + "##contig=<ID=chr1,length=" + length + ">\n"
+                + "##contig=<ID=chrX,length=" + length + ">\n"
+                + "##contig=<ID=chrY,length=" + length + ">\n";
+        final String[][] male = {
+            {"chr1", "1000", "2000", "GT:CN:NP:QS", "0:2:5:100"},
+            {"chr1", "3000", "4000", "GT:CN:NP:QS", ".:.:5:100"},
+            {"chr1", "5000", "6000", "GT:CN:NP:QS", ".:0:5:100"},
+            {"chr1", "7000", "8000", "GT:CN:NP:QS", "1:1:5:30"},
+            {"chr1", "9000", "10000", "GT:CN:NP:QS", "1:1:5:60"},
+            {"chr1", "20000", "20500", "GT:CN:NP:QS", "1:1:5:100"},
+            {"chr1", "20600", "21100", "GT:CN:NP:QS", "1:1:5:100"},
+            {"chr1", "40000", "60000", "GT:CN:NP:QS", "2:3:40:100"},
+            {"chr1", "60100", "80100", "GT:CN:NP:QS", "2:3:40:100"},
+            {"chr1", "90000", "91000", "GT:CN:NP:QS", ".:1:2:100"},
+            {"chr1", "120000", "130000", "GT:CN:NP:QS", "1:0:20:100"},
+            {"chr1", "130200", "140000", "GT:CN:NP:QS", "1:1:20:100"},
+            {"chrX", "1000", "2000", "GT:CN:NP:QS", "1:0:2:100"},
+            {"chrX", "5000", "6000", "GT:CN:NP:QS:ECN", "1:0:2:100:2"},
+            {"chrY", "1000", "2000", "GT:CN:NP:QS", "1:0:2:100"},
+        };
+        final StringBuilder maleVcf = new StringBuilder(header)
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmale1\n");
+        for (final String[] r : male) {
+            maleVcf.append(r[0]).append('\t').append(r[1]).append("\tCNV_").append(r[0]).append('_')
+                    .append(r[1]).append('_').append(r[2]).append("\tN\t<DEL>,<DUP>\t.\t.\tEND=")
+                    .append(r[2]).append('\t').append(r[3]).append('\t').append(r[4]).append('\n');
+        }
+        Files.writeString(dir.resolve("jgcs_male1.vcf"), maleVcf.toString(), StandardCharsets.UTF_8);
+        final String[][] cohort = {
+            {"chr1", "20000", "21000", "<DEL>", "1:1:100", "0:2:100", "1:1:80"},
+            {"chr1", "20050", "21000", "<DEL>", "0:2:100", "1:1:100", "0:2:100"},
+            {"chr1", "20500", "30000", "<DUP>", "0:2:100", "0:2:100", "1:3:100"},
+            {"chr1", "50000", "52000", "<DEL>", "1:1:100", "1:0:100", "1:1:100"},
+            {"chr1", "50100", "60000", "<DEL>", "1:1:100", "0:2:100", "0:2:100"},
+            {"chrX", "1000", "2000", "<DEL>", "1:0:100", "1:1:100", "1:0:100"},
+            {"chrY", "1000", "2000", "<DEL>", "1:0:100", ".:0:100", ".:0:100"},
+        };
+        final StringBuilder cohortVcf = new StringBuilder(header)
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmale1\tfemale1\tunknown1\n");
+        for (final String[] r : cohort) {
+            cohortVcf.append(r[0]).append('\t').append(r[1]).append("\tjoint_").append(r[0]).append('_')
+                    .append(r[1]).append("\tN\t").append(r[3]).append("\t.\t.\tEND=").append(r[2])
+                    .append("\tGT:CN:QS\t").append(r[4]).append('\t').append(r[5]).append('\t')
+                    .append(r[6]).append('\n');
+        }
+        Files.writeString(dir.resolve("jgcs_cohort.vcf"), cohortVcf.toString(), StandardCharsets.UTF_8);
+        for (final String name : new String[] {"jgcs_male1.vcf", "jgcs_cohort.vcf"}) {
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(name).toString()});
+        }
+        Files.writeString(dir.resolve("jgcs.ped"),
+                "fam\tmale1\t0\t0\t1\t0\nfam\tfemale1\t0\t0\t2\t0\nfam\tunknown1\t0\t0\t0\t0\n",
+                StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("jgcs_swapped.ped"),
+                "fam\tmale1\t0\t0\t0\t0\nfam\tfemale1\t0\t0\t1\t0\nfam\tunknown1\t0\t0\t2\t0\n",
+                StandardCharsets.UTF_8);
+        final StringBuilder bins = new StringBuilder(
+                Files.readString(dir.resolve("jgcs_ref.dict"), StandardCharsets.UTF_8));
+        for (final String contig : new String[] {"chr1", "chrX", "chrY"}) {
+            for (int start = 1; start <= length; start += 500) {
+                bins.append(contig).append('\t').append(start).append('\t').append(start + 499)
+                        .append("\t+\t.\n");
+            }
+        }
+        Files.writeString(dir.resolve("jgcs_bins.interval_list"), bins.toString(), StandardCharsets.UTF_8);
     }
 }

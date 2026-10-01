@@ -99,6 +99,41 @@ tagged inputs, written as `tag:path` words that `run_array.py` expands:
 
 The set is covered as one value, like any other: a pair, the pair reversed, one input alone.
 
+## Whole lists
+
+A repeated argument is one `List` to Barclay, and some tools read that list as a unit rather than
+as a sample: `VariantRecalibrator` builds one model over every `--use-annotation` it is given, so
+two annotations are a two-dimensional model and not two runs of a one-dimensional one. A tool lists
+such arguments under `$lists`, and each of their values is the whole list, its elements separated
+by spaces; `run_array.py` writes each element as its own `--name element`:
+
+```json
+{
+  "per_tool": {
+    "VariantRecalibrator": {
+      "$lists": ["--use-annotation"],
+      "--use-annotation": ["QD MQ FS SOR", "MQ SOR"]
+    }
+  }
+}
+```
+
+## A refusal that comes after the answer
+
+A refused row is compared on its exit status and its error line, because for most tools a failed
+run leaves nothing else worth reading. `AlleleFrequencyQC` is the exception: it writes its metrics,
+then runs an R script the image cannot, so every row it accepts ends on a user error. A tool listed
+with `"$output_on_failure": true` has the files a failed row left compared with the refusal, and
+counted among the distinct outputs, rather than thrown away with it:
+
+```json
+{
+  "per_tool": {
+    "AlleleFrequencyQC": { "$output_on_failure": true }
+  }
+}
+```
+
 ## One value is not a domain
 
 An argument with a single fixture value is *held* at it: every row carries it, no row varies it,

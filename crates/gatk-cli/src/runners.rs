@@ -33,6 +33,9 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 /// dispatcher with one banner to print for both (`main-non-user`).
 pub type Outcome = Result<Option<String>, Thrown>;
 
+mod joint_germline_cnv;
+pub use joint_germline_cnv::joint_germline_cnv_segmentation;
+
 /// The value of one named argument, as the parser left it.
 ///
 /// A path argument holds a `Tagged` value, whose tag is `None` when nobody wrote one; a plain
@@ -622,10 +625,28 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "TransferReadTags"
             | "PostProcessReadsForRSEM"
             | "CalibrateDragstrModel"
+            | "AnalyzeSaturationMutagenesis"
     )
 }
 
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
+    read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
+}
+
+/// The traversal intervals as `GATKTool.initializeIntervals` hands them over, before the
+/// dictionaries are validated: a tool that overrides `transformTraversalIntervals` changes them
+/// there, and a refusal of its own comes in that place.
+type IntervalTransform<'a> = dyn FnMut(
+        Vec<gatk_engine::interval::SimpleInterval>,
+        &SamHeader,
+    ) -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown>
+    + 'a;
+
+fn read_walker_startup_with(
+    parser: &Parser,
+    tool: &str,
+    transform: &mut IntervalTransform,
+) -> Result<ReadWalkerStart, Thrown> {
     let resolved_filters = resolve_read_filters(parser, tool)?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
     // BAM and merges their headers. This port reads one, which is what every case of the golden
@@ -741,9 +762,10 @@ fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, T
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => transform(parameters.intervals, &best)?,
+        None => Vec::new(),
+    };
 
     // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
     // runs first and checks the reference before the reads; then the reference is checked against
@@ -10990,6 +11012,461 @@ fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments
     }
 }
 
+/// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
+/// row and, with `--report-file`, the error-rate report.
+///
+/// * **the score is `FlowFeatureMapper.computeLikelihoodLocal`** of the read against the reference
+///   window as a flow haplotype, so the engine `--likelihood-calculation-engine` names must be
+///   `FlowBased`, and anything else is refused before the CSV is opened;
+/// * **a read soft-clipped at one end only** is hard-clipped there, or with
+///   `--use-softclipped-bases` reverted and scored over a window widened by the clip; a read
+///   clipped at both ends is scored as it is;
+/// * **the alignment is never applied**: the key is read off the bases as stored, which is the
+///   reference direction for either strand, and nothing flips it for a reverse read or drops the
+///   zero flows at its ends;
+/// * **the CSV and the report are written by `closeTool`**, which runs after a failure too.
+pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
+    use gatk_tools::ground_truth_scorer as gts;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GroundTruthScorer")?;
+    let output = argument(parser, "output-csv").ok_or_else(|| {
+        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    // `onTraversalStart`: the engine, the prior, the CSV, the report.
+    let engine =
+        scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
+    if engine != "FlowBased" {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "must use a flow based likelihood calculation engine".to_string(),
+        ));
+    }
+    let prior = match argument(parser, "genome-prior") {
+        Some(path) => {
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!("failed to open genome-prior file: {path}"),
+                )
+            })?;
+            Some(gts::GenomePrior::parse(&text).map_err(|error| {
+                if error.class.is_empty() {
+                    Thrown::non_user(
+                        PORT_LIMITATION,
+                        format!(
+                            "{}: not read by the port. This message is the port's own and not GATK's.",
+                            error.message
+                        ),
+                    )
+                } else {
+                    Thrown::non_user(error.class, error.message)
+                }
+            })?)
+        }
+        None => None,
+    };
+    let add_mean_call = flag(parser, "add-mean-call");
+    let mut csv = String::new();
+    let mut fields: Vec<&str> = gts::CSV_FIELD_ORDER_BASIC.to_vec();
+    if add_mean_call {
+        fields.extend(gts::MEAN_CALL_COLUMNS);
+    }
+    csv.push_str(&fields.join(","));
+    csv.push('\n');
+    let report_path = argument(parser, "report-file");
+    let quality_percentiles = scalar(parser, "quality-percentiles")
+        .unwrap_or_else(|| gts::DEFAULT_QUALITY_PERCENTILES.to_string());
+    let mut qual_report = report_path.as_ref().map(|_| gts::QualReport::default());
+    let mut percentiles: Option<Vec<gts::PercentileReport>> =
+        report_path.as_ref().map(|_| Vec::new());
+
+    let traversed = ground_truth_scorer_traverse(
+        parser,
+        &source,
+        &header,
+        &intervals,
+        &filter,
+        prior.as_ref(),
+        &mut csv,
+        qual_report.as_mut(),
+        percentiles.as_mut(),
+        add_mean_call,
+    );
+
+    // `closeTool`, which runs whether or not the traversal finished.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(csv.as_bytes(), 6)
+    } else {
+        csv.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    if let (Some(path), Some(report), Some(percentiles)) =
+        (&report_path, &qual_report, &percentiles)
+    {
+        let text = gts::report_text(
+            report,
+            percentiles,
+            &quality_percentiles,
+            flag(parser, "omit-zeros-from-report"),
+        );
+        write_file(path, text.as_bytes())?;
+    }
+    traversed?;
+    Ok(None)
+}
+
+/// `GroundTruthScorer.apply` over every read the traversal reaches.
+#[allow(clippy::too_many_arguments)]
+fn ground_truth_scorer_traverse(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filter: &Filter,
+    prior: Option<&gatk_tools::ground_truth_scorer::GenomePrior>,
+    csv: &mut String,
+    mut qual_report: Option<&mut gatk_tools::ground_truth_scorer::QualReport>,
+    mut percentiles: Option<&mut Vec<gatk_tools::ground_truth_scorer::PercentileReport>>,
+    add_mean_call: bool,
+) -> Result<(), Thrown> {
+    use gatk_engine::read_utils;
+    use gatk_tools::flow_based_read::FlowRead;
+    use gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype;
+    use gatk_tools::ground_truth_scorer as gts;
+
+    let flow = flow_arguments(parser);
+    let use_softclipped = flag(parser, "use-softclipped-bases");
+    let threshold = double_or(
+        parser,
+        "normalized-score-threshold",
+        gts::NORMALIZED_SCORE_THRESHOLD_DEFAULT,
+    );
+    let no_output = flag(parser, "gt-no-output");
+    let exclude_zero_flows = flag(parser, "exclude-zero-flows");
+    let features = match argument(parser, "features-file") {
+        Some(path) => {
+            if !has_feature_index(&path) {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "--features-file without an index is not ported. This message is the port's own and not GATK's."
+                        .to_string(),
+                ));
+            }
+            let (_, text) = open_feature_input(&path)?;
+            Some(
+                htsjdk_vcf::reader::read_vcf(&text)
+                    .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?
+                    .records,
+            )
+        }
+        None => None,
+    };
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    let reads = gatk_tools::read_walker::traverse(source, intervals, filter)
+        .map_err(reads_traversal_error)?;
+    let period_guard = |bases: &[u8], flow_order: &str| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "baseArrayToKey periodGuard tripped, on {}, flowOrder: {flow_order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                String::from_utf8_lossy(bases)
+            ),
+        )
+    };
+    let clip_failed = |error: gatk_engine::clipping::ClipError| {
+        Thrown::non_user(PORT_FAILURE, format!("{error:?}"))
+    };
+    for read in &reads {
+        if read.flags & 0x4 != 0 {
+            continue;
+        }
+        let contig = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|at| header.sequences.get(at))
+            .map(|sequence| sequence.name.clone())
+            .unwrap_or_default();
+        // Without a reference the context still has its window, over no bases, so the read goes on
+        // to the haplotype its empty bases make.
+        let contig_length = match reference.as_ref() {
+            Some(reference) => reference.sequence_length(&contig).unwrap_or(0) as i32,
+            None => header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map_or(0, |sequence| sequence.length),
+        };
+        let (mut window_start, mut window_end) = (read_utils::start(read), read_utils::end(read));
+
+        // `isSoftClipped`: soft-clipped at exactly one end.
+        let first = read.cigar.elements.first().map(|element| element.op);
+        let last = read.cigar.elements.last().map(|element| element.op);
+        let soft = |op: Option<htsjdk_bam::cigar::Op>| op == Some(htsjdk_bam::cigar::Op::S);
+        let clipped = if first.is_some() && (soft(first) != soft(last)) {
+            if use_softclipped {
+                let leading = read_utils::start(read) - read_utils::unclipped_start(read);
+                // `getUnclippedEnd() - getEnd()`: the soft and hard clips at the tail.
+                let trailing: i32 = read
+                    .cigar
+                    .elements
+                    .iter()
+                    .rev()
+                    .take_while(|element| {
+                        matches!(
+                            element.op,
+                            htsjdk_bam::cigar::Op::S | htsjdk_bam::cigar::Op::H
+                        )
+                    })
+                    .map(|element| element.length as i32)
+                    .sum();
+                window_start = (window_start - leading).max(1);
+                window_end = (window_end + trailing).min(contig_length);
+                gatk_engine::clipping::revert_soft_clipped_bases(read, Some(header))
+                    .map_err(clip_failed)?
+            } else {
+                gatk_engine::clipping::hard_clip_soft_clipped_bases(read, Some(header), 0)
+                    .map_err(clip_failed)?
+            }
+        } else {
+            read.clone()
+        };
+        let window = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, window_start, window_end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
+
+        if let Some(records) = &features {
+            let (start, end) = (read_utils::start(&clipped), read_utils::end(&clipped));
+            let mut agrees = true;
+            'records: for record in records.iter().filter(|record| {
+                record.contig == contig
+                    && record.start <= i64::from(end)
+                    && record.stop >= i64::from(start)
+            }) {
+                for coordinate in record.start..=record.stop {
+                    let base = match read_utils::read_base_at_reference_coordinate(
+                        &clipped,
+                        coordinate as i32,
+                    ) {
+                        read_utils::BaseAt::Present(base) => base,
+                        read_utils::BaseAt::Absent => {
+                            agrees = false;
+                            break 'records;
+                        }
+                        read_utils::BaseAt::Threw => {
+                            return Err(Thrown::non_user(
+                                "java.lang.ArrayIndexOutOfBoundsException",
+                                "a read base past the end of the read".to_string(),
+                            ))
+                        }
+                    };
+                    let index = coordinate - i64::from(window_start);
+                    let Some(reference_base) =
+                        usize::try_from(index).ok().and_then(|at| window.get(at))
+                    else {
+                        return Err(Thrown::non_user(
+                            "java.lang.ArrayIndexOutOfBoundsException",
+                            format!("Index {index} out of bounds for length {}", window.len()),
+                        ));
+                    };
+                    if *reference_base != base {
+                        agrees = false;
+                        break 'records;
+                    }
+                }
+            }
+            if !agrees {
+                continue;
+            }
+        }
+
+        let info =
+            gatk_tools::flow_based_read::read_group_info(&clipped, header).map_err(flow_refusal)?;
+        let flow_read = FlowRead::new(&clipped, &info.flow_order, info.max_class, &flow)
+            .map_err(flow_refusal)?;
+        // `new Haplotype(bases, true)`: an empty allele is a null one.
+        if window.is_empty() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Null alleles are not supported".to_string(),
+            ));
+        }
+        let haplotype = FlowHaplotype::new(&window, &info.flow_order)
+            .ok_or_else(|| period_guard(&window, &info.flow_order))?;
+        if !flow_read.valid {
+            continue;
+        }
+        let score = gatk_tools::flow_feature_mapper::compute_likelihood_local(
+            &flow_read,
+            &haplotype,
+            haplotype.key.len(),
+        )
+        .map_err(flow_refusal)?;
+        let normalized = score / flow_read.key.len() as f64;
+        if normalized < threshold {
+            continue;
+        }
+        let errors = gts::error_probabilities(
+            &flow_read,
+            prior,
+            percentiles.as_deref_mut(),
+            exclude_zero_flows,
+        );
+        // `getFlowOrder()`: the first four flows of the read's own order.
+        let read_flow_order: String = flow_read
+            .flow_order
+            .iter()
+            .take(4)
+            .map(|base| *base as char)
+            .collect();
+        let cigar: Vec<(char, usize)> = clipped
+            .cigar
+            .elements
+            .iter()
+            .map(|element| (element.op.to_char() as char, element.length as usize))
+            .collect();
+        let cycle_skip =
+            gts::cycle_skip_status(&clipped.read_bases, &cigar, &window, &read_flow_order)
+                .map_err(|guard| period_guard(&guard.bases, &read_flow_order))?;
+        let reverse = clipped.flags & 0x10 != 0;
+        if cycle_skip != gts::CycleSkipStatus::CS {
+            if let Some(report) = qual_report.as_deref_mut() {
+                let reference_key = FlowHaplotype::new(&window, &read_flow_order)
+                    .ok_or_else(|| period_guard(&window, &read_flow_order))?;
+                gts::add_to_qual_report(
+                    report,
+                    &flow_read.key,
+                    &reference_key.key,
+                    read_flow_order.as_bytes(),
+                    reverse,
+                    &errors,
+                );
+            }
+        }
+
+        // `emit`.
+        use htsjdk_bam::tag::{Tag, TagValue};
+        let join = |values: &mut dyn Iterator<Item = String>| values.collect::<Vec<_>>().join(",");
+        let rq = match clipped.tags.get(Tag::new(b"rq")) {
+            None => "null".to_string(),
+            Some(TagValue::Float(value)) => java_float_to_string(*value),
+            Some(TagValue::Int(value)) => java_float_to_string(*value as f32),
+            Some(_) => {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "an rq tag that is neither a float nor an integer. This message is the port's own and not GATK's."
+                        .to_string(),
+                ))
+            }
+        };
+        let tp: Vec<i8> = match clipped.tags.get(Tag::new(b"tp")) {
+            Some(TagValue::ByteArray { values, .. }) => values.clone(),
+            _ => {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "a flow read without a byte-array tp tag. This message is the port's own and not GATK's."
+                        .to_string(),
+                ))
+            }
+        };
+        let lowest = gts::lowest_q_base_tp(&flow_read.key, &tp, &clipped.base_qualities).map_err(
+            |index| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!(
+                        "Index {index} out of bounds for length {}",
+                        tp.len().min(clipped.base_qualities.len())
+                    ),
+                )
+            },
+        )?;
+        let mut columns = vec![
+            clipped.read_name.clone(),
+            format!(
+                "\"{}\"",
+                join(&mut flow_read.key.iter().map(|v| v.to_string()))
+            ),
+            if reverse { "1" } else { "0" }.to_string(),
+            clipped.mapping_quality.to_string(),
+            rq,
+            format!(
+                "\"{}\"",
+                join(&mut haplotype.key.iter().map(|v| v.to_string()))
+            ),
+            String::from_utf8_lossy(&clipped.read_bases).into_owned(),
+            gatk_engine::tsv_table::java_double_to_string(score),
+            gatk_engine::tsv_table::java_double_to_string(normalized),
+            format!(
+                "\"{}\"",
+                join(&mut errors.iter().map(|v| gts::error_format(*v)))
+            ),
+            flow_read.key.len().to_string(),
+            haplotype.key.len().to_string(),
+            cycle_skip.name().to_string(),
+            read.cigar.to_text(),
+            format!("\"{}\"", join(&mut lowest.iter().map(|v| v.to_string()))),
+        ];
+        if add_mean_call {
+            let (probs, mean_call) = gts::read_probs(&flow_read);
+            columns.push(format!(
+                "\"{}\"",
+                join(&mut probs.iter().map(|v| gts::error_format(*v)))
+            ));
+            columns.push(format!(
+                "\"{}\"",
+                join(&mut mean_call.iter().map(|v| gts::error_format(*v)))
+            ));
+        }
+        if !no_output {
+            csv.push_str(&columns.join(","));
+            csv.push('\n');
+        }
+    }
+    Ok(())
+}
+
+/// `Float.toString`: the shortest decimal that round-trips as a float, with `E` notation outside
+/// `[1e-3, 1e7)` and always a digit after the point.
+fn java_float_to_string(value: f32) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    let magnitude = value.abs();
+    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
+        let rendered = format!("{value:e}");
+        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        return format!("{mantissa}E{exponent}");
+    }
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        format!("{rendered}.0")
+    }
+}
+
 /// A flow read the reference throws on, or one the port does not read.
 fn flow_refusal(refusal: gatk_tools::flow_based_read::FlowReadError) -> Thrown {
     if refusal.port_limitation {
@@ -14347,6 +14824,32 @@ fn read_bed_features(path: &str) -> Result<Vec<gatk_tools::variant_eval_engine::
 
 /// `VariantEval`, a multi-variant walker grouped on start over its evals, `--dbsnp` and comps.
 pub fn variant_eval(parser: &Parser) -> Outcome {
+    let (output, report) = variant_eval_report(parser, None)?;
+    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(report.as_bytes(), 6)
+    } else {
+        report.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    Ok(None)
+}
+
+/// What `AlleleFrequencyQC.onTraversalStart` does before handing over to `VariantEval`'s: every
+/// module and stratifier knob preset, whatever the command line said, and the sample name read out
+/// of the merged header, which is a `NullPointerException` when no input carries one.
+struct AlleleFrequencyQcPresets<'a> {
+    /// Where the sample name goes once it is read.
+    sample: &'a mut Option<String>,
+}
+
+/// `VariantEval`'s traversal, from the parsed command line to the report text, with the `-O` it was
+/// given. `AlleleFrequencyQC` passes its presets, which override the module and stratifier
+/// arguments and read the sample alias at the point its `onTraversalStart` does.
+fn variant_eval_report(
+    parser: &Parser,
+    mut qc: Option<AlleleFrequencyQcPresets>,
+) -> Result<(String, String), Thrown> {
     use gatk_tools::variant_eval_engine as ve;
 
     let limitation = |what: &str| {
@@ -14471,6 +14974,31 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
         .iter()
         .map(|(contig, _, _)| contig.clone())
         .collect();
+
+    // `AlleleFrequencyQC.onTraversalStart` reads the alias before `super.onTraversalStart()`, so a
+    // header without one fails ahead of everything `VariantEval` validates there. The merged
+    // header keeps one line per key, the last input's where several carry it.
+    if let Some(presets) = qc.as_mut() {
+        let alias = opened.iter().rev().find_map(|(_, _, _, _, file)| {
+            file.header.lines.iter().rev().find_map(|line| match line {
+                htsjdk_vcf::header::HeaderLine::Unstructured { key, value }
+                    if key == gatk_tools::allele_frequency_qc::SAMPLE_ALIAS_KEY =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+        });
+        match alias {
+            Some(value) => *presets.sample = Some(value),
+            None => {
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    gatk_tools::allele_frequency_qc::NO_ALIAS_MESSAGE,
+                ))
+            }
+        }
+    }
 
     // The samples of the eval headers, filtered by `--sample` and sorted.
     let mut eval_samples: Vec<String> = Vec::new();
@@ -14617,6 +15145,18 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .filter(|path| !has_feature_index(path)),
         gold_standard,
     };
+    let mut arguments_for_engine = arguments_for_engine;
+    if qc.is_some() {
+        arguments_for_engine.no_standard_modules = true;
+        arguments_for_engine.modules_to_use =
+            vec![gatk_tools::allele_frequency_qc::MODULE.to_string()];
+        arguments_for_engine.keep_ac0 = true;
+        arguments_for_engine.no_standard_strats = true;
+        arguments_for_engine.strats_to_use =
+            vec!["AlleleFrequency".to_string(), "Filter".to_string()];
+        arguments_for_engine.af_scale = ve::AfScale::Logarithmic;
+        arguments_for_engine.use_comp_af = true;
+    }
     let mut engine =
         ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
 
@@ -14734,15 +15274,66 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .apply(&group, &mut source)
             .map_err(variant_eval_thrown)?;
     }
-    let report = engine.finalize_report();
-    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
-    let bytes = if output.ends_with(".gz") {
-        java_gzip(report.as_bytes(), 6)
-    } else {
-        report.into_bytes()
-    };
-    write_file(&output, &bytes)?;
-    Ok(None)
+    Ok((output, engine.finalize_report()))
+}
+
+/// `AlleleFrequencyQC`: `VariantEval` with one module and two stratifiers preset, and a statistic
+/// read back out of the report it wrote.
+///
+/// * **`-O` is the metrics file, not the report.** The report goes to `--debug-file`, or to a
+///   temporary file the run deletes, and `onTraversalSuccess` reads it back as a `GATKReport`, so
+///   the averages the statistic sums are the eight decimals the report printed.
+/// * **the sample is the `##sampleAlias` header line**, read before `VariantEval` starts: without
+///   one the run is a `NullPointerException` and writes nothing.
+/// * **the plot comes last and fails in an image without R**: the metrics are already written, and
+///   the run then ends on the user error `RScriptExecutor` raises. With `Rscript` on the path the
+///   reference would draw the plot, which the port does not, so that is its limitation.
+pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
+    use gatk_tools::allele_frequency_qc as qc;
+
+    let mut sample = None;
+    let (metrics_output, report) = variant_eval_report(
+        parser,
+        Some(AlleleFrequencyQcPresets {
+            sample: &mut sample,
+        }),
+    )?;
+    if let Some(debug) = argument(parser, "debugFile") {
+        write_file(&debug, report.as_bytes())?;
+    }
+    let bins = qc::bins_from_report(&report, qc::MODULE)
+        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+    if bins.len() < 2 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "fewer than two allele-frequency bins leave the chi-squared distribution without a \
+             positive degree of freedom. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    let sample = sample.unwrap_or_default();
+    let variance = double_or(parser, "allowedVariance", qc::DEFAULT_ALLOWED_VARIANCE);
+    write_file(
+        &metrics_output,
+        qc::metrics_file(&sample, &bins, variance).as_bytes(),
+    )?;
+
+    // `RScriptExecutor.exec`: the executable is looked for on the path when the script runs.
+    let rscript_found = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|directory| directory.join("Rscript").is_file())
+    });
+    if rscript_found {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "plotAlleleFrequencyQC.R is not ported. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    Err(Thrown::user(
+        "Unable to execute Rscript command: Please add the Rscript directory to your environment \
+         ${PATH}"
+            .to_string(),
+    ))
 }
 
 /// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between
@@ -22808,4 +23399,335 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
         ));
     }
     Ok(Some("Optional.empty".to_string()))
+}
+
+/// `AnalyzeSaturationMutagenesis`, a `GATKTool` whose `traverse()` streams the reads itself.
+///
+/// The startup is a read tool's, in its order, so the dictionaries, the intervals and the read
+/// filters are all validated. What the tool then does differently is what a row measures: `-L`
+/// bounds nothing, the filter chain is never consulted (the stream is `PRIMARY_LINE` alone), and
+/// the refusals of `onTraversalStart` come in the tool's order, the sort order first, then the
+/// translation, the reference and the ORF.
+pub fn analyze_saturation_mutagenesis(parser: &Parser) -> Outcome {
+    use gatk_tools::analyze_saturation_mutagenesis_engine as asm;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        filters,
+        ..
+    } = read_walker_startup(parser, "AnalyzeSaturationMutagenesis")?;
+    // Resolved for its refusals, which are the parser's, and then not applied.
+    let _ = read_filter(parser, &filters, &header)?;
+    let prefix = argument(parser, "output-file-prefix").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument output-file-prefix was missing: Argument 'output-file-prefix' is required",
+        )
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let orf = argument(parser, "orf").ok_or_else(|| {
+        Thrown::command_line("Argument orf was missing: Argument 'orf' is required")
+    })?;
+    let defaults = asm::Settings::default();
+    let settings = asm::Settings {
+        min_q: number_or(parser, "min-q", defaults.min_q),
+        min_length: number_or(parser, "min-length", defaults.min_length),
+        min_flanking_length: number_or(parser, "min-flanking-length", defaults.min_flanking_length),
+        min_mapq: number_or(parser, "min-mapq", defaults.min_mapq),
+        orf,
+        min_variant_observations: scalar(parser, "min-variant-obs")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.min_variant_observations),
+        find_large_deletions: flag(parser, "find-large-deletions"),
+        min_alt_length: number_or(parser, "min-alt-length", defaults.min_alt_length),
+        codon_translation: argument(parser, "codon-translation")
+            .map(|text| text.encode_utf16().collect())
+            .unwrap_or(defaults.codon_translation),
+        paired_mode: flag(parser, "paired-mode"),
+        dont_ignore_disjoint_pairs: flag(parser, "dont-ignore-disjoint-pairs"),
+        write_rejected_reads: flag(parser, "write-rejected-reads"),
+    };
+    let thrown = |error: asm::AsmError| match error {
+        asm::AsmError::User(message) => Thrown::user(message),
+        asm::AsmError::Internal { class, message } => Thrown::non_user(class, message),
+    };
+
+    // `onTraversalStart` refuses the sort order and the translation before it reads the reference,
+    // and the reference before it parses the ORF against it; `Run::start` keeps that order. The
+    // FASTA itself was opened by the startup already, so reading it here refuses nothing new.
+    let coordinate_sorted = header.attributes.get("SO") == Some("coordinate");
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs = reference.sequences().len();
+    let bases = match reference.sequences().first().cloned() {
+        Some((name, length)) if contigs == 1 => reference
+            .query(&name, 1, length as i32)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        _ => Vec::new(),
+    };
+    let mut run = asm::Run::start(settings, coordinate_sorted, contigs, &bases).map_err(thrown)?;
+
+    let reads = source.iter_all().map_err(reads_traversal_error)?;
+    run.traverse(reads).map_err(thrown)?;
+
+    // `onTraversalSuccess`: the eight reports in their order, then the rejected reads' writer is
+    // closed.
+    for (suffix, text) in run.reports().map_err(thrown)? {
+        write_file(&format!("{prefix}{suffix}"), text.as_bytes())?;
+    }
+    if let Some(rejected) = run.rejected_reads() {
+        let command_line = crate::command_line::expanded("AnalyzeSaturationMutagenesis", parser);
+        let options = gatk_tools::sam_output::Options {
+            intervals: Vec::new(),
+            create_output_bam_index: flag(parser, "create-output-bam-index"),
+            add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+            command_line: &command_line,
+            version: crate::TOOLKIT_VERSION,
+        };
+        // `getHeaderForSAMWriter` is overridden to mark the output unsorted, after the `@PG`
+        // record the engine adds.
+        let mut out_header =
+            gatk_tools::sam_output::header_for_sam_writer(&header, asm::TOOL_NAME, &options);
+        out_header.attributes.set("SO", "unsorted");
+        let (level, deflater) = output_compression(parser);
+        let (bytes, bai) = gatk_tools::sam_output::write_records_with(
+            &out_header,
+            rejected,
+            false,
+            level,
+            deflater,
+        )
+        .map_err(reads_traversal_error)?;
+        write_bam(parser, &format!("{prefix}.rejected.bam"), &bytes, bai)?;
+    }
+    Ok(None)
+}
+
+/// `LocalAssembler`, a `PairWalker`: the reads over the padded intervals paired, assembled, and
+/// the graph and its paths written.
+///
+/// `PairWalker.transformTraversalIntervals` pads every `-L` interval by `--pair-padding` and folds
+/// it into the one before it, in `initializeIntervals`, so its refusal comes before the
+/// dictionaries are validated; the unpadded intervals are what `RegionChecker` asks a read about.
+/// The two files are written in `onTraversalSuccess` and nowhere else: a traversal too complex to
+/// finish writes no GFA at all, and the FASTA of its contigs.
+pub fn local_assembler(parser: &Parser) -> Outcome {
+    use gatk_tools::local_assembler_engine as la;
+
+    let padding = number_or(parser, "pair-padding", 1000);
+    let mut original: Vec<la::Span> = Vec::new();
+    let mut transform = |intervals: Vec<gatk_engine::interval::SimpleInterval>,
+                         best: &SamHeader|
+     -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown> {
+        original = intervals
+            .iter()
+            .map(|interval| la::Span {
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect();
+        let padded = la::pad_intervals(&original, padding, |contig| {
+            best.sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map(|sequence| sequence.length)
+        })
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+        Ok(padded
+            .into_iter()
+            .map(|span| gatk_engine::interval::SimpleInterval {
+                contig: span.contig,
+                start: span.start,
+                end: span.end,
+            })
+            .collect())
+    };
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup_with(parser, "LocalAssembler", &mut transform)?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    let assembly_name = argument(parser, "assembly-name").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument assembly-name was missing: Argument 'assembly-name' is required",
+        )
+    })?;
+    let defaults = la::Settings::default();
+    let settings = la::Settings {
+        assembly_name: assembly_name.clone(),
+        q_min: scalar(parser, "q-min")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.q_min),
+        min_thin_observations: number_or(
+            parser,
+            "min-thin-observations",
+            defaults.min_thin_observations,
+        ),
+        min_gapfill_count: number_or(parser, "min-gapfill-count", defaults.min_gapfill_count),
+        too_many_traversals: number_or(parser, "too-many-traversals", defaults.too_many_traversals),
+        too_many_scaffolds: number_or(parser, "too-many-scaffolds", defaults.too_many_scaffolds),
+        min_sv_size: number_or(parser, "min-sv-size", defaults.min_sv_size),
+        no_scaffolding: flag(parser, "no-scaffolding"),
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let names: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let contig_of = |index: i32| names.get(usize::try_from(index).ok()?).cloned();
+    let index_of = |name: &str| {
+        names
+            .iter()
+            .position(|candidate| candidate == name)
+            .map_or(-1, |index| index as i32)
+    };
+    let reads = la::pair_reads(reads, &original, &contig_of, &index_of);
+    let region_size: i32 = intervals
+        .iter()
+        .map(|interval| interval.end - interval.start + 1)
+        .sum();
+    let assembly = la::assemble(&reads, region_size, &settings)
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+
+    // `onTraversalSuccess` defaults both paths to the assembly's name, gzipped.
+    let gfa_path =
+        argument(parser, "gfa-file").unwrap_or_else(|| format!("{assembly_name}.gfa.gz"));
+    let fasta_path =
+        argument(parser, "fasta-file").unwrap_or_else(|| format!("{assembly_name}.fa.gz"));
+    // `createBufferedWriter`: a `GZIPOutputStream` when the name ends in `.gz` or `.GZ`.
+    let encoded = |path: &str, text: &str| {
+        if path.ends_with(".gz") || path.ends_with(".GZ") {
+            java_gzip(text.as_bytes(), 6)
+        } else {
+            text.as_bytes().to_vec()
+        }
+    };
+    if let Some(gfa) = &assembly.gfa {
+        std::fs::write(&gfa_path, encoded(&gfa_path, gfa))
+            .map_err(|_| Thrown::user(format!("Failed to write gfa-file {gfa_path}")))?;
+    }
+    std::fs::write(&fasta_path, encoded(&fasta_path, &assembly.fasta))
+        .map_err(|_| Thrown::user(format!("Failed to write fasta-file {fasta_path}")))?;
+    Ok(None)
+}
+
+/// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+/// `GroundTruthReadsBuilder`, in a file of its own.
+#[path = "runners_ground_truth_reads_builder.rs"]
+mod ground_truth_reads_builder_runner;
+pub use ground_truth_reads_builder_runner::ground_truth_reads_builder;
+
+#[path = "runners_variant_recalibrator.rs"]
+mod variant_recalibrator_runner;
+pub use variant_recalibrator_runner::variant_recalibrator;
+
+/// An I/O error as the JDK words it: the C library's `strerror`, which is what Rust prints before
+/// its own ` (os error N)`.
+fn java_io_reason(error: &std::io::Error) -> String {
+    let text = error.to_string();
+    match text.rfind(" (os error ") {
+        Some(at) => text[..at].to_string(),
+        None => text,
+    }
+}
+
+/// `BwaMemIndexImageCreator.doWork`, which is `BwaMemIndex.createIndexImageFromFastaFile`: the
+/// checks GATK's Java side makes, in its order, and then the image BWA would build.
+///
+/// The image's addresses are written as zero: see `gatk_tools::bwa_index_image`.
+pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
+    use gatk_tools::bwa_mem_index_image_creator as tool;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").unwrap_or_else(|| tool::default_output(&input));
+
+    // `CommandLineProgram.instanceMainPostParseArgs` judges `--tmp-dir` before `doWork` runs:
+    // it must be a directory this process can read and write.
+    if let Some(tmp) = argument(parser, "tmp-dir") {
+        let usable = std::fs::metadata(&tmp)
+            .map(|m| m.is_dir() && !m.permissions().readonly())
+            .unwrap_or(false);
+        if !usable {
+            return Err(Thrown::user(format!(
+                "Failure working with the tmp directory {tmp}. Try changing the tmp dir with with \
+                 --tmp-dir on the command line.  Exact error was should exist and have read/write \
+                 access"
+            )));
+        }
+    }
+
+    // `assertLooksLikeFastaFile`: the extension, then a non-empty readable regular file, then a
+    // `>` as the first non-space character.
+    tool::check_extension(&input)
+        .map_err(|message| Thrown::non_user("java.lang.IllegalArgumentException", message))?;
+    let unreachable = || {
+        Thrown::non_user(
+            tool::COULD_NOT_READ_REFERENCE,
+            tool::unreachable_reference(&input),
+        )
+    };
+    let metadata = std::fs::metadata(&input).map_err(|_| unreachable())?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(unreachable());
+    }
+    let bytes = std::fs::read(&input).map_err(|_| unreachable())?;
+    if !tool::looks_like_fasta(&String::from_utf8_lossy(&bytes)) {
+        return Err(Thrown::non_user(
+            tool::INVALID_FILE_FORMAT,
+            tool::invalid_format(&input),
+        ));
+    }
+
+    // `assertCanCreateOrOverwriteImageFile`: `File.createNewFile`, deleted again at once when it
+    // made one, and an existing path must be a regular file this process can write.
+    let cannot_create = |reason: String| {
+        Thrown::non_user(
+            tool::COULD_NOT_CREATE_INDEX_IMAGE,
+            tool::cannot_create_image(&output, &reason),
+        )
+    };
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&output);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let regular = std::fs::metadata(&output)
+                .map(|m| m.is_file())
+                .unwrap_or(false);
+            let writable = regular
+                && std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&output)
+                    .is_ok();
+            if !writable {
+                return Err(cannot_create(tool::EXISTS_UNWRITABLE.to_string()));
+            }
+        }
+        Err(error) => return Err(cannot_create(java_io_reason(&error))),
+    }
+
+    let image = gatk_tools::bwa_index_image::build_image(&bytes).map_err(|_| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            "[bns_restore_core] Parse error reading the .amb file: an ambiguous base is white space",
+        )
+    })?;
+    std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
+    Ok(None)
 }

@@ -838,6 +838,15 @@
       "t": 2,
       "share": 1.0
     },
+    "JointGermlineCNVSegmentation": {
+      "rows": 22,
+      "accepted": 22,
+      "rejected": 0,
+      "distinct_outputs": 20,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
     "SVAnnotate": {
       "rows": 18,
       "accepted": 14,
@@ -1063,6 +1072,51 @@
       "t": 2,
       "share": 1.0
     },
+    "GroundTruthScorer": {
+      "rows": 25,
+      "accepted": 13,
+      "rejected": 12,
+      "distinct_outputs": 11,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
+    "AlleleFrequencyQC": {
+      "rows": 26,
+      "accepted": 0,
+      "rejected": 26,
+      "distinct_outputs": 8,
+      "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "AnalyzeSaturationMutagenesis": {
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 9,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "LocalAssembler": {
+      "rows": 21,
+      "accepted": 13,
+      "rejected": 8,
+      "distinct_outputs": 10,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "BwaMemIndexImageCreator": {
+      "rows": 15,
+      "accepted": 5,
+      "rejected": 10,
+      "distinct_outputs": 5,
+      "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
     "DownsampleByDuplicateSet": {
       "rows": 18,
       "accepted": 11,
@@ -1096,6 +1150,24 @@
       "rejected": 26,
       "distinct_outputs": 1,
       "matched": 40,
+      "t": 2,
+      "share": 1.0
+    },
+    "VariantRecalibrator": {
+      "rows": 26,
+      "accepted": 21,
+      "rejected": 5,
+      "distinct_outputs": 21,
+      "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "GroundTruthReadsBuilder": {
+      "rows": 29,
+      "accepted": 20,
+      "rejected": 9,
+      "distinct_outputs": 14,
+      "matched": 29,
       "t": 2,
       "share": 1.0
     }
