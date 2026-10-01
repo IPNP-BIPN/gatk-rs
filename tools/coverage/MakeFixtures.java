@@ -3444,7 +3444,336 @@ public class MakeFixtures {
         funcotatorDownloaderFixtures(dir);
         funcotatorFixtures(dir);
         bwaIndexImage(dir);
+        structuralVariantDiscovererFixtures(dir);
         System.out.println("wrote " + dir);
+    }
+
+    /**
+     * One alignment of an assembled contig, as BWA would write it: the contig bases it covers
+     * (1-based, inclusive), where they land, and the record kind (0 primary, 1 supplementary with
+     * hard clips, 2 secondary, 3 unmapped). {@code middle} is the cigar of the aligned part along
+     * the contig, and {@code score} its AS.
+     */
+    static final class SvAlignment {
+        final String chrom;
+        final int start;
+        final boolean reverse;
+        final int from;
+        final int to;
+        final int mq;
+        final String middle;
+        final int kind;
+        final int score;
+
+        SvAlignment(final String chrom, final int start, final boolean reverse, final int from,
+                    final int to, final int mq, final String middle, final int kind,
+                    final int score) {
+            this.chrom = chrom;
+            this.start = start;
+            this.reverse = reverse;
+            this.from = from;
+            this.to = to;
+            this.mq = mq;
+            this.middle = middle;
+            this.kind = kind;
+            this.score = score;
+        }
+
+        static SvAlignment of(final String chrom, final int start, final boolean reverse,
+                              final int from, final int to, final int mq, final int kind) {
+            return new SvAlignment(chrom, start, reverse, from, to, mq, null, kind, to - from + 1);
+        }
+    }
+
+    static String reverseComplement(final String bases) {
+        final byte[] copy = bases.getBytes(StandardCharsets.US_ASCII);
+        htsjdk.samtools.util.SequenceUtil.reverseComplement(copy);
+        return new String(copy, StandardCharsets.US_ASCII);
+    }
+
+    /** The record BWA would write for one alignment of a contig whose sequence is {@code contig}. */
+    static SAMRecord svRecord(final SAMFileHeader header, final String name, final String contig,
+                              final SvAlignment alignment, final String group) {
+        final int length = contig.length();
+        final SAMRecord record = new SAMRecord(header);
+        record.setReadName(name);
+        if (group != null) {
+            record.setAttribute("RG", group);
+        }
+        if (alignment.kind == 3) {
+            record.setReadUnmappedFlag(true);
+            record.setReadString(contig);
+            record.setBaseQualityString("I".repeat(length));
+            return record;
+        }
+        final boolean hard = alignment.kind == 1;
+        final htsjdk.samtools.CigarOperator clip =
+                hard ? htsjdk.samtools.CigarOperator.H : htsjdk.samtools.CigarOperator.S;
+        final int left = alignment.from - 1;
+        final int right = length - alignment.to;
+        final String middle = alignment.middle != null ? alignment.middle
+                : (alignment.to - alignment.from + 1) + "M";
+        final List<htsjdk.samtools.CigarElement> along = new ArrayList<>();
+        if (left > 0) {
+            along.add(new htsjdk.samtools.CigarElement(left, clip));
+        }
+        along.addAll(htsjdk.samtools.TextCigarCodec.decode(middle).getCigarElements());
+        if (right > 0) {
+            along.add(new htsjdk.samtools.CigarElement(right, clip));
+        }
+        String bases = contig;
+        if (alignment.reverse) {
+            java.util.Collections.reverse(along);
+            bases = reverseComplement(contig);
+        }
+        if (hard) {
+            final int recordLeft = alignment.reverse ? right : left;
+            final int recordRight = alignment.reverse ? left : right;
+            bases = bases.substring(recordLeft, length - recordRight);
+        }
+        record.setReferenceName(alignment.chrom);
+        record.setAlignmentStart(alignment.start);
+        record.setCigar(new htsjdk.samtools.Cigar(along));
+        record.setReadNegativeStrandFlag(alignment.reverse);
+        record.setMappingQuality(alignment.mq);
+        record.setSupplementaryAlignmentFlag(hard);
+        record.setSecondaryAlignment(alignment.kind == 2);
+        record.setReadString(bases);
+        record.setBaseQualityString("I".repeat(bases.length()));
+        record.setAttribute("NM", 0);
+        record.setAttribute("AS", alignment.score);
+        return record;
+    }
+
+    static void writeSvBam(final Path path, final SAMFileHeader header,
+                           final List<SAMRecord> records, final boolean index) {
+        final SAMFileWriterFactory factory = new SAMFileWriterFactory().setCreateIndex(index);
+        try (final SAMFileWriter writer = factory.makeBAMWriter(header, false, path.toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+    }
+
+    /**
+     * What `StructuralVariantDiscoverer` reads. `svd_ref.fasta` is random bases on chr1 (10000,
+     * with a 50-base tandem repeat at 3551-3650), chr2 (3000) and chrUn_alt (300), the last being
+     * the deleted haplotype of one contig. `svd.bam` is queryname-sorted assembled contigs with
+     * their primary, supplementary and secondary lines as BWA writes them: a deletion (twice,
+     * from two contigs), an insertion, a tandem duplication, a replacement long enough for a
+     * linked DEL and INS, both strand switches, an inter-chromosome and a reference-order-swap
+     * breakend pair, a deletion on the reverse strand, one at MQ 25, one inside a single gapped
+     * alignment, a tandem contraction, a small duplication with inserted bases, a deletion whose
+     * contig maps whole to chrUn_alt, one with a secondary line, an unmapped contig and an
+     * insertion whose middle maps at MQ 5. `svd2.bam` is another read group with three contigs and
+     * no breakend, which is what the copy-number calls can annotate (a breakend refuses them),
+     * `svd_coord.bam` the same coordinate-sorted and indexed, and `svd_norg.bam` the same with no
+     * read group.
+     */
+    static void structuralVariantDiscovererFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20261001L);
+        final StringBuilder first = new StringBuilder();
+        for (int i = 0; i < 10000; i++) {
+            first.append("ACGT".charAt(random.nextInt(4)));
+        }
+        for (int i = 0; i < 50; i++) {
+            first.setCharAt(3550 + i, first.charAt(3600 + i));
+        }
+        final StringBuilder second = new StringBuilder();
+        for (int i = 0; i < 3000; i++) {
+            second.append("ACGT".charAt(random.nextInt(4)));
+        }
+        final String chr1 = first.toString();
+        final String chr2 = second.toString();
+        final String alt = chr1.substring(8000, 8150) + chr1.substring(8650, 8800);
+        final java.util.Map<String, String> genome = new java.util.LinkedHashMap<>();
+        genome.put("chr1", chr1);
+        genome.put("chr2", chr2);
+        genome.put("chrUn_alt", alt);
+        // `svd_other.fasta` is the same genome with chr2 cut to 2900 bases: a dictionary the reads
+        // disagree with, and still every base a call in this corpus asks for.
+        for (final Object[] fasta : new Object[][] {{"svd_ref.fasta", 3000}, {"svd_other.fasta", 2900}}) {
+            try (final htsjdk.samtools.reference.FastaReferenceWriter writer =
+                         new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                                 .setFastaFile(dir.resolve((String) fasta[0]))
+                                 .setMakeFaiOutput(true)
+                                 .setMakeDictOutput(true)
+                                 .build()) {
+                for (final java.util.Map.Entry<String, String> contig : genome.entrySet()) {
+                    final String bases = contig.getKey().equals("chr2")
+                            ? chr2.substring(0, (Integer) fasta[1]) : contig.getValue();
+                    writer.addSequence(new htsjdk.samtools.reference.ReferenceSequence(
+                            contig.getKey(), 0, bases.getBytes(StandardCharsets.US_ASCII)));
+                }
+            }
+        }
+        final java.util.function.BiFunction<String, int[], String> ref =
+                (chrom, span) -> genome.get(chrom).substring(span[0] - 1, span[1]);
+        final StringBuilder novel = new StringBuilder();
+        for (int i = 0; i < 300; i++) {
+            novel.append("ACGT".charAt(random.nextInt(4)));
+        }
+        final String n80 = novel.substring(0, 80);
+        final String n60 = novel.substring(80, 140);
+        final String n40 = novel.substring(140, 180);
+
+        // name, sequence, alignments
+        final List<Object[]> contigs = new ArrayList<>();
+        final String del = ref.apply("chr1", new int[] {1001, 1150}) + ref.apply("chr1", new int[] {1651, 1800});
+        contigs.add(new Object[] {"ctg01_del", del, new SvAlignment[] {
+                SvAlignment.of("chr1", 1001, false, 1, 150, 60, 0),
+                SvAlignment.of("chr1", 1651, false, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg01_del_b", del, new SvAlignment[] {
+                SvAlignment.of("chr1", 1001, false, 1, 150, 60, 0),
+                SvAlignment.of("chr1", 1651, false, 151, 300, 50, 1)}});
+        contigs.add(new Object[] {"ctg02_ins",
+                ref.apply("chr1", new int[] {2001, 2150}) + n80 + ref.apply("chr1", new int[] {2151, 2300}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 2001, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 2151, false, 231, 380, 60, 1)}});
+        contigs.add(new Object[] {"ctg03_dup",
+                ref.apply("chr1", new int[] {3001, 3200}) + ref.apply("chr1", new int[] {3101, 3300}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 3001, false, 1, 200, 60, 0),
+                        SvAlignment.of("chr1", 3101, false, 201, 400, 60, 1)}});
+        contigs.add(new Object[] {"ctg04_rpl",
+                ref.apply("chr1", new int[] {4001, 4150}) + n60 + ref.apply("chr1", new int[] {4701, 4850}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 4001, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 4701, false, 211, 360, 60, 1)}});
+        contigs.add(new Object[] {"ctg05_inv55",
+                ref.apply("chr1", new int[] {5001, 5150})
+                        + reverseComplement(ref.apply("chr1", new int[] {5401, 5550})),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 5001, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 5401, true, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg06_inter",
+                ref.apply("chr1", new int[] {6001, 6150}) + ref.apply("chr2", new int[] {1001, 1150}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 6001, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr2", 1001, false, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg07_revdel",
+                reverseComplement(ref.apply("chr1", new int[] {7351, 7500}))
+                        + reverseComplement(ref.apply("chr1", new int[] {7001, 7150})),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 7351, true, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 7001, true, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg08_lowmq",
+                ref.apply("chr1", new int[] {500, 649}) + ref.apply("chr1", new int[] {850, 999}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 500, false, 1, 150, 25, 0),
+                        SvAlignment.of("chr1", 850, false, 151, 300, 25, 1)}});
+        contigs.add(new Object[] {"ctg09_gapped",
+                ref.apply("chr1", new int[] {9001, 9150}) + ref.apply("chr1", new int[] {9351, 9500}),
+                new SvAlignment[] {
+                        new SvAlignment("chr1", 9001, false, 1, 300, 60, "150M200D150M", 0, 290)}});
+        contigs.add(new Object[] {"ctg10_contraction",
+                ref.apply("chr1", new int[] {3401, 3600}) + ref.apply("chr1", new int[] {3651, 3800}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 3401, false, 1, 200, 60, 0),
+                        SvAlignment.of("chr1", 3601, false, 151, 350, 60, 1)}});
+        contigs.add(new Object[] {"ctg11_smalldup",
+                ref.apply("chr1", new int[] {9601, 9750}) + n40 + ref.apply("chr1", new int[] {9721, 9870}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 9601, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 9721, false, 191, 340, 60, 1)}});
+        contigs.add(new Object[] {"ctg12_noncanon", alt, new SvAlignment[] {
+                SvAlignment.of("chrUn_alt", 1, false, 1, 300, 60, 0),
+                SvAlignment.of("chr1", 8001, false, 1, 150, 60, 1),
+                SvAlignment.of("chr1", 8651, false, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg13_swap",
+                ref.apply("chr1", new int[] {2601, 2750}) + ref.apply("chr1", new int[] {2401, 2550}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 2601, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 2401, false, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg14_inv33",
+                reverseComplement(ref.apply("chr1", new int[] {5801, 5950}))
+                        + ref.apply("chr1", new int[] {5601, 5750}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr1", 5801, true, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 5601, false, 151, 300, 60, 1)}});
+        contigs.add(new Object[] {"ctg15_secondary",
+                ref.apply("chr2", new int[] {2001, 2150}) + ref.apply("chr2", new int[] {2401, 2550}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr2", 2001, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr2", 2401, false, 151, 300, 60, 1),
+                        SvAlignment.of("chr2", 101, false, 1, 150, 60, 2)}});
+        contigs.add(new Object[] {"ctg16_unmapped", novel.substring(0, 300), new SvAlignment[] {
+                SvAlignment.of("chr1", 0, false, 1, 300, 0, 3)}});
+        contigs.add(new Object[] {"ctg17_insmap",
+                ref.apply("chr2", new int[] {1201, 1350}) + ref.apply("chr1", new int[] {51, 200})
+                        + ref.apply("chr2", new int[] {1351, 1500}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr2", 1201, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr1", 51, false, 151, 300, 5, 1),
+                        SvAlignment.of("chr2", 1351, false, 301, 450, 60, 1)}});
+        final List<Object[]> others = new ArrayList<>();
+        others.add(contigs.get(0));
+        others.add(contigs.get(3));
+        others.add(new Object[] {"ctg20_del2",
+                ref.apply("chr2", new int[] {2601, 2750}) + ref.apply("chr2", new int[] {2851, 3000}),
+                new SvAlignment[] {
+                        SvAlignment.of("chr2", 2601, false, 1, 150, 60, 0),
+                        SvAlignment.of("chr2", 2851, false, 151, 300, 60, 1)}});
+
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        for (final java.util.Map.Entry<String, String> contig : genome.entrySet()) {
+            dictionary.addSequence(new SAMSequenceRecord(contig.getKey(), contig.getValue().length()));
+        }
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+        final SAMFileHeader bare = header.clone();
+        final SAMReadGroupRecord group = new SAMReadGroupRecord("rg1");
+        group.setSample("sample1");
+        group.setPlatform("ILLUMINA");
+        header.addReadGroup(group);
+        final SAMFileHeader other = bare.clone();
+        final SAMReadGroupRecord otherGroup = new SAMReadGroupRecord("rg2");
+        otherGroup.setSample("sample1");
+        otherGroup.setPlatform("ILLUMINA");
+        other.addReadGroup(otherGroup);
+        final java.util.function.BiFunction<SAMFileHeader, List<Object[]>, List<SAMRecord>> records =
+                (target, list) -> {
+                    final List<SAMRecord> out = new ArrayList<>();
+                    final String rg = target.getReadGroups().isEmpty() ? null
+                            : target.getReadGroups().get(0).getId();
+                    for (final Object[] contig : list) {
+                        for (final SvAlignment alignment : (SvAlignment[]) contig[2]) {
+                            out.add(svRecord(target, (String) contig[0], (String) contig[1], alignment, rg));
+                        }
+                    }
+                    return out;
+                };
+        writeSvBam(dir.resolve("svd.bam"), header, records.apply(header, contigs), false);
+        writeSvBam(dir.resolve("svd2.bam"), other, records.apply(other, others), false);
+        writeSvBam(dir.resolve("svd_norg.bam"), bare, records.apply(bare, others), false);
+        final SAMFileHeader coordinate = other.clone();
+        coordinate.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        writeSvBam(dir.resolve("svd_coord.bam"), coordinate, records.apply(coordinate, others), true);
+
+        // The external copy-number calls, one sample each, over the reads' own dictionary.
+        final StringBuilder cnv = new StringBuilder("##fileformat=VCFv4.2\n");
+        cnv.append("##ALT=<ID=DEL,Description=\"Deletion\">\n");
+        cnv.append("##ALT=<ID=DUP,Description=\"Duplication\">\n");
+        cnv.append("##INFO=<ID=END,Number=1,Type=Integer,Description=\"End\">\n");
+        cnv.append("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n");
+        cnv.append("##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Copy number\">\n");
+        cnv.append("##FORMAT=<ID=CNQ,Number=1,Type=Float,Description=\"Copy number quality\">\n");
+        for (final java.util.Map.Entry<String, String> contig : genome.entrySet()) {
+            cnv.append("##contig=<ID=").append(contig.getKey()).append(",length=")
+                    .append(contig.getValue().length()).append(">\n");
+        }
+        for (final String sample : new String[] {"sample1", "other"}) {
+            final String text = cnv
+                    + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" + sample + "\n"
+                    + "chr1\t1100\tcnv_del1\tN\t<DEL>\t.\tPASS\tEND=1700\tGT:CN:CNQ\t0/1:1:45.5\n"
+                    + "chr1\t3050\tcnv_dup1\tN\t<DUP>\t.\tPASS\tEND=3350\tGT:CN:CNQ\t0/1:3:30\n"
+                    + "chr1\t4100\tcnv_del2\tN\t<DEL>\t.\tPASS\tEND=4800\tGT:CN:CNQ\t1/1:0:99\n";
+            Files.writeString(dir.resolve(sample.equals("sample1") ? "svd_cnv.vcf" : "svd_cnv_other.vcf"),
+                    text, StandardCharsets.UTF_8);
+        }
+        Files.writeString(dir.resolve("svd_noncanonical.txt"), "chrUn_alt\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("svd_noncanonical_other.txt"), "chrUn_missing\nchr9\n",
+                StandardCharsets.UTF_8);
     }
 
     /**

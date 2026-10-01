@@ -401,6 +401,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "StructuralVariantDiscoverer" => Some(run_structural_variant_discoverer),
         "AlleleFrequencyQC" => Some(run_allele_frequency_qc),
         "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
         "LocalAssembler" => Some(run_local_assembler),
@@ -539,6 +540,10 @@ fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_annotator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_annotator(&parsed("VariantAnnotator", args)?)
+}
+
+fn run_structural_variant_discoverer(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::structural_variant_discoverer(&parsed("StructuralVariantDiscoverer", args)?)
 }
 
 fn run_local_assembler(args: &[String]) -> Result<Option<String>, Thrown> {

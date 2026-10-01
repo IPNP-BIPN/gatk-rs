@@ -6471,6 +6471,167 @@
         "FASTA is the bwa-index-image suite's missing-fasta case and is not repeated here."
       ]
     },
+    "StructuralVariantDiscoverer": {
+      "$why": [
+        "svd.bam is queryname-sorted assembled contigs over svd_ref.fasta (chr1, chr2 and chrUn_alt),",
+        "with their primary, supplementary and secondary lines as BWA writes them: a deletion called",
+        "by two contigs, an insertion, a tandem duplication, a replacement written as a linked DEL and",
+        "INS, both intra-chromosome strand switches, an inter-chromosome and a reference-order-swap",
+        "breakend pair, a deletion on the reverse strand, one at MQ 25 (LOW_MQ at the default --min-mq",
+        "and not at 20), one inside a single gapped alignment, a tandem contraction, a small",
+        "duplication with inserted bases, a deletion whose contig also maps whole to chrUn_alt, one",
+        "with a secondary line, an unmapped contig and an insertion whose middle maps at MQ 5.",
+        "svd2.bam is three contigs of the same sample and no breakend; svd_coord.bam is them",
+        "coordinate-sorted and indexed, the queryname refusal.",
+        "--disable-read-filter NotSecondaryAlignmentReadFilter lets the secondary line in, which makes",
+        "its contig ambiguous and drops a call; MappedReadFilter lets the unmapped contig in, which",
+        "AlignmentInterval refuses on svd.bam and not on svd2.bam, which has none.",
+        "--disable-tool-default-read-filters is forbidden with svd.bam: it is the same refusal as",
+        "MappedReadFilter there, and on svd2.bam it is accepted. The contig with only supplementary",
+        "lines (No primary line) is reached by --inverted-read-filter NotSupplementaryAlignmentReadFilter.",
+        "--read-filter MappingQualityReadFilter drops the MQ 5 line (INSSEQ_MAP disappears) and",
+        "PrimaryLineReadFilter leaves only the gapped call.",
+        "--non-canonical-contig-names-file svd_noncanonical.txt names chrUn_alt, which turns an",
+        "ambiguous contig into a deletion annotated with CTG_GOOD_NONCANONICAL_MAPPING; the other file",
+        "names contigs the dictionary lacks, which changes nothing.",
+        "--cnv-calls svd_cnv.vcf annotates svd2.bam's deletion and duplication with",
+        "EXTERNAL_CNV_CALLS and refuses svd.bam, whose breakends have no end (the reference's own",
+        "IllegalArgumentException).",
+        "svd_other.fasta cuts chr2 to 2900 bases, which the dictionary validation refuses; it is",
+        "forbidden without --disable-sequence-dictionary-validation, so its rows run on a reference",
+        "that still holds every base a call asks for. The validation refusal is the read walkers'",
+        "startup, measured by their arrays.",
+        "Refusals compared by hand against the oracle, one run each, and left out of the rows they",
+        "would spend: a file with no read group (svd_norg.bam, the sample refusal), a names file that",
+        "is not there, copy-number calls for another sample (svd_cnv_other.vcf), a master dictionary",
+        "the reads disagree with (svd_other.dict), and -L, which every queryname-sorted file refuses",
+        "for want of an index; -XL alone varies instead and is refused the same way.",
+        "The SVVCFWriter builds its own writer, so --create-output-variant-index, -md5,",
+        "--sites-only-vcf-output and --max-variants-per-shard vary and change nothing, and a .vcf.gz",
+        "output is plain text. --add-output-vcf-command-line is held at false for the reason every",
+        "variant writer holds it: the line carries the run's date.",
+        "--read-index is held out: a queryname-sorted file cannot be indexed, so the one index in the",
+        "corpus belongs to the refused coordinate-sorted file.",
+        "--read-filter-tag-op, --keep-reverse-strand-only and --dont-require-soft-clips-both-ends",
+        "belong to filters no row selects and are refused without them, as for AddOriginalAlignmentTags.",
+        "The complex-event path (three or more alignments) is not in the corpus: the port refuses it",
+        "as its own limitation."
+      ],
+      "--input": [
+        "/work/fixtures/svd.bam",
+        "/work/fixtures/svd2.bam",
+        "/work/fixtures/svd_coord.bam"
+      ],
+      "--outputVCFName": [
+        "/work/out/svd.vcf",
+        "/work/out/svd.vcf.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/svd_ref.fasta",
+        "/work/fixtures/svd_other.fasta"
+      ],
+      "--cnv-calls": [
+        "null",
+        "/work/fixtures/svd_cnv.vcf"
+      ],
+      "--non-canonical-contig-names-file": [
+        "null",
+        "/work/fixtures/svd_noncanonical.txt",
+        "/work/fixtures/svd_noncanonical_other.txt"
+      ],
+      "--min-mq": [
+        "30",
+        "20",
+        "61"
+      ],
+      "--min-align-length": [
+        "50",
+        "151"
+      ],
+      "--assembly-imprecise-evidence-overlap-uncertainty": [
+        "100",
+        "5"
+      ],
+      "--imprecise-variant-evidence-threshold": [
+        "7",
+        "1"
+      ],
+      "--truth-interval-padding": [
+        "50",
+        "0"
+      ],
+      "--max-callable-imprecise-deletion-size": [
+        "15000",
+        "10"
+      ],
+      "--debug-mode": [
+        "false",
+        "true"
+      ],
+      "--intervals": [],
+      "--exclude-intervals": [
+        "null",
+        "chr2"
+      ],
+      "--read-filter": [
+        "null",
+        "MappingQualityReadFilter",
+        "PrimaryLineReadFilter"
+      ],
+      "--disable-read-filter": [
+        "null",
+        "NotSecondaryAlignmentReadFilter",
+        "MappedReadFilter"
+      ],
+      "--inverted-read-filter": [
+        "null",
+        "NotSupplementaryAlignmentReadFilter"
+      ],
+      "--disable-tool-default-read-filters": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [
+        "null",
+        "/work/fixtures/svd_ref.dict"
+      ],
+      "--read-validation-stringency": [
+        "SILENT",
+        "LENIENT",
+        "STRICT"
+      ],
+      "--disable-sequence-dictionary-validation": [
+        "false",
+        "true"
+      ],
+      "--create-output-variant-index": [
+        "true",
+        "false"
+      ],
+      "--create-output-variant-md5": [
+        "false",
+        "true"
+      ],
+      "--sites-only-vcf-output": [
+        "false",
+        "true"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0",
+        "2"
+      ],
+      "--lenient": [
+        "false",
+        "true"
+      ],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": []
+    },
     "JointGermlineCNVSegmentation": {
       "$why": [
         "--variant is jgcs_male1.vcf, ONE sample written as GermlineCNVCaller writes segments, which is the",
@@ -7716,6 +7877,26 @@
         "--tmp-dir": "/work/tmp-missing"
       },
       "why": "Both refuse and only the first is observed; the pair would spend a row the accepting values need, so every refusal here is paired with accepting values only."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--reference": "/work/fixtures/svd_other.fasta",
+        "--disable-sequence-dictionary-validation": "false"
+      },
+      "why": "The shorter chr2 is refused by the dictionary validation before the tool runs, which the read walkers' arrays measure; with the validation off the row runs on a reference that still holds every base a call asks for."
+    },
+    {
+      "tools": [
+        "StructuralVariantDiscoverer"
+      ],
+      "forbid": {
+        "--disable-tool-default-read-filters": "true",
+        "--input": "/work/fixtures/svd.bam"
+      },
+      "why": "Without the defaults the unmapped contig of svd.bam reaches AlignmentInterval, the same refusal --disable-read-filter MappedReadFilter measures; on svd2.bam the row is accepted."
     },
     {
       "tools": [

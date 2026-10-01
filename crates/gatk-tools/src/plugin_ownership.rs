@@ -375,6 +375,12 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "PassesVendorQualityCheckReadFilter",
             "MappedReadFilter",
         ]),
+        // `StructuralVariantDiscoverer.getDefaultReadFilters` does not call super: MAPPED and
+        // NOT_SECONDARY_ALIGNMENT, with no wellformed filter, so a supplementary line with hard
+        // clips reaches the tool as BWA wrote it.
+        "StructuralVariantDiscoverer" => {
+            Some(&["MappedReadFilter", "NotSecondaryAlignmentReadFilter"])
+        }
         _ => None,
     }
 }
