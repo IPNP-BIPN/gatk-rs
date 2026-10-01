@@ -6184,7 +6184,6 @@
         "refusing value paired with every other argument would turn most rows into the parser's",
         "refusal. The chain lengths stay short enough that a row runs in seconds and the burn-in",
         "values stay below both sample counts. --window-size is $repeated too: three sizes, and one",
-        "values stay below both sample counts. --window-size is $repeated too: three sizes, and one",
         "size named twice, which the tool deduplicates. --genotyping-base-error-rate takes 0, which calls every site heterozygous, and 0.2, which calls fewer."
       ],
       "$repeated": [
