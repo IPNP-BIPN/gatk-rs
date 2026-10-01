@@ -23619,6 +23619,11 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 }
 
 /// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+/// `GroundTruthReadsBuilder`, in a file of its own.
+#[path = "runners_ground_truth_reads_builder.rs"]
+mod ground_truth_reads_builder_runner;
+pub use ground_truth_reads_builder_runner::ground_truth_reads_builder;
+
 #[path = "runners_variant_recalibrator.rs"]
 mod variant_recalibrator_runner;
 pub use variant_recalibrator_runner::variant_recalibrator;

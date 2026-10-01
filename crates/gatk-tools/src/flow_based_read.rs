@@ -267,6 +267,30 @@ impl FlowRead {
         Ok(flow_read)
     }
 
+    /// The flip `applyAlignment` makes first for a reverse read whose direction was set to
+    /// `SYNTHESIS`: every row of the matrix reversed, the key reversed, and the flow order
+    /// reverse-complemented.
+    pub fn flip_to_synthesis(&mut self) {
+        for row in self.matrix.iter_mut() {
+            row.reverse();
+        }
+        self.key.reverse();
+        self.flow_order.reverse();
+        for base in self.flow_order.iter_mut() {
+            *base = match *base {
+                b'A' => b'T',
+                b'T' => b'A',
+                b'C' => b'G',
+                b'G' => b'C',
+                b'a' => b't',
+                b't' => b'a',
+                b'c' => b'g',
+                b'g' => b'c',
+                other => other,
+            };
+        }
+    }
+
     /// `applyAlignment` on a read already in reference direction and in base format, which is
     /// `applyClipping(0, 0, 0, 0, false)`: nothing is clipped, but the zero flows at either end
     /// of the key are dropped, with their columns and their bases of the flow order.

@@ -6929,6 +6929,161 @@
         "false",
         "true"
       ]
+    },
+    "GroundTruthReadsBuilder": {
+      "--input": [
+        "/work/fixtures/gt.bam"
+      ],
+      "--output-csv": [
+        "/work/out/gtrb.csv",
+        "/work/out/gtrb.csv.gz"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta",
+        "null"
+      ],
+      "--maternal-ref": [
+        "/work/fixtures/gt_maternal.fasta"
+      ],
+      "--paternal-ref": [
+        "/work/fixtures/gt_paternal.fasta"
+      ],
+      "--ancestral-translators-base-path": [
+        "/work/fixtures/gtrb/",
+        "/work/fixtures/gtrb_late/"
+      ],
+      "--likelihood-calculation-engine": [
+        "FlowBased",
+        "PairHMM"
+      ],
+      "--subsampling-ratio": [
+        "1.0"
+      ],
+      "--max-output-reads": [
+        "20000000",
+        "5",
+        "0"
+      ],
+      "--output-flow-length": [
+        "0",
+        "120"
+      ],
+      "--prepend-sequence": [
+        "null",
+        "TTTT"
+      ],
+      "--append-sequence": [
+        "null",
+        "CCCC"
+      ],
+      "--min-mq": [
+        "0.0",
+        "30.0"
+      ],
+      "--max-rq": [
+        "0.0",
+        "12.0"
+      ],
+      "--min-haplotype-score": [
+        "0.0",
+        "-3.0"
+      ],
+      "--min-haplotype-score-delta": [
+        "0.0",
+        "0.5"
+      ],
+      "--haplotype-output-padding-size": [
+        "8",
+        "0",
+        "20"
+      ],
+      "--gt-no-output": [
+        "false",
+        "true"
+      ],
+      "--gt-debug": [
+        "false"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:650-760"
+      ],
+      "--pair-hmm-implementation": [
+        "FASTEST_AVAILABLE"
+      ],
+      "--pair-hmm-results-file": [],
+      "--dragstr-params-path": [],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0",
+        "0.01"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "3,5,4,5",
+        "1,2"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--exclude-intervals": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "$why": [
+        "gt.bam over its two ancestors: gt_maternal.fasta carries substitutions at 650, 700 and 820,",
+        "gt_paternal.fasta a two-base insertion after 760, and gtrb/ the translation tables between",
+        "them; gtrb_late/ starts its tables at 620, so the reads before it index a table at minus one.",
+        "The reads carry tm tags of Q, Z and AQ, one-sided and two-sided soft clips and both strands.",
+        "--subsampling-ratio is held at one: the tool draws from an unseeded java.util.Random, so any",
+        "other ratio in (0, 1) is a different answer on every run of the reference itself. --gt-debug",
+        "is held at false: it only logs. PairHMM is the engine refusal onTraversalStart makes after",
+        "opening both ancestral references."
+      ]
     }
   },
   "constraints": [
