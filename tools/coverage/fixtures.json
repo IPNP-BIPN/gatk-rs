@@ -4713,15 +4713,23 @@
         "f1r2_tn.tar.gz is the reference's own CollectF1R2Counts over the Mutect tumour/normal BAM and",
         "its random reference: two samples in one archive, each with alt sites in several contexts.",
         "f1r2_counts.tar.gz is the one-sample F1R2 corpus over the ACGT repeat, whose few contexts",
-        "leave most priors flat. An output not ending in .tar.gz is refused first.",
+        "leave most priors flat. The tumour/normal archive given twice is the multi-file path: each",
+        "sample's histograms summed bin by bin across files and its alt tables concatenated.",
+        "Two accepted output names and one refused one, so the refusal (an output not ending in",
+        ".tar.gz is refused first) is a third of the rows rather than half of them.",
         "--num-em-iterations 1 stops the EM before it converges, and --max-depth 50 cuts the depth bins."
+      ],
+      "$lists": [
+        "--input"
       ],
       "--input": [
         "/work/fixtures/f1r2_tn.tar.gz",
-        "/work/fixtures/f1r2_counts.tar.gz"
+        "/work/fixtures/f1r2_counts.tar.gz",
+        "/work/fixtures/f1r2_tn.tar.gz /work/fixtures/f1r2_tn.tar.gz"
       ],
       "--output": [
         "/work/out/priors.tar.gz",
+        "/work/out/orientation.tar.gz",
         "/work/out/priors.tar"
       ],
       "--convergence-threshold": [

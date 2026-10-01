@@ -78,9 +78,9 @@
       "source": "none"
     }
   ],
-  "rows": 8,
-  "tuples_total": 84,
-  "tuples_covered": 84,
+  "rows": 12,
+  "tuples_total": 109,
+  "tuples_covered": 109,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -122,7 +122,7 @@
         "--input=/work/fixtures/f1r2_counts.tar.gz",
         "--max-depth=50",
         "--num-em-iterations=1",
-        "--output=/work/out/priors.tar",
+        "--output=/work/out/orientation.tar.gz",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=false"
       ]
@@ -130,19 +130,19 @@
     {
       "row": 2,
       "labels": {
-        "--convergence-threshold": "fixture[1]",
-        "--input": "fixture[0]",
-        "--max-depth": "fixture[1]",
-        "--num-em-iterations": "fixture[0]",
-        "--output": "fixture[1]",
+        "--convergence-threshold": "fixture[0]",
+        "--input": "fixture[2]",
+        "--max-depth": "fixture[0]",
+        "--num-em-iterations": "fixture[1]",
+        "--output": "fixture[2]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "false"
       },
       "arguments": [
-        "--convergence-threshold=0.1",
-        "--input=/work/fixtures/f1r2_tn.tar.gz",
-        "--max-depth=50",
-        "--num-em-iterations=20",
+        "--convergence-threshold=1.0E-4",
+        "--input=/work/fixtures/f1r2_tn.tar.gz /work/fixtures/f1r2_tn.tar.gz",
+        "--max-depth=200",
+        "--num-em-iterations=1",
         "--output=/work/out/priors.tar",
         "--tmp-dir=/work/tmp",
         "--use-jdk-deflater=false"
@@ -152,19 +152,19 @@
       "row": 3,
       "labels": {
         "--convergence-threshold": "fixture[1]",
-        "--input": "fixture[1]",
-        "--max-depth": "fixture[0]",
-        "--num-em-iterations": "fixture[1]",
-        "--output": "fixture[0]",
+        "--input": "fixture[0]",
+        "--max-depth": "fixture[1]",
+        "--num-em-iterations": "fixture[0]",
+        "--output": "fixture[2]",
         "--tmp-dir": "fixture[1]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--convergence-threshold=0.1",
-        "--input=/work/fixtures/f1r2_counts.tar.gz",
-        "--max-depth=200",
-        "--num-em-iterations=1",
-        "--output=/work/out/priors.tar.gz",
+        "--input=/work/fixtures/f1r2_tn.tar.gz",
+        "--max-depth=50",
+        "--num-em-iterations=20",
+        "--output=/work/out/priors.tar",
         "--tmp-dir=/work/tmp2",
         "--use-jdk-deflater=true"
       ]
@@ -172,7 +172,49 @@
     {
       "row": 4,
       "labels": {
-        "--convergence-threshold": "fixture[0]",
+        "--convergence-threshold": "fixture[1]",
+        "--input": "fixture[1]",
+        "--max-depth": "fixture[0]",
+        "--num-em-iterations": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--convergence-threshold=0.1",
+        "--input=/work/fixtures/f1r2_counts.tar.gz",
+        "--max-depth=200",
+        "--num-em-iterations=20",
+        "--output=/work/out/orientation.tar.gz",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 5,
+      "labels": {
+        "--convergence-threshold": "fixture[1]",
+        "--input": "fixture[2]",
+        "--max-depth": "fixture[1]",
+        "--num-em-iterations": "fixture[0]",
+        "--output": "fixture[0]",
+        "--tmp-dir": "fixture[1]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--convergence-threshold=0.1",
+        "--input=/work/fixtures/f1r2_tn.tar.gz /work/fixtures/f1r2_tn.tar.gz",
+        "--max-depth=50",
+        "--num-em-iterations=20",
+        "--output=/work/out/priors.tar.gz",
+        "--tmp-dir=/work/tmp2",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 6,
+      "labels": {
+        "--convergence-threshold": "fixture[1]",
         "--input": "fixture[0]",
         "--max-depth": "fixture[1]",
         "--num-em-iterations": "fixture[1]",
@@ -181,7 +223,7 @@
         "--use-jdk-deflater": "true"
       },
       "arguments": [
-        "--convergence-threshold=1.0E-4",
+        "--convergence-threshold=0.1",
         "--input=/work/fixtures/f1r2_tn.tar.gz",
         "--max-depth=50",
         "--num-em-iterations=1",
@@ -191,7 +233,28 @@
       ]
     },
     {
-      "row": 5,
+      "row": 7,
+      "labels": {
+        "--convergence-threshold": "fixture[0]",
+        "--input": "fixture[0]",
+        "--max-depth": "fixture[0]",
+        "--num-em-iterations": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "false"
+      },
+      "arguments": [
+        "--convergence-threshold=1.0E-4",
+        "--input=/work/fixtures/f1r2_tn.tar.gz",
+        "--max-depth=200",
+        "--num-em-iterations=20",
+        "--output=/work/out/orientation.tar.gz",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=false"
+      ]
+    },
+    {
+      "row": 8,
       "labels": {
         "--convergence-threshold": "fixture[0]",
         "--input": "fixture[1]",
@@ -199,7 +262,7 @@
         "--num-em-iterations": "fixture[0]",
         "--output": "fixture[0]",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--convergence-threshold=1.0E-4",
@@ -208,23 +271,23 @@
         "--num-em-iterations=20",
         "--output=/work/out/priors.tar.gz",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
-      "row": 6,
+      "row": 9,
       "labels": {
         "--convergence-threshold": "fixture[0]",
-        "--input": "fixture[0]",
+        "--input": "fixture[1]",
         "--max-depth": "fixture[0]",
         "--num-em-iterations": "fixture[0]",
-        "--output": "fixture[1]",
+        "--output": "fixture[2]",
         "--tmp-dir": "fixture[0]",
         "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--convergence-threshold=1.0E-4",
-        "--input=/work/fixtures/f1r2_tn.tar.gz",
+        "--input=/work/fixtures/f1r2_counts.tar.gz",
         "--max-depth=200",
         "--num-em-iterations=20",
         "--output=/work/out/priors.tar",
@@ -233,7 +296,28 @@
       ]
     },
     {
-      "row": 7,
+      "row": 10,
+      "labels": {
+        "--convergence-threshold": "fixture[0]",
+        "--input": "fixture[2]",
+        "--max-depth": "fixture[0]",
+        "--num-em-iterations": "fixture[0]",
+        "--output": "fixture[1]",
+        "--tmp-dir": "fixture[0]",
+        "--use-jdk-deflater": "true"
+      },
+      "arguments": [
+        "--convergence-threshold=1.0E-4",
+        "--input=/work/fixtures/f1r2_tn.tar.gz /work/fixtures/f1r2_tn.tar.gz",
+        "--max-depth=200",
+        "--num-em-iterations=20",
+        "--output=/work/out/orientation.tar.gz",
+        "--tmp-dir=/work/tmp",
+        "--use-jdk-deflater=true"
+      ]
+    },
+    {
+      "row": 11,
       "labels": {
         "--convergence-threshold": "fixture[0]",
         "--input": "fixture[0]",
