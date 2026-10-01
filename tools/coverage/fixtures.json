@@ -6494,7 +6494,12 @@
         "mitochondrial code, which renames four codons.",
         "-L and -XL are on the amplicon's contig: the tool bounds nothing with them, but they are still",
         "resolved against the dictionary, so the shared chr1 values would only measure that refusal.",
-        "--read-index is held out: neither BAM has an index."
+        "--read-index is held out: neither BAM has an index.",
+        "--write-rejected-reads is held at false: GATK writes BAMs asynchronously, and a read rejected",
+        "before its report exists is added to the rejected BAM twice, once tagged XX:unmapped and then,",
+        "after processReport retags the same object XX:lowQ, again. Whether the first copy was encoded",
+        "before the retag depends on the writer thread, so the reference itself answers either way from",
+        "run to run (4 of 18 runs under load kept XX:unmapped on dup1 and qc1)."
       ],
       "--input": [
         "/work/fixtures/asm.bam",
@@ -6552,7 +6557,10 @@
         "/work/fixtures/amplicon.dict",
         "/work/fixtures/amplicon_plus.dict"
       ],
-      "--read-index": []
+      "--read-index": [],
+      "--write-rejected-reads": [
+        "false"
+      ]
     },
     "LocalAssembler": {
       "$why": [
