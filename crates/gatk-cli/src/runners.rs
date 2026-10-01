@@ -797,7 +797,11 @@ fn read_walker_startup_with(
     // unindexed input is not refused at all. Measured on ten rows each of `TransferReadTags` and
     // `PostProcessReadsForRSEM`, whose corpus is query-name sorted and therefore has no index to
     // find: the reference traversed the whole file and the port refused every row.
-    if intervals_given && index.is_none() && sets_traversal_bounds(tool) {
+    // `hasUserSuppliedIntervals` is `intervalsSpecified`, which an exclusion alone satisfies: an
+    // unindexed input given `-XL` and no `-L` is refused the same way.
+    let intervals_specified =
+        intervals_given || !arguments(parser, "exclude-intervals").is_empty();
+    if intervals_specified && index.is_none() && sets_traversal_bounds(tool) {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
         ));
@@ -23726,5 +23730,177 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
         )
     })?;
     std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
+    Ok(None)
+}
+
+/// `StructuralVariantDiscoverer`: a read walker over the alignments of assembled contigs.
+///
+/// The startup is the read walker's (dictionaries, reference, reads, intervals, validation, the
+/// traversal bounds), with the tool's own two default filters. `onTraversalStart` then refuses a
+/// file that is not queryname-sorted, reads the one sample the read groups carry, loads the
+/// external copy-number calls and the non-canonical contig names, in that order. The traversal
+/// hands every read that passes the filters to the tool, which gathers them by name; the calls
+/// are made and written only once the traversal succeeds, so a refusal leaves no file.
+///
+/// `SVVCFWriter` builds its own `VariantContextWriter` over a plain output stream: no index, no
+/// MD5, no block compression whatever the name, and no genotypes to drop, so
+/// `--create-output-variant-index`, `--create-output-variant-md5`, `--sites-only-vcf-output` and
+/// `--max-variants-per-shard` change nothing. Only `--add-output-vcf-command-line` reaches it,
+/// through `getDefaultToolVCFHeaderLines`.
+pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
+    use gatk_tools::structural_variant_discoverer as svd;
+    use gatk_tools::sv_contig_alignments::{
+        Cigar, CigarOp, ContigRead, Dictionary, Interval, SvError,
+    };
+
+    const TOOL: &str = "StructuralVariantDiscoverer";
+    let thrown = |error: SvError| {
+        if error.is_user() {
+            Thrown::user(error.message)
+        } else {
+            Thrown::non_user(error.class, error.message)
+        }
+    };
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, TOOL)?;
+    let output = argument(parser, "outputVCFName").ok_or_else(|| {
+        Thrown::command_line("Argument outputVCFName was missing: Argument 'outputVCFName' is required")
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+
+    // `onTraversalStart`.
+    svd::check_sort_order(svd::SortOrder::from_header_value(header.attributes.get("SO")))
+        .map_err(thrown)?;
+    let samples: Vec<Option<String>> = header
+        .read_groups
+        .iter()
+        .map(|group| group.attributes.get("SM").map(str::to_string))
+        .collect();
+    let sample = svd::sample_id(&samples).map_err(thrown)?;
+    // `refDict` is the READS' dictionary, which orders the output and writes its contig lines.
+    let dictionary = Dictionary {
+        names: header.sequences.iter().map(|record| record.name.clone()).collect(),
+        lengths: header.sequences.iter().map(|record| record.length).collect(),
+        assemblies: header
+            .sequences
+            .iter()
+            .map(|record| record.attributes.get("AS").map(str::to_string))
+            .collect(),
+    };
+    let cnv_calls = match argument(parser, "cnv-calls") {
+        None => None,
+        Some(path) => {
+            // `loadCNVCalls` asks for the sample again before it opens the file.
+            svd::sample_id(&samples).map_err(thrown)?;
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                Thrown::user(gatk_tools::read_walker_refusal::cannot_read(&path, false))
+            })?;
+            Some(svd::load_cnv_calls(&text, sample.as_deref(), &dictionary).map_err(thrown)?)
+        }
+    };
+    let names_file = argument(parser, "non-canonical-contig-names-file");
+    let names_text = names_file
+        .as_ref()
+        .and_then(|path| std::fs::read_to_string(path).ok());
+    let canonical = svd::canonical_chromosomes(
+        &dictionary,
+        names_file
+            .as_deref()
+            .map(|path| (path, names_text.as_deref())),
+    )
+    .map_err(thrown)?;
+    let arguments = svd::DiscoveryArguments {
+        min_mq: scalar(parser, "min-mq")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(30),
+        min_align_length: scalar(parser, "min-align-length")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(50),
+    };
+
+    // The traversal: every read the filters keep, in file order.
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let reads: Vec<ContigRead> = records
+        .iter()
+        .map(|record| {
+            let integer = |name: &[u8; 2]| match record.tags.get(htsjdk_bam::tag::Tag::new(name)) {
+                Some(htsjdk_bam::tag::TagValue::Int(value)) => Some(*value as i32),
+                Some(htsjdk_bam::tag::TagValue::Str(text)) => text.parse().ok(),
+                _ => None,
+            };
+            ContigRead {
+                name: record.read_name.clone(),
+                unmapped: gatk_engine::read::is_unmapped(record),
+                reverse_strand: record.flags & 0x10 != 0,
+                supplementary: record.flags & 0x800 != 0,
+                contig: usize::try_from(record.reference_index)
+                    .ok()
+                    .and_then(|index| header.sequences.get(index))
+                    .map(|sequence| sequence.name.clone())
+                    .unwrap_or_default(),
+                start: record.alignment_start,
+                end: record.alignment_end(),
+                cigar: Cigar(
+                    record
+                        .cigar
+                        .elements
+                        .iter()
+                        .filter_map(|element| {
+                            CigarOp::from_char(element.op.to_char() as char)
+                                .map(|op| (element.length as i32, op))
+                        })
+                        .collect(),
+                ),
+                mapping_quality: record.mapping_quality as i32,
+                bases: record.read_bases.clone(),
+                nm: integer(b"NM"),
+                alignment_score: integer(b"AS"),
+            }
+        })
+        .collect();
+
+    // `ReferenceContext.getBases(window)`: trimmed to the contig, then queried.
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let mut bases = |window: &Interval| -> Result<Vec<u8>, SvError> {
+        let length = reference.sequence_length(&window.contig).ok_or_else(|| {
+            SvError::new("java.lang.NullPointerException", "")
+        })? as i32;
+        let trimmed = Interval::new(&window.contig, window.start.max(1), window.end.min(length))?;
+        reference
+            .query(&trimmed.contig, trimmed.start, trimmed.end)
+            .map_err(|error| SvError::new(PORT_FAILURE, format!("{error:?}")))
+    };
+    let variants = svd::discover(
+        &reads,
+        &dictionary,
+        &canonical,
+        cnv_calls.as_deref(),
+        &arguments,
+        &mut bases,
+    )
+    .map_err(thrown)?;
+
+    let default_lines: Vec<String> = default_tool_vcf_header_lines(parser, TOOL)
+        .iter()
+        .map(|line| line.render())
+        .collect();
+    std::fs::write(&output, svd::write_vcf(&variants, &dictionary, &default_lines)).map_err(
+        |_| {
+            Thrown::non_user(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                "Could not create output file",
+            )
+        },
+    )?;
     Ok(None)
 }
