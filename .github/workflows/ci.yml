@@ -523,6 +523,15 @@ jobs:
         # point produces a different index for a reason that is not the port's.
         run: cargo build --release -p gatk-cli
 
+      - name: h5py, which reads an HDF5 output back as its tree of datasets
+        # The HDF5 library stamps every object header with the time it was made, so two runs of the
+        # reference write different bytes; run_array.py compares the groups, datasets and values
+        # instead, and needs a reader for that. Without one it falls back to a digest, which would
+        # differ on every row that writes a matrix.
+        run: |
+          sudo apt-get install -y -qq python3-h5py
+          python3 -c "import h5py; print(h5py.version.version)"
+
       - name: Run the array against both sides
         run: |
           # Four tools side by side over one corpus: the runner has four cores, and each row is one
@@ -633,6 +642,8 @@ jobs:
             --tool FuncotatorDataSourceDownloader \
             --tool FuncotateSegments --tool Funcotator \
             --tool VariantRecalibrator \
+            --tool ExtractVariantAnnotations \
+            --tool FilterAlignmentArtifacts \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces

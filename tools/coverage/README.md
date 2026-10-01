@@ -134,6 +134,14 @@ counted among the distinct outputs, rather than thrown away with it:
 }
 ```
 
+## HDF5 outputs
+
+The HDF5 library stamps every object header with the time it was made, so two runs of the
+reference over one input already write different bytes, and a digest of the file would differ on
+every row. `run_array.py` reads an `.hdf5` output back with `h5py` and compares its tree: every
+group, and every dataset's type, shape and values, a string dataset as its text whatever width the
+file stores it at. CI installs `python3-h5py` for that; without it the file falls back to a digest.
+
 ## One value is not a domain
 
 An argument with a single fixture value is *held* at it: every row carries it, no row varies it,

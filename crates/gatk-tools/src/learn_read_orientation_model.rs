@@ -9,7 +9,7 @@
 //! starts from, and the responsibilities one site takes given a prior.
 
 use gatk_engine::beta_binomial::BetaBinomialDistribution;
-use gatk_engine::natural_log_utils::normalize_from_log_to_linear_space;
+use gatk_engine::natural_log_utils::normalize_from_log_to_linear_space_host_exp;
 
 /// `ArtifactState`, in the order every prior array is indexed in: the eight artefacts first, the
 /// four real states after.
@@ -230,7 +230,8 @@ pub fn log_posterior(
             .expect("a valid shape")
             .log_probability(f1r2_alt_count)
             .expect("a valid count");
-    state_prior.ln() + over_depth + over_alt
+    // `Math.log`, which is correctly rounded: `jmath::math::log`, not the host's `ln`.
+    jmath::math::log(state_prior) + over_depth + over_alt
 }
 
 /// `computeResponsibilities`.
@@ -273,7 +274,8 @@ pub fn compute_responsibilities(
     if given_not_hom_ref {
         log_unnormalized[State::HomRef.index()] = f64::NEG_INFINITY;
     }
-    let normalized = normalize_from_log_to_linear_space(&log_unnormalized)
+    // The host `exp`, measured closer to `Math.exp` here than fdlibm: see the function's note.
+    let normalized = normalize_from_log_to_linear_space_host_exp(&log_unnormalized)
         .expect("a finite sum over the twelve states");
     let mut out = [0.0; NUM_STATES];
     out.copy_from_slice(&normalized);

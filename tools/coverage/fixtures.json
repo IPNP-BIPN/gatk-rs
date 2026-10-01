@@ -4713,15 +4713,23 @@
         "f1r2_tn.tar.gz is the reference's own CollectF1R2Counts over the Mutect tumour/normal BAM and",
         "its random reference: two samples in one archive, each with alt sites in several contexts.",
         "f1r2_counts.tar.gz is the one-sample F1R2 corpus over the ACGT repeat, whose few contexts",
-        "leave most priors flat. An output not ending in .tar.gz is refused first.",
+        "leave most priors flat. The tumour/normal archive given twice is the multi-file path: each",
+        "sample's histograms summed bin by bin across files and its alt tables concatenated.",
+        "Two accepted output names and one refused one, so the refusal (an output not ending in",
+        ".tar.gz is refused first) is a third of the rows rather than half of them.",
         "--num-em-iterations 1 stops the EM before it converges, and --max-depth 50 cuts the depth bins."
+      ],
+      "$lists": [
+        "--input"
       ],
       "--input": [
         "/work/fixtures/f1r2_tn.tar.gz",
-        "/work/fixtures/f1r2_counts.tar.gz"
+        "/work/fixtures/f1r2_counts.tar.gz",
+        "/work/fixtures/f1r2_tn.tar.gz /work/fixtures/f1r2_tn.tar.gz"
       ],
       "--output": [
         "/work/out/priors.tar.gz",
+        "/work/out/orientation.tar.gz",
         "/work/out/priors.tar"
       ],
       "--convergence-threshold": [
@@ -7674,6 +7682,196 @@
       ],
       "--dragen-378-concordance-mode": []
     },
+    "ExtractVariantAnnotations": {
+      "$why": [
+        "--variant is one of VariantRecalibrator's two call sets (vr_calls.vcf, vr_calls2.vcf), whose INFO carries QD,",
+        "MQ, FS, SOR, MQRankSum (absent on some records) and a Number=A AS_QD, which turns allele-specific mode on.",
+        "--resource is a set of tagged resources: training and calibration over vr_train.vcf with a known set whose",
+        "genotypes are sometimes 0/0 (which --do-not-trust-all-polymorphic decides), the training set alone, and a",
+        "set labelled with the reserved snp label, which is the refusal. --annotation and --mode are whole lists",
+        "($lists). The HDF5 matrices are compared as their tree of datasets (run_array.py's hdf5_members), since two",
+        "runs of the reference already write different bytes. A plain VCF output with an index is forbidden",
+        "because its .idx records the output's modification time; the command line is held off because it records",
+        "the date. --input, --read-index, --reference and --sequence-dictionary are not given: the tool reads no base",
+        "and no read, and a reference only rewrites the ##contig lines' assembly."
+      ],
+      "$tagged": [
+        "--resource"
+      ],
+      "$lists": [
+        "--annotation",
+        "--mode"
+      ],
+      "--variant": [
+        "/work/fixtures/vr_calls.vcf",
+        "/work/fixtures/vr_calls2.vcf"
+      ],
+      "--resource": [
+        "train,training=true,calibration=true:/work/fixtures/vr_train.vcf known,known=true,training=false:/work/fixtures/vr_known.vcf",
+        "train,training=true:/work/fixtures/vr_train.vcf",
+        "known,known=true,calibration=true:/work/fixtures/vr_known.vcf bad,bad=true:/work/fixtures/vr_bad.vcf",
+        "typed,snp=true:/work/fixtures/vr_train.vcf"
+      ],
+      "--annotation": [
+        "QD MQ FS SOR",
+        "AS_QD MQ",
+        "QD MQRankSum",
+        "FS"
+      ],
+      "--mode": [
+        "SNP INDEL",
+        "SNP",
+        "INDEL"
+      ],
+      "--ignore-filter": [
+        "null",
+        "LowQual"
+      ],
+      "--output": [
+        "/work/out/extract"
+      ],
+      "--maximum-number-of-unlabeled-variants": [
+        "0",
+        "150",
+        "5000"
+      ],
+      "--reservoir-sampling-random-seed": [
+        "0",
+        "7"
+      ],
+      "--intervals": [
+        "null",
+        "chr1"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr2:1-300000"
+      ],
+      "--variant-output-filtering": [
+        "null",
+        "CONTAINED"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--input": [],
+      "--read-index": [],
+      "--reference": [],
+      "--sequence-dictionary": []
+    },
+    "FilterAlignmentArtifacts": {
+      "$why": [
+        "faa_ref.fasta is two random contigs and faa.img the reference's own BwaMemIndexImageCreator over it. faa.bam",
+        "and faa2.bam tile both contigs with reads that copy the reference base for base, so NO read supports any",
+        "call: the realignment (the Mutect2 assembler, the PairHMM and BWA-MEM over the unitigs), which this port does",
+        "not carry, has nothing to realign on any row, and what the array measures is the walker around it: which",
+        "calls are read, which are skipped as filtered, and what the output carries. The realignment arguments",
+        "(--kmer-size, --minimum-seed-length, --drop-ratio, --seed-split-factor, the score and mismatch thresholds,",
+        "--max-reasonable-fragment-length, --num-regular-contigs, --indel-start-tolerance) are varied and answer",
+        "nothing on this corpus, which is the honest reading of their rows. --bam-output is not given: it writes the",
+        "assembled haplotypes. --smith-waterman leaves out AVX_ENABLED, which refuses on a machine without AVX and so",
+        "measures the runner's CPU. A plain VCF output with an index is forbidden because its .idx records the",
+        "output's modification time; the command line is held off because it records the date."
+      ],
+      "--variant": [
+        "/work/fixtures/faa.vcf",
+        "/work/fixtures/faa2.vcf"
+      ],
+      "--input": [
+        "/work/fixtures/faa.bam",
+        "/work/fixtures/faa2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/faa_ref.fasta"
+      ],
+      "--bwa-mem-index-image": [
+        "/work/fixtures/faa.img"
+      ],
+      "--output": [
+        "/work/out/filtered.vcf",
+        "/work/out/filtered.vcf.gz"
+      ],
+      "--bam-output": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--smith-waterman": [
+        "FASTEST_AVAILABLE",
+        "JAVA"
+      ],
+      "--dont-skip-filtered-variants": [
+        "false",
+        "true"
+      ],
+      "--indel-start-tolerance": [
+        "5",
+        "0"
+      ],
+      "--kmer-size": [
+        "21",
+        "15"
+      ],
+      "--max-reasonable-fragment-length": [
+        "100000",
+        "500"
+      ],
+      "--min-aligner-score-difference-per-base": [
+        "0.2",
+        "0.05"
+      ],
+      "--min-mismatch-difference-per-base": [
+        "0.02",
+        "0.1"
+      ],
+      "--num-regular-contigs": [
+        "250000",
+        "1"
+      ],
+      "--minimum-seed-length": [
+        "14",
+        "19"
+      ],
+      "--drop-ratio": [
+        "0.2",
+        "0.5"
+      ],
+      "--seed-split-factor": [
+        "0.5",
+        "1.5"
+      ],
+      "--combine-variants-distance": [
+        "1000",
+        "0"
+      ],
+      "--max-distance": [
+        "10000",
+        "100"
+      ],
+      "--ref-padding": [
+        "100",
+        "10"
+      ],
+      "--intervals": [
+        "null",
+        "chr1"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr2:1-1500"
+      ],
+      "--variant-output-filtering": [
+        "null",
+        "CONTAINED"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ]
+    },
     "ModelSegments": {
       "$why": [
         "ms/ holds two case samples (tumor, tumorB) and a matched normal over one two-contig dictionary,",
@@ -8094,6 +8292,66 @@
         "--omit-zeros-from-report": "false"
       },
       "why": "Without omitting zeros the four-level table is five million rows on any input, so every such row would compare a quarter of a gigabyte of zeros."
+    },
+    {
+      "tools": [
+        "ExtractVariantAnnotations"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "ExtractVariantAnnotations"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "CONTAINED",
+        "--intervals": "null"
+      },
+      "why": "An output filtering mode without -L is refused while the command line is checked."
+    },
+    {
+      "tools": [
+        "ExtractVariantAnnotations"
+      ],
+      "forbid": {
+        "--do-not-gzip-vcf-output": "true",
+        "--create-output-variant-index": "true"
+      },
+      "why": "A plain VCF's .idx records the output's modification time, so two runs of the reference already differ there."
+    },
+    {
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the descriptor before the tool runs."
+    },
+    {
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "forbid": {
+        "--variant-output-filtering": "CONTAINED",
+        "--intervals": "null"
+      },
+      "why": "An output filtering mode without -L is refused while the command line is checked."
+    },
+    {
+      "tools": [
+        "FilterAlignmentArtifacts"
+      ],
+      "forbid": {
+        "--output": "/work/out/filtered.vcf",
+        "--create-output-variant-index": "true"
+      },
+      "why": "A plain VCF's .idx records the output's modification time, so two runs of the reference already differ there."
     }
   ],
   "exclude": {
