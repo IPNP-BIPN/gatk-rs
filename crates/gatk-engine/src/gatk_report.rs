@@ -240,10 +240,6 @@ fn java_to_string(value: &Value) -> String {
 
 /// `%.Nf` and `%s` over a double, which is every numeric conversion this format uses.
 fn apply_format(format: &str, number: f64) -> String {
-    // `%f` with no precision is Java's six fraction digits.
-    if format == "%f" {
-        return format_decimals(number, 6);
-    }
     if let Some(rest) = format.strip_prefix("%.") {
         if let Some(digits) = rest.strip_suffix('f') {
             if let Ok(places) = digits.parse::<usize>() {
