@@ -17153,7 +17153,19 @@ fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(),
     let index = match index_feature_file::index_kind(output) {
         index_feature_file::IndexKind::Tabix => {
             let (level, deflater) = output_compression(parser);
-            gatk_tools::index_feature_file::build_tabix(&bytes, &source, output, deflater, level)
+            // The writer's index is finalised at the stream's position BEFORE the empty block
+            // that ends a BGZF file is written, so the index's end offset is that block's start;
+            // `IndexFeatureFile`, reading a finished file, ends after it. Measured on
+            // ExtractVariantAnnotations' `.vcf.gz.tbi`, 28 bytes apart.
+            const EOF_BLOCK: usize = 28;
+            let body = if bytes.len() >= EOF_BLOCK
+                && bytes[bytes.len() - EOF_BLOCK..] == htsjdk_bgzf::EMPTY_GZIP_BLOCK[..]
+            {
+                &bytes[..bytes.len() - EOF_BLOCK]
+            } else {
+                &bytes[..]
+            };
+            gatk_tools::index_feature_file::build_tabix(body, &source, output, deflater, level)
                 .map_err(|refusal| Thrown {
                     failure: Failure::User,
                     exception: refusal.java_class(),
@@ -23728,3 +23740,13 @@ pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
     std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
     Ok(None)
 }
+
+/// `ExtractVariantAnnotations`, in a file of its own beside the HDF5 matrices it writes.
+#[path = "runners_extract_variant_annotations.rs"]
+mod extract_variant_annotations_runner;
+pub use extract_variant_annotations_runner::extract_variant_annotations;
+
+/// `FilterAlignmentArtifacts`, whose realignment is not ported and whose walker is.
+#[path = "runners_filter_alignment_artifacts.rs"]
+mod filter_alignment_artifacts_runner;
+pub use filter_alignment_artifacts_runner::filter_alignment_artifacts;

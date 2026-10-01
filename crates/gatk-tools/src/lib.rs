@@ -101,6 +101,7 @@ pub mod grouped_sv_cluster;
 pub mod gtf_to_bed;
 pub mod gvcf_blocks;
 pub mod haplotype_based_variant_recaller;
+pub mod hdf5_writer;
 pub mod index_feature_file;
 pub mod interval_walker;
 pub mod joint_germline_cnv_segmentation;

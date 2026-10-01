@@ -66,7 +66,9 @@ pub enum ContextType {
 
 /// An allele written in angle brackets, or a breakend.
 pub fn is_symbolic(allele: &str) -> bool {
-    allele.starts_with('<') || allele.contains('[') || allele.contains(']') || allele == "*"
+    // `Allele.wouldBeSymbolicAllele` answers false for anything one base long, so a spanning
+    // deletion `*` is NOT symbolic: beside a SNP it makes a multiallelic SNP, not a MIXED site.
+    allele.len() > 1 && (allele.starts_with('<') || allele.contains('[') || allele.contains(']'))
 }
 
 /// `typeOfBiallelicVariant`, which is the whole of the type determination for one alternate.

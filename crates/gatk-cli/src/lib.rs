@@ -322,6 +322,8 @@ pub fn runner(name: &str) -> Option<Runner> {
         "FilterVariantTranches" => Some(run_filter_variant_tranches),
         "ApplyVQSR" => Some(run_apply_vqsr),
         "VariantRecalibrator" => Some(run_variant_recalibrator),
+        "ExtractVariantAnnotations" => Some(run_extract_variant_annotations),
+        "FilterAlignmentArtifacts" => Some(run_filter_alignment_artifacts),
         "VCFComparator" => Some(run_vcf_comparator),
         "SVStratify" => Some(run_sv_stratify),
         "SVConcordance" => Some(run_sv_concordance),
@@ -641,6 +643,14 @@ fn run_apply_vqsr(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_recalibrator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_recalibrator(&parsed("VariantRecalibrator", args)?)
+}
+
+fn run_extract_variant_annotations(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::extract_variant_annotations(&parsed("ExtractVariantAnnotations", args)?)
+}
+
+fn run_filter_alignment_artifacts(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::filter_alignment_artifacts(&parsed("FilterAlignmentArtifacts", args)?)
 }
 
 fn run_vcf_comparator(args: &[String]) -> Result<Option<String>, Thrown> {
