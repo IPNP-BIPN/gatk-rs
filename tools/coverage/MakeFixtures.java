@@ -5809,14 +5809,6 @@ public class MakeFixtures {
         }
     }
 
-    static String reverseComplement(final String text) {
-        final StringBuilder out = new StringBuilder();
-        for (int i = text.length() - 1; i >= 0; i--) {
-            out.append("TGCA".charAt("ACGT".indexOf(text.charAt(i))));
-        }
-        return out.toString();
-    }
-
     /**
      * Makes the coding sequence over the given pieces (in transcription order) start with ATG and
      * hold no stop codon in frame, redrawing any codon that is one.
