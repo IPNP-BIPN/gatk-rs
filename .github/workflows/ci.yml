@@ -628,6 +628,8 @@ jobs:
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
             --tool VCFComparator \
+            --tool FuncotatorDataSourceDownloader \
+            --tool FuncotateSegments --tool Funcotator \
             --tool VariantRecalibrator \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 

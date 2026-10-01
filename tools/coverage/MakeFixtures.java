@@ -3201,6 +3201,8 @@ public class MakeFixtures {
                 + "@CO\tafter the first record, so not header\n",
                 StandardCharsets.UTF_8);
         pathSeqTaxonomy(dir);
+        funcotatorDownloaderFixtures(dir);
+        funcotatorFixtures(dir);
         bwaIndexImage(dir);
         System.out.println("wrote " + dir);
     }
@@ -4964,6 +4966,347 @@ public class MakeFixtures {
                 tar.closeArchiveEntry();
             }
         }
+    }
+
+    /**
+     * A previous `FuncotatorDataSourceDownloader` download and its checksum, which the array names
+     * as `--output`: the copier refuses an existing destination before it opens the source, and the
+     * source is always in the gs:// bucket, which the oracle cannot reach. A folder packed with a
+     * directory entry and two files, and an upper-case sum with the name after two spaces.
+     */
+    static void funcotatorDownloaderFixtures(final Path dir) throws Exception {
+        final byte[] ds = tarGz(new String[][] {
+                {"funco_ds/", null},
+                {"funco_ds/MANIFEST.txt", "Version: 1.7.hg38.20220101\nSource: test\n"},
+                {"funco_ds/README.txt", "A data source folder, packed.\n"}});
+        Files.write(dir.resolve("funco_ds.tar.gz"), ds);
+        Files.writeString(dir.resolve("funco_ds.sha256"),
+                sha256Hex(ds).toUpperCase() + "  funco_ds.tar.gz\n", StandardCharsets.UTF_8);
+    }
+
+    /** A tar.gz of the given entries, a null content being a directory, stamped at time zero. */
+    static byte[] tarGz(final String[][] entries) throws Exception {
+        final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (final org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tar =
+                     new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(
+                             new java.util.zip.GZIPOutputStream(bytes))) {
+            for (final String[] entry : entries) {
+                final org.apache.commons.compress.archivers.tar.TarArchiveEntry header =
+                        new org.apache.commons.compress.archivers.tar.TarArchiveEntry(entry[0]);
+                header.setModTime(0L);
+                final byte[] content = entry[1] == null ? new byte[0]
+                        : entry[1].getBytes(StandardCharsets.UTF_8);
+                if (entry[1] != null) {
+                    header.setSize(content.length);
+                }
+                tar.putArchiveEntry(header);
+                tar.write(content);
+                tar.closeArchiveEntry();
+            }
+        }
+        return bytes.toByteArray();
+    }
+
+    static String sha256Hex(final byte[] bytes) throws Exception {
+        final StringBuilder hex = new StringBuilder();
+        for (final byte b : java.security.MessageDigest.getInstance("SHA-256").digest(bytes)) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
+
+    /** Length of chr1 in the Funcotator corpus. */
+    static final int FUNCO_LENGTH = 6000;
+
+    /**
+     * What `Funcotator` and `FuncotateSegments` annotate from: a 6 kb chr1 of seeded bases, two
+     * genes on opposite strands, and folders of data sources over them.
+     *
+     * ALPHA (+, 1000-1600) has a coding transcript of two exons, a 5' UTR, a start codon at
+     * 1050, the CDS split by an intron and a stop codon at 1499 with a 3' UTR after it, and a
+     * one-exon lncRNA transcript over 1000-1300. BETA (-, 3000-3600) is the mirror image, with
+     * its start codon at 3550 and its stop codon at 3099, and a second transcript that is tagged
+     * MANE_Select without being basic. The bases are drawn, then the codons are fixed so each CDS
+     * starts with ATG, ends with a stop, and holds no other stop in frame.
+     *
+     * `funco_ds` holds GENCODE named `Gencode` at version 28 (both the SEG and the MAF renderers
+     * alias it) under hg38 and hg19, behind an old-style manifest line the reader does not parse;
+     * `funco_ds43` the same annotation at version 43 (the MAF renderer aliases it, the SEG renderer
+     * does not) under hg38 alone, behind a new-style line; and `funco_ds27` version 27 with no
+     * manifest at all.
+     */
+    static void funcotatorFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20260930L);
+        final char[] bases = new char[FUNCO_LENGTH + 1];
+        for (int i = 1; i <= FUNCO_LENGTH; i++) {
+            bases[i] = "ACGT".charAt(random.nextInt(4));
+        }
+        // ALPHA's CDS, on the forward strand: 1050-1200 and 1401-1498, stop at 1499-1501.
+        fixCodingSequence(bases, random, new int[][] {{1050, 1200}, {1401, 1498}}, false);
+        setBases(bases, 1499, "TAA");
+        // BETA's CDS, on the reverse strand: 3550-3401 and 3200-3102, stop at 3101-3099.
+        fixCodingSequence(bases, random, new int[][] {{3401, 3550}, {3102, 3200}}, true);
+        setBases(bases, 3099, reverseComplement("TAG"));
+
+        final StringBuilder fasta = new StringBuilder(">chr1\n");
+        for (int i = 1; i <= FUNCO_LENGTH; i++) {
+            fasta.append(bases[i]);
+            if (i % 60 == 0 || i == FUNCO_LENGTH) {
+                fasta.append('\n');
+            }
+        }
+        final Path reference = dir.resolve("funco_ref.fasta");
+        Files.writeString(reference, fasta.toString(), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(reference, true);
+        writeDictionary(dir.resolve("funco_ref.dict"), List.of(new SAMSequenceRecord("chr1", FUNCO_LENGTH)));
+
+        // An old-style version line, which the reader does not parse and so never checks: the folder
+        // is accepted without the date check that throws for every new-style line.
+        writeFuncotatorDataSources(dir.resolve("funco_ds"), "1.7.20220101", "28", bases, true);
+        writeFuncotatorDataSources(dir.resolve("funco_ds43"), "1.8.hg38.20230908", "43", bases, false);
+        // No manifest at all, which is read without any version check.
+        writeFuncotatorDataSources(dir.resolve("funco_ds27"), null, "27", bases, true);
+
+        // The variants: every region the two genes have, and the flanks and gaps around them.
+        final int[] positions = {500, 950, 1020, 1051, 1100, 1199, 1203, 1300, 1450, 1500, 1550,
+                1650, 2500, 3150, 3450, 3549, 3580, 5000};
+        final StringBuilder records = new StringBuilder();
+        for (final int position : positions) {
+            final char ref = bases[position];
+            final String alt;
+            if (position == 1100) {
+                alt = otherBase(ref, 1) + "," + otherBase(ref, 2);
+            } else {
+                alt = String.valueOf(otherBase(ref, 1));
+            }
+            final String filter = position == 1450 ? "LOW" : "PASS";
+            final String info = position == 1100 ? "DP=12" : ".";
+            records.append("chr1\t").append(position).append("\t.\t").append(ref).append('\t')
+                    .append(alt).append("\t50\t").append(filter).append('\t').append(info)
+                    .append("\tGT\t0/1\n");
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LOW,Description=\"Low quality\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##contig=<ID=chr1,length=" + FUNCO_LENGTH + ">\n";
+        final String columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample\n";
+        Files.writeString(dir.resolve("funco_variants.vcf"), header + columns + records,
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("funco_variants.vcf").toString()});
+        // The same records under a header that says Funcotator has been here already.
+        Files.writeString(dir.resolve("funco_annotated.vcf"),
+                header + "##Funcotator Version=4.6.2.0 | Gencode 28 CANONICAL\n" + columns + records,
+                StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("funco_annotated.vcf").toString()});
+
+        // The segments: one from ALPHA's flank into its intron, one from ALPHA's first exon into
+        // BETA's first exon, and one over neither gene.
+        Files.writeString(dir.resolve("funco_segments.seg"),
+                "CONTIG\tSTART\tEND\tNUM_POINTS_COPY_RATIO\tMEAN_LOG2_COPY_RATIO\tCALL\n"
+                        + "chr1\t900\t1250\t10\t0.5\t+\n"
+                        + "chr1\t1150\t3450\t20\t-0.3\t-\n"
+                        + "chr1\t4000\t5500\t5\t0.01\t0\n",
+                StandardCharsets.UTF_8);
+        // The same regions under other column names, a sample column and a call the converter
+        // does not know, so the aliases and the unspecified allele are both reached.
+        Files.writeString(dir.resolve("funco_segments_alt.seg"),
+                "chr\tstart\tend\tsample\tSegment_Call\n"
+                        + "chr1\t1010\t1700\tS1\t0\n"
+                        + "chr1\t3100\t3580\tS1\tNA\n",
+                StandardCharsets.UTF_8);
+        // A segment of 101 bases, under the minimum a segment has to exceed.
+        Files.writeString(dir.resolve("funco_segments_short.seg"),
+                "CONTIG\tSTART\tEND\tCALL\n" + "chr1\t1200\t1300\t+\n", StandardCharsets.UTF_8);
+
+        // A transcript list naming BETA's MANE transcript and ALPHA's lncRNA, without versions.
+        Files.writeString(dir.resolve("funco_transcripts.list"),
+                "ENST00000000002\nENST00000000004\n", StandardCharsets.UTF_8);
+        // Severities that put an intron ahead of everything coding.
+        Files.writeString(dir.resolve("funco_severity.tsv"),
+                "INTRON\t0\nRNA\t0\nMISSENSE\t30\n", StandardCharsets.UTF_8);
+    }
+
+    static char otherBase(final char base, final int step) {
+        final String acgt = "ACGT";
+        return acgt.charAt((acgt.indexOf(base) + step) % 4);
+    }
+
+    static void setBases(final char[] bases, final int start, final String text) {
+        for (int i = 0; i < text.length(); i++) {
+            bases[start + i] = text.charAt(i);
+        }
+    }
+
+    static String reverseComplement(final String text) {
+        final StringBuilder out = new StringBuilder();
+        for (int i = text.length() - 1; i >= 0; i--) {
+            out.append("TGCA".charAt("ACGT".indexOf(text.charAt(i))));
+        }
+        return out.toString();
+    }
+
+    /**
+     * Makes the coding sequence over the given pieces (in transcription order) start with ATG and
+     * hold no stop codon in frame, redrawing any codon that is one.
+     */
+    static void fixCodingSequence(final char[] bases, final java.util.Random random,
+                                  final int[][] pieces, final boolean reverse) {
+        final List<Integer> positions = new ArrayList<>();
+        for (final int[] piece : pieces) {
+            if (reverse) {
+                for (int p = piece[1]; p >= piece[0]; p--) {
+                    positions.add(p);
+                }
+            } else {
+                for (int p = piece[0]; p <= piece[1]; p++) {
+                    positions.add(p);
+                }
+            }
+        }
+        for (int codon = 0; codon + 2 < positions.size(); codon += 3) {
+            String text;
+            if (codon == 0) {
+                text = "ATG";
+            } else {
+                do {
+                    text = "" + "ACGT".charAt(random.nextInt(4)) + "ACGT".charAt(random.nextInt(4))
+                            + "ACGT".charAt(random.nextInt(4));
+                } while (text.equals("TAA") || text.equals("TAG") || text.equals("TGA"));
+            }
+            for (int i = 0; i < 3; i++) {
+                final char base = text.charAt(i);
+                bases[positions.get(codon + i)] = reverse ? "TGCA".charAt("ACGT".indexOf(base)) : base;
+            }
+        }
+    }
+
+    static void writeDictionary(final Path path, final List<SAMSequenceRecord> records) throws Exception {
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSequenceDictionary(new SAMSequenceDictionary(records));
+        try (final java.io.Writer writer = Files.newBufferedWriter(path)) {
+            new htsjdk.samtools.SAMTextHeaderCodec().encode(writer, header);
+        }
+    }
+
+    static String gtfLine(final int start, final int end, final String strand, final String type,
+                          final String phase, final String attributes) {
+        return "chr1\tHAVANA\t" + type + "\t" + start + "\t" + end + "\t.\t" + strand + "\t" + phase
+                + "\t" + attributes;
+    }
+
+    /**
+     * One folder of data sources: a manifest (or none) and a GENCODE source under hg38, and under
+     * hg19 too where asked, with the NCBI build its config names.
+     */
+    static void writeFuncotatorDataSources(final Path root, final String manifestVersion,
+                                           final String gencodeVersion, final char[] bases,
+                                           final boolean withHg19) throws Exception {
+        Files.createDirectories(root);
+        if (manifestVersion != null) {
+            Files.writeString(root.resolve("MANIFEST.txt"),
+                    "Version: " + manifestVersion + "\nSource: ftp://test\nAlternate Source: gs://test\n",
+                    StandardCharsets.UTF_8);
+        }
+        writeGencodeSource(root.resolve("gencode").resolve("hg38"), gencodeVersion, "hg38", bases);
+        if (withHg19) {
+            writeGencodeSource(root.resolve("gencode").resolve("hg19"), gencodeVersion, "hg19", bases);
+        }
+    }
+
+    static void writeGencodeSource(final Path source, final String gencodeVersion,
+                                   final String build, final char[] bases) throws Exception {
+        Files.createDirectories(source);
+
+        final String alphaGene = "gene_id \"ENSG00000000001.1\"; gene_type \"protein_coding\"; gene_name \"ALPHA\"; level 2;";
+        final String alpha1 = "gene_id \"ENSG00000000001.1\"; transcript_id \"ENST00000000001.1\"; gene_type \"protein_coding\"; gene_name \"ALPHA\"; transcript_type \"protein_coding\"; transcript_name \"ALPHA-201\"; level 2; tag \"basic\"; tag \"appris_principal_1\"; tag \"CCDS\";";
+        final String alpha2 = "gene_id \"ENSG00000000001.1\"; transcript_id \"ENST00000000002.1\"; gene_type \"protein_coding\"; gene_name \"ALPHA\"; transcript_type \"lncRNA\"; transcript_name \"ALPHA-202\"; level 1; tag \"basic\";";
+        final String betaGene = "gene_id \"ENSG00000000002.1\"; gene_type \"protein_coding\"; gene_name \"BETA\"; level 2;";
+        final String beta1 = "gene_id \"ENSG00000000002.1\"; transcript_id \"ENST00000000003.1\"; gene_type \"protein_coding\"; gene_name \"BETA\"; transcript_type \"protein_coding\"; transcript_name \"BETA-201\"; level 2; tag \"basic\";";
+        final String beta2 = "gene_id \"ENSG00000000002.1\"; transcript_id \"ENST00000000004.1\"; gene_type \"protein_coding\"; gene_name \"BETA\"; transcript_type \"protein_coding\"; transcript_name \"BETA-202\"; level 2; tag \"MANE_Select\";";
+        final java.util.function.BiFunction<String, Integer, String> exon =
+                (attributes, number) -> attributes + " exon_number " + number + "; exon_id \"ENSE0000000" + number + ".1\";";
+
+        final List<String> gtf = new ArrayList<>();
+        gtf.add("##description: evidence-based annotation of the human genome (GRCh38), version 43 (Ensembl 109)");
+        gtf.add("##provider: GENCODE");
+        gtf.add("##contact: gencode-help@ebi.ac.uk");
+        gtf.add("##format: gtf");
+        gtf.add("##date: 2022-11-29");
+        gtf.add(gtfLine(1000, 1600, "+", "gene", ".", alphaGene));
+        gtf.add(gtfLine(1000, 1600, "+", "transcript", ".", alpha1));
+        gtf.add(gtfLine(1000, 1200, "+", "exon", ".", exon.apply(alpha1, 1)));
+        gtf.add(gtfLine(1050, 1200, "+", "CDS", "0", exon.apply(alpha1, 1)));
+        gtf.add(gtfLine(1050, 1052, "+", "start_codon", "0", exon.apply(alpha1, 1)));
+        gtf.add(gtfLine(1401, 1600, "+", "exon", ".", exon.apply(alpha1, 2)));
+        gtf.add(gtfLine(1401, 1498, "+", "CDS", "2", exon.apply(alpha1, 2)));
+        gtf.add(gtfLine(1499, 1501, "+", "stop_codon", "0", exon.apply(alpha1, 2)));
+        gtf.add(gtfLine(1000, 1049, "+", "UTR", ".", exon.apply(alpha1, 1)));
+        gtf.add(gtfLine(1502, 1600, "+", "UTR", ".", exon.apply(alpha1, 2)));
+        gtf.add(gtfLine(1000, 1300, "+", "transcript", ".", alpha2));
+        gtf.add(gtfLine(1000, 1300, "+", "exon", ".", exon.apply(alpha2, 1)));
+        gtf.add(gtfLine(3000, 3600, "-", "gene", ".", betaGene));
+        gtf.add(gtfLine(3000, 3600, "-", "transcript", ".", beta1));
+        gtf.add(gtfLine(3401, 3600, "-", "exon", ".", exon.apply(beta1, 1)));
+        gtf.add(gtfLine(3401, 3550, "-", "CDS", "0", exon.apply(beta1, 1)));
+        gtf.add(gtfLine(3548, 3550, "-", "start_codon", "0", exon.apply(beta1, 1)));
+        gtf.add(gtfLine(3000, 3200, "-", "exon", ".", exon.apply(beta1, 2)));
+        gtf.add(gtfLine(3102, 3200, "-", "CDS", "0", exon.apply(beta1, 2)));
+        gtf.add(gtfLine(3099, 3101, "-", "stop_codon", "0", exon.apply(beta1, 2)));
+        gtf.add(gtfLine(3551, 3600, "-", "UTR", ".", exon.apply(beta1, 1)));
+        gtf.add(gtfLine(3000, 3098, "-", "UTR", ".", exon.apply(beta1, 2)));
+        gtf.add(gtfLine(3050, 3500, "-", "transcript", ".", beta2));
+        gtf.add(gtfLine(3050, 3500, "-", "exon", ".", exon.apply(beta2, 1)));
+        gtf.add("");
+        final Path gtfPath = source.resolve("gencode.gtf");
+        Files.writeString(gtfPath, String.join("\n", gtf), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createLinearIndex(gtfPath.toFile(),
+                new org.broadinstitute.hellbender.utils.codecs.gtf.GencodeGtfCodec())
+                .writeBasedOnFeatureFile(gtfPath.toFile());
+
+        // The transcripts as GENCODE writes them: every exon joined in transcription order, named
+        // by a header whose fields are separated by `|` and give the UTRs and the CDS.
+        final String alphaSeq = span(bases, 1000, 1200, false) + span(bases, 1401, 1600, false);
+        final String alpha2Seq = span(bases, 1000, 1300, false);
+        final String betaSeq = span(bases, 3401, 3600, true) + span(bases, 3000, 3200, true);
+        final String beta2Seq = span(bases, 3050, 3500, true);
+        final String[][] transcripts = {
+                {"ENST00000000001.1|ENSG00000000001.1|-|-|ALPHA-201|ALPHA|" + alphaSeq.length() + "|UTR5:1-50|CDS:51-302|UTR3:303-" + alphaSeq.length() + "|", alphaSeq},
+                {"ENST00000000002.1|ENSG00000000001.1|-|-|ALPHA-202|ALPHA|" + alpha2Seq.length() + "|", alpha2Seq},
+                {"ENST00000000003.1|ENSG00000000002.1|-|-|BETA-201|BETA|" + betaSeq.length() + "|UTR5:1-50|CDS:51-302|UTR3:303-" + betaSeq.length() + "|", betaSeq},
+                {"ENST00000000004.1|ENSG00000000002.1|-|-|BETA-202|BETA|" + beta2Seq.length() + "|", beta2Seq}};
+        final StringBuilder transcriptFasta = new StringBuilder();
+        final List<SAMSequenceRecord> transcriptRecords = new ArrayList<>();
+        for (final String[] transcript : transcripts) {
+            transcriptFasta.append('>').append(transcript[0]).append('\n');
+            for (int i = 0; i < transcript[1].length(); i += 60) {
+                transcriptFasta.append(transcript[1], i, Math.min(i + 60, transcript[1].length())).append('\n');
+            }
+            transcriptRecords.add(new SAMSequenceRecord(transcript[0], transcript[1].length()));
+        }
+        final Path transcriptPath = source.resolve("gencode.transcripts.fasta");
+        Files.writeString(transcriptPath, transcriptFasta.toString(), StandardCharsets.UTF_8);
+        htsjdk.samtools.reference.FastaSequenceIndexCreator.create(transcriptPath, true);
+        writeDictionary(source.resolve("gencode.transcripts.dict"), transcriptRecords);
+
+        Files.writeString(source.resolve("gencode.config"), String.join("\n",
+                "name = Gencode",
+                "version = " + gencodeVersion,
+                "src_file = gencode.gtf",
+                "origin_location = test",
+                "preprocessing_script =",
+                "type = gencode",
+                "gencode_fasta_path = gencode.transcripts.fasta",
+                "ncbi_build_version = " + build,
+                ""), StandardCharsets.UTF_8);
+    }
+
+    /** The bases over [start, end], reverse-complemented for the reverse strand. */
+    static String span(final char[] bases, final int start, final int end, final boolean reverse) {
+        final String forward = new String(bases, start, end - start + 1);
+        return reverse ? reverseComplement(forward) : forward;
     }
 
     /**
