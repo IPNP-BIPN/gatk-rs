@@ -7871,6 +7871,143 @@
       "--max-variants-per-shard": [
         "0"
       ]
+    },
+    "ModelSegments": {
+      "$why": [
+        "ms/ holds two case samples (tumor, tumorB) and a matched normal over one two-contig dictionary,",
+        "written by the reference's own CopyRatioCollection and AllelicCountCollection writers, and an",
+        "interval list of segments. The copy ratios and the allele fractions step at different bins, so",
+        "each data mode segments differently, and the first contig has more bins than the default",
+        "kernel-approximation dimension, so the subsample is drawn.",
+        "--denoised-copy-ratios and --allelic-counts are $lists: a value of two words is the",
+        "argument given twice, which is the multi-sample mode (segmentation only, one interval list).",
+        "Each takes one sample, two samples, or null, so a row can be copy-ratio only, allele-fraction",
+        "only, or both. The pairs that refuse are measured refusals: two files against one, and null",
+        "against null.",
+        "--normal-allelic-counts and --segments are null (absent) first and the file second: the normal",
+        "switches the genotyping to matched-normal mode, and a segments list replaces the kernel",
+        "segmentation. Its first segment spans a whole contig, 240 copy-ratio points, so the copy-ratio",
+        "slice sampler draws them in two minibatches. A segments list in multi-sample mode, and a",
+        "normal with a positive case total-count floor, are the reference's own refusals.",
+        "Every numeric argument carries its default and a second ACCEPTED value rather than its",
+        "out-of-range neighbours: a covering array fills every other cell with the first value, and a",
+        "refusing value paired with every other argument would turn most rows into the parser's",
+        "refusal. The chain lengths stay short enough that a row runs in seconds and the burn-in",
+        "values stay below both sample counts. --window-size is $lists too: three sizes, and one",
+        "size named twice, which the tool deduplicates. --genotyping-base-error-rate takes 0, which calls every site heterozygous, and 0.2, which calls fewer."
+      ],
+      "$lists": [
+        "--denoised-copy-ratios",
+        "--allelic-counts",
+        "--window-size"
+      ],
+      "--denoised-copy-ratios": [
+        "/work/fixtures/ms/tumor.cr.tsv",
+        "/work/fixtures/ms/tumor.cr.tsv /work/fixtures/ms/tumorB.cr.tsv",
+        "null"
+      ],
+      "--allelic-counts": [
+        "/work/fixtures/ms/tumor.ac.tsv",
+        "/work/fixtures/ms/tumor.ac.tsv /work/fixtures/ms/tumorB.ac.tsv",
+        "null"
+      ],
+      "--normal-allelic-counts": [
+        "null",
+        "/work/fixtures/ms/normal.ac.tsv"
+      ],
+      "--segments": [
+        "null",
+        "/work/fixtures/ms/segments.interval_list"
+      ],
+      "--output": [
+        "/work/out",
+        "/work/out/sub"
+      ],
+      "--output-prefix": [
+        "tumor",
+        "case.sample"
+      ],
+      "--minimum-total-allele-count-case": [
+        "0",
+        "20"
+      ],
+      "--minimum-total-allele-count-normal": [
+        "30",
+        "0"
+      ],
+      "--genotyping-homozygous-log-ratio-threshold": [
+        "-10.0",
+        "-2.0"
+      ],
+      "--genotyping-base-error-rate": [
+        "0.05",
+        "0.0",
+        "0.2"
+      ],
+      "--maximum-number-of-segments-per-chromosome": [
+        "1000",
+        "2"
+      ],
+      "--kernel-variance-copy-ratio": [
+        "0.0",
+        "0.1"
+      ],
+      "--kernel-variance-allele-fraction": [
+        "0.025",
+        "0.0"
+      ],
+      "--kernel-scaling-allele-fraction": [
+        "1.0",
+        "0.3"
+      ],
+      "--kernel-approximation-dimension": [
+        "100",
+        "20"
+      ],
+      "--window-size": [
+        "8 16 32",
+        "64 64"
+      ],
+      "--number-of-changepoints-penalty-factor": [
+        "1.0",
+        "0.1"
+      ],
+      "--minor-allele-fraction-prior-alpha": [
+        "25.0",
+        "1.0"
+      ],
+      "--number-of-samples-copy-ratio": [
+        "100",
+        "60"
+      ],
+      "--number-of-burn-in-samples-copy-ratio": [
+        "50",
+        "10"
+      ],
+      "--number-of-samples-allele-fraction": [
+        "100",
+        "60"
+      ],
+      "--number-of-burn-in-samples-allele-fraction": [
+        "50",
+        "10"
+      ],
+      "--smoothing-credible-interval-threshold-copy-ratio": [
+        "2.0",
+        "0.5"
+      ],
+      "--smoothing-credible-interval-threshold-allele-fraction": [
+        "2.0",
+        "6.0"
+      ],
+      "--maximum-number-of-smoothing-iterations": [
+        "25",
+        "0"
+      ],
+      "--number-of-smoothing-iterations-per-fit": [
+        "0",
+        "1"
+      ]
     }
   },
   "constraints": [

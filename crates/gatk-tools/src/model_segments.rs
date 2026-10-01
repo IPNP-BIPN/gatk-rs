@@ -52,7 +52,8 @@ pub fn homozygous_log_ratio(count: AllelicCount, base_error_rate: f64) -> Result
     let beta_one_minus_error = regularized_beta(1.0 - base_error_rate, r + 1.0, n - r + 1.0)?;
     let beta_homozygous = beta_error + beta_all - beta_one_minus_error;
     let beta_heterozygous = beta_one_minus_error - beta_error;
-    Ok(beta_homozygous.ln() - beta_heterozygous.ln())
+    // `Math.log`, which is correctly rounded; `f64::ln` is the host's and is not promised to be.
+    Ok(jmath::math::log(beta_homozygous) - jmath::math::log(beta_heterozygous))
 }
 
 /// `filterByHeterozygosity`'s predicate, which is STRICTLY below the threshold.
