@@ -83,6 +83,11 @@ impl NonFiniteSum {
 /// addition is not associative, so reordering the loop would change the result even with an
 /// identical `exp`.
 pub fn log_sum_exp(log_values: &[f64]) -> Result<f64, NonFiniteSum> {
+    log_sum_exp_with(log_values, exp)
+}
+
+/// [`log_sum_exp`] with the `exp` chosen by the caller, the operation order unchanged.
+fn log_sum_exp_with(log_values: &[f64], exp: fn(f64) -> f64) -> Result<f64, NonFiniteSum> {
     // `maxElementIndex` refuses an empty array; the port's own version does the same, so an empty
     // slice would panic there rather than reach this.
     let max_index = max_element_index(log_values, 0, log_values.len());
@@ -112,7 +117,16 @@ pub fn log_sum_exp(log_values: &[f64]) -> Result<f64, NonFiniteSum> {
 /// this port returns a new vector either way. The distinction is observable only through aliasing,
 /// which Rust does not permit here, and the *values* are identical on both paths.
 pub fn normalize_log(array: &[f64], take_log_of_output: bool) -> Result<Vec<f64>, NonFiniteSum> {
-    let log_sum = log_sum_exp(array)?;
+    normalize_log_with(array, take_log_of_output, exp)
+}
+
+/// [`normalize_log`] with the `exp` chosen by the caller, for both its own terms and the sum's.
+fn normalize_log_with(
+    array: &[f64],
+    take_log_of_output: bool,
+    exp: fn(f64) -> f64,
+) -> Result<Vec<f64>, NonFiniteSum> {
+    let log_sum = log_sum_exp_with(array, exp)?;
     let result: Vec<f64> = array.iter().map(|value| value - log_sum).collect();
     if take_log_of_output {
         Ok(result)
@@ -127,6 +141,21 @@ pub fn normalize_log(array: &[f64], take_log_of_output: bool) -> Result<Vec<f64>
 /// function is 1-ulp-bounded rather than bit-identical, on every input.
 pub fn normalize_from_log_to_linear_space(array: &[f64]) -> Result<Vec<f64>, NonFiniteSum> {
     normalize_log(array, false)
+}
+
+/// [`normalize_from_log_to_linear_space`] through the **host** libm's `exp` instead of fdlibm's.
+///
+/// The reference's `Math.exp` is a HotSpot intrinsic neither function reproduces (decisions 0014
+/// and 0025), so which stand-in a call site takes is a measurement, not a principle, exactly as
+/// for the activity profile's kernel. `LearnReadOrientationModel`'s E-step is the caller that
+/// measured the host closer: built on fdlibm, two of the eight covering-array rows print one prior
+/// an ulp away from the oracle's; built on the host `exp`, all eight match. The same two rows
+/// match the fdlibm build exactly when the reference runs with `-XX:-UseLibmIntrinsic`, which is
+/// what pins the difference on the intrinsic and on nothing else in the EM.
+pub fn normalize_from_log_to_linear_space_host_exp(
+    array: &[f64],
+) -> Result<Vec<f64>, NonFiniteSum> {
+    normalize_log_with(array, false, f64::exp)
 }
 
 /// `posteriors(logPriors, logLikelihoods)`, which is what the Dirichlet fixed point calls per read.
