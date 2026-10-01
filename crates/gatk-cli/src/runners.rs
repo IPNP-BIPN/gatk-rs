@@ -30,6 +30,9 @@ use htsjdk_bam::record::BamRecord;
 /// dispatcher with one banner to print for both (`main-non-user`).
 pub type Outcome = Result<Option<String>, Thrown>;
 
+mod joint_germline_cnv;
+pub use joint_germline_cnv::joint_germline_cnv_segmentation;
+
 /// The value of one named argument, as the parser left it.
 ///
 /// A path argument holds a `Tagged` value, whose tag is `None` when nobody wrote one; a plain
@@ -619,11 +622,29 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "TransferReadTags"
             | "PostProcessReadsForRSEM"
             | "CalibrateDragstrModel"
+            | "AnalyzeSaturationMutagenesis"
             | "HaplotypeBasedVariantRecaller"
     )
 }
 
 fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, Thrown> {
+    read_walker_startup_with(parser, tool, &mut |intervals, _| Ok(intervals))
+}
+
+/// The traversal intervals as `GATKTool.initializeIntervals` hands them over, before the
+/// dictionaries are validated: a tool that overrides `transformTraversalIntervals` changes them
+/// there, and a refusal of its own comes in that place.
+type IntervalTransform<'a> = dyn FnMut(
+        Vec<gatk_engine::interval::SimpleInterval>,
+        &SamHeader,
+    ) -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown>
+    + 'a;
+
+fn read_walker_startup_with(
+    parser: &Parser,
+    tool: &str,
+    transform: &mut IntervalTransform,
+) -> Result<ReadWalkerStart, Thrown> {
     let resolved_filters = resolve_read_filters(parser, tool)?;
     // `--input` is a COLLECTION on a read walker, not a scalar: the reference takes more than one
     // BAM and merges their headers. This port reads one, which is what every case of the golden
@@ -739,9 +760,10 @@ fn read_walker_startup(parser: &Parser, tool: &str) -> Result<ReadWalkerStart, T
         .clone()
         .or_else(|| reference.clone())
         .unwrap_or_else(|| header.clone());
-    let intervals = interval_arguments(parser, &best)?
-        .map(|parameters| parameters.intervals)
-        .unwrap_or_default();
+    let intervals = match interval_arguments(parser, &best)? {
+        Some(parameters) => transform(parameters.intervals, &best)?,
+        None => Vec::new(),
+    };
 
     // `validateSequenceDictionaries`, which the argument turns off wholesale. The master block
     // runs first and checks the reference before the reads; then the reference is checked against
@@ -10616,1335 +10638,6 @@ pub fn flow_pairhmm_align_reads_to_haplotypes(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
-/// `Float.toString` for a read attribute, which is shortest-round-trip for a float as
-/// `Double.toString` is for a double, with the same switch to `E` notation outside `[1e-3, 1e7)`.
-fn java_float_to_string(value: f32) -> String {
-    if value.is_nan() {
-        return "NaN".to_string();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
-    }
-    let magnitude = value.abs();
-    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
-        let rendered = format!("{value:e}");
-        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent");
-        let mantissa = if mantissa.contains('.') {
-            mantissa.to_string()
-        } else {
-            format!("{mantissa}.0")
-        };
-        return format!("{mantissa}E{exponent}");
-    }
-    let rendered = format!("{value}");
-    if rendered.contains('.') {
-        rendered
-    } else {
-        format!("{rendered}.0")
-    }
-}
-
-/// `GATKRead.getAttributeAsFloat`: a float as it is, anything else through `Float.parseFloat` of
-/// its text, and an absent tag as Java's `null`.
-fn attribute_as_float(read: &BamRecord, name: &[u8; 2]) -> Result<Option<f32>, Thrown> {
-    use htsjdk_bam::tag::{Tag, TagValue};
-    let Some(value) = read.tags.get(Tag::new(name)) else {
-        return Ok(None);
-    };
-    let text = match value {
-        TagValue::Float(value) => return Ok(Some(*value)),
-        TagValue::Int(value) => value.to_string(),
-        TagValue::Str(value) => value.clone(),
-        TagValue::Char(value) => (*value as char).to_string(),
-        _ => String::new(),
-    };
-    text.trim().parse::<f32>().map(Some).map_err(|_| {
-        Thrown::non_user(
-            "org.broadinstitute.hellbender.exceptions.GATKException$ReadAttributeTypeMismatch",
-            format!(
-                "Attribute {} not of (or convertible to) type integer",
-                String::from_utf8_lossy(name)
-            ),
-        )
-    })
-}
-
-/// A read's unclipped start and end, soft and hard clips both counted.
-fn unclipped_span(read: &BamRecord) -> (i32, i32) {
-    use htsjdk_bam::cigar::Op;
-    let elements = &read.cigar.elements;
-    let end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
-    let clipped = |element: &htsjdk_bam::cigar::CigarElement| matches!(element.op, Op::S | Op::H);
-    let leading: i32 = elements
-        .iter()
-        .take_while(|element| clipped(element))
-        .map(|element| element.length as i32)
-        .sum();
-    let trailing: i32 = elements
-        .iter()
-        .rev()
-        .take_while(|element| clipped(element))
-        .map(|element| element.length as i32)
-        .sum();
-    (read.alignment_start - leading, end + trailing)
-}
-
-/// `GroundTruthScorer`: every mapped read scored in flow space against the reference it aligns to,
-/// one CSV line each, and a report of the error rate by quality, hmer, deviation and base.
-///
-/// The per-read steps are the reference's, in its order: the soft clip reverted or hard clipped
-/// (only when EXACTLY one end is clipped), the features filter, the flow read and the reference's
-/// flow haplotype, the score and its normalized form against the threshold, the error
-/// probabilities (which feed the percentile report whatever the threshold decided after), the
-/// cycle skip, the quality report unless the read is a cycle skip, and the line.
-pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
-    use gatk_tools::flow_based_read::{read_group_info, FlowRead};
-    use gatk_tools::ground_truth_scorer as gts;
-    use htsjdk_bam::tag::{Tag, TagValue};
-    let ReadWalkerStart {
-        source,
-        header,
-        intervals,
-        filters,
-    } = read_walker_startup(parser, "GroundTruthScorer")?;
-    let output = argument(parser, "output-csv").ok_or_else(|| {
-        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
-    })?;
-    let filter = read_filter(parser, &filters, &header)?;
-
-    // onTraversalStart: the engine first, then the genome prior, then the output.
-    match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        Some("FlowBased") => {}
-        _ => {
-            return Err(Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                "must use a flow based likelihood calculation engine".to_string(),
-            ))
-        }
-    }
-    let prior = match argument(parser, "genome-prior") {
-        None => None,
-        Some(path) => {
-            let text = std::fs::read_to_string(&path).map_err(|_| {
-                Thrown::non_user(
-                    "org.broadinstitute.hellbender.exceptions.GATKException",
-                    format!("failed to open genome-prior file: {path}"),
-                )
-            })?;
-            Some(gts::GenomePrior::parse(&text).map_err(|(class, message)| {
-                Thrown::non_user(Box::leak(class.into_boxed_str()), message)
-            })?)
-        }
-    };
-    write_file(&output, b"")?;
-    let report_path = argument(parser, "report-file");
-    let add_mean_call = flag(parser, "add-mean-call");
-    let no_output = flag(parser, "gt-no-output");
-    let omit_zeros = flag(parser, "omit-zeros-from-report");
-    let exclude_zero_flows = flag(parser, "exclude-zero-flows");
-    let quality_percentiles = scalar(parser, "quality-percentiles")
-        .unwrap_or_else(|| gts::DEFAULT_QUALITY_PERCENTILES.to_string());
-    let threshold = double_or(
-        parser,
-        "normalized-score-threshold",
-        gts::NORMALIZED_SCORE_THRESHOLD_DEFAULT,
-    );
-    let use_softclipped = flag(parser, "use-softclipped-bases");
-    let flow = flow_arguments(parser);
-    let features_path = argument(parser, "features-file");
-    let features = match &features_path {
-        None => None,
-        Some(path) => Some(feature_variants(path)?.0),
-    };
-    let mut reference = match argument(parser, "reference") {
-        Some(path) => Some(
-            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
-        ),
-        None => None,
-    };
-
-    let mut columns: Vec<&str> = vec![
-        "ReadName",
-        "ReadKey",
-        "ReadIsReversed",
-        "ReadMQ",
-        "ReadRQ",
-        "GroundTruthKey",
-        "ReadSequence",
-        "Score",
-        "NormalizedScore",
-        "ErrorProbability",
-        "ReadKeyLength",
-        "GroundTruthKeyLength",
-        "CycleSkipStatus",
-        "Cigar",
-        "LowestQBaseTP",
-    ];
-    if add_mean_call {
-        columns.extend(gts::MEAN_CALL_COLUMNS);
-    }
-    let mut csv = columns.join(",");
-    csv.push('\n');
-    let mut qual_report = report_path.as_ref().map(|_| gts::QualReport::new());
-    let mut percentiles: Vec<gts::PercentileReport> = Vec::new();
-    let join_ints = |values: &[i32]| {
-        values
-            .iter()
-            .map(i32::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
-    };
-    let join_formatted = |values: &[f64]| {
-        values
-            .iter()
-            .map(|v| gts::error_format(*v))
-            .collect::<Vec<_>>()
-            .join(",")
-    };
-
-    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(reads_traversal_error)?;
-    for read in &reads {
-        if read.flags & 0x4 != 0 || read.reference_index < 0 {
-            continue;
-        }
-        // Without a reference the window is still the read's span, and its bases are EMPTY: the
-        // walk goes on until something indexes them or builds a haplotype out of nothing.
-        let contig = header.sequences[read.reference_index as usize].name.clone();
-        let end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
-        let contig_length = reference
-            .as_ref()
-            .map(|reference| reference.sequence_length(&contig).unwrap_or(0) as i32);
-
-        // The clipping, and the window that goes with a reverted clip.
-        let (mut window_start, mut window_end) = (read.alignment_start, end);
-        let clipped = if gts::is_soft_clipped(false, &read.cigar.elements) {
-            if use_softclipped {
-                let (unclipped_start, unclipped_end) = unclipped_span(read);
-                let leading = read.alignment_start - unclipped_start;
-                let trailing = unclipped_end - end;
-                if leading != 0 || trailing != 0 {
-                    // `trimToContigLength` asks the data source for its dictionary.
-                    let Some(contig_length) = contig_length else {
-                        return Err(Thrown::non_user(
-                            "java.lang.NullPointerException",
-                            "Cannot invoke \"org.broadinstitute.hellbender.engine.ReferenceDataSource.getSequenceDictionary()\" because \"this.dataSource\" is null".to_string(),
-                        ));
-                    };
-                    window_start = (read.alignment_start - leading).max(1);
-                    window_end = (end + trailing).min(contig_length);
-                }
-                gatk_engine::clipping::revert_soft_clipped_bases(read, Some(&header))
-                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?
-            } else {
-                gatk_engine::clipping::hard_clip_soft_clipped_bases(read, Some(&header), 0)
-                    .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?
-            }
-        } else {
-            read.clone()
-        };
-        let window = match reference.as_mut() {
-            Some(reference) => reference
-                .query(&contig, window_start, window_end)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            None => Vec::new(),
-        };
-
-        // The features filter: every base of every feature the read overlaps must be the
-        // reference's own on the read.
-        if let (Some(features), Some(path)) = (&features, &features_path) {
-            if !has_feature_index(path) {
-                return Err(Thrown::user(format!(
-                    "Input {path} must support random access to enable queries by interval. If \
-                     it's a file, please index it using the bundled tool IndexFeatureFile"
-                )));
-            }
-            let clipped_end = clipped.alignment_start + clipped.cigar.reference_length() as i32 - 1;
-            let mut keep = true;
-            'features: for vc in features.iter().filter(|vc| {
-                vc.contig == contig
-                    && vc.start as i32 <= clipped_end
-                    && vc.stop as i32 >= clipped.alignment_start
-            }) {
-                for coordinate in vc.start as i32..=vc.stop as i32 {
-                    use gatk_engine::read_utils::BaseAt;
-                    let base = match gatk_engine::read_utils::read_base_at_reference_coordinate(
-                        &clipped, coordinate,
-                    ) {
-                        BaseAt::Present(base) => Some(base),
-                        BaseAt::Absent => None,
-                        BaseAt::Threw => {
-                            return Err(Thrown::non_user(
-                                "java.lang.ArrayIndexOutOfBoundsException",
-                                "a feature base past the read's end".to_string(),
-                            ))
-                        }
-                    };
-                    let Some(base) = base else {
-                        keep = false;
-                        break 'features;
-                    };
-                    let offset = coordinate - window_start;
-                    let reference_base = usize::try_from(offset)
-                        .ok()
-                        .and_then(|at| window.get(at).copied())
-                        .ok_or_else(|| {
-                            Thrown::non_user(
-                                "java.lang.ArrayIndexOutOfBoundsException",
-                                format!("Index {offset} out of bounds for length {}", window.len()),
-                            )
-                        })?;
-                    if base != reference_base {
-                        keep = false;
-                        break 'features;
-                    }
-                }
-            }
-            if !keep {
-                continue;
-            }
-        }
-
-        let info = read_group_info(&clipped, &header).map_err(flow_refusal)?;
-        let flow_read = FlowRead::new(&clipped, &info.flow_order, info.max_class, &flow)
-            .map_err(flow_refusal)?;
-        if window.is_empty() {
-            return Err(Thrown::non_user(
-                "java.lang.IllegalArgumentException",
-                "Null alleles are not supported".to_string(),
-            ));
-        }
-        let haplotype = gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype::new(
-            &window,
-            &info.flow_order,
-        )
-        .ok_or_else(|| {
-            Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                format!(
-                    "baseArrayToKey periodGuard tripped, on {}, flowOrder: {} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
-                    String::from_utf8_lossy(&window),
-                    info.flow_order
-                ),
-            )
-        })?;
-        if !flow_read.valid {
-            continue;
-        }
-        let score = gatk_tools::flow_feature_mapper::compute_likelihood_local(
-            &flow_read,
-            &haplotype,
-            haplotype.key.len(),
-        )
-        .map_err(flow_refusal)?;
-        let normalized = score / flow_read.key.len() as f64;
-        if normalized < threshold {
-            continue;
-        }
-        let error = gts::error_probabilities(
-            &flow_read,
-            prior.as_ref(),
-            qual_report.as_ref().map(|_| &mut percentiles),
-            exclude_zero_flows,
-        );
-        // `getFlowOrder`: the first cycle of the read's flows.
-        let cycle: String = flow_read
-            .flow_order
-            .iter()
-            .take(4)
-            .map(|base| *base as char)
-            .collect();
-        let status = gts::cycle_skip_status(
-            &clipped.read_bases,
-            &clipped.cigar.elements,
-            &window,
-            &cycle,
-        );
-        let reverse = read.flags & 0x10 != 0;
-        if status != gts::CycleSkipStatus::CS {
-            if let Some(report) = qual_report.as_mut() {
-                report.add_read(&flow_read, &window, &cycle, reverse, &error);
-            }
-        }
-
-        let tp: Vec<i8> = match clipped.tags.get(Tag::new(b"tp")) {
-            Some(TagValue::ByteArray { values, .. }) => values.clone(),
-            Some(TagValue::Str(text)) => text.bytes().map(|b| b as i8).collect(),
-            _ => Vec::new(),
-        };
-        let lowest = gts::lowest_q_base_tp(&flow_read.key, &tp, &clipped.base_qualities).map_err(
-            |message| Thrown::non_user("java.lang.ArrayIndexOutOfBoundsException", message),
-        )?;
-        let rq = match attribute_as_float(&clipped, b"rq")? {
-            Some(value) => java_float_to_string(value),
-            None => "null".to_string(),
-        };
-        let mut line = vec![
-            clipped.read_name.clone(),
-            format!("\"{}\"", join_ints(&flow_read.key)),
-            if reverse { "1" } else { "0" }.to_string(),
-            clipped.mapping_quality.to_string(),
-            rq,
-            format!("\"{}\"", join_ints(&haplotype.key)),
-            String::from_utf8_lossy(&clipped.read_bases).into_owned(),
-            gatk_engine::tsv_table::java_double_to_string(score),
-            gatk_engine::tsv_table::java_double_to_string(normalized),
-            format!("\"{}\"", join_formatted(&error)),
-            flow_read.key.len().to_string(),
-            haplotype.key.len().to_string(),
-            status.name().to_string(),
-            read.cigar.to_text(),
-            format!(
-                "\"{}\"",
-                lowest
-                    .iter()
-                    .map(i8::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
-        ];
-        if add_mean_call {
-            let (probs, mean) = gts::read_probs_and_mean_call(&flow_read);
-            line.push(format!("\"{}\"", join_formatted(&probs)));
-            line.push(format!("\"{}\"", join_formatted(&mean)));
-        }
-        if !no_output {
-            csv.push_str(&line.join(","));
-            csv.push('\n');
-        }
-    }
-
-    let bytes = if output.ends_with(".gz") {
-        java_gzip(csv.as_bytes(), 6)
-    } else {
-        csv.into_bytes()
-    };
-    write_file(&output, &bytes)?;
-    if let (Some(path), Some(report)) = (report_path, qual_report.as_ref()) {
-        let text = gts::report_text(report, &percentiles, omit_zeros, &quality_percentiles);
-        write_file(&path, text.as_bytes())?;
-    }
-    Ok(None)
-}
-
-/// One ancestral side of a read: its translated interval, the haplotype built from it, the two
-/// extended windows the output is written from, and its score.
-struct ScoredHaplotype {
-    interval: gatk_engine::interval::SimpleInterval,
-    haplotype: Vec<u8>,
-    clipped_ref: Option<Vec<u8>>,
-    unclipped_ref: Vec<u8>,
-    softclip_front_fill_count: usize,
-    score: f64,
-}
-
-/// `GroundTruthReadsBuilder`: every read translated onto its two ancestral references, scored in
-/// flow space against the reference and against both ancestral haplotypes, and written with the
-/// keys of the haplotype that fits it best.
-///
-/// The steps are the reference's, in its order: the mapping-quality, supplementary and soft-clip
-/// filters, the subsampling (a ratio below one is a draw from an unseeded `Random`, which only its
-/// two ends make deterministic), the read-quality filter, the translation (a read that collapses
-/// is skipped and counted), the haplotypes and their extended windows, the three scores, the two
-/// score filters, then the row. The traversal stops once `--max-output-reads` rows are written.
-pub fn ground_truth_reads_builder(parser: &Parser) -> Outcome {
-    use gatk_engine::interval::SimpleInterval;
-    use gatk_tools::flow_based_read::{read_group_info, FlowRead};
-    use gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype;
-    use gatk_tools::ground_truth_reads_builder as gtrb;
-    use htsjdk_bam::cigar::Op;
-    use htsjdk_bam::tag::{Tag, TagValue};
-    let ReadWalkerStart {
-        source,
-        header,
-        intervals,
-        filters,
-    } = read_walker_startup(parser, "GroundTruthReadsBuilder")?;
-    let output = argument(parser, "output-csv").ok_or_else(|| {
-        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
-    })?;
-    let filter = read_filter(parser, &filters, &header)?;
-    let open_reference =
-        |name: &str| -> Result<gatk_engine::reference::ReferenceFileSource, Thrown> {
-            let path = argument(parser, name).unwrap_or_default();
-            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))
-        };
-    // onTraversalStart: the two ancestral references, the translator, the engine, the output.
-    let mut maternal_reference = open_reference("maternal-ref")?;
-    let mut paternal_reference = open_reference("paternal-ref")?;
-    let base_path = argument(parser, "ancestral-translators-base-path").unwrap_or_default();
-    // `GATKPath.getURIString()` of a directory ends with a separator, which the table names are
-    // appended to; anything else is a prefix.
-    let base_path = if !base_path.ends_with('/') && std::path::Path::new(&base_path).is_dir() {
-        format!("{base_path}/")
-    } else {
-        base_path
-    };
-    match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        Some("FlowBased") => {}
-        _ => {
-            return Err(Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                "must use a flow based likelihood calculation engine".to_string(),
-            ))
-        }
-    }
-    write_file(&output, b"")?;
-
-    let subsampling_ratio = double_or(parser, "subsampling-ratio", 1.0);
-    let max_output_reads = number_or(parser, "max-output-reads", 20_000_000);
-    let output_flow_length = number_or(parser, "output-flow-length", 0);
-    let prepend = scalar(parser, "prepend-sequence");
-    let append = scalar(parser, "append-sequence");
-    let min_mq = double_or(parser, "min-mq", 0.0);
-    let max_rq = double_or(parser, "max-rq", 0.0);
-    let include_supp = flag(parser, "include-supp-align");
-    let min_score = double_or(parser, "min-haplotype-score", 0.0);
-    let min_score_delta = double_or(parser, "min-haplotype-score-delta", 0.0);
-    let padding = number_or(parser, "haplotype-output-padding-size", 8);
-    let discard_non_polyt = flag(parser, "discard-non-polyt-softclipped-reads");
-    let fill_trimmed_q = flag(parser, "fill-trimmed-reads-Q");
-    let fill_trimmed_z = flag(parser, "fill-trimmed-reads-Z");
-    let fill_trimmed = flag(parser, "fill-trimmed-reads");
-    let fill_softclipped = flag(parser, "fill-softclipped-reads");
-    let false_snp_compensation = flag(parser, "false-snp-compensation");
-    let no_output = flag(parser, "gt-no-output");
-    let flow = flow_arguments(parser);
-    let mut reference = match argument(parser, "reference") {
-        Some(path) => Some(
-            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
-        ),
-        None => None,
-    };
-    if subsampling_ratio > 0.0 && subsampling_ratio < 1.0 {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "a subsampling ratio strictly between zero and one draws from an unseeded Random. This message is the port's own and not GATK's."
-                .to_string(),
-        ));
-    }
-
-    let mut csv = gtrb::header();
-    csv.push('\n');
-    let mut translators: std::collections::HashMap<String, gtrb::Translator> =
-        std::collections::HashMap::new();
-    let null_alleles = || {
-        Thrown::non_user(
-            "java.lang.IllegalArgumentException",
-            "Null alleles are not supported".to_string(),
-        )
-    };
-    let key_error = |sequence: &[u8], order: &str| {
-        Thrown::non_user(
-            "org.broadinstitute.hellbender.exceptions.GATKException",
-            format!(
-                "baseArrayToKey periodGuard tripped, on {}, flowOrder: {order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
-                String::from_utf8_lossy(sequence)
-            ),
-        )
-    };
-
-    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
-        .map_err(reads_traversal_error)?;
-    let mut written = 0i32;
-    for read in &reads {
-        if max_output_reads != 0 && written >= max_output_reads {
-            break;
-        }
-        let reverse = read.flags & 0x10 != 0;
-        let elements = &read.cigar.elements;
-        let first_op = elements.first().map(|element| element.op);
-        let last_op = elements.last().map(|element| element.op);
-        let end_softclipped = if reverse {
-            first_op == Some(Op::S)
-        } else {
-            last_op == Some(Op::S)
-        };
-        let start_softclipped = if reverse {
-            last_op == Some(Op::S)
-        } else {
-            first_op == Some(Op::S)
-        };
-        if min_mq != 0.0 && f64::from(read.mapping_quality) < min_mq {
-            continue;
-        }
-        if read.flags & 0x800 != 0 && !include_supp {
-            continue;
-        }
-        if discard_non_polyt && end_softclipped {
-            // `isEndPolyTSoftclipped`, which measures the clip by the OTHER end's element.
-            let bases = &read.read_bases;
-            let polyt = if !reverse {
-                let length = elements.first().map(|e| e.length as usize).unwrap_or(0);
-                (0..length).all(|n| bases.get(n) == Some(&b'T'))
-            } else {
-                let length = elements.last().map(|e| e.length as usize).unwrap_or(0);
-                (0..length).all(|n| bases.len() > n && bases[bases.len() - n - 1] == b'A')
-            };
-            if !polyt {
-                continue;
-            }
-        }
-        if subsampling_ratio <= 0.0 {
-            continue;
-        }
-        let info = read_group_info(read, &header).map_err(flow_refusal)?;
-        let flow_read =
-            FlowRead::new(read, &info.flow_order, info.max_class, &flow).map_err(flow_refusal)?;
-        if max_rq != 0.0 {
-            let quality: f64 = (0..flow_read.key.len())
-                .map(|n| flow_read.prob(n, flow_read.max_hmer))
-                .sum();
-            if quality > max_rq {
-                continue;
-            }
-        }
-
-        // The translation, maternal then paternal, each start then end.
-        let contig = header.sequences[read.reference_index as usize].name.clone();
-        let read_end = read.alignment_start + read.cigar.reference_length() as i32 - 1;
-        let mut translate = |ancestor: &str| -> Result<Result<SimpleInterval, String>, Thrown> {
-            let key = format!("{ancestor}.{contig}.csv");
-            if !translators.contains_key(&key) {
-                let path = format!("{base_path}{key}");
-                let text = std::fs::read_to_string(&path).map_err(|_| {
-                    Thrown::user(format!(
-                        "Couldn't read file {path}. Error was: It doesn't exist."
-                    ))
-                })?;
-                translators.insert(key.clone(), gtrb::Translator::parse(&text));
-            }
-            let translator = &translators[&key];
-            let at = |from: i32| {
-                translator.translate(from).ok_or_else(|| {
-                    Thrown::non_user(
-                        "java.lang.ArrayIndexOutOfBoundsException",
-                        format!(
-                            "Index -1 out of bounds for length {}",
-                            translator.positions.len()
-                        ),
-                    )
-                })
-            };
-            let start = at(read.alignment_start)?;
-            let end = at(read_end)?;
-            Ok(if end > start {
-                Ok(SimpleInterval {
-                    contig: format!("{contig}_{ancestor}"),
-                    start,
-                    end,
-                })
-            } else {
-                Err(format!("{start},{end}"))
-            })
-        };
-        let maternal_interval = match translate(gtrb::MATERNAL)? {
-            Ok(interval) => interval,
-            Err(_) => continue,
-        };
-        let paternal_interval = match translate(gtrb::PATERNAL)? {
-            Ok(interval) => interval,
-            Err(_) => continue,
-        };
-
-        // The aligned bases, oriented, which the false-SNP skip compares against.
-        let start_clip = if first_op == Some(Op::S) {
-            elements[0].length as usize
-        } else {
-            0
-        };
-        let end_clip = if last_op == Some(Op::S) {
-            elements[elements.len() - 1].length as usize
-        } else {
-            0
-        };
-        let aligned = &read.read_bases[start_clip..read.read_bases.len() - end_clip];
-        let read_oriented = gtrb::oriented(aligned, reverse);
-        // `buildReferenceHaplotype`: the window's bases oriented, a false SNP skipped.
-        let build_haplotype =
-            |window: &[u8], interval: &SimpleInterval| -> Result<(Vec<u8>, i32), Thrown> {
-                let mut bases = gtrb::oriented(window, reverse);
-                let mut length = interval.end - interval.start + 1;
-                if false_snp_compensation {
-                    let first = *bases.first().ok_or_else(|| {
-                        Thrown::non_user(
-                            "java.lang.ArrayIndexOutOfBoundsException",
-                            "Index 0 out of bounds for length 0".to_string(),
-                        )
-                    })?;
-                    if Some(&first) != read_oriented.first() {
-                        let skip = gtrb::detect_false_snp(&bases, &read_oriented);
-                        if skip != 0 {
-                            bases = bases[skip..].to_vec();
-                            length -= skip as i32;
-                        }
-                    }
-                }
-                if bases.is_empty() {
-                    return Err(null_alleles());
-                }
-                Ok((bases, length))
-            };
-        let query = |source: &mut gatk_engine::reference::ReferenceFileSource,
-                     interval: &SimpleInterval|
-         -> Result<Vec<u8>, Thrown> {
-            source
-                .query(&interval.contig, interval.start, interval.end)
-                .map_err(|error| Thrown::user(format!("{error:?}")))
-        };
-        let mut scored = Vec::with_capacity(2);
-        for (interval, source) in [
-            (maternal_interval, &mut maternal_reference),
-            (paternal_interval, &mut paternal_reference),
-        ] {
-            let window = query(source, &interval)?;
-            let (haplotype, span) = build_haplotype(&window, &interval)?;
-            scored.push((interval, window, haplotype, span));
-        }
-        // `buildExtendedRef`, for each side.
-        let mut sides: Vec<ScoredHaplotype> = Vec::with_capacity(2);
-        for (index, (interval, _window, haplotype, span)) in scored.into_iter().enumerate() {
-            let source: &mut gatk_engine::reference::ReferenceFileSource = if index == 0 {
-                &mut maternal_reference
-            } else {
-                &mut paternal_reference
-            };
-            let mut extend_start = 0i32;
-            let mut extend_end = 0i32;
-            if fill_softclipped {
-                let element = if !reverse {
-                    elements.last()
-                } else {
-                    elements.first()
-                };
-                if let Some(element) = element.filter(|e| e.op == Op::S) {
-                    if !reverse {
-                        extend_end += element.length as i32;
-                    } else {
-                        extend_start += element.length as i32;
-                    }
-                }
-            }
-            if !reverse {
-                extend_end += padding;
-            } else {
-                extend_start += padding;
-            }
-            let fill_from_haplotype = if end_softclipped {
-                fill_softclipped
-            } else {
-                match read.tags.get(Tag::new(b"tm")) {
-                    None => true,
-                    Some(value) => {
-                        let tm = match value {
-                            TagValue::Str(text) => text.clone(),
-                            TagValue::Char(c) => (*c as char).to_string(),
-                            TagValue::Int(i) => i.to_string(),
-                            _ => String::new(),
-                        };
-                        if tm.contains('A') {
-                            false
-                        } else {
-                            (tm.contains('Z') && (fill_trimmed || fill_trimmed_z))
-                                || (tm.contains('Q') && (fill_trimmed || fill_trimmed_q))
-                        }
-                    }
-                }
-            };
-            if output_flow_length != 0 && fill_from_haplotype {
-                let length = (interval.end + extend_end) - (interval.start - extend_start);
-                let delta = (output_flow_length - length).max(0) + 50;
-                if !reverse {
-                    extend_end += delta;
-                } else {
-                    extend_start += delta;
-                }
-            }
-            let delta = (interval.end - interval.start + 1) - span;
-            if delta != 0 {
-                if !reverse {
-                    extend_start -= delta;
-                } else {
-                    extend_end -= delta;
-                }
-            }
-            let contig_length = source.sequence_length(&interval.contig).unwrap_or(0) as i32;
-            let clamp = |from: i32, to: i32| SimpleInterval {
-                contig: interval.contig.clone(),
-                start: from.max(1),
-                end: to.min(contig_length),
-            };
-            let clipped_ref = if start_softclipped {
-                Some(query(
-                    source,
-                    &clamp(interval.start - extend_start, interval.end + extend_end),
-                )?)
-            } else {
-                None
-            };
-            let front = if !reverse {
-                elements.first()
-            } else {
-                elements.last()
-            };
-            if let Some(front) = front.filter(|e| e.op == Op::S) {
-                if !reverse {
-                    extend_start += front.length as i32;
-                } else {
-                    extend_end += front.length as i32;
-                }
-            }
-            let unclipped_ref = query(
-                source,
-                &clamp(interval.start - extend_start, interval.end + extend_end),
-            )?;
-            sides.push(ScoredHaplotype {
-                interval,
-                haplotype,
-                clipped_ref,
-                unclipped_ref,
-                softclip_front_fill_count: 0,
-                score: 0.0,
-            });
-        }
-
-        // The three scores, each against a flow read of its own.
-        let score_against = |haplotype: &[u8]| -> Result<f64, Thrown> {
-            let flow_haplotype = FlowHaplotype::new(haplotype, &info.flow_order)
-                .ok_or_else(|| key_error(haplotype, &info.flow_order))?;
-            let mut flow_read = FlowRead::new(read, &info.flow_order, info.max_class, &flow)
-                .map_err(flow_refusal)?;
-            if reverse {
-                flow_read
-                    .apply_alignment_from_synthesis()
-                    .map_err(flow_refusal)?;
-            }
-            if !flow_read.valid {
-                return Ok(-1.0);
-            }
-            gatk_tools::flow_feature_mapper::compute_likelihood_local(
-                &flow_read,
-                &flow_haplotype,
-                flow_haplotype.key.len(),
-            )
-            .map_err(flow_refusal)
-        };
-        let reference_window = match reference.as_mut() {
-            Some(reference) => reference
-                .query(&contig, read.alignment_start, read_end)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            None => Vec::new(),
-        };
-        let reference_interval = SimpleInterval {
-            contig: contig.clone(),
-            start: read.alignment_start,
-            end: read_end,
-        };
-        let (reference_haplotype, _) = build_haplotype(&reference_window, &reference_interval)?;
-        let reference_score = score_against(&reference_haplotype)?;
-        let reference_oriented = gtrb::oriented(&reference_window, reverse);
-        sides[0].score = if sides[0].haplotype == reference_oriented {
-            reference_score
-        } else {
-            score_against(&sides[0].haplotype)?
-        };
-        sides[1].score = if sides[1].haplotype == reference_oriented {
-            reference_score
-        } else {
-            score_against(&sides[1].haplotype)?
-        };
-        let (maternal_score, paternal_score) = (sides[0].score, sides[1].score);
-        if min_score != 0.0 && maternal_score.min(paternal_score) > min_score {
-            continue;
-        }
-        if min_score_delta != 0.0 && (maternal_score - paternal_score).abs() > min_score_delta {
-            continue;
-        }
-        written += 1;
-
-        // emit
-        let tm = match read.tags.get(Tag::new(b"tm")) {
-            Some(TagValue::Str(text)) => Some(text.clone()),
-            Some(TagValue::Char(c)) => Some((*c as char).to_string()),
-            Some(TagValue::Int(i)) => Some(i.to_string()),
-            _ => None,
-        };
-        let fill = gtrb::fill_value(end_softclipped, tm.as_deref());
-        let order_for_key = if reverse {
-            String::from_utf8(gtrb::reverse_complement(info.flow_order.as_bytes()))
-                .unwrap_or_default()
-        } else {
-            info.flow_order.clone()
-        };
-        let mut output_keys: Vec<Vec<i32>> = vec![Vec::new(), Vec::new()];
-        // Paternal first, as the reference builds them.
-        for index in [1usize, 0] {
-            let side = &mut sides[index];
-            let sequence = gtrb::oriented(&side.unclipped_ref, reverse);
-            let key = gtrb::haplotype_key(&sequence, &order_for_key)
-                .ok_or_else(|| key_error(&sequence, &order_for_key))?;
-            side.softclip_front_fill_count = match &side.clipped_ref {
-                Some(clipped) if start_softclipped => {
-                    let sequence = gtrb::oriented(clipped, reverse);
-                    let clipped_key = gtrb::haplotype_key(&sequence, &order_for_key)
-                        .ok_or_else(|| key_error(&sequence, &order_for_key))?;
-                    key.len().saturating_sub(clipped_key.len())
-                }
-                _ => 0,
-            };
-            let flow_length = if output_flow_length != 0 {
-                output_flow_length as usize
-            } else {
-                key.len()
-            };
-            let mut out = vec![fill; flow_length];
-            let kept = flow_length.min(key.len());
-            out[..kept].copy_from_slice(&key[..kept]);
-            output_keys[index] = out;
-        }
-        let mut sequences: Vec<String> = vec![String::new(), String::new()];
-        for index in [1usize, 0] {
-            let side = &sides[index];
-            let sequence = gtrb::oriented(&side.unclipped_ref, reverse);
-            let count = gtrb::key_bases(&output_keys[index]);
-            let body = sequence.get(..count).ok_or_else(|| {
-                Thrown::non_user(
-                    "java.lang.StringIndexOutOfBoundsException",
-                    format!("begin 0, end {count}, length {}", sequence.len()),
-                )
-            })?;
-            let mut text = prepend.clone().unwrap_or_default();
-            text.push_str(&String::from_utf8_lossy(body));
-            text.push_str(append.as_deref().unwrap_or(""));
-            sequences[index] = text;
-        }
-        if !fill_softclipped {
-            for index in [1usize, 0] {
-                let limit = sides[index]
-                    .softclip_front_fill_count
-                    .min(output_keys[index].len());
-                for cell in output_keys[index].iter_mut().take(limit) {
-                    *cell = gtrb::SOFTCLIP_FILL_VALUE;
-                }
-            }
-        }
-        let same = sequences[0] == sequences[1];
-        let best = if paternal_score > maternal_score {
-            1
-        } else {
-            0
-        };
-        let consensus = gtrb::consensus_key(&output_keys[1], &output_keys[0]);
-        let best_key = if !same {
-            gtrb::key_csv(&output_keys[best])
-        } else {
-            gtrb::key_csv(&consensus)
-        };
-        let (unclipped_start, unclipped_end) = unclipped_span(read);
-        let read_sequence = gtrb::oriented(&read.read_bases, reverse);
-        let mut read_key = flow_read.key.clone();
-        if reverse {
-            read_key.reverse();
-        }
-        let read_order = gtrb::oriented(info.flow_order.as_bytes(), reverse);
-        let interval_text = |interval: &SimpleInterval| {
-            format!("{}:{}-{}", interval.contig, interval.start, interval.end)
-        };
-        let fields: Vec<String> = vec![
-            read.read_name.clone(),
-            contig.clone(),
-            read.alignment_start.to_string(),
-            read_end.to_string(),
-            gatk_engine::java_format::format_decimals(paternal_score, 6),
-            gatk_engine::java_format::format_decimals(maternal_score, 6),
-            gatk_engine::java_format::format_decimals(reference_score, 6),
-            gtrb::read_key_csv(&read_key, &read_sequence, &read_order),
-            best_key,
-            gtrb::key_csv(&consensus),
-            tm.unwrap_or_default(),
-            read.mapping_quality.to_string(),
-            read.flags.to_string(),
-            read.cigar.to_text(),
-            String::from_utf8_lossy(&read_sequence).into_owned(),
-            sequences[1].clone(),
-            sequences[0].clone(),
-            sequences[best].clone(),
-            unclipped_start.to_string(),
-            unclipped_end.to_string(),
-            interval_text(&sides[1].interval),
-            interval_text(&sides[0].interval),
-        ];
-        if !no_output {
-            csv.push_str(&fields.join(","));
-            csv.push('\n');
-        }
-    }
-
-    let bytes = if output.ends_with(".gz") {
-        java_gzip(csv.as_bytes(), 6)
-    } else {
-        csv.into_bytes()
-    };
-    write_file(&output, &bytes)?;
-    Ok(None)
-}
-
-/// `HaplotypeBasedVariantRecaller`: every allele of a VCF, as the haplotypes around it carry it,
-/// scored against every read that spans it.
-///
-/// Per VCF record in each interval: the haplotype group that centres it best, the reads that
-/// contain it hard clipped to the group's span, the PairHMM likelihood of each read against each
-/// haplotype (the Java `LOGLESS_CACHING` kernel; the native ones are not ported), the reads the
-/// engine disqualifies taken away, the haplotypes' events merged at each start the span holds,
-/// the likelihoods marginalized onto the merged alleles, and one block per start that is the
-/// record's own.
-pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
-    use gatk_engine::interval::SimpleInterval;
-    use gatk_tools::haplotype_based_variant_recaller as hbvr;
-    let ReadWalkerStart {
-        source,
-        header,
-        intervals,
-        filters,
-    } = read_walker_startup(parser, "HaplotypeBasedVariantRecaller")?;
-
-    // traverse(): the engine first.
-    let engine = scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
-    let threshold = number_or(parser, "base-quality-score-threshold", 18);
-    if engine == "PairHMM" {
-        match scalar(parser, "pair-hmm-implementation").as_deref() {
-            Some("LOGLESS_CACHING") => {}
-            _ => {
-                return Err(Thrown::non_user(
-                    PORT_LIMITATION,
-                    "only the LOGLESS_CACHING PairHMM is ported. This message is the port's own and not GATK's."
-                        .to_string(),
-                ))
-            }
-        }
-        if threshold < 6 {
-            return Err(Thrown::non_user(
-                "java.lang.IllegalArgumentException",
-                "baseQualityScoreThreshold must be greater than or equal to 6 (QualityUtils.MIN_USABLE_Q_SCORE)"
-                    .to_string(),
-            ));
-        }
-    }
-    let Some(reference_path) = argument(parser, "reference") else {
-        return Err(Thrown::non_user(
-            "java.lang.IllegalArgumentException",
-            "Null object is not allowed here.".to_string(),
-        ));
-    };
-    let mut reference =
-        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
-            .map_err(|error| Thrown::user(format!("{error:?}")))?;
-    let output = scalar(parser, "matrix-file-csv").unwrap_or_default();
-    write_file(&output, b"")?;
-    let alleles_path = scalar(parser, "alleles-file-vcf").unwrap_or_default();
-    let (variants, _) = feature_variants(&alleles_path)?;
-    let haplotypes_path = scalar(parser, "haplotypes-file-bam").unwrap_or_default();
-    let haplotype_source = {
-        let path = std::path::Path::new(&haplotypes_path);
-        match htsjdk_bam::sam_files::find_index(path) {
-            Some(index) => ReadsDataSource::open(path, &index),
-            None => ReadsDataSource::open_unindexed(path),
-        }
-        .map_err(|error| Thrown::user(format!("{error:?}")))?
-    };
-    let filter = read_filter(parser, &filters, &header)?;
-    let intervals: Vec<SimpleInterval> = if intervals.is_empty() {
-        header
-            .sequences
-            .iter()
-            .map(|sequence| SimpleInterval {
-                contig: sequence.name.clone(),
-                start: 1,
-                end: sequence.length as i32,
-            })
-            .collect()
-    } else {
-        intervals
-    };
-    let settings = hbvr::EngineSettings {
-        pcr_error_model: scalar(parser, "pcr-indel-model").unwrap_or_else(|| "CONSERVATIVE".to_string()),
-        base_quality_score_threshold: threshold as u8,
-        gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10) as u8,
-        disable_cap_read_qualities_to_map_q: flag(parser, "disable-cap-base-qualities-to-map-quality"),
-        dynamic_disqualification: flag(parser, "enable-dynamic-read-disqualification-for-genotyping"),
-        read_disqualification_scale: double_or(parser, "dynamic-read-disqualification-threshold", 1.0),
-        expected_error_rate_per_base: double_or(
-            parser,
-            "expected-mismatch-rate-for-read-disqualification",
-            0.02,
-        ),
-    };
-    let max_mnp_distance = number_or(parser, "max-mnp-distance", 0);
-    let emit_spanning_dels = !flag(parser, "disable-spanning-event-genotyping");
-    let alleles_indexed = has_feature_index(&alleles_path);
-    let sample_of = |read: &BamRecord| -> String {
-        gatk_engine::read_group::resolve(read, &header)
-            .and_then(|group| group.attributes.get("SM").map(str::to_string))
-            .unwrap_or_else(|| "null".to_string())
-    };
-    let cigar_of = |read: &BamRecord| -> Vec<hbvr::CigarElement> {
-        read.cigar
-            .elements
-            .iter()
-            .map(|element| hbvr::CigarElement {
-                operator: element.op.to_char() as char,
-                length: element.length as i32,
-            })
-            .collect()
-    };
-    let read_end = |read: &BamRecord| read.alignment_start + read.cigar.reference_length() as i32 - 1;
-
-    let mut text = String::new();
-    for region in &intervals {
-        if !alleles_indexed {
-            return Err(Thrown::user(format!(
-                "Input {alleles_path} must support random access to enable queries by interval. If \
-                 it's a file, please index it using the bundled tool IndexFeatureFile"
-            )));
-        }
-        for vc in variants.iter().filter(|vc| {
-            vc.contig == region.contig
-                && vc.start as i32 <= region.end
-                && vc.stop as i32 >= region.start
-        }) {
-            let vc_loc = hbvr::Span::new(&vc.contig, vc.start as i32, vc.stop as i32);
-            // forBest: the haplotype records over the variant, grouped by span.
-            let records = haplotype_source
-                .query(&[SimpleInterval {
-                    contig: vc_loc.contig.clone(),
-                    start: vc_loc.start,
-                    end: vc_loc.end,
-                }])
-                .map_err(reads_traversal_error)?;
-            let haplotype_records: Vec<&BamRecord> = records
-                .iter()
-                .filter(|record| hbvr::is_haplotype_record(&record.read_name))
-                .collect();
-            let listed: Vec<hbvr::HaplotypeRecord> = haplotype_records
-                .iter()
-                .map(|record| hbvr::HaplotypeRecord {
-                    name: record.read_name.clone(),
-                    span: hbvr::Span::new(&vc_loc.contig, record.alignment_start, read_end(record)),
-                })
-                .collect();
-            let groups = hbvr::groups(&listed);
-            let Some(best) = hbvr::best_group(&vc_loc, &groups) else {
-                continue;
-            };
-            // The group's records, in the order the query returned them.
-            let first_index = {
-                let mut at = 0usize;
-                for group in &groups {
-                    if std::ptr::eq(group, best) {
-                        break;
-                    }
-                    at += group.len();
-                }
-                at
-            };
-            let members: Vec<&BamRecord> =
-                haplotype_records[first_index..first_index + best.len()].to_vec();
-            let span = best[0].span.clone();
-            let span_interval = SimpleInterval {
-                contig: span.contig.clone(),
-                start: span.start,
-                end: span.end,
-            };
-            let ref_bases = reference
-                .query(&span.contig, span.start, span.end)
-                .map_err(|error| Thrown::user(format!("{error:?}")))?;
-
-            // The reads that contain the variant, filtered, then clipped to the span.
-            let candidates = source
-                .query(std::slice::from_ref(&span_interval))
-                .map_err(reads_traversal_error)?;
-            let mut reads: Vec<BamRecord> = Vec::new();
-            for record in &candidates {
-                if record.flags & 0x4 != 0 {
-                    continue;
-                }
-                if !(record.alignment_start <= vc_loc.start && read_end(record) >= vc_loc.end) {
-                    continue;
-                }
-                if !filter(record) {
-                    continue;
-                }
-                let clipped =
-                    gatk_engine::clipping::hard_clip_soft_clipped_bases(record, Some(&header), 0)
-                        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
-                let clipped = gatk_engine::clipping::hard_clip_to_region(
-                    &clipped,
-                    Some(&header),
-                    span.start,
-                    span.end,
-                )
-                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
-                if clipped.flags & 0x4 != 0 || clipped.cigar.elements.is_empty() {
-                    continue;
-                }
-                reads.push(clipped);
-            }
-            if engine != "PairHMM" {
-                if let Some(read) = reads.first() {
-                    return Err(Thrown::non_user(
-                        "java.lang.IllegalArgumentException",
-                        format!(
-                            "read must be flow based: {} {}:{}-{}",
-                            read.read_name,
-                            span.contig,
-                            read.alignment_start,
-                            read_end(read)
-                        ),
-                    ));
-                }
-            }
-
-            // The haplotypes, deduplicated by bases as the allele list keeps them.
-            let mut distinct: Vec<Vec<u8>> = Vec::new();
-            let mut index_of_member: Vec<usize> = Vec::new();
-            for member in &members {
-                let at = match distinct.iter().position(|bases| *bases == member.read_bases) {
-                    Some(at) => at,
-                    None => {
-                        distinct.push(member.read_bases.clone());
-                        distinct.len() - 1
-                    }
-                };
-                index_of_member.push(at);
-            }
-            let engine_reads: Vec<hbvr::EngineRead> = reads
-                .iter()
-                .map(|read| {
-                    let tag = |name: &[u8; 2]| match read.tags.get(htsjdk_bam::tag::Tag::new(name)) {
-                        Some(htsjdk_bam::tag::TagValue::Str(text)) => {
-                            Some(text.bytes().map(|b| b.wrapping_sub(33)).collect())
-                        }
-                        _ => None,
-                    };
-                    hbvr::EngineRead {
-                        bases: read.read_bases.clone(),
-                        quals: read.base_qualities.clone(),
-                        insertion_quals: tag(b"BI"),
-                        deletion_quals: tag(b"BD"),
-                        mapping_quality: read.mapping_quality,
-                    }
-                })
-                .collect();
-            let result = hbvr::compute_likelihoods(&distinct, &engine_reads, &settings);
-
-            // simplifiedAssignGenotypeLikelihood.
-            let mut maps = Vec::with_capacity(members.len());
-            for member in &members {
-                maps.push(
-                    hbvr::event_map(
-                        &member.read_bases,
-                        &cigar_of(member),
-                        &ref_bases,
-                        span.start,
-                        max_mnp_distance,
-                    )
-                    .map_err(|(class, message)| {
-                        Thrown::non_user(Box::leak(class.into_boxed_str()), message)
-                    })?,
-                );
-            }
-            let starts: std::collections::BTreeSet<i32> =
-                maps.iter().flat_map(|map| map.keys().copied()).collect();
-            let kind = {
-                let reference_length = vc.reference().len();
-                let types: std::collections::BTreeSet<u8> = vc
-                    .alternate_alleles()
-                    .iter()
-                    .map(|alt| {
-                        if alt.is_symbolic() || vc.reference().is_symbolic() {
-                            0
-                        } else if alt.len() == reference_length {
-                            if reference_length == 1 {
-                                1
-                            } else {
-                                2
-                            }
-                        } else {
-                            3
-                        }
-                    })
-                    .collect();
-                if types.len() > 1 {
-                    hbvr::VariantKind::Mixed
-                } else {
-                    hbvr::VariantKind::Other
-                }
-            };
-            for loc in starts {
-                if !(span.start <= loc && loc <= span.end) {
-                    continue;
-                }
-                let reference_base = ref_bases[(loc - span.start) as usize];
-                let Some(merged) = hbvr::merged_alleles(&maps, loc, reference_base)
-                    .map_err(|(class, message)| {
-                        Thrown::non_user(Box::leak(class.into_boxed_str()), message)
-                    })?
-                else {
-                    continue;
-                };
-                if loc != vc.start as i32 {
-                    continue;
-                }
-                let mapper = hbvr::allele_mapper(&merged, &maps, loc, emit_spanning_dels);
-                let header_line = hbvr::header_line(
-                    &vc.contig,
-                    vc.start as i32,
-                    vc.stop as i32,
-                    kind,
-                    &span,
-                    &mapper.iter().map(|(allele, _)| allele.text()).collect::<Vec<_>>(),
-                );
-                let mut lines = Vec::new();
-                for (column, &r) in result.kept.iter().enumerate() {
-                    let values: Vec<f64> = mapper
-                        .iter()
-                        .map(|(_, members_of)| {
-                            members_of
-                                .iter()
-                                .map(|m| result.likelihoods[index_of_member[*m]][column])
-                                .fold(f64::NEG_INFINITY, f64::max)
-                        })
-                        .collect();
-                    let read = &reads[r];
-                    let (unclipped_start, unclipped_end) = unclipped_span(read);
-                    let line_read = hbvr::Read {
-                        name: read.read_name.clone(),
-                        span: hbvr::Span::new(&vc.contig, read.alignment_start, read_end(read)),
-                        cigar: cigar_of(read),
-                        bases: read.read_bases.clone(),
-                        is_duplicate: read.flags & 0x400 != 0,
-                        is_reverse: read.flags & 0x10 != 0,
-                        mapping_quality: i32::from(read.mapping_quality),
-                        key_length: 0,
-                        sample: sample_of(read),
-                        unclipped_start,
-                        unclipped_end,
-                    };
-                    if let Some(line) = hbvr::matrix_line(&line_read, &vc_loc, &values) {
-                        lines.push(line);
-                    }
-                }
-                text.push_str(&hbvr::variant_block(&header_line, &lines));
-            }
-        }
-    }
-    write_file(&output, text.as_bytes())?;
-    Ok(None)
-}
-
 /// `FlowFeatureMapper` with its one mapper, `SNVMapper`: every mismatch surrounded by matching
 /// bases, scored by the flow matrix as the read's haplotype against the reference's, and written
 /// once the traversal has passed it, with the reads still queued over it counted.
@@ -12314,6 +11007,461 @@ fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments
         retain_max_n_probs: flag(parser, "flow-retain-max-n-probs-base-format"),
         flow_matrix_mods: scalar(parser, "flow-matrix-mods").filter(|text| text != "null"),
         keep_boundary_flows: flag(parser, "keep-boundary-flows"),
+    }
+}
+
+/// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
+/// row and, with `--report-file`, the error-rate report.
+///
+/// * **the score is `FlowFeatureMapper.computeLikelihoodLocal`** of the read against the reference
+///   window as a flow haplotype, so the engine `--likelihood-calculation-engine` names must be
+///   `FlowBased`, and anything else is refused before the CSV is opened;
+/// * **a read soft-clipped at one end only** is hard-clipped there, or with
+///   `--use-softclipped-bases` reverted and scored over a window widened by the clip; a read
+///   clipped at both ends is scored as it is;
+/// * **the alignment is never applied**: the key is read off the bases as stored, which is the
+///   reference direction for either strand, and nothing flips it for a reverse read or drops the
+///   zero flows at its ends;
+/// * **the CSV and the report are written by `closeTool`**, which runs after a failure too.
+pub fn ground_truth_scorer(parser: &Parser) -> Outcome {
+    use gatk_tools::ground_truth_scorer as gts;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup(parser, "GroundTruthScorer")?;
+    let output = argument(parser, "output-csv").ok_or_else(|| {
+        Thrown::command_line("Argument output-csv was missing: Argument 'output-csv' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    // `onTraversalStart`: the engine, the prior, the CSV, the report.
+    let engine =
+        scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
+    if engine != "FlowBased" {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "must use a flow based likelihood calculation engine".to_string(),
+        ));
+    }
+    let prior = match argument(parser, "genome-prior") {
+        Some(path) => {
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!("failed to open genome-prior file: {path}"),
+                )
+            })?;
+            Some(gts::GenomePrior::parse(&text).map_err(|error| {
+                if error.class.is_empty() {
+                    Thrown::non_user(
+                        PORT_LIMITATION,
+                        format!(
+                            "{}: not read by the port. This message is the port's own and not GATK's.",
+                            error.message
+                        ),
+                    )
+                } else {
+                    Thrown::non_user(error.class, error.message)
+                }
+            })?)
+        }
+        None => None,
+    };
+    let add_mean_call = flag(parser, "add-mean-call");
+    let mut csv = String::new();
+    let mut fields: Vec<&str> = gts::CSV_FIELD_ORDER_BASIC.to_vec();
+    if add_mean_call {
+        fields.extend(gts::MEAN_CALL_COLUMNS);
+    }
+    csv.push_str(&fields.join(","));
+    csv.push('\n');
+    let report_path = argument(parser, "report-file");
+    let quality_percentiles = scalar(parser, "quality-percentiles")
+        .unwrap_or_else(|| gts::DEFAULT_QUALITY_PERCENTILES.to_string());
+    let mut qual_report = report_path.as_ref().map(|_| gts::QualReport::default());
+    let mut percentiles: Option<Vec<gts::PercentileReport>> =
+        report_path.as_ref().map(|_| Vec::new());
+
+    let traversed = ground_truth_scorer_traverse(
+        parser,
+        &source,
+        &header,
+        &intervals,
+        &filter,
+        prior.as_ref(),
+        &mut csv,
+        qual_report.as_mut(),
+        percentiles.as_mut(),
+        add_mean_call,
+    );
+
+    // `closeTool`, which runs whether or not the traversal finished.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(csv.as_bytes(), 6)
+    } else {
+        csv.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    if let (Some(path), Some(report), Some(percentiles)) =
+        (&report_path, &qual_report, &percentiles)
+    {
+        let text = gts::report_text(
+            report,
+            percentiles,
+            &quality_percentiles,
+            flag(parser, "omit-zeros-from-report"),
+        );
+        write_file(path, text.as_bytes())?;
+    }
+    traversed?;
+    Ok(None)
+}
+
+/// `GroundTruthScorer.apply` over every read the traversal reaches.
+#[allow(clippy::too_many_arguments)]
+fn ground_truth_scorer_traverse(
+    parser: &Parser,
+    source: &ReadsDataSource,
+    header: &SamHeader,
+    intervals: &[gatk_engine::interval::SimpleInterval],
+    filter: &Filter,
+    prior: Option<&gatk_tools::ground_truth_scorer::GenomePrior>,
+    csv: &mut String,
+    mut qual_report: Option<&mut gatk_tools::ground_truth_scorer::QualReport>,
+    mut percentiles: Option<&mut Vec<gatk_tools::ground_truth_scorer::PercentileReport>>,
+    add_mean_call: bool,
+) -> Result<(), Thrown> {
+    use gatk_engine::read_utils;
+    use gatk_tools::flow_based_read::FlowRead;
+    use gatk_tools::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype;
+    use gatk_tools::ground_truth_scorer as gts;
+
+    let flow = flow_arguments(parser);
+    let use_softclipped = flag(parser, "use-softclipped-bases");
+    let threshold = double_or(
+        parser,
+        "normalized-score-threshold",
+        gts::NORMALIZED_SCORE_THRESHOLD_DEFAULT,
+    );
+    let no_output = flag(parser, "gt-no-output");
+    let exclude_zero_flows = flag(parser, "exclude-zero-flows");
+    let features = match argument(parser, "features-file") {
+        Some(path) => {
+            if !has_feature_index(&path) {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "--features-file without an index is not ported. This message is the port's own and not GATK's."
+                        .to_string(),
+                ));
+            }
+            let (_, text) = open_feature_input(&path)?;
+            Some(
+                htsjdk_vcf::reader::read_vcf(&text)
+                    .map_err(|failure| Thrown::user(format!("{:?}", failure.error)))?
+                    .records,
+            )
+        }
+        None => None,
+    };
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    let reads = gatk_tools::read_walker::traverse(source, intervals, filter)
+        .map_err(reads_traversal_error)?;
+    let period_guard = |bases: &[u8], flow_order: &str| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            format!(
+                "baseArrayToKey periodGuard tripped, on {}, flowOrder: {flow_order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                String::from_utf8_lossy(bases)
+            ),
+        )
+    };
+    let clip_failed = |error: gatk_engine::clipping::ClipError| {
+        Thrown::non_user(PORT_FAILURE, format!("{error:?}"))
+    };
+    for read in &reads {
+        if read.flags & 0x4 != 0 {
+            continue;
+        }
+        let contig = usize::try_from(read.reference_index)
+            .ok()
+            .and_then(|at| header.sequences.get(at))
+            .map(|sequence| sequence.name.clone())
+            .unwrap_or_default();
+        // Without a reference the context still has its window, over no bases, so the read goes on
+        // to the haplotype its empty bases make.
+        let contig_length = match reference.as_ref() {
+            Some(reference) => reference.sequence_length(&contig).unwrap_or(0) as i32,
+            None => header
+                .sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map_or(0, |sequence| sequence.length),
+        };
+        let (mut window_start, mut window_end) = (read_utils::start(read), read_utils::end(read));
+
+        // `isSoftClipped`: soft-clipped at exactly one end.
+        let first = read.cigar.elements.first().map(|element| element.op);
+        let last = read.cigar.elements.last().map(|element| element.op);
+        let soft = |op: Option<htsjdk_bam::cigar::Op>| op == Some(htsjdk_bam::cigar::Op::S);
+        let clipped = if first.is_some() && (soft(first) != soft(last)) {
+            if use_softclipped {
+                let leading = read_utils::start(read) - read_utils::unclipped_start(read);
+                // `getUnclippedEnd() - getEnd()`: the soft and hard clips at the tail.
+                let trailing: i32 = read
+                    .cigar
+                    .elements
+                    .iter()
+                    .rev()
+                    .take_while(|element| {
+                        matches!(
+                            element.op,
+                            htsjdk_bam::cigar::Op::S | htsjdk_bam::cigar::Op::H
+                        )
+                    })
+                    .map(|element| element.length as i32)
+                    .sum();
+                window_start = (window_start - leading).max(1);
+                window_end = (window_end + trailing).min(contig_length);
+                gatk_engine::clipping::revert_soft_clipped_bases(read, Some(header))
+                    .map_err(clip_failed)?
+            } else {
+                gatk_engine::clipping::hard_clip_soft_clipped_bases(read, Some(header), 0)
+                    .map_err(clip_failed)?
+            }
+        } else {
+            read.clone()
+        };
+        let window = match reference.as_mut() {
+            Some(reference) => reference
+                .query(&contig, window_start, window_end)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            None => Vec::new(),
+        };
+
+        if let Some(records) = &features {
+            let (start, end) = (read_utils::start(&clipped), read_utils::end(&clipped));
+            let mut agrees = true;
+            'records: for record in records.iter().filter(|record| {
+                record.contig == contig
+                    && record.start <= i64::from(end)
+                    && record.stop >= i64::from(start)
+            }) {
+                for coordinate in record.start..=record.stop {
+                    let base = match read_utils::read_base_at_reference_coordinate(
+                        &clipped,
+                        coordinate as i32,
+                    ) {
+                        read_utils::BaseAt::Present(base) => base,
+                        read_utils::BaseAt::Absent => {
+                            agrees = false;
+                            break 'records;
+                        }
+                        read_utils::BaseAt::Threw => {
+                            return Err(Thrown::non_user(
+                                "java.lang.ArrayIndexOutOfBoundsException",
+                                "a read base past the end of the read".to_string(),
+                            ))
+                        }
+                    };
+                    let index = coordinate - i64::from(window_start);
+                    let Some(reference_base) =
+                        usize::try_from(index).ok().and_then(|at| window.get(at))
+                    else {
+                        return Err(Thrown::non_user(
+                            "java.lang.ArrayIndexOutOfBoundsException",
+                            format!("Index {index} out of bounds for length {}", window.len()),
+                        ));
+                    };
+                    if *reference_base != base {
+                        agrees = false;
+                        break 'records;
+                    }
+                }
+            }
+            if !agrees {
+                continue;
+            }
+        }
+
+        let info =
+            gatk_tools::flow_based_read::read_group_info(&clipped, header).map_err(flow_refusal)?;
+        let flow_read = FlowRead::new(&clipped, &info.flow_order, info.max_class, &flow)
+            .map_err(flow_refusal)?;
+        // `new Haplotype(bases, true)`: an empty allele is a null one.
+        if window.is_empty() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Null alleles are not supported".to_string(),
+            ));
+        }
+        let haplotype = FlowHaplotype::new(&window, &info.flow_order)
+            .ok_or_else(|| period_guard(&window, &info.flow_order))?;
+        if !flow_read.valid {
+            continue;
+        }
+        let score = gatk_tools::flow_feature_mapper::compute_likelihood_local(
+            &flow_read,
+            &haplotype,
+            haplotype.key.len(),
+        )
+        .map_err(flow_refusal)?;
+        let normalized = score / flow_read.key.len() as f64;
+        if normalized < threshold {
+            continue;
+        }
+        let errors = gts::error_probabilities(
+            &flow_read,
+            prior,
+            percentiles.as_deref_mut(),
+            exclude_zero_flows,
+        );
+        // `getFlowOrder()`: the first four flows of the read's own order.
+        let read_flow_order: String = flow_read
+            .flow_order
+            .iter()
+            .take(4)
+            .map(|base| *base as char)
+            .collect();
+        let cigar: Vec<(char, usize)> = clipped
+            .cigar
+            .elements
+            .iter()
+            .map(|element| (element.op.to_char() as char, element.length as usize))
+            .collect();
+        let cycle_skip =
+            gts::cycle_skip_status(&clipped.read_bases, &cigar, &window, &read_flow_order)
+                .map_err(|guard| period_guard(&guard.bases, &read_flow_order))?;
+        let reverse = clipped.flags & 0x10 != 0;
+        if cycle_skip != gts::CycleSkipStatus::CS {
+            if let Some(report) = qual_report.as_deref_mut() {
+                let reference_key = FlowHaplotype::new(&window, &read_flow_order)
+                    .ok_or_else(|| period_guard(&window, &read_flow_order))?;
+                gts::add_to_qual_report(
+                    report,
+                    &flow_read.key,
+                    &reference_key.key,
+                    read_flow_order.as_bytes(),
+                    reverse,
+                    &errors,
+                );
+            }
+        }
+
+        // `emit`.
+        use htsjdk_bam::tag::{Tag, TagValue};
+        let join = |values: &mut dyn Iterator<Item = String>| values.collect::<Vec<_>>().join(",");
+        let rq = match clipped.tags.get(Tag::new(b"rq")) {
+            None => "null".to_string(),
+            Some(TagValue::Float(value)) => java_float_to_string(*value),
+            Some(TagValue::Int(value)) => java_float_to_string(*value as f32),
+            Some(_) => {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "an rq tag that is neither a float nor an integer. This message is the port's own and not GATK's."
+                        .to_string(),
+                ))
+            }
+        };
+        let tp: Vec<i8> = match clipped.tags.get(Tag::new(b"tp")) {
+            Some(TagValue::ByteArray { values, .. }) => values.clone(),
+            _ => {
+                return Err(Thrown::non_user(
+                    PORT_LIMITATION,
+                    "a flow read without a byte-array tp tag. This message is the port's own and not GATK's."
+                        .to_string(),
+                ))
+            }
+        };
+        let lowest = gts::lowest_q_base_tp(&flow_read.key, &tp, &clipped.base_qualities).map_err(
+            |index| {
+                Thrown::non_user(
+                    "java.lang.ArrayIndexOutOfBoundsException",
+                    format!(
+                        "Index {index} out of bounds for length {}",
+                        tp.len().min(clipped.base_qualities.len())
+                    ),
+                )
+            },
+        )?;
+        let mut columns = vec![
+            clipped.read_name.clone(),
+            format!(
+                "\"{}\"",
+                join(&mut flow_read.key.iter().map(|v| v.to_string()))
+            ),
+            if reverse { "1" } else { "0" }.to_string(),
+            clipped.mapping_quality.to_string(),
+            rq,
+            format!(
+                "\"{}\"",
+                join(&mut haplotype.key.iter().map(|v| v.to_string()))
+            ),
+            String::from_utf8_lossy(&clipped.read_bases).into_owned(),
+            gatk_engine::tsv_table::java_double_to_string(score),
+            gatk_engine::tsv_table::java_double_to_string(normalized),
+            format!(
+                "\"{}\"",
+                join(&mut errors.iter().map(|v| gts::error_format(*v)))
+            ),
+            flow_read.key.len().to_string(),
+            haplotype.key.len().to_string(),
+            cycle_skip.name().to_string(),
+            read.cigar.to_text(),
+            format!("\"{}\"", join(&mut lowest.iter().map(|v| v.to_string()))),
+        ];
+        if add_mean_call {
+            let (probs, mean_call) = gts::read_probs(&flow_read);
+            columns.push(format!(
+                "\"{}\"",
+                join(&mut probs.iter().map(|v| gts::error_format(*v)))
+            ));
+            columns.push(format!(
+                "\"{}\"",
+                join(&mut mean_call.iter().map(|v| gts::error_format(*v)))
+            ));
+        }
+        if !no_output {
+            csv.push_str(&columns.join(","));
+            csv.push('\n');
+        }
+    }
+    Ok(())
+}
+
+/// `Float.toString`: the shortest decimal that round-trips as a float, with `E` notation outside
+/// `[1e-3, 1e7)` and always a digit after the point.
+fn java_float_to_string(value: f32) -> String {
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
+    }
+    let magnitude = value.abs();
+    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
+        let rendered = format!("{value:e}");
+        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        return format!("{mantissa}E{exponent}");
+    }
+    let rendered = format!("{value}");
+    if rendered.contains('.') {
+        rendered
+    } else {
+        format!("{rendered}.0")
     }
 }
 
@@ -15674,6 +14822,32 @@ fn read_bed_features(path: &str) -> Result<Vec<gatk_tools::variant_eval_engine::
 
 /// `VariantEval`, a multi-variant walker grouped on start over its evals, `--dbsnp` and comps.
 pub fn variant_eval(parser: &Parser) -> Outcome {
+    let (output, report) = variant_eval_report(parser, None)?;
+    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
+    let bytes = if output.ends_with(".gz") {
+        java_gzip(report.as_bytes(), 6)
+    } else {
+        report.into_bytes()
+    };
+    write_file(&output, &bytes)?;
+    Ok(None)
+}
+
+/// What `AlleleFrequencyQC.onTraversalStart` does before handing over to `VariantEval`'s: every
+/// module and stratifier knob preset, whatever the command line said, and the sample name read out
+/// of the merged header, which is a `NullPointerException` when no input carries one.
+struct AlleleFrequencyQcPresets<'a> {
+    /// Where the sample name goes once it is read.
+    sample: &'a mut Option<String>,
+}
+
+/// `VariantEval`'s traversal, from the parsed command line to the report text, with the `-O` it was
+/// given. `AlleleFrequencyQC` passes its presets, which override the module and stratifier
+/// arguments and read the sample alias at the point its `onTraversalStart` does.
+fn variant_eval_report(
+    parser: &Parser,
+    mut qc: Option<AlleleFrequencyQcPresets>,
+) -> Result<(String, String), Thrown> {
     use gatk_tools::variant_eval_engine as ve;
 
     let limitation = |what: &str| {
@@ -15798,6 +14972,31 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
         .iter()
         .map(|(contig, _, _)| contig.clone())
         .collect();
+
+    // `AlleleFrequencyQC.onTraversalStart` reads the alias before `super.onTraversalStart()`, so a
+    // header without one fails ahead of everything `VariantEval` validates there. The merged
+    // header keeps one line per key, the last input's where several carry it.
+    if let Some(presets) = qc.as_mut() {
+        let alias = opened.iter().rev().find_map(|(_, _, _, _, file)| {
+            file.header.lines.iter().rev().find_map(|line| match line {
+                htsjdk_vcf::header::HeaderLine::Unstructured { key, value }
+                    if key == gatk_tools::allele_frequency_qc::SAMPLE_ALIAS_KEY =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+        });
+        match alias {
+            Some(value) => *presets.sample = Some(value),
+            None => {
+                return Err(Thrown::non_user(
+                    "java.lang.NullPointerException",
+                    gatk_tools::allele_frequency_qc::NO_ALIAS_MESSAGE,
+                ))
+            }
+        }
+    }
 
     // The samples of the eval headers, filtered by `--sample` and sorted.
     let mut eval_samples: Vec<String> = Vec::new();
@@ -15944,6 +15143,18 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .filter(|path| !has_feature_index(path)),
         gold_standard,
     };
+    let mut arguments_for_engine = arguments_for_engine;
+    if qc.is_some() {
+        arguments_for_engine.no_standard_modules = true;
+        arguments_for_engine.modules_to_use =
+            vec![gatk_tools::allele_frequency_qc::MODULE.to_string()];
+        arguments_for_engine.keep_ac0 = true;
+        arguments_for_engine.no_standard_strats = true;
+        arguments_for_engine.strats_to_use =
+            vec!["AlleleFrequency".to_string(), "Filter".to_string()];
+        arguments_for_engine.af_scale = ve::AfScale::Logarithmic;
+        arguments_for_engine.use_comp_af = true;
+    }
     let mut engine =
         ve::Engine::new(arguments_for_engine, &traversal_contigs).map_err(variant_eval_thrown)?;
 
@@ -16061,15 +15272,66 @@ pub fn variant_eval(parser: &Parser) -> Outcome {
             .apply(&group, &mut source)
             .map_err(variant_eval_thrown)?;
     }
-    let report = engine.finalize_report();
-    // `IOUtils.makePrintStreamMaybeGzipped`: a plain `GZIPOutputStream`, at the default level.
-    let bytes = if output.ends_with(".gz") {
-        java_gzip(report.as_bytes(), 6)
-    } else {
-        report.into_bytes()
-    };
-    write_file(&output, &bytes)?;
-    Ok(None)
+    Ok((output, engine.finalize_report()))
+}
+
+/// `AlleleFrequencyQC`: `VariantEval` with one module and two stratifiers preset, and a statistic
+/// read back out of the report it wrote.
+///
+/// * **`-O` is the metrics file, not the report.** The report goes to `--debug-file`, or to a
+///   temporary file the run deletes, and `onTraversalSuccess` reads it back as a `GATKReport`, so
+///   the averages the statistic sums are the eight decimals the report printed.
+/// * **the sample is the `##sampleAlias` header line**, read before `VariantEval` starts: without
+///   one the run is a `NullPointerException` and writes nothing.
+/// * **the plot comes last and fails in an image without R**: the metrics are already written, and
+///   the run then ends on the user error `RScriptExecutor` raises. With `Rscript` on the path the
+///   reference would draw the plot, which the port does not, so that is its limitation.
+pub fn allele_frequency_qc(parser: &Parser) -> Outcome {
+    use gatk_tools::allele_frequency_qc as qc;
+
+    let mut sample = None;
+    let (metrics_output, report) = variant_eval_report(
+        parser,
+        Some(AlleleFrequencyQcPresets {
+            sample: &mut sample,
+        }),
+    )?;
+    if let Some(debug) = argument(parser, "debugFile") {
+        write_file(&debug, report.as_bytes())?;
+    }
+    let bins = qc::bins_from_report(&report, qc::MODULE)
+        .map_err(|error| Thrown::non_user(PORT_LIMITATION, format!("{error:?}")))?;
+    if bins.len() < 2 {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "fewer than two allele-frequency bins leave the chi-squared distribution without a \
+             positive degree of freedom. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    let sample = sample.unwrap_or_default();
+    let variance = double_or(parser, "allowedVariance", qc::DEFAULT_ALLOWED_VARIANCE);
+    write_file(
+        &metrics_output,
+        qc::metrics_file(&sample, &bins, variance).as_bytes(),
+    )?;
+
+    // `RScriptExecutor.exec`: the executable is looked for on the path when the script runs.
+    let rscript_found = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|directory| directory.join("Rscript").is_file())
+    });
+    if rscript_found {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "plotAlleleFrequencyQC.R is not ported. This message is the port's own and not GATK's."
+                .to_string(),
+        ));
+    }
+    Err(Thrown::user(
+        "Unable to execute Rscript command: Please add the Rscript directory to your environment \
+         ${PATH}"
+            .to_string(),
+    ))
 }
 
 /// `VCFHeader.toString()`: the meta lines in the order they were read, each after a tab, between
@@ -24135,4 +23397,340 @@ pub fn analyze_covariates(parser: &Parser) -> Outcome {
         ));
     }
     Ok(Some("Optional.empty".to_string()))
+}
+
+/// `AnalyzeSaturationMutagenesis`, a `GATKTool` whose `traverse()` streams the reads itself.
+///
+/// The startup is a read tool's, in its order, so the dictionaries, the intervals and the read
+/// filters are all validated. What the tool then does differently is what a row measures: `-L`
+/// bounds nothing, the filter chain is never consulted (the stream is `PRIMARY_LINE` alone), and
+/// the refusals of `onTraversalStart` come in the tool's order, the sort order first, then the
+/// translation, the reference and the ORF.
+pub fn analyze_saturation_mutagenesis(parser: &Parser) -> Outcome {
+    use gatk_tools::analyze_saturation_mutagenesis_engine as asm;
+
+    let ReadWalkerStart {
+        source,
+        header,
+        filters,
+        ..
+    } = read_walker_startup(parser, "AnalyzeSaturationMutagenesis")?;
+    // Resolved for its refusals, which are the parser's, and then not applied.
+    let _ = read_filter(parser, &filters, &header)?;
+    let prefix = argument(parser, "output-file-prefix").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument output-file-prefix was missing: Argument 'output-file-prefix' is required",
+        )
+    })?;
+    let reference_path = argument(parser, "reference").ok_or_else(|| {
+        Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
+    })?;
+    let orf = argument(parser, "orf").ok_or_else(|| {
+        Thrown::command_line("Argument orf was missing: Argument 'orf' is required")
+    })?;
+    let defaults = asm::Settings::default();
+    let settings = asm::Settings {
+        min_q: number_or(parser, "min-q", defaults.min_q),
+        min_length: number_or(parser, "min-length", defaults.min_length),
+        min_flanking_length: number_or(parser, "min-flanking-length", defaults.min_flanking_length),
+        min_mapq: number_or(parser, "min-mapq", defaults.min_mapq),
+        orf,
+        min_variant_observations: scalar(parser, "min-variant-obs")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.min_variant_observations),
+        find_large_deletions: flag(parser, "find-large-deletions"),
+        min_alt_length: number_or(parser, "min-alt-length", defaults.min_alt_length),
+        codon_translation: argument(parser, "codon-translation")
+            .map(|text| text.encode_utf16().collect())
+            .unwrap_or(defaults.codon_translation),
+        paired_mode: flag(parser, "paired-mode"),
+        dont_ignore_disjoint_pairs: flag(parser, "dont-ignore-disjoint-pairs"),
+        write_rejected_reads: flag(parser, "write-rejected-reads"),
+    };
+    let thrown = |error: asm::AsmError| match error {
+        asm::AsmError::User(message) => Thrown::user(message),
+        asm::AsmError::Internal { class, message } => Thrown::non_user(class, message),
+    };
+
+    // `onTraversalStart` refuses the sort order and the translation before it reads the reference,
+    // and the reference before it parses the ORF against it; `Run::start` keeps that order. The
+    // FASTA itself was opened by the startup already, so reading it here refuses nothing new.
+    let coordinate_sorted = header.attributes.get("SO") == Some("coordinate");
+    let mut reference =
+        gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
+            .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    let contigs = reference.sequences().len();
+    let bases = match reference.sequences().first().cloned() {
+        Some((name, length)) if contigs == 1 => reference
+            .query(&name, 1, length as i32)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        _ => Vec::new(),
+    };
+    let mut run = asm::Run::start(settings, coordinate_sorted, contigs, &bases).map_err(thrown)?;
+
+    let reads = source.iter_all().map_err(reads_traversal_error)?;
+    run.traverse(reads).map_err(thrown)?;
+
+    // `onTraversalSuccess`: the eight reports in their order, then the rejected reads' writer is
+    // closed.
+    for (suffix, text) in run.reports().map_err(thrown)? {
+        write_file(&format!("{prefix}{suffix}"), text.as_bytes())?;
+    }
+    if let Some(rejected) = run.rejected_reads() {
+        let command_line = crate::command_line::expanded("AnalyzeSaturationMutagenesis", parser);
+        let options = gatk_tools::sam_output::Options {
+            intervals: Vec::new(),
+            create_output_bam_index: flag(parser, "create-output-bam-index"),
+            add_output_sam_program_record: flag(parser, "add-output-sam-program-record"),
+            command_line: &command_line,
+            version: crate::TOOLKIT_VERSION,
+        };
+        // `getHeaderForSAMWriter` is overridden to mark the output unsorted, after the `@PG`
+        // record the engine adds.
+        let mut out_header =
+            gatk_tools::sam_output::header_for_sam_writer(&header, asm::TOOL_NAME, &options);
+        out_header.attributes.set("SO", "unsorted");
+        let (level, deflater) = output_compression(parser);
+        let (bytes, bai) = gatk_tools::sam_output::write_records_with(
+            &out_header,
+            rejected,
+            false,
+            level,
+            deflater,
+        )
+        .map_err(reads_traversal_error)?;
+        write_bam(parser, &format!("{prefix}.rejected.bam"), &bytes, bai)?;
+    }
+    Ok(None)
+}
+
+/// `LocalAssembler`, a `PairWalker`: the reads over the padded intervals paired, assembled, and
+/// the graph and its paths written.
+///
+/// `PairWalker.transformTraversalIntervals` pads every `-L` interval by `--pair-padding` and folds
+/// it into the one before it, in `initializeIntervals`, so its refusal comes before the
+/// dictionaries are validated; the unpadded intervals are what `RegionChecker` asks a read about.
+/// The two files are written in `onTraversalSuccess` and nowhere else: a traversal too complex to
+/// finish writes no GFA at all, and the FASTA of its contigs.
+pub fn local_assembler(parser: &Parser) -> Outcome {
+    use gatk_tools::local_assembler_engine as la;
+
+    let padding = number_or(parser, "pair-padding", 1000);
+    let mut original: Vec<la::Span> = Vec::new();
+    let mut transform = |intervals: Vec<gatk_engine::interval::SimpleInterval>,
+                         best: &SamHeader|
+     -> Result<Vec<gatk_engine::interval::SimpleInterval>, Thrown> {
+        original = intervals
+            .iter()
+            .map(|interval| la::Span {
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+            })
+            .collect();
+        let padded = la::pad_intervals(&original, padding, |contig| {
+            best.sequences
+                .iter()
+                .find(|sequence| sequence.name == contig)
+                .map(|sequence| sequence.length)
+        })
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+        Ok(padded
+            .into_iter()
+            .map(|span| gatk_engine::interval::SimpleInterval {
+                contig: span.contig,
+                start: span.start,
+                end: span.end,
+            })
+            .collect())
+    };
+    let ReadWalkerStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = read_walker_startup_with(parser, "LocalAssembler", &mut transform)?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    let assembly_name = argument(parser, "assembly-name").ok_or_else(|| {
+        Thrown::command_line(
+            "Argument assembly-name was missing: Argument 'assembly-name' is required",
+        )
+    })?;
+    let defaults = la::Settings::default();
+    let settings = la::Settings {
+        assembly_name: assembly_name.clone(),
+        q_min: scalar(parser, "q-min")
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(defaults.q_min),
+        min_thin_observations: number_or(
+            parser,
+            "min-thin-observations",
+            defaults.min_thin_observations,
+        ),
+        min_gapfill_count: number_or(parser, "min-gapfill-count", defaults.min_gapfill_count),
+        too_many_traversals: number_or(parser, "too-many-traversals", defaults.too_many_traversals),
+        too_many_scaffolds: number_or(parser, "too-many-scaffolds", defaults.too_many_scaffolds),
+        min_sv_size: number_or(parser, "min-sv-size", defaults.min_sv_size),
+        no_scaffolding: flag(parser, "no-scaffolding"),
+    };
+
+    let reads = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(reads_traversal_error)?;
+    let names: Vec<String> = header
+        .sequences
+        .iter()
+        .map(|sequence| sequence.name.clone())
+        .collect();
+    let contig_of = |index: i32| names.get(usize::try_from(index).ok()?).cloned();
+    let index_of = |name: &str| {
+        names
+            .iter()
+            .position(|candidate| candidate == name)
+            .map_or(-1, |index| index as i32)
+    };
+    let reads = la::pair_reads(reads, &original, &contig_of, &index_of);
+    let region_size: i32 = intervals
+        .iter()
+        .map(|interval| interval.end - interval.start + 1)
+        .sum();
+    let assembly = la::assemble(&reads, region_size, &settings)
+        .map_err(|error| Thrown::non_user(error.class, error.message))?;
+
+    // `onTraversalSuccess` defaults both paths to the assembly's name, gzipped.
+    let gfa_path =
+        argument(parser, "gfa-file").unwrap_or_else(|| format!("{assembly_name}.gfa.gz"));
+    let fasta_path =
+        argument(parser, "fasta-file").unwrap_or_else(|| format!("{assembly_name}.fa.gz"));
+    // `createBufferedWriter`: a `GZIPOutputStream` when the name ends in `.gz` or `.GZ`.
+    let encoded = |path: &str, text: &str| {
+        if path.ends_with(".gz") || path.ends_with(".GZ") {
+            java_gzip(text.as_bytes(), 6)
+        } else {
+            text.as_bytes().to_vec()
+        }
+    };
+    if let Some(gfa) = &assembly.gfa {
+        std::fs::write(&gfa_path, encoded(&gfa_path, gfa))
+            .map_err(|_| Thrown::user(format!("Failed to write gfa-file {gfa_path}")))?;
+    }
+    std::fs::write(&fasta_path, encoded(&fasta_path, &assembly.fasta))
+        .map_err(|_| Thrown::user(format!("Failed to write fasta-file {fasta_path}")))?;
+    Ok(None)
+}
+
+/// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+/// `GroundTruthReadsBuilder`, in a file of its own.
+#[path = "runners_ground_truth_reads_builder.rs"]
+mod ground_truth_reads_builder_runner;
+pub use ground_truth_reads_builder_runner::ground_truth_reads_builder;
+
+/// `HaplotypeBasedVariantRecaller`, in a file of its own.
+#[path = "runners_haplotype_based_variant_recaller.rs"]
+mod haplotype_based_variant_recaller_runner;
+pub use haplotype_based_variant_recaller_runner::haplotype_based_variant_recaller;
+
+#[path = "runners_variant_recalibrator.rs"]
+mod variant_recalibrator_runner;
+pub use variant_recalibrator_runner::variant_recalibrator;
+
+/// An I/O error as the JDK words it: the C library's `strerror`, which is what Rust prints before
+/// its own ` (os error N)`.
+fn java_io_reason(error: &std::io::Error) -> String {
+    let text = error.to_string();
+    match text.rfind(" (os error ") {
+        Some(at) => text[..at].to_string(),
+        None => text,
+    }
+}
+
+/// `BwaMemIndexImageCreator.doWork`, which is `BwaMemIndex.createIndexImageFromFastaFile`: the
+/// checks GATK's Java side makes, in its order, and then the image BWA would build.
+///
+/// The image's addresses are written as zero: see `gatk_tools::bwa_index_image`.
+pub fn bwa_mem_index_image_creator(parser: &Parser) -> Outcome {
+    use gatk_tools::bwa_mem_index_image_creator as tool;
+
+    let input = argument(parser, "input").ok_or_else(|| {
+        Thrown::command_line("Argument input was missing: Argument 'input' is required")
+    })?;
+    let output = argument(parser, "output").unwrap_or_else(|| tool::default_output(&input));
+
+    // `CommandLineProgram.instanceMainPostParseArgs` judges `--tmp-dir` before `doWork` runs:
+    // it must be a directory this process can read and write.
+    if let Some(tmp) = argument(parser, "tmp-dir") {
+        let usable = std::fs::metadata(&tmp)
+            .map(|m| m.is_dir() && !m.permissions().readonly())
+            .unwrap_or(false);
+        if !usable {
+            return Err(Thrown::user(format!(
+                "Failure working with the tmp directory {tmp}. Try changing the tmp dir with with \
+                 --tmp-dir on the command line.  Exact error was should exist and have read/write \
+                 access"
+            )));
+        }
+    }
+
+    // `assertLooksLikeFastaFile`: the extension, then a non-empty readable regular file, then a
+    // `>` as the first non-space character.
+    tool::check_extension(&input)
+        .map_err(|message| Thrown::non_user("java.lang.IllegalArgumentException", message))?;
+    let unreachable = || {
+        Thrown::non_user(
+            tool::COULD_NOT_READ_REFERENCE,
+            tool::unreachable_reference(&input),
+        )
+    };
+    let metadata = std::fs::metadata(&input).map_err(|_| unreachable())?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(unreachable());
+    }
+    let bytes = std::fs::read(&input).map_err(|_| unreachable())?;
+    if !tool::looks_like_fasta(&String::from_utf8_lossy(&bytes)) {
+        return Err(Thrown::non_user(
+            tool::INVALID_FILE_FORMAT,
+            tool::invalid_format(&input),
+        ));
+    }
+
+    // `assertCanCreateOrOverwriteImageFile`: `File.createNewFile`, deleted again at once when it
+    // made one, and an existing path must be a regular file this process can write.
+    let cannot_create = |reason: String| {
+        Thrown::non_user(
+            tool::COULD_NOT_CREATE_INDEX_IMAGE,
+            tool::cannot_create_image(&output, &reason),
+        )
+    };
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&output);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let regular = std::fs::metadata(&output)
+                .map(|m| m.is_file())
+                .unwrap_or(false);
+            let writable = regular
+                && std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&output)
+                    .is_ok();
+            if !writable {
+                return Err(cannot_create(tool::EXISTS_UNWRITABLE.to_string()));
+            }
+        }
+        Err(error) => return Err(cannot_create(java_io_reason(&error))),
+    }
+
+    let image = gatk_tools::bwa_index_image::build_image(&bytes).map_err(|_| {
+        Thrown::non_user(
+            PORT_FAILURE,
+            "[bns_restore_core] Parse error reading the .amb file: an ambiguous base is white space",
+        )
+    })?;
+    std::fs::write(&output, image).map_err(|error| cannot_create(java_io_reason(&error)))?;
+    Ok(None)
 }

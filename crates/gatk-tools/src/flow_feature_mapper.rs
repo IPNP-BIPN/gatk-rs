@@ -831,7 +831,7 @@ fn no_feature_but_filter_at(
     Ok(FilterStatus::None)
 }
 
-/// `computeLikelihoodLocal`.
+/// `computeLikelihoodLocal`, which `GroundTruthScorer` also scores a read with.
 pub fn compute_likelihood_local(
     read: &FlowRead,
     haplotype: &crate::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype,
@@ -855,6 +855,8 @@ pub fn compute_likelihood_local(
         if prob.abs() <= f64::from_bits(1) {
             prob = LOWEST_PROB;
         }
+        // `Math.log10`, whose HotSpot intrinsic is correctly rounded (htsjdk-rs decision 0006);
+        // the platform's is not, and the score is printed to its last digit by GroundTruthScorer.
         result += jmath::math::log10(prob);
     }
     Ok(result)

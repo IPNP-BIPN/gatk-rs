@@ -68,7 +68,10 @@ def build_fixtures(manifest, into):
     into.mkdir(parents=True, exist_ok=True)
     command = (
         'cp /harness/MakeFixtures.java . && javac -cp "$ORACLE_CP" -d . MakeFixtures.java '
-        '&& java -Dsamjdk.try_use_intel_deflater=false -cp ".:$ORACLE_CP" MakeFixtures /out'
+        '&& java -Dsamjdk.try_use_intel_deflater=false -cp ".:$ORACLE_CP" MakeFixtures /out '
+        # The container writes as root; open the tree up so the runner can delete the
+        # subdirectories (gtrb/, gtrb_late/) when the temporary directory is cleaned up.
+        '&& chmod -R a+rwX /out'
     )
     return subprocess.run(
         [

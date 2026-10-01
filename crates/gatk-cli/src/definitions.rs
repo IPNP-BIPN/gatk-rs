@@ -66,8 +66,8 @@ pub fn value_class(type_name: &str, type_class: &str) -> Option<ValueClass> {
             simple_name: "DoubleSequence",
             taggable: false,
         }),
-        // `GroundTruthScorer`'s `--features-file`, a data source built from its path through the
-        // `String` constructor, which is not a `TaggedArgument`.
+        // `GroundTruthScorer`'s `--features-file`, a data source built from its path by its `String`
+        // constructor, and not a `TaggedArgument`.
         "FeatureDataSource" => Some(ValueClass::Constructed {
             simple_name: "FeatureDataSource",
             taggable: false,

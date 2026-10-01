@@ -1,9 +1,10 @@
 //! `GroundTruthReadsBuilder`: every read scored against the haplotype its two ancestral
 //! references give it.
 //!
-//! The flow-based scoring engine is not ported. What is ported is the translation from the
-//! aligned contig to the two ancestral ones, the filters that decide which reads survive it, and
-//! the shape of the row each survivor becomes.
+//! The translation from the aligned contig to the two ancestral ones, the filters that decide
+//! which reads survive it, and the shape of the row each survivor becomes: the haplotype keys, the
+//! false SNP compensation and the read's key as the CSV writes it. The score is
+//! `FlowFeatureMapper.computeLikelihoodLocal`, and the walk is the `gatk-cli` runner's.
 //!
 //! Ported from
 //! `org.broadinstitute.hellbender.tools.walkers.groundtruth.SingleFileLocationTranslator`,
@@ -280,12 +281,8 @@ pub fn split_row(line: &str) -> Vec<String> {
     fields
 }
 
-// ================================================================================================
-// The walk's pieces: the haplotypes, their keys, and the row.
-// ================================================================================================
-
-/// `SequenceUtil.reverseComplement`, which complements the four bases in either case and leaves
-/// anything else where it is.
+/// `SequenceUtil.reverseComplement` over bytes: the four bases in either case complemented, every
+/// other byte kept, and the order reversed.
 pub fn reverse_complement(bases: &[u8]) -> Vec<u8> {
     bases
         .iter()
@@ -304,27 +301,52 @@ pub fn reverse_complement(bases: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// `reverseComplement(bases, isReversed)`.
-pub fn oriented(bases: &[u8], reverse: bool) -> Vec<u8> {
-    if reverse {
+/// `reverseComplement(bases, isReversed)`: the bases as they are for a forward read.
+pub fn oriented(bases: &[u8], reversed: bool) -> Vec<u8> {
+    if reversed {
         reverse_complement(bases)
     } else {
         bases.to_vec()
     }
 }
 
-/// `detectFalseSNP`: how many haplotype bases to skip so that five bases after the skip match the
-/// read, the skip staying inside the read's first homopolymer and never past five.
-pub fn detect_false_snp(haplotype: &[u8], read: &[u8]) -> usize {
+/// What the reference raises instead of answering, by class and message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Thrown {
+    pub class: &'static str,
+    pub message: String,
+}
+
+fn out_of_bounds(index: i64, length: usize) -> Thrown {
+    Thrown {
+        class: "java.lang.ArrayIndexOutOfBoundsException",
+        message: format!("Index {index} out of bounds for length {length}"),
+    }
+}
+
+/// `new Haplotype(bases, ...)`, which refuses an empty allele.
+pub fn check_haplotype(bases: &[u8]) -> Result<(), Thrown> {
+    if bases.is_empty() {
+        Err(Thrown {
+            class: "java.lang.IllegalArgumentException",
+            message: "Null alleles are not supported".to_string(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+/// `detectFalseSNP`: how many haplotype bases to skip so that the read's leading homopolymer and
+/// the five bases after the skip line up, at most five, zero when no skip does.
+pub fn detect_false_snp(haplotype: &[u8], read: &[u8]) -> Result<usize, Thrown> {
     const MAX_SKIP: usize = 5;
     const REMAINING: usize = 5;
-    if haplotype.first() == read.first() {
-        return 0;
+    let first_h = *haplotype.first().ok_or_else(|| out_of_bounds(0, 0))?;
+    let first_r = *read.first().ok_or_else(|| out_of_bounds(0, 0))?;
+    if first_h == first_r {
+        return Ok(0);
     }
-    let mut homopolymer = 0;
-    while homopolymer < read.len() && read[homopolymer] == read[0] {
-        homopolymer += 1;
-    }
+    let homo = read.iter().take_while(|base| **base == first_r).count();
     for skip in 1..=MAX_SKIP {
         if skip + REMAINING > haplotype.len() {
             break;
@@ -332,107 +354,122 @@ pub fn detect_false_snp(haplotype: &[u8], read: &[u8]) -> usize {
         if (skip + 1).max(REMAINING) > read.len() {
             break;
         }
-        if skip + 1 > homopolymer {
+        if skip + 1 > homo {
             break;
         }
-        if read[skip..skip + REMAINING] == haplotype[skip..skip + REMAINING] {
-            return skip;
+        let mut equal = true;
+        for i in 0..REMAINING {
+            let r = *read
+                .get(skip + i)
+                .ok_or_else(|| out_of_bounds((skip + i) as i64, read.len()))?;
+            if r != haplotype[skip + i] {
+                equal = false;
+                break;
+            }
+        }
+        if equal {
+            return Ok(skip);
         }
     }
-    0
+    Ok(0)
 }
 
-/// The fill value a row's short keys are padded with: soft clip first, then trimming, told apart
-/// by whether the `tm` tag also names an adapter.
-pub fn fill_value(end_softclipped: bool, tm: Option<&str>) -> i32 {
-    let has = |c: char| tm.is_some_and(|tm| tm.contains(c));
-    if end_softclipped {
-        SOFTCLIP_FILL_VALUE
-    } else if has('Q') || has('Z') {
-        if has('A') {
-            UNKNOWN_FILL_VALUE
-        } else {
-            NONREF_FILL_VALUE
-        }
+/// `buildHaplotypeKey`: the sequence's key in the flow order the read was synthesised in, its
+/// leading zero flows dropped, and zeros prepended for the flows between the order's first `T` and
+/// the sequence's first base, unless that base is a `T` or an `N`.
+pub fn haplotype_key(
+    sequence: &[u8],
+    flow_order: &str,
+    reversed: bool,
+) -> Result<Vec<i32>, Thrown> {
+    let seq = oriented(sequence, reversed);
+    check_haplotype(&seq)?;
+    let order = if reversed {
+        String::from_utf8_lossy(&reverse_complement(flow_order.as_bytes())).into_owned()
     } else {
-        DEFAULT_FILL_VALUE
+        flow_order.to_string()
+    };
+    let haplotype = crate::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype::new(&seq, &order)
+        .ok_or_else(|| Thrown {
+            class: "org.broadinstitute.hellbender.exceptions.GATKException",
+            message: format!(
+                "baseArrayToKey periodGuard tripped, on {}, flowOrder: {order} This probably indicates the presence of a base (value) in the sequence that is not included in the provided flow order",
+                String::from_utf8_lossy(&seq)
+            ),
+        })?;
+    let mut key: &[i32] = &haplotype.key;
+    while *key.first().ok_or_else(|| out_of_bounds(0, 0))? == 0 {
+        key = &key[1..];
     }
-}
-
-/// `buildHaplotypeKey`: the sequence's key in its own direction, its leading zero flows dropped,
-/// then as many zeros put back as it takes the flow order to get from `T` to the first base.
-///
-/// `flow_order` is the key's own cycled flow order, so the walk from `T` wraps at the KEY's
-/// length rather than at four.
-pub fn haplotype_key(sequence: &[u8], flow_order: &str) -> Option<Vec<i32>> {
-    let key = crate::flow_based_read::base_array_to_key(sequence, flow_order)?;
-    let order = flow_order.as_bytes();
-    let cycled: Vec<u8> = (0..key.len()).map(|i| order[i % order.len()]).collect();
-    let mut start = 0;
-    while start < key.len() && key[start] == 0 {
-        start += 1;
-    }
-    let mut out = Vec::new();
-    if let Some(&first) = sequence.first() {
-        if first != b'T' && first != b'N' {
-            let mut at = cycled.iter().position(|base| *base == b'T')?;
-            let mut guard = 0;
-            while cycled[at] != first {
-                out.push(0);
-                at = (at + 1) % cycled.len();
-                guard += 1;
-                if guard > cycled.len() {
-                    return None;
-                }
-            }
+    let mut zeros = 0usize;
+    if seq[0] != b'T' && seq[0] != b'N' {
+        let flows = &haplotype.flow_order;
+        let mut offset = 0usize;
+        while *flows
+            .get(offset)
+            .ok_or_else(|| out_of_bounds(offset as i64, flows.len()))?
+            != b'T'
+        {
+            offset += 1;
+        }
+        while flows[offset] != seq[0] {
+            zeros += 1;
+            offset = (offset + 1) % flows.len();
         }
     }
-    out.extend_from_slice(&key[start..]);
-    Some(out)
+    let mut out = vec![0; zeros];
+    out.extend_from_slice(key);
+    Ok(out)
 }
 
-/// `flowKeyAsCsvString(key)`: the key's elements joined by commas, in quotes.
-pub fn key_csv(key: &[i32]) -> String {
-    let joined: Vec<String> = key.iter().map(i32::to_string).collect();
-    format!("\"{}\"", joined.join(","))
+/// `keyBases`: the bases a key spells, its fill values not counted.
+pub fn key_bases(key: &[i32]) -> usize {
+    key.iter().filter(|v| **v > 0).map(|v| *v as usize).sum()
 }
 
-/// `flowKeyAsCsvString(key, seq, flowOrder)`: the read's key with its leading zeros replaced by
-/// the zeros that walk the four-base flow order from `T` to the sequence's first base.
-pub fn read_key_csv(key: &[i32], sequence: &[u8], flow_order: &[u8]) -> String {
-    let mut start = 0;
-    while start < key.len() && key[start] == 0 {
-        start += 1;
-    }
-    let mut out = String::from("\"");
-    if let Some(&first) = sequence.first() {
-        if first != b'T' && first != b'N' {
-            if let Some(mut at) = flow_order.iter().position(|base| *base == b'T') {
-                let mut guard = 0;
-                while flow_order[at] != first && guard <= flow_order.len() {
-                    out.push_str("0,");
-                    at = (at + 1) % flow_order.len();
-                    guard += 1;
-                }
-            }
-        }
-    }
-    let joined: Vec<String> = key[start..].iter().map(i32::to_string).collect();
-    out.push_str(&joined.join(","));
-    out.push('"');
-    out
-}
-
-/// `buildConsensusKey`: the two keys where they agree, `-72` where they do not.
-pub fn consensus_key(first: &[i32], second: &[i32]) -> Vec<i32> {
-    first
-        .iter()
-        .zip(second)
-        .map(|(a, b)| if a == b { *a } else { -72 })
+/// `buildConsensusKey`: flow by flow over the shorter key, the value where the two agree and -72
+/// where they do not.
+pub fn consensus_key(a: &[i32], b: &[i32]) -> Vec<i32> {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| if x == y { *x } else { -72 })
         .collect()
 }
 
-/// `keyBases`: the bases a key reads, its fill values not counted.
-pub fn key_bases(key: &[i32]) -> usize {
-    key.iter().filter(|c| **c > 0).map(|c| *c as usize).sum()
+/// `flowKeyAsCsvString(key)`: the values comma-joined inside quotes.
+pub fn key_csv(key: &[i32]) -> String {
+    let joined: Vec<String> = key.iter().map(|v| v.to_string()).collect();
+    format!("\"{}\"", joined.join(","))
+}
+
+/// `flowKeyAsCsvString(key, seq, flowOrder)`: the read's key with its leading zero flows dropped
+/// and zeros written for the flows from the order's first `T` to the read's first base.
+pub fn read_key_csv(key: &[i32], sequence: &[u8], flow_order: &[u8]) -> Result<String, Thrown> {
+    let mut key: &[i32] = key;
+    while *key.first().ok_or_else(|| out_of_bounds(0, 0))? == 0 {
+        key = &key[1..];
+    }
+    let mut out = String::from("\"");
+    let first = *sequence.first().ok_or_else(|| Thrown {
+        class: "java.lang.StringIndexOutOfBoundsException",
+        message: "index 0, length 0".to_string(),
+    })?;
+    if first != b'T' && first != b'N' {
+        let mut offset = 0usize;
+        while *flow_order.get(offset).ok_or_else(|| Thrown {
+            class: "java.lang.StringIndexOutOfBoundsException",
+            message: format!("index {offset}, length {}", flow_order.len()),
+        })? != b'T'
+        {
+            offset += 1;
+        }
+        while flow_order[offset] != first {
+            out.push_str("0,");
+            offset = (offset + 1) % flow_order.len();
+        }
+    }
+    let joined: Vec<String> = key.iter().map(|v| v.to_string()).collect();
+    out.push_str(&joined.join(","));
+    out.push('"');
+    Ok(out)
 }

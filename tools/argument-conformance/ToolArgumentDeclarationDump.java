@@ -481,8 +481,7 @@ public class ToolArgumentDeclarationDump {
         // utilities, the F1R2 counter, the panels of normals, the scalable-VQSR extractor, the
         // alignment-artefact and Mutect filters, the funcotators and their downloader, the RNA
         // expression counter, the ground-truth tools, two callers, the local assembler, the
-        // segment modeller, VariantEval and VariantRecalibrator. `StructuralVariantDiscoverer` is a
-        // Spark tool and waits for the Spark argument surface.
+        // segment modeller, VariantEval and VariantRecalibrator.
         declarations("AddFlowBaseQuality",
                 new org.broadinstitute.hellbender.tools.walkers.groundtruth.AddFlowBaseQuality());
         declarations("AddFlowSNVQuality",
@@ -537,6 +536,10 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.walkers.varianteval.VariantEval());
         declarations("VariantRecalibrator",
                 new org.broadinstitute.hellbender.tools.walkers.vqsr.VariantRecalibrator());
+        // `StructuralVariantDiscoverer`, left out of that lot as a Spark tool: it lives beside the
+        // Spark SV pipeline but is a plain `ReadWalker`, and its parser is the engine's own.
+        declarations("StructuralVariantDiscoverer",
+                new org.broadinstitute.hellbender.tools.StructuralVariantDiscoverer());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});

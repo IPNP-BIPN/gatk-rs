@@ -40,6 +40,17 @@ ALLOWED = {
     # to: the grammar is this library's, not Barclay's. MIT, verified from the licence header of
     # every file in its sources jar.
     "joptsimple": "jopt-simple, MIT",
+    # BWA as gatk-bwamem-jni 1.0.4 vendors it, for the index image BwaMemIndexImageCreator writes.
+    # The repository's COPYING is GPLv3, so only files carrying their OWN MIT header are listed,
+    # each verified from the header at lh3/bwa master: bntseq.c, bwtindex.c and bwa.c ("Copyright
+    # (c) 2018- Dana-Farber Cancer Institute"), bwt.c ("Copyright (c) 2008 Genome Research Ltd")
+    # and kseq.h ("Copyright (c) 2008, 2009, 2011 Attractive Chaos"). Any other BWA file is
+    # unclassified until its own header is read.
+    "bwa/bntseq.c": "BWA bntseq.c, MIT",
+    "bwa/bwtindex.c": "BWA bwtindex.c, MIT",
+    "bwa/bwt.c": "BWA bwt.c, MIT",
+    "bwa/bwa.c": "BWA bwa.c, MIT",
+    "bwa/kseq.h": "kseq.h, MIT",
 }
 
 # Anything matching these is GPL2 and must not be transcribed. Listed explicitly rather than

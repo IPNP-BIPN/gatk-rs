@@ -1,9 +1,12 @@
 //! `GroundTruthScorer`: every read scored against the reference it aligns to, and the report that
 //! summarises them.
 //!
-//! The flow-based scoring is not ported. What is ported is the report the tool builds out of the
-//! scores: the accumulators, the four table shapes, the phred each row carries, and the bins the
-//! deviation and the base are folded into.
+//! The report the tool builds out of the scores (the accumulators, the four table shapes, the
+//! phred each row carries, and the bins the deviation and the base are folded into), and what the
+//! scoring needs besides `computeLikelihoodLocal`, which is `FlowFeatureMapper`'s: the cycle-skip
+//! status, the error probabilities with and without a genome prior, `LowestQBaseTP`, the read
+//! probabilities, and the two number formats the CSV is written in. The walk itself is the
+//! `gatk-cli` runner's.
 //!
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.groundtruth.GroundTruthScorer` in
 //! GATK 4.6.2.0.
@@ -226,176 +229,33 @@ pub fn keeps_read(normalized_score: f64, arguments: &Arguments) -> bool {
 /// argument's own name.
 pub const MEAN_CALL_COLUMNS: [&str; 2] = ["ReadProbs", "ReadMeanCall"];
 
-// ================================================================================================
-// The walk: every read's flow score, error probabilities and report entries.
-// ================================================================================================
+/// The CSV's columns, in the order `onTraversalStart` fixes them.
+pub const CSV_FIELD_ORDER_BASIC: [&str; 15] = [
+    "ReadName",
+    "ReadKey",
+    "ReadIsReversed",
+    "ReadMQ",
+    "ReadRQ",
+    "GroundTruthKey",
+    "ReadSequence",
+    "Score",
+    "NormalizedScore",
+    "ErrorProbability",
+    "ReadKeyLength",
+    "GroundTruthKeyLength",
+    "CycleSkipStatus",
+    "Cigar",
+    "LowestQBaseTP",
+];
 
-use crate::flow_based_read::FlowRead;
-use gatk_engine::gatk_report::{Report, Sorting, Table, Value};
-use htsjdk_bam::cigar::{CigarElement as BamCigarElement, Op};
-
-/// `isSoftClipped`: a soft clip at EXACTLY one end. A read clipped at both ends is scored with its
-/// clips in place, as if it were not clipped at all.
-pub fn is_soft_clipped(unmapped: bool, cigar: &[BamCigarElement]) -> bool {
-    if unmapped {
-        return false;
-    }
-    let (Some(first), Some(last)) = (cigar.first(), cigar.last()) else {
-        return false;
-    };
-    (first.op == Op::S) != (last.op == Op::S)
-}
-
-/// `GenomePriorDB`: one row per base, in file order, a later row for the same base replacing the
-/// earlier one's counts.
-///
-/// The first COUNT is read twice: `prior[0]` and `prior[1]` are both column one, and every later
-/// `prior[i]` is column `i`, so column `HMER_VALUE_MAX + 1` is never read at all.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct GenomePrior {
-    rows: Vec<(u8, Vec<i64>)>,
-}
-
-impl GenomePrior {
-    /// `new GenomePriorDB(path)` over the file's text, which is read by opencsv: a line is split
-    /// on commas, and a number that does not parse is `NumberFormatException` with its text.
-    pub fn parse(text: &str) -> Result<GenomePrior, (String, String)> {
-        let mut rows: Vec<(u8, Vec<i64>)> = Vec::new();
-        for line in text.lines() {
-            let columns: Vec<&str> = line.split(',').collect();
-            let base = columns[0].as_bytes().first().copied().ok_or_else(|| {
-                (
-                    "java.lang.ArrayIndexOutOfBoundsException".to_string(),
-                    "Index 0 out of bounds for length 0".to_string(),
-                )
-            })?;
-            let mut prior = vec![0i64; HMER_VALUE_MAX + 1];
-            for (i, slot) in prior.iter_mut().enumerate() {
-                let at = if i == 0 { 1 } else { i };
-                let cell = columns.get(at).ok_or_else(|| {
-                    (
-                        "java.lang.ArrayIndexOutOfBoundsException".to_string(),
-                        format!("Index {at} out of bounds for length {}", columns.len()),
-                    )
-                })?;
-                *slot = cell.parse::<i64>().map_err(|_| {
-                    (
-                        "java.lang.NumberFormatException".to_string(),
-                        format!("For input string: \"{cell}\""),
-                    )
-                })?;
-            }
-            match rows.iter_mut().find(|(known, _)| *known == base) {
-                Some(row) => row.1 = prior,
-                None => rows.push((base, prior)),
-            }
-        }
-        Ok(GenomePrior { rows })
-    }
-
-    fn for_base(&self, base: u8) -> Option<&[i64]> {
-        self.rows
-            .iter()
-            .find(|(known, _)| *known == base)
-            .map(|(_, prior)| prior.as_slice())
-    }
-}
-
-/// `computeErrorProb`: per flow, one less the normalized probability of the called length, scaled
-/// by the genome prior of the flow's base when there is one.
-///
-/// Each value is also added to its flow's percentile series, unless the flow called zero and zero
-/// calls are excluded.
-pub fn error_probabilities(
-    read: &FlowRead,
-    prior: Option<&GenomePrior>,
-    percentiles: Option<&mut Vec<PercentileReport>>,
-    exclude_zero_flows: bool,
-) -> Vec<f64> {
-    let max_hmer = read.max_hmer;
-    let mut column = vec![0.0f64; max_hmer as usize + 1];
-    let mut result = vec![0.0f64; read.key.len()];
-    let mut percentiles = percentiles;
-    for i in 0..read.key.len() {
-        let mut sum = 0.0;
-        for (j, cell) in column.iter_mut().enumerate() {
-            *cell = read.prob(i, j as i32);
-            sum += *cell;
-        }
-        if sum != 0.0 {
-            for cell in column.iter_mut() {
-                *cell /= sum;
-            }
-        }
-        let called = read.key[i].min(max_hmer) as usize;
-        match prior {
-            Some(prior) => {
-                let mut sum = 0.0;
-                if let Some(counts) = prior.for_base(read.flow_order[i]) {
-                    for (j, cell) in column.iter_mut().enumerate() {
-                        *cell *= counts[j] as f64;
-                        sum += *cell;
-                    }
-                }
-                result[i] = if sum != 0.0 {
-                    1.0 - column[(column.len() - 1).min(called)] / sum
-                } else {
-                    1.0 - column[called]
-                };
-            }
-            None => result[i] = 1.0 - column[called],
-        }
-        if let Some(reports) = percentiles.as_deref_mut() {
-            if read.key[i] != 0 || !exclude_zero_flows {
-                while reports.len() < i + 1 {
-                    reports.push(PercentileReport::default());
-                }
-                reports[i].add_probability(result[i]);
-            }
-        }
-    }
-    result
-}
-
-/// `computeLowestQBaseTP`: per flow, the `tp` of the lowest-quality base in the first half of its
-/// hmer, the first such base winning a tie. The `tp` array is the record's tag as it came, which a
-/// hard clip does not shorten, while the qualities are the clipped read's.
-pub fn lowest_q_base_tp(key: &[i32], tp: &[i8], quals: &[u8]) -> Result<Vec<i8>, String> {
-    let out_of_bounds =
-        |index: usize, length: usize| format!("Index {index} out of bounds for length {length}");
-    let mut result = vec![0i8; key.len()];
-    let mut seq = 0usize;
-    for (i, &hmer) in key.iter().enumerate() {
-        if hmer == 0 {
-            result[i] = 0;
-            continue;
-        }
-        result[i] = *tp.get(seq).ok_or_else(|| out_of_bounds(seq, tp.len()))?;
-        let mut lowest = *quals
-            .get(seq)
-            .ok_or_else(|| out_of_bounds(seq, quals.len()))? as i8;
-        let scan = ((hmer + 1) / 2) as usize;
-        for j in 1..scan {
-            let q = *quals
-                .get(seq + j)
-                .ok_or_else(|| out_of_bounds(seq + j, quals.len()))? as i8;
-            if q < lowest {
-                result[i] = *tp
-                    .get(seq + j)
-                    .ok_or_else(|| out_of_bounds(seq + j, tp.len()))?;
-                lowest = q;
-            }
-        }
-        seq += hmer as usize;
-    }
-    Ok(result)
-}
-
-/// `FlowBasedReadUtils.CycleSkipStatus`, whose priority is its order here.
+/// `FlowBasedReadUtils.CycleSkipStatus`, in the order of its priority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CycleSkipStatus {
+    /// Not a cycle skip.
     NS,
+    /// Possibly one: the keys are as long, and a flow is zero in one and not the other.
     PCS,
+    /// One: the keys differ in length.
     CS,
 }
 
@@ -409,355 +269,607 @@ impl CycleSkipStatus {
     }
 }
 
-/// `FlowBasedReadUtils.getCycleSkipStatus`: every `M` element whose bases differ from the
-/// reference's, compared in flow space. Only `M` is looked at, and the subarrays are clamped at
-/// either array's end as `ArrayUtils.subarray` clamps them.
+/// `baseArrayToKey`'s period guard, which a base outside the flow order trips.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeriodGuard {
+    pub bases: Vec<u8>,
+}
+
+/// `FlowBasedReadUtils.getCycleSkipStatus`: each `M` element whose bases differ from the reference
+/// under it, its two keys compared in the read's flow order, the worst answer kept.
+///
+/// `ArrayUtils.subarray` clamps rather than throws, so an element running past either array is
+/// compared over what is there.
 pub fn cycle_skip_status(
     bases: &[u8],
-    cigar: &[BamCigarElement],
+    cigar: &[(char, usize)],
     reference: &[u8],
     flow_order: &str,
-) -> CycleSkipStatus {
+) -> Result<CycleSkipStatus, PeriodGuard> {
     let sub = |array: &[u8], from: usize, length: usize| -> Vec<u8> {
         let start = from.min(array.len());
         let end = (from + length).min(array.len());
         array[start..end].to_vec()
     };
     let mut status = CycleSkipStatus::NS;
-    let mut read_offset = 0usize;
-    let mut ref_offset = 0usize;
-    for element in cigar {
-        let length = element.length as usize;
-        if element.op == Op::M {
-            let read_bases = sub(bases, read_offset, length);
-            let ref_bases = sub(reference, ref_offset, length);
-            if read_bases != ref_bases {
-                let alt = crate::flow_based_read::base_array_to_key(&read_bases, flow_order);
-                let refk = crate::flow_based_read::base_array_to_key(&ref_bases, flow_order);
-                let value = match (alt, refk) {
-                    (Some(alt), Some(refk)) => {
-                        if alt.len() != refk.len() {
-                            CycleSkipStatus::CS
-                        } else if refk.iter().zip(&alt).any(|(r, a)| (*r == 0) != (*a == 0)) {
-                            CycleSkipStatus::PCS
-                        } else {
-                            CycleSkipStatus::NS
-                        }
-                    }
-                    _ => CycleSkipStatus::CS,
+    let (mut read_offset, mut ref_offset) = (0usize, 0usize);
+    for &(op, length) in cigar {
+        if op == 'M' {
+            let element = sub(bases, read_offset, length);
+            let under = sub(reference, ref_offset, length);
+            if element != under {
+                let key = |bases: &[u8]| {
+                    crate::flow_based_read::base_array_to_key(bases, flow_order).ok_or(
+                        PeriodGuard {
+                            bases: bases.to_vec(),
+                        },
+                    )
                 };
-                if value > status {
-                    status = value;
+                let alt_key = key(&element)?;
+                let ref_key = key(&under)?;
+                let mut value = if ref_key.len() != alt_key.len() {
+                    CycleSkipStatus::CS
+                } else {
+                    CycleSkipStatus::NS
+                };
+                if value == CycleSkipStatus::NS
+                    && ref_key
+                        .iter()
+                        .zip(&alt_key)
+                        .any(|(r, a)| (*r == 0) ^ (*a == 0))
+                {
+                    value = CycleSkipStatus::PCS;
                 }
+                status = status.max(value);
             }
         }
-        if element.op.consumes_read_bases() {
+        if matches!(op, 'M' | 'I' | 'S' | '=' | 'X') {
             read_offset += length;
         }
-        if element.op.consumes_reference_bases() {
+        if matches!(op, 'M' | 'D' | 'N' | '=' | 'X') {
             ref_offset += length;
         }
         if status == CycleSkipStatus::CS {
             break;
         }
     }
-    status
+    Ok(status)
 }
 
-/// `collectReadProbs`: every cell of the matrix flow by flow, and each flow's mean call, which
-/// divides by the SUM OF THE LENGTHS rather than of the probabilities.
-pub fn read_probs_and_mean_call(read: &FlowRead) -> (Vec<f64>, Vec<f64>) {
-    let mut probs = Vec::with_capacity(read.key.len() * (read.max_hmer as usize + 1));
-    let mut mean = Vec::with_capacity(read.key.len());
-    for flow in 0..read.key.len() {
-        let mut mc = 0.0;
-        let mut mc_sum = 0i32;
-        for hmer in 0..=read.max_hmer {
-            let p = read.prob(flow, hmer);
-            probs.push(p);
-            mc += p * hmer as f64;
-            mc_sum += hmer;
+/// `GenomePriorDB`: per base, a hundred and one hmer frequencies.
+///
+/// The row's first frequency is read TWICE, into the first two slots, and every later slot takes
+/// the column of its own index, so the row's last column is never read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GenomePrior {
+    pub rows: Vec<(u8, Vec<i64>)>,
+}
+
+/// What reading the prior refused, as the JVM raises it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriorError {
+    pub class: &'static str,
+    pub message: String,
+}
+
+impl GenomePrior {
+    /// The CSV, one row per base. A quoted field is refused as the port's: opencsv would unquote it.
+    pub fn parse(text: &str) -> Result<GenomePrior, PriorError> {
+        let mut rows: Vec<(u8, Vec<i64>)> = Vec::new();
+        for line in text.lines() {
+            if line.contains('"') {
+                return Err(PriorError {
+                    class: "",
+                    message: "a quoted genome-prior field".to_string(),
+                });
+            }
+            let fields: Vec<&str> = line.split(',').collect();
+            let base = *fields[0].as_bytes().first().ok_or_else(|| PriorError {
+                class: "java.lang.ArrayIndexOutOfBoundsException",
+                message: "Index 0 out of bounds for length 0".to_string(),
+            })?;
+            let mut prior = vec![0i64; HMER_VALUE_MAX + 1];
+            for (i, slot) in prior.iter_mut().enumerate() {
+                let column = if i == 0 { 1 } else { i };
+                let text = fields.get(column).ok_or_else(|| PriorError {
+                    class: "java.lang.ArrayIndexOutOfBoundsException",
+                    message: format!("Index {column} out of bounds for length {}", fields.len()),
+                })?;
+                *slot = text.parse::<i64>().map_err(|_| PriorError {
+                    class: "java.lang.NumberFormatException",
+                    message: format!("For input string: \"{text}\""),
+                })?;
+            }
+            // `LinkedHashMap.put`: a repeated base keeps its slot and takes the new row.
+            match rows.iter_mut().find(|(other, _)| *other == base) {
+                Some(row) => row.1 = prior,
+                None => rows.push((base, prior)),
+            }
         }
-        mean.push(mc / mc_sum as f64);
+        Ok(GenomePrior { rows })
     }
-    (probs, mean)
-}
 
-/// `new DecimalFormat("0.0#####")`: at least one fraction digit and at most six, half to even.
-pub fn error_format(value: f64) -> String {
-    let text = gatk_annotation::decimal_format::DecimalFormat::new(6).format(value);
-    if value.is_finite() && !text.contains('.') {
-        format!("{text}.0")
-    } else {
-        text
+    fn prior_for_base(&self, base: u8) -> Option<&[i64]> {
+        self.rows
+            .iter()
+            .find(|(other, _)| *other == base)
+            .map(|(_, prior)| prior.as_slice())
     }
 }
 
-/// `Precision.round(value, scale)`: the value's `Double.toString`, rounded half up.
-fn precision_round(value: f64, scale: usize) -> f64 {
-    if !value.is_finite() {
-        return value;
-    }
-    gatk_engine::java_format::format_decimals(value, scale)
-        .parse()
-        .unwrap_or(value)
-}
-
-/// `BASE_VALUE_MAX + 1`, the base bins.
-const BASE_BINS: usize = BASE_VALUE_MAX + 1;
-/// `deviationToBin(HMER_VALUE_MAX + 1)`, the deviation bins.
-const DEVIATION_BINS: usize = 2 * (HMER_VALUE_MAX + 1);
-
-/// The four-level `BooleanAccumulator` tree, kept sparse: the level that is never reported (qual,
-/// hmer, deviation) is not kept at all.
-#[derive(Debug, Clone, Default)]
-pub struct QualReport {
-    qual: Vec<Accumulator>,
-    qual_hmer: std::collections::BTreeMap<(usize, usize), Accumulator>,
-    four: std::collections::BTreeMap<(usize, usize, usize, usize), Accumulator>,
-}
-
-/// A bin clipped into range, as `BooleanAccumulator.add` clips one it warns about.
-fn clip_bin(bin: i64, bins: usize) -> usize {
-    bin.max(0).min(bins as i64 - 1) as usize
-}
-
-impl QualReport {
-    pub fn new() -> QualReport {
-        QualReport {
-            qual: vec![Accumulator::default(); QUAL_VALUE_MAX + 1],
-            ..Default::default()
+/// `computeErrorProb`: per flow, one less the normalized probability of the flow's own call, with
+/// the column rescaled by the genome prior of the flow's base when there is one.
+///
+/// Each value also feeds that flow's percentile row, when the report is kept, unless the call is
+/// zero and `--exclude-zero-flows` leaves those out.
+pub fn error_probabilities(
+    read: &crate::flow_based_read::FlowRead,
+    prior: Option<&GenomePrior>,
+    mut percentiles: Option<&mut Vec<PercentileReport>>,
+    exclude_zero_flows: bool,
+) -> Vec<f64> {
+    let max_hmer = read.max_hmer;
+    let mut column = vec![0.0f64; max_hmer as usize + 1];
+    let mut result = vec![0.0f64; read.key.len()];
+    for (i, slot) in result.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (j, cell) in column.iter_mut().enumerate() {
+            *cell = read.prob(i, j as i32);
+            sum += *cell;
         }
-    }
-
-    fn add(&mut self, same: bool, qual: usize, hmer: i64, deviation: i64, base: i64) {
-        self.qual[qual].add(same);
-        let hmer = clip_bin(hmer, HMER_VALUE_MAX + 1);
-        self.qual_hmer.entry((qual, hmer)).or_default().add(same);
-        let deviation = clip_bin(deviation, DEVIATION_BINS);
-        let base = clip_bin(base, BASE_BINS);
-        self.four
-            .entry((qual, hmer, deviation, base))
-            .or_default()
-            .add(same);
-    }
-
-    /// `addToQualReport`: the read's key against the reference's, flow by flow, when the two have
-    /// the same length. `flow_order` is the read's four-base cycle.
-    pub fn add_read(
-        &mut self,
-        read: &FlowRead,
-        reference: &[u8],
-        flow_order: &str,
-        reverse: bool,
-        error: &[f64],
-    ) {
-        let Some(haplotype) = crate::flow_pairhmm_align_reads_to_haplotypes::FlowHaplotype::new(
-            reference, flow_order,
-        ) else {
-            return;
+        if sum != 0.0 {
+            for cell in column.iter_mut() {
+                *cell /= sum;
+            }
+        }
+        let call = read.key[i].min(max_hmer) as usize;
+        *slot = match prior {
+            Some(prior) => {
+                let mut sum = 0.0;
+                if let Some(frequencies) = prior.prior_for_base(read.flow_order[i]) {
+                    for (j, cell) in column.iter_mut().enumerate() {
+                        *cell *= frequencies[j] as f64;
+                        sum += *cell;
+                    }
+                }
+                if sum != 0.0 {
+                    1.0 - column[(column.len() - 1).min(call)] / sum
+                } else {
+                    1.0 - column[call]
+                }
+            }
+            None => 1.0 - column[call],
         };
-        if read.key.len() != haplotype.key.len() {
-            return;
-        }
-        let order = flow_order.as_bytes();
-        for flow in 0..read.key.len() {
-            let prob = precision_round(error[flow], QUAL_VALUE_MAX / 10 + 1);
-            let qual = (-10.0 * jmath::math::log10(prob)).ceil() as i32;
-            let deviation = read.key[flow] - haplotype.key[flow];
-            if qual >= 0 && (qual as usize) < self.qual.len() {
-                let base = order[flow % order.len()];
-                let base = if reverse { complement(base) } else { base };
-                let bin = DEFAULT_FLOW_ORDER
-                    .bytes()
-                    .position(|known| known == base)
-                    .map(|at| at as i64)
-                    .unwrap_or(-1);
-                self.add(
-                    deviation == 0,
-                    qual as usize,
-                    read.key[flow] as i64,
-                    deviation_to_bin(deviation) as i64,
-                    bin,
-                );
+        if let Some(reports) = percentiles.as_deref_mut() {
+            if read.key[i] != 0 || !exclude_zero_flows {
+                while reports.len() < i + 1 {
+                    reports.push(PercentileReport::default());
+                }
+                reports[i].add_probability(*slot);
             }
         }
     }
+    result
+}
 
-    fn qual_table(&self, omit_zeros: bool) -> Table {
-        let mut table = Table::new("qualReport", "error rate per qual", Sorting::DoNotSort);
-        for (name, format) in [
+/// `computeLowestQBaseTP`: per flow, the `tp` of the lowest-quality base in the first half of the
+/// hmer, the key walked over the bases in the order both are stored in.
+///
+/// `None` where the reference indexes past an array, which it does not catch.
+pub fn lowest_q_base_tp(key: &[i32], tp: &[i8], qualities: &[u8]) -> Result<Vec<i8>, usize> {
+    let mut result = vec![0i8; key.len()];
+    let mut sequence = 0usize;
+    for (i, &hmer) in key.iter().enumerate() {
+        if hmer == 0 {
+            continue;
+        }
+        let at = |array_len: usize, index: usize| {
+            if index < array_len {
+                Ok(index)
+            } else {
+                Err(index)
+            }
+        };
+        result[i] = tp[at(tp.len(), sequence)?];
+        let mut lowest = qualities[at(qualities.len(), sequence)?];
+        let scan = (hmer as usize).div_ceil(2);
+        for j in 1..scan {
+            let q = qualities[at(qualities.len(), sequence + j)?];
+            if q < lowest {
+                result[i] = tp[at(tp.len(), sequence + j)?];
+                lowest = q;
+            }
+        }
+        sequence += hmer as usize;
+    }
+    Ok(result)
+}
+
+/// `collectReadProbs`: the matrix flattened flow by flow, and each flow's mean call, which divides
+/// by the sum of the hmer lengths rather than of the probabilities.
+pub fn read_probs(read: &crate::flow_based_read::FlowRead) -> (Vec<f64>, Vec<f64>) {
+    let max_hmer = read.max_hmer;
+    let mut probs = Vec::with_capacity(read.key.len() * (max_hmer as usize + 1));
+    let mut mean_call = Vec::with_capacity(read.key.len());
+    for flow in 0..read.key.len() {
+        let mut call = 0.0;
+        let mut total = 0i32;
+        for hmer in 0..=max_hmer {
+            let p = read.prob(flow, hmer);
+            probs.push(p);
+            call += p * f64::from(hmer);
+            total += hmer;
+        }
+        mean_call.push(call / f64::from(total));
+    }
+    (probs, mean_call)
+}
+
+/// `new DecimalFormat("0.0#####")`: at least one integer and one fraction digit, at most six
+/// fraction digits, half to even on the shortest decimal.
+pub fn error_format(value: f64) -> String {
+    let body = gatk_annotation::decimal_format::DecimalFormat::new(6).format(value);
+    if !value.is_finite() {
+        return body;
+    }
+    let (sign, digits) = match body.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", body.as_str()),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    let whole = if whole.is_empty() { "0" } else { whole };
+    let fraction = if fraction.is_empty() { "0" } else { fraction };
+    format!("{sign}{whole}.{fraction}")
+}
+
+/// `Precision.round(x, scale)`: `Double.toString(x)` as a `BigDecimal`, set to `scale` places
+/// HALF_UP, back to a double, with a zero taking the sign of `x`.
+pub fn precision_round(x: f64, scale: usize) -> f64 {
+    if x.is_infinite() {
+        return x;
+    }
+    if x.is_nan() {
+        return f64::NAN;
+    }
+    let text = gatk_engine::tsv_table::java_double_to_string(x);
+    let (negative, text) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest.to_string()),
+        None => (false, text),
+    };
+    let (mantissa, exponent) = match text.split_once('E') {
+        Some((m, e)) => (m.to_string(), e.parse::<i64>().unwrap_or(0)),
+        None => (text.clone(), 0),
+    };
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((&mantissa, ""));
+    let digits: Vec<u8> = format!("{whole}{fraction}")
+        .bytes()
+        .map(|b| b - b'0')
+        .collect();
+    // value = digits * 10^-(places)
+    let places = fraction.len() as i64 - exponent;
+    let rounded = if places <= scale as i64 {
+        x.abs()
+    } else {
+        let drop = (places - scale as i64) as usize;
+        let keep = digits.len().saturating_sub(drop);
+        let mut kept: Vec<u8> = digits[..keep].to_vec();
+        let first_dropped = if drop <= digits.len() {
+            digits[keep]
+        } else {
+            0
+        };
+        if first_dropped >= 5 {
+            let mut carry = true;
+            for digit in kept.iter_mut().rev() {
+                if !carry {
+                    break;
+                }
+                if *digit == 9 {
+                    *digit = 0;
+                } else {
+                    *digit += 1;
+                    carry = false;
+                }
+            }
+            if carry {
+                kept.insert(0, 1);
+            }
+        }
+        let integer: String = if kept.is_empty() {
+            "0".to_string()
+        } else {
+            kept.iter().map(|d| (b'0' + d) as char).collect()
+        };
+        format!("{integer}e-{scale}").parse::<f64>().unwrap_or(0.0)
+    };
+    let signed = if negative { -rounded } else { rounded };
+    if signed == 0.0 {
+        0.0 * x
+    } else {
+        signed
+    }
+}
+
+/// The qual report: `BooleanAccumulator.newReport(61, 101, 202, 4)`, a tree four levels deep kept
+/// here as one flat array of cells per level.
+pub struct QualReport {
+    top: Vec<Accumulator>,
+    hmer: Vec<Accumulator>,
+    deviation: Vec<Accumulator>,
+    base: Vec<Accumulator>,
+}
+
+/// The dimensions of the four levels.
+const QUALS: usize = QUAL_VALUE_MAX + 1;
+const HMERS: usize = HMER_VALUE_MAX + 1;
+const DEVIATIONS: usize = (HMER_VALUE_MAX + 1) * 2;
+const BASES: usize = BASE_VALUE_MAX + 1;
+
+impl Default for QualReport {
+    fn default() -> Self {
+        QualReport {
+            top: vec![Accumulator::default(); QUALS],
+            hmer: vec![Accumulator::default(); QUALS * HMERS],
+            deviation: vec![Accumulator::default(); QUALS * HMERS * DEVIATIONS],
+            base: vec![Accumulator::default(); QUALS * HMERS * DEVIATIONS * BASES],
+        }
+    }
+}
+
+/// `BooleanAccumulator.add`'s clipping: a bin out of range is logged and clamped.
+fn clamp(bin: i64, length: usize) -> usize {
+    bin.max(0).min(length as i64 - 1) as usize
+}
+
+impl QualReport {
+    /// `qualReport[qual].add(same, hmer, deviationBin, baseBin)`.
+    pub fn add(&mut self, same: bool, qual: usize, hmer: i64, deviation: i64, base: i64) {
+        self.top[qual].add(same);
+        let h = qual * HMERS + clamp(hmer, HMERS);
+        self.hmer[h].add(same);
+        let d = h * DEVIATIONS + clamp(deviation, DEVIATIONS);
+        self.deviation[d].add(same);
+        let b = d * BASES + clamp(base, BASES);
+        self.base[b].add(same);
+    }
+}
+
+/// `addToQualReport`: each flow's error probability rounded to seven places and made a phred, and
+/// whether the read's call there is the reference's, filed by the call, the deviation and the
+/// flow's base on the forward strand. A read whose key is not as long as the reference's files
+/// nothing.
+pub fn add_to_qual_report(
+    report: &mut QualReport,
+    read_key: &[i32],
+    reference_key: &[i32],
+    flow_order: &[u8],
+    reverse: bool,
+    error_probabilities: &[f64],
+) {
+    if read_key.len() != reference_key.len() {
+        return;
+    }
+    for flow in 0..read_key.len() {
+        let probability = precision_round(error_probabilities[flow], QUAL_VALUE_MAX / 10 + 1);
+        let qual = crate::series_stats::java_double_to_int(
+            (-10.0 * jmath::math::log10(probability)).ceil(),
+        );
+        let deviation = read_key[flow] - reference_key[flow];
+        if qual >= 0 && (qual as usize) < QUALS {
+            let base = flow_order[flow % flow_order.len()];
+            let base = if reverse {
+                match base {
+                    b'A' => b'T',
+                    b'T' => b'A',
+                    b'C' => b'G',
+                    b'G' => b'C',
+                    other => other,
+                }
+            } else {
+                base
+            };
+            let base_bin = DEFAULT_FLOW_ORDER
+                .bytes()
+                .position(|b| b == base)
+                .map_or(-1, |at| at as i64);
+            report.add(
+                deviation == 0,
+                qual as usize,
+                i64::from(read_key[flow]),
+                deviation_to_bin(deviation) as i64,
+                base_bin,
+            );
+        }
+    }
+}
+
+/// One table of the report, written as `GATKReportTable.write` writes it, from rows produced
+/// twice: once to size the columns and once to print them. The four-level table has five million
+/// rows when its zeros are kept, which a table held in memory cell by cell cannot afford.
+fn write_table<F>(
+    out: &mut String,
+    name: &str,
+    description: &str,
+    columns: &[(&str, &str)],
+    rows: F,
+) where
+    F: Fn(&mut dyn FnMut(Vec<String>)),
+{
+    use gatk_engine::gatk_report::is_right_align;
+    use std::fmt::Write as _;
+    let mut widths: Vec<usize> = columns.iter().map(|(name, _)| name.len()).collect();
+    let mut right: Vec<bool> = vec![true; columns.len()];
+    let mut count = 0usize;
+    rows(&mut |row: Vec<String>| {
+        count += 1;
+        for (i, value) in row.iter().enumerate() {
+            widths[i] = widths[i].max(value.chars().count());
+            if !is_right_align(value) {
+                right[i] = false;
+            }
+        }
+    });
+    let _ = write!(out, "#:GATKTable:{}:{}", columns.len(), count);
+    for (_, format) in columns {
+        let _ = write!(out, ":{format}");
+    }
+    out.push_str(":;\n");
+    let _ = writeln!(out, "#:GATKTable:{name}:{description}");
+    for (i, (column, _)) in columns.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        let _ = write!(out, "{:<width$}", column, width = widths[i]);
+    }
+    out.push('\n');
+    rows(&mut |row: Vec<String>| {
+        for (i, value) in row.iter().enumerate() {
+            if i > 0 {
+                out.push_str("  ");
+            }
+            if right[i] {
+                let _ = write!(out, "{:>width$}", value, width = widths[i]);
+            } else {
+                let _ = write!(out, "{:<width$}", value, width = widths[i]);
+            }
+        }
+        out.push('\n');
+    });
+    out.push('\n');
+}
+
+/// `%f`: six places, HALF_UP.
+fn six(value: f64) -> String {
+    if value.is_finite() {
+        gatk_engine::java_format::format_decimals(value, 6)
+    } else {
+        gatk_engine::tsv_table::java_double_to_string(value)
+    }
+}
+
+/// `closeTool`'s report: a `GATKReport` over four tables, which it keeps in a `TreeMap` by name,
+/// so the percentile table comes first whatever order they were handed in.
+pub fn report_text(
+    report: &QualReport,
+    percentiles: &[PercentileReport],
+    quality_percentiles: &str,
+    omit_zeros: bool,
+) -> String {
+    let mut out = String::from("#:GATKReport.v1.1:4\n");
+
+    // PhredBinAccumulator
+    let names = percentile_columns(quality_percentiles);
+    let mut columns: Vec<(&str, &str)> = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        columns.push((name.as_str(), if i < 2 { "%d" } else { "%f" }));
+    }
+    write_table(
+        &mut out,
+        PERCENTILE_TABLE_NAME,
+        PERCENTILE_TABLE_NAME,
+        &columns,
+        |emit| {
+            for (index, row) in percentiles.iter().enumerate() {
+                let values = row.row(index, quality_percentiles);
+                let mut cells = vec![index.to_string(), row.stats.count().to_string()];
+                cells.extend(values[2..].iter().map(|value| six(*value)));
+                emit(cells);
+            }
+        },
+    );
+
+    // qualReport
+    write_table(
+        &mut out,
+        &one_level_table_name("qual"),
+        "error rate per qual",
+        &[
             ("qual", "%d"),
             ("count", "%d"),
             ("error", "%f"),
             ("phred", "%d"),
-        ] {
-            table.add_column(name, format);
-        }
-        let mut row = 0;
-        for (i, cell) in self.qual.iter().enumerate() {
-            if omit_zeros && i != 0 && cell.count() == 0 {
-                continue;
+        ],
+        |emit| {
+            for (i, cell) in report.top.iter().enumerate() {
+                if omit_zeros && i != 0 && cell.count() == 0 {
+                    continue;
+                }
+                let rate = cell.false_rate();
+                emit(vec![
+                    i.to_string(),
+                    cell.count().to_string(),
+                    six(rate),
+                    phred(rate, cell.count(), DEFAULT_RATIO_THRESHOLD).to_string(),
+                ]);
             }
-            let rate = cell.false_rate();
-            let key = row.to_string();
-            table.set(&key, "qual", Value::Int(i as i64));
-            table.set(&key, "count", Value::Int(cell.count() as i64));
-            table.set(&key, "error", Value::Double(rate));
-            table.set(
-                &key,
-                "phred",
-                Value::Int(phred(rate, cell.count(), DEFAULT_RATIO_THRESHOLD)),
-            );
-            row += 1;
-        }
-        table
-    }
+        },
+    );
 
-    fn qual_hmer_table(&self, omit_zeros: bool) -> Table {
-        let mut table = Table::new(
-            "qual_hmerReport",
-            "error rate per qual by hmer",
-            Sorting::DoNotSort,
-        );
-        for (name, format) in [
+    // qual_hmerReport
+    write_table(
+        &mut out,
+        &two_level_table_name("qual", "hmer"),
+        "error rate per qual by hmer",
+        &[
             ("qual", "%d"),
             ("hmer", "%d"),
             ("count", "%d"),
             ("error", "%f"),
-        ] {
-            table.add_column(name, format);
-        }
-        let empty = Accumulator::default();
-        let mut row = 0;
-        for i in 0..self.qual.len() {
-            for j in 0..=HMER_VALUE_MAX {
-                let cell = self.qual_hmer.get(&(i, j)).unwrap_or(&empty);
-                if omit_zeros && (i != 0 || j != 0) && cell.count() == 0 {
-                    continue;
+        ],
+        |emit| {
+            for i in 0..QUALS {
+                for j in 0..HMERS {
+                    let cell = &report.hmer[i * HMERS + j];
+                    if omit_zeros && (i != 0 || j != 0) && cell.count() == 0 {
+                        continue;
+                    }
+                    emit(vec![
+                        i.to_string(),
+                        j.to_string(),
+                        cell.count().to_string(),
+                        six(cell.false_rate()),
+                    ]);
                 }
-                let key = row.to_string();
-                table.set(&key, "qual", Value::Int(i as i64));
-                table.set(&key, "hmer", Value::Int(j as i64));
-                table.set(&key, "count", Value::Int(cell.count() as i64));
-                table.set(&key, "error", Value::Double(cell.false_rate()));
-                row += 1;
             }
-        }
-        table
-    }
+        },
+    );
 
-    fn four_level_table(&self, omit_zeros: bool) -> Table {
-        let mut table = Table::new(
-            "qual_hmer_deviation_base_Report",
-            "error rate per qual by hmer and deviation",
-            Sorting::DoNotSort,
-        );
-        for (name, format) in [
+    // qual_hmer_deviation_base_Report
+    write_table(
+        &mut out,
+        &four_level_table_name("qual", "hmer", "deviation", "base"),
+        "error rate per qual by hmer and deviation",
+        &[
             ("qual", "%d"),
             ("hmer", "%d"),
             ("deviation", "%s"),
             ("base", "%s"),
             ("count", "%d"),
-        ] {
-            table.add_column(name, format);
-        }
-        let mut row = 0;
-        let mut emit =
-            |table: &mut Table, (i, j, k, m): (usize, usize, usize, usize), count: u64| {
-                let key = row.to_string();
-                table.set(&key, "qual", Value::Int(i as i64));
-                table.set(&key, "hmer", Value::Int(j as i64));
-                table.set(&key, "deviation", Value::Str(bin_to_deviation(k)));
-                table.set(&key, "base", Value::Str(bin_to_base(m).to_string()));
-                table.set(&key, "count", Value::Int(count as i64));
-                row += 1;
-            };
-        let count_at = |at: (usize, usize, usize, usize)| {
-            self.four.get(&at).map(Accumulator::count).unwrap_or(0)
-        };
-        if omit_zeros {
-            // The origin always, then every cell that saw something, in the nested loops' order.
-            let origin = (0, 0, 0, 0);
-            emit(&mut table, origin, count_at(origin));
-            for (&at, cell) in &self.four {
-                if at != origin && cell.count() != 0 {
-                    emit(&mut table, at, cell.count());
-                }
-            }
-        } else {
-            for i in 0..self.qual.len() {
-                for j in 0..=HMER_VALUE_MAX {
-                    for k in 0..DEVIATION_BINS {
-                        for m in 0..BASE_BINS {
-                            emit(&mut table, (i, j, k, m), count_at((i, j, k, m)));
+        ],
+        |emit| {
+            for i in 0..QUALS {
+                for j in 0..HMERS {
+                    for k in 0..DEVIATIONS {
+                        for m in 0..BASES {
+                            let cell = &report.base[((i * HMERS + j) * DEVIATIONS + k) * BASES + m];
+                            if omit_zeros
+                                && (i != 0 || j != 0 || k != 0 || m != 0)
+                                && cell.count() == 0
+                            {
+                                continue;
+                            }
+                            emit(vec![
+                                i.to_string(),
+                                j.to_string(),
+                                bin_to_deviation(k),
+                                bin_to_base(m).to_string(),
+                                cell.count().to_string(),
+                            ]);
                         }
                     }
                 }
             }
-        }
-        table
-    }
-}
-
-fn complement(base: u8) -> u8 {
-    match base {
-        b'A' => b'T',
-        b'T' => b'A',
-        b'C' => b'G',
-        b'G' => b'C',
-        b'a' => b't',
-        b't' => b'a',
-        b'c' => b'g',
-        b'g' => b'c',
-        other => other,
-    }
-}
-
-/// `PercentileReport.newReportTable`.
-fn percentile_table(reports: &[PercentileReport], quality_percentiles: &str) -> Table {
-    let mut table = Table::new(
-        PERCENTILE_TABLE_NAME,
-        PERCENTILE_TABLE_NAME,
-        Sorting::DoNotSort,
+        },
     );
-    let columns = percentile_columns(quality_percentiles);
-    for (index, name) in columns.iter().enumerate() {
-        table.add_column(name, if index < 2 { "%d" } else { "%f" });
-    }
-    for (index, report) in reports.iter().enumerate() {
-        let key = index.to_string();
-        let values = report.row(index, quality_percentiles);
-        for (column, (name, value)) in columns.iter().zip(values).enumerate() {
-            let cell = if column < 2 {
-                Value::Int(value as i64)
-            } else {
-                Value::Double(value)
-            };
-            table.set(&key, name, cell);
-        }
-    }
-    table
-}
-
-/// The report file: its four tables in the order `GATKReport`'s `TreeMap` writes them, which is
-/// the order of their names.
-pub fn report_text(
-    qual: &QualReport,
-    percentiles: &[PercentileReport],
-    omit_zeros: bool,
-    quality_percentiles: &str,
-) -> String {
-    let mut tables = vec![
-        qual.qual_table(omit_zeros),
-        qual.qual_hmer_table(omit_zeros),
-        qual.four_level_table(omit_zeros),
-        percentile_table(percentiles, quality_percentiles),
-    ];
-    tables.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut report = Report::new();
-    for table in tables {
-        report.add_table(table);
-    }
-    report.write()
+    out
 }
