@@ -182,9 +182,9 @@ Reference: gatk 4.6.2.0 (`76edc75c2650`), picard 3.4.0 (`6c3f23bc2e0d`), htsjdk 
 | `FlagStat` | reporting-walker | oracle-backed | counting-walkers | 1 | t=2, 21/21 rows (100%) |
 | `FlowFeatureMapper` | flow-based | oracle-backed | flow-feature-mapper | 1 | t=2, 25/25 rows (100%) |
 | `FlowPairHMMAlignReadsToHaplotypes` | flow-based | oracle-backed | flow-pairhmm-align-reads-to-haplotypes | 1 | t=2, 38/38 rows (100%) |
-| `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | not measured |
-| `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | not measured |
-| `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | not measured |
+| `FuncotateSegments` | variant-walker | oracle-backed | funcotate-segments | 1 | t=2, 25/25 rows (100%) |
+| `Funcotator` | variant-walker | oracle-backed | funcotator | 1 | t=2, 31/31 rows (100%) |
+| `FuncotatorDataSourceDownloader` | variant-walker | oracle-backed | funcotator-data-source-downloader | 1 | t=2, 8/8 rows (100%), **1 distinct output** |
 | `GatherBQSRReports` | unclassified | oracle-backed | gather-bqsr-reports | 1 | t=2, 6/6 rows (100%) |
 | `GatherNormalArtifactData` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) |
 | `GatherPileupSummaries` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 6/6 rows (100%) |

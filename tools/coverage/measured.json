@@ -1081,6 +1081,15 @@
       "t": 2,
       "share": 1.0
     },
+    "GroundTruthReadsBuilder": {
+      "rows": 29,
+      "accepted": 20,
+      "rejected": 9,
+      "distinct_outputs": 14,
+      "matched": 29,
+      "t": 2,
+      "share": 1.0
+    },
     "AlleleFrequencyQC": {
       "rows": 26,
       "accepted": 0,
@@ -1153,21 +1162,39 @@
       "t": 2,
       "share": 1.0
     },
+    "FuncotatorDataSourceDownloader": {
+      "rows": 8,
+      "accepted": 0,
+      "rejected": 8,
+      "distinct_outputs": 0,
+      "matched": 8,
+      "t": 2,
+      "share": 1.0
+    },
+    "FuncotateSegments": {
+      "rows": 25,
+      "accepted": 9,
+      "rejected": 16,
+      "distinct_outputs": 6,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
+    "Funcotator": {
+      "rows": 31,
+      "accepted": 20,
+      "rejected": 11,
+      "distinct_outputs": 19,
+      "matched": 31,
+      "t": 2,
+      "share": 1.0
+    },
     "VariantRecalibrator": {
       "rows": 26,
       "accepted": 21,
       "rejected": 5,
       "distinct_outputs": 21,
       "matched": 26,
-      "t": 2,
-      "share": 1.0
-    },
-    "GroundTruthReadsBuilder": {
-      "rows": 29,
-      "accepted": 20,
-      "rejected": 9,
-      "distinct_outputs": 14,
-      "matched": 29,
       "t": 2,
       "share": 1.0
     }
