@@ -929,7 +929,9 @@ impl AlleleFractionModeller {
             {
                 let global = state.global;
                 let mut minor_fractions = Vec::with_capacity(segments.len());
-                for segment_index in 0..segments.len() {
+                for (segment_index, minor_width) in
+                    minor_widths.iter().enumerate().take(segments.len())
+                {
                     let hets_in_segment = data.segment(segment_index);
                     if hets_in_segment.is_empty() {
                         minor_fractions.push(f64::NAN);
@@ -941,7 +943,7 @@ impl AlleleFractionModeller {
                         |het: &Het, f: f64| het_log_likelihood(&global, f, het),
                         0.0,
                         0.5,
-                        minor_widths[segment_index],
+                        *minor_width,
                         10,
                         APPROX_THRESHOLD,
                     )

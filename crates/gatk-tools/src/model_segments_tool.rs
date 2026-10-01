@@ -353,8 +353,10 @@ fn read_interval_list(path: &str) -> Result<(Vec<SequenceRecord>, Vec<Span>), Th
 
 /// `IntervalList.write`: the dictionary header, then `contig start end + .` per interval.
 fn interval_list_text(dictionary: &[SequenceRecord], intervals: &[Span]) -> String {
-    let mut header = SamHeader::default();
-    header.sequences = dictionary.to_vec();
+    let header = SamHeader {
+        sequences: dictionary.to_vec(),
+        ..SamHeader::default()
+    };
     let mut text = header.encode_replacing_version();
     for interval in intervals {
         text.push_str(&format!(

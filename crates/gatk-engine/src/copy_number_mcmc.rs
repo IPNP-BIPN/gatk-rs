@@ -288,7 +288,10 @@ pub fn beta_sample(rng: &mut JavaRandom, alpha: f64, beta: f64) -> f64 {
 pub fn beta_log_density(x: f64, alpha: f64, beta: f64) -> Result<f64, IllegalArgument> {
     let z = jmath::gamma::log_gamma(alpha) + jmath::gamma::log_gamma(beta)
         - jmath::gamma::log_gamma(alpha + beta);
-    if x < 0.0 || x > 1.0 {
+    // NaN passes, as the reference's two comparisons let it.
+    if x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Less)
+        || x.partial_cmp(&1.0) == Some(std::cmp::Ordering::Greater)
+    {
         Ok(f64::NEG_INFINITY)
     } else if x == 0.0 {
         if alpha < 1.0 {
@@ -498,12 +501,12 @@ where
         minibatch_size: usize,
         approx_threshold: f64,
     ) -> Result<Self, IllegalArgument> {
-        if !(x_min < x_max) {
+        if x_min.partial_cmp(&x_max) != Some(std::cmp::Ordering::Less) {
             return Err(IllegalArgument(
                 "Maximum bound must be greater than minimum bound.".to_string(),
             ));
         }
-        if !(width > 0.0) {
+        if width.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             return Err(IllegalArgument(
                 "Slice-sampling width must be positive.".to_string(),
             ));
@@ -513,7 +516,10 @@ where
                 "Minibatch size must be greater than 1.".to_string(),
             ));
         }
-        if !(approx_threshold >= 0.0) {
+        if !matches!(
+            approx_threshold.partial_cmp(&0.0),
+            Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+        ) {
             return Err(IllegalArgument(
                 "Minibatch approximation threshold must be non-negative.".to_string(),
             ));
