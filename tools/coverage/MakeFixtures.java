@@ -3349,6 +3349,7 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
         vqsrFixtures(dir);
         variantRecalibratorFixtures(dir);
+        filterAlignmentArtifactsFixtures(dir);
         svStratifyFixtures(dir);
         svConcordanceFixtures(dir);
         svClusterFixtures(dir);
@@ -5131,6 +5132,120 @@ public class MakeFixtures {
         Files.writeString(dir.resolve("sv_track_names.list"), "RM\nSD\n", StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("sv_track_files.list"),
                 "/work/fixtures/sv_rm.bed\n/work/fixtures/sv_sd.bed\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What `FilterAlignmentArtifacts` reads: a reference with its BWA-MEM image, reads, and calls.
+     *
+     * `faa_ref.fasta` is two random contigs, and `faa.img` is the reference's own
+     * `BwaMemIndexImageCreator` over it. `faa.bam` (sample `tumor`) and `faa2.bam` (sample
+     * `normal`) tile both contigs with reads that copy the reference base for base, all `M`, so
+     * that NO read supports any call: the tool's realignment (the Mutect2 assembler, the PairHMM
+     * and BWA-MEM over the unitigs) then has nothing to realign, and what a row measures is the
+     * walker around it: which calls are read, which are skipped as filtered, and what the output
+     * carries. `faa.vcf` and `faa2.vcf` hold SNPs, insertions, deletions and a two-allele SNP,
+     * some of them `LowQual`, on both contigs, indexed for `-L`.
+     */
+    static void filterAlignmentArtifactsFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(31415L);
+        final String bases = "ACGT";
+        final String[] names = {"chr1", "chr2"};
+        final int[] lengths = {6000, 3000};
+        final String[] sequences = new String[2];
+        try (final htsjdk.samtools.reference.FastaReferenceWriter reference =
+                     new htsjdk.samtools.reference.FastaReferenceWriterBuilder()
+                             .setFastaFile(dir.resolve("faa_ref.fasta"))
+                             .setMakeFaiOutput(true)
+                             .setMakeDictOutput(true)
+                             .build()) {
+            for (int c = 0; c < 2; c++) {
+                final StringBuilder sequence = new StringBuilder();
+                for (int i = 0; i < lengths[c]; i++) {
+                    sequence.append(bases.charAt(random.nextInt(4)));
+                }
+                sequences[c] = sequence.toString();
+                reference.startSequence(names[c]).appendBases(sequences[c]);
+            }
+        }
+        new org.broadinstitute.hellbender.tools.BwaMemIndexImageCreator().instanceMain(new String[] {
+                "-I", dir.resolve("faa_ref.fasta").toString(), "-O", dir.resolve("faa.img").toString()});
+
+        for (final String[] bam : new String[][] {{"faa.bam", "tumor", "37"}, {"faa2.bam", "normal", "53"}}) {
+            final SAMFileHeader header = new SAMFileHeader();
+            final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+            for (int c = 0; c < 2; c++) {
+                dictionary.addSequence(new SAMSequenceRecord(names[c], lengths[c]));
+            }
+            header.setSequenceDictionary(dictionary);
+            header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rg_" + bam[1]);
+            group.setSample(bam[1]);
+            group.setLibrary("lib_" + bam[1]);
+            group.setPlatform("ILLUMINA");
+            header.addReadGroup(group);
+            final int step = Integer.parseInt(bam[2]);
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, true, dir.resolve(bam[0]).toFile())) {
+                int n = 0;
+                for (int c = 0; c < 2; c++) {
+                    for (int start = 1; start + 100 <= lengths[c]; start += step) {
+                        final SAMRecord record = new SAMRecord(header);
+                        record.setReadName(bam[1] + ":" + (n++));
+                        record.setReferenceName(names[c]);
+                        record.setAlignmentStart(start);
+                        record.setCigarString("100M");
+                        record.setMappingQuality(60);
+                        record.setReadString(sequences[c].substring(start - 1, start + 99));
+                        record.setBaseQualityString("I".repeat(100));
+                        record.setAttribute("RG", "rg_" + bam[1]);
+                        writer.addAlignment(record);
+                    }
+                }
+            }
+        }
+
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##FILTER=<ID=LowQual,Description=\"Low quality\">\n"
+                + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+                + "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths\">\n"
+                + "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">\n"
+                + "##contig=<ID=chr1,length=6000>\n##contig=<ID=chr2,length=3000>\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ttumor\n";
+        for (final String[] calls : new String[][] {{"faa.vcf", "1"}, {"faa2.vcf", "2"}}) {
+            final java.util.Random draw = new java.util.Random(Long.parseLong(calls[1]) * 7919L);
+            final StringBuilder text = new StringBuilder(header);
+            for (int c = 0; c < 2; c++) {
+                for (int position = 250 + 37 * Integer.parseInt(calls[1]); position < lengths[c] - 250;
+                     position += 180 + draw.nextInt(160)) {
+                    final char ref = sequences[c].charAt(position - 1);
+                    final char next = sequences[c].charAt(position);
+                    final char alt = bases.charAt((bases.indexOf(ref) + 1 + draw.nextInt(3)) % 4);
+                    final double kind = draw.nextDouble();
+                    String refAllele = String.valueOf(ref);
+                    String altAllele;
+                    if (kind < 0.6) {
+                        altAllele = String.valueOf(alt);
+                    } else if (kind < 0.75) {
+                        altAllele = ref + String.valueOf(alt);
+                    } else if (kind < 0.9) {
+                        refAllele = ref + String.valueOf(next);
+                        altAllele = String.valueOf(ref);
+                    } else {
+                        altAllele = alt + "," + bases.charAt((bases.indexOf(alt) + 1) % 4 == bases.indexOf(ref)
+                                ? (bases.indexOf(alt) + 2) % 4 : (bases.indexOf(alt) + 1) % 4);
+                    }
+                    final String filter = draw.nextDouble() < 0.2 ? "LowQual" : "PASS";
+                    final String genotype = altAllele.contains(",") ? "1/2" : "0/1";
+                    final String depths = altAllele.contains(",") ? "10,5,4" : "12,7";
+                    text.append(String.join("\t", names[c], Integer.toString(position), ".", refAllele,
+                            altAllele, Integer.toString(40 + draw.nextInt(400)), filter,
+                            "DP=" + (20 + draw.nextInt(40)), "GT:AD", genotype + ":" + depths)).append('\n');
+                }
+            }
+            Files.writeString(dir.resolve(calls[0]), text.toString(), StandardCharsets.UTF_8);
+            new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                    .instanceMain(new String[] {"-I", dir.resolve(calls[0]).toString()});
+        }
     }
 
     /**

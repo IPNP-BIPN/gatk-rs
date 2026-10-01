@@ -207,6 +207,9 @@ def read_output(out_dir, row_args=()):
         if name.endswith(".zip"):
             parts.append(f"{name}: {zip_members(raw)}")
             continue
+        if name.endswith(".hdf5") or name.endswith(".h5"):
+            parts.append(f"{name}: {hdf5_members(path)}")
+            continue
         if unordered_traversals(name, row_args):
             parts.append(f"{name}: {traversals_unordered(raw)}")
             continue
@@ -384,6 +387,44 @@ def bwa_image_masked(raw):
     for start, end in fields:
         masked[start:end] = bytes(end - start)
     return bytes(masked)
+
+
+def hdf5_members(path):
+    """An HDF5 output as its tree: every group, and every dataset's type, shape and values.
+
+    The HDF5 library stamps an object header with the time it was made, so two runs of the
+    reference already write different bytes: `ExtractVariantAnnotations`' matrix differed between
+    two runs over one input. What the tool decides is which groups and datasets there are and what
+    each holds, so that is what is compared. A string dataset is compared as its text, whether the
+    file stores it at a fixed width or as variable-length strings, since that is the library's
+    choice and not the tool's; a numeric one keeps its type, and every value is printed in full.
+    """
+    try:
+        import h5py
+    except ImportError:
+        raw = path.read_bytes()
+        return f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} (no h5py to read it)"
+    rendered = []
+
+    def visit(name, obj):
+        if isinstance(obj, h5py.Group):
+            rendered.append(f"[{name}/]")
+            return
+        data = obj[()]
+        if obj.dtype.kind in ("S", "O", "U"):
+            values = [v.decode("utf-8") if isinstance(v, bytes) else str(v) for v in data.ravel().tolist()]
+            rendered.append(f"[{name}: string {list(obj.shape)} {values}]")
+        else:
+            values = [repr(v) for v in data.ravel().tolist()]
+            rendered.append(f"[{name}: {obj.dtype.str} {list(obj.shape)} {' '.join(values)}]")
+
+    try:
+        with h5py.File(path, "r") as handle:
+            handle.visititems(visit)
+    except OSError as error:
+        raw = path.read_bytes()
+        return f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} (not HDF5: {error})"
+    return "HDF5 " + " ".join(sorted(rendered))
 
 
 def histogram_columns_sorted(text):
