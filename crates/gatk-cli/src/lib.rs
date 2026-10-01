@@ -398,6 +398,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "AlleleFrequencyQC" => Some(run_allele_frequency_qc),
         "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
         "LocalAssembler" => Some(run_local_assembler),
         "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
@@ -518,6 +519,10 @@ fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thr
 
 fn run_ground_truth_scorer(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::ground_truth_scorer(&parsed("GroundTruthScorer", args)?)
+}
+
+fn run_allele_frequency_qc(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::allele_frequency_qc(&parsed("AlleleFrequencyQC", args)?)
 }
 
 fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
