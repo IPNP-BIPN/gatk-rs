@@ -6208,6 +6208,238 @@
         "false",
         "true"
       ]
+    },
+    "Funcotator": {
+      "$why": [
+        "funco_variants.vcf is eighteen SNPs over a 6 kb chr1 of seeded bases (funco_ref.fasta) holding two",
+        "genes: ALPHA on + (a coding transcript of two exons with UTRs, start and stop codons, and a one-exon",
+        "lncRNA) and BETA on - (its mirror, and a transcript tagged MANE_Select that is not basic). The",
+        "records sit in every region the factory tells apart: both flanks, the 5' UTR, the start codon, the",
+        "CDS (a multiallelic site among them), the splice-site windows either side of an exon end, the",
+        "intron, the stop codon, the 3' UTR and the gaps between genes; one carries an INFO field and one is",
+        "filtered. funco_annotated.vcf is the same records under a `Funcotator Version` header line, which",
+        "is refused unless --reannotate-vcf. reference.fasta's chr1 has another length, which the",
+        "dictionary check refuses. funco_ds holds GENCODE at version 28 under hg38 and hg19 behind an",
+        "old-style manifest line the reader does not parse; funco_ds43 version 43 under hg38 alone behind a",
+        "new-style line, whose swallowed date check logs an exception; funco_ds27 version 27 with no",
+        "manifest. The MAF renderer aliases all three versions and rewrites chr1 as 1 under hg19. The two",
+        "flank sizes, the splice window, the transcript list (a file of IDs, or one ID), the severity file",
+        "and the annotation defaults and overrides each move at least one record's funcotation. Reads and",
+        "the master dictionary are held out (the tool reads neither), the on-the-fly index and the",
+        "command-line header line are held false because both carry the time of the run, and",
+        "--variant-output-filtering is held at its default as it is for FilterFuncotations. The MAF",
+        "header's `Date` is masked by run_array.py."
+      ],
+      "--variant": [
+        "/work/fixtures/funco_variants.vcf",
+        "/work/fixtures/funco_annotated.vcf"
+      ],
+      "--reference": [
+        "/work/fixtures/funco_ref.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--data-sources-path": [
+        "/work/fixtures/funco_ds",
+        "/work/fixtures/funco_ds43",
+        "/work/fixtures/funco_ds27"
+      ],
+      "--ref-version": [
+        "hg38",
+        "hg19"
+      ],
+      "--output-file-format": [
+        "VCF",
+        "MAF",
+        "SEG"
+      ],
+      "--output": [
+        "/work/out/funcotated.vcf",
+        "/work/out/funcotated.vcf.gz"
+      ],
+      "--annotation-default": [
+        "null",
+        "Center:Broad",
+        "MyNote:hello"
+      ],
+      "--annotation-override": [
+        "null",
+        "Gencode_28_hugoSymbol:OVERRIDDEN",
+        "Extra:x"
+      ],
+      "--exclude-field": [
+        "null",
+        "Gencode_28_referenceContext",
+        "gc_content"
+      ],
+      "--transcript-selection-mode": [
+        "CANONICAL",
+        "BEST_EFFECT",
+        "ALL"
+      ],
+      "--transcript-list": [
+        "null",
+        "/work/fixtures/funco_transcripts.list",
+        "ENST00000000002"
+      ],
+      "--five-prime-flank-size": [
+        "5000",
+        "100"
+      ],
+      "--three-prime-flank-size": [
+        "0",
+        "1000"
+      ],
+      "--splice-site-window-size": [
+        "2",
+        "0",
+        "5"
+      ],
+      "--custom-variant-classification-order": [
+        "null",
+        "/work/fixtures/funco_severity.tsv"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:1000-2000"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1450-1560"
+      ],
+      "--variant-output-filtering": [
+        "ANYWHERE"
+      ],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--min-num-bases-for-segment-funcotation": [
+        "150",
+        "100"
+      ],
+      "--lookahead-cache-bp": [
+        "100000",
+        "0"
+      ]
+    },
+    "FuncotateSegments": {
+      "$why": [
+        "funco_segments.seg is three segments over the Funcotator corpus's two genes: one from ALPHA's",
+        "flank into its intron, one from ALPHA's first exon into BETA's, and one over neither;",
+        "funco_segments_alt.seg names its columns another way (chr, start, end, sample, Segment_Call) with",
+        "a call the converter does not know; funco_segments_short.seg holds a segment of 101 bases, which",
+        "the gene list refuses at the default minimum and accepts at 50. The folders, versions and",
+        "references are Funcotator's; only funco_ds and funco_ds27 have hg19. VCF output refuses a",
+        "segment's undeclared INFO keys unless --lenient. -L is a refusal, because a segment file has no",
+        "index, and ALL is refused before any segment is read. Reads and the master dictionary are held",
+        "out, and the index and command-line line held false for the reason Funcotator's are. The MAF",
+        "header's `Date` is masked by run_array.py.",
+        "--exclude-intervals is held out: any interval argument makes the unindexed segment file be",
+        "queried and refused with the message -L already measures, so its rows would repeat that refusal."
+      ],
+      "--segments": [
+        "/work/fixtures/funco_segments.seg",
+        "/work/fixtures/funco_segments_alt.seg",
+        "/work/fixtures/funco_segments_short.seg"
+      ],
+      "--reference": [
+        "/work/fixtures/funco_ref.fasta",
+        "/work/fixtures/reference.fasta"
+      ],
+      "--data-sources-path": [
+        "/work/fixtures/funco_ds",
+        "/work/fixtures/funco_ds43",
+        "/work/fixtures/funco_ds27"
+      ],
+      "--ref-version": [
+        "hg38",
+        "hg19"
+      ],
+      "--output-file-format": [
+        "SEG",
+        "MAF",
+        "VCF"
+      ],
+      "--output": [
+        "/work/out/funcotated.seg",
+        "/work/out/funcotated.tsv"
+      ],
+      "--alias-to-key-mapping": [
+        "CALL:Segment_Call",
+        "null"
+      ],
+      "--annotation-default": [
+        "null",
+        "build:hg38",
+        "MyNote:hello"
+      ],
+      "--annotation-override": [
+        "null",
+        "Sample:S0",
+        "Extra:x"
+      ],
+      "--exclude-field": [
+        "null",
+        "Segment_Mean",
+        "gc_content"
+      ],
+      "--transcript-selection-mode": [
+        "CANONICAL",
+        "BEST_EFFECT",
+        "ALL"
+      ],
+      "--transcript-list": [
+        "null",
+        "/work/fixtures/funco_transcripts.list"
+      ],
+      "--custom-variant-classification-order": [
+        "null",
+        "/work/fixtures/funco_severity.tsv"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:1000-2000"
+      ],
+      "--exclude-intervals": [],
+      "--sequence-dictionary": [],
+      "--input": [],
+      "--read-index": [],
+      "--read-filter-tag-op": [],
+      "--keep-reverse-strand-only": [],
+      "--dont-require-soft-clips-both-ends": [],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--min-num-bases-for-segment-funcotation": [
+        "150",
+        "50"
+      ],
+      "--lookahead-cache-bp": [
+        "100000",
+        "0"
+      ],
+      "--splice-site-window-size": [
+        "2",
+        "0",
+        "5"
+      ]
     }
   },
   "constraints": [
@@ -6351,6 +6583,17 @@
         "--overwrite-output-file": "true"
       },
       "why": "A row that picks a data source kind and a reference reaches the gs:// bucket once it gets past the existing-destination check, and the oracle has no network."
+    },
+    {
+      "tools": [
+        "Funcotator",
+        "FuncotateSegments"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "The same filter enabled and disabled is refused while the command line is parsed, before the tool runs; the refusal is the plugin-validation suite's."
     }
   ],
   "exclude": {

@@ -23,7 +23,7 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 
 mod funcotator;
-pub use funcotator::funcotator_data_source_downloader;
+pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_downloader};
 
 /// What a runner answers: what the tool returned, or what it threw.
 ///

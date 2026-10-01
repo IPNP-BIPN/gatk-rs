@@ -624,6 +624,7 @@ jobs:
             --tool ConvertHeaderlessHadoopBamShardToBam \
             --tool VCFComparator \
             --tool FuncotatorDataSourceDownloader \
+            --tool FuncotateSegments --tool Funcotator \
             --port target/release/gatk-rs --corpus-dir /tmp/coverage-corpus
 
       - name: The committed measurement is the one this run produces
