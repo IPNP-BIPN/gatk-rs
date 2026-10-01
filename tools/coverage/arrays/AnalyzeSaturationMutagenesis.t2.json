@@ -4,8 +4,8 @@
   "t": 2,
   "numeric_policy": "strict",
   "arguments_total": 54,
-  "arguments_in_array": 43,
-  "arguments_excluded": 11,
+  "arguments_in_array": 42,
+  "arguments_excluded": 12,
   "excluded": [
     {
       "argument": "--arguments_file",
@@ -83,11 +83,18 @@
       "reason": "excluded by the repository: prints the version and returns, same reason",
       "held_at": null,
       "source": "none"
+    },
+    {
+      "argument": "--write-rejected-reads",
+      "type": "boolean",
+      "reason": "only one value available (fixture[0])",
+      "held_at": "false",
+      "source": "fixture"
     }
   ],
   "rows": 21,
-  "tuples_total": 3781,
-  "tuples_covered": 3781,
+  "tuples_total": 3609,
+  "tuples_covered": 3609,
   "tuples_forbidden": 0,
   "constraint_notes": [],
   "coverage": 1.0,
@@ -136,8 +143,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -181,8 +187,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -229,8 +234,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -274,8 +278,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -322,8 +325,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -367,8 +369,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -415,8 +416,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -460,8 +460,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -508,8 +507,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -553,8 +551,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -601,8 +598,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -646,8 +642,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -694,8 +689,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=false",
@@ -739,8 +733,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -787,8 +780,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -832,8 +824,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -880,8 +871,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -925,8 +915,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -973,8 +962,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1018,8 +1006,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1066,8 +1053,7 @@
         "--sequence-dictionary": "fixture[1]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[1]",
-        "--use-jdk-deflater": "false",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "false"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1111,8 +1097,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon_plus.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp2",
-        "--use-jdk-deflater=false",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=false"
       ]
     },
     {
@@ -1159,8 +1144,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1204,8 +1188,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1252,8 +1235,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "false",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "false"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1297,8 +1279,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=false",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=false"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1345,8 +1326,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1390,8 +1370,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1438,8 +1417,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1483,8 +1461,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1531,8 +1508,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1576,8 +1552,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1610,7 +1585,7 @@
         "--max-variants-per-shard": "default",
         "--min-alt-length": "fixture[1]",
         "--min-flanking-length": "fixture[1]",
-        "--min-length": "fixture[1]",
+        "--min-length": "fixture[0]",
         "--min-mapq": "fixture[1]",
         "--min-q": "fixture[0]",
         "--min-variant-obs": "fixture[0]",
@@ -1624,8 +1599,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1655,7 +1629,7 @@
         "--max-variants-per-shard=0",
         "--min-alt-length=40",
         "--min-flanking-length=5",
-        "--min-length=30",
+        "--min-length=15",
         "--min-mapq=30",
         "--min-q=30",
         "--min-variant-obs=3",
@@ -1669,8 +1643,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1717,8 +1690,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1762,8 +1734,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1810,8 +1781,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1855,8 +1825,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1903,8 +1872,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -1948,8 +1916,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     },
     {
@@ -1996,8 +1963,7 @@
         "--sequence-dictionary": "fixture[0]",
         "--sites-only-vcf-output": "true",
         "--tmp-dir": "fixture[0]",
-        "--use-jdk-deflater": "true",
-        "--write-rejected-reads": "true"
+        "--use-jdk-deflater": "true"
       },
       "arguments": [
         "--add-output-sam-program-record=true",
@@ -2041,8 +2007,7 @@
         "--sequence-dictionary=/work/fixtures/amplicon.dict",
         "--sites-only-vcf-output=true",
         "--tmp-dir=/work/tmp",
-        "--use-jdk-deflater=true",
-        "--write-rejected-reads=true"
+        "--use-jdk-deflater=true"
       ]
     }
   ]

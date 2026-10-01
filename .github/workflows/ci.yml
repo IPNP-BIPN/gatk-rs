@@ -620,6 +620,7 @@ jobs:
             --tool CombineGVCFs \
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
+            --tool GroundTruthScorer \
             --tool AlleleFrequencyQC \
             --tool AnalyzeSaturationMutagenesis --tool LocalAssembler \
             --tool BwaMemIndexImageCreator \

@@ -1105,6 +1105,133 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * What GroundTruthScorer reads, over mutect_ref.fasta. gt.bam holds Ultima reads under the two
+     * flow orders of flow.bam, carrying substitutions at shared sites, one insertion and one
+     * deletion (cycle-skip material), a left, a right and a two-sided soft clip, reverse reads,
+     * and an rq tag that is a float on some reads and an integer on one. gt_prior.csv is a genome
+     * prior, one row per base with a hundred and two columns; gt_prior_short.csv has too few
+     * columns. gt_features.vcf (indexed) holds SNPs at the substitution sites and elsewhere, so the
+     * feature filter keeps some reads and drops others.
+     */
+    static void groundTruthFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", bases.length()));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord tgca = new SAMReadGroupRecord("rgU");
+        tgca.setSample("flow");
+        tgca.setPlatform("ULTIMA");
+        tgca.setFlowOrder("TGCA");
+        header.addReadGroup(tgca);
+        final SAMReadGroupRecord tacg = new SAMReadGroupRecord("rgV");
+        tacg.setSample("flow");
+        tacg.setPlatform("ULTIMA");
+        tacg.setFlowOrder("TACG");
+        tacg.setAttribute("mc", "8");
+        header.addReadGroup(tacg);
+        final int[] sites = {612, 640, 677, 703, 741, 779, 820};
+        final java.util.Random random = new java.util.Random(20260930L);
+        final List<SAMRecord> records = new ArrayList<>();
+        for (int n = 0; n < 36; n++) {
+            final int start = 600 + n * 7;
+            final int length = 36 + random.nextInt(20);
+            final StringBuilder read = new StringBuilder(bases.substring(start - 1, start - 1 + length));
+            for (final int site : sites) {
+                if (site >= start + 3 && site < start + length - 3 && random.nextInt(3) == 0) {
+                    final int at = site - start;
+                    final char was = read.charAt(at);
+                    read.setCharAt(at, was == 'A' ? 'C' : was == 'C' ? 'G' : was == 'G' ? 'T' : 'A');
+                }
+            }
+            String cigar = length + "M";
+            String sequence = read.toString();
+            int alignmentStart = start;
+            if (n == 3) {
+                cigar = "4S" + (length - 4) + "M";
+                alignmentStart = start + 4;
+            } else if (n == 5) {
+                cigar = (length - 6) + "M6S";
+            } else if (n == 8) {
+                cigar = "3S" + (length - 6) + "M3S";
+                alignmentStart = start + 3;
+            } else if (n == 11) {
+                sequence = read.substring(0, 15) + "GG" + read.substring(15);
+                cigar = "15M2I" + (length - 15) + "M";
+            } else if (n == 14) {
+                sequence = read.substring(0, 12) + read.substring(15);
+                cigar = "12M3D" + (length - 15) + "M";
+            } else if (n == 17) {
+                cigar = "5S" + (length - 5) + "M";
+                alignmentStart = start + 5;
+            }
+            final SAMRecord record = new SAMRecord(header);
+            record.setReadName("G:" + n);
+            record.setReferenceName("chr1");
+            record.setAlignmentStart(alignmentStart);
+            record.setCigarString(cigar);
+            record.setReadString(sequence);
+            final int total = sequence.length();
+            final byte[] quals = new byte[total];
+            final byte[] tp = new byte[total];
+            for (int i = 0; i < total; i++) {
+                final int roll = random.nextInt(10);
+                tp[i] = (byte) (roll < 6 ? 0 : roll < 8 ? 1 : -1);
+                quals[i] = (byte) (tp[i] == 0 ? 25 + random.nextInt(16) : 5 + random.nextInt(20));
+            }
+            record.setBaseQualities(quals);
+            record.setMappingQuality(n % 5 == 0 ? 20 : 60);
+            record.setReadNegativeStrandFlag(n % 3 == 1);
+            record.setAttribute("RG", n % 4 == 2 ? "rgV" : "rgU");
+            record.setAttribute("tp", tp);
+            if (n % 4 == 1) {
+                record.setAttribute("rq", 0.9f + random.nextInt(1000) / 10000f);
+            } else if (n == 6) {
+                record.setAttribute("rq", 1);
+            }
+            records.add(record);
+        }
+        records.sort(Comparator.comparingInt(SAMRecord::getAlignmentStart));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
+                             dir.resolve("gt.bam").toFile())) {
+            records.forEach(writer::addAlignment);
+        }
+        final StringBuilder prior = new StringBuilder();
+        final StringBuilder shortPrior = new StringBuilder();
+        for (final char base : new char[] {'T', 'G', 'C', 'A'}) {
+            prior.append(base);
+            shortPrior.append(base);
+            for (int i = 0; i <= 101; i++) {
+                final long count = i == 0 ? 400 + random.nextInt(200) : Math.max(1, 1000000 >> (2 * i)) + random.nextInt(50);
+                prior.append(',').append(count);
+                if (i < 30) {
+                    shortPrior.append(',').append(count);
+                }
+            }
+            prior.append('\n');
+            shortPrior.append('\n');
+        }
+        Files.writeString(dir.resolve("gt_prior.csv"), prior.toString(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("gt_prior_short.csv"), shortPrior.toString(), StandardCharsets.UTF_8);
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n##contig=<ID=chr1,length="
+                + bases.length() + ">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        for (final int site : new int[] {640, 703, 760, 820}) {
+            final char ref = bases.charAt(site - 1);
+            vcf.append("chr1\t").append(site).append("\t.\t").append(ref).append('\t')
+                    .append(ref == 'A' ? 'C' : 'A').append("\t50\tPASS\t.\n");
+        }
+        Files.writeString(dir.resolve("gt_features.vcf"), vcf.toString(), StandardCharsets.UTF_8);
+        new org.broadinstitute.hellbender.tools.IndexFeatureFile()
+                .instanceMain(new String[] {"-I", dir.resolve("gt_features.vcf").toString()});
+    }
+
     static void geneExpressionFixtures(final Path dir) throws Exception {
         final String gff = "##gff-version 3\n"
                 + "chr1\ttest\tgene\t100\t900\t.\t+\t.\tID=gene1;Name=GeneOne\n"
@@ -2476,6 +2603,7 @@ public class MakeFixtures {
         geneExpressionFixtures(dir);
         flowFixtures(dir);
         flowSnvFixtures(dir);
+        groundTruthFixtures(dir);
         // The archives `LearnReadOrientationModel` reads, written by the reference's own
         // `CollectF1R2Counts`: the tumour/normal pair over the random reference, two samples in one
         // archive, and the one-sample F1R2 corpus over the ACGT repeat.
