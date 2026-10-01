@@ -3,8 +3,9 @@
 //!
 //! Golden from `tools/readfilter-conformance/StructuralVariantDiscovererDump.java`.
 //!
-//! The VCF's annotations beyond the contig names are in the golden and are not reproduced: they
-//! come from the evidence classes, which are not ported.
+//! The golden's reads carry no bases, and its contigs are `ACGT` repeated, which is what the
+//! duplication's `SEQ_ALT_HAPLOTYPE` reads back. The REF column comes from a reference the golden
+//! does not carry either, so every column but that one is compared.
 //!
 //! # What this suite is for
 //!
@@ -16,9 +17,10 @@
 
 use gatk_corpus as corpus;
 use gatk_tools::structural_variant_discoverer::{
-    check_sort_order, discover, passes_read_filters, signature, Alignment, DiscovererError,
-    Signature, SortOrder,
+    check_sort_order, discover, passes_default_read_filters, write_vcf, DiscoveryArguments,
+    SortOrder, NOT_QUERYNAME_SORTED,
 };
+use gatk_tools::sv_contig_alignments::{Cigar, ContigRead, Dictionary, Interval, SvError};
 
 fn golden() -> String {
     corpus::read_golden(
@@ -48,8 +50,14 @@ fn refusal(text: &str, label: &str) -> (String, String) {
     (class.to_string(), message.to_string())
 }
 
+/// One line of the golden's reads: the record and its two filter flags.
+struct Line {
+    read: ContigRead,
+    secondary: bool,
+}
+
 /// The reads the golden reports, in the queryname order the file was written in.
-fn alignments(text: &str) -> Vec<Alignment> {
+fn lines(text: &str) -> Vec<Line> {
     section(text, "bam", "reads")
         .lines()
         .filter(|line| !line.is_empty())
@@ -57,63 +65,86 @@ fn alignments(text: &str) -> Vec<Alignment> {
             let columns: Vec<&str> = line.split('\t').collect();
             let flags: u32 = columns[1].parse().expect("flags");
             let start: i32 = columns[3].parse().expect("a start");
-            // Every cigar in this fixture is `<n>M` with optional soft clips, so the reference span
-            // is the M run alone.
-            let matched: i32 = {
-                let cigar = columns[5];
-                let mut length = 0;
-                let mut digits = String::new();
-                for character in cigar.chars() {
-                    if character.is_ascii_digit() {
-                        digits.push(character);
-                    } else {
-                        if character == 'M' {
-                            length += digits.parse::<i32>().expect("a length");
-                        }
-                        digits.clear();
-                    }
-                }
-                length
-            };
-            Alignment {
-                contig_name: columns[0].to_string(),
-                reference: columns[2].to_string(),
-                start,
-                end: start + matched - 1,
-                reverse_strand: flags & 0x10 != 0,
-                supplementary: flags & 0x800 != 0,
+            let cigar = Cigar::parse(columns[5]).expect("a cigar");
+            Line {
+                read: ContigRead {
+                    name: columns[0].to_string(),
+                    unmapped: flags & 0x4 != 0,
+                    reverse_strand: flags & 0x10 != 0,
+                    supplementary: flags & 0x800 != 0,
+                    contig: columns[2].to_string(),
+                    start,
+                    end: start + cigar.reference_length() - 1,
+                    mapping_quality: columns[4].parse().expect("a mapping quality"),
+                    bases: "ACGT".repeat(cigar.read_length() as usize / 4).into_bytes(),
+                    cigar,
+                    nm: None,
+                    alignment_score: None,
+                },
                 secondary: flags & 0x100 != 0,
-                unmapped: flags & 0x4 != 0,
-                mapping_quality: columns[4].parse().expect("a mapping quality"),
             }
         })
         .collect()
 }
 
-/// The variants one run wrote, as position, id and alternate.
-fn measured(text: &str, label: &str) -> Vec<(i32, String, String)> {
-    section(text, "out", label)
-        .lines()
-        .filter(|line| !line.starts_with("#CHROM") && !line.is_empty())
+/// The reads that reach `apply`, through the tool's two default filters.
+fn applied(lines: &[Line]) -> Vec<ContigRead> {
+    lines
+        .iter()
+        .filter(|line| passes_default_read_filters(line.read.unmapped, line.secondary))
+        .map(|line| line.read.clone())
+        .collect()
+}
+
+fn dictionary() -> Dictionary {
+    Dictionary {
+        names: vec!["chr1".to_string()],
+        lengths: vec![100_000],
+        assemblies: vec![None],
+    }
+}
+
+/// The records the tool writes for these reads, as the VCF body with the REF column blanked.
+fn called(reads: &[ContigRead]) -> Vec<String> {
+    let dictionary = dictionary();
+    let canonical = dictionary.names.clone();
+    let mut reference = |_: &Interval| -> Result<Vec<u8>, SvError> { Ok(b"N".to_vec()) };
+    let variants = discover(
+        reads,
+        &dictionary,
+        &canonical,
+        None,
+        &DiscoveryArguments::default(),
+        &mut reference,
+    )
+    .expect("the golden's reads are all interpreted");
+    body(&write_vcf(&variants, &dictionary, &[]))
+}
+
+/// The record lines of a VCF, with the REF column blanked.
+fn body(vcf: &str) -> Vec<String> {
+    vcf.lines()
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
         .map(|line| {
-            let columns: Vec<&str> = line.split('\t').collect();
-            (
-                columns[1].parse().expect("a position"),
-                columns[2].to_string(),
-                columns[4].to_string(),
-            )
+            let mut columns: Vec<&str> = line.split('\t').collect();
+            columns[3] = "";
+            columns.join("\t")
         })
+        .collect()
+}
+
+fn of(all: &[Line], name: &str) -> Vec<ContigRead> {
+    applied(all)
+        .into_iter()
+        .filter(|read| read.name == name)
         .collect()
 }
 
 #[test]
 fn every_call_matches_the_golden() {
     let text = golden();
-    let produced: Vec<(i32, String, String)> = discover(&alignments(&text))
-        .into_iter()
-        .map(|variant| (variant.start, variant.id, variant.alternate))
-        .collect();
-    assert_eq!(produced, measured(&text, "default"));
+    let produced = called(&applied(&lines(&text)));
+    assert_eq!(produced, body(&section(&text, "out", "default")));
     assert_eq!(produced.len(), 2, "two of the six contigs call anything");
 }
 
@@ -121,120 +152,87 @@ fn every_call_matches_the_golden() {
 #[test]
 fn a_gap_is_a_deletion_and_an_overlap_a_duplication() {
     let text = golden();
-    let all = alignments(&text);
-    let of = |name: &str| -> Vec<Alignment> {
-        all.iter()
-            .filter(|alignment| alignment.contig_name == name)
-            .cloned()
-            .collect()
-    };
-    let deletion = of("ctg-del");
-    assert_eq!(deletion.len(), 2);
-    assert_eq!(
-        signature(&deletion),
-        Signature::Deletion {
-            start: 10099,
-            end: 10599
-        }
-    );
-    let duplication = of("ctg-overlap");
-    assert_eq!(duplication.len(), 2);
-    assert!(
-        matches!(signature(&duplication), Signature::TandemDuplication { .. }),
-        "{:?}",
-        signature(&duplication)
-    );
-
-    // And the golden names them.
-    let calls = measured(&text, "default");
-    assert_eq!(calls[0].1, "DEL_chr1_10099_10599");
-    assert_eq!(calls[0].2, "<DEL>");
-    assert_eq!(calls[1].2, "<DUP>");
-    assert!(calls[1].1.starts_with("INS-DUPLICATION-TANDEM-EXPANSION_"));
+    let all = lines(&text);
+    let deletion = called(&of(&all, "ctg-del"));
+    assert_eq!(deletion.len(), 1);
+    let columns: Vec<&str> = deletion[0].split('\t').collect();
+    assert_eq!(columns[1], "10099");
+    assert_eq!(columns[2], "DEL_chr1_10099_10599");
+    assert_eq!(columns[4], "<DEL>");
+    let duplication = called(&of(&all, "ctg-overlap"));
+    assert_eq!(duplication.len(), 1);
+    let columns: Vec<&str> = duplication[0].split('\t').collect();
+    assert_eq!(columns[4], "<DUP>");
+    assert!(columns[2].starts_with("INS-DUPLICATION-TANDEM-EXPANSION_"));
 }
 
-/// A strand flip alone is not a signature.
+/// A strand flip alone is not a signature: the reverse-strand piece of `ctg-inv` claims the same
+/// contig bases as the forward one, so it is dropped as contained, and nothing is left to pair.
 #[test]
 fn a_strand_flip_produces_nothing() {
     let text = golden();
-    let all = alignments(&text);
-    let inverted: Vec<Alignment> = all
-        .iter()
-        .filter(|alignment| alignment.contig_name == "ctg-inv")
-        .cloned()
-        .collect();
+    let all = lines(&text);
+    let inverted = of(&all, "ctg-inv");
     assert_eq!(inverted.len(), 2, "it really has two pieces");
     assert_ne!(
         inverted[0].reverse_strand, inverted[1].reverse_strand,
         "and they really are on different strands"
     );
-    // The same geometry on ONE strand would have been a deletion, so the strand is the only
-    // difference.
-    let same_strand: Vec<Alignment> = inverted
+    assert!(called(&inverted).is_empty());
+    // The same geometry on ONE strand is a deletion, so the strand is the only difference.
+    let same_strand: Vec<ContigRead> = inverted
         .iter()
-        .map(|alignment| Alignment {
+        .map(|read| ContigRead {
             reverse_strand: false,
-            ..alignment.clone()
+            ..read.clone()
         })
         .collect();
-    assert!(matches!(
-        signature(&same_strand),
-        Signature::Deletion { .. }
-    ));
-    assert_eq!(signature(&inverted), Signature::None);
-    // And nothing at 20000 reaches the output.
-    assert!(!measured(&text, "default")
-        .iter()
-        .any(|(start, ..)| (20000..21000).contains(start)));
+    let deletion = called(&same_strand);
+    assert_eq!(deletion.len(), 1);
+    assert!(deletion[0].contains("<DEL>"));
 }
 
 /// A lone alignment, a secondary one and an unmapped one all produce nothing.
 #[test]
 fn three_kinds_of_contig_produce_nothing() {
     let text = golden();
-    let all = alignments(&text);
-    let of = |name: &str| -> Vec<Alignment> {
-        all.iter()
-            .filter(|alignment| alignment.contig_name == name)
-            .cloned()
-            .collect()
-    };
-    assert_eq!(signature(&of("ctg-single")), Signature::None);
-    assert_eq!(of("ctg-single").len(), 1, "one alignment, not two");
-
-    let secondary = of("ctg-secondary");
-    assert_eq!(secondary.len(), 1);
-    assert!(!passes_read_filters(&secondary[0]));
-    assert_eq!(signature(&secondary), Signature::None);
-
-    let unmapped = of("ctg-unmapped");
-    assert_eq!(unmapped.len(), 1);
-    assert!(!passes_read_filters(&unmapped[0]));
-    assert_eq!(signature(&unmapped), Signature::None);
-
-    // The two deletion pieces pass the filters, so the filters are what removes the others.
-    for alignment in of("ctg-del") {
-        assert!(passes_read_filters(&alignment));
-    }
-    // None of the three reaches the output.
-    for start in [30000, 50000, 60000] {
-        assert!(!measured(&text, "default")
-            .iter()
-            .any(|(at, ..)| (start..start + 1000).contains(at)));
-    }
+    let all = lines(&text);
+    let single = of(&all, "ctg-single");
+    assert_eq!(single.len(), 1, "one alignment, not two");
+    assert!(called(&single).is_empty());
+    // The filters are what remove the other two, before the tool sees them.
+    assert!(of(&all, "ctg-secondary").is_empty());
+    assert!(of(&all, "ctg-unmapped").is_empty());
+    let secondary = all
+        .iter()
+        .find(|line| line.read.name == "ctg-secondary")
+        .expect("the golden carries it");
+    assert!(!passes_default_read_filters(
+        secondary.read.unmapped,
+        secondary.secondary
+    ));
+    let unmapped = all
+        .iter()
+        .find(|line| line.read.name == "ctg-unmapped")
+        .expect("the golden carries it");
+    assert!(!passes_default_read_filters(
+        unmapped.read.unmapped,
+        unmapped.secondary
+    ));
+    // And the deletion's two pieces pass them.
+    assert_eq!(of(&all, "ctg-del").len(), 2);
 }
 
 /// Each call says which contig made it.
 #[test]
 fn the_contig_name_is_carried_onto_the_call() {
     let text = golden();
-    let calls = discover(&alignments(&text));
-    assert_eq!(calls[0].contig_names, vec!["ctg-del".to_string()]);
-    assert_eq!(calls[1].contig_names, vec!["ctg-overlap".to_string()]);
-    // The golden carries the same names in CTG_NAMES.
-    let body = section(&text, "out", "default");
-    assert!(body.contains("CTG_NAMES=ctg-del"));
-    assert!(body.contains("CTG_NAMES=ctg-overlap"));
+    let calls = called(&applied(&lines(&text)));
+    assert!(calls[0].contains("CTG_NAMES=ctg-del;"));
+    assert!(calls[1].contains("CTG_NAMES=ctg-overlap;"));
+    let golden_body = section(&text, "out", "default");
+    assert!(golden_body.contains("CTG_NAMES=ctg-del"));
+    assert!(golden_body.contains("CTG_NAMES=ctg-overlap"));
 }
 
 /// The tool walks consecutive records of one name, so anything else is refused.
@@ -247,12 +245,13 @@ fn a_coordinate_sorted_input_is_refused() {
         "org.broadinstitute.hellbender.exceptions.UserException"
     );
     let produced = check_sort_order(SortOrder::Coordinate).expect_err("coordinate order");
-    assert_eq!(produced, DiscovererError::NotQuerynameSorted);
-    assert_eq!(produced.message(), message);
+    assert_eq!(produced.class, class);
+    assert_eq!(produced.message, message);
+    assert_eq!(NOT_QUERYNAME_SORTED, message);
     assert!(check_sort_order(SortOrder::Queryname).is_ok());
     // Unsorted is refused too, for the same reason.
     assert_eq!(
         check_sort_order(SortOrder::Unsorted).expect_err("unsorted"),
-        DiscovererError::NotQuerynameSorted
+        produced
     );
 }

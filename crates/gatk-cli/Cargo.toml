@@ -31,6 +31,8 @@ htsjdk-cram.workspace = true
 # same file: the dictionary is properties and the file's own stats are left at zero.
 htsjdk-tribble.workspace = true
 htsjdk-vcf.workspace = true
+# FuncotatorDataSourceDownloader's --validate-integrity.
+sha2.workspace = true
 
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }

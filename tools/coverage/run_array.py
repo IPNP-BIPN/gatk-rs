@@ -281,6 +281,9 @@ def traversals_unordered(raw):
 
 
 STARTED_ON = re.compile(r"^# Started on: .*$", re.MULTILINE)
+# `MafOutputRenderer.writeHeader` stamps the header with `new Date()` through the pattern
+# `yyyymmdd'T'hhmmss`, which is the wall clock again (the `mm` is minutes, not the month).
+MAF_DATE = re.compile(r"^(##  Funcotator \S+ \| Date )\d{8}T\d{6}( \| )", re.MULTILINE)
 
 
 def tar_gz_members(raw):
@@ -408,14 +411,15 @@ def histogram_columns_sorted(text):
 
 
 def without_start_time(text):
-    """A metrics file with the one line that is the wall clock taken out.
+    """A metrics file with the one line that is the wall clock taken out, and a MAF's too.
 
     `CommandLineProgram.getMetricsFile` heads every metrics file with the command line and then
     `# Started on: <now>`, so two runs of the reference already differ there. The line is kept and
     its value replaced, which still measures that both sides write it, where, and that everything
     around it is the same; only the time of day is not compared.
     """
-    return STARTED_ON.sub("# Started on: <start time>", text)
+    text = STARTED_ON.sub("# Started on: <start time>", text)
+    return MAF_DATE.sub(r"\g<1><date>\g<2>", text)
 
 
 def first_error(text):

@@ -37,3 +37,5 @@ jmath = { git = "https://github.com/IPNP-BIPN/htsjdk-rs", rev = "44f5eb66d53be5c
 # GatherBamFiles writes a .md5 beside its output, which is the only digest a ported tool computes
 # for itself. htsjdk-bam already pulls this crate in for the same algorithm.
 md-5 = "0.11.0"
+# FuncotatorDataSourceDownloader checks the archive it copied against a SHA-256 sum.
+sha2 = "0.11.0"
