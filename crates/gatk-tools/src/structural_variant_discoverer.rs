@@ -277,7 +277,8 @@ pub fn load_cnv_calls(
             ));
         }
         match calls.iter_mut().find(|other| {
-            (other.contig_index, other.start, other.end) == (call.contig_index, call.start, call.end)
+            (other.contig_index, other.start, other.end)
+                == (call.contig_index, call.start, call.end)
         }) {
             Some(other) => *other = call,
             None => calls.push(call),
@@ -431,7 +432,12 @@ fn evidence_annotations(evidence: &[SimpleChimera]) -> Vec<(&'static str, String
         ),
         (
             "ALIGN_LENGTHS",
-            join(annotations.iter().map(|(_, al, _)| al.to_string()).collect()),
+            join(
+                annotations
+                    .iter()
+                    .map(|(_, al, _)| al.to_string())
+                    .collect(),
+            ),
         ),
         (
             "MAX_ALIGN_LENGTH",
@@ -463,7 +469,9 @@ fn evidence_annotations(evidence: &[SimpleChimera]) -> Vec<(&'static str, String
     let non_canonical: Vec<String> = annotations
         .iter()
         .map(|(.., chimera)| chimera.non_canonical_sa_tag.clone())
-        .filter(|tag| tag != crate::sv_contig_alignments::NO_GOOD_MAPPING_TO_NON_CANONICAL_CHROMOSOME)
+        .filter(|tag| {
+            tag != crate::sv_contig_alignments::NO_GOOD_MAPPING_TO_NON_CANONICAL_CHROMOSOME
+        })
         .collect();
     if !non_canonical.is_empty() {
         attributes.push(("CTG_GOOD_NONCANONICAL_MAPPING", join(non_canonical)));
@@ -504,9 +512,7 @@ fn annotate_with_cnv_calls(
     }
     let annotation: Vec<String> = calls
         .iter()
-        .filter(|call| {
-            call.contig_index == contig && call.start < sv.stop && sv.start < call.end
-        })
+        .filter(|call| call.contig_index == contig && call.start < sv.stop && sv.start < call.end)
         .map(|call| {
             format!(
                 "{}:{}:{}",
@@ -598,7 +604,11 @@ fn filter_merged_variant_list(
 ) -> Result<Vec<VariantRecord>, SvError> {
     let mut kept = Vec::with_capacity(variants.len());
     for mut variant in variants {
-        let sv_type = variant.attributes.get("SVTYPE").cloned().unwrap_or_default();
+        let sv_type = variant
+            .attributes
+            .get("SVTYPE")
+            .cloned()
+            .unwrap_or_default();
         if matches!(sv_type.as_str(), "DEL" | "INS" | "DUP")
             && variant.attribute_as_int("SVLEN", 0).abs() < SIZE_LOWER_BOUND
         {

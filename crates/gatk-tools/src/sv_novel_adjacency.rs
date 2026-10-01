@@ -135,7 +135,9 @@ impl SimpleChimera {
         {
             match strand_switch {
                 StrandSwitch::NoSwitch => lower.forward_strand,
-                StrandSwitch::ForwardToReverse => lower.reference_span.end < higher.reference_span.end,
+                StrandSwitch::ForwardToReverse => {
+                    lower.reference_span.end < higher.reference_span.end
+                }
                 StrandSwitch::ReverseToForward => {
                     lower.reference_span.start < higher.reference_span.start
                 }
@@ -143,7 +145,8 @@ impl SimpleChimera {
         } else if strand_switch == StrandSwitch::NoSwitch {
             lower.forward_strand
         } else {
-            dictionary.compare_contigs(&lower.reference_span.contig, &higher.reference_span.contig)?
+            dictionary
+                .compare_contigs(&lower.reference_span.contig, &higher.reference_span.contig)?
                 == Ordering::Less
         };
         Ok(SimpleChimera {
@@ -365,7 +368,9 @@ pub enum Complication {
 
 /// `Strand.toString` over a list, joined as `DUP_ORIENTATIONS` writes it.
 fn strands(list: &[bool]) -> String {
-    list.iter().map(|&plus| if plus { '+' } else { '-' }).collect()
+    list.iter()
+        .map(|&plus| if plus { '+' } else { '-' })
+        .collect()
 }
 
 impl Complication {
@@ -451,7 +456,12 @@ impl Complication {
                 repeats_on_contig,
                 strands_on_contig,
                 ..
-            } => Some((repeat_unit, repeats_on_ref, repeats_on_contig, strands_on_contig)),
+            } => Some((
+                repeat_unit,
+                repeats_on_ref,
+                repeats_on_contig,
+                strands_on_contig,
+            )),
             _ => None,
         };
         if let Some((unit, on_ref, on_contig, orientations)) = small {
@@ -671,7 +681,10 @@ fn validate_locations(
         ));
     }
     for (one, space) in [(left, ""), (right, " ")] {
-        if dictionary.length(&one.contig).is_some_and(|length| one.end > length) {
+        if dictionary
+            .length(&one.contig)
+            .is_some_and(|length| one.end > length)
+        {
             return Err(SvError::new(
                 SHOULD_NEVER_REACH_HERE,
                 format!("Inferred breakpoint beyond reference sequence length.{space}"),
@@ -909,8 +922,7 @@ fn infer_breakpoints(
             let (lower_cn, higher_cn, unit_length, pseudo_homology) =
                 tandem_repeat_structure(distances.gap_on_ref, distances.gap_on_contig);
             let expansion = distances.gap_on_ref < distances.gap_on_contig;
-            let unit_start =
-                distances.left_ref_end - pseudo_homology - unit_length * lower_cn + 1;
+            let unit_start = distances.left_ref_end - pseudo_homology - unit_length * lower_cn + 1;
             let homology = infer_homology(lower, higher, contig, first_after_second)?;
             let (on_ref, on_contig) = if expansion {
                 (lower_cn, higher_cn)
@@ -935,11 +947,8 @@ fn infer_breakpoints(
                     left_ref.end + unit_length,
                 )?
             };
-            let repeat_unit = Interval::new(
-                &lower_contig,
-                unit_start,
-                unit_start + unit_length - 1,
-            )?;
+            let repeat_unit =
+                Interval::new(&lower_contig, unit_start, unit_start + unit_length - 1)?;
             let complication = Complication::SmallDupImprecise {
                 homology: homology.clone(),
                 inserted: String::new(),
@@ -1046,9 +1055,10 @@ fn infer_breakpoints(
             // `isFirstInPartner`.
             let first_in_partner = match chimera.strand_switch {
                 StrandSwitch::NoSwitch => {
-                    dictionary
-                        .compare_contigs(&lower.reference_span.contig, &higher.reference_span.contig)?
-                        == Ordering::Less
+                    dictionary.compare_contigs(
+                        &lower.reference_span.contig,
+                        &higher.reference_span.contig,
+                    )? == Ordering::Less
                 }
                 _ => chimera.forward_representation,
             };
@@ -1147,9 +1157,11 @@ fn inverted_duplication(
             let walk = if alpha == omega {
                 0
             } else {
-                first
-                    .cigar
-                    .associated_distance_on_read(first.start_in_contig, omega - alpha, false)?
+                first.cigar.associated_distance_on_read(
+                    first.start_in_contig,
+                    omega - alpha,
+                    false,
+                )?
             };
             (
                 first.start_in_contig + walk - 1,
@@ -1157,10 +1169,11 @@ fn inverted_duplication(
                 false,
             )
         } else {
-            let walk =
-                second
-                    .cigar
-                    .associated_distance_on_read(second.end_in_contig, alpha - omega, true)?;
+            let walk = second.cigar.associated_distance_on_read(
+                second.end_in_contig,
+                alpha - omega,
+                true,
+            )?;
             (first.start_in_contig - 1, second.end_in_contig - walk, true)
         }
     } else {
@@ -1169,17 +1182,24 @@ fn inverted_duplication(
             let walk = if alpha == omega {
                 0
             } else {
-                first
-                    .cigar
-                    .associated_distance_on_read(first.start_in_contig, alpha - omega, false)?
+                first.cigar.associated_distance_on_read(
+                    first.start_in_contig,
+                    alpha - omega,
+                    false,
+                )?
             };
             (first.start_in_contig + walk - 1, second.end_in_contig, true)
         } else {
-            let walk =
-                second
-                    .cigar
-                    .associated_distance_on_read(second.end_in_contig, omega - alpha, true)?;
-            (first.start_in_contig - 1, second.end_in_contig - walk, false)
+            let walk = second.cigar.associated_distance_on_read(
+                second.end_in_contig,
+                omega - alpha,
+                true,
+            )?;
+            (
+                first.start_in_contig - 1,
+                second.end_in_contig - walk,
+                false,
+            )
         }
     };
     let mut alt_haplotype = slice(contig, start, end)?.to_vec();
@@ -1573,9 +1593,12 @@ impl NovelAdjacency {
     ) -> Result<SvRecordType, SvError> {
         let base = self.breakend_base(upstream, reference)?;
         let inserted = self.complication.inserted();
-        let inserted = if inserted.is_empty() || self.strand_switch == StrandSwitch::NoSwitch {
-            inserted.to_string()
-        } else if upstream == (self.strand_switch == StrandSwitch::ForwardToReverse) {
+        // Kept as written unless a strand switch puts this breakend on the side that reads the
+        // inserted bases backwards.
+        let kept = inserted.is_empty()
+            || self.strand_switch == StrandSwitch::NoSwitch
+            || upstream == (self.strand_switch == StrandSwitch::ForwardToReverse);
+        let inserted = if kept {
             inserted.to_string()
         } else {
             text(&reverse_complement(inserted.as_bytes()))

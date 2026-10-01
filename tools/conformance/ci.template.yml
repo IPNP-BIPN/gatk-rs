@@ -312,7 +312,7 @@ jobs:
             --tool GroundTruthScorer --tool GroundTruthReadsBuilder \
             --tool AlleleFrequencyQC \
             --tool AnalyzeSaturationMutagenesis --tool LocalAssembler \
-            --tool BwaMemIndexImageCreator \
+            --tool BwaMemIndexImageCreator --tool StructuralVariantDiscoverer \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \

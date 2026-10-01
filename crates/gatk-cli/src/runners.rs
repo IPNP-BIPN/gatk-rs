@@ -799,8 +799,7 @@ fn read_walker_startup_with(
     // find: the reference traversed the whole file and the port refused every row.
     // `hasUserSuppliedIntervals` is `intervalsSpecified`, which an exclusion alone satisfies: an
     // unindexed input given `-XL` and no `-L` is refused the same way.
-    let intervals_specified =
-        intervals_given || !arguments(parser, "exclude-intervals").is_empty();
+    let intervals_specified = intervals_given || !arguments(parser, "exclude-intervals").is_empty();
     if intervals_specified && index.is_none() && sets_traversal_bounds(tool) {
         return Err(Thrown::user(
             "Traversal by intervals was requested but some input files are not indexed.",
@@ -23768,15 +23767,19 @@ pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
         filters,
     } = read_walker_startup(parser, TOOL)?;
     let output = argument(parser, "outputVCFName").ok_or_else(|| {
-        Thrown::command_line("Argument outputVCFName was missing: Argument 'outputVCFName' is required")
+        Thrown::command_line(
+            "Argument outputVCFName was missing: Argument 'outputVCFName' is required",
+        )
     })?;
     let reference_path = argument(parser, "reference").ok_or_else(|| {
         Thrown::command_line("Argument reference was missing: Argument 'reference' is required")
     })?;
 
     // `onTraversalStart`.
-    svd::check_sort_order(svd::SortOrder::from_header_value(header.attributes.get("SO")))
-        .map_err(thrown)?;
+    svd::check_sort_order(svd::SortOrder::from_header_value(
+        header.attributes.get("SO"),
+    ))
+    .map_err(thrown)?;
     let samples: Vec<Option<String>> = header
         .read_groups
         .iter()
@@ -23785,8 +23788,16 @@ pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
     let sample = svd::sample_id(&samples).map_err(thrown)?;
     // `refDict` is the READS' dictionary, which orders the output and writes its contig lines.
     let dictionary = Dictionary {
-        names: header.sequences.iter().map(|record| record.name.clone()).collect(),
-        lengths: header.sequences.iter().map(|record| record.length).collect(),
+        names: header
+            .sequences
+            .iter()
+            .map(|record| record.name.clone())
+            .collect(),
+        lengths: header
+            .sequences
+            .iter()
+            .map(|record| record.length)
+            .collect(),
         assemblies: header
             .sequences
             .iter()
@@ -23872,9 +23883,10 @@ pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
         gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&reference_path))
             .map_err(|error| Thrown::user(format!("{error:?}")))?;
     let mut bases = |window: &Interval| -> Result<Vec<u8>, SvError> {
-        let length = reference.sequence_length(&window.contig).ok_or_else(|| {
-            SvError::new("java.lang.NullPointerException", "")
-        })? as i32;
+        let length = reference
+            .sequence_length(&window.contig)
+            .ok_or_else(|| SvError::new("java.lang.NullPointerException", ""))?
+            as i32;
         let trimmed = Interval::new(&window.contig, window.start.max(1), window.end.min(length))?;
         reference
             .query(&trimmed.contig, trimmed.start, trimmed.end)
@@ -23894,13 +23906,15 @@ pub fn structural_variant_discoverer(parser: &Parser) -> Outcome {
         .iter()
         .map(|line| line.render())
         .collect();
-    std::fs::write(&output, svd::write_vcf(&variants, &dictionary, &default_lines)).map_err(
-        |_| {
-            Thrown::non_user(
-                "org.broadinstitute.hellbender.exceptions.GATKException",
-                "Could not create output file",
-            )
-        },
-    )?;
+    std::fs::write(
+        &output,
+        svd::write_vcf(&variants, &dictionary, &default_lines),
+    )
+    .map_err(|_| {
+        Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "Could not create output file",
+        )
+    })?;
     Ok(None)
 }

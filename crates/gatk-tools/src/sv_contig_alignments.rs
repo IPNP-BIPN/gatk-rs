@@ -469,7 +469,8 @@ impl AlignmentInterval {
             read.cigar.clone()
         };
         let start_in_contig = 1 + cigar.count_clipped_bases(true)?;
-        let end_in_contig = cigar.count_unclipped_read_bases() - cigar.count_clipped_bases(false)?;
+        let end_in_contig =
+            cigar.count_unclipped_read_bases() - cigar.count_clipped_bases(false)?;
         Ok(AlignmentInterval {
             reference_span: Interval::new(&read.contig, read.start, read.end)?,
             start_in_contig,
@@ -826,7 +827,8 @@ impl AlignedContig {
         let mut not_bad = 0;
         for alignment in &self.alignments {
             if alignment.map_qual > ALIGNMENT_MQ_THRESHOLD {
-                if alignment.contains_gap_of_equal_or_larger_size(STRUCTURAL_VARIANT_SIZE_LOWER_BOUND)
+                if alignment
+                    .contains_gap_of_equal_or_larger_size(STRUCTURAL_VARIANT_SIZE_LOWER_BOUND)
                 {
                     return true;
                 }
@@ -1136,9 +1138,8 @@ fn remove_non_unique_mappings(mappings: GoodAndBadMappings) -> GoodAndBadMapping
     let mut kept = Vec::new();
     for alignment in selected {
         let (front, rear) = lookup(&alignment);
-        let unique = alignment.end_in_contig - alignment.start_in_contig + 1
-            - front.max(0)
-            - rear.max(0);
+        let unique =
+            alignment.end_in_contig - alignment.start_in_contig + 1 - front.max(0) - rear.max(0);
         if unique < ALIGNMENT_LOW_READ_UNIQUENESS_THRESHOLD {
             low.push(alignment);
         } else {
@@ -1223,10 +1224,8 @@ pub fn simple_chimera_with_stitchable_alignments(
     let on_contig = overlap_on_contig(one, two);
     let on_ref = overlap_on_ref_span(one, two);
     if on_contig == 0 && on_ref == 0 {
-        Ok(
-            two.reference_span.start - one.reference_span.end == 1
-                && two.start_in_contig - one.end_in_contig == 1,
-        )
+        Ok(two.reference_span.start - one.reference_span.end == 1
+            && two.start_in_contig - one.end_in_contig == 1)
     } else {
         Ok(on_contig == on_ref)
     }
