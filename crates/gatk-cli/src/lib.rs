@@ -335,6 +335,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CombineSegmentBreakpoints" => Some(run_combine_segment_breakpoints),
         "MergeMutect2CallsWithMC3" => Some(run_merge_mutect2_calls_with_mc3),
         "FilterFuncotations" => Some(run_filter_funcotations),
+        "FuncotatorDataSourceDownloader" => Some(run_funcotator_data_source_downloader),
+        "FuncotateSegments" => Some(run_funcotate_segments),
+        "Funcotator" => Some(run_funcotator),
         "AnalyzeCovariates" => Some(run_analyze_covariates),
         "ASEReadCounter" => Some(run_ase_read_counter),
         "ConvertHeaderlessHadoopBamShardToBam" => {
@@ -400,11 +403,13 @@ pub fn runner(name: &str) -> Option<Runner> {
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
         "VariantAnnotator" => Some(run_variant_annotator),
+        "StructuralVariantDiscoverer" => Some(run_structural_variant_discoverer),
         "AlleleFrequencyQC" => Some(run_allele_frequency_qc),
         "AnalyzeSaturationMutagenesis" => Some(run_analyze_saturation_mutagenesis),
         "LocalAssembler" => Some(run_local_assembler),
         "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         "GroundTruthScorer" => Some(run_ground_truth_scorer),
+        "HaplotypeBasedVariantRecaller" => Some(run_haplotype_based_variant_recaller),
         "GroundTruthReadsBuilder" => Some(run_ground_truth_reads_builder),
         _ => None,
     }
@@ -519,6 +524,10 @@ fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thr
     runners::ground_truth_reads_builder(&parsed("GroundTruthReadsBuilder", args)?)
 }
 
+fn run_haplotype_based_variant_recaller(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::haplotype_based_variant_recaller(&parsed("HaplotypeBasedVariantRecaller", args)?)
+}
+
 fn run_ground_truth_scorer(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::ground_truth_scorer(&parsed("GroundTruthScorer", args)?)
 }
@@ -533,6 +542,10 @@ fn run_variant_eval(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_variant_annotator(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::variant_annotator(&parsed("VariantAnnotator", args)?)
+}
+
+fn run_structural_variant_discoverer(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::structural_variant_discoverer(&parsed("StructuralVariantDiscoverer", args)?)
 }
 
 fn run_local_assembler(args: &[String]) -> Result<Option<String>, Thrown> {
@@ -695,6 +708,18 @@ fn run_merge_mutect2_calls_with_mc3(args: &[String]) -> Result<Option<String>, T
 
 fn run_filter_funcotations(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::filter_funcotations(&parsed("FilterFuncotations", args)?)
+}
+
+fn run_funcotate_segments(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::funcotate_segments(&parsed("FuncotateSegments", args)?)
+}
+
+fn run_funcotator(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::funcotator(&parsed("Funcotator", args)?)
+}
+
+fn run_funcotator_data_source_downloader(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::funcotator_data_source_downloader(&parsed("FuncotatorDataSourceDownloader", args)?)
 }
 
 fn run_analyze_covariates(args: &[String]) -> Result<Option<String>, Thrown> {

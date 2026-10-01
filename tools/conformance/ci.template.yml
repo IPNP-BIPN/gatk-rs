@@ -319,13 +319,16 @@ jobs:
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
             --tool GroundTruthScorer --tool GroundTruthReadsBuilder \
+            --tool HaplotypeBasedVariantRecaller \
             --tool AlleleFrequencyQC \
             --tool AnalyzeSaturationMutagenesis --tool LocalAssembler \
-            --tool BwaMemIndexImageCreator \
+            --tool BwaMemIndexImageCreator --tool StructuralVariantDiscoverer \
             --tool DownsampleByDuplicateSet \
             --tool ASEReadCounter \
             --tool ConvertHeaderlessHadoopBamShardToBam \
             --tool VCFComparator \
+            --tool FuncotatorDataSourceDownloader \
+            --tool FuncotateSegments --tool Funcotator \
             --tool VariantRecalibrator \
             --tool ExtractVariantAnnotations \
             --tool FilterAlignmentArtifacts \
