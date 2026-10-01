@@ -71,26 +71,42 @@ pub fn sub_kernel_matrix<K>(data: &[f64], dimension: usize, kernel: K) -> Vec<Ve
 where
     K: Fn(f64, f64) -> f64,
 {
-    let mut rng = JavaRandom::new(1216);
-    let num_subsample = dimension.min(data.len());
-    let subsample: Vec<f64> = if num_subsample == data.len() {
-        data.to_vec()
-    } else {
-        (0..num_subsample)
-            .map(|_| data[rng.next_int_bound(data.len() as i32) as usize])
-            .collect()
-    };
+    sub_kernel_matrix_of(data, dimension, |a: &f64, b: &f64| kernel(*a, *b))
+}
 
+/// [`sub_kernel_matrix`] over any kind of data point, which is what `KernelSegmenter<DATA>` is:
+/// `ModelSegments` segments points that carry a copy ratio and an allele fraction per sample.
+pub fn sub_kernel_matrix_of<T, K>(data: &[T], dimension: usize, kernel: K) -> Vec<Vec<f64>>
+where
+    K: Fn(&T, &T) -> f64,
+{
+    let subsample = subsample_indices(data.len(), dimension);
+    let num_subsample = subsample.len();
     let mut matrix = vec![vec![0.0; num_subsample]; num_subsample];
     for i in 0..num_subsample {
         for j in 0..i {
-            let value = kernel(subsample[i], subsample[j]);
+            let value = kernel(&data[subsample[i]], &data[subsample[j]]);
             matrix[i][j] = value;
             matrix[j][i] = value;
         }
-        matrix[i][i] = kernel(subsample[i], subsample[i]);
+        matrix[i][i] = kernel(&data[subsample[i]], &data[subsample[i]]);
     }
     matrix
+}
+
+/// The indices of the subsampled points: all of them in order when the dimension reaches the
+/// data size, else `rng.nextInt(size)` drawn once per point, with replacement, from
+/// `new Random(1216)`.
+fn subsample_indices(size: usize, dimension: usize) -> Vec<usize> {
+    let mut rng = JavaRandom::new(RANDOM_SEED);
+    let num_subsample = dimension.min(size);
+    if num_subsample == size {
+        (0..size).collect()
+    } else {
+        (0..num_subsample)
+            .map(|_| rng.next_int_bound(size as i32) as usize)
+            .collect()
+    }
 }
 
 /// `KernelSegmenter.EPSILON`, which is not the decomposition's epsilon.
@@ -118,19 +134,20 @@ pub fn reduced_observation_matrix<K>(data: &[f64], dimension: usize, kernel: K) 
 where
     K: Fn(f64, f64) -> f64 + Copy,
 {
-    let num_subsample = dimension.min(data.len());
+    reduced_observation_matrix_of(data, dimension, move |a: &f64, b: &f64| kernel(*a, *b))
+}
+
+/// [`reduced_observation_matrix`] over any kind of data point.
+pub fn reduced_observation_matrix_of<T, K>(data: &[T], dimension: usize, kernel: K) -> Vec<Vec<f64>>
+where
+    K: Fn(&T, &T) -> f64 + Copy,
+{
     // The reference draws the subsample inside this function, from a generator `findChangepoints`
     // made a moment earlier and uses nowhere else, so rebuilding it here draws the same points.
-    let mut rng = JavaRandom::new(RANDOM_SEED);
-    let subsample: Vec<f64> = if num_subsample == data.len() {
-        data.to_vec()
-    } else {
-        (0..num_subsample)
-            .map(|_| data[rng.next_int_bound(data.len() as i32) as usize])
-            .collect()
-    };
+    let subsample = subsample_indices(data.len(), dimension);
+    let num_subsample = subsample.len();
 
-    let sub_kernel = sub_kernel_matrix(data, dimension, kernel);
+    let sub_kernel = sub_kernel_matrix_of(data, dimension, kernel);
     let svd = crate::singular_value_decomposition::SingularValueDecomposition::new(&sub_kernel);
     let inv_sqrt_singular_values: Vec<f64> = svd
         .singular_values
@@ -150,7 +167,7 @@ where
     let mut reduced = vec![vec![0.0; num_subsample]; data.len()];
     for (i, row) in reduced.iter_mut().enumerate() {
         for (j, entry) in row.iter_mut().enumerate() {
-            *entry = kernel(data[i], subsample[j]);
+            *entry = kernel(&data[i], &data[subsample[j]]);
         }
     }
 
@@ -209,7 +226,9 @@ fn segment_cost(start: usize, end: usize, reduced: &[Vec<f64>], diagonal: &[f64]
 
     let mut d = diagonal[start];
     let mut w = reduced[start].clone();
-    let mut v: f64 = w.iter().map(|value| value * value).sum();
+    // `Arrays.stream(W).map(w -> w * w).sum()`, a stream sum and therefore compensated.
+    let squares: Vec<f64> = w.iter().map(|value| value * value).collect();
+    let mut v = crate::copy_number_mcmc::double_stream_sum(&squares);
 
     // The reference wraps around the beginning of the data when the segment does.
     let indices: Vec<usize> = if start <= end {
@@ -364,7 +383,7 @@ fn changepoint_candidates(
 /// `calculateChangepointPenalty`: `A * C + B * C * log(N / (C + EPSILON))`.
 ///
 /// The epsilon keeps the logarithm finite at zero changepoints, where the whole term is multiplied
-/// by zero anyway; `Math.log` of a large number is the platform's.
+/// by zero anyway. `Math.log` is correctly rounded, which is what [`jmath::math::log`] implements.
 fn changepoint_penalty(
     num_changepoints: usize,
     linear_factor: f64,
@@ -374,7 +393,7 @@ fn changepoint_penalty(
     linear_factor * num_changepoints as f64
         + log_linear_factor
             * num_changepoints as f64
-            * (num_data as f64 / (num_changepoints as f64 + EPSILON)).ln()
+            * jmath::math::log(num_data as f64 / (num_changepoints as f64 + EPSILON))
 }
 
 /// One segment during backward selection.
@@ -425,7 +444,13 @@ fn select_changepoints(
         })
         .collect();
 
-    let mut total_costs: Vec<f64> = vec![segments.iter().map(|s| s.cost).sum()];
+    // `segments.stream().mapToDouble(s -> s.cost).sum()`, compensated like every stream sum.
+    let total_cost = |segments: &[Segment]| {
+        crate::copy_number_mcmc::double_stream_sum(
+            &segments.iter().map(|s| s.cost).collect::<Vec<f64>>(),
+        )
+    };
+    let mut total_costs: Vec<f64> = vec![total_cost(&segments)];
     let mut costs_for_pairs: Vec<f64> = (0..num_segments - 1)
         .map(|i| segments[i].cost + segments[i + 1].cost)
         .collect();
@@ -493,7 +518,7 @@ fn select_changepoints(
             costs_for_merging[index] = costs_for_pairs[index] - costs_for_merged[index];
         }
 
-        total_costs.insert(0, segments.iter().map(|s| s.cost).sum());
+        total_costs.insert(0, total_cost(&segments));
         changepoints.insert(0, mergepoint);
     }
 
@@ -544,11 +569,39 @@ pub fn find_changepoints<K>(
 where
     K: Fn(f64, f64) -> f64 + Copy,
 {
+    find_changepoints_of(
+        data,
+        max_num_changepoints,
+        move |a: &f64, b: &f64| kernel(*a, *b),
+        kernel_approximation_dimension,
+        window_sizes,
+        linear_factor,
+        log_linear_factor,
+        sort_order,
+    )
+}
+
+/// [`find_changepoints`] over any kind of data point, which is what `ModelSegments`' segmenter
+/// hands it.
+#[allow(clippy::too_many_arguments)]
+pub fn find_changepoints_of<T, K>(
+    data: &[T],
+    max_num_changepoints: usize,
+    kernel: K,
+    kernel_approximation_dimension: usize,
+    window_sizes: &[usize],
+    linear_factor: f64,
+    log_linear_factor: f64,
+    sort_order: ChangepointSortOrder,
+) -> Vec<usize>
+where
+    K: Fn(&T, &T) -> f64 + Copy,
+{
     if max_num_changepoints == 0 || data.is_empty() {
         return Vec::new();
     }
 
-    let reduced = reduced_observation_matrix(data, kernel_approximation_dimension, kernel);
+    let reduced = reduced_observation_matrix_of(data, kernel_approximation_dimension, kernel);
     let diagonal = kernel_approximation_diagonal(&reduced);
     let candidates = changepoint_candidates(
         data.len(),
