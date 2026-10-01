@@ -626,6 +626,7 @@ fn sets_traversal_bounds(tool: &str) -> bool {
             | "PostProcessReadsForRSEM"
             | "CalibrateDragstrModel"
             | "AnalyzeSaturationMutagenesis"
+            | "HaplotypeBasedVariantRecaller"
     )
 }
 
@@ -23626,6 +23627,11 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 #[path = "runners_ground_truth_reads_builder.rs"]
 mod ground_truth_reads_builder_runner;
 pub use ground_truth_reads_builder_runner::ground_truth_reads_builder;
+
+/// `HaplotypeBasedVariantRecaller`, in a file of its own.
+#[path = "runners_haplotype_based_variant_recaller.rs"]
+mod haplotype_based_variant_recaller_runner;
+pub use haplotype_based_variant_recaller_runner::haplotype_based_variant_recaller;
 
 #[path = "runners_variant_recalibrator.rs"]
 mod variant_recalibrator_runner;
