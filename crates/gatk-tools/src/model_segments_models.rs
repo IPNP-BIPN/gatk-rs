@@ -27,9 +27,8 @@
 //! is the repository's measured stand-in, within one ulp. The likelihoods only decide whether a
 //! proposal lies on the slice and where Brent's search steps next, and no likelihood is printed.
 
-use gatk_engine::allele_fraction_cluster::double_stream_sum;
 use gatk_engine::copy_number_mcmc::{
-    beta_log_density, beta_sample, commons_mean, commons_variance, deciles, double_stream_average,
+    beta_log_density, beta_sample, commons_mean, double_stream_sum, commons_variance, deciles, double_stream_average,
     java_max, java_min, IllegalArgument, MinibatchSliceSampler, GIBBS_RANDOM_SEED,
 };
 use gatk_engine::java_random::JavaRandom;
@@ -505,8 +504,7 @@ fn het_log_likelihood(parameters: &GlobalParameters, minor_fraction: f64, het: &
 
     let binomial = binomial_coefficient_log(n, a);
     let outlier = log_pi - jmath::math::log(f64::from(a + r + 1)) - binomial;
-    gatk_engine::natural_log_utils::log_sum_exp(&[alt_minor, ref_minor, outlier])
-        .unwrap_or(f64::NAN)
+    log_sum_exp(&[alt_minor, ref_minor, outlier])
 }
 
 /// `CombinatoricsUtils.binomialCoefficientLog(n, k)`.
@@ -527,6 +525,42 @@ fn binomial_coefficient_log(n: i32, k: i32) -> f64 {
         return jmath::fast_math::log(result as i64 as f64);
     }
     jmath::combinatorics::binomial_coefficient_log(n, k).unwrap_or(f64::NAN)
+}
+
+/// `NaturalLogUtils.logSumExp`, with the host's `exp` standing in for `Math.exp`.
+///
+/// Not [`gatk_engine::natural_log_utils::log_sum_exp`], whose `exp` is FDLIBM: that stand-in is
+/// within one ulp of `Math.exp`, and one ulp is enough here. On a row segmented at a penalty of
+/// 0.1 (121 segments), FDLIBM moved one Brent step of the allele-fraction initializer and every
+/// allele-fraction decile after it, where the host's `exp` answered the reference's bytes. Like
+/// `AllelePseudoDepth`'s `pow`, the host libm is the closer stand-in on the points this reaches;
+/// the covering array is what says so on the platform CI runs.
+///
+/// The refusal on a non-finite sum is the reference's `IllegalArgumentException`; a likelihood
+/// has nowhere to report it from, so it answers NaN, which no comparison accepts.
+fn log_sum_exp(values: &[f64]) -> f64 {
+    // `MathUtils.maxElementIndex`: the first index holding the maximum.
+    let mut max_index = 0;
+    for (index, value) in values.iter().enumerate().skip(1) {
+        if *value > values[max_index] {
+            max_index = index;
+        }
+    }
+    let max_value = values[max_index];
+    if max_value == f64::NEG_INFINITY {
+        return max_value;
+    }
+    let mut sum = 1.0;
+    for (index, value) in values.iter().enumerate() {
+        if index == max_index || *value == f64::NEG_INFINITY {
+            continue;
+        }
+        sum += (value - max_value).exp();
+    }
+    if sum.is_nan() || sum == f64::INFINITY {
+        return f64::NAN;
+    }
+    max_value + if sum != 1.0 { jmath::math::log(sum) } else { 0.0 }
 }
 
 /// `segmentLogLikelihood`, a stream sum over the segment's hets.
@@ -700,6 +734,7 @@ fn initialize(data: &AlleleFractionData) -> Result<(GlobalParameters, Vec<f64>),
         }
         minor_fractions = estimated;
         next = total_log_likelihood(&global, &minor_fractions, data);
+
         iteration += 1;
         if !(iteration < 50 && next - previous > 0.5) {
             break;
@@ -1106,9 +1141,12 @@ fn merge_summaries(first: &PosteriorSummary, second: &PosteriorSummary) -> Poste
     let variance = 1.0 / (1.0 / (sd1 * sd1) + 1.0 / (sd2 * sd2));
     let mean = (first.decile50 / (sd1 * sd1) + second.decile50 / (sd2 * sd2)) * variance;
     let sd = variance.sqrt();
+    // `new SimplePosteriorSummary(mean, mean - standardDeviation, mean + standardDeviation)`, whose
+    // parameters are `(decile10, decile50, decile90)`: the merged mean lands in the TENTH
+    // percentile and `mean - sd` in the median. The next comparison reads them in those places.
     PosteriorSummary {
-        decile10: mean - sd,
-        decile50: mean,
+        decile10: mean,
+        decile50: mean - sd,
         decile90: mean + sd,
     }
 }

@@ -259,6 +259,7 @@ jobs:
             --tool DepthOfCoverage \
             --tool CalculateGenotypePosteriors \
             --tool DenoiseReadCounts \
+            --tool ModelSegments \
             --tool ValidateBasicSomaticShortMutations \
             --tool PrintReadCounts \
             --tool CollectSVEvidence \

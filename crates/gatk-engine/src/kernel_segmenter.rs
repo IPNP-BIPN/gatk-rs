@@ -228,7 +228,7 @@ fn segment_cost(start: usize, end: usize, reduced: &[Vec<f64>], diagonal: &[f64]
     let mut w = reduced[start].clone();
     // `Arrays.stream(W).map(w -> w * w).sum()`, a stream sum and therefore compensated.
     let squares: Vec<f64> = w.iter().map(|value| value * value).collect();
-    let mut v = crate::allele_fraction_cluster::double_stream_sum(&squares);
+    let mut v = crate::copy_number_mcmc::double_stream_sum(&squares);
 
     // The reference wraps around the beginning of the data when the segment does.
     let indices: Vec<usize> = if start <= end {
@@ -446,7 +446,7 @@ fn select_changepoints(
 
     // `segments.stream().mapToDouble(s -> s.cost).sum()`, compensated like every stream sum.
     let total_cost = |segments: &[Segment]| {
-        crate::allele_fraction_cluster::double_stream_sum(
+        crate::copy_number_mcmc::double_stream_sum(
             &segments.iter().map(|s| s.cost).collect::<Vec<f64>>(),
         )
     };

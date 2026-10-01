@@ -406,12 +406,40 @@ pub fn commons_variance(values: &[f64]) -> f64 {
     }
 }
 
+/// `DoubleStream.sum()` as the oracle's JDK 17.0.19 computes it: Kahan summation whose final
+/// step SUBTRACTS the stored compensation.
+///
+/// The accumulator keeps the rounding error with the opposite sign to the running sum, and the
+/// final sum is `sum - compensation`. [`crate::allele_fraction_cluster::double_stream_sum`] adds
+/// it instead, which is a different double whenever the compensation is not zero: two
+/// allele-fraction likelihoods of one segment, `-20.337...` and `-32.733...`, sum to
+/// `0xc04a890dc9de42ed` on the oracle and `...42ef` when the compensation is added. Measured by
+/// tracing `AlleleFractionLikelihoods.segmentLogLikelihood` inside the oracle container.
+pub fn double_stream_sum(values: &[f64]) -> f64 {
+    let mut sum = 0.0;
+    let mut compensation = 0.0;
+    let mut simple = 0.0;
+    for value in values {
+        let tmp = value - compensation;
+        let velvel = sum + tmp;
+        compensation = (velvel - sum) - tmp;
+        sum = velvel;
+        simple += value;
+    }
+    let total = sum - compensation;
+    if total.is_nan() && simple.is_infinite() {
+        simple
+    } else {
+        total
+    }
+}
+
 /// `DoubleStream.average()`: the compensated sum over the count, or `None` for no values.
 pub fn double_stream_average(values: &[f64]) -> Option<f64> {
     if values.is_empty() {
         None
     } else {
-        Some(crate::allele_fraction_cluster::double_stream_sum(values) / values.len() as f64)
+        Some(double_stream_sum(values) / values.len() as f64)
     }
 }
 

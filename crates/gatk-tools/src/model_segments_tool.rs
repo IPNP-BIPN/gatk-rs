@@ -607,7 +607,10 @@ fn find_segmentation(
     options: &Options,
     copy_ratios: &[Vec<(Span, f64)>],
     hets: &[Vec<Het>],
-) -> Vec<Span> {
+) -> Result<Vec<Span>, Thrown> {
+    if options.window_sizes.iter().any(|size| *size <= 0) {
+        return Err(illegal("Window sizes must all be positive."));
+    }
     let num_copy_ratio = copy_ratios[0].len();
     let num_allele_fraction = hets[0].len();
     let (mode, points): (SegmenterMode, Vec<Point>) = if num_allele_fraction == 0 {
@@ -717,6 +720,9 @@ fn find_segmentation(
             });
             continue;
         }
+        if window_sizes.is_empty() {
+            return Err(illegal("At least one window size must be provided."));
+        }
         let changepoints = find_changepoints_of(
             &chromosome,
             max_changepoints,
@@ -739,7 +745,7 @@ fn find_segmentation(
             });
         }
     }
-    segments
+    Ok(segments)
 }
 
 /// The dictionary-order check `AbstractLocatableCollection` makes of the segments it is given,
@@ -917,7 +923,7 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
             options,
             &copy_ratios.iter().map(|r| r.records.clone()).collect::<Vec<_>>(),
             &hets.iter().map(AllelicCounts::hets).collect::<Vec<_>>(),
-        );
+        )?;
         write(
             &path(".interval_list"),
             &interval_list_text(&copy_ratios[0].metadata.dictionary, &segments),
@@ -940,7 +946,7 @@ pub fn run(options: &Options) -> Result<(), Thrown> {
             options,
             std::slice::from_ref(&denoised.records),
             &[het_counts.hets()],
-        ),
+        )?,
         Some(file) => {
             let (_, intervals) = read_interval_list(file)?;
             if intervals.is_empty() {
