@@ -42,7 +42,8 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
     } = read_walker_startup(parser, "HaplotypeBasedVariantRecaller")?;
 
     // traverse(): the engine first.
-    let engine = scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
+    let engine =
+        scalar(parser, "likelihood-calculation-engine").unwrap_or_else(|| "PairHMM".to_string());
     let threshold = number_or(parser, "base-quality-score-threshold", 18);
     if engine == "PairHMM" {
         match scalar(parser, "pair-hmm-implementation").as_deref() {
@@ -93,19 +94,30 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
             .map(|sequence| SimpleInterval {
                 contig: sequence.name.clone(),
                 start: 1,
-                end: sequence.length as i32,
+                end: sequence.length,
             })
             .collect()
     } else {
         intervals
     };
     let settings = hbvr::EngineSettings {
-        pcr_error_model: scalar(parser, "pcr-indel-model").unwrap_or_else(|| "CONSERVATIVE".to_string()),
+        pcr_error_model: scalar(parser, "pcr-indel-model")
+            .unwrap_or_else(|| "CONSERVATIVE".to_string()),
         base_quality_score_threshold: threshold as u8,
         gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10) as u8,
-        disable_cap_read_qualities_to_map_q: flag(parser, "disable-cap-base-qualities-to-map-quality"),
-        dynamic_disqualification: flag(parser, "enable-dynamic-read-disqualification-for-genotyping"),
-        read_disqualification_scale: double_or(parser, "dynamic-read-disqualification-threshold", 1.0),
+        disable_cap_read_qualities_to_map_q: flag(
+            parser,
+            "disable-cap-base-qualities-to-map-quality",
+        ),
+        dynamic_disqualification: flag(
+            parser,
+            "enable-dynamic-read-disqualification-for-genotyping",
+        ),
+        read_disqualification_scale: double_or(
+            parser,
+            "dynamic-read-disqualification-threshold",
+            1.0,
+        ),
         expected_error_rate_per_base: double_or(
             parser,
             "expected-mismatch-rate-for-read-disqualification",
@@ -130,7 +142,8 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
             })
             .collect()
     };
-    let read_end = |read: &BamRecord| read.alignment_start + read.cigar.reference_length() as i32 - 1;
+    let read_end =
+        |read: &BamRecord| read.alignment_start + read.cigar.reference_length() as i32 - 1;
 
     let mut text = String::new();
     for region in &intervals {
@@ -241,7 +254,10 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
             let mut distinct: Vec<Vec<u8>> = Vec::new();
             let mut index_of_member: Vec<usize> = Vec::new();
             for member in &members {
-                let at = match distinct.iter().position(|bases| *bases == member.read_bases) {
+                let at = match distinct
+                    .iter()
+                    .position(|bases| *bases == member.read_bases)
+                {
                     Some(at) => at,
                     None => {
                         distinct.push(member.read_bases.clone());
@@ -253,7 +269,8 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
             let engine_reads: Vec<hbvr::EngineRead> = reads
                 .iter()
                 .map(|read| {
-                    let tag = |name: &[u8; 2]| match read.tags.get(htsjdk_bam::tag::Tag::new(name)) {
+                    let tag = |name: &[u8; 2]| match read.tags.get(htsjdk_bam::tag::Tag::new(name))
+                    {
                         Some(htsjdk_bam::tag::TagValue::Str(text)) => {
                             Some(text.bytes().map(|b| b.wrapping_sub(33)).collect())
                         }
@@ -318,10 +335,9 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
                     continue;
                 }
                 let reference_base = ref_bases[(loc - span.start) as usize];
-                let Some(merged) = hbvr::merged_alleles(&maps, loc, reference_base)
-                    .map_err(|(class, message)| {
-                        Thrown::non_user(Box::leak(class.into_boxed_str()), message)
-                    })?
+                let Some(merged) = hbvr::merged_alleles(&maps, loc, reference_base).map_err(
+                    |(class, message)| Thrown::non_user(Box::leak(class.into_boxed_str()), message),
+                )?
                 else {
                     continue;
                 };
@@ -335,7 +351,10 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
                     vc.stop as i32,
                     kind,
                     &span,
-                    &mapper.iter().map(|(allele, _)| allele.text()).collect::<Vec<_>>(),
+                    &mapper
+                        .iter()
+                        .map(|(allele, _)| allele.text())
+                        .collect::<Vec<_>>(),
                 );
                 let mut lines = Vec::new();
                 for (column, &r) in result.kept.iter().enumerate() {
@@ -374,4 +393,3 @@ pub fn haplotype_based_variant_recaller(parser: &Parser) -> Outcome {
     write_file(&output, text.as_bytes())?;
     Ok(None)
 }
-

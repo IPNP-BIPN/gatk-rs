@@ -310,6 +310,7 @@ jobs:
             --tool GenotypeGVCFs \
             --tool ReblockGVCF --tool GnarlyGenotyper --tool VariantEval --tool VariantAnnotator \
             --tool GroundTruthScorer --tool GroundTruthReadsBuilder \
+            --tool HaplotypeBasedVariantRecaller \
             --tool AlleleFrequencyQC \
             --tool AnalyzeSaturationMutagenesis --tool LocalAssembler \
             --tool BwaMemIndexImageCreator \

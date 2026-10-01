@@ -469,7 +469,9 @@ pub fn event_map(
                 for offset in 0..length {
                     let ref_byte = reference[ref_pos + offset];
                     let alt_byte = haplotype[alignment_pos + offset];
-                    if ref_byte != alt_byte && is_regular_base(ref_byte) && is_regular_base(alt_byte)
+                    if ref_byte != alt_byte
+                        && is_regular_base(ref_byte)
+                        && is_regular_base(alt_byte)
                     {
                         mismatches.push_back(offset);
                     }
@@ -487,7 +489,8 @@ pub fn event_map(
                     proposed.push(Event {
                         start: reference_start + (ref_pos + start) as i32,
                         reference: reference[ref_pos + start..ref_pos + end + 1].to_vec(),
-                        alternate: haplotype[alignment_pos + start..alignment_pos + end + 1].to_vec(),
+                        alternate: haplotype[alignment_pos + start..alignment_pos + end + 1]
+                            .to_vec(),
                     });
                 }
                 ref_pos += length;
@@ -959,8 +962,7 @@ pub fn compute_likelihoods(
                 mean += DYNAMIC_TABLE[entry].0;
                 variance += DYNAMIC_TABLE[entry].1;
             }
-            let dynamic =
-                (mean + settings.read_disqualification_scale * variance.sqrt()) * -0.1;
+            let dynamic = (mean + settings.read_disqualification_scale * variance.sqrt()) * -0.1;
             let plain = standard(false);
             if dynamic < plain {
                 dynamic
@@ -970,7 +972,8 @@ pub fn compute_likelihoods(
         } else {
             standard(true)
         };
-        if !(best < threshold) {
+        // Removed only when strictly below: a NaN maximum is kept, as `<` keeps it.
+        if best.partial_cmp(&threshold) != Some(std::cmp::Ordering::Less) {
             kept.push(r);
         }
     }

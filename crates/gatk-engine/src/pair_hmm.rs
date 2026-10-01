@@ -22,7 +22,7 @@ pub fn initial_condition() -> f64 {
 /// transcribed decimal is a different double from `Math.log10(Math.pow(2, 1020))`, and the
 /// difference lands in the seventh digit of every likelihood.
 pub fn initial_condition_log10() -> f64 {
-    initial_condition().log10()
+    jmath::math::log10(initial_condition())
 }
 /// `TRISTATE_CORRECTION`: a mismatch may be any of the three other bases, so the error probability
 /// is divided by three.
@@ -191,5 +191,5 @@ pub fn read_likelihood_given_haplotype_log10(
     for j in 1..padded_haplotype {
         total += matches[end][j] + insertions[end][j];
     }
-    total.log10() - initial_condition_log10()
+    jmath::math::log10(total) - initial_condition_log10()
 }
