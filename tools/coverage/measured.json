@@ -1215,6 +1215,24 @@
       "matched": 26,
       "t": 2,
       "share": 1.0
+    },
+    "ExtractVariantAnnotations": {
+      "rows": 29,
+      "accepted": 23,
+      "rejected": 6,
+      "distinct_outputs": 22,
+      "matched": 29,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterAlignmentArtifacts": {
+      "rows": 21,
+      "accepted": 21,
+      "rejected": 0,
+      "distinct_outputs": 14,
+      "matched": 21,
+      "t": 2,
+      "share": 1.0
     }
   }
 }
