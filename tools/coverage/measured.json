@@ -595,6 +595,15 @@
       "t": 2,
       "share": 1.0
     },
+    "ModelSegments": {
+      "rows": 19,
+      "accepted": 13,
+      "rejected": 6,
+      "distinct_outputs": 13,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "ValidateBasicSomaticShortMutations": {
       "rows": 22,
       "accepted": 19,
