@@ -595,6 +595,15 @@
       "t": 2,
       "share": 1.0
     },
+    "ModelSegments": {
+      "rows": 19,
+      "accepted": 13,
+      "rejected": 6,
+      "distinct_outputs": 13,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "ValidateBasicSomaticShortMutations": {
       "rows": 22,
       "accepted": 19,
@@ -956,13 +965,13 @@
       "share": 1.0
     },
     "LearnReadOrientationModel": {
-      "rows": 8,
-      "accepted": 5,
+      "rows": 12,
+      "accepted": 9,
       "rejected": 3,
-      "distinct_outputs": 4,
-      "matched": 6,
+      "distinct_outputs": 8,
+      "matched": 12,
       "t": 2,
-      "share": 0.75
+      "share": 1.0
     },
     "GeneExpressionEvaluation": {
       "rows": 19,
@@ -1090,6 +1099,15 @@
       "t": 2,
       "share": 1.0
     },
+    "HaplotypeBasedVariantRecaller": {
+      "rows": 44,
+      "accepted": 28,
+      "rejected": 16,
+      "distinct_outputs": 15,
+      "matched": 44,
+      "t": 2,
+      "share": 1.0
+    },
     "AlleleFrequencyQC": {
       "rows": 26,
       "accepted": 0,
@@ -1123,6 +1141,15 @@
       "rejected": 10,
       "distinct_outputs": 5,
       "matched": 15,
+      "t": 2,
+      "share": 1.0
+    },
+    "StructuralVariantDiscoverer": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 11,
+      "matched": 23,
       "t": 2,
       "share": 1.0
     },
@@ -1195,6 +1222,24 @@
       "rejected": 5,
       "distinct_outputs": 21,
       "matched": 26,
+      "t": 2,
+      "share": 1.0
+    },
+    "ExtractVariantAnnotations": {
+      "rows": 29,
+      "accepted": 23,
+      "rejected": 6,
+      "distinct_outputs": 22,
+      "matched": 29,
+      "t": 2,
+      "share": 1.0
+    },
+    "FilterAlignmentArtifacts": {
+      "rows": 21,
+      "accepted": 21,
+      "rejected": 0,
+      "distinct_outputs": 14,
+      "matched": 21,
       "t": 2,
       "share": 1.0
     }
