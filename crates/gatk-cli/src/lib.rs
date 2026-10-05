@@ -411,6 +411,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "BwaMemIndexImageCreator" => Some(run_bwa_mem_index_image_creator),
         "GroundTruthScorer" => Some(run_ground_truth_scorer),
         "HaplotypeBasedVariantRecaller" => Some(run_haplotype_based_variant_recaller),
+        "CreateReadCountPanelOfNormals" => Some(run_create_read_count_panel_of_normals),
         "GroundTruthReadsBuilder" => Some(run_ground_truth_reads_builder),
         _ => None,
     }
@@ -523,6 +524,10 @@ fn run_gnarly_genotyper(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_ground_truth_reads_builder(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::ground_truth_reads_builder(&parsed("GroundTruthReadsBuilder", args)?)
+}
+
+fn run_create_read_count_panel_of_normals(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::create_read_count_panel_of_normals(&parsed("CreateReadCountPanelOfNormals", args)?)
 }
 
 fn run_haplotype_based_variant_recaller(args: &[String]) -> Result<Option<String>, Thrown> {

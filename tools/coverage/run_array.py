@@ -36,6 +36,37 @@ ARRAYS = REPO / "tools" / "coverage" / "arrays"
 IMAGE = "gatk-rs-oracle:4.6.2.0"
 PLATFORM = "linux/amd64"
 
+# The `Add-Opens` of the GATK jar's own manifest. `java -jar` applies them and `java -cp` does not,
+# so a reference run off the classpath is a JVM the shipped launcher never starts. What they grant
+# is reflective access, which the tools measured before them never needed; `CreateReadCountPanelOfNormals`
+# is a Spark program, and Spark 3.5 on JDK 17 dies in `StorageUtils` with an `IllegalAccessError`
+# on `sun.nio.ch` without them, on every row.
+ADD_OPENS = (
+    "java.base/java.lang", "java.base/java.lang.invoke", "java.base/java.lang.reflect",
+    "java.base/java.io", "java.base/java.net", "java.base/java.nio", "java.base/java.util",
+    "java.base/java.util.concurrent", "java.base/java.util.concurrent.atomic",
+    "java.base/sun.nio.ch", "java.base/sun.nio.cs", "java.base/sun.security.action",
+    "java.base/sun.util.calendar", "java.base/sun.nio.fs", "java.base/java.nio.channels.spi",
+    "java.base/jdk.internal.ref", "java.base/java.lang.ref", "java.base/java.util.zip",
+    "java.base/java.util.jar", "java.base/java.nio.file.attribute",
+    "java.base/jdk.internal.loader", "java.base/sun.net.www.protocol.jar",
+    "java.base/sun.invoke.util", "java.base/java.util.concurrent.locks",
+    "java.base/java.security", "java.base/sun.reflect.annotation", "java.base/java.text",
+    "java.base/java.nio.charset", "java.base/sun.reflect.generics.reflectiveObjects",
+    "java.management/com.sun.jmx.mbeanserver", "java.management/javax.management",
+    "java.base/java.util.regex", "java.base/sun.util.locale", "java.base/jdk.internal.math",
+    "java.xml/com.sun.xml.internal.stream.util", "java.base/java.time",
+    "java.base/sun.reflect.generics.factory", "java.base/java.nio.channels",
+    "java.base/sun.security.util", "java.base/java.time.zone",
+    "java.base/sun.reflect.generics.scope", "java.base/sun.reflect.generics.tree",
+    "java.management/com.sun.jmx.interceptor", "java.management/javax.management.openmbean",
+    "java.management/sun.management", "jdk.management/com.sun.management.internal",
+    "jdk.management.jfr/jdk.management.jfr", "jdk.jfr/jdk.jfr.internal.management",
+    "java.base/jdk.internal.module", "java.base/java.lang.module",
+    "java.security.jgss/sun.security.krb5",
+)
+JAVA_OPENS = " ".join(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPENS)
+
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
 
@@ -168,7 +199,7 @@ def run_oracle(tool, row_args, workdir, positional=(), tagged=(), lists=()):
     cli = " ".join(as_cli(row_args, positional, tagged, lists))
     # `gatk <Tool> <args>`: the tool name is the first token, which is the shape the bit-identity
     # claim is defined against, and the wrapper is what fixes the parser to Barclay.
-    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
+    command = f'rm -rf /work/out/* && mkdir -p /work/tmp /work/tmp2 /work/out && java {JAVA_OPENS} -cp "$ORACLE_CP" org.broadinstitute.hellbender.Main {tool} {cli}'
     result = subprocess.run(
         [
             "docker", "run", "--rm", "--platform", PLATFORM,
@@ -410,6 +441,11 @@ def hdf5_members(path):
         if isinstance(obj, h5py.Group):
             rendered.append(f"[{name}/]")
             return
+        solver = solver_dataset(name)
+        if solver is not None:
+            if solver:
+                rendered.append(f"[{name}: {solver}]")
+            return
         data = obj[()]
         if obj.dtype.kind in ("S", "O", "U"):
             values = [v.decode("utf-8") if isinstance(v, bytes) else str(v) for v in data.ravel().tolist()]
@@ -425,6 +461,32 @@ def hdf5_members(path):
         raw = path.read_bytes()
         return f"BINARY sha256={hashlib.sha256(raw).hexdigest()} bytes={len(raw)} (not HDF5: {error})"
     return "HDF5 " + " ".join(sorted(rendered))
+
+
+# A read-count panel of normals' decomposition: the singular values, and the eigensample vectors in
+# their chunked matrix. What decides them is Spark's solver: the panel's Gramian is summed in an
+# order the cluster picks, its trailing eigenvalues are rounding noise, and whether their roots clear
+# `1e-9` times the first moves from run to run of ONE image (8, 6 and 7 on one fixture, see
+# docs/a-rank-is-not-a-byte.md). An eigenvector's sign is the solver's choice too. So their values,
+# the count of them and the chunks that count shapes are not compared; that they were written is,
+# because the branch that writes them (more than one panel sample, more than zero eigensamples
+# asked for) is the tool's, and so is the interval count every vector spans.
+PANEL_SOLVER = "panel/singular_values"
+PANEL_EIGENSAMPLES = "panel/transposed_eigensamples_samples_by_intervals/"
+
+
+def solver_dataset(name):
+    """None for a dataset compared as it is; else what stands for it, or "" to leave it out."""
+    if name == PANEL_SOLVER:
+        return "the solver's, not compared"
+    if name.startswith(PANEL_EIGENSAMPLES):
+        leaf = name[len(PANEL_EIGENSAMPLES):]
+        if leaf == "num_columns":
+            return None
+        if leaf == "num_rows":
+            return "the solver's, not compared"
+        return ""
+    return None
 
 
 def histogram_columns_sorted(text):
@@ -463,16 +525,24 @@ def without_start_time(text):
     return MAF_DATE.sub(r"\g<1><date>\g<2>", text)
 
 
+# log4j's `%d{HH:mm:ss.SSS}` at the head of a GATK log line.
+LOG_TIME = re.compile(r"^\d\d:\d\d:\d\d\.\d\d\d ")
+
+
 def first_error(text):
     """The refusal's own line.
 
     A rejected row is not a failed run: the reference refuses a block-compressed input whose
     output is not a `.tbi`, and that refusal is behaviour the port has to reproduce, message
     included, so it is recorded as the row's answer rather than thrown away as noise.
+
+    A log line's time of day is taken off its head: `CreateReadCountPanelOfNormals` refuses with a
+    WARN naming the exception it caught, and the stamp in front of it is the only part of that line
+    two runs cannot share.
     """
     for line in text.split("\n"):
         if "Exception" in line or line.startswith("ERROR") or "A USER ERROR" in line:
-            return line.strip()
+            return LOG_TIME.sub("", line.strip())
     return text.strip().split("\n")[-1][:200] if text.strip() else ""
 
 

@@ -582,3 +582,58 @@ fn a_surviving_zero_is_imputed_to_its_intervals_median() {
     let zeros = |values: &Matrix| values.values.iter().filter(|v| **v == 0.0).count();
     assert!(zeros(&left.values) >= zeros(&imputed.values));
 }
+
+/// The decomposition reconstructs the panel it was given: U S V' with V = P'U S^-1 recovered as
+/// the panel's own projection, on a full-rank 3 x 4 panel.
+#[test]
+fn truncated_svd_reconstructs_a_full_rank_panel() {
+    use gatk_tools::create_read_count_panel_of_normals::{truncated_svd, Matrix};
+    let panel = Matrix::new(&[
+        vec![1.0, 2.0, 0.5, -1.0],
+        vec![0.0, 1.0, 3.0, 2.0],
+        vec![-2.0, 0.5, 1.0, 1.5],
+    ]);
+    let svd = truncated_svd(&panel, 3);
+    assert_eq!(svd.singular_values.len(), 3);
+    assert!(svd.singular_values.windows(2).all(|w| w[0] >= w[1]));
+    // U is orthonormal.
+    for a in 0..3 {
+        for b in 0..3 {
+            let dot: f64 = svd
+                .eigensample_vectors
+                .iter()
+                .map(|row| row[a] * row[b])
+                .sum();
+            let expected = if a == b { 1.0 } else { 0.0 };
+            assert!((dot - expected).abs() < 1e-12, "U'U[{a}][{b}] = {dot}");
+        }
+    }
+    // P' = U S V', so P U = V S and |P U[:,c]| = s_c.
+    for (c, sigma) in svd.singular_values.iter().enumerate() {
+        let norm: f64 = (0..3)
+            .map(|s| {
+                let x: f64 = (0..4)
+                    .map(|i| panel.get(s, i) * svd.eigensample_vectors[i][c])
+                    .sum();
+                x * x
+            })
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            (norm - sigma).abs() < 1e-12,
+            "column {c}: {norm} vs {sigma}"
+        );
+    }
+}
+
+/// A sample's GC curve is flat when every bin holds the same coverage, so the correction leaves
+/// the values where they were.
+#[test]
+fn gc_correction_of_a_flat_curve_changes_nothing() {
+    use gatk_tools::create_read_count_panel_of_normals::{correct_gc_bias, Matrix};
+    let mut counts = Matrix::new(&[vec![0.25, 0.25, 0.25, 0.25]]);
+    correct_gc_bias(&mut counts, &[0.1, 0.4, 0.4, 0.9]);
+    for value in &counts.values {
+        assert!((value - 0.25).abs() < 1e-15, "{value}");
+    }
+}
