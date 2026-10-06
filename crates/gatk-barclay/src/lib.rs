@@ -1437,40 +1437,39 @@ impl Parser {
             }
             hash
         };
-        let spec_hash = |definition: &Definition| -> i32 {
-            jopt_option_names(&definition.argument_aliases())
-                .iter()
-                .fold(1i32, |hash, alias| {
-                    hash.wrapping_mul(31).wrapping_add(string_hash(alias))
-                })
-        };
 
-        let mut capacity: usize = 16;
-        let mut table: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
-        let mut size: usize = 0;
+        // `recognizedOptions`, a `HashMap<String, spec>` keyed by every option NAME: the
+        // non-option spec `[arguments]` the constructor recognizes first, then each definition's
+        // names in field order. The key is the name's position, since every name is its own key;
+        // the value is the spec, `None` for the non-option one.
+        let mut names: Vec<(i32, usize, Option<usize>)> =
+            vec![(string_hash("[arguments]"), 0, None)];
         for (index, definition) in self.definitions.iter().enumerate() {
-            let hash = spec_hash(definition);
-            let mixed = hash ^ ((hash as u32) >> 16) as i32;
-            let bucket = ((capacity - 1) as u32 & mixed as u32) as usize;
-            table[bucket].push((index, hash));
-            size += 1;
-            if size > capacity * 3 / 4 {
-                capacity *= 2;
-                let mut resized: Vec<Vec<(usize, i32)>> = vec![Vec::new(); capacity];
-                for entries in table.into_iter() {
-                    for (entry, entry_hash) in entries {
-                        let mixed = entry_hash ^ ((entry_hash as u32) >> 16) as i32;
-                        let to = ((capacity - 1) as u32 & mixed as u32) as usize;
-                        resized[to].push((entry, entry_hash));
-                    }
-                }
-                table = resized;
+            for name in jopt_option_names(&definition.argument_aliases()) {
+                names.push((string_hash(name), names.len(), Some(index)));
             }
         }
-        table
+        let by_name = java_hash_map_order(&names, 16);
+        // `toJavaUtilMap()` is `new HashMap<>(map)`, sized for the entries it copies, and the
+        // spec map is filled from that copy's `values()`.
+        let copied_capacity = table_size_for((by_name.len() as f32 / 0.75f32 + 1.0f32) as usize);
+        let copied = java_hash_map_order(&by_name, copied_capacity);
+
+        let specs: Vec<(i32, usize, Option<usize>)> = copied
             .into_iter()
-            .flatten()
-            .map(|(index, _)| index)
+            .filter_map(|(_, _, spec)| spec)
+            .map(|index| {
+                let hash = jopt_option_names(&self.definitions[index].argument_aliases())
+                    .iter()
+                    .fold(1i32, |hash, alias| {
+                        hash.wrapping_mul(31).wrapping_add(string_hash(alias))
+                    });
+                (hash, index, Some(index))
+            })
+            .collect();
+        java_hash_map_order(&specs, 16)
+            .into_iter()
+            .filter_map(|(_, _, spec)| spec)
             .collect()
     }
 
@@ -1896,6 +1895,45 @@ impl Parser {
 /// unsorted hash reached first.
 ///
 /// A single name is returned untouched, which is the reference's own early exit.
+/// `HashMap.tableSizeFor`: the next power of two at or above `wanted`, and at least one.
+fn table_size_for(wanted: usize) -> usize {
+    wanted.max(1).next_power_of_two()
+}
+
+/// The iteration order of a `java.util.HashMap` filled by `put` in the order given, starting from
+/// `capacity` buckets: by bucket of the spread hash, each bucket in insertion order, doubling past
+/// three quarters full (a split keeps each half in order). Each entry is a hash, a key and a value;
+/// a key put again keeps its place. A bucket that grows past eight entries would be treeified by
+/// the reference and ordered by hash; nothing here reaches that, and this keeps insertion order.
+type HashEntry = (i32, usize, Option<usize>);
+
+fn java_hash_map_order(entries: &[HashEntry], capacity: usize) -> Vec<HashEntry> {
+    let bucket = |hash: i32, capacity: usize| -> usize {
+        let mixed = hash ^ ((hash as u32) >> 16) as i32;
+        ((capacity - 1) as u32 & mixed as u32) as usize
+    };
+    let mut capacity = capacity;
+    let mut table: Vec<Vec<HashEntry>> = vec![Vec::new(); capacity];
+    let mut size = 0;
+    for &(hash, key, value) in entries {
+        let at = bucket(hash, capacity);
+        if table[at].iter().any(|(_, existing, _)| *existing == key) {
+            continue;
+        }
+        table[at].push((hash, key, value));
+        size += 1;
+        if size > capacity * 3 / 4 {
+            capacity *= 2;
+            let mut resized: Vec<Vec<HashEntry>> = vec![Vec::new(); capacity];
+            for entry in table.into_iter().flatten() {
+                resized[bucket(entry.0, capacity)].push(entry);
+            }
+            table = resized;
+        }
+    }
+    table.into_iter().flatten().collect()
+}
+
 fn jopt_option_names<'a>(aliases: &[&'a str]) -> Vec<&'a str> {
     if aliases.len() == 1 {
         return aliases.to_vec();

@@ -23708,6 +23708,11 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 mod ground_truth_reads_builder_runner;
 pub use ground_truth_reads_builder_runner::ground_truth_reads_builder;
 
+/// `CreateReadCountPanelOfNormals`, in a file of its own.
+#[path = "runners_create_read_count_panel_of_normals.rs"]
+mod create_read_count_panel_of_normals_runner;
+pub use create_read_count_panel_of_normals_runner::create_read_count_panel_of_normals;
+
 /// `HaplotypeBasedVariantRecaller`, in a file of its own.
 #[path = "runners_haplotype_based_variant_recaller.rs"]
 mod haplotype_based_variant_recaller_runner;

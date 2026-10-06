@@ -2993,6 +2993,47 @@ public class MakeFixtures {
         Files.copy(dir.resolve("counts.tsv"), dir.resolve("sv.counts.tsv"),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
+        // A panel of normals for `CreateReadCountPanelOfNormals`: eight samples over forty bins,
+        // written in `SimpleCountCollection`'s TSV layout. The corpus's reads give four windows
+        // of two counts or fewer, which leaves the percentile filters nothing to tell apart, so
+        // the counts are made here, in integer arithmetic so they are the same on any machine.
+        // Each filter has something to take: bin 17 is a low-median bin, bin 5 has two zero
+        // samples, sample 7 is zero on every fourth bin, and sample 8 alternates between half
+        // and one and a half times its depth. `pon_shifted` moves every start by one, which the
+        // tool refuses as intervals that do not match, and `pon_annotated.tsv` is the GC content
+        // `--annotated-intervals` corrects by, over the same bins.
+        int[] ponDepth = {100, 130, 80, 110, 90, 125, 70, 105};
+        String ponDictionary = "@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:100000\n";
+        for (int s = 0; s <= ponDepth.length; s++) {
+            boolean ponShifted = s == ponDepth.length;
+            String sample = ponShifted ? "pon_shifted" : "pon_s" + (s + 1);
+            StringBuilder table = new StringBuilder(ponDictionary)
+                    .append("@RG\tID:GATKCopyNumber\tSM:").append(sample).append('\n')
+                    .append("CONTIG\tSTART\tEND\tCOUNT\n");
+            int depthOf = ponShifted ? 0 : s;
+            for (int i = 0; i < 40; i++) {
+                int base = 200 + (i * 37) % 61 + (i % 7) * 13;
+                int wiggle = 100 + (i * 13 + depthOf * 29) % 17 - 8;
+                int v = base * ponDepth[depthOf] * wiggle / 10000;
+                if (i == 5 && (depthOf == 1 || depthOf == 4)) v = 0;
+                if (i == 17) v = v / 40;
+                if (depthOf == 6 && i % 4 == 0) v = 0;
+                if (depthOf == 7) v = i % 2 == 1 ? v * 16 / 10 : v / 2;
+                table.append("chr1\t").append(i * 2000 + (ponShifted ? 2 : 1)).append('\t')
+                        .append(i * 2000 + 1000).append('\t').append(v).append('\n');
+            }
+            Files.writeString(dir.resolve(sample + ".counts.tsv"), table.toString(),
+                    StandardCharsets.UTF_8);
+        }
+        StringBuilder ponAnnotated = new StringBuilder(ponDictionary)
+                .append("CONTIG\tSTART\tEND\tGC_CONTENT\n");
+        for (int i = 0; i < 40; i++) {
+            ponAnnotated.append("chr1\t").append(i * 2000 + 1).append('\t').append(i * 2000 + 1000)
+                    .append("\t0.").append(30 + (i * 37) % 40).append('\n');
+        }
+        Files.writeString(dir.resolve("pon_annotated.tsv"), ponAnnotated.toString(),
+                StandardCharsets.UTF_8);
+
         // Two depth-evidence files for `CondenseDepthEvidence`, written in the codec's own layout:
         // a header of column names and zero-based half-open bins. The first is a run of ten
         // adjacent hundred-base bins, a one-base gap, two more, and a contig change, so every

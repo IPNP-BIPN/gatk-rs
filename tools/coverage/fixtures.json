@@ -4320,6 +4320,78 @@
         "/work/fixtures/reference.fasta"
       ]
     },
+    "CreateReadCountPanelOfNormals": {
+      "$why": [
+        "pon_s1 to pon_s8 are eight counts tables over forty bins, written by MakeFixtures in",
+        "SimpleCountCollection's TSV layout with something for each filter to take: a low-median bin,",
+        "a bin with two zero samples, a sample with many zeros and a sample far from the others. The",
+        "corpus's own counts.tsv is four windows of two reads or fewer, which no percentile can split.",
+        "--input is a list: the eight, the first four, the first alone (a panel of one sample, which",
+        "writes no decomposition), and the eight with pon_shifted, whose intervals start one base",
+        "later and are refused as not matching.",
+        "--annotated-intervals is pon_annotated.tsv, the GC content of the same bins, or absent.",
+        "--maximum-chunk-size 100 splits both chunked matrices into several chunks of two rows, and",
+        "1 is below one row of forty values, which the tool refuses before reading a second file.",
+        "The numeric arguments carry values inside their bounds, each chosen to run or skip a step:",
+        "a percentile of zero and a percentage of a hundred skip their filter, the defaults take",
+        "the low bin, sample 7 and bin 5's zeros, and the third value of each keeps what the default",
+        "drops or drops what it keeps. The bounds themselves are Barclay's check, which refuses",
+        "before the tool runs and would fill a row in three with one refusal.",
+        "--number-of-eigensamples 0 and the single-sample input are the two ways no decomposition",
+        "is written; 3 truncates below the panel's sample count."
+      ],
+      "$lists": [
+        "--input"
+      ],
+      "--input": [
+        "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv /work/fixtures/pon_s5.counts.tsv /work/fixtures/pon_s6.counts.tsv /work/fixtures/pon_s7.counts.tsv /work/fixtures/pon_s8.counts.tsv",
+        "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv",
+        "/work/fixtures/pon_s1.counts.tsv",
+        "/work/fixtures/pon_s1.counts.tsv /work/fixtures/pon_s2.counts.tsv /work/fixtures/pon_s3.counts.tsv /work/fixtures/pon_s4.counts.tsv /work/fixtures/pon_s5.counts.tsv /work/fixtures/pon_s6.counts.tsv /work/fixtures/pon_s7.counts.tsv /work/fixtures/pon_s8.counts.tsv /work/fixtures/pon_shifted.counts.tsv"
+      ],
+      "--annotated-intervals": [
+        "/work/fixtures/pon_annotated.tsv",
+        "null"
+      ],
+      "--output": [
+        "/work/out/pon.hdf5"
+      ],
+      "--maximum-chunk-size": [
+        "16777215",
+        "100",
+        "1"
+      ],
+      "--minimum-interval-median-percentile": [
+        "10.0",
+        "0.0",
+        "50.0"
+      ],
+      "--maximum-zeros-in-sample-percentage": [
+        "5.0",
+        "100.0",
+        "30.0"
+      ],
+      "--maximum-zeros-in-interval-percentage": [
+        "5.0",
+        "100.0",
+        "30.0"
+      ],
+      "--extreme-sample-median-percentile": [
+        "2.5",
+        "0.0",
+        "20.0"
+      ],
+      "--extreme-outlier-truncation-percentile": [
+        "0.1",
+        "0.0",
+        "10.0"
+      ],
+      "--number-of-eigensamples": [
+        "20",
+        "0",
+        "3"
+      ]
+    },
     "CreateSomaticPanelOfNormals": {
       "$why": [
         "pon_normals.vcf is three normals with AD at every site, built so each rule of the panel is",
