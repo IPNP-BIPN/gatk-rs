@@ -450,12 +450,8 @@ jobs:
             suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
           - group: oracle-backed
             index: "61/61"
-            slug: "read-walker-refusals"
-            suites: "read-walker-refusals"
-          - group: golden-pending
-            index: "1/1"
-            slug: "smith-waterman"
-            suites: "smith-waterman"
+            slug: "read-walker-refusals-smith-waterman"
+            suites: "read-walker-refusals smith-waterman"
     steps:
       - uses: actions/checkout@v7
 

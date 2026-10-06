@@ -6874,11 +6874,11 @@
     },
     {
       "id": "smith-waterman",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The Smith-Waterman aligners over the same pairs, before the Java one is ported",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "HaplotypeCaller and Mutect2 realign every haplotype to the reference, and reads to haplotypes, with Smith-Waterman, and --smith-waterman FASTEST_AVAILABLE resolves to SmithWatermanIntelAligner -- Intel GKL, through JNI -- whenever the native library loads. Nobody had checked whether it returns the same offset and CIGAR as the pure-Java SmithWatermanJavaAligner the port targets, and a golden taken without checking would pin whichever one happened to run: the trap the PairHMM measurement found for the likelihood kernel. Forty-six reference and alternate pairs cover an exact match, substitutions at both ends and in the middle, insertions and deletions in the middle and near both ends, homopolymer and tandem-repeat indels whose placement is ambiguous, an alternate longer than the reference, overhanging either end, a prefix, a suffix and an interior stretch that occurs twice, single-base and degenerate shapes, and the two empty inputs the Java refuses. Each pair runs under all four SWParameters sets of SmithWatermanAlignmentConstants and all four SWOverhangStrategy values through every aligner the container can build, and CigarUtils.calculateCigar (pad, align, trim, left-align) runs over the same pairs with the two strategies GATK passes it. THERE IS NO expect_rows, ON PURPOSE: the row count depends on which implementations the runner can build, and that is the question; a loaded row of no is a result rather than a failure.",
+      "why": "HaplotypeCaller and Mutect2 realign every haplotype to the reference, and reads to haplotypes, with Smith-Waterman, and --smith-waterman FASTEST_AVAILABLE resolves to SmithWatermanIntelAligner -- Intel GKL, through JNI -- whenever the native library loads. Nobody had checked whether it returns the same offset and CIGAR as the pure-Java SmithWatermanJavaAligner the port targets, and a golden taken without checking would pin whichever one happened to run: the trap the PairHMM measurement found for the likelihood kernel. Forty-six reference and alternate pairs cover an exact match, substitutions at both ends and in the middle, insertions and deletions in the middle and near both ends, homopolymer and tandem-repeat indels whose placement is ambiguous, an alternate longer than the reference, overhanging either end, a prefix, a suffix and an interior stretch that occurs twice, single-base and degenerate shapes, and the two empty inputs the Java refuses. Each pair runs under all four SWParameters sets of SmithWatermanAlignmentConstants and all four SWOverhangStrategy values through every aligner the container can build, and CigarUtils.calculateCigar (pad, align, trim, left-align) runs over the same pairs with the two strategies GATK passes it. THE RUNNER ANSWERED: SmithWatermanIntelAligner DOES NOT LOAD THERE. On real x86-64, in the pinned image, it raises HardwareFeatureException, which is the failure the vectorised PairHMM shows in the same image, where the Intel GKL native library cannot load for want of libgomp.so.1 (the dump records the refusal, not its cause). FASTEST_AVAILABLE therefore falls back to SmithWatermanJavaAligner, so the pinned oracle CANNOT RUN the Intel aligner at all and every HaplotypeCaller or Mutect2 golden taken from this image already pins the Java one; there is no Intel-versus-Java disagreement to record, because the Intel side never produced a row. The runner dump is byte for byte the laptop dump, 2211 rows, so the conclusion does not depend on the host. A loaded row naming the refusal guards it: a runner that one day CAN load the library fails this suite instead of silently changing what every golden means.",
       "compare": {
         "mode": "lines"
       },
@@ -6888,13 +6888,16 @@
         "align\talt-occurs-twice\tNEW_SW_PARAMETERS\tINDEL\tSmithWatermanJavaAligner\t0\t11M17D",
         "align\talt-overhangs-left\tNEW_SW_PARAMETERS\tIGNORE\tSmithWatermanJavaAligner\t-5\t21M",
         "align\tempty-reference\tNEW_SW_PARAMETERS\tINDEL\tSmithWatermanJavaAligner\t-\texception:IllegalArgumentException",
-        "cigar\thaplotype-trailing-deletion\tNEW_SW_PARAMETERS\tINDEL\tSmithWatermanJavaAligner\t18M2D4M"
+        "cigar\thaplotype-trailing-deletion\tNEW_SW_PARAMETERS\tINDEL\tSmithWatermanJavaAligner\t18M2D4M",
+        "loaded\tSmithWatermanIntelAligner\tno:HardwareFeatureException",
+        "fastest\tSmithWatermanJavaAligner"
       ],
+      "expect_rows": 2211,
       "cases": [
         {
           "dump": "SmithWatermanDump",
-          "golden": null,
-          "why": "Forty-six pairs through every Smith-Waterman implementation the container can build, under four parameter sets and four overhang strategies, plus CigarUtils.calculateCigar over the same pairs. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run PENDING."
+          "golden": "crates/gatk-engine/tests/data/smith_waterman.txt.gz",
+          "why": "Forty-six pairs through every Smith-Waterman implementation the container can build, under four parameter sets and four overhang strategies, plus CigarUtils.calculateCigar over the same pairs. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 37423573301, and byte for byte what this laptop produced."
         }
       ]
     }
