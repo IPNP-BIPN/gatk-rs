@@ -424,7 +424,7 @@ jobs:
       - name: docs/STATUS.md is generated, not written
         # It is generated from the inventory and the vendored port summaries under
         # tools/dashboard/ports, both of which are committed, so this runs with only this
-        # repository checked out. Refreshing the summaries from the sibling working copies is
+        # repository checked out. Refreshing the summaries from the siblings' fetched main is
         # `--refresh`, and is a deliberate, reviewable commit.
         run: python3 tools/dashboard/generate.py --check
 

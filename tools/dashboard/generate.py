@@ -33,6 +33,7 @@ the dashboard says so in the column rather than leaving it blank and letting a r
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,15 +42,27 @@ INVENTORY = REPO / "tools" / "inventory" / "generated" / "inventory.json"
 STATUS = REPO / "docs" / "STATUS.md"
 VENDORED = Path(__file__).resolve().parent / "ports"
 
-# The sibling ports, as they sit on a maintainer's machine. CI has only this repository checked
-# out, so what the dashboard reads is the *vendored* copy under tools/dashboard/ports, refreshed
-# from these paths with --refresh. That keeps the generated file reproducible from committed data
-# alone: a dashboard that could only be regenerated on one machine is a hand-written table with
-# extra steps.
+# The sibling ports' clones, as they sit next to this one on a maintainer's machine. CI has only
+# this repository checked out, so what the dashboard reads is the *vendored* copy under
+# tools/dashboard/ports, refreshed from these clones with --refresh. That keeps the generated file
+# reproducible from committed data alone: a dashboard that could only be regenerated on one machine
+# is a hand-written table with extra steps.
+#
+# These used to name `Picard` and `htsjdk`, the layout before the clones moved under GATK/. Next to
+# gatk-rs those names are the Java references (the filesystem is case-insensitive), which hold no
+# manifest, so every --refresh after the move reported the ports missing and kept the August
+# snapshot: STATUS.md showed 89 Picard tools started while picard-rs main had 105.
 PORTS = [
-    ("picard-rs", REPO.parent / "Picard" / "tools" / "conformance" / "manifest.json"),
-    ("htsjdk-rs", REPO.parent / "htsjdk" / "tools" / "conformance" / "manifest.json"),
+    ("picard-rs", REPO.parent / "picard-rs"),
+    ("htsjdk-rs", REPO.parent / "htsjdk-rs"),
 ]
+
+# What a refresh vendors: each port's main as GitHub has it, never the clone's working tree. A
+# clone is often on a feature branch, and its tree then holds suites and measurements that have
+# not merged; the dashboard would publish them as the port's state.
+PORT_REF = "origin/main"
+MANIFEST_PATH = "tools/conformance/manifest.json"
+MEASURED_PATH = "tools/coverage/measured.json"
 
 # This repository's own manifest is read in place, not vendored.
 #
@@ -64,13 +77,9 @@ PORTS = [
 LOCAL = ("gatk-rs", REPO / "tools" / "conformance" / "manifest.json")
 LOCAL_MEASURED = REPO / "tools" / "coverage" / "measured.json"
 
-# Each port's argument-coverage measurement, written by its own CI from the covering arrays. A
-# port with no such file has not run its arrays, and every tool it covers reports `not measured`
-# rather than nothing, so a reader cannot mistake silence for coverage.
-MEASURED = {
-    "picard-rs": REPO.parent / "Picard" / "tools" / "coverage" / "measured.json",
-    "htsjdk-rs": REPO.parent / "htsjdk" / "tools" / "coverage" / "measured.json",
-}
+# Each port's argument-coverage measurement (MEASURED_PATH above) is written by its own CI from
+# the covering arrays. A port with no such file has not run its arrays, and every tool it covers
+# reports `not measured` rather than nothing, so a reader cannot mistake silence for coverage.
 
 
 def summarize(manifest):
@@ -88,21 +97,35 @@ def summarize(manifest):
     }
 
 
+def git(clone, *args):
+    """Run git in a sibling clone; None when the command fails (no clone, no such path)."""
+    done = subprocess.run(
+        ["git", "-C", str(clone), *args], capture_output=True, text=True, check=False
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
 def refresh():
-    """Re-vendor each port's suite list from the sibling working copy."""
+    """Re-vendor each port's suite list and measurement from its main, fetched first."""
     VENDORED.mkdir(exist_ok=True)
     written, missing = [], []
-    for name, path in PORTS:
-        if not path.exists():
-            missing.append((name, path))
+    for name, clone in PORTS:
+        # A fetch that fails leaves origin/main where it was, and the vendored file would then be
+        # as stale as the one it replaces, so it counts as missing.
+        if git(clone, "fetch", "--quiet", "origin", "main") is None:
+            missing.append((name, clone))
             continue
-        with open(path) as fh:
-            summary = summarize(json.load(fh))
-        summary["source"] = str(path)
-        measured = MEASURED.get(name)
-        if measured and measured.exists():
-            with open(measured) as fh:
-                summary["coverage"] = json.load(fh).get("tools", {})
+        commit = git(clone, "rev-parse", PORT_REF)
+        manifest = git(clone, "show", f"{PORT_REF}:{MANIFEST_PATH}")
+        if commit is None or manifest is None:
+            missing.append((name, clone / MANIFEST_PATH))
+            continue
+        summary = summarize(json.loads(manifest))
+        summary["source"] = f"{name} {PORT_REF}"
+        summary["commit"] = commit.strip()
+        measured = git(clone, "show", f"{PORT_REF}:{MEASURED_PATH}")
+        if measured is not None:
+            summary["coverage"] = json.loads(measured).get("tools", {})
         out = VENDORED / f"{name}.json"
         out.write_text(json.dumps(summary, indent=2) + "\n")
         written.append((name, len(summary["suites"])))
@@ -212,7 +235,14 @@ def render(inventory, manifests, missing):
             f"{name} {ref['tag']} (`{ref['sha'][:12]}`)" for name, ref in reference.items()
         )
     )
-    lines.append("")
+    ports = [
+        f"{name} `{manifest['commit'][:12]}`"
+        for name, manifest in sorted(manifests.items())
+        if manifest.get("commit")
+    ]
+    if ports:
+        lines.append("Ports vendored from main at: " + ", ".join(ports))
+        lines.append("")
 
     total = len(tools)
     lines.append("| state | tools | share |")
@@ -272,7 +302,7 @@ def main(argv):
     ap.add_argument(
         "--refresh",
         action="store_true",
-        help="re-vendor the ports' suite lists from the sibling working copies, then regenerate",
+        help="re-vendor the ports' suite lists from their fetched main, then regenerate",
     )
     args = ap.parse_args(argv)
 
@@ -282,6 +312,11 @@ def main(argv):
             print(f"vendored {name}: {count} suites")
         for name, path in absent:
             print(f"  no manifest for {name} at {path}")
+        # A port that could not be read keeps its old vendored file, which is exactly how the
+        # August snapshot outlived two months of picard-rs merges. Stop before regenerating.
+        if absent:
+            print("refresh incomplete: the dashboard was not regenerated")
+            return 1
         # Said out loud, because a maintainer who sees two lines for three ports would reasonably
         # conclude the third was skipped.
         print(f"{LOCAL[0]}: read in place from {LOCAL[1]}, nothing to vendor")
