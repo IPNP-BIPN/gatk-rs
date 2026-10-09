@@ -6940,6 +6940,29 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "seq-graph",
+      "status": "golden-pending",
+      "title": "toSequenceGraph, cleanupSeqGraph and SeqGraph.simplifyGraph",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The sequence graph the assembler's haplotypes are read from (G3.1b, #1281): BaseGraph.toSequenceGraph after pruning and disconnection, then ReadThreadingAssembler.cleanupSeqGraph stage by stage (cleanNonRefPaths, zipLinearChains, orphans, vertices not connected to the reference either way, simplifyGraph with MergeDiamonds, MergeTails, SplitCommonSuffices and MergeCommonSuffices, removePathsNotConnectedToRef, the final simplification and the empty vertex). JGraphT's rules decide the result: insertion order everywhere, addEdge refusing a second edge between the same pair (so merging two same-sequence predecessors fed by one source loses a multiplicity), and refusing an edge object already present (how the diamond splitter never adds its prefix-to-suffix edge twice). Thirteen graphs threaded from reads (SNPs, a triallelic SNP, short and long insertions, a deletion, an MNP, a prefix before the reference, k of 5 and 25) and nine built by hand to reach each transform.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "summary\tsnp\tfinal\tvertices=4\tedges=4\trefsource=0\trefsink=3",
+        "summary\tshared-sequence-one-source\tsimplified\tvertices=1\tedges=0\trefsource=0\trefsink=0",
+        "status\tref-only\tASSEMBLED_SOME_VARIATION"
+      ],
+      "expect_rows": 2680,
+      "cases": [
+        {
+          "dump": "SeqGraphDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []
