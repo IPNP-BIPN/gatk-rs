@@ -59,6 +59,10 @@ def main():
     # test: the x86-64 job, minus the parts that need the runner
     step("Every ported symbol comes from a licence-compatible source",
          ["python3", "tools/audit/provenance.py", "crates"])
+    step("A change made for speed cannot reorder arithmetic",
+         ["python3", "tools/audit/arithmetic.py"])
+    step("The arithmetic guard catches what it forbids",
+         ["python3", "tools/audit/arithmetic.py", "--self-test"])
     step("A file already explained does not lose its explanations",
          ["python3", "tools/audit/comment_density.py", "--check"])
     step("cargo fmt", ["cargo", "fmt", "--all", "--", "--check"])
