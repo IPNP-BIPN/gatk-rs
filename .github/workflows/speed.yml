@@ -1,0 +1,110 @@
+name: Speed
+
+# Milestone S (#107): what the port costs against the reference, on the rows it is proven
+# byte-identical on. Kept out of ci.yml on purpose: it decides nothing about correctness, it is
+# slow, and a timing taken while thirty other jobs share the runner pool is a timing of the pool.
+# It runs when the harness itself changes, on main, and by hand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/speed/**"
+      - ".github/workflows/speed.yml"
+  pull_request:
+    paths:
+      - "tools/speed/**"
+      - ".github/workflows/speed.yml"
+  workflow_dispatch:
+
+jobs:
+  oracle-image:
+    name: The pinned oracle image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+
+      - name: Build the oracle image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          docker build --platform linux/amd64 -t gatk-rs-oracle:4.6.2.0 tools/oracle
+          docker save gatk-rs-oracle:4.6.2.0 -o /tmp/oracle-image.tar
+
+  measure:
+    name: "measure ${{ matrix.shard }}/8"
+    needs: oracle-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: /tmp/oracle-image.tar
+          key: gatk-rs-oracle-${{ hashFiles('tools/oracle/**') }}
+          fail-on-cache-miss: true
+
+      - run: docker load -i /tmp/oracle-image.tar
+
+      - name: nasm, which is what makes GKL's igzip exact rather than merely valid
+        run: |
+          sudo apt-get update -qq || echo "apt refresh incomplete; the install below is the gate"
+          sudo apt-get install -y -qq nasm
+          nasm -v
+
+      - name: h5py, which the row probe needs to compare an HDF5 output
+        run: sudo apt-get install -y -qq python3-h5py
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the port binary
+        run: cargo build --release -p gatk-cli
+
+      - name: Record the host CPU
+        run: grep -m1 'model name' /proc/cpuinfo; nproc
+
+      - name: Measure this shard
+        # Tools run one at a time: two timings side by side on one runner measure each other.
+        run: |
+          python3 tools/speed/bench.py --port target/release/gatk-rs \
+            --shard ${{ matrix.shard }}/8 --out /tmp/speed-${{ matrix.shard }}.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: speed-shard-${{ matrix.shard }}
+          path: /tmp/speed-${{ matrix.shard }}.json
+
+  merge:
+    name: One measurement
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: speed-shard-*
+          path: /tmp/shards
+          merge-multiple: true
+
+      - name: Merge the shards
+        run: |
+          python3 tools/speed/bench.py --merge /tmp/shards/speed-*.json --out /tmp/speed.json \
+            | tee /tmp/speed.txt
+          { echo '```'; cat /tmp/speed.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: speed
+          path: |
+            /tmp/speed.json
+            /tmp/speed.txt
