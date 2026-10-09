@@ -168,6 +168,34 @@ def coverage_cell(entry, manifests):
     return cell
 
 
+SPEED = REPO / "tools" / "speed" / "baseline.json"
+
+
+def load_speed():
+    """The committed speed baseline (Milestone S, #110), or nothing before there is one."""
+    if not SPEED.exists():
+        return {}
+    with open(SPEED) as fh:
+        return json.load(fh).get("tools", {})
+
+
+def speed_cell(entry, speed):
+    """What the port costs against the reference, beside what it is claimed to produce.
+
+    Both numbers are `port / reference` wall clock on the first row of the tool's covering array
+    that the two answer identically, from `tools/speed/bench.py`: cold is one process per run on
+    each side, steady is against the reference warmed up in one JVM. Below 1 the port is cheaper.
+    Only gatk-rs tools are measured, and only at share 1.000; anything else has no row.
+    """
+    if entry["port"] != "gatk-rs":
+        return "not measured"
+    measured = speed.get(entry["tool"], {})
+    if measured.get("ratio_cold_wall") is None:
+        return "not measured"
+    steady = measured.get("ratio_steady_wall")
+    return f"{measured['ratio_cold_wall']:.3f} / " + (f"{steady:.3f}" if steady is not None else "-")
+
+
 def tool_states(manifests):
     """Map tool name -> {'state', 'suites', 'port', 'cases'}."""
     states = {}
@@ -188,6 +216,7 @@ def tool_states(manifests):
 def render(inventory, manifests, missing):
     tools = inventory["tools"]
     states = tool_states(manifests)
+    speed = load_speed()
 
     counted = {"oracle-backed": 0, "golden-pending": 0, "unchecked": 0, "not started": 0}
     rows = []
@@ -232,6 +261,13 @@ def render(inventory, manifests, missing):
         "run against a port binary, which is still true of most tools here."
     )
     lines.append("")
+    lines.append(
+        "The cost column is `port / reference` wall clock, cold / steady, from the committed "
+        "baseline (`tools/speed/baseline.json`, measured by `tools/speed/bench.py` on real "
+        "x86-64; see [speed/baseline.md](speed/baseline.md)). Cold is one process per run on each "
+        "side; steady is against the reference warmed up in one JVM. Below 1 the port is cheaper."
+    )
+    lines.append("")
 
     if missing:
         lines.append("## Ports not found")
@@ -246,13 +282,16 @@ def render(inventory, manifests, missing):
         lines.append(f"## {origin}-origin tools ({len(started)} of {len(subset)} started)")
         lines.append("")
         if started:
-            lines.append("| tool | archetype | state | suites | cases | argument coverage |")
-            lines.append("|---|---|---|---|---:|---|")
+            lines.append(
+                "| tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |"
+            )
+            lines.append("|---|---|---|---|---:|---|---|")
             for tool, state, entry in started:
                 suites = ", ".join(sorted(set(entry["suites"])))
                 lines.append(
                     f"| `{tool['name']}` | {tool['archetype']} | {state} | {suites} | "
-                    f"{entry['cases']} | {coverage_cell(entry, manifests)} |"
+                    f"{entry['cases']} | {coverage_cell(entry, manifests)} | "
+                    f"{speed_cell(entry, speed)} |"
                 )
             lines.append("")
         not_started = [r[0]["name"] for r in subset if r[1] == "not started"]
