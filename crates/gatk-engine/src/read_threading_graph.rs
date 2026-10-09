@@ -49,6 +49,12 @@ pub enum GraphError {
     AlreadyBuilt,
     /// `SequenceForKmers`'s argument checks.
     InvalidSequence(String),
+    /// `IllegalStateException("Graph must have ref source and sink vertices")`.
+    NoReferenceSourceOrSink,
+    /// `IllegalStateException("Should have eliminated all but the reference sink, ...")`.
+    MoreThanOneSink,
+    /// `IllegalStateException("Should have eliminated all but the reference source, ...")`.
+    MoreThanOneSource,
 }
 
 /// `MultiDeBruijnVertex`: a k-mer's bases and the debugging text `buildGraphIfNecessary` appends to.
@@ -134,12 +140,17 @@ pub struct ReadThreadingGraph {
     pruning_samples: usize,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
+    /// Whether each vertex and edge is still in the graph. A removal keeps the others' order, as
+    /// removing from a `LinkedHashMap` or an array-backed set does.
+    vertex_alive: Vec<bool>,
+    edge_alive: Vec<bool>,
     outgoing: Vec<Vec<usize>>,
     incoming: Vec<Vec<usize>>,
     /// `pending`, a `LinkedHashMap` from sample to its sequences.
     pending: Vec<(String, Vec<SequenceForKmers>)>,
-    /// `kmerToVertexMap`, a `LinkedHashMap`: the entries in insertion order, and an index into them.
-    kmer_entries: Vec<(Vec<u8>, usize)>,
+    /// `kmerToVertexMap`, a `LinkedHashMap`: the entries in insertion order (`None` once removed),
+    /// and an index into them.
+    kmer_entries: Vec<Option<(Vec<u8>, usize)>>,
     kmer_index: HashMap<Vec<u8>, usize>,
     non_unique: HashSet<Vec<u8>>,
     reference_path: Option<Vec<usize>>,
@@ -164,6 +175,8 @@ impl ReadThreadingGraph {
             pruning_samples,
             vertices: Vec::new(),
             edges: Vec::new(),
+            vertex_alive: Vec::new(),
+            edge_alive: Vec::new(),
             outgoing: Vec::new(),
             incoming: Vec::new(),
             pending: Vec::new(),
@@ -192,12 +205,30 @@ impl ReadThreadingGraph {
         self.kmer_size
     }
 
-    pub fn vertices(&self) -> &[Vertex] {
-        &self.vertices
+    /// `vertexSet()`, in its order: the ids of the vertices still in the graph.
+    pub fn vertex_ids(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.vertices.len()).filter(|&v| self.vertex_alive[v])
     }
 
-    pub fn edges(&self) -> &[Edge] {
-        &self.edges
+    /// `edgeSet()`, in its order.
+    pub fn edge_ids(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.edges.len()).filter(|&e| self.edge_alive[e])
+    }
+
+    pub fn vertex(&self, id: usize) -> &Vertex {
+        &self.vertices[id]
+    }
+
+    pub fn edge(&self, id: usize) -> &Edge {
+        &self.edges[id]
+    }
+
+    pub fn vertex_count(&self) -> usize {
+        self.vertex_ids().count()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.edge_ids().count()
     }
 
     pub fn outgoing_edges(&self, vertex: usize) -> &[usize] {
@@ -214,8 +245,8 @@ impl ReadThreadingGraph {
     }
 
     /// `kmerToVertexMap`, in its order.
-    pub fn kmer_to_vertex(&self) -> &[(Vec<u8>, usize)] {
-        &self.kmer_entries
+    pub fn kmer_to_vertex(&self) -> impl Iterator<Item = &(Vec<u8>, usize)> + '_ {
+        self.kmer_entries.iter().flatten()
     }
 
     /// `getNonUniqueKmers()`.
@@ -311,7 +342,7 @@ impl ReadThreadingGraph {
         }
         // `shouldRemoveReadsAfterGraphConstruction()` is true: the pending pile is cleared.
         self.already_built = true;
-        for (_, vertex) in &self.kmer_entries {
+        for (_, vertex) in self.kmer_entries.iter().flatten() {
             self.vertices[*vertex].additional_info.push('+');
         }
         Ok(())
@@ -446,7 +477,8 @@ impl ReadThreadingGraph {
         }
         self.kmer_index
             .get(kmer)
-            .map(|&entry| self.kmer_entries[entry].1)
+            .and_then(|&entry| self.kmer_entries[entry].as_ref())
+            .map(|(_, vertex)| *vertex)
     }
 
     /// `createVertex`: a new vertex, tracked unless its k-mer is non-unique or already tracked.
@@ -456,12 +488,13 @@ impl ReadThreadingGraph {
             sequence: kmer.to_vec(),
             additional_info: String::new(),
         });
+        self.vertex_alive.push(true);
         self.outgoing.push(Vec::new());
         self.incoming.push(Vec::new());
         if !self.non_unique.contains(kmer) && !self.kmer_index.contains_key(kmer) {
             self.kmer_index
                 .insert(kmer.to_vec(), self.kmer_entries.len());
-            self.kmer_entries.push((kmer.to_vec(), vertex));
+            self.kmer_entries.push(Some((kmer.to_vec(), vertex)));
         }
         vertex
     }
@@ -508,13 +541,14 @@ impl ReadThreadingGraph {
             multiplicity,
             self.pruning_samples,
         ));
+        self.edge_alive.push(true);
         self.outgoing[source].push(edge);
         self.incoming[target].push(edge);
     }
 
     /// `isLowQualityGraph()`: more than a quarter as many non-unique k-mers as tracked ones.
     pub fn is_low_quality_graph(&self) -> bool {
-        self.non_unique.len() * 4 > self.kmer_entries.len()
+        self.non_unique.len() * 4 > self.kmer_to_vertex().count()
     }
 
     /// `isRefSource(v)`: no incoming reference edge and an outgoing one, or the only vertex.
@@ -525,7 +559,7 @@ impl ReadThreadingGraph {
         if self.outgoing[vertex].iter().any(|&e| self.edges[e].is_ref) {
             return true;
         }
-        self.vertices.len() == 1
+        self.vertex_count() == 1
     }
 
     /// `isRefSink(v)`.
@@ -536,17 +570,17 @@ impl ReadThreadingGraph {
         if self.incoming[vertex].iter().any(|&e| self.edges[e].is_ref) {
             return true;
         }
-        self.vertices.len() == 1
+        self.vertex_count() == 1
     }
 
     /// `getReferenceSourceVertex()`: the first vertex, in vertex order, that is a reference source.
     pub fn reference_source_vertex(&self) -> Option<usize> {
-        (0..self.vertices.len()).find(|&v| self.is_ref_source(v))
+        self.vertex_ids().find(|&v| self.is_ref_source(v))
     }
 
     /// `getReferenceSinkVertex()`.
     pub fn reference_sink_vertex(&self) -> Option<usize> {
-        (0..self.vertices.len()).find(|&v| self.is_ref_sink(v))
+        self.vertex_ids().find(|&v| self.is_ref_sink(v))
     }
 
     /// `hasCycles()`: JGraphT's `CycleDetector.detectCycles()`, a self-loop included. Only the
@@ -554,7 +588,7 @@ impl ReadThreadingGraph {
     pub fn has_cycles(&self) -> bool {
         // 0 unvisited, 1 on the current path, 2 finished.
         let mut state = vec![0u8; self.vertices.len()];
-        for root in 0..self.vertices.len() {
+        for root in self.vertex_ids() {
             if state[root] != 0 {
                 continue;
             }
@@ -580,6 +614,201 @@ impl ReadThreadingGraph {
         }
         false
     }
+
+    /// `inDegreeOf(v)`.
+    pub fn in_degree(&self, vertex: usize) -> usize {
+        self.incoming[vertex].len()
+    }
+
+    /// `outDegreeOf(v)`.
+    pub fn out_degree(&self, vertex: usize) -> usize {
+        self.outgoing[vertex].len()
+    }
+
+    /// `getSources()`: the vertices with no incoming edge, in vertex order.
+    pub fn sources(&self) -> Vec<usize> {
+        self.vertex_ids()
+            .filter(|&v| self.in_degree(v) == 0)
+            .collect()
+    }
+
+    /// `getSinks()`.
+    pub fn sinks(&self) -> Vec<usize> {
+        self.vertex_ids()
+            .filter(|&v| self.out_degree(v) == 0)
+            .collect()
+    }
+
+    /// `removeEdge(e)`: out of the edge set and both endpoints' lists, the rest in order.
+    pub fn remove_edge(&mut self, edge: usize) {
+        if !self.edge_alive[edge] {
+            return;
+        }
+        self.edge_alive[edge] = false;
+        let Edge { source, target, .. } = self.edges[edge];
+        self.outgoing[source].retain(|&e| e != edge);
+        self.incoming[target].retain(|&e| e != edge);
+    }
+
+    /// `AbstractReadThreadingGraph.removeVertex`: JGraphT's (its edges first, then the vertex),
+    /// and the vertex's sequence out of the k-mer map, whichever vertex the entry pointed to.
+    pub fn remove_vertex(&mut self, vertex: usize) {
+        if !self.vertex_alive[vertex] {
+            return;
+        }
+        let touching: Vec<usize> = self.outgoing[vertex]
+            .iter()
+            .chain(self.incoming[vertex].iter())
+            .copied()
+            .collect();
+        for edge in touching {
+            self.remove_edge(edge);
+        }
+        self.vertex_alive[vertex] = false;
+        if let Some(entry) = self.kmer_index.remove(&self.vertices[vertex].sequence) {
+            self.kmer_entries[entry] = None;
+        }
+    }
+
+    /// `AbstractReadThreadingGraph.removeSingletonOrphanVertices`: every vertex with no edge at
+    /// all. Unlike `BaseGraph`'s, it does not spare an isolated reference source.
+    pub fn remove_singleton_orphan_vertices(&mut self) {
+        let orphans: Vec<usize> = self
+            .vertex_ids()
+            .filter(|&v| self.in_degree(v) == 0 && self.out_degree(v) == 0)
+            .collect();
+        for vertex in orphans {
+            self.remove_vertex(vertex);
+        }
+    }
+
+    /// `removePathsNotConnectedToRef`: keep only the vertices reachable forward from the reference
+    /// source and backward from the reference sink. The reference removes them from a `HashSet`,
+    /// in hash order, but the result of removing a set does not depend on the order.
+    pub fn remove_paths_not_connected_to_ref(&mut self) -> Result<(), GraphError> {
+        let (Some(source), Some(sink)) =
+            (self.reference_source_vertex(), self.reference_sink_vertex())
+        else {
+            return Err(GraphError::NoReferenceSourceOrSink);
+        };
+        let forward = self.reachable(source, true);
+        let backward = self.reachable(sink, false);
+        let doomed: Vec<usize> = self
+            .vertex_ids()
+            .filter(|&v| !(forward[v] && backward[v]))
+            .collect();
+        for vertex in doomed {
+            self.remove_vertex(vertex);
+        }
+        if self.sinks().len() > 1 {
+            return Err(GraphError::MoreThanOneSink);
+        }
+        if self.sources().len() > 1 {
+            return Err(GraphError::MoreThanOneSource);
+        }
+        Ok(())
+    }
+
+    /// The vertices reachable from `start` along outgoing edges (or incoming ones), `start`
+    /// included: `BaseGraphIterator`, of which only the membership is read.
+    fn reachable(&self, start: usize, forward: bool) -> Vec<bool> {
+        let mut seen = vec![false; self.vertices.len()];
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(vertex) = stack.pop() {
+            let edges = if forward {
+                &self.outgoing[vertex]
+            } else {
+                &self.incoming[vertex]
+            };
+            for &edge in edges {
+                let next = if forward {
+                    self.edges[edge].target
+                } else {
+                    self.edges[edge].source
+                };
+                if !seen[next] {
+                    seen[next] = true;
+                    stack.push(next);
+                }
+            }
+        }
+        seen
+    }
+}
+
+/// A `Path` as `ChainPruner.findChain` builds it: its edges in order, and the vertex it ends on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chain {
+    pub edges: Vec<usize>,
+    pub last_vertex: usize,
+}
+
+impl Chain {
+    /// `getVertices()`: the first edge's source, then every edge's target.
+    pub fn vertices(&self, graph: &ReadThreadingGraph) -> Vec<usize> {
+        let mut out = vec![graph.edge(self.edges[0]).source];
+        out.extend(self.edges.iter().map(|&e| graph.edge(e).target));
+        out
+    }
+}
+
+/// `ChainPruner.findAllChains`: from every source, and then from the end of every chain found,
+/// the maximal linear chain behind each outgoing edge. A chain stops at a vertex with other than
+/// one way out, more than one way in, or that is the chain's own start.
+pub fn find_all_chains(graph: &ReadThreadingGraph) -> Vec<Chain> {
+    let mut starts: std::collections::VecDeque<usize> = graph.sources().into();
+    let mut seen: HashSet<usize> = starts.iter().copied().collect();
+    let mut chains = Vec::new();
+    while let Some(start) = starts.pop_front() {
+        for &edge in graph.outgoing_edges(start) {
+            let chain = find_chain(graph, edge);
+            if seen.insert(chain.last_vertex) {
+                starts.push_back(chain.last_vertex);
+            }
+            chains.push(chain);
+        }
+    }
+    chains
+}
+
+fn find_chain(graph: &ReadThreadingGraph, start: usize) -> Chain {
+    let mut edges = vec![start];
+    let first = graph.edge(start).source;
+    let mut last = graph.edge(start).target;
+    loop {
+        if graph.out_degree(last) != 1 || graph.in_degree(last) > 1 || last == first {
+            break;
+        }
+        let next = graph.outgoing_edges(last)[0];
+        edges.push(next);
+        last = graph.edge(next).target;
+    }
+    Chain {
+        edges,
+        last_vertex: last,
+    }
+}
+
+/// `LowWeightChainPruner.pruneLowWeightChains`: remove every chain whose edges are all
+/// non-reference with a pruning multiplicity under `prune_factor`, then the orphans.
+pub fn prune_low_weight_chains(graph: &mut ReadThreadingGraph, prune_factor: i32) {
+    let chains = find_all_chains(graph);
+    let doomed: Vec<Chain> = chains
+        .into_iter()
+        .filter(|chain| {
+            chain.edges.iter().all(|&e| {
+                let edge = graph.edge(e);
+                edge.pruning_multiplicity() < prune_factor && !edge.is_ref
+            })
+        })
+        .collect();
+    for chain in doomed {
+        for edge in chain.edges {
+            graph.remove_edge(edge);
+        }
+    }
+    graph.remove_singleton_orphan_vertices();
 }
 
 #[cfg(test)]
@@ -591,12 +820,11 @@ mod tests {
         let mut graph = ReadThreadingGraph::new(4, 10, 1);
         graph.add_sequence(b"ACGTTGCA", true).unwrap();
         graph.build_graph_if_necessary().unwrap();
-        assert_eq!(graph.vertices().len(), 5);
-        assert_eq!(graph.edges().len(), 4);
+        assert_eq!(graph.vertex_count(), 5);
+        assert_eq!(graph.edge_count(), 4);
         assert!(graph
-            .edges()
-            .iter()
-            .all(|e| e.is_ref && e.multiplicity == 1));
+            .edge_ids()
+            .all(|e| graph.edge(e).is_ref && graph.edge(e).multiplicity == 1));
         assert_eq!(graph.reference_path().unwrap(), &[0, 1, 2, 3, 4]);
         assert_eq!(graph.reference_source_vertex(), Some(0));
         assert_eq!(graph.reference_sink_vertex(), Some(4));
@@ -610,12 +838,11 @@ mod tests {
         graph.add_sequence(b"ACGTACGTT", true).unwrap();
         graph.build_graph_if_necessary().unwrap();
         let acgt = graph
-            .vertices()
-            .iter()
-            .filter(|v| v.sequence == b"ACGT")
+            .vertex_ids()
+            .filter(|&v| graph.vertex(v).sequence == b"ACGT")
             .count();
         assert_eq!(acgt, 2);
-        assert!(graph.kmer_to_vertex().iter().all(|(k, _)| k != b"ACGT"));
+        assert!(graph.kmer_to_vertex().all(|(k, _)| k != b"ACGT"));
     }
 
     #[test]
@@ -627,5 +854,20 @@ mod tests {
         // Queue was [3, 3], then 1 joined and the smallest left: [3, 3].
         assert_eq!(edge.pruning_multiplicity(), 3);
         assert_eq!(edge.multiplicity, 4);
+    }
+
+    #[test]
+    fn a_weight_one_bubble_is_pruned_and_the_reference_kept() {
+        let reference = b"ACGTTGCATGTCGCATGATGCATGAGAG";
+        let mut read = reference.to_vec();
+        read[14] = b'T';
+        let mut graph = ReadThreadingGraph::new(10, 10, 1);
+        graph.add_sequence(reference, true).unwrap();
+        graph.add_read("s1", &read, &vec![30; read.len()]).unwrap();
+        graph.build_graph_if_necessary().unwrap();
+        assert!(graph.vertex_count() > reference.len() - 9);
+        prune_low_weight_chains(&mut graph, 2);
+        assert_eq!(graph.vertex_count(), reference.len() - 9);
+        assert!(graph.edge_ids().all(|e| graph.edge(e).is_ref));
     }
 }
