@@ -1,4 +1,5 @@
 target/
+/target-linux/
 .DS_Store
 /gatk/
 /picard/
