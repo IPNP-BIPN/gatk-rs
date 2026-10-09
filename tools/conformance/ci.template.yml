@@ -71,6 +71,15 @@ jobs:
         # in all three repositories now, not just the one where it was learned.
         run: python3 tools/audit/provenance.py crates
 
+      - name: A change made for speed cannot reorder arithmetic
+        # Milestone S, S.2 (#109). The suites catch a moved byte only where their corpus reaches;
+        # this refuses fused multiply-add, fast-math intrinsics, SIMD and build flags outright,
+        # and ratchets the host transcendentals per file. The self-test plants each violation in
+        # a scratch tree and fails if one is not caught.
+        run: |
+          python3 tools/audit/arithmetic.py
+          python3 tools/audit/arithmetic.py --self-test
+
       - name: A file already explained does not lose its explanations
         # docs/COMMENTING.md. The guard is a ratchet, not a floor for the whole tree: it fails only
         # when a file on tools/audit/commented.txt drops below the density it was recorded at, so
