@@ -168,15 +168,20 @@ def coverage_cell(entry, manifests):
     return cell
 
 
-SPEED = REPO / "tools" / "speed" / "baseline.json"
+# The latest speed measurement, and the baseline it is compared against. `baseline.json` is the
+# record taken before any optimisation (Milestone S, #110) and does not move; `current.json` is
+# re-measured whenever a change made for speed lands, and is what the cost column shows.
+SPEED = REPO / "tools" / "speed" / "current.json"
+BASELINE = REPO / "tools" / "speed" / "baseline.json"
 
 
 def load_speed():
-    """The committed speed baseline (Milestone S, #110), or nothing before there is one."""
-    if not SPEED.exists():
-        return {}
-    with open(SPEED) as fh:
-        return json.load(fh).get("tools", {})
+    """The current speed measurement, else the baseline, else nothing."""
+    for path in (SPEED, BASELINE):
+        if path.exists():
+            with open(path) as fh:
+                return json.load(fh).get("tools", {})
+    return {}
 
 
 def speed_cell(entry, speed):
@@ -262,10 +267,11 @@ def render(inventory, manifests, missing):
     )
     lines.append("")
     lines.append(
-        "The cost column is `port / reference` wall clock, cold / steady, from the committed "
-        "baseline (`tools/speed/baseline.json`, measured by `tools/speed/bench.py` on real "
-        "x86-64; see [speed/baseline.md](speed/baseline.md)). Cold is one process per run on each "
-        "side; steady is against the reference warmed up in one JVM. Below 1 the port is cheaper."
+        "The cost column is `port / reference` wall clock, cold / steady, from the latest "
+        "measurement (`tools/speed/current.json`, measured by `tools/speed/bench.py` on real "
+        "x86-64; the pre-optimisation record is [speed/baseline.md](speed/baseline.md), the changes "
+        "since are [speed/targets.md](speed/targets.md)). Cold is one process per run on each side; "
+        "steady is against the reference warmed up in one JVM. Below 1 the port is cheaper."
     )
     lines.append("")
 

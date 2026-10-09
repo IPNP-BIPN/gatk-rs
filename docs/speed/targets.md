@@ -41,8 +41,20 @@ identical outputs before and after.
 | `HaplotypeBasedVariantRecaller` | 68 ms | 59 ms | 1.15x |
 | `FlowPairHMMAlignReadsToHaplotypes` | 87 ms | 87 ms | 1.0x |
 
-The ratios on real x86-64, from the `Speed` run on this change, replace the baseline's in
-`tools/speed/baseline.json` and in STATUS.md's cost column.
+**Result on real x86-64** (`Speed` run 37923376066 on this change, `tools/speed/current.json`,
+now STATUS.md's cost column; the baseline stays in `baseline.json`):
+
+| Tool | steady, before | steady, after | cold, before | cold, after | port, before | port, after |
+|---|---:|---:|---:|---:|---:|---:|
+| `ModelSegments` | 18.39 | **1.50** | 4.83 | **0.38** | 9.67 s | 1.26 s |
+| `VariantRecalibrator` | 4.63 | **0.75** | 0.37 | 0.06 | 1.00 s | 0.15 s |
+| `HaplotypeBasedVariantRecaller` | 1.30 | 1.05 | 0.07 | 0.06 | 158 ms | 125 ms |
+| `FlowPairHMMAlignReadsToHaplotypes` | 1.05 | 0.98 | 0.09 | 0.09 | 120 ms | 183 ms |
+
+`ModelSegments` is now cheaper than the reference cold and within a factor of 1.5 of it warm;
+`VariantRecalibrator` is cheaper than a warm JVM. The last two rows moved inside the noise, in
+both directions, which is what an unchanged path does. The other 131 tools moved a median 7% cold
+and 10% steady, at most 45%, the same spread two runs of one commit showed in the baseline.
 
 ## Not targets yet
 
