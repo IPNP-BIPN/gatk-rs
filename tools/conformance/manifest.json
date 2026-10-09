@@ -6963,6 +6963,28 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "kbest-haplotype",
+      "status": "golden-pending",
+      "title": "GraphBasedKBestHaplotypeFinder over the sequence graph",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The haplotypes the assembler reads off the sequence graph (G3.1b, #1281): Dijkstra's k-shortest paths scoring each step log10(multiplicity) - log10(total outgoing), a java.util.PriorityQueue ordering by score (highest first) then by bases (BASES_COMPARATOR reversed), each vertex extended at most k times. A zero multiplicity gives -Infinity and an all-zero vertex NaN, which Double.compare hands out first once reversed; the reference alone, with cleanupSeqGraph's empty vertex on a zero-multiplicity edge, scores NaN. A cyclic graph is cut first by a depth-first walk whose visited set is never emptied, so it cuts cross edges as well as back edges. Eight graphs threaded from reads and six built by hand (a tie on score, zero and all-zero multiplicities, six haplotypes from nested bubbles, a cycle, two sources and two sinks), each searched from the reference source to the reference sink and from all sources to all sinks, for k of 1, 2, 3 and 128, scores as raw bits.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "haplotype\ttie-on-score\trefpath\t128\t0\tACGTCTTTT\tbfd34413509f79fe,-0.30102999566398114\tfalse\t0,2,3",
+        "haplotype\tcycle\trefpath\t128\t0\tAAAACCGGTTTT\t0000000000000000,0.0\tfalse\t0,1,2,3"
+      ],
+      "expect_rows": 341,
+      "cases": [
+        {
+          "dump": "KBestHaplotypeDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

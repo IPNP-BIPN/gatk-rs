@@ -825,7 +825,7 @@ pub fn chain_bases(graph: &ReadThreadingGraph, chain: &Chain) -> Vec<u8> {
 }
 
 /// `BaseUtils.BASES_COMPARATOR`: signed bytes in order, then length.
-fn compare_bases(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+pub(crate) fn compare_bases(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
     for (x, y) in a.iter().zip(b) {
         let order = (*x as i8).cmp(&(*y as i8));
         if order != std::cmp::Ordering::Equal {
@@ -836,7 +836,7 @@ fn compare_bases(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
 }
 
 /// `Double.compare`: `-0.0` below `0.0`, NaN above everything, NaN equal to NaN.
-fn java_double_compare(a: f64, b: f64) -> std::cmp::Ordering {
+pub(crate) fn java_double_compare(a: f64, b: f64) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     if a < b {
         return Ordering::Less;
@@ -860,25 +860,25 @@ fn java_double_bits(value: f64) -> i64 {
 /// `java.util.PriorityQueue` with a comparator: the same binary heap, `siftUp` on `offer` and
 /// `siftDown` on `poll`, so that elements the comparator calls equal come out in the reference's
 /// order and not merely in some order.
-struct JavaPriorityQueue<T, F: Fn(&T, &T) -> std::cmp::Ordering> {
+pub(crate) struct JavaPriorityQueue<T, F: Fn(&T, &T) -> std::cmp::Ordering> {
     heap: Vec<T>,
     compare: F,
 }
 
 impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
-    fn new(compare: F) -> Self {
+    pub(crate) fn new(compare: F) -> Self {
         JavaPriorityQueue {
             heap: Vec::new(),
             compare,
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.heap.is_empty()
     }
 
     /// `offer` / `siftUpUsingComparator`.
-    fn add(&mut self, item: T) {
+    pub(crate) fn add(&mut self, item: T) {
         let mut k = self.heap.len();
         self.heap.push(item.clone());
         while k > 0 {
@@ -893,7 +893,7 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
     }
 
     /// `poll` / `siftDownUsingComparator`.
-    fn poll(&mut self) -> Option<T> {
+    pub(crate) fn poll(&mut self) -> Option<T> {
         let last = self.heap.pop()?;
         if self.heap.is_empty() {
             return Some(last);
