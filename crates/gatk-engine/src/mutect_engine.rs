@@ -145,6 +145,69 @@ pub fn tumor_log_odds(tumor_log_10_odds: Option<&[f64]>) -> Option<Vec<f64>> {
     tumor_log_10_odds.map(|odds| odds.iter().map(|value| log10_to_log(*value)).collect())
 }
 
+/// `Mutect2Engine.logLikelihoodRatio(refCount, altCount, errorProbability)`: the alt reads given
+/// one quality, the error probability's Phred score, repeated `alt_count` times.
+///
+/// `None` where `QualityUtils.errorProbToQual` throws, which is for an error probability that is
+/// not one (NaN included).
+pub fn log_likelihood_ratio_from_error(
+    ref_count: i32,
+    alt_count: i32,
+    error_probability: f64,
+) -> Option<f64> {
+    let qual = crate::qual_quantizer::error_prob_to_qual(error_probability)?;
+    Some(log_likelihood_ratio(ref_count, &[qual], alt_count))
+}
+
+/// `Mutect2Engine.logLikelihoodRatio(nRef, altQuals, repeatFactor)`: the `isActive()` statistic
+/// of `docs/mutect/mutect.pdf`, under the flat `Beta(1, 1)` prior on the allele fraction.
+///
+/// Every term is the reference's own function: `FastMath.exp` of a difference of `digamma`s
+/// (`MathUtils.digamma` is a cache of commons-math's `Gamma.digamma`), the quality tables of
+/// `QualityUtils` and `NaturalLogUtils`, `MathUtils.fastBernoulliEntropy`, and
+/// `CombinatoricsUtils.binomialCoefficientLog`. The one term that is not exact against the JVM is
+/// `qualToLogProb`, which goes through `log1mexp` and so through the host's `log1p` or `expm1`.
+pub fn log_likelihood_ratio(n_ref: i32, alt_quals: &[u8], repeat_factor: i32) -> f64 {
+    let n_alt = repeat_factor * alt_quals.len() as i32;
+    let n = n_ref + n_alt;
+    let f_tilde_ratio = jmath::fast_math::exp(digamma(n_ref + 1) - digamma(n_alt + 1));
+
+    let mut read_sum = 0.0;
+    for &qual in alt_quals {
+        // `QualityUtils.qualToErrorProb(byte)`: the cache entry `qualToErrorProb((double) q)`.
+        let epsilon = crate::math_utils::qual_to_error_prob(f64::from(qual));
+        let z_bar_alt = (1.0 - epsilon) / (1.0 - epsilon + epsilon * f_tilde_ratio);
+        let log_epsilon = qual_to_log_error_prob(qual);
+        let log_one_minus_epsilon = log1mexp(log_epsilon);
+        read_sum +=
+            z_bar_alt * (log_one_minus_epsilon - log_epsilon) + fast_bernoulli_entropy(z_bar_alt);
+    }
+
+    let beta_entropy = -jmath::math::log(f64::from(n + 1))
+        - jmath::combinatorics::binomial_coefficient_log(i64::from(n), i64::from(n_alt))
+            .unwrap_or(f64::NAN);
+    beta_entropy + read_sum * f64::from(repeat_factor)
+}
+
+/// `MathUtils.digamma(int)`: `DigammaCache`, which is `Gamma.digamma(n)` memoised.
+fn digamma(n: i32) -> f64 {
+    jmath::gamma::digamma(f64::from(n)).unwrap_or(f64::NAN)
+}
+
+/// `NaturalLogUtils.qualToLogErrorProb(byte)`: `(qual & 0xFF) * PHRED_TO_LOG_ERROR_PROB_FACTOR`,
+/// the factor being minus the natural
+/// logarithm of ten, over ten (`PHRED_TO_LOG_ERROR_PROB_FACTOR`).
+fn qual_to_log_error_prob(qual: u8) -> f64 {
+    f64::from(qual) * (-jmath::math::log(10.0) / 10.0)
+}
+
+/// `MathUtils.fastBernoulliEntropy`: a rational approximation, `p(1-p)(11 + 33 p(1-p)) / (2 + 20
+/// p(1-p))`.
+fn fast_bernoulli_entropy(p: f64) -> f64 {
+    let product = p * (1.0 - p);
+    product * (11.0 + 33.0 * product) / (2.0 + 20.0 * product)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
