@@ -37,7 +37,6 @@ COSTS, and it holds itself to the same rules:
 import argparse
 import json
 import math
-import shutil
 import statistics
 import subprocess
 import sys
@@ -416,14 +415,31 @@ def main(argv):
                     f"steady {summary.get('ratio_steady_wall') or float('nan'):.3f}",
                     flush=True,
                 )
+            # Written before the teardown, so a teardown that fails cannot take the
+            # measurement with it.
+            finish(document)
+            if options.out:
+                Path(options.out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
         finally:
-            run_array.empty_output_in_container(workdir)
-            shutil.rmtree(workdir / "spec", ignore_errors=True)
-    finish(document)
-    if options.out:
-        Path(options.out).write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
+            empty_as_root(workdir)
     table(document)
     return 0
+
+
+def empty_as_root(workdir):
+    """Remove everything the container wrote under `workdir`, as root, which is who owns it.
+
+    The corpus is built by the container, so its subdirectories (`gtrb`, the trio's CSVs) belong
+    to root and the host cannot unlink what is inside them: the temporary directory's teardown
+    raised on every shard after the last tool had been measured.
+    """
+    subprocess.run(
+        [
+            "docker", "run", "--rm", "--platform", run_array.PLATFORM,
+            "-v", f"{workdir}:/scratch", run_array.IMAGE, "rm -rf /scratch/* /scratch/.[!.]*",
+        ],
+        capture_output=True,
+    )
 
 
 if __name__ == "__main__":
