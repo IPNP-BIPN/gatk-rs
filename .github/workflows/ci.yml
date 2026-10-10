@@ -467,16 +467,16 @@ jobs:
             suites: "seq-graph kbest-haplotype dangling-ends pair-hmm-likelihood-engine event-map"
           - group: oracle-backed
             index: "63/63"
-            slug: "assembly-region-trimmer-finalize-region-assembly-complexity"
-            suites: "assembly-region-trimmer finalize-region assembly-complexity"
+            slug: "assembly-region-trimmer-finalize-region-assembly-complexity-hc-phasing"
+            suites: "assembly-region-trimmer finalize-region assembly-complexity hc-phasing"
           - group: golden-pending
             index: "1/2"
             slug: "read-threading-assembler-allele-mapping-dragstr-likelihoods-hc-is-active-hc-genotyping"
             suites: "read-threading-assembler allele-mapping dragstr-likelihoods hc-is-active hc-genotyping"
           - group: golden-pending
             index: "2/2"
-            slug: "hc-annotated-calls-hc-phasing"
-            suites: "hc-annotated-calls hc-phasing"
+            slug: "hc-annotated-calls"
+            suites: "hc-annotated-calls"
     steps:
       - uses: actions/checkout@v7
 

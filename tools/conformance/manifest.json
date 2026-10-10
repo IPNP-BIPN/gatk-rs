@@ -7285,7 +7285,7 @@
     },
     {
       "id": "hc-phasing",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller's physical phasing (phaseCalls)",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7299,7 +7299,8 @@
       "expect_rows": 209,
       "cases": [
         {
-          "dump": "HcPhasingDump"
+          "dump": "HcPhasingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_phasing.txt.gz"
         }
       ]
     }
