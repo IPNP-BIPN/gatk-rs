@@ -19,6 +19,12 @@
       "cases": 1
     },
     {
+      "id": "zlib",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "bgzf",
       "status": "oracle-backed",
       "tools": [],
@@ -55,6 +61,12 @@
       "cases": 1
     },
     {
+      "id": "indexed-fasta",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "bam-reheader",
       "status": "oracle-backed",
       "tools": [],
@@ -68,6 +80,36 @@
     },
     {
       "id": "bam-tag-read",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "quality-util",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "query",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "duplicate-scoring",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "downsampling",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "filter",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
@@ -91,13 +133,43 @@
       "cases": 1
     },
     {
+      "id": "validator",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "bai",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
     },
     {
+      "id": "sbi",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "build-index",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "samfiles",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "tabix-index",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
+      "id": "textual-index",
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
@@ -151,6 +223,12 @@
       "cases": 1
     },
     {
+      "id": "vcf-lazy-genotypes",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "vcf-read",
       "status": "oracle-backed",
       "tools": [],
@@ -199,6 +277,12 @@
       "cases": 1
     },
     {
+      "id": "cigar-clip-3prime",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
+    },
+    {
       "id": "mateinfo",
       "status": "oracle-backed",
       "tools": [],
@@ -206,7 +290,7 @@
     },
     {
       "id": "format",
-      "status": "unchecked",
+      "status": "oracle-backed",
       "tools": [],
       "cases": 1
     },
@@ -425,7 +509,14 @@
       "status": "oracle-backed",
       "tools": [],
       "cases": 1
+    },
+    {
+      "id": "mersenne-twister",
+      "status": "oracle-backed",
+      "tools": [],
+      "cases": 1
     }
   ],
-  "source": "/Users/benjamin/htsjdk/tools/conformance/manifest.json"
+  "source": "htsjdk-rs origin/main",
+  "commit": "0e5afcc8f4bb2496a92b293dcde4bccd330bcb96"
 }
