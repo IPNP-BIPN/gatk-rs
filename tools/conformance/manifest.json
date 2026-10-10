@@ -7267,6 +7267,47 @@
           "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
         }
       ]
+    },
+    {
+      "id": "hc-annotated-calls",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller's calls with its default annotations",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's calls as it writes them by default (G3.1e, #1284): assignGenotypeLikelihoods with the StandardAnnotation and StandardHCAnnotation set (BaseQualityRankSumTest, ChromosomeCounts, Coverage, DepthPerAlleleBySample, DepthPerSampleHC, ExcessHet, FisherStrand, InbreedingCoeff, MappingQualityRankSumTest, QualByDepth, RMSMappingQuality, ReadPosRankSumTest, StrandOddsRatio), computed by makeAnnotatedCall from the read-by-allele matrix the call was genotyped with, over the padded reference, before the reverse trim; the random generator reset as a tool run resets it, so QualByDepth's jitter of a high QD is measured. Reads are cut from the haplotypes and aligned through the haplotype's CIGAR, with varied base qualities, mapping qualities and strands. Twelve cases: het and hom SNPs, strand bias, a triallelic site, two sites, a deletion, an insertion, homopolymer deletions trimmed, two samples, three samples under HWE, a deep site, ploidy 1.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\tstrand-biased\tchr1\t1020\t.\tA\tC\t455.64\t.\tAC=1;AF=0.500;AN=2;BaseQRankSum=0.287;DP=16;ExcessHet=0.0000;FS=11.139"
+      ],
+      "expect_rows": 276,
+      "cases": [
+        {
+          "dump": "HcAnnotatedCallsDump"
+        }
+      ]
+    },
+    {
+      "id": "hc-phasing",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller's physical phasing (phaseCalls)",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's physical phasing (G3.1e, #1284): AssemblyBasedCallerUtils.phaseCalls over the calls of assignGenotypeLikelihoods (phasing on, no annotations). A call with exactly one site-specific alternate is tied to the called haplotypes whose event map holds it; calls on the same haplotypes, or a call on every haplotype carrying a called variant, are phased 0|1 together, calls on complementary haplotypes 0|1 against 1|0, and a call whose partner already sits in another group empties the mapping. Each group's genotypes (hom-ref ones included) are phased, a het one reversed for 1|0, with PID, PGT and PS. Twelve cases: cis, trans, trans with the reference, a hom with a het (the reference allele unsupported, so its PL is Integer.MAX_VALUE), three in cis, two cis and one trans, a triallelic site (not phased), a deletion in cis, two samples, unrelated haplotypes (not phased), a single call, and ploidy 3.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\ttrans\tchr1\t1040\t.\tA\tC\t309.64\t.\tMLEAC=1;MLEAF=0.500\tGT:GQ:PGT:PID:PL:PS\t1|0:99:1|0:1020_A_C:317,0,148:1020"
+      ],
+      "expect_rows": 209,
+      "cases": [
+        {
+          "dump": "HcPhasingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_phasing.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
