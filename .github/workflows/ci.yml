@@ -463,8 +463,8 @@ jobs:
             suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner adaptive-chain-pruner"
           - group: oracle-backed
             index: "62/62"
-            slug: "seq-graph-kbest-haplotype-dangling-ends-event-map"
-            suites: "seq-graph kbest-haplotype dangling-ends event-map"
+            slug: "seq-graph-kbest-haplotype-dangling-ends-pair-hmm-likelihood-engine-event-map"
+            suites: "seq-graph kbest-haplotype dangling-ends pair-hmm-likelihood-engine event-map"
           - group: golden-pending
             index: "1/1"
             slug: "read-threading-assembler"
