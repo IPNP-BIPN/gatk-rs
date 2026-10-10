@@ -7063,7 +7063,7 @@
     },
     {
       "id": "read-threading-assembler",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ReadThreadingAssembler.runLocalAssembly over fixed regions",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7080,7 +7080,8 @@
       "expect_rows": 3288,
       "cases": [
         {
-          "dump": "ReadThreadingAssemblerDump"
+          "dump": "ReadThreadingAssemblerDump",
+          "golden": "crates/gatk-engine/tests/data/read_threading_assembler.txt.gz"
         }
       ]
     },
@@ -7179,7 +7180,7 @@
     },
     {
       "id": "allele-mapping",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Haplotypes to genotyped alleles: event contexts, simpleMerge, createAlleleMapper, marginalize",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7195,13 +7196,14 @@
       "expect_rows": 255,
       "cases": [
         {
-          "dump": "AlleleMappingDump"
+          "dump": "AlleleMappingDump",
+          "golden": "crates/gatk-engine/tests/data/allele_mapping.txt.gz"
         }
       ]
     },
     {
       "id": "dragstr-likelihoods",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DRAGstr in the read likelihoods: STR analyzer, parameter tables, imputators",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7217,13 +7219,14 @@
       "expect_rows": 2191,
       "cases": [
         {
-          "dump": "DragstrDump"
+          "dump": "DragstrDump",
+          "golden": "crates/gatk-engine/tests/data/dragstr_likelihoods.txt.gz"
         }
       ]
     },
     {
       "id": "hc-is-active",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCallerEngine.isActive per locus",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7238,13 +7241,14 @@
       "expect_rows": 3120,
       "cases": [
         {
-          "dump": "HcIsActiveDump"
+          "dump": "HcIsActiveDump",
+          "golden": "crates/gatk-tools/tests/data/hc_is_active.txt.gz"
         }
       ]
     },
     {
       "id": "hc-genotyping",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods without annotations or phasing",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7259,7 +7263,8 @@
       "expect_rows": 288,
       "cases": [
         {
-          "dump": "HcGenotypingDump"
+          "dump": "HcGenotypingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
         }
       ]
     },
@@ -7285,7 +7290,7 @@
     },
     {
       "id": "hc-phasing",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller's physical phasing (phaseCalls)",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7299,7 +7304,8 @@
       "expect_rows": 209,
       "cases": [
         {
-          "dump": "HcPhasingDump"
+          "dump": "HcPhasingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_phasing.txt.gz"
         }
       ]
     },
