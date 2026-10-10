@@ -7355,7 +7355,7 @@
     },
     {
       "id": "hc-end-to-end",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7367,7 +7367,9 @@
       "expect_contains": [],
       "cases": [
         {
-          "dump": "HcEndToEndDump"
+          "dump": "HcEndToEndDump",
+          "golden": "crates/gatk-tools/tests/data/hc_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38065234516, byte for byte the local dump. Ten rows: the two contigs, the SAM text, and seven outputs that each differ from the default's; the generator carries over between runs, and the stack of sixty reads at one start makes the downsampler draw."
         }
       ]
     }
