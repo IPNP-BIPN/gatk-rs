@@ -130,6 +130,7 @@ pub mod model_segments_models;
 pub mod model_segments_tool;
 pub mod mt_low_heteroplasmy;
 pub mod multi_pass;
+pub mod mutect2;
 pub mod mutect_gathers;
 pub mod numt_filter;
 pub mod pathseq_kmers;
