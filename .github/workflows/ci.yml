@@ -466,9 +466,13 @@ jobs:
             slug: "seq-graph-kbest-haplotype-dangling-ends"
             suites: "seq-graph kbest-haplotype dangling-ends"
           - group: golden-pending
-            index: "1/1"
+            index: "1/2"
             slug: "read-threading-assembler-event-map-assembly-region-trimmer-finalize-region-assembly-complexity"
             suites: "read-threading-assembler event-map assembly-region-trimmer finalize-region assembly-complexity"
+          - group: golden-pending
+            index: "2/2"
+            slug: "allele-mapping"
+            suites: "allele-mapping"
     steps:
       - uses: actions/checkout@v7
 

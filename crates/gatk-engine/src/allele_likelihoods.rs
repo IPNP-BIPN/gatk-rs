@@ -440,10 +440,13 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     ///
     /// An old allele the map does not mention contributes to nothing, which the reference supports
     /// and calls "typically not the case".
-    pub fn marginalize(
+    ///
+    /// The new alleles may be of another type than the old ones: `HaplotypeCaller` marginalizes a
+    /// matrix over haplotypes into one over the alleles each site genotypes.
+    pub fn marginalize<B: AlleleType>(
         &self,
-        new_to_old: &[(A, Vec<A>)],
-    ) -> Result<AlleleLikelihoods<E, A>, LikelihoodsError> {
+        new_to_old: &[(B, Vec<A>)],
+    ) -> Result<AlleleLikelihoods<E, B>, LikelihoodsError> {
         let mut new_values: Vec<Vec<Vec<f64>>> = Vec::with_capacity(self.number_of_samples());
         for sample in 0..self.number_of_samples() {
             let evidence_count = self.sample_evidence_count(sample);
@@ -467,7 +470,7 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
             new_values.push(sample_values);
         }
 
-        let new_alleles: Vec<A> = new_to_old
+        let new_alleles: Vec<B> = new_to_old
             .iter()
             .map(|(allele, _)| allele.clone())
             .collect();

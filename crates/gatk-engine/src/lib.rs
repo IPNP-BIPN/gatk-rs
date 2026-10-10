@@ -14,6 +14,7 @@ pub mod allele_fraction_cluster;
 pub mod allele_frequency_calculator;
 pub mod allele_likelihoods;
 pub mod allele_list;
+pub mod allele_mapping;
 pub mod allele_pileup_counter;
 pub mod apply_filters;
 pub mod assembly_based_caller_utils;

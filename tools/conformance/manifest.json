@@ -7149,6 +7149,28 @@
           "dump": "AssemblyComplexityDump"
         }
       ]
+    },
+    {
+      "id": "allele-mapping",
+      "status": "golden-pending",
+      "title": "Haplotypes to genotyped alleles: event contexts, simpleMerge, createAlleleMapper, marginalize",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "From read-by-haplotype to read-by-allele likelihoods (G3.1d, #1283), as HaplotypeCallerGenotypingEngine walks each event start in the active window: getVariantsFromActiveHaplotypes (distinct events overlapping the start, spanning ones included unless spanning-event genotyping is disabled, named HC<haplotype>), replaceSpanDels (an earlier start becomes the reference base against *), makeMergedVariantContext (simpleMerge: the longest reference, shorter ones' alternates extended, * kept, the reference moved first by htsjdk), createAlleleMapper (the haplotypes behind each merged allele, spanning events to * or the reference), and AlleleLikelihoods.marginalize (each allele the maximum over its haplotypes, printed as raw bits). Fourteen cases: a SNP, a triallelic SNP, two sites, a deletion with a SNP, two deletions of different lengths, an insertion with a deletion, a spanning deletion with spanning genotyping on and off, an MNP split and merged (maxMnpDistance 0 and 1), a SNP-plus-deletion compound, homopolymer deletions, a window that excludes starts, and no reference haplotype.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "merged\tsnp-plus-deletion-compound\t1020\tHC1\t1020\t1023\tATAG*,C,A,CTAG",
+        "mapper\tspanning-deletion\t1020\t*\t2",
+        "mapper\tspanning-deletion-off\t1020\tA*\t0,2"
+      ],
+      "expect_rows": 255,
+      "cases": [
+        {
+          "dump": "AlleleMappingDump"
+        }
+      ]
     }
   ],
   "probes": []
