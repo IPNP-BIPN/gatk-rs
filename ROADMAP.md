@@ -479,6 +479,15 @@ copy, which is a worse position than reading the source rather than a better one
       `crates/gatk-engine/src/pair_hmm.rs`, compared as raw bits rather than as decimals. The
       initial condition's logarithm has to be COMPUTED and not transcribed: a written-down decimal
       is a different double and moves the seventh digit of every answer
+- [x] **Smith-Waterman** targeting the pure-Java `SmithWatermanJavaAligner`, and
+      `CigarUtils.calculateCigar` over it (pad, align, trim, left-align). The implementation is
+      pinned in the oracle contract, since `FASTEST_AVAILABLE` resolves per host: the
+      `smith-waterman` golden records that `SmithWatermanIntelAligner` did not load on the runner
+      (the same refusal the vectorised PairHMM shows in that image), so there is no Intel-versus-Java disagreement to carry and
+      the Java one is what every golden already pins. All 736 alignments (46 pairs, four parameter
+      sets, four overhang strategies) and 368 `calculateCigar` results come back from
+      `crates/gatk-engine/src/smith_waterman.rs` and `cigar_utils.rs`, tie-breaks of the traceback
+      and the last-occurrence shortcut included
 
 ---
 
@@ -1065,17 +1074,23 @@ Everything downstream inherits these, so they are front-loaded.
 
 ## Milestone P: finish Picard (121 tools)
 
-- [~] **MergeBamAlignment** (in flight): transfer, `PG` linkage, `NM`/`MD`/`UQ` and the
+**Closed.** Every Picard tool picard-rs ports has a binary and a t=2 covering array frozen at share
+1.000 from CI: 121 tools over 120 binaries in picard-rs's `tools/coverage/measured.json`. The last
+four families (Illumina basecalls, fingerprint, genotyping array, the remainder) landed in
+IPNP-BIPN/picard-rs#347, #348, #349 and #351, closing #1289 to #1292 and the tracking issues (#8
+here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was open.
+
+- [x] **MergeBamAlignment**: transfer, `PG` linkage, `NM`/`MD`/`UQ` and the
       whole-file coordinate-sorted producer are done and oracle-backed. Remaining:
-  - [ ] merged-header construction (`@SQ` from the reference `.dict` with a `UR` absolute-path
+  - [x] merged-header construction (`@SQ` from the reference `.dict` with a `UR` absolute-path
         canonicalization rule, `@RG` from the unmapped BAM, `@PG` from the aligned BAM via the
         ported `SamFileHeaderMerger`)
-  - [ ] paired mate-info, proper-pair and `ClippedPairFixer`
-  - [ ] off-end-of-reference cigar clipping, `UNMAP_CONTAMINANT_READS`, adapter and overlap
+  - [x] paired mate-info, proper-pair and `ClippedPairFixer`
+  - [x] off-end-of-reference cigar clipping, `UNMAP_CONTAMINANT_READS`, adapter and overlap
         clipping
-  - [ ] multi-hit selection (`MultiHitAlignedReadIterator` and the primary-alignment strategies)
-- [ ] the remaining ~59 Picard tools, by archetype
-- [ ] full parameter coverage on every ported Picard tool
+  - [x] multi-hit selection (`MultiHitAlignedReadIterator` and the primary-alignment strategies)
+- [x] the remaining ~59 Picard tools, by archetype
+- [x] full parameter coverage on every ported Picard tool
 
 ---
 
@@ -1150,6 +1165,14 @@ depends on it, and no tool's byte-identity claim may rest on a GPU path alone.
 
 ## Milestone S: speed, once the bytes are settled
 
+**Closed.** The harness (`tools/speed/`), the byte-neutrality guard (`tools/audit/arithmetic.py`)
+and the pages under `docs/speed/` exist; the baseline was committed from CI before any
+optimisation and STATUS.md carries a cost column beside each claim. On the rows the claim covers,
+the port costs a median 0.25% of the reference cold and 5.5% of a warmed-up JVM. The first target,
+jmath's correctly rounded logarithm (IPNP-BIPN/htsjdk-rs#243), took `ModelSegments` from 18.4 to
+1.5 times a warm JVM and `VariantRecalibrator` from 4.6 to 0.75 without moving a byte. The
+paragraphs below are what it said while it was open.
+
 **Every box is gated on a conformance suite existing for the path it touches.** Speed work on a
 path with no golden is not optimisation, it is unmeasured change. Tracking issue #107.
 
@@ -1190,20 +1213,20 @@ Folklore says a Rust port is faster than the JVM. The answerable version is narr
 
 ### The boxes
 
-- [ ] **S.1** (#108) a harness measuring both sides on the same inputs — wall clock, CPU time and
+- [x] **S.1** (#108) a harness measuring both sides on the same inputs — wall clock, CPU time and
       peak RSS, cold start reported separately from steady state, ratios rather than absolute
       seconds, on the conformance fixtures so a benchmark cannot drift onto an easier case than the
       correctness claim covers
-- [ ] **S.2** (#109) the byte-neutrality gate, enforced rather than intended. A perf PR is not
+- [x] **S.2** (#109) the byte-neutrality gate, enforced rather than intended. A perf PR is not
       exempt from its suites, the workspace forbids the flags that would let arithmetic be
       reordered, and the "slow on purpose" list is written down so nobody attacks the contract by
       mistake
-- [ ] **S.3** (#110) a published baseline before any optimisation, with the predictions written
+- [x] **S.3** (#110) a published baseline before any optimisation, with the predictions written
       **first** so the measurement can contradict them
-- [ ] **S.4** (#111) the costs already on the record — the clone in `AllelePseudoDepth`, the exact
+- [x] **S.4** (#111) the costs already on the record — the clone in `AllelePseudoDepth`, the exact
       decimal expansion in `decimal_format`, the fixed reduction order, the software transcendentals
       — each marked removable or not
-- [ ] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
+- [x] **S.5** (#112) the first targets, chosen from the baseline rather than from reading the code.
       Blocked on S.3 by construction
 
 Milestone GPU is a different thing: a second implementation on other hardware. This one is about

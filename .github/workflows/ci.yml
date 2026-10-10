@@ -459,12 +459,12 @@ jobs:
             suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
           - group: oracle-backed
             index: "61/61"
-            slug: "read-walker-refusals"
-            suites: "read-walker-refusals"
+            slug: "read-walker-refusals-smith-waterman-read-threading-graph-chain-pruner-adaptive-chain-pruner"
+            suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner adaptive-chain-pruner"
           - group: golden-pending
             index: "1/1"
-            slug: "read-threading-graph-chain-pruner-adaptive-chain-pruner-seq-graph"
-            suites: "read-threading-graph chain-pruner adaptive-chain-pruner seq-graph"
+            slug: "seq-graph"
+            suites: "seq-graph"
     steps:
       - uses: actions/checkout@v7
 
@@ -748,7 +748,7 @@ jobs:
       - name: docs/STATUS.md is generated, not written
         # It is generated from the inventory and the vendored port summaries under
         # tools/dashboard/ports, both of which are committed, so this runs with only this
-        # repository checked out. Refreshing the summaries from the sibling working copies is
+        # repository checked out. Refreshing the summaries from the siblings' fetched main is
         # `--refresh`, and is a deliberate, reviewable commit.
         run: python3 tools/dashboard/generate.py --check
 
