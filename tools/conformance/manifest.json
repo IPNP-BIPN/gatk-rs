@@ -6923,6 +6923,28 @@
           "golden": "crates/gatk-engine/tests/data/read_threading_graph.txt.gz"
         }
       ]
+    },
+    {
+      "id": "chain-pruner",
+      "status": "oracle-backed",
+      "title": "Low-weight chain pruning and removePathsNotConnectedToRef on the read threading graph",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The two clean-ups ReadThreadingAssembler.createGraph runs on the read threading graph before it becomes a sequence graph (G3.1b, #1281): LowWeightChainPruner, HaplotypeCaller's default, which splits the graph into maximal linear chains and removes every chain whose edges are all non-reference under the prune factor, then the orphans; and removePathsNotConnectedToRef. ReadThreadingGraph's orphan removal does not spare an isolated reference source and drops a removed vertex's k-mer from the k-mer map, so the map is printed after each stage. Sixteen cases: a bubble seen once and twice under prune factors 0 to 3, two bubbles of different weights, light and heavy dangling tails and heads, a heavy prefix before the reference, two samples under one and two pruning samples, a chain mixing weights, the reference alone, a cycle light and heavy, and k of 5.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "summary\tsnp-once-factor-2\tpruned\tvertices=31\tedges=30\tcycles=false\trefsource=0\trefsink=30",
+        "summary\theavy-dangling-tail\tconnected\tvertices=31\tedges=30\tcycles=false\trefsource=0\trefsink=30"
+      ],
+      "expect_rows": 5462,
+      "cases": [
+        {
+          "dump": "ChainPrunerDump",
+          "golden": "crates/gatk-engine/tests/data/chain_pruner.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
