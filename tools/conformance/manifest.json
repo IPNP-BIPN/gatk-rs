@@ -7177,6 +7177,96 @@
           "golden": "crates/gatk-annotation/tests/data/assembly_complexity.txt.gz"
         }
       ]
+    },
+    {
+      "id": "allele-mapping",
+      "status": "oracle-backed",
+      "title": "Haplotypes to genotyped alleles: event contexts, simpleMerge, createAlleleMapper, marginalize",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "From read-by-haplotype to read-by-allele likelihoods (G3.1d, #1283), as HaplotypeCallerGenotypingEngine walks each event start in the active window: getVariantsFromActiveHaplotypes (distinct events overlapping the start, spanning ones included unless spanning-event genotyping is disabled, named HC<haplotype>), replaceSpanDels (an earlier start becomes the reference base against *), makeMergedVariantContext (simpleMerge: the longest reference, shorter ones' alternates extended, * kept, the reference moved first by htsjdk), createAlleleMapper (the haplotypes behind each merged allele, spanning events to * or the reference), and AlleleLikelihoods.marginalize (each allele the maximum over its haplotypes, printed as raw bits). Fourteen cases: a SNP, a triallelic SNP, two sites, a deletion with a SNP, two deletions of different lengths, an insertion with a deletion, a spanning deletion with spanning genotyping on and off, an MNP split and merged (maxMnpDistance 0 and 1), a SNP-plus-deletion compound, homopolymer deletions, a window that excludes starts, and no reference haplotype.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "merged\tsnp-plus-deletion-compound\t1020\tHC1\t1020\t1023\tATAG*,C,A,CTAG",
+        "mapper\tspanning-deletion\t1020\t*\t2",
+        "mapper\tspanning-deletion-off\t1020\tA*\t0,2"
+      ],
+      "expect_rows": 255,
+      "cases": [
+        {
+          "dump": "AlleleMappingDump",
+          "golden": "crates/gatk-engine/tests/data/allele_mapping.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "dragstr-likelihoods",
+      "status": "oracle-backed",
+      "title": "DRAGstr in the read likelihoods: STR analyzer, parameter tables, imputators",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The last of the read likelihoods (G3.1d, #1283): with --dragstr-params-path, PairHMMLikelihoodCalculationEngine takes its gap penalties from DragstrPairHMMInputScoreImputator instead of the read's indel qualities. Measured: DragstrReadSTRAnalyzer (repeats of every period at every position, the period with the most, over twelve sequences and maximum periods 1, 2, 4 and 8), DragstrParams lookups (clamped to the table) for the defaults, DragstrParamUtils.parse over the table CalibrateDragstrModel prints and twelve hand-written files (comments, extra tables, leading spaces, and the refusals: a header not counting from 1, a missing table, too few or too many columns, a negative or non-numeric value, rows that disagree, a file of comments, a header alone), the DRAGstr imputation (GOP capped at 40 and GCP rounded half up per base, 45 and 10 at the last) under the default and a parsed table, the flow-mode NonSymmetricalPairHMMInputScoreImputator, and a likelihood matrix computed with the default DRAGstr parameters, as raw bits.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "impute\tdefault\tCACACACACACACAGT\t30,27,27,27,27,27,27,27,27,27,27,27,27,27,40,45\t5,5,5,5,5,5,5,5,5,5,5,5,5,5,10,10",
+        "error\tnegative\tNullPointerException: null",
+        "parsed\tprinted-default\t8\t20"
+      ],
+      "expect_rows": 2191,
+      "cases": [
+        {
+          "dump": "DragstrDump",
+          "golden": "crates/gatk-engine/tests/data/dragstr_likelihoods.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "hc-is-active",
+      "status": "oracle-backed",
+      "title": "HaplotypeCallerEngine.isActive per locus",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Where HaplotypeCaller looks (G3.1e, #1284): HaplotypeCallerEngine.isActive at every locus LocusIteratorByState yields over a case's reads (deletions kept, Ns not, no downsampling, as AssemblyRegionIterator builds it). Each sample's pileup becomes reference-versus-any likelihoods (ReferenceConfidenceModel.calcGenotypeLikelihoodsOfRefVsAny: bases at or under the minimum quality skipped, deletions at the reference-model deletion quality, alternate meaning a different base or a neighbouring indel or soft clip), stored as PLs and read back rounded; one sample gives the Dirichlet non-ref posterior, several the QUAL of a fake N/<FAKE_ALT> site called at confidence 4. Alternates next to soft clips average the read's high-quality clipped bases, above 6 marking HIGH_QUALITY_SOFT_CLIPS. Eighteen cases through a real HaplotypeCallerEngine: het, hom and rare SNPs, alternate qualities at and above the threshold, a deletion, an insertion, soft clips, Ns, two samples (both, one covered, both reference), ploidies 1 and 3 (one and two samples), a higher heterozygosity, a minimum base quality of 20, and a deletion quality of 10.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "active\tsoft-clips\t150\t26\t3ff0000000000000\tHIGH_QUALITY_SOFT_CLIPS\t401bb13b13b13b13\t4049333333333333",
+        "active\trare-snp\t150\t18\t3feffff47739e9d5\tNONE\t0\t4020000000000000"
+      ],
+      "expect_rows": 3120,
+      "cases": [
+        {
+          "dump": "HcIsActiveDump",
+          "golden": "crates/gatk-tools/tests/data/hc_is_active.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "hc-genotyping",
+      "status": "oracle-backed",
+      "title": "HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods without annotations or phasing",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The calls HaplotypeCaller makes (G3.1e, #1284): HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods over hand-built haplotypes and read likelihoods, with an annotation engine holding no annotations and physical phasing off. At each event start in the window: the merged context and allele mapper, the read-by-allele matrix (marginalize) restricted to reads overlapping the context widened by --informative-read-overlap-margin, each sample's genotype likelihoods (IndependentSampleGenotypesModel and GenotypeLikelihoodCalculator: the one-, two- and three-allele paths) stored as PLs, calculateGenotypes (QUAL, kept alternates, MLEAC/MLEAF, GT/GQ/PL, nothing emitted under the calling confidence), and the reverse trim of a call that lost alleles; each call encoded as its VCF line. Eighteen cases: het, hom and hom-ref SNPs, a site under the calling and the emit thresholds, a triallelic SNP at ploidy 2 and 3, two sites, a deletion, a SNP with a deletion, a spanning deletion with spanning genotyping on and off, an insertion, homopolymer deletions trimmed back, --max-alternate-alleles 1, two samples, a window excluding a site, and reads that do not overlap.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\thomopolymer-deletions-trim\tchr1\t1055\t.\tTA\tT\t46.60\t.\tMLEAC=1;MLEAF=0.500\tGT:GQ:PL\t0/1:54:54,0,58",
+        "call\tspanning-deletion\tchr1\t1020\t.\tA\tC,*"
+      ],
+      "expect_rows": 288,
+      "cases": [
+        {
+          "dump": "HcGenotypingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []

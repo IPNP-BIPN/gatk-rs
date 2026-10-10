@@ -32,6 +32,7 @@ use htsjdk_bam::record::BamRecord;
 use crate::allele_likelihoods::{AlleleLikelihoods, LikelihoodsError};
 use crate::allele_list::{AlleleList, SampleList};
 use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
+use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
 use crate::haplotype::Haplotype;
 use crate::pair_hmm::{fast_round, read_likelihood_given_haplotype_log10};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
@@ -90,6 +91,7 @@ pub enum LikelihoodEngineError {
     InvalidLikelihood(f64),
     Clip(ClipError),
     Likelihoods(LikelihoodsError),
+    Dragstr(DragstrError),
 }
 
 /// A read as the PairHMM sees it: `createQualityModifiedRead`'s bases and three quality arrays.
@@ -114,6 +116,8 @@ pub struct LikelihoodEngineArguments {
     pub symmetrically_normalize_alleles_to_reference: bool,
     pub disable_cap_read_qualities_to_map_q: bool,
     pub modify_soft_clipped_bases: bool,
+    /// `dragstrParams`: with them, `DragstrPairHMMInputScoreImputator` replaces the standard one.
+    pub dragstr_params: Option<DragstrParams>,
 }
 
 impl Default for LikelihoodEngineArguments {
@@ -129,6 +133,7 @@ impl Default for LikelihoodEngineArguments {
             symmetrically_normalize_alleles_to_reference: true,
             disable_cap_read_qualities_to_map_q: false,
             modify_soft_clipped_bases: false,
+            dragstr_params: None,
         }
     }
 }
@@ -278,15 +283,27 @@ impl PairHmmLikelihoodEngine {
             let processed = self.modify_read_qualities(sample_reads)?;
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
             for (r, read) in processed.iter().enumerate() {
-                let gap_continuation =
-                    vec![self.arguments.gap_continuation_penalty as u8; read.bases.len()];
+                // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
+                // continuation penalty, or the DRAGstr penalties of its sequence.
+                let (insertion, deletion, gap_continuation) = match &self.arguments.dragstr_params {
+                    Some(params) => {
+                        let (gop, gcp) = dragstr_impute(params, &read.bases)
+                            .map_err(LikelihoodEngineError::Dragstr)?;
+                        (gop.clone(), gop, gcp)
+                    }
+                    None => (
+                        read.insertion_qualities.clone(),
+                        read.deletion_qualities.clone(),
+                        vec![self.arguments.gap_continuation_penalty as u8; read.bases.len()],
+                    ),
+                };
                 for (a, haplotype) in haplotype_bases.iter().enumerate() {
                     let likelihood = read_likelihood_given_haplotype_log10(
                         haplotype,
                         &read.bases,
                         &read.qualities,
-                        &read.insertion_qualities,
-                        &read.deletion_qualities,
+                        &insertion,
+                        &deletion,
                         &gap_continuation,
                     );
                     if likelihood > 0.0 || likelihood.is_nan() {

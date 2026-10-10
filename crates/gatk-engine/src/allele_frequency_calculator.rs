@@ -25,8 +25,11 @@
 //! combination count goes through commons-math's `CombinatoricsUtils.factorialLog`, which is
 //! `FastMath.log` of an exact factorial below 21, so it is [`jmath::fast_math::log`] here.
 
+use crate::fisher_exact::log_to_log10;
 use crate::genotype_index;
-use crate::math_utils::{log10_sum_log10, pow10};
+use crate::math_utils::{
+    log10_sum_log10, max_element_index, normalize_from_log10_to_linear_space, pow10,
+};
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::variant::Genotype;
 
@@ -285,6 +288,40 @@ impl AlleleFrequencyCalculator {
         genotypes: &[Genotype],
     ) -> Result<AfCalculationResult, AfCalcError> {
         self.calculate_with_ploidy(contig, start, alleles, genotypes, self.default_ploidy)
+    }
+
+    /// `calculateSingleSampleBiallelicNonRefPosterior(log10GenotypeLikelihoods,
+    /// returnZeroIfRefIsMax)`: the posterior that one sample's biallelic genotype is not hom-ref,
+    /// under the Dirichlet prior, with 0 when the reference genotype is the most likely before or
+    /// after the prior and the flag asks for it.
+    pub fn calculate_single_sample_biallelic_non_ref_posterior(
+        &self,
+        log10_genotype_likelihoods: &[f64],
+        return_zero_if_ref_is_max: bool,
+    ) -> f64 {
+        let first_max = |values: &[f64]| max_element_index(values, 0, values.len());
+        if return_zero_if_ref_is_max && first_max(log10_genotype_likelihoods) == 0 {
+            return 0.0;
+        }
+        let ploidy = log10_genotype_likelihoods.len() - 1;
+        let unnormalized: Vec<f64> = (0..=ploidy)
+            .map(|n| {
+                let binomial =
+                    jmath::combinatorics::binomial_coefficient_log(ploidy as i64, n as i64)
+                        .expect("0 <= n <= ploidy");
+                log10_genotype_likelihoods[n]
+                    + log_to_log10(
+                        binomial
+                            + jmath::gamma::log_gamma(n as f64 + self.snp_pseudocount)
+                            + jmath::gamma::log_gamma((ploidy - n) as f64 + self.ref_pseudocount),
+                    )
+            })
+            .collect();
+        if return_zero_if_ref_is_max && first_max(&unnormalized) == 0 {
+            0.0
+        } else {
+            1.0 - normalize_from_log10_to_linear_space(&unnormalized)[0]
+        }
     }
 
     /// `calculate(vc, defaultPloidy)`.
