@@ -6995,7 +6995,7 @@
     },
     {
       "id": "kbest-haplotype",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "GraphBasedKBestHaplotypeFinder over the sequence graph",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7011,7 +7011,7 @@
       "cases": [
         {
           "dump": "KBestHaplotypeDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/kbest_haplotype.txt.gz"
         }
       ]
     }

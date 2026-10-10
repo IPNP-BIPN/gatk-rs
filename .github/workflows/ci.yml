@@ -463,12 +463,8 @@ jobs:
             suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner adaptive-chain-pruner"
           - group: oracle-backed
             index: "62/62"
-            slug: "seq-graph"
-            suites: "seq-graph"
-          - group: golden-pending
-            index: "1/1"
-            slug: "kbest-haplotype"
-            suites: "kbest-haplotype"
+            slug: "seq-graph-kbest-haplotype"
+            suites: "seq-graph kbest-haplotype"
     steps:
       - uses: actions/checkout@v7
 
