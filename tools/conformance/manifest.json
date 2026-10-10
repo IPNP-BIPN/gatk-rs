@@ -7241,6 +7241,27 @@
           "dump": "HcIsActiveDump"
         }
       ]
+    },
+    {
+      "id": "hc-genotyping",
+      "status": "golden-pending",
+      "title": "HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods without annotations or phasing",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The calls HaplotypeCaller makes (G3.1e, #1284): HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods over hand-built haplotypes and read likelihoods, with an annotation engine holding no annotations and physical phasing off. At each event start in the window: the merged context and allele mapper, the read-by-allele matrix (marginalize) restricted to reads overlapping the context widened by --informative-read-overlap-margin, each sample's genotype likelihoods (IndependentSampleGenotypesModel and GenotypeLikelihoodCalculator: the one-, two- and three-allele paths) stored as PLs, calculateGenotypes (QUAL, kept alternates, MLEAC/MLEAF, GT/GQ/PL, nothing emitted under the calling confidence), and the reverse trim of a call that lost alleles; each call encoded as its VCF line. Eighteen cases: het, hom and hom-ref SNPs, a site under the calling and the emit thresholds, a triallelic SNP at ploidy 2 and 3, two sites, a deletion, a SNP with a deletion, a spanning deletion with spanning genotyping on and off, an insertion, homopolymer deletions trimmed back, --max-alternate-alleles 1, two samples, a window excluding a site, and reads that do not overlap.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\thomopolymer-deletions-trim\tchr1\t1055\t.\tTA\tT\t46.60\t.\tMLEAC=1;MLEAF=0.500\tGT:GQ:PL\t0/1:54:54,0,58",
+        "call\tspanning-deletion\tchr1\t1020\t.\tA\tC,*"
+      ],
+      "expect_rows": 288,
+      "cases": [
+        {
+          "dump": "HcGenotypingDump"
+        }
+      ]
     }
   ],
   "probes": []

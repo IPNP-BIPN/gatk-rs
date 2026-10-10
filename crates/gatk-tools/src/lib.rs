@@ -103,6 +103,7 @@ pub mod gtf_to_bed;
 pub mod gvcf_blocks;
 pub mod haplotype_based_variant_recaller;
 pub mod haplotype_caller_engine;
+pub mod hc_genotyping;
 pub mod hdf5_writer;
 pub mod index_feature_file;
 pub mod interval_walker;

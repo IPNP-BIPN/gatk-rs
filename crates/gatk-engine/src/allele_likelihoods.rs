@@ -205,6 +205,24 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         self.filtered_haplotype_count = count;
     }
 
+    /// `retainEvidence(predicate)`: every sample keeps, in order, the evidence the predicate
+    /// accepts, with its likelihoods; the rest is dropped, not filtered.
+    pub fn retain_evidence(&mut self, keep: impl Fn(&E) -> bool) {
+        for (evidence, sample_values) in self
+            .evidence_by_sample
+            .iter_mut()
+            .zip(self.values.iter_mut())
+        {
+            let kept: Vec<bool> = evidence.iter().map(&keep).collect();
+            let mut flags = kept.iter();
+            evidence.retain(|_| *flags.next().expect("one flag per evidence"));
+            for row in sample_values.iter_mut() {
+                let mut flags = kept.iter();
+                row.retain(|_| *flags.next().expect("one flag per value"));
+            }
+        }
+    }
+
     /// `indexOfReference()`: the first reference allele, `-1` (here `None`) without one.
     pub fn index_of_reference(&self) -> Option<usize> {
         self.reference_allele_index
