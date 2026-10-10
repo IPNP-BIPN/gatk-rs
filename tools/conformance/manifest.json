@@ -7109,7 +7109,7 @@
     },
     {
       "id": "finalize-region",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyBasedCallerUtils.finalizeRegion",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7124,7 +7124,8 @@
       "expect_rows": 297,
       "cases": [
         {
-          "dump": "FinalizeRegionDump"
+          "dump": "FinalizeRegionDump",
+          "golden": "crates/gatk-engine/tests/data/finalize_region.txt.gz"
         }
       ]
     }
