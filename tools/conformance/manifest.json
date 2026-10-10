@@ -7270,7 +7270,7 @@
     },
     {
       "id": "hc-annotated-calls",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller's calls with its default annotations",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7284,7 +7284,8 @@
       "expect_rows": 276,
       "cases": [
         {
-          "dump": "HcAnnotatedCallsDump"
+          "dump": "HcAnnotatedCallsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_annotated_calls.txt.gz"
         }
       ]
     }
