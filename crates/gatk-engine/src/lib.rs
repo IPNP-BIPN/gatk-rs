@@ -85,6 +85,7 @@ pub mod read;
 pub mod read_group;
 pub mod read_pileup;
 pub mod read_states;
+pub mod read_threading_graph;
 pub mod read_utils;
 pub mod reads;
 pub mod recal_datum;

@@ -6900,6 +6900,29 @@
           "why": "Forty-six pairs through every Smith-Waterman implementation the container can build, under four parameter sets and four overhang strategies, plus CigarUtils.calculateCigar over the same pairs. The loaded rows say which implementations were available, and a loaded row of no is a result rather than a failure. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 37423573301, and byte for byte what this laptop produced."
         }
       ]
+    },
+    {
+      "id": "read-threading-graph",
+      "status": "oracle-backed",
+      "title": "The read threading graph as buildGraphIfNecessary leaves it, before pruning",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The first stage of the assembler under HaplotypeCaller and Mutect2 (G3.1b, #1281): the reference and then each read's runs of usable bases threaded k-mer by k-mer into a de Bruijn graph, with non-unique k-mers duplicated rather than merged into. JGraphT keeps vertices, edges and each vertex's incoming and outgoing edges in insertion order, and the threading loop follows the first outgoing edge that matches, so the order is part of the answer and the comparison is line for line. Twenty cases: the reference alone, matching reads, SNP, insertion and deletion bubbles, reads split at an N and at low-quality bases, a reference with repeated k-mers, a low-complexity graph, a read with no unique start, a read that starts before the reference, a rearranged read that closes a cycle, threading only from existing vertices, two samples with one and two pruning samples, the backwards count increase through and not through branches, and k of 10 and 25.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "summary\trearranged-read\tvertices=41\tedges=41\tcycles=true\tlowquality=false\trefsource=0\trefsink=35",
+        "summary\tlow-complexity\tvertices=19\tedges=18\tcycles=false\tlowquality=true\trefsource=0\trefsink=18",
+        "edge\ttwo-samples\t0\t1\t5\t2\ttrue"
+      ],
+      "expect_rows": 2094,
+      "cases": [
+        {
+          "dump": "ReadThreadingGraphDump",
+          "golden": "crates/gatk-engine/tests/data/read_threading_graph.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
