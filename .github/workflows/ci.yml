@@ -467,8 +467,8 @@ jobs:
             suites: "seq-graph kbest-haplotype dangling-ends pair-hmm-likelihood-engine read-threading-assembler"
           - group: oracle-backed
             index: "63/63"
-            slug: "event-map-assembly-region-trimmer"
-            suites: "event-map assembly-region-trimmer"
+            slug: "event-map-assembly-region-trimmer-finalize-region"
+            suites: "event-map assembly-region-trimmer finalize-region"
     steps:
       - uses: actions/checkout@v7
 
