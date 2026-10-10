@@ -20,10 +20,10 @@
 //!
 //! Only the parts that are observable through the allele axis are here: the bases, the reference
 //! flag, and the uniqueness value that equality reads. The assembly-side state (`cigar`,
-//! `alignmentStartHapwrtRef`, `score`, `isCollapsed`, `kmerSize`, the genome location, and above all
-//! `EventMap`) is deliberately absent. `getEventMap()` is the assembly event model, which is what
-//! blocks `AssemblyComplexity` and puts it in Milestone G3; inventing an empty version of it here
-//! would let a G3 annotation compile against something that has never been compared to anything.
+//! `alignmentStartHapwrtRef`, `score`, `kmerSize`, the genome location and the `EventMap`) is in
+//! [`crate::haplotype_alignment`], set by the assembler and measured with it; equality never reads
+//! it. `isCollapsed`, the flow-based haplotype collapsing flag, is not ported, so no event is ever
+//! tagged as collapsed.
 //!
 //! # `equals` and `hashCode` disagree about what a haplotype is
 //!

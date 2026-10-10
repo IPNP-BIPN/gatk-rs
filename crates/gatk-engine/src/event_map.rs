@@ -245,6 +245,11 @@ impl EventMap {
         self.events.values()
     }
 
+    /// `get(start)`, the `TreeMap` lookup.
+    pub fn get(&self, start: i32) -> Option<&Event> {
+        self.events.get(&start)
+    }
+
     /// `getNumberOfEvents()`.
     pub fn number_of_events(&self) -> usize {
         self.events.len()

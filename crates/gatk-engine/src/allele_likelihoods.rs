@@ -197,6 +197,11 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         self.filtered_haplotype_count = count;
     }
 
+    /// `indexOfReference()`: the first reference allele, `-1` (here `None`) without one.
+    pub fn index_of_reference(&self) -> Option<usize> {
+        self.reference_allele_index
+    }
+
     pub fn number_of_samples(&self) -> usize {
         self.samples.number_of_samples()
     }
