@@ -479,6 +479,15 @@ copy, which is a worse position than reading the source rather than a better one
       `crates/gatk-engine/src/pair_hmm.rs`, compared as raw bits rather than as decimals. The
       initial condition's logarithm has to be COMPUTED and not transcribed: a written-down decimal
       is a different double and moves the seventh digit of every answer
+- [x] **Smith-Waterman** targeting the pure-Java `SmithWatermanJavaAligner`, and
+      `CigarUtils.calculateCigar` over it (pad, align, trim, left-align). The implementation is
+      pinned in the oracle contract, since `FASTEST_AVAILABLE` resolves per host: the
+      `smith-waterman` golden records that `SmithWatermanIntelAligner` did not load on the runner
+      (the same refusal the vectorised PairHMM shows in that image), so there is no Intel-versus-Java disagreement to carry and
+      the Java one is what every golden already pins. All 736 alignments (46 pairs, four parameter
+      sets, four overhang strategies) and 368 `calculateCigar` results come back from
+      `crates/gatk-engine/src/smith_waterman.rs` and `cigar_utils.rs`, tie-breaks of the traceback
+      and the last-occurrence shortcut included
 
 ---
 

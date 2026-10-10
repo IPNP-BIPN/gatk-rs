@@ -101,6 +101,11 @@ pub enum AlignmentError {
     BadAlleleRanges(&'static str),
     /// A cigar the builder itself refuses, which this function does not produce on its own.
     Builder(CigarError),
+    /// `trimCigar`'s own preconditions: a negative start, an end before the start, or a cigar that
+    /// stops short of the end.
+    BadTrim(&'static str),
+    /// `SmithWatermanJavaAligner.align`: "Non-null, non-empty sequences are required".
+    EmptySequence,
 }
 
 impl AlignmentError {
@@ -115,6 +120,11 @@ impl AlignmentError {
                 "Given cigar does not account for all bases of the read".to_string()
             }
             AlignmentError::BadAlleleRanges(message) => (*message).to_string(),
+            AlignmentError::BadTrim(message) => (*message).to_string(),
+            AlignmentError::EmptySequence => {
+                "Non-null, non-empty sequences are required for the Smith-Waterman calculation"
+                    .to_string()
+            }
             AlignmentError::Builder(error) => format!("{error:?}"),
         }
     }
@@ -295,6 +305,56 @@ pub fn left_align_indels(
         builder.add(*element).map_err(AlignmentError::Builder)?;
     }
     // `makeAndRecordDeletionsRemovedResult`, whose `make()` is `make(false)`.
+    let cigar = builder.make(false).map_err(AlignmentError::Builder)?;
+    Ok(LeftAlignment {
+        cigar,
+        leading_deletion_bases_removed: builder.leading_deletion_bases_removed(),
+        trailing_deletion_bases_removed: builder.trailing_deletion_bases_removed(),
+    })
+}
+
+/// `trimCigarByBases`: the part of a cigar that covers read bases `start` to `end`, both inclusive
+/// and counted from 0, with the deletions the trim leaves at either end removed and counted.
+///
+/// Zero-length elements are kept at both ends, so a deletion that sits exactly on the boundary is
+/// seen by the builder and is what the leading and trailing counts report.
+pub fn trim_cigar_by_bases(
+    cigar: &Cigar,
+    start: i32,
+    end: i32,
+) -> Result<LeftAlignment, AlignmentError> {
+    if start < 0 {
+        return Err(AlignmentError::BadTrim("start position can't be negative"));
+    }
+    if end < start {
+        return Err(AlignmentError::BadTrim("end is before start"));
+    }
+    let mut builder = CigarBuilder::default();
+    let mut element_end = 0;
+    for element in &cigar.elements {
+        let element_start = element_end;
+        element_end = element_start + length_on_read(element);
+
+        if element_end < start || (element_end == start && element_start < start) {
+            continue;
+        } else if element_start > end && element_end > end + 1 {
+            break;
+        }
+
+        let overlap_length = if element_end == element_start {
+            element.length as i32
+        } else {
+            (end + 1).min(element_end) - start.max(element_start)
+        };
+        builder
+            .add(cigar_element(overlap_length, element.op))
+            .map_err(AlignmentError::Builder)?;
+    }
+    if element_end <= end {
+        return Err(AlignmentError::BadTrim(
+            "cigar elements don't reach end position (inclusive)",
+        ));
+    }
     let cigar = builder.make(false).map_err(AlignmentError::Builder)?;
     Ok(LeftAlignment {
         cigar,
