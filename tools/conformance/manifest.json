@@ -7063,7 +7063,7 @@
     },
     {
       "id": "event-map",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "EventMap.fromHaplotype and Event's minimal representation",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7080,7 +7080,8 @@
       "expect_rows": 131,
       "cases": [
         {
-          "dump": "EventMapDump"
+          "dump": "EventMapDump",
+          "golden": "crates/gatk-engine/tests/data/event_map.txt.gz"
         }
       ]
     }
