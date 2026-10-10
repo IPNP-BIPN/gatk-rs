@@ -6903,7 +6903,7 @@
     },
     {
       "id": "read-threading-graph",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The read threading graph as buildGraphIfNecessary leaves it, before pruning",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -6920,7 +6920,7 @@
       "cases": [
         {
           "dump": "ReadThreadingGraphDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/read_threading_graph.txt.gz"
         }
       ]
     }
