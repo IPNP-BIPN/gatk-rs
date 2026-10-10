@@ -451,20 +451,24 @@ jobs:
             suites: "expanded-command-line main-non-user main-entry splitting-index allele-frequency-qc"
           - group: oracle-backed
             index: "59/62"
-            slug: "calculate-contamination-tool-argument-declarations-usage-text-bwa-index-image-tool-argument-enums"
-            suites: "calculate-contamination tool-argument-declarations usage-text bwa-index-image tool-argument-enums"
+            slug: "calculate-contamination-usage-text-bwa-index-image-tool-argument-value-classes-plugin-argument-ownership"
+            suites: "calculate-contamination usage-text bwa-index-image tool-argument-value-classes plugin-argument-ownership"
           - group: oracle-backed
             index: "60/62"
-            slug: "tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing"
-            suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
+            slug: "read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals-smith-waterman"
+            suites: "read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals smith-waterman"
           - group: oracle-backed
             index: "61/62"
-            slug: "read-walker-refusals-smith-waterman-read-threading-graph-chain-pruner-adaptive-chain-pruner"
-            suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner adaptive-chain-pruner"
+            slug: "read-threading-graph-chain-pruner-adaptive-chain-pruner-seq-graph-kbest-haplotype"
+            suites: "read-threading-graph chain-pruner adaptive-chain-pruner seq-graph kbest-haplotype"
           - group: oracle-backed
             index: "62/62"
-            slug: "seq-graph-kbest-haplotype-dangling-ends-pair-hmm-likelihood-engine"
-            suites: "seq-graph kbest-haplotype dangling-ends pair-hmm-likelihood-engine"
+            slug: "dangling-ends-pair-hmm-likelihood-engine"
+            suites: "dangling-ends pair-hmm-likelihood-engine"
+          - group: golden-pending
+            index: "1/1"
+            slug: "tool-argument-declarations-tool-argument-enums"
+            suites: "tool-argument-declarations tool-argument-enums"
     steps:
       - uses: actions/checkout@v7
 
