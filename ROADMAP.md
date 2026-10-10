@@ -488,6 +488,25 @@ copy, which is a worse position than reading the source rather than a better one
       sets, four overhang strategies) and 368 `calculateCigar` results come back from
       `crates/gatk-engine/src/smith_waterman.rs` and `cigar_utils.rs`, tie-breaks of the traceback
       and the last-occurrence shortcut included
+- [x] **Assembly graphs** (G3.1b, #1281), each stage measured on its own:
+      - the read threading graph as `buildGraphIfNecessary` leaves it;
+      - `LowWeightChainPruner` and `removePathsNotConnectedToRef`;
+      - `AdaptiveChainPruner` with `Mutect2Engine.logLikelihoodRatio`;
+      - dangling tail and head recovery over the Smith-Waterman port;
+      - the conversion to a sequence graph and its simplification;
+      - the k best haplotypes.
+
+      JGraphT 1.1.0 keeps vertices, edges and each vertex's edge lists in insertion order and
+      compares by identity, and the threading and every walk follow that order, so the six goldens
+      (`read-threading-graph`, `chain-pruner`, `adaptive-chain-pruner`, `dangling-ends`,
+      `seq-graph`, `kbest-haplotype`: 31,201 rows) are compared line for line. Each CI candidate
+      was byte-identical to the local container run. What a reader would not guess:
+      - `addEdge` refuses a second edge between the same two vertices and ignores an edge it
+        already holds;
+      - the head merge HaplotypeCaller runs by default is the legacy one, which merges at the last
+        mismatch it tolerates;
+      - the k-best queue is `java.util.PriorityQueue`'s own heap, so equal scores leave in its
+        order, NaN first.
 
 ---
 

@@ -7017,7 +7017,7 @@
     },
     {
       "id": "dangling-ends",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "recoverDanglingTails and recoverDanglingHeads on the read threading graph",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7034,7 +7034,7 @@
       "cases": [
         {
           "dump": "DanglingEndDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/dangling_ends.txt.gz"
         }
       ]
     }
