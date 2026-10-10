@@ -7154,6 +7154,29 @@
           "golden": "crates/gatk-engine/tests/data/finalize_region.txt.gz"
         }
       ]
+    },
+    {
+      "id": "assembly-complexity",
+      "status": "oracle-backed",
+      "title": "AssemblyComplexity.annotate",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The last annotation the assembly event model blocked (G3.1c, #1282): AssemblyComplexity.annotate credits each haplotype with the reads that best support it (ties to the first allele), groups haplotypes by their events away from the site (HEC, descending), takes the most supported haplotype as germline and the second if it has at least half the support (integer division), or the reference in reference mode, and per alternate allele reports the edit distance from its most supported carrier to the closest germline haplotype (HAPCOMP) and that carrier's share of the carriers' support (HAPDOM, one over the haplotype count when none has any); symbolic and * alleles get 0, an event map allele matches a context allele with the context's longer reference trimmed, and an allele no haplotype carries throws. Twenty-one cases: one SNP, a passenger event, the variant haplotype dominant (and reference mode), a germline het with a strong, weak, exactly-half and odd-half second haplotype, a far variant, ties, two carriers (and tied by bases), an unsupported carrier, two alternates, a deletion and a merged deletion context, * and <NON_REF> alleles, an allele not carried, and two samples.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "hapcomp\tsnp-with-passenger\t1",
+        "hapdom\ttwo-carriers-tied\t3fd5555555555555:0.3333333333333333",
+        "error\tallele-not-carried\tNoSuchElementException: No value present"
+      ],
+      "expect_rows": 185,
+      "cases": [
+        {
+          "dump": "AssemblyComplexityDump",
+          "golden": "crates/gatk-annotation/tests/data/assembly_complexity.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
