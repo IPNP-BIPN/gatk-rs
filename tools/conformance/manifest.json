@@ -7244,7 +7244,7 @@
     },
     {
       "id": "hc-genotyping",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCallerGenotypingEngine.assignGenotypeLikelihoods without annotations or phasing",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7259,7 +7259,8 @@
       "expect_rows": 288,
       "cases": [
         {
-          "dump": "HcGenotypingDump"
+          "dump": "HcGenotypingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
         }
       ]
     }
