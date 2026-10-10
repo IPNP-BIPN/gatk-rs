@@ -33,6 +33,7 @@ use gatk_annotation::catalogue::{Entry, Kind};
 use gatk_annotation::info_annotation::{AnnotationValue, InfoFieldAnnotation};
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_list::{AlleleList, SampleList};
+use gatk_engine::fragment::Fragment;
 use gatk_engine::java_random::JavaRandom;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -155,6 +156,29 @@ impl Engine {
         random: &mut JavaRandom,
         use_raw: bool,
     ) -> Result<VariantContext, EngineError> {
+        self.annotate_context_full(vc, site, random, use_raw, None)
+    }
+
+    /// `annotateContext` as Mutect2's `SomaticGenotypingEngine` calls it, with the fragment
+    /// likelihoods the fragment-counting genotype annotations read.
+    pub fn annotate_context_somatic(
+        &self,
+        vc: &VariantContext,
+        site: &Site<'_>,
+        fragments: &AlleleLikelihoods<Fragment>,
+        random: &mut JavaRandom,
+    ) -> Result<VariantContext, EngineError> {
+        self.annotate_context_full(vc, site, random, false, Some(fragments))
+    }
+
+    fn annotate_context_full(
+        &self,
+        vc: &VariantContext,
+        site: &Site<'_>,
+        random: &mut JavaRandom,
+        use_raw: bool,
+        fragments: Option<&AlleleLikelihoods<Fragment>>,
+    ) -> Result<VariantContext, EngineError> {
         // `annotateGenotypes`: untouched when no genotype annotation, jumbo or not, was asked
         // for, rebuilt otherwise, each annotation reading the ORIGINAL genotype and writing the
         // builder. A jumbo one never runs here and still costs the file's own genotype text.
@@ -170,7 +194,34 @@ impl Engine {
                 let mut built = genotype.clone();
                 let called = genotype.alleles.iter().any(|allele| !allele.is_no_call());
                 for entry in &genotype_entries {
-                    annotate_genotype(entry, vc, genotype, &mut built, called, site.likelihoods)?;
+                    annotate_genotype(
+                        entry,
+                        vc,
+                        genotype,
+                        &mut built,
+                        called,
+                        site.likelihoods,
+                        fragments,
+                    )?;
+                }
+                // The jumbo ones, which read the fragment matrix, run after the others and only
+                // where a caller hands one over, which is Mutect2's genotyping engine.
+                if fragments.is_some() {
+                    for entry in self
+                        .resolved
+                        .iter()
+                        .filter(|entry| entry.kind == Kind::JumboGenotype)
+                    {
+                        annotate_genotype(
+                            entry,
+                            vc,
+                            genotype,
+                            &mut built,
+                            called,
+                            site.likelihoods,
+                            fragments,
+                        )?;
+                    }
                 }
                 rebuilt.push(built);
             }
@@ -431,6 +482,13 @@ fn annotate_info(
     };
     Ok(match entry.name {
         "BaseQuality" => per_allele(&a::per_allele::BaseQuality, vc, site)?,
+        // `StrandBiasUtils.computeSBAnnotation`: the raw allele-specific table, written as is.
+        "AS_StrandBiasMutectAnnotation" => vec![(
+            "AS_SB_TABLE".to_string(),
+            Value::Str(a::allele_specific_strand_bias::make_raw_annotation_string(
+                &a::allele_specific_strand_bias::strand_counts(vc, likelihoods, 2),
+            )),
+        )],
         "BaseQualityHistogram" => from_trait(&a::read_grouping::BaseQualityHistogram),
         "BaseQualityRankSumTest" => from_trait(&a::rank_sum::BaseQualityRankSumTest),
         "ChromosomeCounts" => from_trait(&a::chromosome_counts::ChromosomeCounts),
@@ -699,10 +757,40 @@ fn annotate_genotype(
     built: &mut htsjdk_vcf::variant::Genotype,
     called: bool,
     likelihoods: &AlleleLikelihoods<BamRecord>,
+    fragments: Option<&AlleleLikelihoods<Fragment>>,
 ) -> Result<(), EngineError> {
     use gatk_annotation as a;
     let sample = genotype.sample_name.as_str();
+    let fragment_error = |error: a::fragment_counts::FragmentCountError| EngineError::Runtime {
+        class: "java.lang.IllegalArgumentException".to_string(),
+        message: format!("{error:?}"),
+    };
+    let ints = |values: Vec<i32>| {
+        Value::List(
+            values
+                .into_iter()
+                .map(|v| Value::Int(i64::from(v)))
+                .collect(),
+        )
+    };
     match entry.name {
+        "FragmentDepthPerAlleleBySample" => {
+            if let Some(depths) =
+                a::fragment_counts::fragment_allele_depths(vc, sample, called, fragments)
+                    .map_err(fragment_error)?
+            {
+                set_extended(built, "FAD", ints(depths));
+            }
+        }
+        "OrientationBiasReadCounts" => {
+            if let Some((f1r2, f2r1)) =
+                a::fragment_counts::orientation_bias_counts(vc, sample, fragments)
+                    .map_err(fragment_error)?
+            {
+                set_extended(built, "F1R2", ints(f1r2));
+                set_extended(built, "F2R1", ints(f2r1));
+            }
+        }
         // An `AF` the genotype already carries is kept: the annotation never overwrites one.
         "AlleleFraction" if genotype.extended.iter().any(|(key, _)| key == "AF") => {}
         "AlleleFraction" => {

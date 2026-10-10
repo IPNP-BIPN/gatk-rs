@@ -7388,6 +7388,24 @@
           "dump": "HcGvcfEndToEndDump"
         }
       ]
+    },
+    {
+      "id": "mutect2-end-to-end",
+      "status": "golden-pending",
+      "title": "Mutect2 end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The somatic caller itself, run by instanceMain on an indexed BAM and a FASTA (G3.1g, #1286). THE ACTIVE REGIONS COME FROM THE TUMOR'S LOG ODDS: per locus the likeliest alternate (a base, another substitution or an indel) against sequencing error. THE CALLS ARE SOMATIC: a tumor allele fraction from the somatic likelihoods model, TLOD, and with a normal NLOD and NALOD. A NORMAL SILENCES A SITE where it carries the tumor's alternate. THE DEFAULT ANNOTATIONS ARE MUTECT2'S. AND THE STATS FILE carries the callable sites. Five runs on HcEndToEndDump's reads: tumor only, tumor-normal, tumor-normal over two intervals, germline sites genotyped, and an initial tumor LOD of 10.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 13,
+      "expect_contains": [],
+      "cases": [
+        {
+          "dump": "Mutect2EndToEndDump"
+        }
+      ]
     }
   ],
   "probes": []

@@ -198,6 +198,26 @@ pub fn clean_overlapping_read_pairs(
     set_conflicting_to_zero: bool,
     half_of_pcr_snv_qual: Option<u8>,
 ) -> Result<(), FinalizeError> {
+    clean_overlapping_read_pairs_with_indels(
+        reads,
+        samples,
+        header,
+        set_conflicting_to_zero,
+        half_of_pcr_snv_qual,
+        None,
+    )
+}
+
+/// The same with `halfOfPcrIndelQual`, which Mutect2 passes: the overlapping bases' insertion and
+/// deletion qualities (`BI` and `BD`, 45 where a read carries none) are capped at it too.
+pub fn clean_overlapping_read_pairs_with_indels(
+    reads: &mut [BamRecord],
+    samples: &[String],
+    header: &SamHeader,
+    set_conflicting_to_zero: bool,
+    half_of_pcr_snv_qual: Option<u8>,
+    half_of_pcr_indel_qual: Option<u8>,
+) -> Result<(), FinalizeError> {
     let mut by_sample: Vec<Vec<usize>> = vec![Vec::new(); samples.len()];
     for (index, read) in reads.iter().enumerate() {
         let sample = sample_name(read, header);
@@ -215,6 +235,7 @@ pub fn clean_overlapping_read_pairs(
                 second,
                 set_conflicting_to_zero,
                 half_of_pcr_snv_qual,
+                half_of_pcr_indel_qual,
             )?;
         }
     }
@@ -255,14 +276,14 @@ fn overlapping_pairs(
     Ok(pairs)
 }
 
-/// `FragmentUtils.adjustQualsOfOverlappingPairedFragments`, without the indel qualities, which
-/// `finalizeRegion` never asks for.
+/// `FragmentUtils.adjustQualsOfOverlappingPairedFragments`.
 fn adjust_quals_of_overlapping_paired_fragments(
     reads: &mut [BamRecord],
     left: usize,
     right: usize,
     set_conflicting_to_zero: bool,
     half_of_pcr_snv_qual: Option<u8>,
+    half_of_pcr_indel_qual: Option<u8>,
 ) -> Result<(), FinalizeError> {
     let in_order = read_utils::soft_start(&reads[left]) < read_utils::soft_start(&reads[right]);
     let (first, second) = if in_order {
@@ -304,5 +325,43 @@ fn adjust_quals_of_overlapping_paired_fragments(
     }
     reads[first].base_qualities = first_quals;
     reads[second].base_qualities = second_quals;
+    if let Some(max_indel) = half_of_pcr_indel_qual {
+        for tag in [b"BD", b"BI"] {
+            let mut first_indel = indel_qualities(&reads[first], tag);
+            let mut second_indel = indel_qualities(&reads[second], tag);
+            for i in 0..overlapping.max(0) {
+                let fi = (offset + i) as usize;
+                let si = (second_offset + i) as usize;
+                if fi >= first_indel.len() || si >= second_indel.len() {
+                    return Err(FinalizeError::IndexOutOfBounds);
+                }
+                first_indel[fi] = first_indel[fi].min(max_indel);
+                second_indel[si] = second_indel[si].min(max_indel);
+            }
+            set_indel_qualities(&mut reads[first], tag, &first_indel);
+            set_indel_qualities(&mut reads[second], tag, &second_indel);
+        }
+    }
     Ok(())
+}
+
+/// `ReadUtils.getBaseInsertionQualities` and `getBaseDeletionQualities`: the tag's phred+33
+/// string, or `DEFAULT_INSERTION_DELETION_QUAL` (45) at every base when the read has none.
+fn indel_qualities(read: &BamRecord, tag: &[u8; 2]) -> Vec<u8> {
+    match read.tags.get(htsjdk_bam::tag::Tag::new(tag)) {
+        Some(htsjdk_bam::tag::TagValue::Str(text)) => {
+            text.bytes().map(|b| b.wrapping_sub(33)).collect()
+        }
+        _ => vec![45; read.read_bases.len()],
+    }
+}
+
+/// `ReadUtils.setInsertionBaseQualities` and `setDeletionBaseQualities`: the qualities written
+/// back as a phred+33 string.
+fn set_indel_qualities(read: &mut BamRecord, tag: &[u8; 2], quals: &[u8]) {
+    let text: String = quals.iter().map(|&q| (q + 33) as char).collect();
+    read.tags.insert(
+        htsjdk_bam::tag::Tag::new(tag),
+        htsjdk_bam::tag::TagValue::Str(text),
+    );
 }
