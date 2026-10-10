@@ -7086,7 +7086,7 @@
     },
     {
       "id": "event-map",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "EventMap.fromHaplotype and Event's minimal representation",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7103,13 +7103,14 @@
       "expect_rows": 131,
       "cases": [
         {
-          "dump": "EventMapDump"
+          "dump": "EventMapDump",
+          "golden": "crates/gatk-engine/tests/data/event_map.txt.gz"
         }
       ]
     },
     {
       "id": "assembly-region-trimmer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyRegionTrimmer.trim and its result's regions",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7126,13 +7127,14 @@
       "expect_rows": 200,
       "cases": [
         {
-          "dump": "AssemblyRegionTrimmerDump"
+          "dump": "AssemblyRegionTrimmerDump",
+          "golden": "crates/gatk-engine/tests/data/assembly_region_trimmer.txt.gz"
         }
       ]
     },
     {
       "id": "finalize-region",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyBasedCallerUtils.finalizeRegion",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7147,13 +7149,14 @@
       "expect_rows": 297,
       "cases": [
         {
-          "dump": "FinalizeRegionDump"
+          "dump": "FinalizeRegionDump",
+          "golden": "crates/gatk-engine/tests/data/finalize_region.txt.gz"
         }
       ]
     },
     {
       "id": "assembly-complexity",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyComplexity.annotate",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7169,7 +7172,8 @@
       "expect_rows": 185,
       "cases": [
         {
-          "dump": "AssemblyComplexityDump"
+          "dump": "AssemblyComplexityDump",
+          "golden": "crates/gatk-annotation/tests/data/assembly_complexity.txt.gz"
         }
       ]
     },
