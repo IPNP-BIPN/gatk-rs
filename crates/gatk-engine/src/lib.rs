@@ -41,6 +41,7 @@ pub mod copy_number_mcmc;
 pub mod covariates;
 pub mod downsampling;
 pub mod error_probabilities;
+pub mod event_map;
 pub mod feature_intervals;
 pub mod features;
 pub mod filtering_engine;

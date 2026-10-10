@@ -467,8 +467,8 @@ jobs:
             suites: "seq-graph kbest-haplotype dangling-ends"
           - group: golden-pending
             index: "1/1"
-            slug: "read-threading-assembler"
-            suites: "read-threading-assembler"
+            slug: "read-threading-assembler-event-map"
+            suites: "read-threading-assembler event-map"
     steps:
       - uses: actions/checkout@v7
 
