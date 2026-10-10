@@ -7130,7 +7130,7 @@
     },
     {
       "id": "assembly-complexity",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyComplexity.annotate",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7146,7 +7146,8 @@
       "expect_rows": 185,
       "cases": [
         {
-          "dump": "AssemblyComplexityDump"
+          "dump": "AssemblyComplexityDump",
+          "golden": "crates/gatk-annotation/tests/data/assembly_complexity.txt.gz"
         }
       ]
     }
