@@ -475,12 +475,12 @@ jobs:
             suites: "dragstr-likelihoods hc-is-active hc-genotyping hc-phasing hc-region-assembly"
           - group: oracle-backed
             index: "65/65"
-            slug: "hc-end-to-end-hc-gvcf-end-to-end-mutect2-end-to-end"
-            suites: "hc-end-to-end hc-gvcf-end-to-end mutect2-end-to-end"
+            slug: "hc-call-region-hc-end-to-end-hc-gvcf-end-to-end-mutect2-end-to-end"
+            suites: "hc-call-region hc-end-to-end hc-gvcf-end-to-end mutect2-end-to-end"
           - group: golden-pending
             index: "1/1"
-            slug: "hc-annotated-calls-hc-call-region"
-            suites: "hc-annotated-calls hc-call-region"
+            slug: "hc-annotated-calls"
+            suites: "hc-annotated-calls"
     steps:
       - uses: actions/checkout@v7
 
