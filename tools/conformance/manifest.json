@@ -7223,7 +7223,7 @@
     },
     {
       "id": "hc-is-active",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCallerEngine.isActive per locus",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7238,7 +7238,8 @@
       "expect_rows": 3120,
       "cases": [
         {
-          "dump": "HcIsActiveDump"
+          "dump": "HcIsActiveDump",
+          "golden": "crates/gatk-tools/tests/data/hc_is_active.txt.gz"
         }
       ]
     }
