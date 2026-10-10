@@ -7302,6 +7302,28 @@
           "dump": "HcPhasingDump"
         }
       ]
+    },
+    {
+      "id": "hc-region-assembly",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller's region assembly: assembleReads, variation events, trimTo",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's region assembly up to genotyping (G3.1e, #1284): AssemblyBasedCallerUtils.assembleReads with HaplotypeCaller's argument collection (finalizeRegion with the minimum base quality less one, overlap correction and the hard-clipped pileup list; the reference padded by 500 within the contig; createReferenceHaplotype; the assembler of createReadThreadingAssembler), AssemblyResultSet.getVariationEvents (event maps against the padded reference, HAPLOTYPE_EVENT_COMPARATOR order), AssemblyRegionTrimmer.trim and AssemblyResultSet.trimTo (Haplotype.trim to the trimmed padded span with getBasesCoveringRefInterval and trimCigarByReference, duplicates collapsed with the reference's original winning, the reference rebuilt without its k-mer size, sorted by length and bases). Eleven regions over a 1500-base contig: het and hom SNPs, a deletion, an insertion, two SNPs, a SNP outside the active span, no variation, both contig ends, soft-clipped reads and a padding of 25.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "\t76M3I75M\t575\tchr1:675-825\t10",
+        "trim\tsnp-outside-active\tnull\tnull",
+        "event\tinsertion\t750\tT\tTTTG"
+      ],
+      "expect_rows": 1338,
+      "cases": [
+        {
+          "dump": "HcRegionAssemblyDump"
+        }
+      ]
     }
   ],
   "probes": []

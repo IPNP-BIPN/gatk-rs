@@ -475,8 +475,8 @@ jobs:
             suites: "read-threading-assembler allele-mapping dragstr-likelihoods hc-is-active hc-genotyping"
           - group: golden-pending
             index: "2/2"
-            slug: "hc-annotated-calls-hc-phasing"
-            suites: "hc-annotated-calls hc-phasing"
+            slug: "hc-annotated-calls-hc-phasing-hc-region-assembly"
+            suites: "hc-annotated-calls hc-phasing hc-region-assembly"
     steps:
       - uses: actions/checkout@v7
 
