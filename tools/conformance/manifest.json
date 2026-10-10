@@ -6948,7 +6948,7 @@
     },
     {
       "id": "adaptive-chain-pruner",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2Engine.logLikelihoodRatio and AdaptiveChainPruner on the read threading graph",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -6966,7 +6966,7 @@
       "cases": [
         {
           "dump": "AdaptiveChainPrunerDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/adaptive_chain_pruner.txt.gz"
         }
       ]
     }
