@@ -7086,7 +7086,7 @@
     },
     {
       "id": "assembly-region-trimmer",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "AssemblyRegionTrimmer.trim and its result's regions",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7103,7 +7103,8 @@
       "expect_rows": 200,
       "cases": [
         {
-          "dump": "AssemblyRegionTrimmerDump"
+          "dump": "AssemblyRegionTrimmerDump",
+          "golden": "crates/gatk-engine/tests/data/assembly_region_trimmer.txt.gz"
         }
       ]
     }
