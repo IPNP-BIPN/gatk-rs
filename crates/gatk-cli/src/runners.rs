@@ -33,6 +33,8 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 /// dispatcher with one banner to print for both (`main-non-user`).
 pub type Outcome = Result<Option<String>, Thrown>;
 
+mod haplotype_caller;
+pub use haplotype_caller::haplotype_caller;
 mod joint_germline_cnv;
 pub use joint_germline_cnv::joint_germline_cnv_segmentation;
 

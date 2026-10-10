@@ -317,7 +317,7 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `HaplotypeCallerEngine.makeStandardHCReadFilters`, which `HaplotypeBasedVariantRecaller`
         // returns as its own: the engine's mapping-quality floor of twenty first, the wellformed
         // filter last.
-        "HaplotypeBasedVariantRecaller" => Some(&[
+        "HaplotypeCaller" | "HaplotypeBasedVariantRecaller" => Some(&[
             "MappingQualityReadFilter",
             "MappingQualityAvailableReadFilter",
             "MappedReadFilter",

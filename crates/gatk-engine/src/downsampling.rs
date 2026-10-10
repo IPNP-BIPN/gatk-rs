@@ -138,6 +138,42 @@ impl<'a, T> ReservoirDownsampler<'a, T> {
     }
 }
 
+/// `PositionalDownsampler` over a coordinate-sorted stream, run to exhaustion: the reads that
+/// share an alignment start go through one reservoir of `target` slots, drawing from the shared
+/// generator once a start holds more than `target` reads, and a read with no assigned position
+/// passes through untouched. The positions are compared on the assigned contig and start, which
+/// is what `ReadCoordinateComparator.compareCoordinates` asks.
+pub fn positional_downsample(
+    reads: &[htsjdk_bam::record::BamRecord],
+    target: usize,
+    random: &mut JavaRandom,
+) -> Vec<htsjdk_bam::record::BamRecord> {
+    let mut out = Vec::with_capacity(reads.len());
+    let mut reservoir: ReservoirDownsampler<'_, htsjdk_bam::record::BamRecord> =
+        ReservoirDownsampler::new(target);
+    let mut previous: Option<(i32, i32)> = None;
+    let drain = |reservoir: &mut ReservoirDownsampler<'_, htsjdk_bam::record::BamRecord>,
+                 out: &mut Vec<htsjdk_bam::record::BamRecord>| {
+        reservoir.signal_end_of_input();
+        out.extend(reservoir.consume_finalized_items().into_iter().cloned());
+        reservoir.reset_stats();
+    };
+    for read in reads {
+        let position = (read.reference_index, read.alignment_start);
+        if previous.is_some_and(|p| p != position) {
+            drain(&mut reservoir, &mut out);
+        }
+        if read.reference_index < 0 || read.alignment_start <= 0 {
+            out.push(read.clone());
+        } else {
+            reservoir.submit(read, &read.read_name, &mut SlotSource::Random(random));
+        }
+        previous = Some(position);
+    }
+    drain(&mut reservoir, &mut out);
+    out
+}
+
 /// `LevelingDownsampler`: given several stacks and a total target, remove items evenly until the
 /// sum fits.
 ///

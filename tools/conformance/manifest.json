@@ -6682,7 +6682,7 @@
         {
           "dump": "ToolArgumentDeclarationDump",
           "golden": "crates/gatk-tools/tests/data/tool_declarations.txt.gz",
-          "why": "Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, a `ReadWalker` the fifth lot left out as a Spark tool. Frozen from the candidate artefact of run 35985928935, byte for byte the local dump, with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: a hundred and thirty-seven declared tools. The twenty-seven added are the fifth lot of #1225, from AddFlowBaseQuality to VariantRecalibrator."
+          "why": "Frozen from the candidate artefact of run 38062634307, byte for byte the local dump, with `HaplotypeCaller` and `Mutect2`, the two G3 callers. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, a `ReadWalker` the fifth lot left out as a Spark tool. Frozen from the candidate artefact of run 35985928935, byte for byte the local dump, with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955, derived in the pinned container on a real x86-64 runner and byte for byte what this laptop produced: a hundred and thirty-seven declared tools. The twenty-seven added are the fifth lot of #1225, from AddFlowBaseQuality to VariantRecalibrator."
         }
       ]
     },
@@ -6750,7 +6750,7 @@
         {
           "dump": "ToolArgumentEnumDump",
           "golden": "crates/gatk-tools/tests/data/tool_argument_enums.txt.gz",
-          "why": "Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, a `ReadWalker` the fifth lot left out as a Spark tool. Frozen from the candidate artefact of run 35985928935, byte for byte the local dump, with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced."
+          "why": "Frozen from the candidate artefact of run 38062634307, byte for byte the local dump, with `HaplotypeCaller` and `Mutect2`, the two G3 callers. Frozen from the candidate artefact of run 36808605640 on main, byte for byte the local dump, with `StructuralVariantDiscoverer`, a `ReadWalker` the fifth lot left out as a Spark tool. Frozen from the candidate artefact of run 35985928935, byte for byte the local dump, with `GenotypeGVCFs`, whose instance-built parser refuses its own definitions (a mutex target only its annotation plugin contributes), so its count row reads `instance=refused` and the tool's own parser is what is declared. Frozen from the candidate artefact of run 35839898955 with the twenty-seven tools of #1225, byte for byte what this laptop produced."
         }
       ]
     },
@@ -7351,6 +7351,26 @@
         {
           "dump": "HcCallRegionDump",
           "golden": "crates/gatk-tools/tests/data/hc_call_region.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "hc-end-to-end",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The tool itself, run by instanceMain on an indexed BAM and a FASTA (G3.1e, #1284): the IUPAC transformer and the read filters, the positional downsampler, the activity profile with its soft-clip spreading, the region boundaries, assembly, likelihoods, genotyping, the default annotations and the VCF writer, chained. Two samples over two random contigs: SNPs het and hom, a deletion, an insertion, two SNPs in cis for one sample and in trans for the other, a SNP on the second contig, reads at mapping quality 10, duplicates, high-quality soft clips, an N and an IUPAC base, and sixty reads at one start. Seven runs in one JVM, the generator never reset: the default, two intervals, phasing off (which VCF mode turns off anyway), a calling threshold of 500, no downsampling, the mapping-quality filter disabled, and a minimum base quality of 30.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 10,
+      "expect_contains": [],
+      "cases": [
+        {
+          "dump": "HcEndToEndDump",
+          "golden": "crates/gatk-tools/tests/data/hc_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38065234516, byte for byte the local dump. Ten rows: the two contigs, the SAM text, and seven outputs that each differ from the default's; the generator carries over between runs, and the stack of sixty reads at one start makes the downsampler draw."
         }
       ]
     }
