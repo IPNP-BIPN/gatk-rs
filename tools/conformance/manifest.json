@@ -6972,7 +6972,7 @@
     },
     {
       "id": "seq-graph",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "toSequenceGraph, cleanupSeqGraph and SeqGraph.simplifyGraph",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -6989,7 +6989,7 @@
       "cases": [
         {
           "dump": "SeqGraphDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/seq_graph.txt.gz"
         }
       ]
     }
