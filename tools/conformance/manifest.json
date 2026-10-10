@@ -7014,6 +7014,29 @@
           "golden": "crates/gatk-engine/tests/data/kbest_haplotype.txt.gz"
         }
       ]
+    },
+    {
+      "id": "dangling-ends",
+      "status": "oracle-backed",
+      "title": "recoverDanglingTails and recoverDanglingHeads on the read threading graph",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The last read threading graph stage before the sequence graph (G3.1b, #1281): after chain pruning, ReadThreadingAssembler.getAssemblyResult walks each dangling tail and head back to the reference, aligns the branch against the reference with the Java Smith-Waterman aligner and STANDARD_NGS (LEADING_INDEL, trailing deletions dropped), and joins a branch whose CIGAR has at most three elements back with one edge; a head whose matching bases reach into its source k-mer is first extended with new vertices outside the k-mer map. The legacy head merge (numDanglingMatchingPrefixBases -1, the default) and the newer one (0 and up) are both measured. Forty-three cases: tails after a SNP with 1, 4 and 8 matching bases, an insertion, a deletion, an MNP, junk, near the reference start and with the reference source as the ancestor; heads mutated at offsets 2, 4, 6 and 9, an insertion, a deletion, junk and a long head; minimum branch lengths 0 and 4, minimum matching bases -1, 0, 2, 3 and 5, recover-all, a forked tail, a tail whose last edges are under the prune factor, both ends at once, two samples, k of 5, and the two argument refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "summary\ttail-snp-4\ttails\tvertices=56\tedges=56\tcycles=false\trefsource=0\trefsink=50",
+        "summary\thead-4\theads\tvertices=62\tedges=61\tcycles=false\trefsource=0\trefsink=50",
+        "error\tnegative-min-branch\tIllegalArgumentException"
+      ],
+      "expect_rows": 19253,
+      "cases": [
+        {
+          "dump": "DanglingEndDump",
+          "golden": "crates/gatk-engine/tests/data/dangling_ends.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
