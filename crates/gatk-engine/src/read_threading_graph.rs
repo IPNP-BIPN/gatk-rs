@@ -811,6 +811,346 @@ pub fn prune_low_weight_chains(graph: &mut ReadThreadingGraph, prune_factor: i32
     graph.remove_singleton_orphan_vertices();
 }
 
+/// `Path.getBases()`: the first vertex's whole sequence, then each following vertex's last base
+/// (`MultiDeBruijnVertex.getAdditionalSequence(false)` is the suffix).
+pub fn chain_bases(graph: &ReadThreadingGraph, chain: &Chain) -> Vec<u8> {
+    let mut bases = graph
+        .vertex(graph.edge(chain.edges[0]).source)
+        .sequence
+        .clone();
+    for &edge in &chain.edges {
+        bases.push(graph.vertex(graph.edge(edge).target).suffix());
+    }
+    bases
+}
+
+/// `BaseUtils.BASES_COMPARATOR`: signed bytes in order, then length.
+fn compare_bases(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+    for (x, y) in a.iter().zip(b) {
+        let order = (*x as i8).cmp(&(*y as i8));
+        if order != std::cmp::Ordering::Equal {
+            return order;
+        }
+    }
+    a.len().cmp(&b.len())
+}
+
+/// `Double.compare`: `-0.0` below `0.0`, NaN above everything, NaN equal to NaN.
+fn java_double_compare(a: f64, b: f64) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    if a < b {
+        return Ordering::Less;
+    }
+    if a > b {
+        return Ordering::Greater;
+    }
+    let (a, b) = (java_double_bits(a), java_double_bits(b));
+    a.cmp(&b)
+}
+
+/// `Double.doubleToLongBits`: every NaN collapsed to the canonical one.
+fn java_double_bits(value: f64) -> i64 {
+    if value.is_nan() {
+        0x7ff8_0000_0000_0000
+    } else {
+        value.to_bits() as i64
+    }
+}
+
+/// `java.util.PriorityQueue` with a comparator: the same binary heap, `siftUp` on `offer` and
+/// `siftDown` on `poll`, so that elements the comparator calls equal come out in the reference's
+/// order and not merely in some order.
+struct JavaPriorityQueue<T, F: Fn(&T, &T) -> std::cmp::Ordering> {
+    heap: Vec<T>,
+    compare: F,
+}
+
+impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
+    fn new(compare: F) -> Self {
+        JavaPriorityQueue {
+            heap: Vec::new(),
+            compare,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+
+    /// `offer` / `siftUpUsingComparator`.
+    fn add(&mut self, item: T) {
+        let mut k = self.heap.len();
+        self.heap.push(item.clone());
+        while k > 0 {
+            let parent = (k - 1) >> 1;
+            if (self.compare)(&item, &self.heap[parent]) != std::cmp::Ordering::Less {
+                break;
+            }
+            self.heap[k] = self.heap[parent].clone();
+            k = parent;
+        }
+        self.heap[k] = item;
+    }
+
+    /// `poll` / `siftDownUsingComparator`.
+    fn poll(&mut self) -> Option<T> {
+        let last = self.heap.pop()?;
+        if self.heap.is_empty() {
+            return Some(last);
+        }
+        let result = self.heap[0].clone();
+        let n = self.heap.len();
+        let mut k = 0;
+        let half = n >> 1;
+        while k < half {
+            let mut child = 2 * k + 1;
+            let right = child + 1;
+            if right < n
+                && (self.compare)(&self.heap[child], &self.heap[right])
+                    == std::cmp::Ordering::Greater
+            {
+                child = right;
+            }
+            if (self.compare)(&last, &self.heap[child]) != std::cmp::Ordering::Greater {
+                break;
+            }
+            self.heap[k] = self.heap[child].clone();
+            k = child;
+        }
+        self.heap[k] = last;
+        Some(result)
+    }
+}
+
+/// The parameters of `AdaptiveChainPruner`.
+#[derive(Debug, Clone, Copy)]
+pub struct AdaptivePruning {
+    pub initial_error_probability: f64,
+    pub log_odds_threshold: f64,
+    pub seeding_log_odds_threshold: f64,
+    pub max_unpruned_variants: i32,
+}
+
+/// `AdaptiveChainPruner.chainLogOdds`: the log odds that the chain is real against the edges
+/// leaving its first vertex (left) and entering its last (right), zero at a source or a sink.
+///
+/// `None` where `QualityUtils.errorProbToQual` throws on the error rate.
+pub fn chain_log_odds(
+    graph: &ReadThreadingGraph,
+    chain: &Chain,
+    error_rate: f64,
+) -> Option<(f64, f64)> {
+    let first = graph.edge(chain.edges[0]).source;
+    let last = chain.last_vertex;
+    let multiplicity =
+        |edges: &[usize]| -> i32 { edges.iter().map(|&e| graph.edge(e).multiplicity).sum() };
+    let left_total = multiplicity(graph.outgoing_edges(first));
+    let right_total = multiplicity(graph.incoming_edges(last));
+    let left = graph.edge(chain.edges[0]).multiplicity;
+    let right = graph
+        .edge(*chain.edges.last().expect("a chain has an edge"))
+        .multiplicity;
+    let left_odds = if graph.in_degree(first) == 0 {
+        0.0
+    } else {
+        crate::mutect_engine::log_likelihood_ratio_from_error(left_total - left, left, error_rate)?
+    };
+    let right_odds = if graph.out_degree(last) == 0 {
+        0.0
+    } else {
+        crate::mutect_engine::log_likelihood_ratio_from_error(
+            right_total - right,
+            right,
+            error_rate,
+        )?
+    };
+    Some((left_odds, right_odds))
+}
+
+/// `AdaptiveChainPruner.likelyErrorChains`: grow a subgraph of good chains from seeds, along chains
+/// whose log odds pass the threshold, and answer every chain left out, in chain order.
+pub fn likely_error_chains(
+    graph: &ReadThreadingGraph,
+    chains: &[Chain],
+    error_rate: f64,
+    params: &AdaptivePruning,
+) -> Option<Vec<usize>> {
+    let odds: Vec<(f64, f64)> = chains
+        .iter()
+        .map(|chain| chain_log_odds(graph, chain, error_rate))
+        .collect::<Option<_>>()?;
+    let first_vertex = |c: usize| graph.edge(chains[c].edges[0]).source;
+    let starts_on_ref = |c: usize| graph.edge(chains[c].edges[0]).is_ref;
+
+    // `ArrayListMultimap`s: per vertex, its chains in chain order.
+    let n = graph.vertices.len();
+    let mut seedable: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut good_incoming: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut good_outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (c, chain) in chains.iter().enumerate() {
+        let (left, right) = odds[c];
+        if right >= params.log_odds_threshold || starts_on_ref(c) {
+            good_incoming[chain.last_vertex].push(c);
+        }
+        if left >= params.log_odds_threshold || starts_on_ref(c) {
+            good_outgoing[first_vertex(c)].push(c);
+        }
+        if right >= params.seeding_log_odds_threshold && left >= params.seeding_log_odds_threshold {
+            seedable[first_vertex(c)].push(c);
+            seedable[chain.last_vertex].push(c);
+        }
+    }
+
+    let bases: Vec<Vec<u8>> = chains
+        .iter()
+        .map(|chain| chain_bases(graph, chain))
+        .collect();
+    let mut queue = JavaPriorityQueue::new(|a: &(usize, f64), b: &(usize, f64)| {
+        java_double_compare(-a.1, -b.1)
+            .then_with(|| {
+                compare_bases(
+                    &graph.vertex(first_vertex(a.0)).sequence,
+                    &graph.vertex(first_vertex(b.0)).sequence,
+                )
+            })
+            .then_with(|| compare_bases(&bases[a.0], &bases[b.0]))
+    });
+
+    queue.add((max_weight_chain(graph, chains), f64::INFINITY));
+    // The seeding loop walks the multimap's keys in hash order; it only offers chains to the
+    // queue and marks vertices processed, and neither depends on the order of the offers.
+    let mut processed = vec![false; n];
+    for vertex in graph.vertex_ids() {
+        if seedable[vertex].len() > 2 {
+            for &c in &good_outgoing[vertex] {
+                queue.add((c, odds[c].0));
+            }
+            for &c in &good_incoming[vertex] {
+                queue.add((c, odds[c].1));
+            }
+            processed[vertex] = true;
+        }
+    }
+
+    let mut good = vec![false; chains.len()];
+    let mut has_good_outgoing = vec![false; n];
+    let mut variant_count = 0;
+    while !queue.is_empty() && variant_count <= params.max_unpruned_variants {
+        let (c, _) = queue.poll().expect("not empty");
+        if good[c] {
+            continue;
+        }
+        good[c] = true;
+        let first = first_vertex(c);
+        let new_variant = has_good_outgoing[first];
+        has_good_outgoing[first] = true;
+        if new_variant {
+            variant_count += 1;
+        }
+        if new_variant && variant_count > params.max_unpruned_variants {
+            continue;
+        }
+        for vertex in [first, chains[c].last_vertex] {
+            if !processed[vertex] {
+                for &other in &good_outgoing[vertex] {
+                    queue.add((other, odds[other].0));
+                }
+                for &other in &good_incoming[vertex] {
+                    queue.add((other, odds[other].1));
+                }
+                processed[vertex] = true;
+            }
+        }
+    }
+    Some((0..chains.len()).filter(|&c| !good[c]).collect())
+}
+
+/// `getMaxWeightChain`: the chain holding the heaviest edge, then the longest, then the first
+/// vertex's bases; `Stream.max` keeps the FIRST of equals.
+fn max_weight_chain(graph: &ReadThreadingGraph, chains: &[Chain]) -> usize {
+    let key = |c: usize| {
+        let heaviest = chains[c]
+            .edges
+            .iter()
+            .map(|&e| graph.edge(e).multiplicity)
+            .max()
+            .unwrap_or(0);
+        (heaviest, chains[c].edges.len())
+    };
+    let mut best = 0;
+    for c in 1..chains.len() {
+        let order = key(c).cmp(&key(best)).then_with(|| {
+            compare_bases(
+                &graph.vertex(graph.edge(chains[c].edges[0]).source).sequence,
+                &graph
+                    .vertex(graph.edge(chains[best].edges[0]).source)
+                    .sequence,
+            )
+        });
+        // `BinaryOperator.maxBy`: `compare(a, b) >= 0 ? a : b`, a being the running best.
+        if order == std::cmp::Ordering::Greater {
+            best = c;
+        }
+    }
+    best
+}
+
+/// `AdaptiveChainPruner.chainsToRemove`: a first pass at the initial error rate estimates the
+/// graph's own error rate (the multiplicity of the probable error chains' last edges over every
+/// chain edge's), and a second pass at that rate decides; a chain touching the reference is kept.
+pub fn adaptive_chains_to_remove(
+    graph: &ReadThreadingGraph,
+    chains: &[Chain],
+    params: &AdaptivePruning,
+) -> Result<Vec<usize>, GraphError> {
+    if chains.is_empty() {
+        return Ok(Vec::new());
+    }
+    let refused = || GraphError::InvalidSequence("errorRate must be good probability".to_string());
+    let probable = likely_error_chains(graph, chains, params.initial_error_probability, params)
+        .ok_or_else(refused)?;
+    let error_count: i32 = probable
+        .iter()
+        .map(|&c| {
+            graph
+                .edge(*chains[c].edges.last().expect("an edge"))
+                .multiplicity
+        })
+        .sum();
+    let total_bases: i32 = chains
+        .iter()
+        .map(|chain| {
+            chain
+                .edges
+                .iter()
+                .map(|&e| graph.edge(e).multiplicity)
+                .sum::<i32>()
+        })
+        .sum();
+    let error_rate = f64::from(error_count) / f64::from(total_bases);
+    let likely = likely_error_chains(graph, chains, error_rate, params).ok_or_else(refused)?;
+    Ok(likely
+        .into_iter()
+        .filter(|&c| !chains[c].edges.iter().any(|&e| graph.edge(e).is_ref))
+        .collect())
+}
+
+/// `AdaptiveChainPruner.pruneLowWeightChains`: `ChainPruner`'s removal with the adaptive choice.
+pub fn prune_adaptive(
+    graph: &mut ReadThreadingGraph,
+    params: &AdaptivePruning,
+) -> Result<(), GraphError> {
+    let chains = find_all_chains(graph);
+    let doomed = adaptive_chains_to_remove(graph, &chains, params)?;
+    for c in doomed {
+        for &edge in &chains[c].edges {
+            graph.remove_edge(edge);
+        }
+    }
+    graph.remove_singleton_orphan_vertices();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

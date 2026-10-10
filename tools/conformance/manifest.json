@@ -6945,6 +6945,30 @@
           "golden": "crates/gatk-engine/tests/data/chain_pruner.txt.gz"
         }
       ]
+    },
+    {
+      "id": "adaptive-chain-pruner",
+      "status": "oracle-backed",
+      "title": "Mutect2Engine.logLikelihoodRatio and AdaptiveChainPruner on the read threading graph",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Mutect2's default pruner (G3.1b, #1281). Each chain is scored by Mutect2Engine.logLikelihoodRatio against the other edges at its two ends, good chains are grown from seeds through a java.util.PriorityQueue ordered by log odds, then the first vertex's bases, then the chain's, and everything else is removed; the pruner does it once at the initial error rate to estimate the graph's own rate, and again at that estimate. The log likelihood ratio is printed over a grid of reference and alt counts and error probabilities, the invalid ones (NaN, 1.5) refused, and every chain's left and right log odds in both passes, all as raw bits, because they are compared against thresholds. Twelve graphs under Mutect2's defaults and variations: a real and an error bubble, two bubbles, light and heavy dangling tails, at most zero and one unpruned variant, thresholds no chain reaches and every chain reaches, a high initial error rate, the reference alone, k of 5.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "llr\t0\t1\t0.001\t4018da32a4c743d4,6.213083815252464",
+        "llr\t0\t1\tNaN\texception:IllegalArgumentException",
+        "errorrate\terror-bubble\t3f58d3018d3018d3,0.0015151515151515152",
+        "summary\terror-bubble\tpruned\tvertices=31\tedges=30"
+      ],
+      "expect_rows": 1371,
+      "cases": [
+        {
+          "dump": "AdaptiveChainPrunerDump",
+          "golden": "crates/gatk-engine/tests/data/adaptive_chain_pruner.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
