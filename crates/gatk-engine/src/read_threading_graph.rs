@@ -1,8 +1,9 @@
 //! Ported from `org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading`
 //! (`AbstractReadThreadingGraph`, `ReadThreadingGraph`, `MultiDeBruijnVertex`) and
 //! `haplotypecaller.graphs` (`BaseGraph`, `BaseEdge`, `MultiSampleEdge`), GATK 4.6.2.0: the read
-//! threading graph as `buildGraphIfNecessary` leaves it. Pruning, dangling-end recovery and the
-//! conversion to a sequence graph are later stages and are not here.
+//! threading graph as `buildGraphIfNecessary` leaves it, the chain pruners, and (in
+//! `dangling_ends`) the recovery of dangling tails and heads. The conversion to a sequence graph is
+//! `seq_graph`.
 //!
 //! # What is built
 //!
@@ -33,6 +34,8 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
+mod dangling_ends;
+
 /// `ANONYMOUS_SAMPLE`: the sample every sequence added without one belongs to, the reference's
 /// included.
 pub const ANONYMOUS_SAMPLE: &str = "XXX_UNNAMED_XXX";
@@ -55,6 +58,19 @@ pub enum GraphError {
     MoreThanOneSink,
     /// `IllegalStateException("Should have eliminated all but the reference source, ...")`.
     MoreThanOneSource,
+    /// `Utils.validateArg` in dangling-end recovery: a negative prune factor or branch length, or a
+    /// CIGAR whose first or last element is not the M the merge expects.
+    IllegalArgument(&'static str),
+    /// `IllegalStateException`: recovery before the graph is built, or a dangling end that is no
+    /// longer dangling when its turn comes.
+    IllegalState(&'static str),
+    /// `IndexOutOfBoundsException` or `ArrayIndexOutOfBoundsException`: an index the reference
+    /// computes and then reads without a check.
+    IndexOutOfBounds,
+    /// `NoSuchElementException`: the heaviest edge of a vertex that has none.
+    NoSuchElement,
+    /// The Smith-Waterman aligner's own refusal.
+    Alignment(crate::alignment_utils::AlignmentError),
 }
 
 /// `MultiDeBruijnVertex`: a k-mer's bases and the debugging text `buildGraphIfNecessary` appends to.
@@ -158,12 +174,15 @@ pub struct ReadThreadingGraph {
     start_only_at_existing_vertex: bool,
     increase_counts_through_branches: bool,
     already_built: bool,
+    /// `minMatchingBasesToDanglingEndRecovery`: -1 takes the legacy dangling-head merge.
+    min_matching_bases: i32,
 }
 
 impl ReadThreadingGraph {
     /// `ReadThreadingGraph(kmerSize, debugGraphTransformations, minBaseQualityToUseInAssembly,
-    /// numPruningSamples, numDanglingMatchingPrefixBases)`, without the debugging switch and the
-    /// dangling-end argument, which this stage does not read.
+    /// numPruningSamples, numDanglingMatchingPrefixBases)`, without the debugging switch. The
+    /// dangling-end argument starts at -1 and is set with
+    /// `set_min_matching_bases_to_dangling_end_recovery`.
     pub fn new(
         kmer_size: usize,
         min_base_quality: u8,
@@ -188,12 +207,18 @@ impl ReadThreadingGraph {
             start_only_at_existing_vertex: false,
             increase_counts_through_branches: false,
             already_built: false,
+            min_matching_bases: -1,
         }
     }
 
     /// `setThreadingStartOnlyAtExistingVertex`.
     pub fn set_threading_start_only_at_existing_vertex(&mut self, value: bool) {
         self.start_only_at_existing_vertex = value;
+    }
+
+    /// The constructor's `numDanglingMatchingPrefixBases`, or `setMinMatchingBasesToDanglingEndRecovery`.
+    pub fn set_min_matching_bases_to_dangling_end_recovery(&mut self, value: i32) {
+        self.min_matching_bases = value;
     }
 
     /// `setIncreaseCountsThroughBranches`.
