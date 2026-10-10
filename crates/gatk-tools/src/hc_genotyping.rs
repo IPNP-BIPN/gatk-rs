@@ -14,7 +14,10 @@
 //! alleles as the merged context, and the context's otherwise, so the PL order follows the allele
 //! mapper whenever the two agree in size.
 //!
-//! Not ported here: the annotations and physical phasing (their own bricks), reference-confidence
+//! The annotations are the given annotator engine's, run before the trim as `makeAnnotatedCall`
+//! runs them; with none, the call is left as genotyped.
+//!
+//! Not ported here: physical phasing (its own brick), reference-confidence
 //! mode, contamination downsampling, DRAGstr priors and the BQD/FRD genotyping models, and the
 //! reduction of sites with more alleles than the genotype count allows (refused).
 
@@ -35,7 +38,9 @@ use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::variant::{Genotype, VariantContext};
 
 use crate::genotyping_engine::{EngineError, GenotypingEngine};
+use crate::variant_annotator_engine::{Engine as AnnotatorEngine, Site};
 use crate::variant_trim::reverse_trim_alleles;
+use gatk_engine::java_random::JavaRandom;
 
 /// The `HaplotypeCallerArgumentCollection` fields the genotyping engine reads.
 #[derive(Debug, Clone)]
@@ -75,6 +80,42 @@ pub fn assign_genotype_likelihoods(
     ref_loc: &SimpleInterval,
     active_region_window: &SimpleInterval,
     contig_length: i32,
+) -> Result<Vec<VariantContext>, EngineError> {
+    assign_genotype_likelihoods_annotated(
+        engine,
+        arguments,
+        haplotypes,
+        read_likelihoods,
+        samples,
+        reference,
+        ref_loc,
+        active_region_window,
+        contig_length,
+        None,
+    )
+}
+
+/// The annotation engine `makeAnnotatedCall` runs, and the tool's random generator, which
+/// `QualByDepth` draws from.
+pub struct CallAnnotator<'a> {
+    pub engine: &'a AnnotatorEngine,
+    pub random: &'a mut JavaRandom,
+}
+
+/// `assignGenotypeLikelihoods` with the annotations: each call is annotated from the
+/// read-by-allele matrix it was genotyped with, then reverse-trimmed if it lost alleles.
+#[allow(clippy::too_many_arguments)]
+pub fn assign_genotype_likelihoods_annotated(
+    engine: &mut GenotypingEngine,
+    arguments: &HcGenotypingArguments,
+    haplotypes: &mut [Haplotype],
+    read_likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    samples: &[String],
+    reference: &[u8],
+    ref_loc: &SimpleInterval,
+    active_region_window: &SimpleInterval,
+    contig_length: i32,
+    mut annotator: Option<CallAnnotator<'_>>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -143,6 +184,23 @@ pub fn assign_genotype_likelihoods(
         vc.stop = i64::from(merged.end);
         vc.genotypes = GenotypesContext::new(genotypes);
         if let Some(call) = engine.calculate_genotypes(&vc)? {
+            // `makeAnnotatedCall`: the annotations read the matrix the call was genotyped with,
+            // over a reference context whose window is the padded reference.
+            let call = match annotator.as_mut() {
+                Some(annotator) => {
+                    let site = Site {
+                        likelihoods: &marginal,
+                        window: (i64::from(ref_loc.start), reference),
+                        overlaps: Vec::new(),
+                        dbsnp: None,
+                        resources: Vec::new(),
+                    };
+                    annotator
+                        .engine
+                        .annotate_context(&call, &site, annotator.random)?
+                }
+                None => call,
+            };
             let call = if call.alleles.len() == merged_allele_count {
                 call
             } else {
