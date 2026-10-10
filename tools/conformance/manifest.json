@@ -7324,6 +7324,27 @@
           "dump": "HcRegionAssemblyDump"
         }
       ]
+    },
+    {
+      "id": "hc-call-region",
+      "status": "golden-pending",
+      "title": "HaplotypeCallerEngine.callRegion",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "A whole active region called as HaplotypeCaller calls it by default (G3.1e, #1284): HaplotypeCallerEngine.callRegion through a real engine over a temporary FASTA, with the default annotations and the random generator reset per region. Assembly and trimming (#1320), read stubs under 10 aligned bases removed, filterNonPassingReads (short, mapping quality under 20, mate on another contig), the likelihoods against the trimmed haplotypes (soft-clipped bases kept, conservative PCR model), every read realigned to its best haplotype (createReadAlignedToRef: Smith-Waterman to the haplotype, the CIGAR projected through the haplotype's, indels left-aligned, clips restored), genotyping, the annotations with the filtered reads added at no likelihood, and phasing. Ten regions: het and hom SNPs, a deletion, an insertion, two SNPs, no variation, soft clips, low mapping-quality reads, two samples and a region at the contig start.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\tlow-mapq-reads\tchr1\t750\t.\tT\tA\t92.64\t.\tAC=1;AF=0.500;AN=2;BaseQRankSum=-1.097;DP=16",
+        "calls\tno-variation\t0"
+      ],
+      "expect_rows": 690,
+      "cases": [
+        {
+          "dump": "HcCallRegionDump"
+        }
+      ]
     }
   ],
   "probes": []

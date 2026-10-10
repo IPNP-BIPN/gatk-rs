@@ -124,7 +124,39 @@ pub fn assign_genotype_likelihoods_annotated(
     ref_loc: &SimpleInterval,
     active_region_window: &SimpleInterval,
     contig_length: i32,
+    annotator: Option<CallAnnotator<'_>>,
+) -> Result<Vec<VariantContext>, EngineError> {
+    assign_genotype_likelihoods_full(
+        engine,
+        arguments,
+        haplotypes,
+        read_likelihoods,
+        samples,
+        reference,
+        ref_loc,
+        active_region_window,
+        contig_length,
+        annotator,
+        &[],
+    )
+}
+
+/// `assignGenotypeLikelihoods` as `callRegion` runs it: with the annotations, and with each
+/// sample's reads filtered before genotyping, which the annotations still see
+/// (`addEvidence(overlappingFilteredReads, 0)`) wherever they overlap a call.
+#[allow(clippy::too_many_arguments)]
+pub fn assign_genotype_likelihoods_full(
+    engine: &mut GenotypingEngine,
+    arguments: &HcGenotypingArguments,
+    haplotypes: &mut [Haplotype],
+    read_likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    samples: &[String],
+    reference: &[u8],
+    ref_loc: &SimpleInterval,
+    active_region_window: &SimpleInterval,
+    contig_length: i32,
     mut annotator: Option<CallAnnotator<'_>>,
+    filtered_reads: &[Vec<BamRecord>],
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -208,8 +240,25 @@ pub fn assign_genotype_likelihoods_annotated(
             // over a reference context whose window is the padded reference.
             let call = match annotator.as_mut() {
                 Some(annotator) => {
+                    // `prepareReadAlleleLikelihoodsForAnnotation`: the genotyping matrix, with the
+                    // filtered reads overlapping the call added at no likelihood.
+                    let mut for_annotation = marginal.clone();
+                    for (s, reads) in filtered_reads.iter().enumerate() {
+                        let overlapping: Vec<BamRecord> = reads
+                            .iter()
+                            .filter(|read| {
+                                overlap.overlaps(
+                                    &overlap.contig,
+                                    read_utils::start(read),
+                                    read_utils::end(read),
+                                )
+                            })
+                            .cloned()
+                            .collect();
+                        for_annotation.add_evidence(s, &overlapping, 0.0);
+                    }
                     let site = Site {
-                        likelihoods: &marginal,
+                        likelihoods: &for_annotation,
                         window: (i64::from(ref_loc.start), reference),
                         overlaps: Vec::new(),
                         dbsnp: None,

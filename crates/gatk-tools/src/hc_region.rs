@@ -13,13 +13,27 @@
 
 use gatk_engine::assembly_based_caller_utils::{finalize_region, FinalizeArguments, FinalizeError};
 use gatk_engine::assembly_region::AssemblyRegion;
+use gatk_engine::assembly_region_trimmer::AssemblyRegionTrimmer;
 use gatk_engine::assembly_result_set::AssemblyResultSet;
 use gatk_engine::haplotype::Haplotype;
 use gatk_engine::interval::SimpleInterval;
+use gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine;
+use gatk_engine::read_pileup::sample_name;
+use gatk_engine::read_realignment::realign_reads_to_their_best_haplotype;
 use gatk_engine::read_threading_assembler::{
     AssemblerError, AssemblerSettings, ReadThreadingAssembler,
 };
-use gatk_engine::smith_waterman::{SmithWatermanAligner, NEW_SW_PARAMETERS, STANDARD_NGS};
+use gatk_engine::smith_waterman::{
+    SmithWatermanAligner, ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, NEW_SW_PARAMETERS,
+    STANDARD_NGS,
+};
+use htsjdk_bam::record::BamRecord;
+use htsjdk_vcf::variant::VariantContext;
+
+use crate::genotyping_engine::GenotypingEngine;
+use crate::hc_genotyping::{
+    assign_genotype_likelihoods_full, CallAnnotator, HcGenotypingArguments,
+};
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 use htsjdk_bam::header::SamHeader;
 
@@ -32,6 +46,169 @@ pub enum RegionAssemblyError {
     Finalize(FinalizeError),
     Assembler(AssemblerError),
     IllegalState(String),
+    /// A later stage of `callRegion`, with its message.
+    Calling(String),
+}
+
+/// `HaplotypeCallerEngine.READ_LENGTH_FILTER_THRESHOLD`.
+const READ_LENGTH_FILTER_THRESHOLD: i32 = 10;
+/// `AssemblyBasedCallerUtils.MINIMUM_READ_LENGTH_AFTER_TRIMMING`.
+const MINIMUM_READ_LENGTH_AFTER_TRIMMING: i32 = 10;
+
+/// What `callRegion` runs with, beside the region.
+pub struct CallRegionContext<'a> {
+    pub header: &'a SamHeader,
+    pub samples: &'a [String],
+    pub contig_bases: &'a [u8],
+    pub assembly: &'a RegionAssemblyArguments,
+    pub assembler: &'a ReadThreadingAssembler,
+    pub aligner: &'a dyn SmithWatermanAligner,
+    pub trimmer: &'a AssemblyRegionTrimmer,
+    pub likelihood_engine: &'a PairHmmLikelihoodEngine,
+    pub genotyping: &'a HcGenotypingArguments,
+    /// `--mapping-quality-threshold-for-genotyping`, 20 by default.
+    pub mapping_quality_threshold: u8,
+}
+
+/// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
+fn unclipped_read_length(read: &BamRecord) -> i32 {
+    let soft: u32 = read
+        .cigar
+        .elements
+        .iter()
+        .filter(|e| e.op == Op::S)
+        .map(|e| e.length)
+        .sum();
+    read.read_bases.len() as i32 - soft as i32
+}
+
+/// `HaplotypeCallerEngine.callRegion` without reference confidence: the region's calls.
+pub fn call_region(
+    mut region: AssemblyRegion,
+    context: &CallRegionContext<'_>,
+    engine: &mut GenotypingEngine,
+    annotator: Option<CallAnnotator<'_>>,
+) -> Result<Vec<VariantContext>, RegionAssemblyError> {
+    let calling = |e: String| RegionAssemblyError::Calling(e);
+    // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
+    if !region.is_active() || region.reads().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut untrimmed = assemble_reads(
+        &mut region,
+        context.assembly,
+        context.header,
+        context.samples,
+        context.contig_bases,
+        context.assembler,
+        context.aligner,
+    )?;
+    let events = untrimmed
+        .variation_events(context.genotyping.max_mnp_distance)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    let padded = region.padded_span().clone();
+    let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
+    let trimmed = context
+        .trimmer
+        .trim(&region, &events, padded_bases, padded.start)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    if trimmed.variant_span.is_none() {
+        return Ok(Vec::new());
+    }
+    let variant_region = context
+        .trimmer
+        .variant_region(&trimmed, &region, context.header)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    let mut assembly = untrimmed
+        .trim_to(variant_region)
+        .map_err(|e| calling(format!("{e:?}")))?;
+
+    // The read stubs the trim left, then `filterNonPassingReads`, whose reads the annotations
+    // still see.
+    let genotyping_region = assembly
+        .region_for_genotyping_mut()
+        .expect("a trimmed set has its region");
+    genotyping_region
+        .retain_reads(|r| unclipped_read_length(r) >= MINIMUM_READ_LENGTH_AFTER_TRIMMING);
+    let mut filtered: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
+    for read in genotyping_region.reads() {
+        let failing = unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
+            || read.mapping_quality < context.mapping_quality_threshold
+            || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read);
+        if failing {
+            let sample = sample_name(read, context.header);
+            let index = context
+                .samples
+                .iter()
+                .position(|s| Some(s) == sample.as_ref())
+                .ok_or_else(|| calling("a filtered read of no known sample".to_string()))?;
+            filtered[index].push(read.clone());
+        }
+    }
+    let threshold = context.mapping_quality_threshold;
+    genotyping_region.retain_reads(|read| {
+        !(unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
+            || read.mapping_quality < threshold
+            || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
+    });
+    if !assembly.is_variation_present() {
+        return Ok(Vec::new());
+    }
+    let genotyping_region = assembly
+        .region_for_genotyping()
+        .expect("a trimmed set has its region")
+        .clone();
+    if genotyping_region.reads().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // `splitReadsBySample`, then the likelihoods against the trimmed haplotypes.
+    let mut reads: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
+    for read in genotyping_region.reads() {
+        let sample = sample_name(read, context.header);
+        let index = context
+            .samples
+            .iter()
+            .position(|s| Some(s) == sample.as_ref())
+            .ok_or_else(|| calling("a read of no known sample".to_string()))?;
+        reads[index].push(read.clone());
+    }
+    let mut haplotypes: Vec<_> = assembly.haplotype_list().to_vec();
+    let mut likelihoods = context
+        .likelihood_engine
+        .compute_read_likelihoods(&haplotypes, context.samples, &reads)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    let ref_loc = assembly
+        .padded_reference_loc()
+        .expect("a trimmed set has its padded reference")
+        .clone();
+    let reference_haplotype = assembly
+        .reference_haplotype()
+        .expect("a trimmed set has its reference")
+        .clone();
+    realign_reads_to_their_best_haplotype(
+        &mut likelihoods,
+        &reference_haplotype,
+        ref_loc.start,
+        context.aligner,
+        &ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+    )
+    .map_err(|e| calling(format!("{e:?}")))?;
+    let contig_length = context.contig_bases.len() as i32;
+    assign_genotype_likelihoods_full(
+        engine,
+        context.genotyping,
+        &mut haplotypes,
+        &likelihoods,
+        context.samples,
+        assembly.full_reference_with_padding(),
+        &ref_loc,
+        genotyping_region.span(),
+        contig_length,
+        annotator,
+        &filtered,
+    )
+    .map_err(|e| calling(format!("{e:?}")))
 }
 
 /// HaplotypeCaller's `minBaseQualityScore` and the switches `assembleReads` passes on.

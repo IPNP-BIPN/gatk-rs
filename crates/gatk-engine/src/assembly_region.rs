@@ -306,6 +306,11 @@ impl AssemblyRegion {
         self.hard_clipped_pileup_reads.clear();
     }
 
+    /// `removeAll(readsToRemove)`, as the reads to keep: their order is kept.
+    pub fn retain_reads(&mut self, keep: impl Fn(&BamRecord) -> bool) {
+        self.reads.retain(|read| keep(read));
+    }
+
     /// `AssemblyRegion.add`.
     pub fn add(&mut self, record: BamRecord, header: &SamHeader) -> Result<(), RegionError> {
         let padded = self.padded_span.clone();

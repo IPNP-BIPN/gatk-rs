@@ -223,6 +223,25 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         }
     }
 
+    /// `changeEvidence`, for one piece of evidence: the likelihoods stay, the evidence is replaced.
+    pub fn replace_evidence(&mut self, sample_index: usize, evidence_index: usize, replacement: E) {
+        self.evidence_by_sample[sample_index][evidence_index] = replacement;
+    }
+
+    /// `addEvidence(evidenceBySample, initialLikelihood)` for one sample: each new piece of
+    /// evidence not already present is appended with the initial likelihood for every allele.
+    pub fn add_evidence(&mut self, sample_index: usize, evidence: &[E], initial_likelihood: f64) {
+        for item in evidence {
+            if self.evidence_by_sample[sample_index].contains(item) {
+                continue;
+            }
+            self.evidence_by_sample[sample_index].push(item.clone());
+            for row in self.values[sample_index].iter_mut() {
+                row.push(initial_likelihood);
+            }
+        }
+    }
+
     /// `indexOfReference()`: the first reference allele, `-1` (here `None`) without one.
     pub fn index_of_reference(&self) -> Option<usize> {
         self.reference_allele_index

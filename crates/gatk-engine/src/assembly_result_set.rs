@@ -150,6 +150,11 @@ impl AssemblyResultSet {
         self.region_for_genotyping.as_ref()
     }
 
+    /// The region for genotyping, for a caller that removes reads from it as `callRegion` does.
+    pub fn region_for_genotyping_mut(&mut self) -> Option<&mut AssemblyRegion> {
+        self.region_for_genotyping.as_mut()
+    }
+
     /// `setRegionForGenotyping`.
     pub fn set_region_for_genotyping(&mut self, region: AssemblyRegion) {
         self.region_for_genotyping = Some(region);
