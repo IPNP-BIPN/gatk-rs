@@ -7108,6 +7108,30 @@
           "golden": "crates/gatk-engine/tests/data/event_map.txt.gz"
         }
       ]
+    },
+    {
+      "id": "assembly-region-trimmer",
+      "status": "oracle-backed",
+      "title": "AssemblyRegionTrimmer.trim and its result's regions",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The part of an assembled region that HaplotypeCaller and Mutect2 genotype (G3.1c, #1282): AssemblyRegionTrimmer.trim spans the events overlapping the active span and pads each, a SNP by snpPaddingForGenotyping, an indel by indelPaddingForGenotyping, or an indel expanding or contracting a tandem repeat by strPaddingForGenotyping plus the longest run either allele carries in the reference after it (TandemRepeat.getNumTandemRepeatUnits on a reference context over the padded span), the padded span cut to the region's; the legacy trim pads once and caps at the active span plus maxExtensionIntoRegionPadding. Then getVariantRegion and the two non-variant flanks, padded by assemblyRegionPadding, with the reads each keeps. Twenty-nine cases on a 1000-base contig holding a dinucleotide and a trinucleotide repeat: no events, one SNP (inside, at the active start, only in the padding), SNPs apart, an MNP, insertions and deletions in and out of repeats, an event across the active end, both contig ends, small region and genotyping paddings, the legacy trim over the same shapes, and a negative padding refused. The tandem-repeat arithmetic moves from gatk-annotation into gatk-engine (tandem_repeat_units.rs) so that the engine can call it.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "result\tstr-insertion\tchr1:400-400\tchr1:293-507",
+        "result\tstr-tri-deletion\tchr1:600-603\tchr1:489-714",
+        "result\tlegacy-snps-apart\tchr1:301-499\tchr1:281-519",
+        "error\tnegative-snp-padding\ttrim\tBadArgumentValue: Argument paddingAroundSNPs has a bad value: -1< 0"
+      ],
+      "expect_rows": 200,
+      "cases": [
+        {
+          "dump": "AssemblyRegionTrimmerDump",
+          "golden": "crates/gatk-engine/tests/data/assembly_region_trimmer.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
