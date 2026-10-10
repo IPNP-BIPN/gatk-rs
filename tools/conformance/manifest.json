@@ -7194,6 +7194,28 @@
           "dump": "AlleleMappingDump"
         }
       ]
+    },
+    {
+      "id": "dragstr-likelihoods",
+      "status": "golden-pending",
+      "title": "DRAGstr in the read likelihoods: STR analyzer, parameter tables, imputators",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The last of the read likelihoods (G3.1d, #1283): with --dragstr-params-path, PairHMMLikelihoodCalculationEngine takes its gap penalties from DragstrPairHMMInputScoreImputator instead of the read's indel qualities. Measured: DragstrReadSTRAnalyzer (repeats of every period at every position, the period with the most, over twelve sequences and maximum periods 1, 2, 4 and 8), DragstrParams lookups (clamped to the table) for the defaults, DragstrParamUtils.parse over the table CalibrateDragstrModel prints and twelve hand-written files (comments, extra tables, leading spaces, and the refusals: a header not counting from 1, a missing table, too few or too many columns, a negative or non-numeric value, rows that disagree, a file of comments, a header alone), the DRAGstr imputation (GOP capped at 40 and GCP rounded half up per base, 45 and 10 at the last) under the default and a parsed table, the flow-mode NonSymmetricalPairHMMInputScoreImputator, and a likelihood matrix computed with the default DRAGstr parameters, as raw bits.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "impute\tdefault\tCACACACACACACAGT\t30,27,27,27,27,27,27,27,27,27,27,27,27,27,40,45\t5,5,5,5,5,5,5,5,5,5,5,5,5,5,10,10",
+        "error\tnegative\tNullPointerException: null",
+        "parsed\tprinted-default\t8\t20"
+      ],
+      "expect_rows": 2191,
+      "cases": [
+        {
+          "dump": "DragstrDump"
+        }
+      ]
     }
   ],
   "probes": []

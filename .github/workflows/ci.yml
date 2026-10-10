@@ -471,8 +471,8 @@ jobs:
             suites: "read-threading-assembler event-map assembly-region-trimmer finalize-region assembly-complexity"
           - group: golden-pending
             index: "2/2"
-            slug: "allele-mapping"
-            suites: "allele-mapping"
+            slug: "allele-mapping-dragstr-likelihoods"
+            suites: "allele-mapping dragstr-likelihoods"
     steps:
       - uses: actions/checkout@v7
 

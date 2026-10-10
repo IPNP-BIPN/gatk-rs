@@ -43,6 +43,7 @@ pub mod context_iterator;
 pub mod copy_number_mcmc;
 pub mod covariates;
 pub mod downsampling;
+pub mod dragstr;
 pub mod error_probabilities;
 pub mod event_map;
 pub mod feature_intervals;
