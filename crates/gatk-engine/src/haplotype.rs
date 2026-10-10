@@ -53,6 +53,7 @@
 //! is not free.
 
 use crate::allele_list::AlleleType;
+use crate::haplotype_alignment::HaplotypeAlignment;
 use htsjdk_vcf::allele::{Allele, AlleleError};
 
 /// `Haplotype`, over the state its allele identity is made of.
@@ -67,6 +68,10 @@ pub struct Haplotype {
     /// `uniquenessValue`, "uniquely differentiates the haplotype from others with same ref/bases".
     /// Zero unless the assembler sets it, and part of equality whether or not it was set.
     uniqueness_value: i32,
+    /// What the assembler gives a haplotype once it has one: where it is, its CIGAR against the
+    /// reference, its path score and the k-mer size of its graph. None of it takes part in
+    /// equality; the accessors are in [`crate::haplotype_alignment`].
+    pub(crate) alignment: HaplotypeAlignment,
 }
 
 impl Haplotype {
@@ -80,6 +85,10 @@ impl Haplotype {
         Ok(Self {
             allele: Allele::create(bases, is_ref)?,
             uniqueness_value: 0,
+            // The field initialisers: a null location and CIGAR, an alignment start of 0, a score
+            // of `Double.NaN` (which is what a reference haplotype keeps, since the sequence-graph
+            // finder never marks a path as the reference) and a k-mer size of 0.
+            alignment: HaplotypeAlignment::default(),
         })
     }
 

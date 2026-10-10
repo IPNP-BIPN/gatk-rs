@@ -991,10 +991,3 @@ impl Splitter {
         }
     }
 }
-
-/// What `cleanupSeqGraph` answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssemblyStatus {
-    JustAssembledReference,
-    AssembledSomeVariation,
-}
