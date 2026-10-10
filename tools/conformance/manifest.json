@@ -7084,6 +7084,30 @@
           "golden": "crates/gatk-engine/tests/data/read_threading_assembler.txt.gz"
         }
       ]
+    },
+    {
+      "id": "event-map",
+      "status": "oracle-backed",
+      "title": "EventMap.fromHaplotype and Event's minimal representation",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "How an assembled haplotype becomes variants (G3.1c, #1282): EventMap.fromHaplotype walks the haplotype's CIGAR from alignmentStartHapwrtRef, makes an insertion an event (padded with the base before it) only when it is neither the first nor the last element nor at the window start, a deletion only away from the window start, groups mismatches within an M, = or X element into MNPs while the gap is at most maxMnpDistance, drops any event touching a base BaseUtils does not call regular (A, C, G, T in either case, and the wildcard *), and compounds events sharing a start (SNP with insertion or deletion, insertion with deletion; two SNPs refused). Event cuts its alleles to their minimal representation. Thirty-six CIGAR cases (SNPs at the window edge, MNP distances 0 to 2 over a chain of substitutions, = and X, lowercase, N and * bases, insertions first, last and at the window start, deletions, SNPs sharing a start with an insertion or a deletion, offsets into the window, a soft clip, a hard clip and a negative MNP distance), getOverlappingEvents at every locus, getEventStartPositions over all of them, and new Event and makeCompoundEvents called directly for the trims and compounds no canonical CIGAR reaches.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "event\tchain-mnp1\t0\t1010\t1012\tTGC\tATG\tfalse\tfalse\tfalse\tfalse\ttrue",
+        "direct\tinsertion+deletion\t1019\t1021\tGAT\tGCC",
+        "direct\ttrim-two\t1019\t1020\tAC\tA",
+        "error\thard-clip\tGATKException: Unsupported cigar operator created during SW alignment: H"
+      ],
+      "expect_rows": 131,
+      "cases": [
+        {
+          "dump": "EventMapDump",
+          "golden": "crates/gatk-engine/tests/data/event_map.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []

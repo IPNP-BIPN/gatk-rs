@@ -3,13 +3,14 @@
 //!
 //! `Haplotype` itself keeps its identity (bases, reference flag, uniqueness value) in
 //! `haplotype.rs`; this is the rest of its state, which `equals` never reads: the genome location,
-//! the CIGAR against the reference haplotype, the offset of the haplotype in the padded reference
+//! the CIGAR against the reference haplotype, the event map read off that CIGAR, the offset of the haplotype in the padded reference
 //! (`alignmentStartHapwrtRef`, an index into bases held in memory and not a contig position), the
 //! score of the path it came from, and the k-mer size of that path's graph.
 
 use htsjdk_bam::cigar::Cigar;
 
 use crate::cigar_builder::{CigarBuilder, CigarError};
+use crate::event_map::EventMap;
 use crate::haplotype::Haplotype;
 use crate::interval::SimpleInterval;
 
@@ -21,6 +22,7 @@ pub struct HaplotypeAlignment {
     alignment_start_hap_wrt_ref: i32,
     score: f64,
     kmer_size: i32,
+    event_map: Option<EventMap>,
 }
 
 impl Default for HaplotypeAlignment {
@@ -32,6 +34,7 @@ impl Default for HaplotypeAlignment {
             alignment_start_hap_wrt_ref: 0,
             score: f64::NAN,
             kmer_size: 0,
+            event_map: None,
         }
     }
 }
@@ -111,6 +114,16 @@ impl Haplotype {
     /// `getKmerSize()`.
     pub fn kmer_size(&self) -> i32 {
         self.alignment.kmer_size
+    }
+
+    /// `getEventMap()`.
+    pub fn event_map(&self) -> Option<&EventMap> {
+        self.alignment.event_map.as_ref()
+    }
+
+    /// `setEventMap(EventMap)`.
+    pub fn set_event_map(&mut self, map: EventMap) {
+        self.alignment.event_map = Some(map);
     }
 
     /// `setKmerSize(int)`.
