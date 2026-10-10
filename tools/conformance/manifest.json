@@ -7063,7 +7063,7 @@
     },
     {
       "id": "read-threading-assembler",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "ReadThreadingAssembler.runLocalAssembly over fixed regions",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7080,7 +7080,8 @@
       "expect_rows": 3288,
       "cases": [
         {
-          "dump": "ReadThreadingAssemblerDump"
+          "dump": "ReadThreadingAssemblerDump",
+          "golden": "crates/gatk-engine/tests/data/read_threading_assembler.txt.gz"
         }
       ]
     },
