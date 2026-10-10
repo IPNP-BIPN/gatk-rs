@@ -8,12 +8,13 @@
 //! [`call_region`] as soon as its contig's regions are known. The calls come out in region order,
 //! which is coordinate order since the regions do not overlap.
 //!
-//! What a reader would not guess: physical phasing is **off** in VCF mode whatever
-//! `--do-not-run-physical-phasing` says, since `validateAndInitializeArgs` turns it off unless
-//! reference confidence is emitted; and the samples are the read groups' `SM` values **sorted**,
+//! What a reader would not guess: the samples are the read groups' `SM` values **sorted**,
 //! because `ReadUtils.getSamplesFromHeader` collects them in a `TreeSet`.
 //!
-//! Not ported here: reference-confidence (GVCF) mode, `--alleles`, pileup detection, DRAGEN mode
+//! In reference-confidence mode each region's output is a record per base, which the command line
+//! combines into blocks when it writes a GVCF.
+//!
+//! Not ported here: `--alleles`, pileup detection, DRAGEN mode
 //! and the flow-based paths, all refused by the command line.
 
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
@@ -102,11 +103,7 @@ pub fn call_variants(
     let assembler = haplotype_caller_assembler(arguments.assembly.min_base_quality_score);
     let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
         .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
-    // Phasing needs reference confidence, which VCF mode never emits.
-    let genotyping = HcGenotypingArguments {
-        do_physical_phasing: false,
-        ..arguments.genotyping.clone()
-    };
+    let genotyping = arguments.genotyping.clone();
 
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
