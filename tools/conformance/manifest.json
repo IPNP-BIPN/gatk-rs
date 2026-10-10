@@ -7305,7 +7305,7 @@
     },
     {
       "id": "hc-region-assembly",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller's region assembly: assembleReads, variation events, trimTo",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7321,7 +7321,8 @@
       "expect_rows": 1338,
       "cases": [
         {
-          "dump": "HcRegionAssemblyDump"
+          "dump": "HcRegionAssemblyDump",
+          "golden": "crates/gatk-tools/tests/data/hc_region_assembly.txt.gz"
         }
       ]
     }
