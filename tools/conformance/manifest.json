@@ -7039,6 +7039,29 @@
       ]
     },
     {
+      "id": "pair-hmm-likelihood-engine",
+      "status": "oracle-backed",
+      "title": "PairHMMLikelihoodCalculationEngine.computeReadLikelihoods: read preparation, PairHMM, normalization and filtering",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "How HaplotypeCaller and Mutect2 score every read against every haplotype (G3.1d, #1283). Each read is prepared (soft clips hard-clipped unless kept, the PCR indel error model capping insertion and deletion qualities by the tandem repeat ending at each base, base qualities capped by the mapping quality and squashed to Q6 under the threshold, indel qualities squashed to Q6), scored with the Java LOGLESS_CACHING PairHMM and a constant gap continuation penalty, normalized so no likelihood falls more than the mismapping rate below the best allele, and filtered when no haplotype explains it (a fixed threshold of Q40 per tolerated error, or the dynamic table). The dump prints the PCR model's 63 adjusted qualities, findTandemRepeatUnits at every offset of eight sequences, and for 21 cases the prepared reads, the evidence left, every likelihood as raw bits and the filtered reads: the three PCR models and none, dynamic disqualification at two scales, error rate, asymmetric normalization, the mapping-quality cap disabled, soft clips kept, no and a loose mismapping cap, gap continuation penalty, base quality thresholds, one haplotype, the reference second, an empty sample, and the three constructor refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "lk\tdefault\ts2\t1\t0\tc01907028ad85f80\t-6.256845635849345",
+        "filtered\tdynamic-1\ts1\tindelquals",
+        "repeat\tTTCTTCCCCAGT\t5\tC\t4"
+      ],
+      "expect_rows": 1191,
+      "cases": [
+        {
+          "dump": "PairHmmLikelihoodEngineDump",
+          "golden": "crates/gatk-engine/tests/data/pair_hmm_likelihood_engine.txt.gz"
+        }
+      ]
+    },
+    {
       "id": "read-threading-assembler",
       "status": "oracle-backed",
       "title": "ReadThreadingAssembler.runLocalAssembly over fixed regions",

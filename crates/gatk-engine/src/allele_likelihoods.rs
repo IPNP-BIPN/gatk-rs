@@ -101,6 +101,10 @@ pub enum LikelihoodsError {
     WrongRowLength { sample: String, allele: usize },
     /// `switchToNaturalLog` called twice.
     AlreadyNaturalLog,
+    /// `normalizeLikelihoods` with a cap that is not negative.
+    NonNegativeCap,
+    /// `filterPoorlyModeledEvidence` on a matrix with no alleles.
+    NoAlleles,
 }
 
 /// `AlleleLikelihoods<EVIDENCE, A>`, over an evidence type and an allele type the caller names.
@@ -132,6 +136,9 @@ pub struct AlleleLikelihoods<E: Clone + PartialEq, A: AlleleType = Allele> {
     /// matrix nobody filtered reports zero, and that zero is a real answer rather than a missing
     /// one.
     filtered_haplotype_count: i32,
+    /// `filteredEvidenceBySampleIndex`: what `filterPoorlyModeledEvidence` removed, kept for
+    /// genotyping.
+    filtered_evidence: Vec<Vec<E>>,
 }
 
 impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
@@ -184,6 +191,7 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
             reference_allele_index,
             is_natural_log: false,
             filtered_haplotype_count: 0,
+            filtered_evidence: vec![Vec::new(); sample_count],
         })
     }
 
@@ -256,6 +264,106 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// One likelihood.
     pub fn value(&self, sample_index: usize, allele_index: usize, evidence_index: usize) -> f64 {
         self.values[sample_index][allele_index][evidence_index]
+    }
+
+    /// The evidence `filterPoorlyModeledEvidence` removed from a sample, in removal order.
+    pub fn filtered_evidence(&self, sample_index: usize) -> &[E] {
+        &self.filtered_evidence[sample_index]
+    }
+
+    /// `normalizeLikelihoods(maximumLikelihoodDifferenceCap, symmetricallyNormalizeAllelesToReference)`:
+    /// no likelihood of a piece of evidence may fall more than the cap below its best allele's.
+    /// The best allele may be the reference only when `symmetric`; negative infinity disables the
+    /// cap, and a matrix of fewer than two alleles is left alone.
+    pub fn normalize_likelihoods(
+        &mut self,
+        cap: f64,
+        symmetric: bool,
+    ) -> Result<(), LikelihoodsError> {
+        if cap >= 0.0 || cap.is_nan() {
+            return Err(LikelihoodsError::NonNegativeCap);
+        }
+        if cap == f64::NEG_INFINITY || self.alleles.number_of_alleles() < 2 {
+            return Ok(());
+        }
+        for sample in 0..self.values.len() {
+            for evidence in 0..self.evidence_by_sample[sample].len() {
+                let best = self.search_best_allele(sample, evidence, symmetric, None);
+                let worst = best.likelihood + cap;
+                for row in self.values[sample].iter_mut() {
+                    if row[evidence] < worst {
+                        row[evidence] = worst;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `maximumLikelihoodOverAllAlleles`.
+    pub fn maximum_likelihood_over_all_alleles(
+        &self,
+        sample_index: usize,
+        evidence_index: usize,
+    ) -> f64 {
+        let mut result = f64::NEG_INFINITY;
+        for row in &self.values[sample_index] {
+            if row[evidence_index] > result {
+                result = row[evidence_index];
+            }
+        }
+        result
+    }
+
+    /// `filterPoorlyModeledEvidence(log10MinTrueLikelihood)`: remove, sample by sample, the
+    /// evidence whose best likelihood is under its threshold, and keep it aside. The threshold is
+    /// asked of `(sample, evidence index, evidence)`, since what it reads (the read's HMM
+    /// qualities) is a transient attribute in the reference.
+    pub fn filter_poorly_modeled_evidence(
+        &mut self,
+        mut log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
+    ) -> Result<(), LikelihoodsError> {
+        if self.alleles.number_of_alleles() == 0 {
+            return Err(LikelihoodsError::NoAlleles);
+        }
+        for sample in 0..self.samples.number_of_samples() {
+            let remove: Vec<usize> = (0..self.evidence_by_sample[sample].len())
+                .filter(|&i| {
+                    self.maximum_likelihood_over_all_alleles(sample, i)
+                        < log10_min_true_likelihood(sample, i, &self.evidence_by_sample[sample][i])
+                })
+                .collect();
+            for &i in &remove {
+                let evidence = self.evidence_by_sample[sample][i].clone();
+                self.filtered_evidence[sample].push(evidence);
+            }
+            self.remove_evidence_by_index(sample, &remove);
+        }
+        Ok(())
+    }
+
+    /// `removeEvidenceByIndex`, for sorted distinct indices. The reference leaves the freed tail of
+    /// each likelihood row as NaN; here the rows are shortened, which no reader can tell apart.
+    fn remove_evidence_by_index(&mut self, sample_index: usize, remove: &[usize]) {
+        if remove.is_empty() {
+            return;
+        }
+        let keep = |i: &usize| remove.binary_search(i).is_err();
+        let evidence = std::mem::take(&mut self.evidence_by_sample[sample_index]);
+        self.evidence_by_sample[sample_index] = evidence
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| keep(i))
+            .map(|(_, e)| e)
+            .collect();
+        for row in self.values[sample_index].iter_mut() {
+            *row = row
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| keep(i))
+                .map(|(_, v)| *v)
+                .collect();
+        }
     }
 
     /// `switchToNaturalLog()`, which refuses to run twice.
