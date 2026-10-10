@@ -35,6 +35,11 @@ pub enum SeqGraphError {
     InfiniteSimplification,
     /// `assertVertexExist`: an edge to a vertex the graph does not hold.
     NoSuchVertex,
+    /// `KBestHaplotypeFinder`: "could not find any path from the source vertex to the sink vertex
+    /// after removing cycles".
+    NoPathAfterRemovingCycles,
+    /// `KBestHaplotypeFinder`: "cannot find a way to remove the cycles".
+    CannotRemoveCycles,
 }
 
 /// `BaseEdge`: a multiplicity and a reference flag.
