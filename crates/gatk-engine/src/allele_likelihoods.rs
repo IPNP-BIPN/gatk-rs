@@ -689,3 +689,72 @@ impl<A: AlleleType> AlleleLikelihoods<htsjdk_bam::record::BamRecord, A> {
         Ok(grouped)
     }
 }
+
+impl<E: Clone + PartialEq> AlleleLikelihoods<E, Allele> {
+    /// `addNonReferenceAllele(Allele.NON_REF_ALLELE)`: `<NON_REF>` appended as the last allele
+    /// when it is missing, its row filled by [`Self::update_non_ref_allele_likelihoods`] over
+    /// every allele. A matrix that already holds it is left alone.
+    pub fn add_non_reference_allele(&mut self) {
+        let non_ref = Allele::from_str("<NON_REF>", false).expect("a symbolic allele");
+        if self.alleles.index_of_allele(&non_ref).is_some() {
+            return;
+        }
+        let mut alleles: Vec<Allele> = self.alleles.as_slice().to_vec();
+        alleles.push(non_ref);
+        self.alleles = AlleleList::new(&alleles);
+        for sample in &mut self.values {
+            let evidence = sample.first().map_or(0, Vec::len);
+            sample.push(vec![f64::NEG_INFINITY; evidence]);
+        }
+        let all = alleles.clone();
+        self.update_non_ref_allele_likelihoods(&all);
+    }
+
+    /// `updateNonRefAlleleLikelihoods(allelesToConsider)`: for each piece of evidence, the
+    /// `<NON_REF>` likelihood is the median (Commons Math's, so the legacy percentile) of the
+    /// concrete alleles' likelihoods strictly below the best one, among the alleles to consider.
+    /// With none below the best, it is the best itself, or NaN when there are fewer than two
+    /// concrete alleles.
+    pub fn update_non_ref_allele_likelihoods(&mut self, to_consider: &[Allele]) {
+        let non_ref = Allele::from_str("<NON_REF>", false).expect("a symbolic allele");
+        let Some(non_ref_index) = self.alleles.index_of_allele(&non_ref) else {
+            return;
+        };
+        let allele_count = self.alleles.number_of_alleles();
+        let concrete = allele_count - 1;
+        for s in 0..self.values.len() {
+            let evidence = self.evidence_by_sample[s].len();
+            for r in 0..evidence {
+                let best = self.search_best_allele(s, r, true, None).likelihood;
+                let mut qualified: Vec<f64> = Vec::with_capacity(concrete);
+                for a in 0..allele_count {
+                    let likelihood = self.values[s][a][r];
+                    let allele = self.alleles.get_allele(a).expect("an allele");
+                    if a != non_ref_index
+                        && likelihood < best
+                        && !likelihood.is_nan()
+                        && to_consider.contains(allele)
+                    {
+                        qualified.push(likelihood);
+                    }
+                }
+                let median = if qualified.is_empty() {
+                    f64::NAN
+                } else {
+                    jmath::percentile::evaluate(
+                        &qualified,
+                        50.0,
+                        jmath::percentile::EstimationType::Legacy,
+                    )
+                };
+                self.values[s][non_ref_index][r] = if !median.is_nan() {
+                    median
+                } else if concrete <= 1 {
+                    f64::NAN
+                } else {
+                    best
+                };
+            }
+        }
+    }
+}

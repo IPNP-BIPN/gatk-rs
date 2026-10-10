@@ -142,6 +142,19 @@ impl Engine {
         site: &Site<'_>,
         random: &mut JavaRandom,
     ) -> Result<VariantContext, EngineError> {
+        self.annotate_context_raw(vc, site, random, false)
+    }
+
+    /// `annotateContext` on an engine built with `useRaw`, which reference-confidence mode asks
+    /// for: a reducible INFO annotation writes its raw data (`annotateRawData`) instead of its
+    /// finished value.
+    pub fn annotate_context_raw(
+        &self,
+        vc: &VariantContext,
+        site: &Site<'_>,
+        random: &mut JavaRandom,
+        use_raw: bool,
+    ) -> Result<VariantContext, EngineError> {
         // `annotateGenotypes`: untouched when no genotype annotation, jumbo or not, was asked
         // for, rebuilt otherwise, each annotation reading the ORIGINAL genotype and writing the
         // builder. A jumbo one never runs here and still costs the file's own genotype text.
@@ -168,7 +181,12 @@ impl Engine {
         let mut attributes = genotype_annotated.attributes.clone();
         self.annotate_expressions(vc, site, &mut attributes)?;
         for entry in self.info() {
-            for (key, value) in annotate_info(entry, &genotype_annotated, site, random)? {
+            let values = if use_raw && entry.is_reducible() {
+                annotate_raw(entry, site)?
+            } else {
+                annotate_info(entry, &genotype_annotated, site, random)?
+            };
+            for (key, value) in values {
                 put(&mut attributes, &key, value);
             }
         }
@@ -363,6 +381,38 @@ fn to_values(pairs: Vec<(String, AnnotationValue)>) -> Vec<(String, Value)> {
 }
 
 /// One info annotation's `annotate(ref, vc, likelihoods)`.
+/// `ReducibleAnnotation.annotateRawData`, for the one reducible annotation HaplotypeCaller's
+/// defaults carry: `RMSMappingQuality`'s `RAW_MQandDP`, the summed squared mapping qualities and
+/// the count of the reads that have one, over every sample's evidence.
+fn annotate_raw(entry: &Entry, site: &Site<'_>) -> Result<Vec<(String, Value)>, EngineError> {
+    match entry.name {
+        "RMSMappingQuality" => {
+            let likelihoods = site.likelihoods;
+            if likelihoods.evidence_count() == 0 {
+                return Ok(Vec::new());
+            }
+            let mut square_sum: i64 = 0;
+            let mut reads: i64 = 0;
+            for s in 0..likelihoods.number_of_samples() {
+                for read in likelihoods.sample_evidence(s).unwrap_or(&[]) {
+                    let mq = i64::from(read.mapping_quality);
+                    if mq != 255 {
+                        square_sum += mq * mq;
+                        reads += 1;
+                    }
+                }
+            }
+            Ok(vec![(
+                "RAW_MQandDP".to_string(),
+                Value::Str(format!("{square_sum},{reads}")),
+            )])
+        }
+        other => Err(EngineError::Limitation(format!(
+            "the raw data of {other}, which reference-confidence mode writes, is not ported."
+        ))),
+    }
+}
+
 fn annotate_info(
     entry: &Entry,
     vc: &VariantContext,

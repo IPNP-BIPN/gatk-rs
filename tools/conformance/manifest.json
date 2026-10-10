@@ -7373,6 +7373,26 @@
           "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38065234516, byte for byte the local dump. Ten rows: the two contigs, the SAM text, and seven outputs that each differ from the default's; the generator carries over between runs, and the stack of sixty reads at one start makes the downsampler draw."
         }
       ]
+    },
+    {
+      "id": "hc-gvcf-end-to-end",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller in reference-confidence mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The tool with --emit-ref-confidence (G3.1f, #1285), on one sample's reads over two contigs. EVERY BASE IS ACCOUNTED FOR: inactive regions, regions that assemble to the reference and the trimmer's flanks each get a reference-confidence record per base, from the ref-vs-any likelihoods and the count of reads with no plausible indel, the less confident of the two. A <NON_REF> ALLELE IS ADDED TO EVERY CALL, its likelihood the median of each read's non-best concrete alleles, and the calling threshold is zero. THE ANNOTATIONS CHANGE: StrandBiasBySample added, ChromosomeCounts, FisherStrand, StrandOddsRatio and QualByDepth removed, the reducible ones written raw. PHYSICAL PHASING IS ON. AND GVCF COMBINES THE REFERENCE RECORDS INTO GQ-BAND BLOCKS where BP_RESOLUTION writes each one. Five runs: GVCF, BP_RESOLUTION over chr1:1150-1350, GVCF over two intervals, GVCF without phasing, and GVCF with two GQ bands.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 8,
+      "expect_contains": [],
+      "cases": [
+        {
+          "dump": "HcGvcfEndToEndDump",
+          "golden": "crates/gatk-tools/tests/data/hc_gvcf_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the PR's candidate-goldens artefact, byte for byte the local dump."
+        }
+      ]
     }
   ],
   "probes": []
