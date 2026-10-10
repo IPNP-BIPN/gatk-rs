@@ -6926,7 +6926,7 @@
     },
     {
       "id": "chain-pruner",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Low-weight chain pruning and removePathsNotConnectedToRef on the read threading graph",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -6942,7 +6942,7 @@
       "cases": [
         {
           "dump": "ChainPrunerDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/chain_pruner.txt.gz"
         }
       ]
     }

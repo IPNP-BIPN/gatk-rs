@@ -459,12 +459,8 @@ jobs:
             suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
           - group: oracle-backed
             index: "61/61"
-            slug: "read-walker-refusals-smith-waterman-read-threading-graph"
-            suites: "read-walker-refusals smith-waterman read-threading-graph"
-          - group: golden-pending
-            index: "1/1"
-            slug: "chain-pruner"
-            suites: "chain-pruner"
+            slug: "read-walker-refusals-smith-waterman-read-threading-graph-chain-pruner"
+            suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner"
     steps:
       - uses: actions/checkout@v7
 

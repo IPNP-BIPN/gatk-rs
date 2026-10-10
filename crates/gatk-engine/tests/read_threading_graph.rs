@@ -319,14 +319,15 @@ fn render(c: &Case) -> Vec<String> {
     }
 
     let label = c.label;
-    for (i, v) in graph.vertices().iter().enumerate() {
+    for i in graph.vertex_ids() {
+        let v = graph.vertex(i);
         out.push(format!(
             "vertex\t{label}\t{i}\t{}\t{}",
             String::from_utf8_lossy(&v.sequence),
             v.additional_info
         ));
     }
-    for e in graph.edges() {
+    for e in graph.edge_ids().map(|e| graph.edge(e)) {
         out.push(format!(
             "edge\t{label}\t{}\t{}\t{}\t{}\t{}",
             e.source,
@@ -359,8 +360,8 @@ fn render(c: &Case) -> Vec<String> {
     let show = |v: Option<usize>| v.map_or("-".to_string(), |v| v.to_string());
     out.push(format!(
         "summary\t{label}\tvertices={}\tedges={}\tcycles={}\tlowquality={}\trefsource={}\trefsink={}",
-        graph.vertices().len(),
-        graph.edges().len(),
+        graph.vertex_count(),
+        graph.edge_count(),
         graph.has_cycles(),
         graph.is_low_quality_graph(),
         show(graph.reference_source_vertex()),
