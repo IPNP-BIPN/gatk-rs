@@ -37,9 +37,12 @@
 
 use crate::assembly_region::RegionError;
 use crate::assembly_region_iterator::{
-    assembly_regions, group_intervals_by_contig, AssemblyRegionArgs, ReadShard, TraversedRegion,
+    assembly_regions, assembly_regions_with_states, group_intervals_by_contig, ActivityAnswer,
+    AssemblyRegionArgs, ReadShard, TraversedRegion,
 };
 use crate::interval::SimpleInterval;
+use crate::java_random::JavaRandom;
+use crate::locus_iterator::AlignmentContext;
 use crate::locus_iterator::{self, LocusIteratorOptions};
 use crate::read_states::{DownsamplingInfo, ReadStateError, ReadStateManager};
 use crate::read_utils;
@@ -185,16 +188,13 @@ pub fn traverse(
             .collect();
 
         let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
-        // `new LocusIteratorByState(..., true)`: the keepUniqueReadList constructor, whose
-        // deletion and N settings are both on, unlike a LocusWalker's.
+        // `new LocusIteratorByState(reads, NONE, samples, header, true)`: the five-argument
+        // constructor, deletions included and reads with an N at the locus left out.
         let contexts = locus_iterator::contexts(
             &shard_reads,
             samples.to_vec(),
             header,
-            LocusIteratorOptions {
-                include_deletions: true,
-                include_ns: true,
-            },
+            REGION_LOCUS_OPTIONS,
             states,
         )?;
 
@@ -224,6 +224,89 @@ pub fn traverse(
                     depth: 0,
                 }),
             },
+        )?;
+        out.extend(regions);
+    }
+    Ok(out)
+}
+
+/// What `AssemblyRegionIterator` builds its `LocusIteratorByState` with.
+const REGION_LOCUS_OPTIONS: LocusIteratorOptions = LocusIteratorOptions {
+    include_deletions: true,
+    include_ns: false,
+};
+
+impl Located for AlignmentContext<'_> {
+    fn contig(&self) -> &str {
+        &self.contig
+    }
+    fn start(&self) -> i32 {
+        self.position
+    }
+    fn stop(&self) -> i32 {
+        self.position
+    }
+}
+
+/// `traverse()` as a tool with a real evaluator runs it: each shard's reads through the
+/// positional downsampler (`max_reads_per_alignment_start` per start, none at zero), drawing from
+/// `random`, then the evaluator handed the locus and its `AlignmentContext`, `None` for a locus
+/// no read covers. The evaluator answers the probability and, for a `HIGH_QUALITY_SOFT_CLIPS`
+/// state, its value.
+///
+/// The downsampler runs over the whole shard before the first locus, where the reference pulls
+/// reads lazily as the loci advance: the draws are the same, and only their interleaving with a
+/// draw the tool makes while calling a region could differ.
+#[allow(clippy::too_many_arguments)]
+pub fn traverse_with_pileups(
+    reads: &[BamRecord],
+    intervals: &[SimpleInterval],
+    samples: &[Option<String>],
+    args: &AssemblyRegionArgs,
+    header: &SamHeader,
+    random: &mut JavaRandom,
+    is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
+) -> Result<Vec<TraversedRegion>, WalkerError> {
+    let shards = make_read_shards(intervals, args.assembly_region_padding, header)
+        .expect("a padding validate() has already accepted");
+
+    let mut out = Vec::new();
+    for shard in &shards {
+        let queried: Vec<BamRecord> = reads
+            .iter()
+            .filter(|record| {
+                let contig = contig_of(record, header);
+                shard.padded_intervals.iter().any(|interval| {
+                    interval.overlaps(&contig, read_utils::start(record), read_utils::end(record))
+                })
+            })
+            .cloned()
+            .collect();
+        let shard_reads = if needs_downsampler(args) {
+            crate::downsampling::positional_downsample(
+                &queried,
+                args.max_reads_per_alignment_start as usize,
+                random,
+            )
+        } else {
+            queried
+        };
+
+        let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
+        let contexts = locus_iterator::contexts(
+            &shard_reads,
+            samples.to_vec(),
+            header,
+            REGION_LOCUS_OPTIONS,
+            states,
+        )?;
+        let regions = assembly_regions_with_states(
+            &contexts,
+            &shard_reads,
+            shard,
+            args,
+            header,
+            &mut |locus, context| is_active(&locus.interval, context),
         )?;
         out.extend(regions);
     }

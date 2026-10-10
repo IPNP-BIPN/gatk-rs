@@ -7345,6 +7345,24 @@
           "dump": "HcCallRegionDump"
         }
       ]
+    },
+    {
+      "id": "hc-end-to-end",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The tool itself, run by instanceMain on an indexed BAM and a FASTA (G3.1e, #1284): the IUPAC transformer and the read filters, the positional downsampler, the activity profile with its soft-clip spreading, the region boundaries, assembly, likelihoods, genotyping, the default annotations and the VCF writer, chained. Two samples over two random contigs: SNPs het and hom, a deletion, an insertion, two SNPs in cis for one sample and in trans for the other, a SNP on the second contig, reads at mapping quality 10, duplicates, high-quality soft clips, an N and an IUPAC base, and sixty reads at one start. Seven runs in one JVM, the generator never reset: the default, two intervals, phasing off (which VCF mode turns off anyway), a calling threshold of 500, no downsampling, the mapping-quality filter disabled, and a minimum base quality of 30.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 10,
+      "expect_contains": [],
+      "cases": [
+        {
+          "dump": "HcEndToEndDump"
+        }
+      ]
     }
   ],
   "probes": []
