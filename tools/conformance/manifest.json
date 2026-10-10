@@ -7334,7 +7334,7 @@
     },
     {
       "id": "hc-call-region",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCallerEngine.callRegion",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7349,7 +7349,8 @@
       "expect_rows": 690,
       "cases": [
         {
-          "dump": "HcCallRegionDump"
+          "dump": "HcCallRegionDump",
+          "golden": "crates/gatk-tools/tests/data/hc_call_region.txt.gz"
         }
       ]
     },
