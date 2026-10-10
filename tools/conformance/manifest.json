@@ -7106,6 +7106,27 @@
           "dump": "AssemblyRegionTrimmerDump"
         }
       ]
+    },
+    {
+      "id": "finalize-region",
+      "status": "golden-pending",
+      "title": "AssemblyBasedCallerUtils.finalizeRegion",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The reads of an assembly region as HaplotypeCaller's assembler and genotyper see them (G3.1c, #1282): AssemblyBasedCallerUtils.finalizeRegion hard-clips soft clips, or reverts them (keeping the original span in os and oe) when soft-clipped bases are used and the fragment size is well defined or the check is overridden, clips low-quality ends (soft or hard; 6 under error correction), the adaptor and whatever lies outside the padded span, drops what is left empty, sorts by coordinate, and per sample caps the overlapping bases of a fragment's two mates at half the PCR error quality (20) or zeroes them where they disagree (FragmentCollection.create and FragmentUtils.adjustQualsOfOverlappingPairedFragments). Twenty-two reads (plain, outside the padded span on either side, soft clips left, right and both, low-quality heads and tails, all low, a deletion, agreeing, conflicting and two-sample overlapping pairs, a short fragment whose adaptor is clipped, soft-clipped proper pairs) through ten switch settings: HaplotypeCaller's, soft clips unused, the fragment check overridden, error correction, a tail quality of 20, soft-clipped tails, no overlap correction, the hard-clipped pileup list kept, and an already finalized region.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "region\ttrack-hardclipped\t21\t21\ttrue",
+        "region\talready-finalized\t22\t0\ttrue"
+      ],
+      "expect_rows": 297,
+      "cases": [
+        {
+          "dump": "FinalizeRegionDump"
+        }
+      ]
     }
   ],
   "probes": []

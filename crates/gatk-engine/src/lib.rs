@@ -16,6 +16,7 @@ pub mod allele_likelihoods;
 pub mod allele_list;
 pub mod allele_pileup_counter;
 pub mod apply_filters;
+pub mod assembly_based_caller_utils;
 pub mod assembly_region;
 pub mod assembly_region_iterator;
 pub mod assembly_region_trimmer;
