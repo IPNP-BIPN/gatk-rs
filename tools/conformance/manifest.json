@@ -7216,6 +7216,27 @@
           "dump": "DragstrDump"
         }
       ]
+    },
+    {
+      "id": "hc-is-active",
+      "status": "golden-pending",
+      "title": "HaplotypeCallerEngine.isActive per locus",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "Where HaplotypeCaller looks (G3.1e, #1284): HaplotypeCallerEngine.isActive at every locus LocusIteratorByState yields over a case's reads (deletions kept, Ns not, no downsampling, as AssemblyRegionIterator builds it). Each sample's pileup becomes reference-versus-any likelihoods (ReferenceConfidenceModel.calcGenotypeLikelihoodsOfRefVsAny: bases at or under the minimum quality skipped, deletions at the reference-model deletion quality, alternate meaning a different base or a neighbouring indel or soft clip), stored as PLs and read back rounded; one sample gives the Dirichlet non-ref posterior, several the QUAL of a fake N/<FAKE_ALT> site called at confidence 4. Alternates next to soft clips average the read's high-quality clipped bases, above 6 marking HIGH_QUALITY_SOFT_CLIPS. Eighteen cases through a real HaplotypeCallerEngine: het, hom and rare SNPs, alternate qualities at and above the threshold, a deletion, an insertion, soft clips, Ns, two samples (both, one covered, both reference), ploidies 1 and 3 (one and two samples), a higher heterozygosity, a minimum base quality of 20, and a deletion quality of 10.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "active\tsoft-clips\t150\t26\t3ff0000000000000\tHIGH_QUALITY_SOFT_CLIPS\t401bb13b13b13b13\t4049333333333333",
+        "active\trare-snp\t150\t18\t3feffff47739e9d5\tNONE\t0\t4020000000000000"
+      ],
+      "expect_rows": 3120,
+      "cases": [
+        {
+          "dump": "HcIsActiveDump"
+        }
+      ]
     }
   ],
   "probes": []
