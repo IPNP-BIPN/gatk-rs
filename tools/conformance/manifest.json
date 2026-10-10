@@ -7267,6 +7267,92 @@
           "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
         }
       ]
+    },
+    {
+      "id": "hc-annotated-calls",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller's calls with its default annotations",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's calls as it writes them by default (G3.1e, #1284): assignGenotypeLikelihoods with the StandardAnnotation and StandardHCAnnotation set (BaseQualityRankSumTest, ChromosomeCounts, Coverage, DepthPerAlleleBySample, DepthPerSampleHC, ExcessHet, FisherStrand, InbreedingCoeff, MappingQualityRankSumTest, QualByDepth, RMSMappingQuality, ReadPosRankSumTest, StrandOddsRatio), computed by makeAnnotatedCall from the read-by-allele matrix the call was genotyped with, over the padded reference, before the reverse trim; the random generator reset as a tool run resets it, so QualByDepth's jitter of a high QD is measured. Reads are cut from the haplotypes and aligned through the haplotype's CIGAR, with varied base qualities, mapping qualities and strands. Twelve cases: het and hom SNPs, strand bias, a triallelic site, two sites, a deletion, an insertion, homopolymer deletions trimmed, two samples, three samples under HWE, a deep site, ploidy 1.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\tstrand-biased\tchr1\t1020\t.\tA\tC\t455.64\t.\tAC=1;AF=0.500;AN=2;BaseQRankSum=0.287;DP=16;ExcessHet=0.0000;FS=11.139"
+      ],
+      "expect_rows": 276,
+      "cases": [
+        {
+          "dump": "HcAnnotatedCallsDump"
+        }
+      ]
+    },
+    {
+      "id": "hc-phasing",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller's physical phasing (phaseCalls)",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's physical phasing (G3.1e, #1284): AssemblyBasedCallerUtils.phaseCalls over the calls of assignGenotypeLikelihoods (phasing on, no annotations). A call with exactly one site-specific alternate is tied to the called haplotypes whose event map holds it; calls on the same haplotypes, or a call on every haplotype carrying a called variant, are phased 0|1 together, calls on complementary haplotypes 0|1 against 1|0, and a call whose partner already sits in another group empties the mapping. Each group's genotypes (hom-ref ones included) are phased, a het one reversed for 1|0, with PID, PGT and PS. Twelve cases: cis, trans, trans with the reference, a hom with a het (the reference allele unsupported, so its PL is Integer.MAX_VALUE), three in cis, two cis and one trans, a triallelic site (not phased), a deletion in cis, two samples, unrelated haplotypes (not phased), a single call, and ploidy 3.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\ttrans\tchr1\t1040\t.\tA\tC\t309.64\t.\tMLEAC=1;MLEAF=0.500\tGT:GQ:PGT:PID:PL:PS\t1|0:99:1|0:1020_A_C:317,0,148:1020"
+      ],
+      "expect_rows": 209,
+      "cases": [
+        {
+          "dump": "HcPhasingDump",
+          "golden": "crates/gatk-tools/tests/data/hc_phasing.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "hc-region-assembly",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller's region assembly: assembleReads, variation events, trimTo",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's region assembly up to genotyping (G3.1e, #1284): AssemblyBasedCallerUtils.assembleReads with HaplotypeCaller's argument collection (finalizeRegion with the minimum base quality less one, overlap correction and the hard-clipped pileup list; the reference padded by 500 within the contig; createReferenceHaplotype; the assembler of createReadThreadingAssembler), AssemblyResultSet.getVariationEvents (event maps against the padded reference, HAPLOTYPE_EVENT_COMPARATOR order), AssemblyRegionTrimmer.trim and AssemblyResultSet.trimTo (Haplotype.trim to the trimmed padded span with getBasesCoveringRefInterval and trimCigarByReference, duplicates collapsed with the reference's original winning, the reference rebuilt without its k-mer size, sorted by length and bases). Eleven regions over a 1500-base contig: het and hom SNPs, a deletion, an insertion, two SNPs, a SNP outside the active span, no variation, both contig ends, soft-clipped reads and a padding of 25.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "\t76M3I75M\t575\tchr1:675-825\t10",
+        "trim\tsnp-outside-active\tnull\tnull",
+        "event\tinsertion\t750\tT\tTTTG"
+      ],
+      "expect_rows": 1338,
+      "cases": [
+        {
+          "dump": "HcRegionAssemblyDump",
+          "golden": "crates/gatk-tools/tests/data/hc_region_assembly.txt.gz"
+        }
+      ]
+    },
+    {
+      "id": "hc-call-region",
+      "status": "oracle-backed",
+      "title": "HaplotypeCallerEngine.callRegion",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "A whole active region called as HaplotypeCaller calls it by default (G3.1e, #1284): HaplotypeCallerEngine.callRegion through a real engine over a temporary FASTA, with the default annotations and the random generator reset per region. Assembly and trimming (#1320), read stubs under 10 aligned bases removed, filterNonPassingReads (short, mapping quality under 20, mate on another contig), the likelihoods against the trimmed haplotypes (soft-clipped bases kept, conservative PCR model), every read realigned to its best haplotype (createReadAlignedToRef: Smith-Waterman to the haplotype, the CIGAR projected through the haplotype's, indels left-aligned, clips restored), genotyping, the annotations with the filtered reads added at no likelihood, and phasing. Ten regions: het and hom SNPs, a deletion, an insertion, two SNPs, no variation, soft clips, low mapping-quality reads, two samples and a region at the contig start.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\tlow-mapq-reads\tchr1\t750\t.\tT\tA\t92.64\t.\tAC=1;AF=0.500;AN=2;BaseQRankSum=-1.097;DP=16",
+        "calls\tno-variation\t0"
+      ],
+      "expect_rows": 690,
+      "cases": [
+        {
+          "dump": "HcCallRegionDump",
+          "golden": "crates/gatk-tools/tests/data/hc_call_region.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []

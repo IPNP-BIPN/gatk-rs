@@ -323,6 +323,26 @@ pub fn trim_cigar_by_bases(
     start: i32,
     end: i32,
 ) -> Result<LeftAlignment, AlignmentError> {
+    trim_cigar(cigar, start, end, false)
+}
+
+/// `trimCigarByReference`: the same over reference positions `start` to `end`, counted from the
+/// cigar's first reference base.
+pub fn trim_cigar_by_reference(
+    cigar: &Cigar,
+    start: i32,
+    end: i32,
+) -> Result<LeftAlignment, AlignmentError> {
+    trim_cigar(cigar, start, end, true)
+}
+
+/// `trimCigar(cigar, start, end, byReference)`.
+fn trim_cigar(
+    cigar: &Cigar,
+    start: i32,
+    end: i32,
+    by_reference: bool,
+) -> Result<LeftAlignment, AlignmentError> {
     if start < 0 {
         return Err(AlignmentError::BadTrim("start position can't be negative"));
     }
@@ -333,7 +353,12 @@ pub fn trim_cigar_by_bases(
     let mut element_end = 0;
     for element in &cigar.elements {
         let element_start = element_end;
-        element_end = element_start + length_on_read(element);
+        element_end = element_start
+            + if by_reference {
+                length_on_reference(element)
+            } else {
+                length_on_read(element)
+            };
 
         if element_end < start || (element_end == start && element_start < start) {
             continue;
@@ -361,6 +386,67 @@ pub fn trim_cigar_by_bases(
         leading_deletion_bases_removed: builder.leading_deletion_bases_removed(),
         trailing_deletion_bases_removed: builder.trailing_deletion_bases_removed(),
     })
+}
+
+/// `getBasesCoveringRefInterval(refStart, refEnd, bases, basesStartOnRef, basesToRefCigar)`: the
+/// bases aligned to reference positions `ref_start` to `ref_end` (both inclusive, counted like
+/// `bases_start_on_ref`), or `None` when either end falls in a deletion.
+pub fn bases_covering_ref_interval(
+    ref_start: i32,
+    ref_end: i32,
+    bases: &[u8],
+    bases_start_on_ref: i32,
+    cigar: &Cigar,
+) -> Result<Option<Vec<u8>>, AlignmentError> {
+    if ref_start < 0 || ref_end < ref_start {
+        return Err(AlignmentError::BadTrim("bad start and/or stop"));
+    }
+    if bases_start_on_ref < 0 {
+        return Err(AlignmentError::BadTrim("basesStartOnRef must be >= 0"));
+    }
+    if bases.len() != cigar.read_length() as usize {
+        return Err(AlignmentError::BadTrim(
+            "mismatch in length between reference bases and cigar length",
+        ));
+    }
+    let mut ref_pos = bases_start_on_ref;
+    let mut bases_pos = 0i32;
+    let mut bases_start = -1i32;
+    let mut bases_stop = -1i32;
+    'elements: for element in &cigar.elements {
+        match element.op {
+            Op::I => bases_pos += element.length as i32,
+            Op::M | Op::X | Op::Eq => {
+                for _ in 0..element.length {
+                    if ref_pos == ref_start {
+                        bases_start = bases_pos;
+                    }
+                    if ref_pos == ref_end {
+                        bases_stop = bases_pos;
+                        break 'elements;
+                    }
+                    ref_pos += 1;
+                    bases_pos += 1;
+                }
+            }
+            Op::D => {
+                for _ in 0..element.length {
+                    if ref_pos == ref_end || ref_pos == ref_start {
+                        // One of the ends is in a deletion.
+                        return Ok(None);
+                    }
+                    ref_pos += 1;
+                }
+            }
+            _ => return Err(AlignmentError::BadTrim("unsupported operator")),
+        }
+    }
+    if bases_start == -1 || bases_stop == -1 {
+        return Err(AlignmentError::BadTrim("never found start or stop"));
+    }
+    Ok(Some(
+        bases[bases_start as usize..=bases_stop as usize].to_vec(),
+    ))
 }
 
 /// `normalizeAlleles`: move a set of allele ranges as far left as they can go and still mean the
