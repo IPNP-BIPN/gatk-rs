@@ -7201,7 +7201,7 @@
     },
     {
       "id": "dragstr-likelihoods",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DRAGstr in the read likelihoods: STR analyzer, parameter tables, imputators",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7217,7 +7217,8 @@
       "expect_rows": 2191,
       "cases": [
         {
-          "dump": "DragstrDump"
+          "dump": "DragstrDump",
+          "golden": "crates/gatk-engine/tests/data/dragstr_likelihoods.txt.gz"
         }
       ]
     }
