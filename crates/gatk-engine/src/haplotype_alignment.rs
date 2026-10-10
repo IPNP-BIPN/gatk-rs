@@ -9,6 +9,9 @@
 
 use htsjdk_bam::cigar::Cigar;
 
+use crate::alignment_utils::{
+    bases_covering_ref_interval, trim_cigar_by_reference, AlignmentError,
+};
 use crate::cigar_builder::{CigarBuilder, CigarError};
 use crate::event_map::EventMap;
 use crate::haplotype::Haplotype;
@@ -37,6 +40,18 @@ impl Default for HaplotypeAlignment {
             event_map: None,
         }
     }
+}
+
+/// What `trim` refuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HaplotypeTrimError {
+    /// `NullPointerException`: no genome location or no CIGAR.
+    Missing(&'static str),
+    /// `IllegalArgumentException`: a span the haplotype does not contain.
+    NotContained,
+    Alignment(AlignmentError),
+    Cigar(HaplotypeCigarError),
+    Allele(htsjdk_vcf::allele::AlleleError),
 }
 
 /// What `setCigar` refuses.
@@ -124,6 +139,66 @@ impl Haplotype {
     /// `setEventMap(EventMap)`.
     pub fn set_event_map(&mut self, map: EventMap) {
         self.alignment.event_map = Some(map);
+    }
+
+    /// `trim(loc, ignoreRefState)`: the part of the haplotype aligned to `loc`, which it must
+    /// contain, or `None` when an end of `loc` falls in a deletion or nothing but an insertion is
+    /// left. A leading or trailing insertion is cut from the CIGAR (the bases keep it), the
+    /// reference flag is dropped when `ignore_ref_state` asks, and the score, k-mer size and the
+    /// shifted alignment start are carried over.
+    pub fn trim(
+        &self,
+        loc: &SimpleInterval,
+        ignore_ref_state: bool,
+    ) -> Result<Option<Haplotype>, HaplotypeTrimError> {
+        let location = self
+            .genome_location()
+            .ok_or(HaplotypeTrimError::Missing("genomeLocation"))?;
+        if !location.contains(loc) {
+            return Err(HaplotypeTrimError::NotContained);
+        }
+        let cigar = self.cigar().ok_or(HaplotypeTrimError::Missing("cigar"))?;
+        let new_start = loc.start - location.start;
+        let new_stop = new_start + loc.end - loc.start;
+        let bases = self.bases();
+        let Some(new_bases) = bases_covering_ref_interval(new_start, new_stop, &bases, 0, cigar)
+            .map_err(HaplotypeTrimError::Alignment)?
+        else {
+            return Ok(None);
+        };
+        if new_bases.is_empty() {
+            return Ok(None);
+        }
+        let new_cigar = trim_cigar_by_reference(cigar, new_start, new_stop)
+            .map_err(HaplotypeTrimError::Alignment)?
+            .cigar;
+        let leading_insertion = !new_cigar.elements[0].op.consumes_reference_bases();
+        let trailing_insertion = !new_cigar.elements[new_cigar.elements.len() - 1]
+            .op
+            .consumes_reference_bases();
+        let first = usize::from(leading_insertion);
+        let last = new_cigar.elements.len() - usize::from(trailing_insertion);
+        if last <= first {
+            // The whole CIGAR is an insertion.
+            return Ok(None);
+        }
+        let kept = if leading_insertion || trailing_insertion {
+            Cigar::new(new_cigar.elements[first..last].to_vec())
+        } else {
+            new_cigar
+        };
+        let mut trimmed = Haplotype::new(&new_bases, !ignore_ref_state && self.is_reference())
+            .map_err(HaplotypeTrimError::Allele)?;
+        // `setCigar` runs the elements through a `CigarBuilder(false)`, as the reference's
+        // `new CigarBuilder(false).addAll(...).make()` already has.
+        trimmed
+            .set_cigar(&kept)
+            .map_err(HaplotypeTrimError::Cigar)?;
+        trimmed.set_genome_location(loc.clone());
+        trimmed.set_score(self.score());
+        trimmed.set_kmer_size(self.kmer_size());
+        trimmed.set_alignment_start_hap_wrt_ref(new_start + self.alignment_start_hap_wrt_ref());
+        Ok(Some(trimmed))
     }
 
     /// `setKmerSize(int)`.
