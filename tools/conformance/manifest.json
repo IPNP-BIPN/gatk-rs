@@ -7037,6 +7037,29 @@
           "golden": "crates/gatk-engine/tests/data/dangling_ends.txt.gz"
         }
       ]
+    },
+    {
+      "id": "read-threading-assembler",
+      "status": "golden-pending",
+      "title": "ReadThreadingAssembler.runLocalAssembly over fixed regions",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The orchestration of local assembly (G3.1c, #1282), every graph stage of which an earlier suite measures: ReadThreadingAssembler.runLocalAssembly in the default sequence-graph mode, with reads hard-clipped of their soft clips, the k-mer sizes sorted and tried in turn, up to six retries ten larger when none gives a graph (the last allowed low complexity and non-unique reference k-mers), createGraph's refusals (non-unique reference k-mers, a cycle after pruning, a low-complexity graph) and its FAILED answer for a reference shorter than k, pruning before or after the cycle check, the k best paths of every graph aligned to the reference haplotype by CigarUtils.calculateCigar with NEW_SW_PARAMETERS (SOFTCLIP, then INDEL when the span differs), haplotypes under 30 reference bases or with an N dropped, and the LinkedHashSet order of the result set, in which the reference bases found as an alternative give way to the reference haplotype added at the end. Forty-two cases over a 400-base contig: reference only, a SNP at two allele fractions, an insertion, a deletion, two SNPs together and apart, an MNP, errors pruned, unpruned (128 paths per graph) and adaptively pruned, two paths per graph, unsorted k-mer sizes, a duplicated reference segment forcing a retry at 35 (and refused, or allowed), a short tandem repeat expansion, a moved segment making cycles at 10 and 25, a dinucleotide repeat, a region too short for 30 reference bases and one shorter than k, soft clips, low qualities and Ns, dangling tails and heads with recovery on, off, recover-all and min-matching, two samples with one or both carrying the variant, and a region at the contig start. Each case prints its inputs, which the Rust test rebuilds the region from.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "set\tcycle\t2\ttrue\t1",
+        "set\trepeat-retry\t2\ttrue\t1",
+        "result\tshort-region\t1\t-\tFAILED\t-\t-",
+        "set\terrors-unpruned\t170\ttrue\t127"
+      ],
+      "expect_rows": 3288,
+      "cases": [
+        {
+          "dump": "ReadThreadingAssemblerDump"
+        }
+      ]
     }
   ],
   "probes": []
