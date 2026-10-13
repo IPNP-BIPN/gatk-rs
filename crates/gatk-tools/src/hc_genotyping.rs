@@ -17,7 +17,12 @@
 //! The annotations are the given annotator engine's, run before the trim as `makeAnnotatedCall`
 //! runs them; with none, the call is left as genotyped.
 //!
-//! Not ported here: physical phasing (its own brick), reference-confidence
+//! Physical phasing (`AssemblyBasedCallerUtils.phaseCalls`) runs over the trimmed calls when
+//! asked for: calls on the same called haplotypes are phased `0|1` together, calls on
+//! complementary ones `0|1` against `1|0`, and a call whose partner already sits in another group
+//! empties the whole mapping.
+//!
+//! Not ported here: reference-confidence
 //! mode, contamination downsampling, DRAGstr priors and the BQD/FRD genotyping models, and the
 //! reduction of sites with more alleles than the genotype count allows (refused).
 
@@ -35,7 +40,7 @@ use gatk_engine::read_utils;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::genotypes_context::GenotypesContext;
-use htsjdk_vcf::variant::{Genotype, VariantContext};
+use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
 
 use crate::genotyping_engine::{EngineError, GenotypingEngine};
 use crate::variant_annotator_engine::{Engine as AnnotatorEngine, Site};
@@ -54,6 +59,9 @@ pub struct HcGenotypingArguments {
     pub max_genotype_count: usize,
     /// The maximum MNP distance the event maps are built with.
     pub max_mnp_distance: i32,
+    /// `doPhysicalPhasing`, which the tool sets from `--do-not-run-physical-phasing`. Off here
+    /// unless asked for, so that the genotyping can be measured on its own.
+    pub do_physical_phasing: bool,
 }
 
 impl Default for HcGenotypingArguments {
@@ -64,6 +72,7 @@ impl Default for HcGenotypingArguments {
             disable_spanning_event_genotyping: false,
             max_genotype_count: 1024,
             max_mnp_distance: 0,
+            do_physical_phasing: false,
         }
     }
 }
@@ -127,6 +136,8 @@ pub fn assign_genotype_likelihoods_annotated(
     let ploidy = arguments.sample_ploidy;
     let spanning = !arguments.disable_spanning_event_genotyping;
     let mut calls = Vec::new();
+    // `calledHaplotypes`: the haplotypes behind any allele of any call, once each.
+    let mut called: Vec<usize> = Vec::new();
     for loc in starts {
         if loc < active_region_window.start || loc > active_region_window.end {
             continue;
@@ -184,6 +195,15 @@ pub fn assign_genotype_likelihoods_annotated(
         vc.stop = i64::from(merged.end);
         vc.genotypes = GenotypesContext::new(genotypes);
         if let Some(call) = engine.calculate_genotypes(&vc)? {
+            for allele in &call.alleles {
+                if let Some((_, indices)) = mapper.iter().find(|(a, _)| a == allele) {
+                    for &h in indices {
+                        if !called.iter().any(|&c| haplotypes[c] == haplotypes[h]) {
+                            called.push(h);
+                        }
+                    }
+                }
+            }
             // `makeAnnotatedCall`: the annotations read the matrix the call was genotyped with,
             // over a reference context whose window is the padded reference.
             let call = match annotator.as_mut() {
@@ -209,7 +229,214 @@ pub fn assign_genotype_likelihoods_annotated(
             calls.push(call);
         }
     }
+    if arguments.do_physical_phasing {
+        let called: Vec<&Haplotype> = called.iter().map(|&h| &haplotypes[h]).collect();
+        return phase_calls(calls, &called);
+    }
     Ok(calls)
+}
+
+/// `PhaseGroup`: which alternate index of a het genotype holds the phased alternate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhaseGroup {
+    Phase01,
+    Phase10,
+}
+
+impl PhaseGroup {
+    fn description(self) -> &'static str {
+        match self {
+            PhaseGroup::Phase01 => "0|1",
+            PhaseGroup::Phase10 => "1|0",
+        }
+    }
+
+    fn alt_allele_index(self) -> usize {
+        match self {
+            PhaseGroup::Phase01 => 1,
+            PhaseGroup::Phase10 => 0,
+        }
+    }
+
+    fn other(self) -> PhaseGroup {
+        match self {
+            PhaseGroup::Phase01 => PhaseGroup::Phase10,
+            PhaseGroup::Phase10 => PhaseGroup::Phase01,
+        }
+    }
+}
+
+/// `isSiteSpecificAltAllele`: neither the reference, `<NON_REF>` nor `*`.
+fn is_site_specific_alt(allele: &Allele) -> bool {
+    !(allele.is_reference()
+        || allele.display_string() == "<NON_REF>"
+        || allele.display_string() == htsjdk_vcf::allele::SPAN_DEL_STRING)
+}
+
+/// `AssemblyBasedCallerUtils.phaseCalls(calls, calledHaplotypes)`.
+pub fn phase_calls(
+    calls: Vec<VariantContext>,
+    called: &[&Haplotype],
+) -> Result<Vec<VariantContext>, EngineError> {
+    // `constructHaplotypeMapping`: a call with exactly one site-specific alternate, tied to the
+    // called haplotypes whose event map holds it at the call's start.
+    let haplotype_map: Vec<Vec<usize>> = calls
+        .iter()
+        .map(|call| {
+            let alts: Vec<&Allele> = call
+                .alternate_alleles()
+                .iter()
+                .filter(|a| is_site_specific_alt(a))
+                .collect();
+            if alts.len() != 1 {
+                return Vec::new();
+            }
+            let alt = alts[0];
+            (0..called.len())
+                .filter(|&h| {
+                    called[h].event_map().is_some_and(|map| {
+                        map.events()
+                            .any(|e| i64::from(e.start()) == call.start && e.alt_allele() == alt)
+                    })
+                })
+                .collect()
+        })
+        .collect();
+
+    // `constructPhaseSetMapping`.
+    let mut available: Vec<usize> = Vec::new();
+    for set in &haplotype_map {
+        for &h in set {
+            if !available.contains(&h) {
+                available.push(h);
+            }
+        }
+    }
+    let total = available.len();
+    let mut mapping: Vec<Option<(usize, PhaseGroup)>> = vec![None; calls.len()];
+    let mut counter = 0usize;
+    let contains_all = |a: &[usize], b: &[usize]| b.iter().all(|x| a.contains(x));
+    'outer: for i in 0..calls.len().saturating_sub(1) {
+        let with_call = &haplotype_map[i];
+        if with_call.is_empty() {
+            continue;
+        }
+        let call_on_all = with_call.len() == total;
+        let mut call_available = with_call.clone();
+        for j in i + 1..calls.len() {
+            let with_comp = &haplotype_map[j];
+            if with_comp.is_empty() {
+                continue;
+            }
+            let comp_on_all = with_comp.len() == total;
+            if (with_call.len() == with_comp.len() && contains_all(with_call, with_comp))
+                || (call_on_all && contains_all(&call_available, with_comp))
+                || comp_on_all
+            {
+                if mapping[i].is_none() {
+                    if mapping[j].is_some() {
+                        mapping = vec![None; calls.len()];
+                        break 'outer;
+                    }
+                    mapping[i] = Some((counter, PhaseGroup::Phase01));
+                    mapping[j] = Some((counter, PhaseGroup::Phase01));
+                    call_available.retain(|h| with_comp.contains(h));
+                    counter += 1;
+                } else if mapping[j].is_none() {
+                    mapping[j] = mapping[i];
+                }
+            } else if with_call.len() + with_comp.len() == total
+                && !with_call.iter().any(|h| with_comp.contains(h))
+            {
+                if mapping[i].is_none() {
+                    if mapping[j].is_some() {
+                        mapping = vec![None; calls.len()];
+                        break 'outer;
+                    }
+                    mapping[i] = Some((counter, PhaseGroup::Phase01));
+                    mapping[j] = Some((counter, PhaseGroup::Phase10));
+                    counter += 1;
+                } else if mapping[j].is_none() {
+                    let (group, phase) = mapping[i].expect("mapped");
+                    mapping[j] = Some((group, phase.other()));
+                }
+            }
+        }
+    }
+
+    // `constructPhaseGroups`, up to the number of distinct groups.
+    let mut groups: Vec<usize> = mapping.iter().flatten().map(|(g, _)| *g).collect();
+    groups.sort_unstable();
+    groups.dedup();
+    let mut phased = calls.clone();
+    for count in 0..groups.len() {
+        let indexes: Vec<usize> = (0..calls.len())
+            .filter(|&i| mapping[i].is_some_and(|(g, _)| g == count))
+            .collect();
+        if indexes.len() < 2 {
+            return Err(EngineError::Runtime {
+                class: "IllegalStateException".to_string(),
+                message: "Somehow we have a group of phased variants that has fewer than 2 members"
+                    .to_string(),
+            });
+        }
+        let first = &calls[indexes[0]];
+        let unique_id = format!(
+            "{}_{}_{}",
+            first.start,
+            first.reference().display_string(),
+            first.alternate_alleles()[0].display_string()
+        );
+        let phase_set = first.start;
+        for &i in &indexes {
+            let (_, phase) = mapping[i].expect("mapped");
+            phased[i] = phase_vc(&calls[i], &unique_id, phase, phase_set);
+        }
+    }
+    Ok(phased)
+}
+
+/// `htsjdk Genotype.isHet()`: every allele called, and not all the same.
+fn is_het(genotype: &Genotype) -> bool {
+    if genotype.alleles.is_empty() || genotype.alleles.iter().any(Allele::is_no_call) {
+        return false;
+    }
+    genotype.alleles.iter().any(|a| *a != genotype.alleles[0])
+}
+
+/// `phaseVC`: every genotype phased with PID, PGT and PS, a het one reversed when its phased
+/// alternate index holds no site-specific alternate.
+fn phase_vc(vc: &VariantContext, id: &str, phase: PhaseGroup, phase_set: i64) -> VariantContext {
+    let mut out = vc.clone();
+    let genotypes: Vec<Genotype> = vc
+        .genotypes
+        .iter()
+        .map(|g| {
+            let mut genotype = g.clone();
+            if is_het(g) && !is_site_specific_alt(&g.alleles[phase.alt_allele_index()]) {
+                genotype.alleles.reverse();
+            }
+            genotype.phased = true;
+            set_extended(&mut genotype, "PID", Value::Str(id.to_string()));
+            set_extended(
+                &mut genotype,
+                "PGT",
+                Value::Str(phase.description().to_string()),
+            );
+            set_extended(&mut genotype, "PS", Value::Int(phase_set));
+            genotype
+        })
+        .collect();
+    out.genotypes = GenotypesContext::new(genotypes);
+    out
+}
+
+/// `GenotypeBuilder.attribute(key, value)`: replaced in place, or appended.
+fn set_extended(genotype: &mut Genotype, key: &str, value: Value) {
+    match genotype.extended.iter_mut().find(|(k, _)| k == key) {
+        Some((_, slot)) => *slot = value,
+        None => genotype.extended.push((key.to_string(), value)),
+    }
 }
 
 /// `calculateGLsForThisEvent`: each sample, no-called, with the PLs of its genotype likelihoods
