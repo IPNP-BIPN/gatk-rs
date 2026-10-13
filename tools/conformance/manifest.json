@@ -7270,7 +7270,7 @@
     },
     {
       "id": "dragen-genotypes",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "DRAGENGenotypesModel: the BQD and FRD genotype models, DRAGEN's mapping quality table and the reference STR analyzer",
       "harness": "tools/readfilter-conformance",
       "tools": [],
@@ -7288,7 +7288,8 @@
       "cases": [
         {
           "dump": "DragenGenotypesDump",
-          "golden": null
+          "golden": "crates/gatk-engine/tests/data/dragen_genotypes.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38414021108, byte for byte the local dump."
         }
       ]
     },
