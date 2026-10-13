@@ -471,20 +471,20 @@ jobs:
             suites: "event-map assembly-region-trimmer finalize-region assembly-complexity allele-mapping"
           - group: oracle-backed
             index: "64/66"
-            slug: "dragstr-likelihoods-hc-is-active-hc-genotyping-hc-annotated-calls-hc-phasing"
-            suites: "dragstr-likelihoods hc-is-active hc-genotyping hc-annotated-calls hc-phasing"
+            slug: "dragstr-likelihoods-hc-is-active-hc-genotyping-dragen-genotypes-hc-annotated-calls"
+            suites: "dragstr-likelihoods hc-is-active hc-genotyping dragen-genotypes hc-annotated-calls"
           - group: oracle-backed
             index: "65/66"
-            slug: "hc-region-assembly-hc-call-region-hc-end-to-end-hc-gvcf-end-to-end-mutect2-end-to-end"
-            suites: "hc-region-assembly hc-call-region hc-end-to-end hc-gvcf-end-to-end mutect2-end-to-end"
+            slug: "hc-phasing-hc-region-assembly-hc-call-region-hc-end-to-end-hc-gvcf-end-to-end"
+            suites: "hc-phasing hc-region-assembly hc-call-region hc-end-to-end hc-gvcf-end-to-end"
           - group: oracle-backed
             index: "66/66"
-            slug: "ramps-end-to-end"
-            suites: "ramps-end-to-end"
+            slug: "mutect2-end-to-end-ramps-end-to-end"
+            suites: "mutect2-end-to-end ramps-end-to-end"
           - group: golden-pending
             index: "1/1"
-            slug: "dragen-genotypes-hc-dragen-end-to-end"
-            suites: "dragen-genotypes hc-dragen-end-to-end"
+            slug: "hc-dragen-end-to-end"
+            suites: "hc-dragen-end-to-end"
     steps:
       - uses: actions/checkout@v7
 
