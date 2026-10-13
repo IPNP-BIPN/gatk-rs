@@ -204,5 +204,17 @@ public class HcFlowDump {
                 bam, fasta, List.of("--flow-mode", "ADVANCED"));
         HcAllAnnotationsDump.run(dir, "mutect2-flow-mode-standard", Mutect2::new, bam, fasta, List.of("--flow-mode", "STANDARD"));
         HcAllAnnotationsDump.run(dir, "mutect2-flow-mode-advanced", Mutect2::new, bam, fasta, List.of("--flow-mode", "ADVANCED"));
+        // --likelihood-calculation-engine FlowBasedHMM: the PairHMM over flows.
+        final List<String> hmm = List.of("--likelihood-calculation-engine", "FlowBasedHMM");
+        HcAllAnnotationsDump.run(dir, "hc-flow-hmm", HaplotypeCaller::new, bam, fasta, hmm);
+        HcAllAnnotationsDump.run(dir, "hc-flow-hmm-penalties", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(hmm, List.of("--flow-hmm-engine-min-indel-adjust", "20",
+                        "--flow-hmm-engine-flat-insertion-penatly", "30", "--flow-hmm-engine-flat-deletion-penatly", "35",
+                        "--pcr-indel-model", "AGGRESSIVE")));
+        HcAllAnnotationsDump.run(dir, "hc-flow-hmm-no-pcr", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(hmm, List.of("--pcr-indel-model", "NONE", "--enable-dynamic-read-disqualification-for-genotyping")));
+        HcAllAnnotationsDump.run(dir, "hc-flow-hmm-cycle-8", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(hmm, List.of("--flow-order-cycle-length", "8")));
+        HcAllAnnotationsDump.run(dir, "mutect2-flow-hmm", Mutect2::new, bam, fasta, hmm);
     }
 }

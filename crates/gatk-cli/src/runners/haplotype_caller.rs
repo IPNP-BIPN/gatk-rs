@@ -397,7 +397,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
     // reference container; a kernel named outright is refused.
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") | Some("FlowBased") => {}
+        None | Some("PairHMM") | Some("FlowBased") | Some("FlowBasedHMM") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for HaplotypeCaller."
@@ -650,6 +650,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             read_to_haplotype_sw: sw.2,
         },
         flow_engine: flow_engine_arguments(parser),
+        flow_hmm: flow_hmm_arguments(
+            parser,
+            pcr_model(parser),
+            if flag(parser, "dont-use-dragstr-pair-hmm-scores") {
+                None
+            } else {
+                dragstr_params.clone()
+            },
+        ),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,

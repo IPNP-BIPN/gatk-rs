@@ -51,7 +51,7 @@ use gatk_engine::java_random::JavaRandom;
 use gatk_engine::locus_iterator::AlignmentContext;
 use gatk_engine::mutect_engine::log_likelihood_ratio;
 use gatk_engine::natural_log_utils::{log_sum_exp, normalize_from_log_to_linear_space, posteriors};
-use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
+use gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments;
 use gatk_engine::read_pileup::sample_name;
 use gatk_engine::read_realignment::realign_reads_to_their_best_haplotype;
 use gatk_engine::read_threading_assembler::ReadThreadingAssembler;
@@ -99,6 +99,8 @@ pub struct Mutect2Arguments {
     pub likelihoods: LikelihoodEngineArguments,
     /// `--likelihood-calculation-engine FlowBased`: the flow engine's own arguments.
     pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
+    /// `--likelihood-calculation-engine FlowBasedHMM`: its arguments.
+    pub flow_hmm: Option<crate::flow_likelihood_engine::FlowHmmArguments>,
     pub normal_samples: Vec<String>,
     /// `getInitialLogOdds()`, `getEmissionLogOdds()` and `--normal-lod`, natural log.
     pub initial_log_odds: f64,
@@ -184,23 +186,12 @@ pub fn call_variants(
     )
     .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
     // `createLikelihoodCalculationEngine`.
-    let likelihood_engine = match &arguments.flow_engine {
-        None => crate::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
-            PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
-                .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?,
-        ),
-        Some(flow) => crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
-            crate::flow_likelihood_engine::FlowLikelihoodEngine {
-                arguments: flow.clone(),
-                log10_global_read_mismapping_rate: arguments
-                    .likelihoods
-                    .log10_global_read_mismapping_rate,
-                expected_error_rate_per_base: arguments.likelihoods.expected_error_rate_per_base,
-                dynamic_disqualification: arguments.likelihoods.dynamic_disqualification,
-                read_disqualification_scale: arguments.likelihoods.read_disqualification_scale,
-            },
-        ),
-    };
+    let likelihood_engine = crate::flow_likelihood_engine::ReadLikelihoodEngine::create(
+        &arguments.likelihoods,
+        &arguments.flow_engine,
+        &arguments.flow_hmm,
+    )
+    .map_err(|(class, message)| failure(&class, message))?;
     let mut tumor_buffer = PileupQualBuffer::default();
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;

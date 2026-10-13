@@ -274,7 +274,7 @@ pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") | Some("FlowBased") => {}
+        None | Some("PairHMM") | Some("FlowBased") | Some("FlowBasedHMM") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for Mutect2."
@@ -450,6 +450,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             read_to_haplotype_sw: sw.2,
         },
         flow_engine: flow_engine_arguments(parser),
+        flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,

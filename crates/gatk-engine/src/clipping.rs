@@ -516,9 +516,8 @@ pub fn clip_low_qual_ends(
     let read_length = read.read_bases.len() as i32;
     // Java compares `byte`s, signed: a threshold of -1 (`(byte) (0 - 1)`) clips nothing.
     let low_qual = low_qual as i8;
-    let quality = |index: i32| -> Option<i8> {
-        read.base_qualities.get(index as usize).map(|&q| q as i8)
-    };
+    let quality =
+        |index: i32| -> Option<i8> { read.base_qualities.get(index as usize).map(|&q| q as i8) };
     let mut right = read_length - 1;
     while right >= 0 {
         match quality(right) {

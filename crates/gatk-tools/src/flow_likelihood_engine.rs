@@ -370,6 +370,7 @@ fn first_usable_flow_order(header: &SamHeader, cycle: usize) -> Result<String, F
 pub enum ReadLikelihoodEngine {
     PairHmm(gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine),
     FlowBased(FlowLikelihoodEngine),
+    FlowBasedHmm(FlowHmmEngine),
 }
 
 impl ReadLikelihoodEngine {
@@ -389,11 +390,360 @@ impl ReadLikelihoodEngine {
             ReadLikelihoodEngine::FlowBased(engine) => engine
                 .compute_read_likelihoods(haplotypes, header, samples, reads)
                 .map_err(|e| format!("{e:?}")),
+            ReadLikelihoodEngine::FlowBasedHmm(engine) => engine
+                .compute_read_likelihoods(haplotypes, header, samples, reads)
+                .map_err(|e| format!("{e:?}")),
         }
     }
 
-    /// Whether it is one of the flow-based engines, which the reference model asks.
+    /// Whether it is the `FlowBased` engine, which Mutect2's reference model asks.
     pub fn is_flow_based(&self) -> bool {
         matches!(self, ReadLikelihoodEngine::FlowBased(_))
     }
+
+    /// `createLikelihoodCalculationEngine`: FlowBasedHMM, FlowBased or the PairHMM, as the
+    /// arguments ask.
+    pub fn create(
+        likelihoods: &gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments,
+        flow: &Option<FlowEngineArguments>,
+        flow_hmm: &Option<FlowHmmArguments>,
+    ) -> Result<ReadLikelihoodEngine, (String, String)> {
+        if let Some(hmm) = flow_hmm {
+            let engine = FlowHmmEngine {
+                arguments: hmm.clone(),
+                log10_global_read_mismapping_rate: likelihoods.log10_global_read_mismapping_rate,
+                expected_error_rate_per_base: likelihoods.expected_error_rate_per_base,
+                dynamic_disqualification: likelihoods.dynamic_disqualification,
+                read_disqualification_scale: likelihoods.read_disqualification_scale,
+            };
+            engine.check().map_err(|e| match e {
+                FlowEngineError::Thrown(class, message) => (class.to_string(), message),
+                other => ("GATKException".to_string(), format!("{other:?}")),
+            })?;
+            return Ok(ReadLikelihoodEngine::FlowBasedHmm(engine));
+        }
+        if let Some(flow) = flow {
+            return Ok(ReadLikelihoodEngine::FlowBased(FlowLikelihoodEngine {
+                arguments: flow.clone(),
+                log10_global_read_mismapping_rate: likelihoods.log10_global_read_mismapping_rate,
+                expected_error_rate_per_base: likelihoods.expected_error_rate_per_base,
+                dynamic_disqualification: likelihoods.dynamic_disqualification,
+                read_disqualification_scale: likelihoods.read_disqualification_scale,
+            }));
+        }
+        gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine::new(likelihoods.clone())
+            .map(ReadLikelihoodEngine::PairHmm)
+            .map_err(|e| ("IllegalArgumentException".to_string(), format!("{e:?}")))
+    }
+}
+
+/// `FlowBasedHMMEngine`'s own arguments: the gap continuation penalty, the PCR model, DRAGstr's
+/// table, and the three `--flow-hmm-engine-*` values.
+#[derive(Debug, Clone)]
+pub struct FlowHmmArguments {
+    pub flow: FlowEngineArguments,
+    pub constant_gcp: u8,
+    pub pcr_error_model: gatk_engine::pair_hmm_likelihood_engine::PcrErrorModel,
+    pub dragstr_params: Option<gatk_engine::dragstr::DragstrParams>,
+    pub min_usable_indel_score: i32,
+    pub flat_insertion_penalty: u8,
+    pub flat_deletion_penalty: u8,
+}
+
+/// `FlowBasedHMMEngine`.
+#[derive(Debug, Clone)]
+pub struct FlowHmmEngine {
+    pub arguments: FlowHmmArguments,
+    pub log10_global_read_mismapping_rate: f64,
+    pub expected_error_rate_per_base: f64,
+    pub dynamic_disqualification: bool,
+    pub read_disqualification_scale: f64,
+}
+
+/// `FlowBasedPairHMM.FLOW_SIZE`.
+const FLOW_SIZE: usize = 4;
+
+impl FlowHmmEngine {
+    /// The constructor's check: the HMM steps four flows at a time.
+    pub fn check(&self) -> Result<(), FlowEngineError> {
+        let cycle = self.arguments.flow.flow_order_cycle_length;
+        if cycle != 4 {
+            return Err(FlowEngineError::Thrown(
+                "org.broadinstitute.hellbender.exceptions.GATKException",
+                format!(
+                    "FlowBasedHMMEngine requires flow order of 4 elements but cycle length is \
+                     specified as {cycle}"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `computeReadLikelihoods(haplotypes, header, samples, perSampleReadList, filterPoorly)`.
+    pub fn compute_read_likelihoods(
+        &self,
+        haplotypes: &[Haplotype],
+        header: &SamHeader,
+        samples: &[String],
+        reads: &[Vec<BamRecord>],
+    ) -> Result<AlleleLikelihoods<BamRecord, Haplotype>, FlowEngineError> {
+        let mut values = Vec::with_capacity(samples.len());
+        for sample_reads in reads {
+            values.push(self.sample_matrix(haplotypes, header, sample_reads)?);
+        }
+        let mut result = AlleleLikelihoods::new(
+            SampleList::new(samples),
+            AlleleList::new(haplotypes),
+            reads.to_vec(),
+            values,
+        )
+        .map_err(|e| FlowEngineError::Likelihoods(format!("{e:?}")))?;
+        result
+            .normalize_likelihoods(self.log10_global_read_mismapping_rate, true)
+            .map_err(|e| FlowEngineError::Likelihoods(format!("{e:?}")))?;
+        let expected = self.expected_error_rate_per_base;
+        let dynamic = self.dynamic_disqualification;
+        let scale = self.read_disqualification_scale;
+        // Its own `log10MinTrueLikelihood`: three expected errors and two catastrophic ones at
+        // least, at a fixed 0.001, whether capped or not.
+        let floor = |length: usize| {
+            let errors = 3.0f64.max((length as f64 * expected).ceil());
+            let catastrophic = 2.0f64.max((length as f64 * 0.001).ceil());
+            errors * jmath::math::log10(expected) + catastrophic * jmath::math::log10(0.001)
+        };
+        result
+            .filter_poorly_modeled_evidence(|_, _, read: &BamRecord| {
+                let maximum = floor(read.read_bases.len());
+                if dynamic {
+                    let threshold = log10_dynamic_read_qual_threshold(&read.base_qualities, scale);
+                    if threshold < maximum {
+                        threshold
+                    } else {
+                        maximum
+                    }
+                } else {
+                    maximum
+                }
+            })
+            .map_err(|e| FlowEngineError::Likelihoods(format!("{e:?}")))?;
+        Ok(result)
+    }
+
+    /// `getErrorModelAdjustedQual` with the engine's floor, as the `byte` it is cast to.
+    fn pcr_cache(&self) -> Option<Vec<i8>> {
+        let model = self.arguments.pcr_error_model;
+        if !model.has_rate_factor() {
+            return None;
+        }
+        let max = gatk_engine::pair_hmm_likelihood_engine::MAX_REPEAT_LENGTH;
+        Some(
+            (0..=max)
+                .map(|i| {
+                    let penalty = jmath::strict_exp::exp(
+                        f64::from(i) / (model.rate_factor() * std::f64::consts::PI),
+                    );
+                    let rounded = gatk_engine::pair_hmm::fast_round(40.0 - penalty + 1.0);
+                    i32::from(self.arguments.min_usable_indel_score as i8).max(rounded) as i8
+                })
+                .collect(),
+        )
+    }
+
+    fn sample_matrix(
+        &self,
+        haplotypes: &[Haplotype],
+        header: &SamHeader,
+        reads: &[BamRecord],
+    ) -> Result<Vec<Vec<f64>>, FlowEngineError> {
+        let cycle = self.arguments.flow.flow_order_cycle_length;
+        let (flow_order, max_class) = match reads.first() {
+            Some(first) => {
+                let info = crate::flow_based_read::read_group_info(first, header)
+                    .map_err(FlowEngineError::Read)?;
+                (substring(&info.flow_order, cycle)?, info.max_class)
+            }
+            None => (first_usable_flow_order(header, cycle)?, 0),
+        };
+        let cache = self.pcr_cache();
+        let min_usable = self.arguments.min_usable_indel_score as i8;
+        let mut processed = Vec::with_capacity(reads.len());
+        for read in reads {
+            let mut flow = FlowRead::new(read, &flow_order, max_class, &self.arguments.flow.flow)
+                .map_err(FlowEngineError::Read)?;
+            flow.apply_alignment().map_err(FlowEngineError::Read)?;
+            let bases = &read.read_bases;
+            let (mut insertion, mut deletion, gcp): (Vec<i8>, Vec<i8>, Vec<i8>) = match &self
+                .arguments
+                .dragstr_params
+            {
+                Some(params) => {
+                    let (gop, gcp) = gatk_engine::dragstr::dragstr_impute(params, bases)
+                        .map_err(|e| FlowEngineError::Likelihoods(format!("{e:?}")))?;
+                    let signed = |v: Vec<u8>| v.into_iter().map(|q| q as i8).collect::<Vec<_>>();
+                    (signed(gop.clone()), signed(gop), signed(gcp))
+                }
+                None => (
+                    vec![self.arguments.flat_insertion_penalty as i8; read.base_qualities.len()],
+                    vec![self.arguments.flat_deletion_penalty as i8; read.base_qualities.len()],
+                    vec![self.arguments.constant_gcp as i8; bases.len()],
+                ),
+            };
+            // `applyPCRErrorModel`, compared as unsigned, then `capMinimumReadIndelQualities`,
+            // compared as signed.
+            if let Some(cache) = &cache {
+                for i in 1..bases.len() {
+                    let (_, repeat) =
+                        gatk_engine::pair_hmm_likelihood_engine::find_tandem_repeat_units(
+                            bases,
+                            i - 1,
+                        );
+                    let cap = cache[repeat as usize] as u8;
+                    insertion[i - 1] = (insertion[i - 1] as u8).min(cap) as i8;
+                    deletion[i - 1] = (deletion[i - 1] as u8).min(cap) as i8;
+                }
+            }
+            for i in 0..insertion.len() {
+                insertion[i] = insertion[i].max(min_usable);
+                deletion[i] = deletion[i].max(min_usable);
+            }
+            let to_key = |quals: &[i8], fill: i8| -> Result<Vec<u8>, FlowEngineError> {
+                base_array_to_key_space(bases, flow.key.len(), quals, fill, &flow.flow_order)
+            };
+            let flow_insertion = to_key(&insertion, 40)?;
+            let flow_deletion = to_key(&deletion, 40)?;
+            let flow_gcp = to_key(&gcp, 10)?;
+            processed.push((flow, flow_insertion, flow_deletion, flow_gcp));
+        }
+        let scored: Vec<FlowHaplotype> = haplotypes
+            .iter()
+            .map(|h| {
+                FlowHaplotype::new(&h.bases(), &flow_order).ok_or_else(|| {
+                    FlowEngineError::Thrown(
+                        "org.broadinstitute.hellbender.exceptions.GATKException",
+                        "baseArrayToKey".to_string(),
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        let mut values = vec![vec![0.0; processed.len()]; haplotypes.len()];
+        for (r, (read, ins, del, gcp)) in processed.iter().enumerate() {
+            for (h, haplotype) in scored.iter().enumerate() {
+                let read_first = read.flow_order.first().copied().unwrap_or(0);
+                let start = haplotype
+                    .flow_order
+                    .iter()
+                    .position(|b| *b == read_first)
+                    .unwrap_or(0);
+                values[h][r] = flow_pair_hmm(start, haplotype, read, ins, del, gcp);
+            }
+        }
+        Ok(values)
+    }
+}
+
+/// `FlowBasedKeyCodec.baseArrayToKeySpace`: each flow's smallest value over the bases it reads,
+/// a flow reading none the last flow's value (the fill before any).
+fn base_array_to_key_space(
+    bases: &[u8],
+    key_length: usize,
+    values: &[i8],
+    fill: i8,
+    flow_order: &[u8],
+) -> Result<Vec<u8>, FlowEngineError> {
+    if bases.len() != values.len() {
+        return Err(FlowEngineError::Thrown(
+            "java.lang.IllegalArgumentException",
+            "Read and qual arrays do not match".to_string(),
+        ));
+    }
+    // `getFlowOrder()`: the first cycle of the read's flow order.
+    let order = &flow_order[..flow_order.len().min(4)];
+    let mut result = vec![0u8; key_length];
+    let mut loc = 0;
+    let mut flow_number = 0;
+    let mut last = fill;
+    while loc < bases.len() {
+        let flow_base = order[flow_number % order.len()];
+        let slot = result.get_mut(flow_number).ok_or_else(|| {
+            FlowEngineError::Thrown(
+                "java.lang.ArrayIndexOutOfBoundsException",
+                format!("Index {flow_number} out of bounds for length {key_length}"),
+            )
+        })?;
+        if bases[loc] != flow_base && bases[loc] != b'N' {
+            *slot = last as u8;
+        } else {
+            let mut qual = i8::MAX;
+            while loc < bases.len() && (bases[loc] == flow_base || bases[loc] == b'N') {
+                qual = values[loc].min(qual);
+                loc += 1;
+            }
+            *slot = qual as u8;
+            last = qual;
+        }
+        flow_number += 1;
+    }
+    Ok(result)
+}
+
+/// `subComputekeayLikelihoodGivenHaplotypeKeysLog10`: the PairHMM over flows, a step of four
+/// flows on either axis, a cell's prior the read's probability of the haplotype's hmer where the
+/// two flows read the same base and zero elsewhere.
+fn flow_pair_hmm(
+    hap_start: usize,
+    haplotype: &FlowHaplotype,
+    read: &FlowRead,
+    insertion: &[u8],
+    deletion: &[u8],
+    gcp: &[u8],
+) -> f64 {
+    use gatk_engine::pair_hmm::{
+        initial_condition, initial_condition_log10, qual_to_trans_probs, DELETION_TO_DELETION,
+        INDEL_TO_MATCH, INSERTION_TO_INSERTION, MATCH_TO_DELETION, MATCH_TO_INSERTION,
+        MATCH_TO_MATCH,
+    };
+    let read_len = read.key.len() + 1 + FLOW_SIZE;
+    let hap_len = haplotype.key.len() + 1 + FLOW_SIZE;
+    let mut matches = vec![vec![0.0f64; hap_len]; read_len];
+    let mut insertions = vec![vec![0.0f64; hap_len]; read_len];
+    let mut deletions = vec![vec![0.0f64; hap_len]; read_len];
+    let initial = initial_condition() / haplotype.key.len() as f64;
+    for row in deletions.iter_mut().take(FLOW_SIZE + 1) {
+        for cell in row.iter_mut() {
+            *cell = initial;
+        }
+    }
+    let mut transition = vec![[0.0f64; 6]; read_len];
+    for i in 0..insertion.len() {
+        transition[i + 1] = qual_to_trans_probs(insertion[i], deletion[i], gcp[i]);
+    }
+    let mut prior = vec![vec![0.0f64; hap_len]; read_len];
+    for i in 0..read.key.len() {
+        for j in 0..haplotype.key.len() {
+            if haplotype.flow_order[j] == read.flow_order[i] {
+                prior[i + 1 + FLOW_SIZE][j + 1 + FLOW_SIZE] = read.prob(i, haplotype.key[j]);
+            }
+        }
+    }
+    for i in 1 + FLOW_SIZE..read_len {
+        let t = transition[i - FLOW_SIZE];
+        let mut j = ((hap_start + i) % FLOW_SIZE) + FLOW_SIZE;
+        while j < hap_len {
+            matches[i][j] = prior[i][j]
+                * (matches[i - 1][j - 1] * t[MATCH_TO_MATCH]
+                    + insertions[i - 1][j - 1] * t[INDEL_TO_MATCH]
+                    + deletions[i - 1][j - 1] * t[INDEL_TO_MATCH]);
+            insertions[i][j] = matches[i - FLOW_SIZE][j] * t[MATCH_TO_INSERTION]
+                + insertions[i - FLOW_SIZE][j] * t[INSERTION_TO_INSERTION];
+            deletions[i][j] = matches[i][j - FLOW_SIZE] * t[MATCH_TO_DELETION]
+                + deletions[i][j - FLOW_SIZE] * t[DELETION_TO_DELETION];
+            j += FLOW_SIZE;
+        }
+    }
+    let end = read_len - 1;
+    let mut total = 0.0;
+    for j in 1..hap_len {
+        total += matches[end][j] + insertions[end][j];
+    }
+    jmath::math::log10(total) - initial_condition_log10()
 }

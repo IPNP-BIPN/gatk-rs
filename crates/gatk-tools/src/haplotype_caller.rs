@@ -27,7 +27,7 @@ use gatk_engine::assembly_region_walker::{needs_downsampler, traverse_with_pileu
 use gatk_engine::downsampling::positional_downsample_with;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_random::JavaRandom;
-use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
+use gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments;
 use gatk_engine::smith_waterman::SmithWatermanJavaAligner;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -56,6 +56,8 @@ pub struct HaplotypeCallerArguments {
     pub likelihoods: LikelihoodEngineArguments,
     /// `--likelihood-calculation-engine FlowBased`: the flow engine's own arguments.
     pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
+    /// `--likelihood-calculation-engine FlowBasedHMM`: its arguments.
+    pub flow_hmm: Option<crate::flow_likelihood_engine::FlowHmmArguments>,
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
@@ -188,24 +190,12 @@ fn call_variants_into(
     )
     .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
     // `createLikelihoodCalculationEngine`.
-    let likelihood_engine = match &arguments.flow_engine {
-        None => crate::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
-            PairHmmLikelihoodEngine::new(arguments.likelihoods.clone()).map_err(|e| {
-                HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}"))
-            })?,
-        ),
-        Some(flow) => crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
-            crate::flow_likelihood_engine::FlowLikelihoodEngine {
-                arguments: flow.clone(),
-                log10_global_read_mismapping_rate: arguments
-                    .likelihoods
-                    .log10_global_read_mismapping_rate,
-                expected_error_rate_per_base: arguments.likelihoods.expected_error_rate_per_base,
-                dynamic_disqualification: arguments.likelihoods.dynamic_disqualification,
-                read_disqualification_scale: arguments.likelihoods.read_disqualification_scale,
-            },
-        ),
-    };
+    let likelihood_engine = crate::flow_likelihood_engine::ReadLikelihoodEngine::create(
+        &arguments.likelihoods,
+        &arguments.flow_engine,
+        &arguments.flow_hmm,
+    )
+    .map_err(|(class, message)| HaplotypeCallerError::new(&class, message))?;
     let genotyping = arguments.genotyping.clone();
 
     // `buildRamps`: the off ramp is opened before the traversal and written when it ends.

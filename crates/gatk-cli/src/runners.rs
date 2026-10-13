@@ -11148,6 +11148,34 @@ pub(crate) fn flow_engine_arguments(
     })
 }
 
+/// `FlowBasedHMMEngine`'s arguments, when `--likelihood-calculation-engine` is `FlowBasedHMM`.
+pub(crate) fn flow_hmm_arguments(
+    parser: &Parser,
+    pcr_error_model: gatk_engine::pair_hmm_likelihood_engine::PcrErrorModel,
+    dragstr_params: Option<gatk_engine::dragstr::DragstrParams>,
+) -> Option<gatk_tools::flow_likelihood_engine::FlowHmmArguments> {
+    if scalar(parser, "likelihood-calculation-engine").as_deref() != Some("FlowBasedHMM") {
+        return None;
+    }
+    Some(gatk_tools::flow_likelihood_engine::FlowHmmArguments {
+        flow: gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+            flow: flow_arguments(parser),
+            flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
+                as usize,
+            optimized: flag(parser, "flow-likelihood-optimized-comp"),
+            trim_to_haplotype: scalar(parser, "trim-to-haplotype").map_or(true, |v| v == "true"),
+            exact_matching: flag(parser, "exact-matching"),
+        },
+        constant_gcp: number_or(parser, "pair-hmm-gap-continuation-penalty", 10) as u8,
+        pcr_error_model,
+        dragstr_params,
+        min_usable_indel_score: number_or(parser, "flow-hmm-engine-min-indel-adjust", 6),
+        flat_insertion_penalty: number_or(parser, "flow-hmm-engine-flat-insertion-penatly", 45)
+            as u8,
+        flat_deletion_penalty: number_or(parser, "flow-hmm-engine-flat-deletion-penatly", 45) as u8,
+    })
+}
+
 /// The flow matrix arguments every flow-capable caller honours: what shapes a read's matrix, and
 /// the scaling and quantization only the vestigial layouts read.
 pub(crate) const FLOW_MATRIX_ARGUMENTS: &[&str] = &[
@@ -11170,6 +11198,10 @@ pub(crate) const FLOW_MATRIX_ARGUMENTS: &[&str] = &[
     "flow-likelihood-optimized-comp",
     "trim-to-haplotype",
     "exact-matching",
+    // FlowBasedHMM's.
+    "flow-hmm-engine-min-indel-adjust",
+    "flow-hmm-engine-flat-insertion-penatly",
+    "flow-hmm-engine-flat-deletion-penatly",
 ];
 
 /// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
