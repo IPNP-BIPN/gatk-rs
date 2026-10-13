@@ -747,7 +747,14 @@ fn annotate_jumbo_info<E: Clone + PartialEq>(
             ),
         ]),
         "AssemblyComplexity" => {
-            let by_allele: Vec<&Haplotype> = haplotypes.iter().collect();
+            // Each row's haplotype, found by equality: the caller's list carries the event maps
+            // but need not be in the matrix's order.
+            let by_allele: Vec<&Haplotype> = (0..likelihoods.number_of_alleles())
+                .map(|a| {
+                    let allele = likelihoods.get_allele(a).expect("an allele index");
+                    haplotypes.iter().find(|h| *h == allele).unwrap_or(allele)
+                })
+                .collect();
             let complexity =
                 ac::annotate_with_event_maps(vc, likelihoods, &by_allele, reference_mode).map_err(
                     |error| EngineError::Runtime {

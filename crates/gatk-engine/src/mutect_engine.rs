@@ -168,6 +168,18 @@ pub fn log_likelihood_ratio_from_error(
 /// `CombinatoricsUtils.binomialCoefficientLog`. The one term that is not exact against the JVM is
 /// `qualToLogProb`, which goes through `log1mexp` and so through the host's `log1p` or `expm1`.
 pub fn log_likelihood_ratio(n_ref: i32, alt_quals: &[u8], repeat_factor: i32) -> f64 {
+    log_likelihood_ratio_with_prior(n_ref, alt_quals, repeat_factor, None)
+}
+
+/// `logLikelihoodRatio(nRef, altQuals, repeatFactor, afPrior)`: the same statistic under a
+/// `Beta(alpha, beta)` prior on the allele fraction when one is given, which somatic
+/// reference-confidence mode uses to soften fractions below `--minimum-allele-fraction`.
+pub fn log_likelihood_ratio_with_prior(
+    n_ref: i32,
+    alt_quals: &[u8],
+    repeat_factor: i32,
+    af_prior: Option<(f64, f64)>,
+) -> f64 {
     let n_alt = repeat_factor * alt_quals.len() as i32;
     let n = n_ref + n_alt;
     let f_tilde_ratio = jmath::fast_math::exp(digamma(n_ref + 1) - digamma(n_alt + 1));
@@ -183,9 +195,22 @@ pub fn log_likelihood_ratio(n_ref: i32, alt_quals: &[u8], repeat_factor: i32) ->
             z_bar_alt * (log_one_minus_epsilon - log_epsilon) + fast_bernoulli_entropy(z_bar_alt);
     }
 
-    let beta_entropy = -jmath::math::log(f64::from(n + 1))
-        - jmath::combinatorics::binomial_coefficient_log(i64::from(n), i64::from(n_alt))
-            .unwrap_or(f64::NAN);
+    let beta_entropy = match af_prior {
+        Some((alpha, beta)) => {
+            let log_gamma = |x: f64| jmath::gamma::log_gamma(x);
+            log_gamma(alpha + beta)
+                - log_gamma(alpha)
+                - log_gamma(beta)
+                - log_gamma(alpha + beta + f64::from(n))
+                + log_gamma(alpha + f64::from(n_alt))
+                + log_gamma(beta + f64::from(n_ref))
+        }
+        None => {
+            -jmath::math::log(f64::from(n + 1))
+                - jmath::combinatorics::binomial_coefficient_log(i64::from(n), i64::from(n_alt))
+                    .unwrap_or(f64::NAN)
+        }
+    };
     beta_entropy + read_sum * f64::from(repeat_factor)
 }
 

@@ -7500,6 +7500,30 @@
       ]
     },
     {
+      "id": "mutect2-gvcf",
+      "status": "golden-pending",
+      "title": "Mutect2 in somatic reference-confidence mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--emit-ref-confidence in Mutect2 (G3.2d, #1333). The activity and emission thresholds drop to minus infinity, so every region is active and every alternate is emitted, <NON_REF> among them with the median likelihood addNonReferenceAllele gives it. A base without a call is a record whose likelihood is the somatic log odds of its alternate reads under a Beta prior from --minimum-allele-fraction, written as a FORMAT TLOD, with no indel model and so no GQ or PL. SomaticGVCFWriter merges those records into blocks by TLOD band: the bands are decimal LODs binned to the precision their smallest gap needs, from Integer.MIN_VALUE to Integer.MAX_VALUE, and a block carries the smallest TLOD it saw and a diploid hom-ref genotype whatever the sample. Over the first sample of HcDragenEndToEndDump's reads: GVCF over the contig and over a window, BP_RESOLUTION, GVCF with three bands a quarter apart, GVCF with every annotation, and the two-sample BAM, refused. Found on the way and fixed: bestAllelesBreakingTies() gives a tie to the reference allele, and the port took the first maximum, which agrees only while the reference is the first allele of the matrix; AssemblyComplexity over four haplotypes is where they parted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\ttwo-samples\tjava.lang.IllegalArgumentException:readLikelihoods must contain exactly one sample but it contained 2",
+        "GVCFBlock-2147483648--25"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2GvcfDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

@@ -250,7 +250,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.063 |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.052 |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | t=2, 19/19 rows (100%) | 0.384 / 1.501 |
-| `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, mutect2-end-to-end | 2 | t=2, 25/25 rows (100%) | not measured |
+| `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, mutect2-end-to-end, mutect2-gvcf | 3 | t=2, 25/25 rows (100%) | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.048 |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) | 0.002 / 0.068 |

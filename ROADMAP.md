@@ -480,7 +480,7 @@ arrays, and G3 is done only when no argument of the three callers is held out as
             DRAGstr, the XQ mapping-quality swap, `--sample-name` and the mode's presets;
       - [~] G3.2b `--disable-optimizations` (#1331);
       - [~] G3.2c `--enable-all-annotations` (#1332);
-      - [ ] G3.2d Mutect2's somatic reference-confidence mode (#1333);
+      - [~] G3.2d Mutect2's somatic reference-confidence mode (#1333);
       - [ ] G3.2e Mutect2's mitochondria mode (#1334);
       - [ ] G3.2f the flow-based paths (#1335);
       - [ ] G3.2g pileup detection and the partially determined PairHMM, with

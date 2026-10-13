@@ -47,6 +47,23 @@ const INDEL_QUAL: u8 = 45;
 /// `AlignmentUtils.GAP_CHARACTER`.
 const GAP_CHARACTER: u8 = b'-';
 
+/// `SomaticReferenceConfidenceModel`'s one difference in configuration: the `Beta(alpha, beta)`
+/// prior on the allele fraction, `Beta(1 - ln 2 / ln minAF, 1)`, absent when `minAF` is zero.
+#[derive(Debug, Clone, Copy)]
+pub struct SomaticRefConfidence {
+    pub af_prior: Option<(f64, f64)>,
+}
+
+impl SomaticRefConfidence {
+    /// The constructor's prior, from `--minimum-allele-fraction`.
+    pub fn from_min_af(min_af: f64) -> SomaticRefConfidence {
+        SomaticRefConfidence {
+            af_prior: (min_af != 0.0)
+                .then(|| (1.0 - jmath::math::log(2.0) / jmath::math::log(min_af), 1.0)),
+        }
+    }
+}
+
 /// The model's switches.
 #[derive(Debug, Clone)]
 pub struct RefConfidenceArguments {
@@ -82,6 +99,7 @@ pub fn calculate_ref_confidence(
     variant_calls: &[VariantContext],
     header: &SamHeader,
     arguments: &RefConfidenceArguments,
+    somatic: Option<&SomaticRefConfidence>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let mut reads: Vec<BamRecord> = evidence.to_vec();
     reads.sort_by(read_utils::compare_read_coordinate);
@@ -121,6 +139,19 @@ pub fn calculate_ref_confidence(
             .get(&position)
             .map(|&index| &contexts[index].pileup.elements)
             .unwrap_or(&empty);
+        if let Some(somatic) = somatic {
+            let ref_base = ref_bases[(offset + global_ref_offset) as usize];
+            results.push(somatic_reference_confidence_context(
+                ploidy,
+                ref_base,
+                sample,
+                pileup,
+                &span.contig,
+                position,
+                somatic,
+            )?);
+            continue;
+        }
         results.push(reference_confidence_context(
             ploidy,
             ref_bases,
@@ -218,6 +249,60 @@ fn reference_confidence_context(
     let pls = gls_to_pls(&worst);
     genotype.gq = Some(calculate_gq_from_pls(&pls)?);
     genotype.pl = Some(pls);
+    vc.genotypes = GenotypesContext::new(vec![genotype]);
+    Ok(vc)
+}
+
+/// `makeReferenceConfidenceVariantContext` under `SomaticReferenceConfidenceModel`: the depths and
+/// the somatic log odds of the alternate reads, written as `TLOD`, and no likelihoods at all, since
+/// the somatic model's `doIndelRefConfCalc` does nothing and so sets no GQ or PL.
+fn somatic_reference_confidence_context(
+    ploidy: usize,
+    ref_base: u8,
+    sample: &str,
+    pileup: &[PileupElement<'_>],
+    contig: &str,
+    position: i32,
+    somatic: &SomaticRefConfidence,
+) -> Result<VariantContext, EngineError> {
+    // `calcGenotypeLikelihoodsOfRefVsAny`, somatic: a base at or under the threshold is skipped
+    // unless it is a deletion, and a deletion counts at `DELETION_QUAL`.
+    let mut ref_depth = 0i32;
+    let mut alt_quals: Vec<u8> = Vec::new();
+    for element in pileup {
+        if !element.is_deletion() && (element.qual() as i8) <= (BASE_QUAL_THRESHOLD as i8) {
+            continue;
+        }
+        if element.base() != ref_base || element.is_deletion() {
+            alt_quals.push(element.qual());
+        } else {
+            ref_depth += 1;
+        }
+    }
+    let log_odds = gatk_engine::mutect_engine::log_likelihood_ratio_with_prior(
+        ref_depth,
+        &alt_quals,
+        1,
+        somatic.af_prior,
+    );
+    let non_ref_depth = alt_quals.len() as i32;
+
+    let ref_allele = Allele::create(&[ref_base], true).map_err(|e| runtime(e.to_string()))?;
+    let non_ref = Allele::from_str("<NON_REF>", false).expect("a symbolic allele");
+    let mut vc = VariantContext::new(
+        contig,
+        i64::from(position),
+        vec![ref_allele.clone(), non_ref],
+    );
+    vc.stop = i64::from(position);
+    let mut genotype = Genotype::new(sample, vec![ref_allele; ploidy]);
+    genotype.ad = Some(vec![ref_depth, non_ref_depth]);
+    genotype.dp = Some(ref_depth + non_ref_depth);
+    // `addGenotypeData`: `MathUtils.logToLog10(lods.get(NON_REF))`.
+    genotype.extended.push((
+        "TLOD".to_string(),
+        htsjdk_vcf::variant::Value::Double(log_odds * jmath::math::log10(std::f64::consts::E)),
+    ));
     vc.genotypes = GenotypesContext::new(vec![genotype]);
     Ok(vc)
 }

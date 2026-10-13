@@ -483,8 +483,8 @@ jobs:
             suites: "mutect2-end-to-end ramps-end-to-end"
           - group: golden-pending
             index: "1/1"
-            slug: "hc-dragen-end-to-end-hc-disable-optimizations-callers-all-annotations"
-            suites: "hc-dragen-end-to-end hc-disable-optimizations callers-all-annotations"
+            slug: "hc-dragen-end-to-end-hc-disable-optimizations-callers-all-annotations-mutect2-gvcf"
+            suites: "hc-dragen-end-to-end hc-disable-optimizations callers-all-annotations mutect2-gvcf"
     steps:
       - uses: actions/checkout@v7
 

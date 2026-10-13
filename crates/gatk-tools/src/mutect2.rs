@@ -19,7 +19,11 @@
 //! matrices, phased, and given `ECNT` (the somatic events in the region) and `ECNTH` (those on the
 //! best-supported haplotype carrying each alternate).
 //!
-//! Not ported here: reference-confidence mode, `--alleles`, `--germline-resource`,
+//! In reference-confidence mode the activity and emission thresholds are minus infinity, every call
+//! carries `<NON_REF>`, and each region is reported base by base by the somatic reference model
+//! ([`crate::reference_confidence_model`]): its flanks and any region without a call entirely so.
+//!
+//! Not ported here: `--alleles`, `--germline-resource`,
 //! `--panel-of-normals`, `--f1r2-tar-gz`, the bamout, a germline-sites fraction above zero (whose
 //! generator is unseeded), mitochondria mode and the Permutect datasets, all refused by the
 //! command line.
@@ -31,7 +35,9 @@ use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_mapping::{
     create_allele_mapper, make_merged_variant_context, variants_from_active_haplotypes,
 };
-use gatk_engine::assembly_based_caller_utils::clean_overlapping_read_pairs_with_indels;
+use gatk_engine::assembly_based_caller_utils::{
+    clean_overlapping_read_pairs_with_indels, finalize_region, FinalizeArguments,
+};
 use gatk_engine::assembly_region::AssemblyRegion;
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
@@ -65,6 +71,7 @@ use crate::hc_genotyping::phase_calls;
 use crate::hc_region::{
     assemble_reads, assembler_from, AssemblerArguments, RegionAssemblyArguments,
 };
+use crate::reference_confidence_model::{calculate_ref_confidence, RefConfidenceArguments};
 use crate::variant_annotator_engine::{Engine as AnnotatorEngine, Site};
 
 /// `Mutect2Engine.MAX_ALT_FRACTION_IN_NORMAL`.
@@ -115,6 +122,11 @@ pub struct Mutect2Arguments {
     pub assembler: AssemblerArguments,
     /// `--independent-mates`: each read its own fragment.
     pub independent_mates: bool,
+    /// `--emit-ref-confidence` other than `NONE`: every region is reported base by base, with
+    /// `<NON_REF>` added to every call. The thresholds above are then minus infinity.
+    pub emit_reference_confidence: bool,
+    /// `SomaticReferenceConfidenceModel`'s prior, from `--minimum-allele-fraction`.
+    pub somatic_ref_confidence: crate::reference_confidence_model::SomaticRefConfidence,
 }
 
 /// What a run produces: the calls, and the callable-site count the stats file carries.
@@ -411,7 +423,83 @@ fn calling(message: impl Into<String>) -> Mutect2Error {
     failure("GATKException", message)
 }
 
-/// `Mutect2Engine.callRegion`, outside reference-confidence mode.
+/// `Mutect2Engine.MIN_TAIL_QUALITY`.
+const MIN_TAIL_QUALITY: u8 = 9;
+
+/// `Mutect2Engine.referenceModelForNoVariation(region)`: nothing outside reference-confidence
+/// mode; otherwise the region finalized as Mutect2 finalizes it for this (soft clips dropped, no
+/// overlap correction) and a somatic reference-confidence record for each base of its span.
+fn reference_model_for_no_variation(
+    mut region: AssemblyRegion,
+    context: &RegionContext<'_>,
+) -> Result<Vec<VariantContext>, Mutect2Error> {
+    if !context.arguments.emit_reference_confidence {
+        return Ok(Vec::new());
+    }
+    finalize_region(
+        &mut region,
+        &FinalizeArguments {
+            error_correct_reads: false,
+            dont_use_soft_clipped_bases: true,
+            min_tail_quality: MIN_TAIL_QUALITY,
+            correct_overlapping_base_qualities: false,
+            soft_clip_low_quality_ends: false,
+            override_softclip_fragment_check: false,
+            track_hardclipped_reads: false,
+        },
+        context.header,
+        context.samples,
+    )
+    .map_err(|e| calling(format!("{e:?}")))?;
+    let padded = region.padded_span().clone();
+    let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
+    somatic_ref_confidence(
+        ref_bases,
+        region.span(),
+        padded.start,
+        region.reads(),
+        &[],
+        context,
+    )
+}
+
+/// `calculateRefConfidence` under the somatic model, which takes exactly one sample.
+fn somatic_ref_confidence(
+    ref_bases: &[u8],
+    span: &SimpleInterval,
+    padded_start: i32,
+    evidence: &[BamRecord],
+    calls: &[VariantContext],
+    context: &RegionContext<'_>,
+) -> Result<Vec<VariantContext>, Mutect2Error> {
+    if context.samples.len() != 1 {
+        return Err(failure(
+            "java.lang.IllegalArgumentException",
+            format!(
+                "readLikelihoods must contain exactly one sample but it contained {}",
+                context.samples.len()
+            ),
+        ));
+    }
+    calculate_ref_confidence(
+        ref_bases,
+        span,
+        padded_start,
+        evidence,
+        &context.samples[0],
+        2,
+        calls,
+        context.header,
+        &RefConfidenceArguments::default(),
+        Some(&context.arguments.somatic_ref_confidence),
+    )
+    .map_err(|e| match e {
+        EngineError::Limitation(what) => failure("PortLimitation", what),
+        EngineError::Runtime { class, message } => failure(&class, message),
+    })
+}
+
+/// `Mutect2Engine.callRegion`.
 fn call_region(
     mut region: AssemblyRegion,
     context: &RegionContext<'_>,
@@ -434,7 +522,7 @@ fn call_region(
         .add_all(reads, context.header)
         .map_err(|e| calling(format!("{e:?}")))?;
     if !region.is_active() || region.reads().is_empty() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, context);
     }
     remove_unmarked_duplicates(&mut region, context.header)?;
 
@@ -458,7 +546,7 @@ fn call_region(
         .trim(&region, &events, padded_bases, padded.start)
         .map_err(|e| calling(format!("{e:?}")))?;
     if trimmed.variant_span.is_none() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, context);
     }
     let variant_region = context
         .trimmer
@@ -468,7 +556,7 @@ fn call_region(
         .trim_to(variant_region)
         .map_err(|e| calling(format!("{e:?}")))?;
     if !assembly.is_variation_present() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, context);
     }
     // `removeReadStubs`: reads under ten bases long, soft clips included.
     let genotyping_region = assembly
@@ -515,7 +603,8 @@ fn call_region(
         i64::from(padded.start),
         &context.contig_bases[padded.start as usize - 1..padded.end as usize],
     );
-    call_mutations(
+    let realigned: Vec<BamRecord> = likelihoods.sample_evidence(0).unwrap_or(&[]).to_vec();
+    let calls = call_mutations(
         likelihoods,
         &mut haplotypes,
         assembly.full_reference_with_padding(),
@@ -524,7 +613,45 @@ fn call_region(
         window,
         context,
         random,
-    )
+    )?;
+    if !arguments.emit_reference_confidence {
+        return Ok(calls);
+    }
+    // `containsCalls`: a genotype with any allele called.
+    let contains_calls = calls.iter().any(|call| {
+        call.genotypes
+            .iter()
+            .any(|g| g.alleles.iter().any(|a| !a.is_no_call()))
+    });
+    if !contains_calls {
+        return reference_model_for_no_variation(region, context);
+    }
+    // The left flank, the genotyping region base by base with its calls, then the right flank.
+    let left = context
+        .trimmer
+        .non_variant_left_flank_region(&trimmed, &region, context.header)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    let right = context
+        .trimmer
+        .non_variant_right_flank_region(&trimmed, &region, context.header)
+        .map_err(|e| calling(format!("{e:?}")))?;
+    let mut result = Vec::new();
+    if let Some(flank) = left {
+        result.extend(reference_model_for_no_variation(flank, context)?);
+    }
+    result.extend(somatic_ref_confidence(
+        &reference_haplotype.bases(),
+        genotyping_region.span(),
+        // The trimmed reference haplotype spans the genotyping region's padded span.
+        genotyping_region.padded_span().start,
+        &realigned,
+        &calls,
+        context,
+    )?);
+    if let Some(flank) = right {
+        result.extend(reference_model_for_no_variation(flank, context)?);
+    }
+    Ok(result)
 }
 
 /// `removeUnmarkedDuplicates`: among paired reads whose mate maps far away or to another contig,
@@ -591,7 +718,7 @@ type DuplicateKey = (Option<String>, i32);
 /// A likelihood matrix as `[allele][evidence]`.
 type Matrix = Vec<Vec<f64>>;
 
-/// `SomaticGenotypingEngine.callMutations`, outside reference-confidence mode and with no given
+/// `SomaticGenotypingEngine.callMutations`, with no given
 /// alleles, germline resource or panel of normals.
 #[allow(clippy::too_many_arguments)]
 fn call_mutations(
@@ -642,6 +769,15 @@ fn call_mutations(
         else {
             continue;
         };
+        // `ReferenceConfidenceUtils.addNonRefSymbolicAllele`: `<NON_REF>` joins the merged context.
+        // The mapper skips symbolic alleles, so the marginalized matrices lack it until
+        // `addNonReferenceAllele` adds its row, each read's median of the non-best alleles.
+        let mut merged = merged;
+        if arguments.emit_reference_confidence {
+            merged
+                .alleles
+                .push(Allele::from_str("<NON_REF>", false).expect("a symbolic allele"));
+        }
         let mapper = create_allele_mapper(&merged, loc, haplotypes, true)
             .map_err(|e| illegal(format!("{e:?}")))?;
         let new_to_old: Vec<(Allele, Vec<Haplotype>)> = mapper
@@ -670,6 +806,9 @@ fn call_mutations(
         log_likelihoods.retain_evidence(|f: &Fragment| {
             Some(f.contig_index) == contig_index && f.start <= overlap.end && overlap.start <= f.end
         });
+        if arguments.emit_reference_confidence {
+            log_likelihoods.add_non_reference_allele();
+        }
 
         let alleles: Vec<Allele> = (0..log_likelihoods.number_of_alleles())
             .map(|a| log_likelihoods.get_allele(a).expect("an allele").clone())
@@ -736,7 +875,8 @@ fn call_mutations(
             emitted_alleles.clone(),
         );
         vc.stop = i64::from(merged.end);
-        let log10 = |x: f64| x / std::f64::consts::LN_10;
+        // `MathUtils.logToLog10`: `ln * LOG10_E`, which is not always `ln / ln(10)` in the last bit.
+        let log10 = |x: f64| x * jmath::math::log10(std::f64::consts::E);
         let doubles =
             |values: Vec<f64>| Value::List(values.into_iter().map(Value::Double).collect());
         vc.attributes.push((
@@ -803,6 +943,9 @@ fn call_mutations(
         read_alleles.retain_evidence(|r: &BamRecord| {
             overlap.overlaps(&overlap.contig, read_utils::start(r), read_utils::end(r))
         });
+        if arguments.emit_reference_confidence {
+            read_alleles.add_non_reference_allele();
+        }
         let trimmed_reads = read_alleles
             .marginalize(&trim_map)
             .map_err(|e| illegal(format!("{e:?}")))?;
