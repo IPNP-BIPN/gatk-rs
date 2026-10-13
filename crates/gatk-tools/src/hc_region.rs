@@ -572,7 +572,7 @@ pub struct CollapseSettings {
 
 /// `possiblyUncollapseHaplotypesInReadLikelihoods`: the haplotypes put back to the reference's
 /// hmer lengths and those made identical merged.
-fn uncollapse(
+pub(crate) fn uncollapse(
     engine: &crate::haplotype_collapsing::HaplotypeCollapsing,
     likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
     haplotypes: &mut Vec<Haplotype>,

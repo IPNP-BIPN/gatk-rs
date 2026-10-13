@@ -20,6 +20,13 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // Long hmer collapsing and allele filtering before genotyping.
+    "flow-assembly-collapse-hmer-size",
+    "flow-assembly-collapse-partial-mode",
+    "flow-filter-alleles",
+    "flow-filter-alleles-qual-threshold",
+    "flow-filter-alleles-sor-threshold",
+    "flow-filter-lone-alleles",
     // The linked de Bruijn graph and its artificial haplotype recovery.
     "linked-de-bruijn-graph",
     "disable-artificial-haplotype-recovery",
@@ -483,6 +490,13 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         consider_germline_active: genotype_germline_sites
             && double_or(parser, "genotype-germline-sites-fraction", 1.0) >= 1.0,
         min_af,
+        flow_collapse_hmer_size: match number_or(parser, "flow-assembly-collapse-hmer-size", 0) {
+            -1 => gatk_tools::haplotype_collapsing::determine_collapse_threshold(&header)
+                .map_err(|(class, message)| Thrown::non_user(class, message))?,
+            size => size,
+        },
+        flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
+        filter_alleles: super::haplotype_caller::allele_filter_arguments(parser),
         default_af,
         informative_read_overlap_margin: number_or(
             parser,

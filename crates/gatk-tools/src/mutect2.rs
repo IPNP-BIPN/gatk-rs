@@ -113,6 +113,12 @@ pub struct Mutect2Arguments {
     /// fraction of one or more makes deterministic: the generator is unseeded.
     pub consider_germline_active: bool,
     pub min_af: f64,
+    /// `--flow-assembly-collapse-hmer-size`, -1 resolved from the read groups, and
+    /// `--flow-assembly-collapse-partial-mode`.
+    pub flow_collapse_hmer_size: i32,
+    pub flow_collapse_partial_mode: bool,
+    /// `--flow-filter-alleles`, with its thresholds.
+    pub filter_alleles: Option<crate::allele_filtering::AlleleFilterArguments>,
     /// `getDefaultAlleleFrequency()`.
     pub default_af: f64,
     pub informative_read_overlap_margin: i32,
@@ -620,6 +626,55 @@ fn call_region(
         &arguments.assembly.read_to_haplotype_sw,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // The collapsing engine `assembleReads` built: a threshold above zero and a run longer than it
+    // under the padded span.
+    let threshold = arguments.flow_collapse_hmer_size;
+    if threshold > 0
+        && crate::haplotype_collapsing::needs_collapsing(
+            &context.contig_bases[padded.start as usize - 1..padded.end as usize],
+            threshold,
+        )
+    {
+        let engine = crate::haplotype_collapsing::HaplotypeCollapsing {
+            hmer_size_threshold: threshold,
+            partial_mode: arguments.flow_collapse_partial_mode,
+            full_ref: assembly.full_reference_with_padding().to_vec(),
+            ref_loc: ref_loc.clone(),
+            parameters: arguments.assembly.haplotype_to_reference_sw.clone(),
+        };
+        crate::hc_region::uncollapse(
+            &engine,
+            &mut likelihoods,
+            &mut haplotypes,
+            &SmithWatermanJavaAligner,
+        )
+        .map_err(calling)?;
+    }
+    // `AlleleFilteringMutect`, on the natural-log matrix.
+    if let Some(filter) = &arguments.filter_alleles {
+        let alt_pseudocount = if arguments.min_af == 0.0 {
+            1.0
+        } else {
+            1.0 - std::f64::consts::LN_2 / jmath::math::log(arguments.min_af)
+        };
+        let filtered = crate::allele_filtering::filter_alleles(
+            &likelihoods,
+            assembly.full_reference_with_padding(),
+            &ref_loc,
+            arguments.max_mnp_distance,
+            filter,
+            crate::allele_filtering::FilterModel::Somatic {
+                ref_pseudocount: 1.0,
+                alt_pseudocount,
+            },
+        )
+        .map_err(calling)?;
+        likelihoods = filtered.likelihoods;
+        likelihoods.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
+        haplotypes = (0..likelihoods.number_of_alleles())
+            .filter_map(|index| likelihoods.get_allele(index).cloned())
+            .collect();
+    }
     let window = (
         i64::from(padded.start),
         &context.contig_bases[padded.start as usize - 1..padded.end as usize],

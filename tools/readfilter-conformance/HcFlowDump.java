@@ -194,5 +194,6 @@ public class HcFlowDump {
                 HcPedigreeDump.concat(flow, List.of(collapse, "4")));
         HcAllAnnotationsDump.run(dir, "ramped-collapse-4", org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller::new,
                 bam, fasta, List.of(collapse, "4"));
+        HcAllAnnotationsDump.run(dir, "mutect2-collapse-4", Mutect2::new, bam, fasta, List.of(collapse, "4"));
     }
 }

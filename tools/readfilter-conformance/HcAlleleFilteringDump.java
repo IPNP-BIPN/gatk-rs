@@ -68,5 +68,10 @@ public class HcAlleleFilteringDump {
                 List.of(filter, "--flow-filter-alleles-qual-threshold", "300"));
         HcAllAnnotationsDump.run(dir, "hc-filter-gvcf", HaplotypeCaller::new, bam, fasta,
                 List.of(filter, "-ERC", "GVCF", "--sample-name", "s1", "-L", "chr1"));
+        // Mutect2 scores an allele by ten times its somatic log odds against its inverse.
+        HcAllAnnotationsDump.run(dir, "mutect2-filter", org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2::new,
+                bam, fasta, List.of(filter));
+        HcAllAnnotationsDump.run(dir, "mutect2-filter-qual-300", org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2::new,
+                bam, fasta, List.of(filter, "--flow-filter-alleles-qual-threshold", "300", "--normal-sample", "s2"));
     }
 }
