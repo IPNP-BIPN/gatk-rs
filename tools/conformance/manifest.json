@@ -7414,6 +7414,32 @@
           "why": "From the pinned container on a real x86-64 runner, the PR's candidate-goldens artefact, byte for byte the local dump."
         }
       ]
+    },
+    {
+      "id": "ramps-end-to-end",
+      "status": "golden-pending",
+      "title": "RampedHaplotypeCaller's off ramps, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "java_props": [
+        "-Duser.language=en",
+        "-Duser.country=US",
+        "-Dsamjdk.use_libdeflate=false",
+        "-Dsamjdk.compression_level=2"
+      ],
+      "why": "RampedHaplotypeCaller run by instanceMain on HcEndToEndDump's BAM and FASTA with each off ramp (#1278). The covering array cannot vary the ramp arguments, because gatkdoc omits RampedHaplotypeCallerArgumentCollection and the inventory is built from gatkdoc, so this suite is where they are measured. PRE_ASSEMBLER_OFF WRITES ONLY THE REGIONS, POST_ASSEMBLER_OFF THE ASSEMBLED HAPLOTYPES as a CSV and as an indexed BAM of artificial haplotype reads with the trimmer's flanks, PRE_FILTER_OFF THE READ LIKELIHOODS per sample, and info.json lists its keys in HashMap order. An off ramp calls nothing, so each VCF keeps only its header. Four runs: the three off ramps (the post-assembler one through the JDK deflater, so its BAM bytes replay on any machine) and an off ramp without a file, which the reference refuses. The dump runs at samjdk.compression_level 2, the level GATKConfig gives a real gatk invocation and instanceMain never sees (#1032).",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 20,
+      "expect_contains": [],
+      "cases": [
+        {
+          "dump": "RampsEndToEndDump",
+          "golden": null,
+          "why": "Pending: the golden comes from the PR's candidate-goldens artefact."
+        }
+      ]
     }
   ],
   "probes": []

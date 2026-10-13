@@ -70,6 +70,9 @@ pub struct CallRegionContext<'a> {
     pub genotyping: &'a HcGenotypingArguments,
     /// `--mapping-quality-threshold-for-genotyping`, 20 by default.
     pub mapping_quality_threshold: u8,
+    /// RampedHaplotypeCaller's off ramp: the region's state is written to it at the ramp's point,
+    /// and the region answers no calls.
+    pub off_ramp: Option<&'a std::cell::RefCell<crate::ramp_files::OffRamp>>,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -95,6 +98,22 @@ pub fn call_region(
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
     if !region.is_active() || region.reads().is_empty() {
         return reference_model_for_no_variation(region, true, context);
+    }
+    // The pre-assembler off ramp: the region's place, before anything is assembled.
+    let ramp_kind = context.off_ramp.map(|ramp| ramp.borrow().kind);
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PreAssembler) {
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_assembly(
+                region.span(),
+                &crate::ramp_files::region_description(&region),
+                "assemblyResult",
+                None,
+                None,
+                None,
+                context.header,
+            );
+        }
+        return Ok(Vec::new());
     }
     let mut untrimmed = assemble_reads(
         &mut region,
@@ -124,6 +143,37 @@ pub fn call_region(
     let mut assembly = untrimmed
         .trim_to(variant_region)
         .map_err(|e| calling(format!("{e:?}")))?;
+    // The post-assembler off ramp: the trimmed assembly, its spans and the flanks.
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PostAssembler) {
+        let left = context
+            .trimmer
+            .non_variant_left_flank_region(&trimmed, &region, context.header)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let right = context
+            .trimmer
+            .non_variant_right_flank_region(&trimmed, &region, context.header)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let padded_loc = assembly
+            .padded_reference_loc()
+            .expect("a trimmed set has its padded reference")
+            .clone();
+        let genotyping = assembly
+            .region_for_genotyping()
+            .expect("a trimmed set has its region")
+            .clone();
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_assembly(
+                region.span(),
+                &crate::ramp_files::region_description(&region),
+                "assemblyResult",
+                Some((&padded_loc, &genotyping, assembly.haplotype_list())),
+                left.as_ref(),
+                right.as_ref(),
+                context.header,
+            );
+        }
+        return Ok(Vec::new());
+    }
 
     // The read stubs the trim left, then `filterNonPassingReads`, whose reads the annotations
     // still see.
@@ -212,6 +262,18 @@ pub fn call_region(
         },
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // The pre-filter off ramp: the realigned likelihoods, before any allele is filtered.
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PreFilter) {
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_likelihoods(
+                region.span(),
+                "readLikelihoods",
+                &likelihoods,
+                &genotyping_region,
+            );
+        }
+        return Ok(Vec::new());
+    }
     let contig_length = context.contig_bases.len() as i32;
     let calls = assign_genotype_likelihoods_full(
         engine,

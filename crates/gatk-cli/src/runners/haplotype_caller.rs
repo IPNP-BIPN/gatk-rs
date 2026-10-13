@@ -158,8 +158,8 @@ const HONOURED: &[&str] = &[
     "pair-hmm-implementation",
     "smith-waterman",
     "likelihood-calculation-engine",
-    // RampedHaplotypeCaller's own: the ramps are refused unless NONE, and the two debug
-    // switches only log.
+    // RampedHaplotypeCaller's own: the off ramp is written, the on ramp refused unless NONE,
+    // and the two debug switches only log.
     "off-ramp-type",
     "off-ramp-file",
     "on-ramp-type",
@@ -180,6 +180,28 @@ const HONOURED: &[&str] = &[
     "smith-waterman-read-to-haplotype-gap-open-penalty",
     "smith-waterman-read-to-haplotype-gap-extend-penalty",
 ];
+
+/// `buildRamps`' off ramp: its type, and the file it is written to, which a type other than `NONE`
+/// requires.
+fn off_ramp(
+    parser: &Parser,
+) -> Result<Option<(gatk_tools::ramp_files::OffRampType, std::path::PathBuf)>, Thrown> {
+    let Some(name) = scalar(parser, "off-ramp-type") else {
+        return Ok(None);
+    };
+    let kind = gatk_tools::ramp_files::OffRampType::parse(&name)
+        .ok_or_else(|| Thrown::command_line(format!("unknown off ramp type {name}")))?;
+    let Some(kind) = kind else {
+        return Ok(None);
+    };
+    let file = scalar(parser, "off-ramp-file").ok_or_else(|| {
+        Thrown::non_user(
+            "java.lang.RuntimeException",
+            "rampFile must be specified".to_string(),
+        )
+    })?;
+    Ok(Some((kind, std::path::PathBuf::from(file))))
+}
 
 fn limitation(what: &str) -> Thrown {
     Thrown::non_user(
@@ -227,7 +249,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
 /// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
 /// `callRegion` measures read stubs, filters reads and realigns them.
 pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
-    for ramp in ["off-ramp-type", "on-ramp-type"] {
+    for ramp in ["on-ramp-type"] {
         match scalar(parser, ramp).as_deref() {
             None | Some("NONE") => {}
             Some(kind) => {
@@ -525,6 +547,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
         non_random_downsampling: ramped,
+        off_ramp: if ramped { off_ramp(parser)? } else { None },
+        compression: crate::runners::output_compression(parser),
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {
         resolved: resolved.clone(),

@@ -59,6 +59,10 @@ pub struct HaplotypeCallerArguments {
     pub use_posteriors_to_calculate_qual: bool,
     /// `nonRandomDownsamplingMode()`, which `RampedHaplotypeCaller` turns on.
     pub non_random_downsampling: bool,
+    /// RampedHaplotypeCaller's `--off-ramp-type` and `--off-ramp-file`.
+    pub off_ramp: Option<(crate::ramp_files::OffRampType, std::path::PathBuf)>,
+    /// The BGZF level and deflater the run writes block-compressed files with.
+    pub compression: (u32, htsjdk_bgzf::Deflater),
 }
 
 /// What a run refuses, with the Java class it would be thrown as.
@@ -128,6 +132,13 @@ pub fn call_variants(
         .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
     let genotyping = arguments.genotyping.clone();
 
+    // `buildRamps`: the off ramp is opened before the traversal and written when it ends.
+    let off_ramp = arguments.off_ramp.as_ref().map(|(kind, _)| {
+        std::cell::RefCell::new(crate::ramp_files::OffRamp::new(
+            *kind,
+            arguments.compression,
+        ))
+    });
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -193,6 +204,7 @@ pub fn call_variants(
             likelihood_engine: &likelihood_engine,
             genotyping: &genotyping,
             mapping_quality_threshold: arguments.mapping_quality_threshold,
+            off_ramp: off_ramp.as_ref(),
         };
         for traversed in regions {
             let region_calls = call_region(
@@ -207,6 +219,12 @@ pub fn call_variants(
             .map_err(|e| HaplotypeCallerError::new("GATKException", format!("{e:?}")))?;
             calls.extend(region_calls);
         }
+    }
+    // `tearRamps`: the zip is written as the engine shuts down.
+    if let (Some(ramp), Some((_, path))) = (&off_ramp, &arguments.off_ramp) {
+        ramp.borrow()
+            .write(path)
+            .map_err(|message| HaplotypeCallerError::new("GATKException", message))?;
     }
     Ok(calls)
 }
