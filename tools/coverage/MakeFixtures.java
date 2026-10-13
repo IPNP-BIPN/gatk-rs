@@ -973,6 +973,49 @@ public class MakeFixtures {
      * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class. One read is
      * supplementary and one fails the vendor check, which AddFlowSNVQuality's switches drop.
      */
+    /**
+     * flow_calls.bam: mutect_t.bam's reads as Ultima flow reads, for the callers' flow-based
+     * engines: one read group under TGCA (no mc, so the maximal class is twelve), every read given
+     * a tp array (mostly zero, some +-1) with qualities that follow it, and every other one a t0
+     * string. Its calls are mutect_t.bam's, scored in flow space.
+     */
+    static void flowCallsFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20261014L);
+        try (final htsjdk.samtools.SamReader reader =
+                     htsjdk.samtools.SamReaderFactory.makeDefault().open(dir.resolve("mutect_t.bam"))) {
+            final SAMFileHeader header = reader.getFileHeader().clone();
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rgFlow");
+            group.setSample("tumor");
+            group.setPlatform("ULTIMA");
+            group.setFlowOrder("TGCATGCATGCA");
+            header.setReadGroups(List.of(group));
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, true, dir.resolve("flow_calls.bam").toFile())) {
+                int n = 0;
+                for (final SAMRecord record : reader) {
+                    record.setHeader(header);
+                    record.setAttribute("RG", "rgFlow");
+                    final int length = record.getReadLength();
+                    final byte[] tp = new byte[length];
+                    final byte[] quals = new byte[length];
+                    final StringBuilder t0 = new StringBuilder();
+                    for (int i = 0; i < length; i++) {
+                        final int roll = random.nextInt(10);
+                        tp[i] = (byte) (roll < 7 ? 0 : roll < 9 ? 1 : -1);
+                        quals[i] = (byte) (tp[i] == 0 ? 30 + random.nextInt(11) : 8 + random.nextInt(15));
+                        t0.append((char) ('!' + 10 + random.nextInt(31)));
+                    }
+                    record.setBaseQualities(quals);
+                    record.setAttribute("tp", tp);
+                    if (n++ % 2 == 0) {
+                        record.setAttribute("t0", t0.toString());
+                    }
+                    writer.addAlignment(record);
+                }
+            }
+        }
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -2914,6 +2957,7 @@ public class MakeFixtures {
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
+        flowCallsFixtures(dir);
         flowSnvFixtures(dir);
         groundTruthFixtures(dir);
         haplotypeRecallerFixtures(dir);

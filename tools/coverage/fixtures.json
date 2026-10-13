@@ -8091,12 +8091,12 @@
         "date, the second the output's last-modified time.",
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
-        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "--dragen-mode. Held out, as features this port does not carry: pileup detection and the partially determined PairHMM.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
@@ -8109,11 +8109,16 @@
         "thresholds matter only where PossibleDeNovo runs.",
         "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
         "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
-        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/flow_calls.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8142,7 +8147,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8196,19 +8203,59 @@
         "-6"
       ],
       "--dragen-378-concordance-mode": [],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
@@ -8261,6 +8308,197 @@
       "--disable-artificial-haplotype-recovery": [
         "false",
         "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8276,7 +8514,7 @@
         "--emit-ref-confidence is listed NONE first, then GVCF and BP_RESOLUTION, with two lists of TLOD bands and a",
         "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
         "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
-        "does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "does not carry: pileup detection and the partially determined PairHMM.",
         "--read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
@@ -8287,14 +8525,19 @@
         "thresholds matter only where PossibleDeNovo runs.",
         "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
         "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
-        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
       ],
       "$lists": [
         "--gvcf-lod-band"
       ],
       "--input": [
         "/work/fixtures/mutect_tn.bam",
-        "/work/fixtures/mutect_t.bam"
+        "/work/fixtures/mutect_t.bam",
+        "/work/fixtures/flow_calls.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8327,7 +8570,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8380,19 +8625,59 @@
         "-5",
         "-6"
       ],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
@@ -8442,6 +8727,181 @@
       "--disable-artificial-haplotype-recovery": [
         "false",
         "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8455,12 +8915,12 @@
         "date, the second the output's last-modified time.",
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
-        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "--dragen-mode. Held out, as features this port does not carry: pileup detection and the partially determined PairHMM.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
@@ -8477,11 +8937,16 @@
         "thresholds matter only where PossibleDeNovo runs.",
         "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
         "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
-        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/flow_calls.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8510,7 +8975,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8564,19 +9031,59 @@
         "-6"
       ],
       "--dragen-378-concordance-mode": [],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
@@ -8734,9 +9241,198 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
         "false",
         "true"
       ]
@@ -9268,6 +9964,436 @@
         "--disable-artificial-haplotype-recovery": "true"
       },
       "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "STANDARD"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "ADVANCED"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-filter-alleles": "false"
+      },
+      "why": "Stepwise filtering without allele filtering is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--likelihood-calculation-engine": "FlowBased"
+      },
+      "why": "Stepwise filtering with the FlowBased engine is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "STANDARD"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "ADVANCED"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-filter-alleles": "false"
+      },
+      "why": "Stepwise filtering without allele filtering is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--likelihood-calculation-engine": "FlowBased"
+      },
+      "why": "Stepwise filtering with the FlowBased engine is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/flow_calls.bam",
+        "--normal-sample": "normal"
+      },
+      "why": "flow_calls.bam has no normal sample, so naming one is the same refusal on every row."
     }
   ],
   "exclude": {
