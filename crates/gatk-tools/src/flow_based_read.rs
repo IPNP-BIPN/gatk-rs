@@ -123,7 +123,7 @@ pub struct ReadGroupInfo {
 }
 
 /// `NGSPlatform.fromReadGroupPL`, reduced to the two platforms that make a group flow-based.
-fn platform(pl: &str) -> Option<&'static str> {
+pub(crate) fn platform(pl: &str) -> Option<&'static str> {
     match pl.to_ascii_uppercase().as_str() {
         "ULTIMA" => Some("ULTIMA"),
         "454" | "LS454" => Some("LS454"),

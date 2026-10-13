@@ -43,6 +43,8 @@ pub struct EventContext {
     pub end: i32,
     pub reference: Allele,
     pub alternate: Allele,
+    /// The `XC` attribute of the event it was made from, which a spanning deletion keeps.
+    pub collapsed: bool,
 }
 
 /// The merged context: its source, span, and alleles with the reference first.
@@ -114,6 +116,7 @@ pub fn variants_from_active_haplotypes(
                 end: event.end(),
                 reference: event.ref_allele().clone(),
                 alternate: event.alt_allele().clone(),
+                collapsed: event.is_collapsed(),
             });
         }
     }

@@ -64,6 +64,10 @@ pub struct HaplotypeCallerArguments {
     pub sample_name: Option<String>,
     /// `--disable-optimizations`.
     pub disable_optimizations: bool,
+    /// `--flow-assembly-collapse-hmer-size` (-1 asks the read groups) and
+    /// `--flow-assembly-collapse-partial-mode`.
+    pub flow_collapse_hmer_size: i32,
+    pub flow_collapse_partial_mode: bool,
     /// `--mapping-quality-threshold-for-genotyping`.
     pub mapping_quality_threshold: u8,
     /// `--use-posteriors-to-calculate-qual`.
@@ -269,6 +273,15 @@ fn call_variants_into(
             return Err(failure);
         }
 
+        // `assembleReads`: a threshold of -1 is the largest maximal class of the read groups.
+        let collapse_threshold = if arguments.flow_collapse_hmer_size
+            == crate::haplotype_collapsing::DETERMINE_COLLAPSE_THRESHOLD
+        {
+            crate::haplotype_collapsing::determine_collapse_threshold(header)
+                .map_err(|(class, message)| HaplotypeCallerError::new(class, message))?
+        } else {
+            arguments.flow_collapse_hmer_size
+        };
         let trimmer = AssemblyRegionTrimmer::new(arguments.trimmer.clone(), bases.len() as i32)
             .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
         let context = CallRegionContext {
@@ -285,6 +298,11 @@ fn call_variants_into(
             off_ramp: off_ramp.as_ref(),
             on_ramp: on_ramp.as_ref(),
             disable_optimizations: arguments.disable_optimizations,
+            collapse: crate::hc_region::CollapseSettings {
+                raw: arguments.flow_collapse_hmer_size,
+                determined: collapse_threshold,
+                partial: arguments.flow_collapse_partial_mode,
+            },
         };
         for mut traversed in regions {
             // `removeReadsFromAllSamplesExcept`.

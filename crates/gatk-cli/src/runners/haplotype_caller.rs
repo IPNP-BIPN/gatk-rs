@@ -25,6 +25,9 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // Long hmer collapsing.
+    "flow-assembly-collapse-hmer-size",
+    "flow-assembly-collapse-partial-mode",
     // Allele filtering before genotyping.
     "flow-filter-alleles",
     "flow-filter-alleles-qual-threshold",
@@ -737,6 +740,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         priors,
         sample_name: sample_name.clone(),
         disable_optimizations: flag(parser, "disable-optimizations"),
+        flow_collapse_hmer_size: number_or(parser, "flow-assembly-collapse-hmer-size", 0),
+        flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
@@ -844,6 +849,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         id: "LowQual".to_string(),
         description: "Low quality".to_string(),
     });
+    if arguments.flow_collapse_hmer_size > 0 || arguments.flow_collapse_hmer_size == -1 {
+        lines.push(compound(
+            "INFO",
+            "XC",
+            Cardinality::Fixed(1),
+            LineType::Integer,
+            "Indicates longer hmer collapsing took place (this is a flow-based specific tag)",
+        ));
+    }
     if arguments.genotyping.filter_alleles.is_some() {
         lines.push(compound(
             "INFO",

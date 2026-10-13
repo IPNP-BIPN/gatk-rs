@@ -290,6 +290,7 @@ pub fn assign_genotype_likelihoods_full(
         let ref_base = Allele::create(&reference[(loc - ref_loc.start) as usize..][..1], true)
             .map_err(|e| refused(e.to_string()))?;
         let replaced = replace_span_dels(events, &ref_base, loc);
+        let collapsed = replaced.iter().any(|c| c.collapsed);
         let Some(mut merged) =
             make_merged_variant_context(&replaced).map_err(|e| refused(format!("{e:?}")))?
         else {
@@ -478,6 +479,11 @@ pub fn assign_genotype_likelihoods_full(
                 }
                 None => call,
             };
+            // `EXT_COLLAPSED_TAG`, from the merged context, after the annotations.
+            let mut call = call;
+            if collapsed {
+                set_attribute(&mut call, "XC", Value::Str("1".to_string()));
+            }
             let mut call = if call.alleles.len() == merged_allele_count {
                 call
             } else {

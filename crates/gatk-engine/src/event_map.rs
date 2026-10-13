@@ -84,9 +84,17 @@ pub struct Event {
     stop: i32,
     ref_allele: Allele,
     alt_allele: Allele,
+    /// The `XC` variant attribute: a substitution found on a collapsed haplotype. Equality does
+    /// not read it.
+    collapsed: bool,
 }
 
 impl Event {
+    /// Whether the event carries the `XC` attribute.
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
     /// `new Event(contig, start, ref, alt)`.
     pub fn new(
         contig: &str,
@@ -105,6 +113,7 @@ impl Event {
             stop,
             ref_allele,
             alt_allele,
+            collapsed: false,
         })
     }
 
@@ -435,12 +444,15 @@ fn get_events(
                         &slice(&alignment, alignment_pos + start, alignment_pos + end + 1)?,
                         false,
                     )?;
-                    proposed.push(Event::new(
+                    let mut event = Event::new(
                         &ref_loc.contig,
                         ref_loc.start + (ref_pos + start) as i32,
                         ref_allele,
                         alt_allele,
-                    )?);
+                    )?;
+                    // `setVariantAttribute(EXT_COLLAPSED_TAG, "1")`.
+                    event.collapsed = haplotype.is_collapsed();
+                    proposed.push(event);
                 }
                 ref_pos += length;
                 alignment_pos += length;

@@ -11,8 +11,9 @@
  * two at the filling value. Under a flow engine the reference model skips low-quality deletions
  * and gives a deletion the quality of the base after it when that base is the reference's.
  *
- * One contig of 1400 random bases with a het SNP, a het one-base deletion in an A homopolymer and
- * a het one-base insertion in a C homopolymer; one sample's reads, 100 bases every three, from
+ * One contig of 1400 random bases with a het SNP, a het one-base deletion in an A homopolymer with
+ * a het SNP twenty bases on (so a collapsed haplotype carries a substitution), and a het one-base
+ * insertion in a C homopolymer; one sample's reads, 100 bases every three, from
  * the two haplotypes alternately, each with a tp array (mostly zero, some +-1) and qualities that
  * follow it, a t0 string on every other read, under flow order TGCA.
  *
@@ -79,7 +80,7 @@ public class HcFlowDump {
             if (pos == 606) {
                 continue; // the last A of the homopolymer deleted
             }
-            final char base = pos == 300 ? 'G' : reference.charAt(pos - 1);
+            final char base = pos == 300 ? 'G' : pos == 625 ? HcEndToEndDump.other(reference.charAt(pos - 1)) : reference.charAt(pos - 1);
             alt.add(new int[]{pos, base});
             if (pos == 905) {
                 alt.add(new int[]{0, 'C'}); // one more C
@@ -182,5 +183,16 @@ public class HcFlowDump {
         HcAllAnnotationsDump.run(dir, "hc-flow-gvcf", HaplotypeCaller::new, bam, fasta,
                 HcPedigreeDump.concat(flow, List.of("-ERC", "GVCF", "-L", "chr1:550-700")));
         HcAllAnnotationsDump.run(dir, "mutect2-flow", Mutect2::new, bam, fasta, flow);
+        // --flow-assembly-collapse-hmer-size: the A homopolymer of six and the C one of five are
+        // longer than these thresholds, and the haplotypes' deletions beside them are put back.
+        final String collapse = "--flow-assembly-collapse-hmer-size";
+        HcAllAnnotationsDump.run(dir, "hc-collapse-4", HaplotypeCaller::new, bam, fasta, List.of(collapse, "4"));
+        HcAllAnnotationsDump.run(dir, "hc-collapse-3-partial", HaplotypeCaller::new, bam, fasta,
+                List.of(collapse, "3", "--flow-assembly-collapse-partial-mode"));
+        HcAllAnnotationsDump.run(dir, "hc-collapse-determined", HaplotypeCaller::new, bam, fasta, List.of(collapse, "-1"));
+        HcAllAnnotationsDump.run(dir, "hc-flow-collapse-4", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(flow, List.of(collapse, "4")));
+        HcAllAnnotationsDump.run(dir, "ramped-collapse-4", org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller::new,
+                bam, fasta, List.of(collapse, "4"));
     }
 }

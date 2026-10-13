@@ -106,6 +106,7 @@ pub mod gvcf_blocks;
 pub mod haplotype_based_variant_recaller;
 pub mod haplotype_caller;
 pub mod haplotype_caller_engine;
+pub mod haplotype_collapsing;
 pub mod hc_genotyping;
 pub mod hc_region;
 pub mod hdf5_writer;

@@ -84,6 +84,8 @@ pub struct CallRegionContext<'a> {
     /// anyway. One the trimmer found no variation in then fails, as the reference's
     /// `getVariantRegion` does.
     pub disable_optimizations: bool,
+    /// The haplotype collapsing settings.
+    pub collapse: CollapseSettings,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -426,6 +428,30 @@ pub fn call_region(
         .likelihood_engine
         .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
         .map_err(calling)?;
+    // The collapsing engine `assembleReads` built for the region: a threshold above zero and a
+    // run longer than it in the reference under the padded span. Read back from a post-assembler
+    // on ramp, the set has none, and the ramped engine builds one only for a threshold given.
+    let threshold = if on_kind == Some(OnRampType::PostAssembler) {
+        context.collapse.raw
+    } else {
+        context.collapse.determined
+    };
+    let padded_span = region.padded_span().clone();
+    let collapsing = (threshold > 0
+        && crate::haplotype_collapsing::needs_collapsing(
+            &context.contig_bases[padded_span.start as usize - 1..padded_span.end as usize],
+            threshold,
+        ))
+    .then(|| crate::haplotype_collapsing::HaplotypeCollapsing {
+        hmer_size_threshold: threshold,
+        partial_mode: context.collapse.partial,
+        full_ref: assembly.full_reference_with_padding().to_vec(),
+        ref_loc: ref_loc.clone(),
+        parameters: context.assembly.haplotype_to_reference_sw.clone(),
+    });
+    if let (false, Some(engine)) = (ramped, &collapsing) {
+        uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
+    }
     // `filterAlleles`: HaplotypeCaller's engine before realigning, the ramped one after its
     // pre-filter off ramp.
     let mut suspicious = std::collections::BTreeSet::new();
@@ -493,6 +519,9 @@ pub fn call_region(
         },
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    if let (true, Some(engine)) = (ramped, &collapsing) {
+        uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
+    }
     // The pre-filter off ramp: the realigned likelihoods, before any allele is filtered.
     if ramp_kind == Some(crate::ramp_files::OffRampType::PreFilter) {
         if let Some(ramp) = context.off_ramp {
@@ -530,6 +559,44 @@ pub fn call_region(
         &suspicious,
         pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
     )
+}
+
+/// `--flow-assembly-collapse-hmer-size` as given (`raw`) and as `assembleReads` resolves -1
+/// (`determined`), and `--flow-assembly-collapse-partial-mode`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CollapseSettings {
+    pub raw: i32,
+    pub determined: i32,
+    pub partial: bool,
+}
+
+/// `possiblyUncollapseHaplotypesInReadLikelihoods`: the haplotypes put back to the reference's
+/// hmer lengths and those made identical merged.
+fn uncollapse(
+    engine: &crate::haplotype_collapsing::HaplotypeCollapsing,
+    likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+    haplotypes: &mut Vec<Haplotype>,
+    aligner: &dyn gatk_engine::smith_waterman::SmithWatermanAligner,
+) -> Result<(), String> {
+    let original: Vec<Haplotype> = (0..likelihoods.number_of_alleles())
+        .filter_map(|index| likelihoods.get_allele(index).cloned())
+        .collect();
+    let uncollapsed = engine.uncollapse_hmers_in_haplotypes(&original, aligner)?;
+    let groups = crate::haplotype_collapsing::identical_by_sequence(&uncollapsed)?;
+    let new_to_old: Vec<(Haplotype, Vec<Haplotype>)> = groups
+        .iter()
+        .map(|(key, members)| {
+            (
+                uncollapsed[*key].clone(),
+                members.iter().map(|&m| original[m].clone()).collect(),
+            )
+        })
+        .collect();
+    *likelihoods = likelihoods
+        .marginalize(&new_to_old)
+        .map_err(|e| format!("{e:?}"))?;
+    *haplotypes = new_to_old.into_iter().map(|(h, _)| h).collect();
+    Ok(())
 }
 
 /// The genotyping and, in reference-confidence mode, the flanks and the per-base records: what
