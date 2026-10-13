@@ -228,5 +228,21 @@ public class HcFlowDump {
         HcAllAnnotationsDump.run(dir, "hc-stepwise-no-filter", HaplotypeCaller::new, bam, fasta, List.of(stepwise));
         HcAllAnnotationsDump.run(dir, "hc-stepwise-flow-based", HaplotypeCaller::new, bam, fasta,
                 HcPedigreeDump.concat(flow, List.of(stepwise, "--flow-filter-alleles")));
+        // --flow-order-for-annotations: what the flow annotations read is the first entry with no
+        // read group; CycleSkipStatus writes only with one.
+        final List<String> flowAnnotations = List.of("-A", "CycleSkipStatus", "-A", "HmerIndelLength", "-A", "HmerMotifs",
+                "-A", "VariantType", "-A", "GcContent", "-A", "IndelClassify");
+        HcAllAnnotationsDump.run(dir, "hc-flow-annotations", HaplotypeCaller::new, bam, fasta, flowAnnotations);
+        HcAllAnnotationsDump.run(dir, "hc-flow-annotations-order", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(flowAnnotations, List.of("--flow-order-for-annotations", "ACGT")));
+        HcAllAnnotationsDump.run(dir, "hc-flow-annotations-group-order", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(flowAnnotations, List.of("--flow-order-for-annotations", "rgF:CATG",
+                        "--flow-order-for-annotations", "GTAC")));
+        HcAllAnnotationsDump.run(dir, "hc-flow-annotations-only-group", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(flowAnnotations, List.of("--flow-order-for-annotations", "rgF:CATG")));
+        HcAllAnnotationsDump.run(dir, "hc-flow-order-without-annotation", HaplotypeCaller::new, bam, fasta,
+                List.of("--flow-order-for-annotations", "ACGT"));
+        HcAllAnnotationsDump.run(dir, "mutect2-flow-annotations-order", Mutect2::new, bam, fasta,
+                HcPedigreeDump.concat(flowAnnotations, List.of("--flow-order-for-annotations", "TACG")));
     }
 }

@@ -293,6 +293,52 @@ pub(crate) fn resolve_read_filters_in(
     })
 }
 
+/// The flow annotations, the `FlowAnnotatorBase` classes `--flow-order-for-annotations` goes to.
+const FLOW_ANNOTATIONS: [&str; 8] = [
+    "CycleSkipStatus",
+    "GcContent",
+    "HmerIndelLength",
+    "HmerIndelNuc",
+    "HmerMotifs",
+    "IndelClassify",
+    "IndelLength",
+    "VariantType",
+];
+
+/// `validateAndResolvePlugins`' flow step: `--flow-order-for-annotations` with no flow annotation
+/// resolved is refused, the flow annotations named in the plugin's `HashMap` order. What the
+/// annotations then read is the first entry naming no read group.
+pub(crate) fn flow_order_for_annotations(
+    parser: &Parser,
+    resolved: &[&gatk_annotation::catalogue::Entry],
+) -> Result<Option<String>, Thrown> {
+    let entries = arguments(parser, "flow-order-for-annotations");
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    if !resolved
+        .iter()
+        .any(|entry| FLOW_ANNOTATIONS.contains(&entry.name))
+    {
+        let all: Vec<String> = gatk_annotation::catalogue::CATALOGUE
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect();
+        let order = gatk_engine::java_hash::hash_set_order(&all).unwrap_or(all);
+        let named: Vec<&str> = order
+            .iter()
+            .map(String::as_str)
+            .filter(|name| FLOW_ANNOTATIONS.contains(name))
+            .collect();
+        return Err(Thrown::command_line(format!(
+            "Flow argument \"flow-order-for-annotations\" was specified without a flow based \
+             annotation being requested, (eg: {}))",
+            named.join(", ")
+        )));
+    }
+    Ok(entries.into_iter().find(|entry| !entry.contains(':')))
+}
+
 /// The pedigree annotations, the ones `GATKAnnotationPluginDescriptor` hands `--pedigree` and
 /// `--founder-id`.
 const PEDIGREE_ANNOTATIONS: [&str; 4] = [
@@ -15862,6 +15908,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
         pedigree: Default::default(),
+        flow_order_for_annotations: None,
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
 

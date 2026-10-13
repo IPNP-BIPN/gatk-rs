@@ -141,6 +141,9 @@ pub struct Engine {
     pub assembly_complexity_reference_mode: bool,
     /// What `--pedigree` and `--founder-id` hand the pedigree annotations.
     pub pedigree: PedigreeArguments,
+    /// `--flow-order-for-annotations`, as the flow annotations end up reading it: the first entry
+    /// with no read group (a read's group is looked up and the answer dropped).
+    pub flow_order_for_annotations: Option<String>,
 }
 
 /// The pedigree annotations' inputs: the trios `--pedigree` gives `PossibleDeNovo` and
@@ -271,7 +274,14 @@ impl Engine {
             let values = if use_raw && entry.is_reducible() {
                 annotate_raw(entry, &genotype_annotated, site)?
             } else {
-                annotate_info(entry, &genotype_annotated, site, random, &self.pedigree)?
+                annotate_info(
+                    entry,
+                    &genotype_annotated,
+                    site,
+                    random,
+                    &self.pedigree,
+                    self.flow_order_for_annotations.as_deref(),
+                )?
             };
             for (key, value) in values {
                 put(&mut attributes, &key, value);
@@ -571,6 +581,7 @@ fn annotate_info(
     site: &Site<'_>,
     random: &mut JavaRandom,
     pedigree: &PedigreeArguments,
+    flow_order: Option<&str>,
 ) -> Result<Vec<(String, Value)>, EngineError> {
     // `getFounderGenotypes`: every genotype, or only the founders' when there are founders.
     let founders_only = |vc: &VariantContext| -> VariantContext {
@@ -767,7 +778,9 @@ fn annotate_info(
         .map(|(key, ids)| (key, Value::List(ids.into_iter().map(Value::Str).collect())))
         .collect(),
         "VariantType" | "GcContent" | "HmerIndelLength" | "HmerIndelNuc" | "HmerMotifs"
-        | "IndelClassify" | "IndelLength" | "CycleSkipStatus" => flow_values(entry.name, vc, site),
+        | "IndelClassify" | "IndelLength" | "CycleSkipStatus" => {
+            flow_values(entry.name, vc, site, flow_order)?
+        }
         name => {
             return Err(limitation(format!(
                 "the {name} annotation is not ported for VariantAnnotator yet."
@@ -849,16 +862,37 @@ fn annotate_jumbo_info<E: Clone + PartialEq>(
 }
 
 /// One flow annotation's keys, out of the eight `FlowAnnotatorBase` computes together.
-fn flow_values(name: &str, vc: &VariantContext, site: &Site<'_>) -> Vec<(String, Value)> {
+fn flow_values(
+    name: &str,
+    vc: &VariantContext,
+    site: &Site<'_>,
+    flow_order: Option<&str>,
+) -> Result<Vec<(String, Value)>, EngineError> {
     use gatk_annotation::flow;
-    if name == "CycleSkipStatus" {
-        return Vec::new();
-    }
     let window = flow::Window {
         start: site.window.0,
         bases: site.window.1,
     };
-    let computed = flow::annotate(vc, &window, "TGCA");
+    let computed = flow::annotate(vc, &window, flow_order.unwrap_or(flow::DEFAULT_FLOW_ORDER));
+    if name == "CycleSkipStatus" {
+        // Computed whatever the flow order, so a motif list that ran off the window throws; written
+        // only with an actual flow order, which the annotation requires.
+        return match computed.cycle_skip {
+            Err(flow::CycleSkipError::MissingMotifList) => Err(EngineError::Runtime {
+                class: "java.lang.NullPointerException".to_string(),
+                message: "Cannot invoke \"java.util.List.get(int)\"".to_string(),
+            }),
+            Err(flow::CycleSkipError::KeyFromNullMotif) => Err(EngineError::Runtime {
+                class: "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
+                message: "baseArrayToKey periodGuard tripped".to_string(),
+            }),
+            Ok(css) if flow_order.is_some() => Ok(vec![(
+                "X_CSS".to_string(),
+                Value::List(css.into_iter().map(Value::Str).collect()),
+            )]),
+            Ok(_) => Ok(Vec::new()),
+        };
+    }
     let strings = |values: &[String]| Value::List(values.iter().cloned().map(Value::Str).collect());
     let optional_strings = |values: &[Option<String>]| {
         Value::List(
@@ -914,7 +948,7 @@ fn flow_values(name: &str, vc: &VariantContext, site: &Site<'_>) -> Vec<(String,
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// `Float.toString`, which the encoder reaches for a `Float` attribute.

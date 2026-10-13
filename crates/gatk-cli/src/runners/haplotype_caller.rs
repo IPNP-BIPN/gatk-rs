@@ -25,6 +25,8 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // The flow annotations' flow order.
+    "flow-order-for-annotations",
     // Stepwise filtering with the flow aligner.
     "use-flow-aligner-for-stepwise-hc-filtering",
     // Long hmer collapsing.
@@ -434,6 +436,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
+    let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
     // `makeVariantAnnotations`: allele filtering brings its own annotation.
     let mut resolved = resolved;
     if flag(parser, "flow-filter-alleles") {
@@ -828,6 +831,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
         pedigree: pedigree_arguments(parser)?,
+        flow_order_for_annotations: annotation_flow_order.clone(),
     };
 
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {

@@ -20,6 +20,8 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // The flow annotations' flow order.
+    "flow-order-for-annotations",
     // The flow-based presets.
     "flow-mode",
     // Long hmer collapsing and allele filtering before genotyping.
@@ -302,6 +304,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
+    let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
     let ReadWalkerStart {
         source,
         header,
@@ -560,6 +563,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
         pedigree: pedigree_arguments(parser)?,
+        flow_order_for_annotations: annotation_flow_order.clone(),
     };
     let mut random = gatk_random();
     let called = m2::call_variants(
