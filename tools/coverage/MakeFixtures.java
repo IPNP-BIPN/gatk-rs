@@ -729,7 +729,8 @@ public class MakeFixtures {
      * seeded `java.util.Random`. The BAM holds a tumour and a normal sample over it, fifty-base reads
      * tiled every
      * five bases from 800 to 2150, one forward and one reverse per start and sample, so each site is
-     * about twenty reads deep in each sample. Six sites carry an alternate: at 1000 a clean somatic
+     * about twenty reads deep in each sample; mutect_t.bam is the tumour sample alone. Six sites
+     * carry an alternate: at 1000 a clean somatic
      * variant (two reads in five of the tumour), at 1200 a germline het in both samples, at 1400
      * two tumour reads only, at 1600 an alternate on forward reads alone, at 1800 an alternate whose
      * base quality is low, and at 1950 one near the reads' first bases.
@@ -815,6 +816,22 @@ public class MakeFixtures {
                      new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(header, true,
                              bam.toFile())) {
             records.forEach(writer::addAlignment);
+        }
+        // The tumour sample alone, for the germline callers: HaplotypeCaller's reference-confidence
+        // mode refuses more than one sample, and a header still naming the normal read group
+        // would make it two even with none of its reads.
+        final SAMFileHeader tumorHeader = header.clone();
+        tumorHeader.setReadGroups(List.of(header.getReadGroup("rgT")));
+        try (final SAMFileWriter writer =
+                     new SAMFileWriterFactory().setCreateIndex(true).makeBAMWriter(tumorHeader, true,
+                             dir.resolve("mutect_t.bam").toFile())) {
+            for (final SAMRecord record : records) {
+                if ("rgT".equals(record.getAttribute("RG"))) {
+                    record.setHeader(tumorHeader);
+                    writer.addAlignment(record);
+                    record.setHeader(header);
+                }
+            }
         }
         new org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2().instanceMain(new String[] {
                 "--input", bam.toString(),

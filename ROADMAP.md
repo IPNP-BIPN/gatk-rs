@@ -471,7 +471,16 @@ copy, which is a worse position than reading the source rather than a better one
 
 ## Milestone G3: the variant callers (individually multi-month)
 
-- [ ] `HaplotypeCaller`, `Mutect2` and relatives: assembly graph, genotyping
+- [x] `HaplotypeCaller`, `Mutect2` and relatives: assembly graph, genotyping. Each run end to end
+      by the tool itself on an indexed BAM and a FASTA, golden from the pinned container:
+      `hc-end-to-end` (seven runs, the generator carried between them), `hc-gvcf-end-to-end`
+      (GVCF and BP_RESOLUTION), `mutect2-end-to-end` (tumor only, tumor-normal, germline sites) and
+      `ramps-end-to-end` (RampedHaplotypeCaller's three off ramps and two on ramps, the zips
+      compared entry by entry, the haplotype BAM and its index as bytes). Over their t=2 covering
+      arrays the port answers as the reference on every row: HaplotypeCaller 42/42 (31 distinct
+      outputs), RampedHaplotypeCaller 42/42 (31), Mutect2 25/25 (16). The ramp arguments are not
+      in the arrays, because gatkdoc omits `RampedHaplotypeCallerArgumentCollection` and the
+      inventory is built from gatkdoc; the ramps suite is where they are measured
 - [x] **PairHMM** targeting the pure-Java `LoglessPairHMM` semantics. The implementation is pinned
       in the oracle contract, since `FASTEST_AVAILABLE` resolves per host: the `pair-hmm` golden
       records which of the three loaded on the runner, and the two vectorised ones did not. All

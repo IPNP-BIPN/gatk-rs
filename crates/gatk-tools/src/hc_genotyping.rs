@@ -67,6 +67,9 @@ pub struct HcGenotypingArguments {
     pub emit_reference_confidence: bool,
     /// The reference-confidence model's switches, read only in that mode.
     pub ref_confidence: crate::reference_confidence_model::RefConfidenceArguments,
+    /// `RampedHaplotypeCallerEngine` in place of HaplotypeCaller's, which `callRegion` follows
+    /// where the two part.
+    pub ramped_engine: bool,
 }
 
 impl Default for HcGenotypingArguments {
@@ -80,6 +83,7 @@ impl Default for HcGenotypingArguments {
             do_physical_phasing: false,
             emit_reference_confidence: false,
             ref_confidence: Default::default(),
+            ramped_engine: false,
         }
     }
 }

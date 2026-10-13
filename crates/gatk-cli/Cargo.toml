@@ -36,3 +36,5 @@ sha2.workspace = true
 
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }
+# The off-ramp conformance reads back the zip RampedHaplotypeCaller wrote.
+zip = { version = "9", default-features = false, features = ["deflate"] }

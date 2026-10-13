@@ -165,6 +165,29 @@ impl ActiveRegionEvaluator {
         }
     }
 
+    /// What `activeRegionArgs` copies from the caller's arguments with
+    /// `copyStandardCallerArgsFrom`, after `validateAndInitializeArgs` has run: the assignment
+    /// method, `--use-posteriors-to-calculate-qual`, and `annotateAllSitesWithPLs` (forced on in
+    /// reference-confidence mode), which `MinimalGenotypingEngine.forceKeepAllele` also answers.
+    /// Its `calculateGenotypes` hands over a Hardy-Weinberg prior calculator.
+    pub fn configure_from_caller(
+        &mut self,
+        method: SubsetMethod,
+        use_posteriors_to_calculate_qual: bool,
+        annotate_all_sites_with_pls: bool,
+    ) {
+        self.engine.configuration.assignment_method = method;
+        self.engine.configuration.annotate_all_sites_with_pls = annotate_all_sites_with_pls;
+        self.engine.configuration.force_keep_all_alleles = annotate_all_sites_with_pls;
+        self.engine
+            .set_use_posteriors_to_calculate_qual(use_posteriors_to_calculate_qual);
+        self.engine
+            .set_genotype_priors(crate::genotyping_engine::GenotypePriors::assuming_hw(
+                jmath::math::log10(self.arguments.snp_heterozygosity),
+                jmath::math::log10(self.arguments.indel_heterozygosity),
+            ));
+    }
+
     /// `isActive(context, ref, features)`, `ref_base` being the reference base at the locus.
     pub fn is_active(
         &mut self,

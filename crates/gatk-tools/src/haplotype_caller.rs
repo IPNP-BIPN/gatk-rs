@@ -21,7 +21,7 @@ use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
 use gatk_engine::assembly_region_walker::{needs_downsampler, traverse_with_pileups};
-use gatk_engine::downsampling::positional_downsample;
+use gatk_engine::downsampling::positional_downsample_with;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_random::JavaRandom;
 use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
@@ -30,11 +30,11 @@ use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
-use crate::genotyping_engine::{Configuration, GenotypingEngine};
+use crate::genotyping_engine::{Configuration, GenotypePriors, GenotypingEngine};
 use crate::haplotype_caller_engine::{ActiveRegionEvaluator, ActivityType, IsActiveArguments};
 use crate::hc_genotyping::{CallAnnotator, HcGenotypingArguments};
 use crate::hc_region::{
-    call_region, haplotype_caller_assembler, CallRegionContext, RegionAssemblyArguments,
+    assembler_from, call_region, AssemblerArguments, CallRegionContext, RegionAssemblyArguments,
 };
 use crate::variant_annotator_engine::Engine as AnnotatorEngine;
 
@@ -47,12 +47,24 @@ pub struct HaplotypeCallerArguments {
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
+    /// The read-threading assembler's own arguments.
+    pub assembler: AssemblerArguments,
     pub likelihoods: LikelihoodEngineArguments,
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
     /// `--mapping-quality-threshold-for-genotyping`.
     pub mapping_quality_threshold: u8,
+    /// `--use-posteriors-to-calculate-qual`.
+    pub use_posteriors_to_calculate_qual: bool,
+    /// `nonRandomDownsamplingMode()`, which `RampedHaplotypeCaller` turns on.
+    pub non_random_downsampling: bool,
+    /// RampedHaplotypeCaller's `--off-ramp-type` and `--off-ramp-file`.
+    pub off_ramp: Option<(crate::ramp_files::OffRampType, std::path::PathBuf)>,
+    /// RampedHaplotypeCaller's `--on-ramp-type` and `--on-ramp-file`.
+    pub on_ramp: Option<(crate::ramp_files::OnRampType, std::path::PathBuf)>,
+    /// The BGZF level and deflater the run writes block-compressed files with.
+    pub compression: (u32, htsjdk_bgzf::Deflater),
 }
 
 /// What a run refuses, with the Java class it would be thrown as.
@@ -97,15 +109,45 @@ pub fn call_variants(
     let samples = samples_from_header(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
     let mut evaluator = ActiveRegionEvaluator::new(arguments.is_active.clone(), samples.clone());
+    evaluator.configure_from_caller(
+        arguments.calling.assignment_method,
+        arguments.use_posteriors_to_calculate_qual,
+        arguments.calling.annotate_all_sites_with_pls,
+    );
     let mut engine = GenotypingEngine::new(
         arguments.calling,
         AlleleFrequencyCalculator::make_calculator(&arguments.priors),
     );
-    let assembler = haplotype_caller_assembler(arguments.assembly.min_base_quality_score);
+    // `resolveGenotypePriorCalculator` without DRAGstr: Hardy-Weinberg over the two
+    // heterozygosities, which only `USE_POSTERIOR_PROBABILITIES` reads.
+    engine.set_genotype_priors(GenotypePriors::assuming_hw(
+        jmath::math::log10(arguments.priors.snp_heterozygosity),
+        jmath::math::log10(arguments.priors.indel_heterozygosity),
+    ));
+    engine.set_use_posteriors_to_calculate_qual(arguments.use_posteriors_to_calculate_qual);
+    let assembler = assembler_from(
+        &arguments.assembler,
+        arguments.assembly.min_base_quality_score,
+    )
+    .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
     let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
         .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
     let genotyping = arguments.genotyping.clone();
 
+    // `buildRamps`: the off ramp is opened before the traversal and written when it ends.
+    let off_ramp = arguments.off_ramp.as_ref().map(|(kind, _)| {
+        std::cell::RefCell::new(crate::ramp_files::OffRamp::new(
+            *kind,
+            arguments.compression,
+        ))
+    });
+    // The on ramp is read whole when the engine is built.
+    let on_ramp = arguments
+        .on_ramp
+        .as_ref()
+        .map(|(kind, path)| crate::ramp_files::OnRamp::open(*kind, path))
+        .transpose()
+        .map_err(|message| HaplotypeCallerError::new("RuntimeException", message))?;
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -121,10 +163,11 @@ pub fn call_variants(
             &mut |reads| {
                 // `createDownsampler()`: a `PositionalDownsampler` only above zero.
                 if needs_downsampler(&arguments.region) {
-                    positional_downsample(
+                    positional_downsample_with(
                         reads,
                         arguments.region.max_reads_per_alignment_start as usize,
                         random,
+                        arguments.non_random_downsampling,
                     )
                 } else {
                     reads.to_vec()
@@ -170,6 +213,8 @@ pub fn call_variants(
             likelihood_engine: &likelihood_engine,
             genotyping: &genotyping,
             mapping_quality_threshold: arguments.mapping_quality_threshold,
+            off_ramp: off_ramp.as_ref(),
+            on_ramp: on_ramp.as_ref(),
         };
         for traversed in regions {
             let region_calls = call_region(
@@ -184,6 +229,12 @@ pub fn call_variants(
             .map_err(|e| HaplotypeCallerError::new("GATKException", format!("{e:?}")))?;
             calls.extend(region_calls);
         }
+    }
+    // `tearRamps`: the zip is written as the engine shuts down.
+    if let (Some(ramp), Some((_, path))) = (&off_ramp, &arguments.off_ramp) {
+        ramp.borrow()
+            .write(path)
+            .map_err(|message| HaplotypeCallerError::new("GATKException", message))?;
     }
     Ok(calls)
 }

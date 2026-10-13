@@ -34,7 +34,7 @@ pub use funcotator::{funcotate_segments, funcotator, funcotator_data_source_down
 pub type Outcome = Result<Option<String>, Thrown>;
 
 mod haplotype_caller;
-pub use haplotype_caller::haplotype_caller;
+pub use haplotype_caller::{haplotype_caller, ramped_haplotype_caller};
 mod mutect2;
 pub use mutect2::mutect2;
 mod joint_germline_cnv;
@@ -1387,7 +1387,7 @@ pub fn create_hadoop_bam_splitting_index(parser: &Parser) -> Outcome {
 /// `--use-jdk-deflater` chooses the first and `GATKConfig`'s `samjdk.compression_level` the
 /// second, and neither is htsjdk's own default. Every file a tool writes block compressed depends
 /// on both (#1032).
-fn output_compression(parser: &Parser) -> (u32, htsjdk_bgzf::Deflater) {
+pub(crate) fn output_compression(parser: &Parser) -> (u32, htsjdk_bgzf::Deflater) {
     let level = gatk_tools::gatk_config::compression_level(
         std::env::var(gatk_tools::gatk_config::COMPRESSION_LEVEL)
             .ok()

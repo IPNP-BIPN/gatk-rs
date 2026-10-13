@@ -96,6 +96,18 @@ const HONOURED: &[&str] = &[
     "max-mnp-distance",
     "recover-all-dangling-branches",
     "min-dangling-branch-length",
+    "smith-waterman-dangling-end-match-value",
+    "smith-waterman-dangling-end-mismatch-penalty",
+    "smith-waterman-dangling-end-gap-open-penalty",
+    "smith-waterman-dangling-end-gap-extend-penalty",
+    "smith-waterman-haplotype-to-reference-match-value",
+    "smith-waterman-haplotype-to-reference-mismatch-penalty",
+    "smith-waterman-haplotype-to-reference-gap-open-penalty",
+    "smith-waterman-haplotype-to-reference-gap-extend-penalty",
+    "smith-waterman-read-to-haplotype-match-value",
+    "smith-waterman-read-to-haplotype-mismatch-penalty",
+    "smith-waterman-read-to-haplotype-gap-open-penalty",
+    "smith-waterman-read-to-haplotype-gap-extend-penalty",
     // Mutect2's own.
     "normal-sample",
     "tumor-sample",
@@ -114,6 +126,35 @@ const HONOURED: &[&str] = &[
     "normal-lod",
     "ignore-itr-artifacts",
     "minimum-allele-fraction",
+    // The read-threading assembler, shared with HaplotypeCaller.
+    "allow-non-unique-kmers-in-ref",
+    "dont-increase-kmer-sizes-for-cycles",
+    "disable-adaptive-pruning",
+    "kmer-size",
+    "num-pruning-samples",
+    "min-pruning",
+    "adaptive-pruning-initial-error-rate",
+    "pruning-lod-threshold",
+    "pruning-seeding-lod-threshold",
+    "max-unpruned-variants",
+    "enable-legacy-graph-cycle-detection",
+    "num-matching-bases-in-dangling-end-to-recover",
+    "max-num-haplotypes-in-population",
+    "disable-artificial-haplotype-recovery",
+    "independent-mates",
+    // Without a panel of normals, a Permutect dataset, a bamout, --alleles, a native PairHMM or a
+    // DRAGstr model these change nothing; --debug-assembly is logged only.
+    "genotype-pon-sites",
+    "permutect-dataset-mode",
+    "bam-writer-type",
+    "debug-assembly",
+    "force-call-filtered-alleles",
+    "native-pair-hmm-use-double-precision",
+    "dont-use-dragstr-pair-hmm-scores",
+    // The implementations, refused below when they name a kernel this port does not carry.
+    "pair-hmm-implementation",
+    "smith-waterman",
+    "likelihood-calculation-engine",
 ];
 
 fn limitation(what: &str) -> Thrown {
@@ -161,6 +202,22 @@ fn pcr_model(parser: &Parser) -> PcrErrorModel {
 /// `Mutect2.doWork`.
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
+    match scalar(parser, "likelihood-calculation-engine").as_deref() {
+        None | Some("PairHMM") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} likelihood engine is not ported for Mutect2."
+            )))
+        }
+    }
+    match scalar(parser, "pair-hmm-implementation").as_deref() {
+        None | Some("LOGLESS_CACHING") | Some("FASTEST_AVAILABLE") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} PairHMM is not ported; only LOGLESS_CACHING is."
+            )))
+        }
+    }
     let resolved = catalogue::resolve(
         &catalogue::AnnotationArguments {
             annotations: arguments(parser, "annotation"),
@@ -278,6 +335,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         .validate()
         .map_err(|error| Thrown::command_line(error.message()))?;
     let mismapping = double_or(parser, "phred-scaled-global-read-mismapping-rate", 45.0);
+    let sw = super::haplotype_caller::smith_waterman_arguments(parser);
     let log10_to_log = gatk_engine::allele_likelihoods::log10_to_log;
     let default_af = {
         let given = double_or(parser, "af-of-alleles-not-in-resource", -1.0);
@@ -310,6 +368,9 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             soft_clip_low_quality_ends: flag(parser, "soft-clip-low-quality-ends"),
             override_softclip_fragment_check: flag(parser, "override-fragment-softclip-check"),
             do_not_correct_overlapping_base_qualities: true,
+            dangling_end_sw: sw.0,
+            haplotype_to_reference_sw: sw.1,
+            read_to_haplotype_sw: sw.2,
         },
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
@@ -377,8 +438,15 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             0,
         ),
         downsampling_stride: number_or(parser, "downsampling-stride", 1),
-        recover_all_dangling_branches: flag(parser, "recover-all-dangling-branches"),
-        min_dangling_branch_length: number_or(parser, "min-dangling-branch-length", 4),
+        assembler: {
+            let mut assembler = super::haplotype_caller::assembler_arguments(
+                parser,
+                !flag(parser, "disable-adaptive-pruning"),
+            );
+            assembler.recover_dangling_branches = true;
+            assembler
+        },
+        independent_mates: flag(parser, "independent-mates"),
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {
         resolved: resolved.clone(),
@@ -497,5 +565,6 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     );
     std::fs::write(format!("{output}.stats"), stats)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}.stats: {error}")))?;
-    Ok(None)
+    // `onTraversalSuccess` returns "SUCCESS", which `handleResult` prints.
+    Ok(Some("SUCCESS".to_string()))
 }

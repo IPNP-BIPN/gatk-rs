@@ -8080,6 +8080,408 @@
         "0",
         "1"
       ]
+    },
+    "HaplotypeCaller": {
+      "$why": [
+        "mutect_t.bam is the tumour sample of mutect_tn.bam alone, so reference-confidence mode accepts it; mutect_tn.bam",
+        "is both samples, which GVCF mode refuses and VCF mode calls jointly. Both are over mutect_ref.fasta, about twenty",
+        "reads deep, with a somatic SNV, a germline het, a two-read site, a forward-only alternate, a low-quality one and",
+        "one near the reads' starts.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false: the first carries the run's",
+        "date, the second the output's last-modified time.",
+        "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
+        "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
+        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "Held out, as features this port does not carry: DRAGEN mode (--dragen-mode, --apply-bqd, --apply-frd,",
+        "--transform-dragen-mapping-quality, and --dragen-378-concordance-mode, which Barclay refuses beside --dragen-mode),",
+        "the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
+        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
+        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
+        "for the allele-specific ones."
+      ],
+      "--input": [
+        "/work/fixtures/mutect_t.bam",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/out.vcf"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--pair-hmm-implementation": [
+        "LOGLESS_CACHING"
+      ],
+      "--smith-waterman": [
+        "JAVA"
+      ],
+      "--likelihood-calculation-engine": [
+        "PairHMM"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--smith-waterman-dangling-end-match-value": [
+        "25",
+        "26"
+      ],
+      "--smith-waterman-dangling-end-mismatch-penalty": [
+        "-50",
+        "-51"
+      ],
+      "--smith-waterman-dangling-end-gap-open-penalty": [
+        "-110",
+        "-111"
+      ],
+      "--smith-waterman-dangling-end-gap-extend-penalty": [
+        "-6",
+        "-7"
+      ],
+      "--smith-waterman-haplotype-to-reference-match-value": [
+        "200",
+        "201"
+      ],
+      "--smith-waterman-haplotype-to-reference-mismatch-penalty": [
+        "-150",
+        "-151"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-open-penalty": [
+        "-260",
+        "-261"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-extend-penalty": [
+        "-11",
+        "-12"
+      ],
+      "--smith-waterman-read-to-haplotype-match-value": [
+        "10",
+        "11"
+      ],
+      "--smith-waterman-read-to-haplotype-mismatch-penalty": [
+        "-15",
+        "-16"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-open-penalty": [
+        "-30",
+        "-31"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-extend-penalty": [
+        "-5",
+        "-6"
+      ],
+      "--dragen-mode": [],
+      "--dragen-378-concordance-mode": [],
+      "--apply-bqd": [],
+      "--apply-frd": [],
+      "--transform-dragen-mapping-quality": [],
+      "--flow-mode": [],
+      "--flow-assembly-collapse-partial-mode": [],
+      "--flow-disallow-probs-larger-than-call": [],
+      "--flow-filter-alleles": [],
+      "--flow-filter-lone-alleles": [],
+      "--flow-lump-probs": [],
+      "--flow-remove-non-single-base-pair-indels": [],
+      "--flow-remove-one-zero-probs": [],
+      "--flow-report-insertion-or-deletion": [],
+      "--flow-retain-max-n-probs-base-format": [],
+      "--flow-symmetric-indel-probs": [],
+      "--flow-use-t0-tag": [],
+      "--keep-boundary-flows": [],
+      "--pileup-detection": [],
+      "--use-pdhmm": [],
+      "--use-pdhmm-overlap-optimization": [],
+      "--linked-de-bruijn-graph": [],
+      "--disable-optimizations": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--enable-all-annotations": [
+        "false"
+      ]
+    },
+    "Mutect2": {
+      "$why": [
+        "mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about twenty reads deep each, with a",
+        "somatic SNV, a germline het, a two-read site, a forward-only alternate, a low-quality one and one near the",
+        "reads' starts. --normal-sample names the normal or nothing, which makes both samples tumours.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false, as for HaplotypeCaller;",
+        "--pair-hmm-implementation at LOGLESS_CACHING, --smith-waterman at JAVA and --likelihood-calculation-engine at",
+        "PairHMM for the same reasons.",
+        "Held out, as features this port does not carry: somatic reference-confidence mode (--emit-ref-confidence),",
+        "mitochondria mode, the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
+        "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--enable-all-annotations is held at false, as for HaplotypeCaller: most of what it switches on is not computed in Mutect2's context by this port."
+      ],
+      "--input": [
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/out.vcf"
+      ],
+      "--normal-sample": [
+        "normal",
+        "null"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--pair-hmm-implementation": [
+        "LOGLESS_CACHING"
+      ],
+      "--smith-waterman": [
+        "JAVA"
+      ],
+      "--likelihood-calculation-engine": [
+        "PairHMM"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--smith-waterman-dangling-end-match-value": [
+        "25",
+        "26"
+      ],
+      "--smith-waterman-dangling-end-mismatch-penalty": [
+        "-50",
+        "-51"
+      ],
+      "--smith-waterman-dangling-end-gap-open-penalty": [
+        "-110",
+        "-111"
+      ],
+      "--smith-waterman-dangling-end-gap-extend-penalty": [
+        "-6",
+        "-7"
+      ],
+      "--smith-waterman-haplotype-to-reference-match-value": [
+        "200",
+        "201"
+      ],
+      "--smith-waterman-haplotype-to-reference-mismatch-penalty": [
+        "-150",
+        "-151"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-open-penalty": [
+        "-260",
+        "-261"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-extend-penalty": [
+        "-11",
+        "-12"
+      ],
+      "--smith-waterman-read-to-haplotype-match-value": [
+        "10",
+        "11"
+      ],
+      "--smith-waterman-read-to-haplotype-mismatch-penalty": [
+        "-15",
+        "-16"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-open-penalty": [
+        "-30",
+        "-31"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-extend-penalty": [
+        "-5",
+        "-6"
+      ],
+      "--flow-mode": [],
+      "--flow-assembly-collapse-partial-mode": [],
+      "--flow-disallow-probs-larger-than-call": [],
+      "--flow-filter-alleles": [],
+      "--flow-filter-lone-alleles": [],
+      "--flow-lump-probs": [],
+      "--flow-remove-non-single-base-pair-indels": [],
+      "--flow-remove-one-zero-probs": [],
+      "--flow-report-insertion-or-deletion": [],
+      "--flow-retain-max-n-probs-base-format": [],
+      "--flow-symmetric-indel-probs": [],
+      "--flow-use-t0-tag": [],
+      "--keep-boundary-flows": [],
+      "--pileup-detection": [],
+      "--use-pdhmm": [],
+      "--use-pdhmm-overlap-optimization": [],
+      "--linked-de-bruijn-graph": [],
+      "--emit-ref-confidence": [],
+      "--mitochondria-mode": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--enable-all-annotations": [
+        "false"
+      ]
+    },
+    "RampedHaplotypeCaller": {
+      "$why": [
+        "HaplotypeCaller's corpus and holds, for the same reasons.",
+        "mutect_t.bam is the tumour sample of mutect_tn.bam alone, so reference-confidence mode accepts it; mutect_tn.bam",
+        "is both samples, which GVCF mode refuses and VCF mode calls jointly. Both are over mutect_ref.fasta, about twenty",
+        "reads deep, with a somatic SNV, a germline het, a two-read site, a forward-only alternate, a low-quality one and",
+        "one near the reads' starts.",
+        "--add-output-vcf-command-line and --create-output-variant-index are held at false: the first carries the run's",
+        "date, the second the output's last-modified time.",
+        "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
+        "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
+        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "Held out, as features this port does not carry: DRAGEN mode (--dragen-mode, --apply-bqd, --apply-frd,",
+        "--transform-dragen-mapping-quality, and --dragen-378-concordance-mode, which Barclay refuses beside --dragen-mode),",
+        "the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
+        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
+        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
+        "for the allele-specific ones.",
+        "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
+        "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet."
+      ],
+      "--input": [
+        "/work/fixtures/mutect_t.bam",
+        "/work/fixtures/mutect_tn.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/mutect_ref.fasta"
+      ],
+      "--output": [
+        "/work/out/out.vcf"
+      ],
+      "--intervals": [
+        "null",
+        "chr1:900-1300"
+      ],
+      "--exclude-intervals": [
+        "null",
+        "chr1:1590-1610"
+      ],
+      "--add-output-vcf-command-line": [
+        "false"
+      ],
+      "--create-output-variant-index": [
+        "false"
+      ],
+      "--pair-hmm-implementation": [
+        "LOGLESS_CACHING"
+      ],
+      "--smith-waterman": [
+        "JAVA"
+      ],
+      "--likelihood-calculation-engine": [
+        "PairHMM"
+      ],
+      "--max-variants-per-shard": [
+        "0"
+      ],
+      "--smith-waterman-dangling-end-match-value": [
+        "25",
+        "26"
+      ],
+      "--smith-waterman-dangling-end-mismatch-penalty": [
+        "-50",
+        "-51"
+      ],
+      "--smith-waterman-dangling-end-gap-open-penalty": [
+        "-110",
+        "-111"
+      ],
+      "--smith-waterman-dangling-end-gap-extend-penalty": [
+        "-6",
+        "-7"
+      ],
+      "--smith-waterman-haplotype-to-reference-match-value": [
+        "200",
+        "201"
+      ],
+      "--smith-waterman-haplotype-to-reference-mismatch-penalty": [
+        "-150",
+        "-151"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-open-penalty": [
+        "-260",
+        "-261"
+      ],
+      "--smith-waterman-haplotype-to-reference-gap-extend-penalty": [
+        "-11",
+        "-12"
+      ],
+      "--smith-waterman-read-to-haplotype-match-value": [
+        "10",
+        "11"
+      ],
+      "--smith-waterman-read-to-haplotype-mismatch-penalty": [
+        "-15",
+        "-16"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-open-penalty": [
+        "-30",
+        "-31"
+      ],
+      "--smith-waterman-read-to-haplotype-gap-extend-penalty": [
+        "-5",
+        "-6"
+      ],
+      "--dragen-mode": [],
+      "--dragen-378-concordance-mode": [],
+      "--apply-bqd": [],
+      "--apply-frd": [],
+      "--transform-dragen-mapping-quality": [],
+      "--flow-mode": [],
+      "--flow-assembly-collapse-partial-mode": [],
+      "--flow-disallow-probs-larger-than-call": [],
+      "--flow-filter-alleles": [],
+      "--flow-filter-lone-alleles": [],
+      "--flow-lump-probs": [],
+      "--flow-remove-non-single-base-pair-indels": [],
+      "--flow-remove-one-zero-probs": [],
+      "--flow-report-insertion-or-deletion": [],
+      "--flow-retain-max-n-probs-base-format": [],
+      "--flow-symmetric-indel-probs": [],
+      "--flow-use-t0-tag": [],
+      "--keep-boundary-flows": [],
+      "--pileup-detection": [],
+      "--use-pdhmm": [],
+      "--use-pdhmm-overlap-optimization": [],
+      "--linked-de-bruijn-graph": [],
+      "--disable-optimizations": [],
+      "--read-index": [],
+      "--sequence-dictionary": [],
+      "--enable-all-annotations": [
+        "false"
+      ],
+      "--off-ramp-type": [
+        "NONE"
+      ],
+      "--on-ramp-type": [
+        "NONE"
+      ],
+      "--off-ramp-file": [],
+      "--on-ramp-file": [],
+      "--ramps-debug-reads": [],
+      "--ramps-debug-post-assembler-on": []
     }
   },
   "constraints": [
@@ -8424,6 +8826,50 @@
         "--create-output-variant-index": "true"
       },
       "why": "A plain VCF's .idx records the output's modification time, so two runs of the reference already differ there."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--floor-blocks": "true",
+        "--emit-ref-confidence": "NONE"
+      },
+      "why": "--floor-blocks refers to GVCF blocks and is refused outside reference-confidence mode, before anything is read."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "GVCF"
+      },
+      "why": "Reference-confidence mode refuses more than one sample; the pair would measure that refusal on every row it fills."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "BP_RESOLUTION"
+      },
+      "why": "As for GVCF: one refusal, at startup."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--read-filter": "MappedReadFilter",
+        "--disable-read-filter": "MappedReadFilter"
+      },
+      "why": "A filter both enabled and disabled is refused by the plugin descriptor while the command line is parsed."
     }
   ],
   "exclude": {
