@@ -7448,6 +7448,31 @@
       ]
     },
     {
+      "id": "hc-disable-optimizations",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller and RampedHaplotypeCaller with --disable-optimizations, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--disable-optimizations (G3.2b, #1331) lifts three shortcuts of callRegion. Lifted, a region the trimmer found no variation in asks the trimmer's result for a variant region it does not have, and the run fails with \"There is no variation present.\": in GVCF mode every region reaches that point, in VCF mode none does on these reads. Over HcDragenEndToEndDump's reads: VCF, VCF with --dragen-mode, GVCF (refused), an interval with no active region, and RampedHaplotypeCaller in VCF and GVCF (refused). One more run measures what the arrays found beside the flag: HaplotypeCaller's writer ignores --lenient, so a BP_RESOLUTION run with the default annotations off is refused over the reference-model records' AD however --lenient is set. The port writes what came before a failure before reporting it, as the reference's closeTool does in its finally.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\tgvcf\tjava.lang.IllegalStateException:There is no variation present.",
+        "error\tlenient-ignored\tjava.lang.IllegalStateException:Key AD found in VariantContext field FORMAT"
+      ],
+      "cases": [
+        {
+          "dump": "HcDisableOptimizationsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",
