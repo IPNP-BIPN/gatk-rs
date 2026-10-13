@@ -7426,7 +7426,7 @@
     },
     {
       "id": "hc-dragen-end-to-end",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller in DRAGEN mode, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7444,13 +7444,14 @@
       "cases": [
         {
           "dump": "HcDragenEndToEndDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_dragen_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38442469884, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-disable-optimizations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller and RampedHaplotypeCaller with --disable-optimizations, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7469,7 +7470,8 @@
       "cases": [
         {
           "dump": "HcDisableOptimizationsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_disable_optimizations.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38442469884, byte for byte the local dump."
         }
       ]
     },
