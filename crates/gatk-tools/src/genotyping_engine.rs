@@ -108,6 +108,11 @@ pub struct GenotypingEngine {
     calculator: AlleleFrequencyCalculator,
     /// `upstreamDeletionsLoc`: contig, start and end of each deletion emitted so far.
     upstream_deletions: VecDeque<(String, i64, i64)>,
+    /// The genotype prior calculator HaplotypeCaller passes to `calculateGenotypes`; `None` for
+    /// the tools that pass null.
+    genotype_priors: Option<GenotypePriors>,
+    /// `--use-posteriors-to-calculate-qual`.
+    use_posteriors_to_calculate_qual: bool,
 }
 
 fn is_span_del(allele: &Allele) -> bool {
@@ -187,6 +192,185 @@ impl SubsetMethod {
     }
 }
 
+/// `GenotypePriorCalculator`: log10 genotype priors from a het and a hom value per allele type
+/// (reference, SNP, indel, anything else), the SNP ones spread over the three other bases.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GenotypePriors {
+    het: [f64; 4],
+    hom: [f64; 4],
+    diff: [f64; 4],
+}
+
+const PRIOR_REF: usize = 0;
+const PRIOR_SNP: usize = 1;
+const PRIOR_INDEL: usize = 2;
+const PRIOR_OTHER: usize = 3;
+
+impl GenotypePriors {
+    fn new(snp: (f64, f64), indel: (f64, f64), other: (f64, f64)) -> Self {
+        // `LOG10_SNP_NORMALIZATION_CONSTANT`: log10 of the three bases a SNP can turn into.
+        let normalization = jmath::math::log10(3.0);
+        let mut het = [0.0; 4];
+        let mut hom = [0.0; 4];
+        het[PRIOR_SNP] = snp.0 - normalization;
+        hom[PRIOR_SNP] = snp.1 - normalization;
+        het[PRIOR_INDEL] = indel.0;
+        hom[PRIOR_INDEL] = indel.1;
+        het[PRIOR_OTHER] = other.0;
+        hom[PRIOR_OTHER] = other.1;
+        let mut diff = [0.0; 4];
+        for i in 0..4 {
+            diff[i] = hom[i] - het[i];
+        }
+        GenotypePriors { het, hom, diff }
+    }
+
+    /// `assumingHW(log10SnpHet, log10IndelHet)`: a hom is twice the het, and anything that is
+    /// neither a SNP nor an indel takes the larger of the two.
+    pub fn assuming_hw(log10_snp_het: f64, log10_indel_het: f64) -> Self {
+        let other = gatk_engine::math_utils::java_max(log10_snp_het, log10_indel_het);
+        GenotypePriors::new(
+            (log10_snp_het, log10_snp_het * 2.0),
+            (log10_indel_het, log10_indel_het * 2.0),
+            (other, other * 2.0),
+        )
+    }
+
+    /// `getLog10Priors(ploidy, alleles)`: zero for the hom-ref genotype, and for every other the
+    /// sum over its alleles of the het value (raised by the difference per extra copy) or, at
+    /// exactly two copies, the hom value.
+    pub fn log10_priors(&self, ploidy: usize, alleles: &[Allele]) -> Result<Vec<f64>, EngineError> {
+        let reference_length = alleles.first().map_or(0, Allele::len);
+        let mut types = Vec::with_capacity(alleles.len());
+        for allele in alleles {
+            types.push(if allele.is_reference() {
+                PRIOR_REF
+            } else if !allele.is_no_call() && !allele.is_symbolic() {
+                if allele.len() == reference_length {
+                    PRIOR_SNP
+                } else {
+                    PRIOR_INDEL
+                }
+            } else if matches!(allele.display_string().as_str(), "<INS>" | "<DEL>") {
+                return Err(EngineError::Runtime {
+                    class: "java.lang.IllegalArgumentException".to_string(),
+                    message: format!("cannot handle symbolic indels: {}", allele.display_string()),
+                });
+            } else {
+                PRIOR_OTHER
+            });
+        }
+        let genotypes = genotypes_in_canonical_order(ploidy, alleles.len());
+        let mut result = vec![0.0; genotypes.len()];
+        for (index, genotype) in genotypes.iter().enumerate().skip(1) {
+            let mut sum = 0.0;
+            let mut a = 0;
+            while a < genotype.len() {
+                let allele = genotype[a];
+                let count = genotype[a..].iter().take_while(|&&x| x == allele).count();
+                let t = types[allele];
+                sum += if count == 2 {
+                    self.hom[t]
+                } else {
+                    self.het[t] + self.diff[t] * (count as f64 - 1.0)
+                };
+                a += count;
+            }
+            result[index] = sum;
+        }
+        Ok(result)
+    }
+}
+
+/// `GATKVariantContextUtils.formatGP`: two decimals, with trailing zeros (and a bare point) cut.
+fn format_gp(value: f64) -> String {
+    let formatted = gatk_engine::java_format::format_decimals(value, 2);
+    if let Some(stripped) = formatted.strip_suffix("00") {
+        stripped.trim_end_matches('.').to_string()
+    } else if let Some(stripped) = formatted.strip_suffix('0') {
+        stripped.to_string()
+    } else {
+        formatted
+    }
+}
+
+/// `MathUtils.log10SumLog10(a, b)`, the two-argument form.
+fn log10_sum_log10_two(a: f64, b: f64) -> f64 {
+    if a > b {
+        a + jmath::math::log10(1.0 + gatk_engine::math_utils::pow10(b - a))
+    } else {
+        b + jmath::math::log10(1.0 + gatk_engine::math_utils::pow10(a - b))
+    }
+}
+
+/// `MathUtils.log10SumLog10(a, b, c)`, the three-argument form.
+fn log10_sum_log10_three(a: f64, b: f64, c: f64) -> f64 {
+    use gatk_engine::math_utils::pow10;
+    if a >= b && a >= c {
+        a + jmath::math::log10(1.0 + pow10(b - a) + pow10(c - a))
+    } else if b >= c {
+        b + jmath::math::log10(1.0 + pow10(a - b) + pow10(c - b))
+    } else {
+        c + jmath::math::log10(1.0 + pow10(a - c) + pow10(b - c))
+    }
+}
+
+/// `MathUtils.log10sumLog10(array, start, finish)`, the lower-case form: one element is returned
+/// as it is, and the sum is `1.0 + (the other terms)`.
+fn log10sum_log10(values: &[f64], start: usize, finish: usize) -> f64 {
+    if finish - start < 2 {
+        return if finish == start {
+            f64::NEG_INFINITY
+        } else {
+            values[start]
+        };
+    }
+    let max_index = gatk_engine::math_utils::max_element_index(values, start, finish);
+    let max_value = values[max_index];
+    if max_value == f64::NEG_INFINITY {
+        return max_value;
+    }
+    let mut sum = 0.0;
+    for (i, value) in values.iter().enumerate().take(finish).skip(start) {
+        if i != max_index {
+            sum += gatk_engine::math_utils::pow10(value - max_value);
+        }
+    }
+    max_value + jmath::math::log10(1.0 + sum)
+}
+
+/// `GATKVariantContextUtils.getGQLog10FromPosteriors`.
+fn gq_log10_from_posteriors(best: usize, posteriors: &[f64]) -> Option<f64> {
+    match posteriors.len() {
+        0 | 1 => None,
+        2 => Some(if best == 0 {
+            posteriors[1]
+        } else {
+            posteriors[0]
+        }),
+        3 => Some(gatk_engine::math_utils::java_min(
+            0.0,
+            log10_sum_log10_two(
+                posteriors[if best == 0 { 2 } else { best - 1 }],
+                posteriors[if best == 2 { 0 } else { best + 1 }],
+            ),
+        )),
+        n => Some(gatk_engine::math_utils::java_min(
+            0.0,
+            if best == 0 {
+                gatk_engine::math_utils::log10_sum_log10_range(posteriors, 1, n)
+            } else if best == n - 1 {
+                gatk_engine::math_utils::log10_sum_log10_range(posteriors, 0, best)
+            } else {
+                log10_sum_log10_two(
+                    log10sum_log10(posteriors, 0, best),
+                    log10sum_log10(posteriors, best + 1, n),
+                )
+            },
+        )),
+    }
+}
+
 /// `makeGenotypeCall(ploidy, gb, method, likelihoods, allelesToUse, originalGT, null)`.
 pub(crate) fn make_genotype_call(
     ploidy: usize,
@@ -195,6 +379,27 @@ pub(crate) fn make_genotype_call(
     likelihoods: Option<&[f64]>,
     targets: &[Allele],
     original: &Genotype,
+) -> Result<(), EngineError> {
+    make_genotype_call_with_priors(
+        ploidy,
+        genotype,
+        method,
+        likelihoods,
+        targets,
+        original,
+        None,
+    )
+}
+
+/// `makeGenotypeCall` with the genotype prior calculator `USE_POSTERIOR_PROBABILITIES` reads.
+pub(crate) fn make_genotype_call_with_priors(
+    ploidy: usize,
+    genotype: &mut Genotype,
+    method: SubsetMethod,
+    likelihoods: Option<&[f64]>,
+    targets: &[Allele],
+    original: &Genotype,
+    priors: Option<&GenotypePriors>,
 ) -> Result<(), EngineError> {
     // Before the method: a hom-ref or no-call with GQ 0 is a no-call, and with DP 0 as well it
     // loses everything but its name. `SET_TO_NO_CALL` alone skips it, "so CombineGVCFs and
@@ -268,11 +473,49 @@ pub(crate) fn make_genotype_call(
             };
         }
         SubsetMethod::UsePosteriorProbabilities => {
-            return Err(EngineError::Runtime {
-                class: "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
-                message: "cannot uses posteriors without an genotype prior calculator present"
-                    .to_string(),
-            });
+            let Some(priors) = priors else {
+                return Err(EngineError::Runtime {
+                    class: "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
+                    message: "cannot uses posteriors without an genotype prior calculator present"
+                        .to_string(),
+                });
+            };
+            let Some(gls) = likelihoods else {
+                return Err(EngineError::Runtime {
+                    class: "java.lang.NullPointerException".to_string(),
+                    message: "genotype likelihoods are null".to_string(),
+                });
+            };
+            let log10_priors = priors.log10_priors(ploidy, targets)?;
+            let posteriors: Vec<f64> = log10_priors.iter().zip(gls).map(|(p, l)| p + l).collect();
+            let max = posteriors.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let normalized: Vec<f64> = posteriors.iter().map(|v| v - max).collect();
+            let phred = |values: &[f64]| -> Value {
+                Value::List(
+                    values
+                        .iter()
+                        .map(|&v| Value::Str(format_gp(if v == 0.0 { 0.0 } else { v * -10.0 })))
+                        .collect(),
+                )
+            };
+            genotype
+                .extended
+                .push(("GP".to_string(), phred(&normalized)));
+            genotype
+                .extended
+                .push(("PG".to_string(), phred(&log10_priors)));
+            let best = max_element_index(&posteriors);
+            if !targets.is_empty() {
+                genotype.gq = gq_log10_from_posteriors(best, &normalized)
+                    .map(|log10| jmath::math::round(log10 * -10.0) as i32);
+            }
+            genotype.alleles = genotypes_in_canonical_order(ploidy, targets.len())
+                .into_iter()
+                .nth(best)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|index| targets[index].clone())
+                .collect();
         }
         SubsetMethod::DoNotAssignGenotypes | SubsetMethod::UsePosteriorsAnnotation => {}
     }
@@ -325,6 +568,28 @@ pub fn subset_alleles_with_length_annotations(
     alleles_to_keep: &[Allele],
     method: SubsetMethod,
     allele_based_length_annotations: &[String],
+) -> Result<Vec<Genotype>, EngineError> {
+    subset_alleles_with_priors(
+        genotypes,
+        default_ploidy,
+        original_alleles,
+        alleles_to_keep,
+        method,
+        allele_based_length_annotations,
+        None,
+    )
+}
+
+/// `AlleleSubsettingUtils.subsetAlleles` with a genotype prior calculator, which
+/// `USE_POSTERIOR_PROBABILITIES` assigns from.
+pub fn subset_alleles_with_priors(
+    genotypes: &[Genotype],
+    default_ploidy: usize,
+    original_alleles: &[Allele],
+    alleles_to_keep: &[Allele],
+    method: SubsetMethod,
+    allele_based_length_annotations: &[String],
+    priors: Option<&GenotypePriors>,
 ) -> Result<Vec<Genotype>, EngineError> {
     let kept: Vec<usize> = alleles_to_keep
         .iter()
@@ -411,13 +676,14 @@ pub fn subset_alleles_with_length_annotations(
         }
         built.pl = new_likelihoods.as_deref().map(pls_of);
 
-        make_genotype_call(
+        make_genotype_call_with_priors(
             g.ploidy(),
             &mut built,
             method,
             new_likelihoods.as_deref(),
             alleles_to_keep,
             g,
+            priors,
         )?;
 
         if g.extended.iter().any(|(key, _)| key == "SAC") {
@@ -544,7 +810,20 @@ impl GenotypingEngine {
             configuration,
             calculator,
             upstream_deletions: VecDeque::new(),
+            genotype_priors: None,
+            use_posteriors_to_calculate_qual: false,
         }
+    }
+
+    /// The genotype prior calculator `calculateGenotypes` is handed, as HaplotypeCaller's
+    /// `resolveGenotypePriorCalculator` builds it.
+    pub fn set_genotype_priors(&mut self, priors: GenotypePriors) {
+        self.genotype_priors = Some(priors);
+    }
+
+    /// `--use-posteriors-to-calculate-qual`.
+    pub fn set_use_posteriors_to_calculate_qual(&mut self, value: bool) {
+        self.use_posteriors_to_calculate_qual = value;
     }
 
     /// `cannotBeGenotyped`.
@@ -695,14 +974,35 @@ impl GenotypingEngine {
         let genotypes = if output_alleles.len() == 1 {
             subset_to_ref_only(vc, default_ploidy)
         } else {
-            subset_alleles(
+            subset_alleles_with_priors(
                 &vc.genotypes,
                 default_ploidy,
                 &vc.alleles,
                 &output_alleles,
                 self.configuration.assignment_method,
+                &[],
+                self.genotype_priors.as_ref(),
             )?
         };
+        // `usePosteriorProbabilitiesToCalculateQual`: QUAL again, from the posteriors the
+        // genotypes now carry, read back from their two-decimal GP strings.
+        if self.use_posteriors_to_calculate_qual
+            && genotypes
+                .iter()
+                .any(|g| g.extended.iter().any(|(key, _)| key == "GP"))
+        {
+            let no_variant = phred_no_variant_posterior(&output_alleles, &genotypes);
+            let log10_no_variant = no_variant * -0.1;
+            let update = if !monomorphic || self.configuration.annotate_all_sites_with_pls {
+                log10_no_variant + 0.0
+            } else {
+                gatk_engine::allele_frequency_calculator::log10_one_minus_pow10(log10_no_variant)
+                    + 0.0
+            };
+            if !update.is_nan() {
+                out.log10_p_error = update;
+            }
+        }
         out.attributes = self.compose_call_attributes(
             vc,
             &reduced_alleles,
@@ -773,5 +1073,68 @@ impl GenotypingEngine {
             ));
         }
         attributes
+    }
+}
+
+/// `phredNoVariantPosteriorProbability`: over the genotypes, the sum of each one's
+/// `extractPNoAlt`, the NaN ones skipped and NaN when every one is.
+fn phred_no_variant_posterior(alleles: &[Allele], genotypes: &[Genotype]) -> f64 {
+    let mut total = f64::NAN;
+    for genotype in genotypes {
+        let value = extract_p_no_alt(alleles, genotype);
+        if value.is_nan() {
+            continue;
+        }
+        total = if total.is_nan() { value } else { total + value };
+    }
+    total
+}
+
+/// `extractPNoAlt`: the hom-ref posterior less the phred sum of all of them (or, with a spanning
+/// deletion, the phred sum of the genotypes made of the reference and `*` alone), from the GP
+/// strings, NaN when a genotype carries none.
+fn extract_p_no_alt(alleles: &[Allele], genotype: &Genotype) -> f64 {
+    let posteriors: Vec<f64> = match genotype.extended.iter().find(|(key, _)| key == "GP") {
+        Some((_, Value::List(values))) => values
+            .iter()
+            .map(|v| match v {
+                Value::Str(text) => text.parse().unwrap_or(f64::NAN),
+                Value::Double(d) => *d,
+                Value::Int(i) => *i as f64,
+                _ => f64::NAN,
+            })
+            .collect(),
+        _ => vec![f64::NAN],
+    };
+    let phred_sum = |phreds: &[f64]| -> f64 {
+        match phreds.len() {
+            0 => f64::MAX,
+            1 => phreds[0],
+            2 => -10.0 * log10_sum_log10_two(phreds[0] * -0.1, phreds[1] * -0.1),
+            3 => {
+                -10.0 * log10_sum_log10_three(phreds[0] * -0.1, phreds[1] * -0.1, phreds[2] * -0.1)
+            }
+            _ => {
+                let log10: Vec<f64> = phreds.iter().map(|p| p * -0.1).collect();
+                -10.0 * gatk_engine::math_utils::log10_sum_log10(&log10)
+            }
+        }
+    };
+    match alleles.iter().position(is_span_del) {
+        None => posteriors[0] - gatk_engine::math_utils::java_max(0.0, phred_sum(&posteriors)),
+        Some(span_del) => {
+            let ploidy = genotype.ploidy();
+            let genotypes = genotypes_in_canonical_order(ploidy, alleles.len());
+            let non_variant: Vec<f64> = (0..=ploidy)
+                .map(|n| {
+                    let mut wanted = vec![0usize; ploidy - n];
+                    wanted.extend(std::iter::repeat_n(span_del, n));
+                    let index = genotypes.iter().position(|g| *g == wanted).unwrap_or(0);
+                    posteriors.get(index).copied().unwrap_or(f64::NAN)
+                })
+                .collect();
+            gatk_engine::math_utils::java_max(0.0, phred_sum(&non_variant))
+                - gatk_engine::math_utils::java_max(0.0, phred_sum(&posteriors))
+        }
     }
 }

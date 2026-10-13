@@ -27,7 +27,7 @@
 use std::collections::HashMap;
 
 use gatk_engine::alignment_utils::{normalize_alleles, IndexRange};
-use gatk_engine::allele_likelihoods::{log10_to_log, AlleleLikelihoods};
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_mapping::{
     create_allele_mapper, make_merged_variant_context, variants_from_active_haplotypes,
 };
@@ -48,10 +48,8 @@ use gatk_engine::natural_log_utils::{log_sum_exp, normalize_from_log_to_linear_s
 use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
 use gatk_engine::read_pileup::sample_name;
 use gatk_engine::read_realignment::realign_reads_to_their_best_haplotype;
-use gatk_engine::read_threading_assembler::{AssemblerSettings, ReadThreadingAssembler};
-use gatk_engine::smith_waterman::{
-    SmithWatermanJavaAligner, ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
-};
+use gatk_engine::read_threading_assembler::ReadThreadingAssembler;
+use gatk_engine::smith_waterman::SmithWatermanJavaAligner;
 use gatk_engine::somatic_likelihoods::{
     allele_fractions_posterior, effective_log_multinomial_weights, log_dirichlet_normalization,
 };
@@ -64,7 +62,9 @@ use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
 
 use crate::genotyping_engine::EngineError;
 use crate::hc_genotyping::phase_calls;
-use crate::hc_region::{assemble_reads, RegionAssemblyArguments};
+use crate::hc_region::{
+    assemble_reads, assembler_from, AssemblerArguments, RegionAssemblyArguments,
+};
 use crate::variant_annotator_engine::{Engine as AnnotatorEngine, Site};
 
 /// `Mutect2Engine.MAX_ALT_FRACTION_IN_NORMAL`.
@@ -111,8 +111,10 @@ pub struct Mutect2Arguments {
     pub phred_scaled_global_read_mismapping_rate: f64,
     pub max_suspicious_reads_per_alignment_start: i32,
     pub downsampling_stride: i32,
-    pub recover_all_dangling_branches: bool,
-    pub min_dangling_branch_length: i32,
+    /// The read-threading assembler's arguments.
+    pub assembler: AssemblerArguments,
+    /// `--independent-mates`: each read its own fragment.
+    pub independent_mates: bool,
 }
 
 /// What a run produces: the calls, and the callable-site count the stats file carries.
@@ -136,32 +138,6 @@ fn failure(class: &str, message: impl Into<String>) -> Mutect2Error {
     }
 }
 
-/// `MutectReadThreadingAssemblerArgumentCollection.makeReadThreadingAssembler` with its defaults:
-/// adaptive pruning, so a prune factor of zero.
-pub fn mutect_assembler(arguments: &Mutect2Arguments) -> ReadThreadingAssembler {
-    let settings = AssemblerSettings {
-        max_allowed_paths: 128,
-        kmer_sizes: vec![10, 25],
-        dont_increase_kmer_sizes_for_cycles: false,
-        allow_non_unique_kmers_in_ref: false,
-        num_pruning_samples: 1,
-        prune_factor: 0,
-        use_adaptive_pruning: true,
-        initial_error_rate_for_pruning: 0.001,
-        pruning_log_odds_threshold: log10_to_log(1.0),
-        pruning_seeding_log_odds_threshold: log10_to_log(4.0),
-        max_unpruned_variants: 100,
-        enable_legacy_graph_cycle_detection: false,
-        min_matching_bases_to_dangling_end_recovery: -1,
-    };
-    let mut assembler = ReadThreadingAssembler::new(&settings).expect("valid defaults");
-    assembler.set_recover_dangling_branches(true);
-    assembler.set_recover_all_dangling_branches(arguments.recover_all_dangling_branches);
-    assembler.set_min_dangling_branch_length(arguments.min_dangling_branch_length);
-    assembler.set_min_base_quality_to_use_in_assembly(arguments.assembly.min_base_quality_score);
-    assembler
-}
-
 /// The samples of the header, in `getSamplesFromHeader`'s sorted order.
 fn samples_of(header: &SamHeader) -> Vec<String> {
     crate::haplotype_caller::samples_from_header(header)
@@ -180,7 +156,13 @@ pub fn call_variants(
 ) -> Result<Mutect2Output, Mutect2Error> {
     let samples = samples_of(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
-    let assembler = mutect_assembler(arguments);
+    // `MutectReadThreadingAssemblerArgumentCollection.makeReadThreadingAssembler`: adaptive
+    // pruning unless disabled, and dangling branches always recovered.
+    let assembler = assembler_from(
+        &arguments.assembler,
+        arguments.assembly.min_base_quality_score,
+    )
+    .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
     let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
         .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
     let mut tumor_buffer = PileupQualBuffer::default();
@@ -526,7 +508,7 @@ fn call_region(
         &reference_haplotype,
         ref_loc.start,
         &SmithWatermanJavaAligner,
-        &ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+        &arguments.assembly.read_to_haplotype_sw,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     let window = (
@@ -639,7 +621,7 @@ fn call_mutations(
             .map_err(|e| illegal(format!("{e:?}")))?;
     }
     let fragments = log_read_likelihoods
-        .group_by_fragment()
+        .group_by_fragment_with(arguments.independent_mates)
         .map_err(|e| illegal(format!("{e:?}")))?;
     let has_normal = !arguments.normal_samples.is_empty();
     let contig_length = context.contig_bases.len() as i32;

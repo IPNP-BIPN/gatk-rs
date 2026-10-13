@@ -13,11 +13,12 @@ use gatk_engine::allele_frequency_calculator::Priors;
 use gatk_engine::assembly_region_iterator::AssemblyRegionArgs;
 use gatk_engine::assembly_region_trimmer::TrimmerArguments;
 use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PcrErrorModel};
+use gatk_engine::read_threading_assembler::AssemblerSettings;
 use gatk_tools::genotyping_engine::{Configuration, SubsetMethod};
 use gatk_tools::haplotype_caller::{self as hc, HaplotypeCallerArguments};
 use gatk_tools::haplotype_caller_engine::IsActiveArguments;
 use gatk_tools::hc_genotyping::HcGenotypingArguments;
-use gatk_tools::hc_region::RegionAssemblyArguments;
+use gatk_tools::hc_region::{AssemblerArguments, RegionAssemblyArguments};
 use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
@@ -119,6 +120,65 @@ const HONOURED: &[&str] = &[
     "gvcf-gq-bands",
     "floor-blocks",
     "indel-size-to-eliminate-in-ref-model",
+    // The read-threading assembler.
+    "kmer-size",
+    "dont-increase-kmer-sizes-for-cycles",
+    "allow-non-unique-kmers-in-ref",
+    "num-pruning-samples",
+    "min-pruning",
+    "adaptive-pruning",
+    "adaptive-pruning-initial-error-rate",
+    "pruning-lod-threshold",
+    "pruning-seeding-lod-threshold",
+    "max-unpruned-variants",
+    "enable-legacy-graph-cycle-detection",
+    "num-matching-bases-in-dangling-end-to-recover",
+    "do-not-recover-dangling-branches",
+    "recover-all-dangling-branches",
+    "min-dangling-branch-length",
+    "max-num-haplotypes-in-population",
+    // Only the linked de Bruijn graph reads it, and that graph is not ported.
+    "disable-artificial-haplotype-recovery",
+    // Genotyping options.
+    "all-site-pls",
+    "output-mode",
+    "genotype-assignment-method",
+    "use-posteriors-to-calculate-qual",
+    // Without contamination the filtered read map is the genotyping one either way.
+    "use-filtered-reads-for-annotations",
+    // Without --alleles, a bamout, a native PairHMM or a DRAGstr model these change nothing.
+    "force-call-filtered-alleles",
+    "bam-writer-type",
+    "native-pair-hmm-use-double-precision",
+    "dont-use-dragstr-priors",
+    "dont-use-dragstr-pair-hmm-scores",
+    // Logged only.
+    "debug-assembly",
+    // The implementations, refused below when they name a kernel this port does not carry.
+    "pair-hmm-implementation",
+    "smith-waterman",
+    "likelihood-calculation-engine",
+    // RampedHaplotypeCaller's own: the ramps are refused unless NONE, and the two debug
+    // switches only log.
+    "off-ramp-type",
+    "off-ramp-file",
+    "on-ramp-type",
+    "on-ramp-file",
+    "ramps-debug-reads",
+    "ramps-debug-post-assembler-on",
+    // The three Smith-Waterman weightings.
+    "smith-waterman-dangling-end-match-value",
+    "smith-waterman-dangling-end-mismatch-penalty",
+    "smith-waterman-dangling-end-gap-open-penalty",
+    "smith-waterman-dangling-end-gap-extend-penalty",
+    "smith-waterman-haplotype-to-reference-match-value",
+    "smith-waterman-haplotype-to-reference-mismatch-penalty",
+    "smith-waterman-haplotype-to-reference-gap-open-penalty",
+    "smith-waterman-haplotype-to-reference-gap-extend-penalty",
+    "smith-waterman-read-to-haplotype-match-value",
+    "smith-waterman-read-to-haplotype-mismatch-penalty",
+    "smith-waterman-read-to-haplotype-gap-open-penalty",
+    "smith-waterman-read-to-haplotype-gap-extend-penalty",
 ];
 
 fn limitation(what: &str) -> Thrown {
@@ -129,9 +189,8 @@ fn limitation(what: &str) -> Thrown {
 }
 
 /// The refusal of any declared argument the port does not read.
-fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
-    let declarations =
-        gatk_tools::tool_declarations::declarations("HaplotypeCaller").unwrap_or(&[]);
+fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
+    let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
         if !definition.has_been_set() || HONOURED.contains(&name) {
@@ -143,7 +202,7 @@ fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
         });
         if !read_filter_argument {
             return Err(limitation(&format!(
-                "--{name} is a HaplotypeCaller argument this port does not carry yet."
+                "--{name} is a {tool} argument this port does not carry yet."
             )));
         }
     }
@@ -159,9 +218,57 @@ fn pcr_model(parser: &Parser) -> PcrErrorModel {
     }
 }
 
-/// `HaplotypeCaller.doWork` in VCF mode.
+/// `HaplotypeCaller.doWork`.
 pub fn haplotype_caller(parser: &Parser) -> Outcome {
-    refuse_unported(parser)?;
+    run(parser, "HaplotypeCaller")
+}
+
+/// `RampedHaplotypeCaller.doWork`: HaplotypeCaller with `RampedHaplotypeCallerEngine` and
+/// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
+/// `callRegion` measures read stubs, filters reads and realigns them.
+pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
+    for ramp in ["off-ramp-type", "on-ramp-type"] {
+        match scalar(parser, ramp).as_deref() {
+            None | Some("NONE") => {}
+            Some(kind) => {
+                return Err(limitation(&format!(
+                    "the {kind} ramp is not ported; RampedHaplotypeCaller runs without ramps."
+                )))
+            }
+        }
+    }
+    run(parser, "RampedHaplotypeCaller")
+}
+
+fn run(parser: &Parser, tool: &str) -> Outcome {
+    let ramped = tool == "RampedHaplotypeCaller";
+    refuse_unported(parser, tool)?;
+    // The kernels this port carries: the Java LOGLESS_CACHING PairHMM behind the PairHMM engine.
+    // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
+    // reference container; a kernel named outright is refused.
+    match scalar(parser, "likelihood-calculation-engine").as_deref() {
+        None | Some("PairHMM") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} likelihood engine is not ported for HaplotypeCaller."
+            )))
+        }
+    }
+    match scalar(parser, "pair-hmm-implementation").as_deref() {
+        None | Some("LOGLESS_CACHING") | Some("FASTEST_AVAILABLE") => {}
+        Some(other) => {
+            return Err(limitation(&format!(
+                "the {other} PairHMM is not ported; only LOGLESS_CACHING is."
+            )))
+        }
+    }
+    let output_mode =
+        scalar(parser, "output-mode").unwrap_or_else(|| "EMIT_VARIANTS_ONLY".to_string());
+    let assignment_method = SubsetMethod::from_name(
+        &scalar(parser, "genotype-assignment-method")
+            .unwrap_or_else(|| "USE_PLS_TO_ASSIGN".to_string()),
+    )
+    .unwrap_or(SubsetMethod::UsePlsToAssign);
     let resolved = catalogue::resolve(
         &catalogue::AnnotationArguments {
             annotations: arguments(parser, "annotation"),
@@ -199,12 +306,18 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
         header,
         intervals,
         filters,
-    } = read_walker_startup(parser, "HaplotypeCaller")?;
+    } = read_walker_startup(parser, tool)?;
     if emit_reference_confidence && hc::samples_from_header(&header).len() != 1 {
         return Err(Thrown::command_line(
             "Argument emit-ref-confidence has a bad value: Can only be used in single sample \
              mode currently. Use the --sample-name argument to run on a single sample out of a \
              multi-sample BAM file.",
+        ));
+    }
+    if flag(parser, "floor-blocks") && !emit_reference_confidence {
+        return Err(Thrown::user(
+            "floor-blocks refers to GVCF blocks, so reference confidence mode \
+             (emit-ref-confidence) must be specified.",
         ));
     }
     // `validateAndInitializeArgs`: GVCF mode calls at a threshold of -0.0, which the
@@ -285,6 +398,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
         .validate()
         .map_err(|error| Thrown::command_line(error.message()))?;
     let mismapping = double_or(parser, "phred-scaled-global-read-mismapping-rate", 45.0);
+    let sw = smith_waterman_arguments(parser);
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -298,6 +412,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
             ),
         },
         region,
+        assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,
@@ -318,6 +433,9 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
                 parser,
                 "do-not-correct-overlapping-quality",
             ),
+            dangling_end_sw: sw.0,
+            haplotype_to_reference_sw: sw.1,
+            read_to_haplotype_sw: sw.2,
         },
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
@@ -384,6 +502,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
                 ) as u8,
                 use_soft_clipped_bases: !flag(parser, "override-fragment-softclip-check"),
             },
+            ramped_engine: ramped,
         },
         calling: Configuration {
             standard_confidence_for_calling: calling_confidence,
@@ -393,17 +512,19 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
                 parser,
                 "annotate-with-num-discovered-alleles",
             ),
-            emit_all_active_sites: false,
+            emit_all_active_sites: output_mode == "EMIT_ALL_ACTIVE_SITES",
             allele_specific: false,
-            emit_all_confident_sites: false,
-            annotate_all_sites_with_pls: emit_reference_confidence,
+            emit_all_confident_sites: output_mode == "EMIT_ALL_CONFIDENT_SITES",
+            annotate_all_sites_with_pls: emit_reference_confidence || flag(parser, "all-site-pls"),
             // `forceKeepAllele` is true for every allele with reference confidence.
             force_keep_all_alleles: emit_reference_confidence,
-            assignment_method: SubsetMethod::UsePlsToAssign,
+            assignment_method,
         },
         priors,
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
+        use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
+        non_random_downsampling: ramped,
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {
         resolved: resolved.clone(),
@@ -449,7 +570,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
                 extra: Vec::new(),
             }
         };
-    let mut lines: Vec<HeaderLine> = default_tool_vcf_header_lines(parser, "HaplotypeCaller");
+    let mut lines: Vec<HeaderLine> = default_tool_vcf_header_lines(parser, tool);
     if arguments.calling.annotate_number_of_alleles_discovered {
         lines.push(compound(
             "INFO",
@@ -480,6 +601,22 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
         id: "LowQual".to_string(),
         description: "Low quality".to_string(),
     });
+    if assignment_method == SubsetMethod::UsePosteriorProbabilities {
+        lines.push(compound(
+            "FORMAT",
+            "GP",
+            Cardinality::G,
+            LineType::Float,
+            "genotype posterior in Phred Scale",
+        ));
+        lines.push(compound(
+            "FORMAT",
+            "PG",
+            Cardinality::G,
+            LineType::Float,
+            "genotype priors in Phred Scale",
+        ));
+    }
     if emit_reference_confidence {
         lines.push(HeaderLine::Structured {
             key: "ALT".to_string(),
@@ -554,4 +691,106 @@ fn arguments_or_default_bands(parser: &Parser) -> Vec<i32> {
         return given;
     }
     (1..=60).chain([70, 80, 90, 99]).collect()
+}
+
+/// The three `--smith-waterman-*` groups, each defaulting to the constant the reference uses:
+/// `(dangling end, haplotype to reference, read to haplotype)`.
+pub(super) fn smith_waterman_arguments(
+    parser: &Parser,
+) -> (
+    gatk_engine::smith_waterman::SwParameters,
+    gatk_engine::smith_waterman::SwParameters,
+    gatk_engine::smith_waterman::SwParameters,
+) {
+    use gatk_engine::smith_waterman::{
+        SwParameters, ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, NEW_SW_PARAMETERS, STANDARD_NGS,
+    };
+    let group = |prefix: &str, default: SwParameters| SwParameters {
+        match_value: number_or(
+            parser,
+            &format!("smith-waterman-{prefix}-match-value"),
+            default.match_value,
+        ),
+        mismatch_penalty: number_or(
+            parser,
+            &format!("smith-waterman-{prefix}-mismatch-penalty"),
+            default.mismatch_penalty,
+        ),
+        gap_open_penalty: number_or(
+            parser,
+            &format!("smith-waterman-{prefix}-gap-open-penalty"),
+            default.gap_open_penalty,
+        ),
+        gap_extend_penalty: number_or(
+            parser,
+            &format!("smith-waterman-{prefix}-gap-extend-penalty"),
+            default.gap_extend_penalty,
+        ),
+    };
+    (
+        group("dangling-end", STANDARD_NGS),
+        group("haplotype-to-reference", NEW_SW_PARAMETERS),
+        group(
+            "read-to-haplotype",
+            ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+        ),
+    )
+}
+
+/// The read-threading assembler's arguments, which both callers declare; `adaptive` is
+/// HaplotypeCaller's `--adaptive-pruning` or Mutect2's `!--disable-adaptive-pruning`.
+pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerArguments {
+    AssemblerArguments {
+        settings: AssemblerSettings {
+            max_allowed_paths: number_or(parser, "max-num-haplotypes-in-population", 128).max(0)
+                as usize,
+            kmer_sizes: {
+                let sizes: Vec<usize> = arguments(parser, "kmer-size")
+                    .iter()
+                    .filter_map(|k| k.trim().parse().ok())
+                    .collect();
+                if sizes.is_empty() {
+                    vec![10, 25]
+                } else {
+                    sizes
+                }
+            },
+            dont_increase_kmer_sizes_for_cycles: flag(
+                parser,
+                "dont-increase-kmer-sizes-for-cycles",
+            ),
+            allow_non_unique_kmers_in_ref: flag(parser, "allow-non-unique-kmers-in-ref"),
+            num_pruning_samples: number_or(parser, "num-pruning-samples", 1).max(0) as usize,
+            prune_factor: number_or(parser, "min-pruning", 2),
+            use_adaptive_pruning: adaptive,
+            initial_error_rate_for_pruning: double_or(
+                parser,
+                "adaptive-pruning-initial-error-rate",
+                0.001,
+            ),
+            pruning_log_odds_threshold: double_or(
+                parser,
+                "pruning-lod-threshold",
+                std::f64::consts::LN_10,
+            ),
+            pruning_seeding_log_odds_threshold: double_or(
+                parser,
+                "pruning-seeding-lod-threshold",
+                4.0 * std::f64::consts::LN_10,
+            ),
+            max_unpruned_variants: number_or(parser, "max-unpruned-variants", 100),
+            enable_legacy_graph_cycle_detection: flag(
+                parser,
+                "enable-legacy-graph-cycle-detection",
+            ),
+            min_matching_bases_to_dangling_end_recovery: number_or(
+                parser,
+                "num-matching-bases-in-dangling-end-to-recover",
+                -1,
+            ),
+        },
+        recover_dangling_branches: !flag(parser, "do-not-recover-dangling-branches"),
+        recover_all_dangling_branches: flag(parser, "recover-all-dangling-branches"),
+        min_dangling_branch_length: number_or(parser, "min-dangling-branch-length", 4),
+    }
 }

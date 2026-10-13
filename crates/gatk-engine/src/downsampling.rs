@@ -148,6 +148,17 @@ pub fn positional_downsample(
     target: usize,
     random: &mut JavaRandom,
 ) -> Vec<htsjdk_bam::record::BamRecord> {
+    positional_downsample_with(reads, target, random, false)
+}
+
+/// The same with `nonRandomDownsamplingMode`, which `RampedHaplotypeCaller` asks for: the slot a
+/// read takes is its name's hash modulo the count seen, and the generator is never drawn from.
+pub fn positional_downsample_with(
+    reads: &[htsjdk_bam::record::BamRecord],
+    target: usize,
+    random: &mut JavaRandom,
+    non_random: bool,
+) -> Vec<htsjdk_bam::record::BamRecord> {
     let mut out = Vec::with_capacity(reads.len());
     let mut reservoir: ReservoirDownsampler<'_, htsjdk_bam::record::BamRecord> =
         ReservoirDownsampler::new(target);
@@ -166,7 +177,12 @@ pub fn positional_downsample(
         if read.reference_index < 0 || read.alignment_start <= 0 {
             out.push(read.clone());
         } else {
-            reservoir.submit(read, &read.read_name, &mut SlotSource::Random(random));
+            let mut slots = if non_random {
+                SlotSource::NonRandom
+            } else {
+                SlotSource::Random(random)
+            };
+            reservoir.submit(read, &read.read_name, &mut slots);
         }
         previous = Some(position);
     }

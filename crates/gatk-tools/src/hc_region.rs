@@ -24,8 +24,8 @@ use gatk_engine::read_threading_assembler::{
     AssemblerError, AssemblerSettings, ReadThreadingAssembler,
 };
 use gatk_engine::smith_waterman::{
-    SmithWatermanAligner, ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS, NEW_SW_PARAMETERS,
-    STANDARD_NGS,
+    SmithWatermanAligner, SwParameters, ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+    NEW_SW_PARAMETERS, STANDARD_NGS,
 };
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
@@ -130,8 +130,15 @@ pub fn call_region(
     let genotyping_region = assembly
         .region_for_genotyping_mut()
         .expect("a trimmed set has its region");
-    genotyping_region
-        .retain_reads(|r| unclipped_read_length(r) >= MINIMUM_READ_LENGTH_AFTER_TRIMMING);
+    // The ramped engine measures a stub by its whole length, soft clips included.
+    let ramped = context.genotyping.ramped_engine;
+    if ramped {
+        genotyping_region
+            .retain_reads(|r| r.read_bases.len() as i32 >= MINIMUM_READ_LENGTH_AFTER_TRIMMING);
+    } else {
+        genotyping_region
+            .retain_reads(|r| unclipped_read_length(r) >= MINIMUM_READ_LENGTH_AFTER_TRIMMING);
+    }
     let mut filtered: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
     for read in genotyping_region.reads() {
         let failing = unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
@@ -147,12 +154,16 @@ pub fn call_region(
             filtered[index].push(read.clone());
         }
     }
+    // HaplotypeCaller drops them before the likelihoods; the ramped engine only after, in
+    // `genotype()`, so they are scored and realigned, then added again for the annotations.
     let threshold = context.mapping_quality_threshold;
-    genotyping_region.retain_reads(|read| {
-        !(unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
-            || read.mapping_quality < threshold
-            || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
-    });
+    if !ramped {
+        genotyping_region.retain_reads(|read| {
+            !(unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
+                || read.mapping_quality < threshold
+                || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
+        });
+    }
     if !assembly.is_variation_present() {
         return reference_model_for_no_variation(region, false, context);
     }
@@ -193,7 +204,12 @@ pub fn call_region(
         &reference_haplotype,
         ref_loc.start,
         context.aligner,
-        &ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+        // The ramped engine realigns with the haplotype-to-reference weights.
+        if ramped {
+            &context.assembly.haplotype_to_reference_sw
+        } else {
+            &context.assembly.read_to_haplotype_sw
+        },
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     let contig_length = context.contig_bases.len() as i32;
@@ -330,6 +346,11 @@ pub struct RegionAssemblyArguments {
     pub soft_clip_low_quality_ends: bool,
     pub override_softclip_fragment_check: bool,
     pub do_not_correct_overlapping_base_qualities: bool,
+    /// `getDanglingEndSWParameters()`, `getHaplotypeToReferenceSWParameters()` and
+    /// `getReadToHaplotypeSWParameters()`, the `--smith-waterman-*` values.
+    pub dangling_end_sw: SwParameters,
+    pub haplotype_to_reference_sw: SwParameters,
+    pub read_to_haplotype_sw: SwParameters,
 }
 
 impl Default for RegionAssemblyArguments {
@@ -340,8 +361,68 @@ impl Default for RegionAssemblyArguments {
             soft_clip_low_quality_ends: false,
             override_softclip_fragment_check: false,
             do_not_correct_overlapping_base_qualities: false,
+            dangling_end_sw: STANDARD_NGS,
+            haplotype_to_reference_sw: NEW_SW_PARAMETERS,
+            read_to_haplotype_sw: ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
         }
     }
+}
+
+/// `HaplotypeCallerReadThreadingAssemblerArgumentCollection`, as the command line sets it.
+#[derive(Debug, Clone)]
+pub struct AssemblerArguments {
+    /// What the assembler is constructed with; `prune_factor` is `--min-pruning`, which adaptive
+    /// pruning replaces with zero.
+    pub settings: AssemblerSettings,
+    /// `!--do-not-recover-dangling-branches`.
+    pub recover_dangling_branches: bool,
+    pub recover_all_dangling_branches: bool,
+    pub min_dangling_branch_length: i32,
+}
+
+impl Default for AssemblerArguments {
+    fn default() -> Self {
+        AssemblerArguments {
+            settings: AssemblerSettings {
+                max_allowed_paths: 128,
+                kmer_sizes: vec![10, 25],
+                dont_increase_kmer_sizes_for_cycles: false,
+                allow_non_unique_kmers_in_ref: false,
+                num_pruning_samples: 1,
+                prune_factor: 2,
+                use_adaptive_pruning: false,
+                initial_error_rate_for_pruning: 0.001,
+                pruning_log_odds_threshold: gatk_engine::allele_likelihoods::log10_to_log(1.0),
+                pruning_seeding_log_odds_threshold: gatk_engine::allele_likelihoods::log10_to_log(
+                    4.0,
+                ),
+                max_unpruned_variants: 100,
+                enable_legacy_graph_cycle_detection: false,
+                min_matching_bases_to_dangling_end_recovery: -1,
+            },
+            recover_dangling_branches: true,
+            recover_all_dangling_branches: false,
+            min_dangling_branch_length: 4,
+        }
+    }
+}
+
+/// `hcArgs.createReadThreadingAssembler()`: the assembler the arguments describe, with the
+/// minimum base quality `AssemblyBasedCallerArgumentCollection` sets on it.
+pub fn assembler_from(
+    arguments: &AssemblerArguments,
+    min_base_quality_score: u8,
+) -> Result<ReadThreadingAssembler, AssemblerError> {
+    let mut settings = arguments.settings.clone();
+    if settings.use_adaptive_pruning {
+        settings.prune_factor = 0;
+    }
+    let mut assembler = ReadThreadingAssembler::new(&settings)?;
+    assembler.set_recover_dangling_branches(arguments.recover_dangling_branches);
+    assembler.set_recover_all_dangling_branches(arguments.recover_all_dangling_branches);
+    assembler.set_min_dangling_branch_length(arguments.min_dangling_branch_length);
+    assembler.set_min_base_quality_to_use_in_assembly(min_base_quality_score);
+    Ok(assembler)
 }
 
 /// `hcArgs.createReadThreadingAssembler()` with HaplotypeCaller's defaults.
@@ -409,8 +490,8 @@ pub fn assemble_reads(
             &ref_loc,
             header,
             aligner,
-            &STANDARD_NGS,
-            &NEW_SW_PARAMETERS,
+            &arguments.dangling_end_sw,
+            &arguments.haplotype_to_reference_sw,
         )
         .map_err(RegionAssemblyError::Assembler)
 }

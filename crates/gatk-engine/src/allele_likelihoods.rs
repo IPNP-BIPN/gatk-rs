@@ -651,13 +651,26 @@ impl<A: AlleleType> AlleleLikelihoods<htsjdk_bam::record::BamRecord, A> {
     pub fn group_by_fragment(
         &self,
     ) -> Result<AlleleLikelihoods<crate::fragment::Fragment, A>, LikelihoodsError> {
+        self.group_by_fragment_with(false)
+    }
+
+    /// `groupEvidence(independentMates ? read -> read : GATKRead::getName, ...)`: with independent
+    /// mates every read is a fragment of its own, in evidence order.
+    pub fn group_by_fragment_with(
+        &self,
+        independent_mates: bool,
+    ) -> Result<AlleleLikelihoods<crate::fragment::Fragment, A>, LikelihoodsError> {
         let allele_count = self.number_of_alleles();
         let mut evidence_by_sample: Vec<Vec<crate::fragment::Fragment>> = Vec::new();
         let mut values: Vec<Vec<Vec<f64>>> = Vec::new();
 
         for sample in 0..self.number_of_samples() {
             let reads = self.sample_evidence(sample).unwrap_or(&[]);
-            let groups = crate::fragment::group_by_read_name(reads);
+            let groups = if independent_mates {
+                (0..reads.len()).map(|index| vec![index]).collect()
+            } else {
+                crate::fragment::group_by_read_name(reads)
+            };
             let mut fragments = Vec::with_capacity(groups.len());
             let mut sample_values: Vec<Vec<f64>> = vec![vec![0.0; groups.len()]; allele_count];
             for (new_index, group) in groups.iter().enumerate() {
