@@ -22019,8 +22019,18 @@ fn write_vcf_honouring_lenient(
     header: &htsjdk_vcf::header::VcfHeader,
     records: &[htsjdk_vcf::variant::VariantContext],
 ) -> Result<String, Thrown> {
+    write_vcf_strict_or_lenient(flag(parser, "lenient"), header, records)
+}
+
+/// The same encoding with leniency decided by the caller: `HaplotypeCallerEngine.makeVCFWriter`
+/// builds its writer without `ALLOW_MISSING_FIELDS_IN_HEADER` whatever `--lenient` says.
+pub(crate) fn write_vcf_strict_or_lenient(
+    lenient: bool,
+    header: &htsjdk_vcf::header::VcfHeader,
+    records: &[htsjdk_vcf::variant::VariantContext],
+) -> Result<String, Thrown> {
     use htsjdk_vcf::encoder::{EncodeError, MissingFields, VcfEncoder};
-    let missing = if flag(parser, "lenient") {
+    let missing = if lenient {
         MissingFields::Allow
     } else {
         MissingFields::Refuse
