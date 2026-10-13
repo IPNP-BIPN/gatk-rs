@@ -7269,6 +7269,30 @@
       ]
     },
     {
+      "id": "dragen-genotypes",
+      "status": "golden-pending",
+      "title": "DRAGENGenotypesModel: the BQD and FRD genotype models, DRAGEN's mapping quality table and the reference STR analyzer",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The genotype models HaplotypeCaller switches on with --apply-bqd and --apply-frd (G4.1, #1330), measured on their own before the caller uses them. DRAGENGenotypesModel.calculateLikelihoods over hand-built read likelihoods, each case three ways (BQD alone, FRD alone, both), each sample's log10 genotype likelihoods as raw bits and as PLs. The cases cover alternate support at the reads' ends (BQD's dropout) and on reads of poor mapping quality (FRD's foreign reads), the homopolymer adjustment of the error base, ties in the feather-end sort, soft and hard clips, reads that delete the site or cover it only with a soft clip, reads the HMM disqualified, the FRD depth cap, indels with the flat prior and with DRAGstr's API, three alleles, ploidies 1 to 3, two samples and an empty one. Beside them, DRAGENMappingQualityReadTransformer's table from -1 to 257 and its XQ swap, and DragstrReferenceAnalyzer's period and repeat length at every position of eight sequences, with its three refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "gl\tbqd-dropout\tBQD\t0\t",
+        "gl\tfrd-foreign-depth-cap\tFRD\t0\t",
+        "mq\t257\terror\tGATKException",
+        "strerror\tbad--1-5\tIndexOutOfBoundsException"
+      ],
+      "expect_rows": 825,
+      "cases": [
+        {
+          "dump": "DragenGenotypesDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "hc-annotated-calls",
       "status": "oracle-backed",
       "title": "HaplotypeCaller's calls with its default annotations",

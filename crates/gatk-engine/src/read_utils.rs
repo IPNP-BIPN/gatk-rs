@@ -107,6 +107,19 @@ pub fn unclipped_start(record: &BamRecord) -> i32 {
     unclipped
 }
 
+/// `getUnclippedEnd`: the alignment end plus the soft and hard clips after it.
+pub fn unclipped_end(record: &BamRecord) -> i32 {
+    let trailing: i32 = record
+        .cigar
+        .elements
+        .iter()
+        .rev()
+        .take_while(|e| matches!(e.op, Op::S | Op::H))
+        .map(|e| e.length as i32)
+        .sum();
+    end(record) + trailing
+}
+
 /// `ReadUtils.hasWellDefinedFragmentSize`: can this read's adaptor be found from its mate?
 ///
 /// Five refusals, and the order is the reference's. The commented-out `isProperlyPaired` check is
