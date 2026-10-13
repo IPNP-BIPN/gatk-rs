@@ -320,7 +320,10 @@ fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
-        if !definition.has_been_set() || HONOURED.contains(&name) {
+        if !definition.has_been_set()
+            || HONOURED.contains(&name)
+            || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+        {
             continue;
         }
         let read_filter_argument = declarations.iter().any(|declaration| {
@@ -364,7 +367,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
     // reference container; a kernel named outright is refused.
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") => {}
+        None | Some("PairHMM") | Some("FlowBased") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for HaplotypeCaller."
@@ -595,6 +598,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             min_base_quality_score: min_base_quality,
             ref_model_deletion_quality: number_or(parser, "reference-model-deletion-quality", 30)
                 as u8,
+            flow_based_model: flow_based_model(parser),
         },
         assembly: RegionAssemblyArguments {
             min_base_quality_score: min_base_quality,
@@ -609,6 +613,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
         },
+        flow_engine: flow_engine_arguments(parser),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,
@@ -677,6 +682,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                     30,
                 ) as u8,
                 use_soft_clipped_bases: !flag(parser, "override-fragment-softclip-check"),
+                flow_based_model: flow_based_model(parser),
             },
             ramped_engine: ramped,
             dragen_models: (flag(parser, "apply-bqd") || flag(parser, "apply-frd")).then(|| {
@@ -1046,6 +1052,15 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
             "disable-artificial-haplotype-recovery",
         ),
     }
+}
+
+/// `isFlowBased`: a likelihood engine of the flow-based kind, which the reference confidence model
+/// is built with.
+pub(super) fn flow_based_model(parser: &Parser) -> bool {
+    matches!(
+        scalar(parser, "likelihood-calculation-engine").as_deref(),
+        Some("FlowBased") | Some("FlowBasedHMM")
+    )
 }
 
 /// `ReadThreadingAssembler.setArtificialHaplotypeRecoveryMode`, which the engine's constructor

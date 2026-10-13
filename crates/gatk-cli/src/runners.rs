@@ -11091,7 +11091,7 @@ fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
 }
 
 /// `FlowBasedArgumentCollection`, as a command line sets it.
-fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
+pub(crate) fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
     gatk_tools::flow_based_read::FlowArguments {
         use_t0_tag: flag(parser, "flow-use-t0-tag"),
         remove_longer_than_one_indels: flag(parser, "flow-remove-non-single-base-pair-indels"),
@@ -11106,6 +11106,46 @@ fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments
         keep_boundary_flows: flag(parser, "keep-boundary-flows"),
     }
 }
+
+/// `FlowBasedAlignmentArgumentCollection`, when `--likelihood-calculation-engine` is `FlowBased`.
+pub(crate) fn flow_engine_arguments(
+    parser: &Parser,
+) -> Option<gatk_tools::flow_likelihood_engine::FlowEngineArguments> {
+    if scalar(parser, "likelihood-calculation-engine").as_deref() != Some("FlowBased") {
+        return None;
+    }
+    Some(gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+        flow: flow_arguments(parser),
+        flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0) as usize,
+        optimized: flag(parser, "flow-likelihood-optimized-comp"),
+        trim_to_haplotype: scalar(parser, "trim-to-haplotype").map_or(true, |v| v == "true"),
+        exact_matching: flag(parser, "exact-matching"),
+    })
+}
+
+/// The flow matrix arguments every flow-capable caller honours: what shapes a read's matrix, and
+/// the scaling and quantization only the vestigial layouts read.
+pub(crate) const FLOW_MATRIX_ARGUMENTS: &[&str] = &[
+    "flow-use-t0-tag",
+    "flow-remove-non-single-base-pair-indels",
+    "flow-remove-one-zero-probs",
+    "flow-fill-empty-bins-value",
+    "flow-symmetric-indel-probs",
+    "flow-report-insertion-or-deletion",
+    "flow-disallow-probs-larger-than-call",
+    "flow-lump-probs",
+    "flow-retain-max-n-probs-base-format",
+    "flow-matrix-mods",
+    "keep-boundary-flows",
+    "flow-order-cycle-length",
+    "flow-probability-scaling-factor",
+    "flow-quantization-bins",
+    // The engine's own: a thread count changes no value, and the rest are read above.
+    "flow-likelihood-parallel-threads",
+    "flow-likelihood-optimized-comp",
+    "trim-to-haplotype",
+    "exact-matching",
+];
 
 /// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
 /// row and, with `--report-file`, the error-rate report.

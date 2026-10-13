@@ -54,6 +54,8 @@ pub struct HaplotypeCallerArguments {
     /// The read-threading assembler's own arguments.
     pub assembler: AssemblerArguments,
     pub likelihoods: LikelihoodEngineArguments,
+    /// `--likelihood-calculation-engine FlowBased`: the flow engine's own arguments.
+    pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
@@ -181,8 +183,25 @@ fn call_variants_into(
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
-    let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
-        .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
+    // `createLikelihoodCalculationEngine`.
+    let likelihood_engine = match &arguments.flow_engine {
+        None => crate::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
+            PairHmmLikelihoodEngine::new(arguments.likelihoods.clone()).map_err(|e| {
+                HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}"))
+            })?,
+        ),
+        Some(flow) => crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
+            crate::flow_likelihood_engine::FlowLikelihoodEngine {
+                arguments: flow.clone(),
+                log10_global_read_mismapping_rate: arguments
+                    .likelihoods
+                    .log10_global_read_mismapping_rate,
+                expected_error_rate_per_base: arguments.likelihoods.expected_error_rate_per_base,
+                dynamic_disqualification: arguments.likelihoods.dynamic_disqualification,
+                read_disqualification_scale: arguments.likelihoods.read_disqualification_scale,
+            },
+        ),
+    };
     let genotyping = arguments.genotyping.clone();
 
     // `buildRamps`: the off ramp is opened before the traversal and written when it ends.

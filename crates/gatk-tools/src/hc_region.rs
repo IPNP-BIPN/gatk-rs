@@ -18,7 +18,6 @@ use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimResult};
 use gatk_engine::assembly_result_set::{AssemblyResultSet, ResultSetError};
 use gatk_engine::haplotype::Haplotype;
 use gatk_engine::interval::SimpleInterval;
-use gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine;
 use gatk_engine::read_pileup::sample_name;
 use gatk_engine::read_realignment::realign_reads_to_their_best_haplotype;
 use gatk_engine::read_threading_assembler::{
@@ -71,7 +70,7 @@ pub struct CallRegionContext<'a> {
     pub assembler: &'a ReadThreadingAssembler,
     pub aligner: &'a dyn SmithWatermanAligner,
     pub trimmer: &'a AssemblyRegionTrimmer,
-    pub likelihood_engine: &'a PairHmmLikelihoodEngine,
+    pub likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
     pub genotyping: &'a HcGenotypingArguments,
     /// `--mapping-quality-threshold-for-genotyping`, 20 by default.
     pub mapping_quality_threshold: u8,
@@ -423,8 +422,8 @@ pub fn call_region(
     }
     let mut likelihoods = context
         .likelihood_engine
-        .compute_read_likelihoods(&haplotypes, context.samples, &reads)
-        .map_err(|e| calling(format!("{e:?}")))?;
+        .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
+        .map_err(calling)?;
     realign_reads_to_their_best_haplotype(
         &mut likelihoods,
         &reference_haplotype,

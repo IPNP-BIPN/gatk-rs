@@ -97,6 +97,8 @@ pub struct Mutect2Arguments {
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
     pub likelihoods: LikelihoodEngineArguments,
+    /// `--likelihood-calculation-engine FlowBased`: the flow engine's own arguments.
+    pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
     pub normal_samples: Vec<String>,
     /// `getInitialLogOdds()`, `getEmissionLogOdds()` and `--normal-lod`, natural log.
     pub initial_log_odds: f64,
@@ -175,8 +177,24 @@ pub fn call_variants(
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
-    let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
-        .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
+    // `createLikelihoodCalculationEngine`.
+    let likelihood_engine = match &arguments.flow_engine {
+        None => crate::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
+            PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
+                .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?,
+        ),
+        Some(flow) => crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
+            crate::flow_likelihood_engine::FlowLikelihoodEngine {
+                arguments: flow.clone(),
+                log10_global_read_mismapping_rate: arguments
+                    .likelihoods
+                    .log10_global_read_mismapping_rate,
+                expected_error_rate_per_base: arguments.likelihoods.expected_error_rate_per_base,
+                dynamic_disqualification: arguments.likelihoods.dynamic_disqualification,
+                read_disqualification_scale: arguments.likelihoods.read_disqualification_scale,
+            },
+        ),
+    };
     let mut tumor_buffer = PileupQualBuffer::default();
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;
@@ -415,7 +433,7 @@ struct RegionContext<'a> {
     arguments: &'a Mutect2Arguments,
     assembler: &'a ReadThreadingAssembler,
     trimmer: &'a AssemblyRegionTrimmer,
-    likelihood_engine: &'a PairHmmLikelihoodEngine,
+    likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
     annotator: &'a AnnotatorEngine,
 }
 
@@ -490,7 +508,10 @@ fn somatic_ref_confidence(
         2,
         calls,
         context.header,
-        &RefConfidenceArguments::default(),
+        &RefConfidenceArguments {
+            flow_based_model: context.likelihood_engine.is_flow_based(),
+            ..RefConfidenceArguments::default()
+        },
         Some(&context.arguments.somatic_ref_confidence),
     )
     .map_err(|e| match e {
@@ -578,8 +599,8 @@ fn call_region(
     let mut haplotypes: Vec<Haplotype> = assembly.haplotype_list().to_vec();
     let mut likelihoods = context
         .likelihood_engine
-        .compute_read_likelihoods(&haplotypes, context.samples, &by_sample)
-        .map_err(|e| calling(format!("{e:?}")))?;
+        .compute_read_likelihoods(&haplotypes, context.header, context.samples, &by_sample)
+        .map_err(calling)?;
     likelihoods
         .switch_to_natural_log()
         .map_err(|e| calling(format!("{e:?}")))?;

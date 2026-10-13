@@ -180,7 +180,10 @@ fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations("Mutect2").unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
-        if !definition.has_been_set() || HONOURED.contains(&name) {
+        if !definition.has_been_set()
+            || HONOURED.contains(&name)
+            || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+        {
             continue;
         }
         let read_filter_argument = declarations.iter().any(|declaration| {
@@ -244,7 +247,7 @@ pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") => {}
+        None | Some("PairHMM") | Some("FlowBased") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for Mutect2."
@@ -419,6 +422,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
         },
+        flow_engine: flow_engine_arguments(parser),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,
