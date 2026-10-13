@@ -25,6 +25,11 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // Allele filtering before genotyping.
+    "flow-filter-alleles",
+    "flow-filter-alleles-qual-threshold",
+    "flow-filter-alleles-sor-threshold",
+    "flow-filter-lone-alleles",
     // The linked de Bruijn graph and its artificial haplotype recovery.
     "linked-de-bruijn-graph",
     "disable-artificial-haplotype-recovery",
@@ -402,6 +407,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
+    // `makeVariantAnnotations`: allele filtering brings its own annotation.
+    let mut resolved = resolved;
+    if flag(parser, "flow-filter-alleles") {
+        resolved
+            .push(catalogue::entry("HaplotypeFilteringAnnotation").expect("a known annotation"));
+    }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
@@ -705,6 +716,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                     indel_heterozygosity: priors.indel_heterozygosity,
                 }
             }),
+            filter_alleles: allele_filter_arguments(parser),
         },
         calling: Configuration {
             standard_confidence_for_calling: calling_confidence,
@@ -832,6 +844,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         id: "LowQual".to_string(),
         description: "Low quality".to_string(),
     });
+    if arguments.genotyping.filter_alleles.is_some() {
+        lines.push(compound(
+            "INFO",
+            "SUSP_NOISY_ADJACENT_TP_VARIANT",
+            Cardinality::Fixed(0),
+            LineType::Flag,
+            "Indicates a locus where false positive allele might be affecting a true positive allele",
+        ));
+    }
     if assignment_method == SubsetMethod::UsePosteriorProbabilities {
         lines.push(compound(
             "FORMAT",
@@ -1052,6 +1073,19 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
             "disable-artificial-haplotype-recovery",
         ),
     }
+}
+
+/// `--flow-filter-alleles` and its thresholds.
+pub(super) fn allele_filter_arguments(
+    parser: &Parser,
+) -> Option<gatk_tools::allele_filtering::AlleleFilterArguments> {
+    flag(parser, "flow-filter-alleles").then(|| {
+        gatk_tools::allele_filtering::AlleleFilterArguments {
+            qual_threshold: double_or(parser, "flow-filter-alleles-qual-threshold", 30.0) as f32,
+            sor_threshold: double_or(parser, "flow-filter-alleles-sor-threshold", 3.0) as f32,
+            filter_lone_alleles: flag(parser, "flow-filter-lone-alleles"),
+        }
+    })
 }
 
 /// `isFlowBased`: a likelihood engine of the flow-based kind, which the reference confidence model

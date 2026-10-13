@@ -737,7 +737,7 @@ fn remove_unmarked_duplicates(
 type DuplicateKey = (Option<String>, i32);
 
 /// A likelihood matrix as `[allele][evidence]`.
-type Matrix = Vec<Vec<f64>>;
+pub(crate) type Matrix = Vec<Vec<f64>>;
 
 /// `SomaticGenotypingEngine.callMutations`, with no given
 /// alleles, germline resource or panel of normals.
@@ -1104,7 +1104,7 @@ fn numerical(e: impl std::fmt::Debug) -> Mutect2Error {
 }
 
 /// `SomaticLikelihoodsEngine.logEvidence`.
-fn log_evidence(matrix: &Matrix, prior: &[f64]) -> Result<f64, Mutect2Error> {
+pub(crate) fn log_evidence(matrix: &Matrix, prior: &[f64]) -> Result<f64, Mutect2Error> {
     let posterior = allele_fractions_posterior(matrix, prior, None)
         .map_err(numerical)?
         .values;

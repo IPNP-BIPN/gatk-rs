@@ -84,6 +84,8 @@ pub struct HcGenotypingArguments {
     pub dragen_models: Option<DragenModelArguments>,
     /// `--dragstr-params-path`: DRAGstr's genotype priors and the STR annotations.
     pub dragstr: Option<DragstrGenotyping>,
+    /// `--flow-filter-alleles`, with its thresholds.
+    pub filter_alleles: Option<crate::allele_filtering::AlleleFilterArguments>,
 }
 
 /// The DRAGEN genotype models' switches.
@@ -122,6 +124,7 @@ impl Default for HcGenotypingArguments {
             ramped_engine: false,
             dragen_models: None,
             dragstr: None,
+            filter_alleles: None,
         }
     }
 }
@@ -187,6 +190,8 @@ pub fn assign_genotype_likelihoods_annotated(
         contig_length,
         annotator,
         &[],
+        &std::collections::BTreeSet::new(),
+        None,
     )
 }
 
@@ -206,6 +211,8 @@ pub fn assign_genotype_likelihoods_full(
     contig_length: i32,
     mut annotator: Option<CallAnnotator<'_>>,
     filtered_reads: &[Vec<BamRecord>],
+    suspicious_locations: &std::collections::BTreeSet<i32>,
+    pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -449,10 +456,18 @@ pub fn assign_genotype_likelihoods_full(
                         resources: Vec::new(),
                         // `preFilteringAlleleLikelihoods`, which without `--flow-filter-alleles`
                         // is the matrix genotyped here, its haplotypes the ones given event maps.
-                        haplotypes: Some(crate::variant_annotator_engine::HaplotypeMatrix::Reads(
-                            read_likelihoods,
-                            &*haplotypes,
-                        )),
+                        haplotypes: Some(match pre_filtering {
+                            Some((likelihoods, haplotypes)) => {
+                                crate::variant_annotator_engine::HaplotypeMatrix::Reads(
+                                    likelihoods,
+                                    haplotypes,
+                                )
+                            }
+                            None => crate::variant_annotator_engine::HaplotypeMatrix::Reads(
+                                read_likelihoods,
+                                &*haplotypes,
+                            ),
+                        }),
                     };
                     annotator.engine.annotate_context_raw(
                         &call,
@@ -468,6 +483,13 @@ pub fn assign_genotype_likelihoods_full(
             } else {
                 reverse_trim_alleles(&call).map_err(refused)?
             };
+            if suspicious_locations.contains(&loc) {
+                set_attribute(
+                    &mut call,
+                    "SUSP_NOISY_ADJACENT_TP_VARIANT",
+                    Value::Bool(true),
+                );
+            }
             // `annotateVariantContextWithDragstrParametersUsed`.
             if let (Some(strs), Some(dragstr)) = (&dragstrs, &arguments.dragstr) {
                 if contains_inline_indel(&call.alleles[0], &call.alleles[1..]) {

@@ -418,12 +418,68 @@ pub fn call_region(
             &filtered,
             &trimmed,
             ramp_flanks,
+            &std::collections::BTreeSet::new(),
+            None,
         );
     }
     let mut likelihoods = context
         .likelihood_engine
         .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
         .map_err(calling)?;
+    // `filterAlleles`: HaplotypeCaller's engine before realigning, the ramped one after its
+    // pre-filter off ramp.
+    let mut suspicious = std::collections::BTreeSet::new();
+    // `preFilteringAlleleLikelihoods`: what the jumbo annotations see, its haplotypes given their
+    // event maps and its count of filtered haplotypes set.
+    let mut pre_filtering: Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)> = None;
+    let filter =
+        |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+         haplotypes: &mut Vec<Haplotype>,
+         suspicious: &mut std::collections::BTreeSet<i32>,
+         pre_filtering: &mut Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)>|
+         -> Result<(), RegionAssemblyError> {
+            if let Some(arguments) = &context.genotyping.filter_alleles {
+                let filtered = crate::allele_filtering::filter_alleles(
+                    likelihoods,
+                    assembly.full_reference_with_padding(),
+                    &ref_loc,
+                    context.genotyping.max_mnp_distance,
+                    arguments,
+                    crate::allele_filtering::FilterModel::Germline {
+                        ploidy: context.genotyping.sample_ploidy,
+                    },
+                )
+                .map_err(calling)?;
+                let mut before = likelihoods.clone();
+                before.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
+                let mut before_haplotypes: Vec<Haplotype> = (0..before.number_of_alleles())
+                    .filter_map(|index| before.get_allele(index).cloned())
+                    .collect();
+                gatk_engine::event_map::build_event_maps_for_haplotypes(
+                    &mut before_haplotypes,
+                    assembly.full_reference_with_padding(),
+                    &ref_loc,
+                    context.genotyping.max_mnp_distance,
+                )
+                .map_err(|e| calling(e.message()))?;
+                *pre_filtering = Some((before, before_haplotypes));
+                let kept = filtered.likelihoods;
+                *haplotypes = (0..kept.number_of_alleles())
+                    .filter_map(|index| kept.get_allele(index).cloned())
+                    .collect();
+                *likelihoods = kept;
+                *suspicious = filtered.suspicious_locations;
+            }
+            Ok(())
+        };
+    if !ramped {
+        filter(
+            &mut likelihoods,
+            &mut haplotypes,
+            &mut suspicious,
+            &mut pre_filtering,
+        )?;
+    }
     realign_reads_to_their_best_haplotype(
         &mut likelihoods,
         &reference_haplotype,
@@ -449,6 +505,14 @@ pub fn call_region(
         }
         return Ok(Vec::new());
     }
+    if ramped {
+        filter(
+            &mut likelihoods,
+            &mut haplotypes,
+            &mut suspicious,
+            &mut pre_filtering,
+        )?;
+    }
     finish_region(
         region,
         context,
@@ -463,6 +527,8 @@ pub fn call_region(
         &filtered,
         &trimmed,
         ramp_flanks,
+        &suspicious,
+        pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
     )
 }
 
@@ -483,6 +549,8 @@ fn finish_region(
     filtered: &[Vec<BamRecord>],
     trimmed: &TrimResult,
     ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)>,
+    suspicious: &std::collections::BTreeSet<i32>,
+    pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     let contig_length = context.contig_bases.len() as i32;
@@ -498,6 +566,8 @@ fn finish_region(
         contig_length,
         annotator,
         filtered,
+        suspicious,
+        pre_filtering,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     if !context.genotyping.emit_reference_confidence {
