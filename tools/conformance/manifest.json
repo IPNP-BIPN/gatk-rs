@@ -7424,6 +7424,30 @@
       ]
     },
     {
+      "id": "hc-dragen-end-to-end",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller in DRAGEN mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "why": "DRAGEN mode and DRAGstr in the tool itself (G4.1, #1330), on one contig with three short tandem repeats and two samples' reads built so that each mechanism moves a call: an alternate only near the reads' ends at base quality 22 (BQD), an alternate only on reads mapped at quality 6 to 14 (FRD, and the mode's mapping-quality floor of 1 that lets them in), indels inside an A homopolymer and a CA repeat (DRAGstr's priors, gap penalties and STR annotations), and an XQ tag on every read (--transform-dragen-mapping-quality). Fourteen runs in one JVM: the default, --dragen-mode, the mode with a DRAGstr table, --apply-bqd, --apply-frd with and without a depth cap, the XQ swap, the table alone, without its priors, without its PairHMM scores and with a het:hom ratio of 4, the mode in GVCF on one --sample-name, the mode under an explicit calling threshold it must not override, and the mode beside --flow-mode, refused. Each output compared from its ##INFO lines and #CHROM on.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "DRAGstrInfo=1,10",
+        "error\tdragen-mode-and-flow-mode\torg.broadinstitute.hellbender.exceptions.UserException:dragen mode and flow mode can't be both specified"
+      ],
+      "cases": [
+        {
+          "dump": "HcDragenEndToEndDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

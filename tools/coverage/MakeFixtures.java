@@ -833,6 +833,11 @@ public class MakeFixtures {
                 }
             }
         }
+        // DRAGstr's default table, for HaplotypeCaller's --dragstr-params-path.
+        org.broadinstitute.hellbender.utils.dragstr.DragstrParamUtils.print(
+                org.broadinstitute.hellbender.utils.dragstr.DragstrParams.DEFAULT,
+                new org.broadinstitute.hellbender.engine.GATKPath(dir.resolve("dragstr.txt").toString()),
+                "origin", "fixtures");
         new org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2().instanceMain(new String[] {
                 "--input", bam.toString(),
                 "--reference", dir.resolve("mutect_ref.fasta").toString(),

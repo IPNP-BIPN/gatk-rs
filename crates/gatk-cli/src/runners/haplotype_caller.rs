@@ -5,7 +5,8 @@
 //! filters (`makeStandardHCReadFilters` by default); the traversal intervals are `-L`'s, or every
 //! contig of the reads' dictionary. Every argument the port does not honour is refused when it is
 //! set, rather than silently left at its default: GVCF output, `--alleles`, the assembler's own
-//! knobs, pileup detection, DRAGEN mode and the flow-based paths among them.
+//! knobs, pileup detection and the flow-based paths among them. DRAGEN mode is applied as the
+//! reference applies it, while parsing ([`haplotype_caller_modes`]).
 
 use super::*;
 use gatk_annotation::catalogue;
@@ -146,12 +147,23 @@ const HONOURED: &[&str] = &[
     "use-posteriors-to-calculate-qual",
     // Without contamination the filtered read map is the genotyping one either way.
     "use-filtered-reads-for-annotations",
-    // Without --alleles, a bamout, a native PairHMM or a DRAGstr model these change nothing.
+    // Without --alleles, a bamout or a native PairHMM these change nothing.
     "force-call-filtered-alleles",
     "bam-writer-type",
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
     "dont-use-dragstr-pair-hmm-scores",
+    "sample-name",
+    // DRAGEN mode and DRAGstr.
+    "dragen-mode",
+    "apply-bqd",
+    "apply-frd",
+    "transform-dragen-mapping-quality",
+    "max-effective-depth-adjustment-for-frd",
+    "dragstr-params-path",
+    "dragstr-het-hom-ratio",
+    // Refused below beside --dragen-mode, and otherwise NONE.
+    "flow-mode",
     // Logged only.
     "debug-assembly",
     // The implementations, refused below when they name a kernel this port does not carry.
@@ -180,6 +192,56 @@ const HONOURED: &[&str] = &[
     "smith-waterman-read-to-haplotype-gap-open-penalty",
     "smith-waterman-read-to-haplotype-gap-extend-penalty",
 ];
+
+/// `getDragenVersion3412NameValuePairs`: what `--dragen-mode` sets, unless the command line set it.
+const DRAGEN_3412_MODE: &[(&str, &str)] = &[
+    ("apply-bqd", "true"),
+    ("apply-frd", "true"),
+    ("transform-dragen-mapping-quality", "true"),
+    ("soft-clip-low-quality-ends", "true"),
+    ("mapping-quality-threshold-for-genotyping", "1"),
+    ("minimum-mapping-quality", "1"),
+    ("allele-informative-reads-overlap-margin", "1"),
+    ("disable-cap-base-qualities-to-map-quality", "true"),
+    (
+        "enable-dynamic-read-disqualification-for-genotyping",
+        "true",
+    ),
+    ("expected-mismatch-rate-for-read-disqualification", "0.03"),
+    ("genotype-assignment-method", "USE_POSTERIOR_PROBABILITIES"),
+    ("padding-around-indels", "150"),
+    ("standard-min-confidence-threshold-for-calling", "3.0"),
+    ("use-posteriors-to-calculate-qual", "true"),
+];
+
+/// `HaplotypeCaller.customCommandLineValidation`, which runs as the last step of parsing: DRAGEN
+/// mode beside flow mode is refused; otherwise DRAGEN mode lowers the resolved mapping-quality
+/// filter to 1 **whatever the command line said**, and then sets its arguments where the command
+/// line did not. `--dragen-378-concordance-mode` is refused before this, as an argument the port
+/// does not carry.
+pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thrown> {
+    let dragen = flag(parser, "dragen-mode");
+    let flow = scalar(parser, "flow-mode").is_some_and(|mode| mode != "NONE");
+    if dragen && flow {
+        return Err(Thrown::user(
+            "dragen mode and flow mode can't be both specified",
+        ));
+    }
+    if dragen {
+        let filter_resolved = resolve_read_filters(parser, tool)?
+            .iter()
+            .any(|filter| filter.name == "MappingQualityReadFilter");
+        if filter_resolved {
+            parser
+                .override_value("minimum-mapping-quality", "1")
+                .map_err(|error| Thrown::command_line(error.message))?;
+        }
+        parser
+            .set_mode_values(DRAGEN_3412_MODE)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
+    Ok(())
+}
 
 /// `buildRamps`' off ramp: its type, and the file it is written to, which a type other than `NONE`
 /// requires.
@@ -353,7 +415,24 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         intervals,
         filters,
     } = read_walker_startup(parser, tool)?;
-    if emit_reference_confidence && hc::samples_from_header(&header).len() != 1 {
+    // `initializeSamples`.
+    let header_samples = hc::samples_from_header(&header);
+    let sample_name = match scalar(parser, "sample-name") {
+        Some(name) if !header_samples.contains(&name) => {
+            return Err(Thrown::command_line(
+                "Argument --sample_name has a bad value: Specified name does not exist in input bam files",
+            ))
+        }
+        // The only sample named: nothing to filter.
+        Some(_) if header_samples.len() == 1 => None,
+        other => other,
+    };
+    let sample_count = if sample_name.is_some() {
+        1
+    } else {
+        header_samples.len()
+    };
+    if emit_reference_confidence && sample_count != 1 {
         return Err(Thrown::command_line(
             "Argument emit-ref-confidence has a bad value: Can only be used in single sample \
              mode currently. Use the --sample-name argument to run on a single sample out of a \
@@ -402,6 +481,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
 
     // `makePreReadFilterTransformer`, then the filters.
     let filter = read_filter(parser, &filters, &header)?;
+    let transform_mapping_quality = flag(parser, "transform-dragen-mapping-quality");
     let mut reads = Vec::new();
     for mut read in source
         .iter_all()
@@ -409,10 +489,28 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     {
         hc::iupac_to_n(&mut read).map_err(Thrown::user)?;
         if filter(&read) {
+            // `makePostReadFilterTransformer`: DRAGEN's mapping quality swap, after the filters.
+            if transform_mapping_quality {
+                gatk_engine::dragen_genotypes::transform_mapping_quality(&mut read).map_err(
+                    |message| Thrown::non_user("java.lang.IllegalArgumentException", message),
+                )?;
+            }
             reads.push(read);
         }
     }
 
+    // `DragstrParamUtils.parse(hcArgs.likelihoodArgs.dragstrParams)`.
+    let dragstr_params = match argument(parser, "dragstr-params-path") {
+        None => None,
+        Some(path) => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|_| Thrown::user(format!("Couldn't read file {path}")))?;
+            Some(
+                gatk_engine::dragstr::parse(&text, &path)
+                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
+            )
+        }
+    };
     let ploidy = number_or(parser, "sample-ploidy", 2).max(0) as usize;
     let calling_confidence = calling_threshold;
     let max_alternate_alleles = number_or(parser, "max-alternate-alleles", 6).max(0) as usize;
@@ -519,7 +617,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 "disable-cap-base-qualities-to-map-quality",
             ),
             modify_soft_clipped_bases: !flag(parser, "soft-clip-low-quality-ends"),
-            dragstr_params: None,
+            dragstr_params: if flag(parser, "dont-use-dragstr-pair-hmm-scores") {
+                None
+            } else {
+                dragstr_params.clone()
+            },
         },
         genotyping: HcGenotypingArguments {
             sample_ploidy: ploidy,
@@ -551,6 +653,26 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 use_soft_clipped_bases: !flag(parser, "override-fragment-softclip-check"),
             },
             ramped_engine: ramped,
+            dragen_models: (flag(parser, "apply-bqd") || flag(parser, "apply-frd")).then(|| {
+                gatk_tools::hc_genotyping::DragenModelArguments {
+                    bqd: flag(parser, "apply-bqd"),
+                    frd: flag(parser, "apply-frd"),
+                    max_effective_depth_adjustment: number_or(
+                        parser,
+                        "max-effective-depth-adjustment-for-frd",
+                        0,
+                    ),
+                }
+            }),
+            dragstr: dragstr_params.clone().map(|params| {
+                gatk_tools::hc_genotyping::DragstrGenotyping {
+                    params,
+                    use_priors: !flag(parser, "dont-use-dragstr-priors"),
+                    het_hom_ratio: number_or(parser, "dragstr-het-hom-ratio", 2),
+                    snp_heterozygosity: priors.snp_heterozygosity,
+                    indel_heterozygosity: priors.indel_heterozygosity,
+                }
+            }),
         },
         calling: Configuration {
             standard_confidence_for_calling: calling_confidence,
@@ -569,6 +691,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             assignment_method,
         },
         priors,
+        sample_name: sample_name.clone(),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
@@ -672,6 +795,22 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             "genotype priors in Phred Scale",
         ));
     }
+    if argument(parser, "dragstr-params-path").is_some() {
+        lines.push(compound(
+            "INFO",
+            "DRAGstrInfo",
+            Cardinality::Fixed(2),
+            LineType::Integer,
+            "Indicates the period and repeat count",
+        ));
+        lines.push(compound(
+            "INFO",
+            "DRAGstrParams",
+            Cardinality::Fixed(3),
+            LineType::Float,
+            "Parameters used (GOP, GCP, API)",
+        ));
+    }
     if emit_reference_confidence {
         lines.push(HeaderLine::Structured {
             key: "ALT".to_string(),
@@ -703,7 +842,10 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
     let mut vcf_header = VcfHeader {
         lines: unique,
-        samples: hc::samples_from_header(&header),
+        samples: match &sample_name {
+            Some(name) => vec![name.clone()],
+            None => hc::samples_from_header(&header),
+        },
     };
     // `GVCFWriter`: the reference records combined into GQ-band blocks.
     if emit_mode == "GVCF" {

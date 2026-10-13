@@ -14,8 +14,11 @@
 //! In reference-confidence mode each region's output is a record per base, which the command line
 //! combines into blocks when it writes a GVCF.
 //!
-//! Not ported here: `--alleles`, pileup detection, DRAGEN mode
-//! and the flow-based paths, all refused by the command line.
+//! With `--sample-name` naming one of several samples, only that sample is genotyped and each
+//! region keeps only its reads, but the activity profile reads every sample's reads as that one's.
+//!
+//! Not ported here: `--alleles`, pileup detection and the flow-based paths, all refused by the
+//! command line.
 
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
@@ -53,6 +56,9 @@ pub struct HaplotypeCallerArguments {
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
+    /// `--sample-name`, already cleared by the caller when it names the only sample: the samples
+    /// genotyped, and the reads each region keeps.
+    pub sample_name: Option<String>,
     /// `--mapping-quality-threshold-for-genotyping`.
     pub mapping_quality_threshold: u8,
     /// `--use-posteriors-to-calculate-qual`.
@@ -106,8 +112,14 @@ pub fn call_variants(
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
-    let samples = samples_from_header(header);
-    let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
+    let header_samples = samples_from_header(header);
+    let partition: Vec<Option<String>> = header_samples.iter().cloned().map(Some).collect();
+    // `initializeSamples`: one sample named, and the activity profile then reads every sample's
+    // reads as that one's (`splitContextBySampleName(assumedSingleSample, header)`).
+    let samples = match &arguments.sample_name {
+        Some(name) => vec![name.clone()],
+        None => header_samples,
+    };
     let mut evaluator = ActiveRegionEvaluator::new(arguments.is_active.clone(), samples.clone());
     evaluator.configure_from_caller(
         arguments.calling.assignment_method,
@@ -216,7 +228,13 @@ pub fn call_variants(
             off_ramp: off_ramp.as_ref(),
             on_ramp: on_ramp.as_ref(),
         };
-        for traversed in regions {
+        for mut traversed in regions {
+            // `removeReadsFromAllSamplesExcept`.
+            if let Some(name) = &arguments.sample_name {
+                traversed.region.retain_reads(|read| {
+                    gatk_engine::read_pileup::sample_name(read, header).as_deref() == Some(name)
+                });
+            }
             let region_calls = call_region(
                 traversed.region,
                 &context,

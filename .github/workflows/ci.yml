@@ -483,8 +483,8 @@ jobs:
             suites: "ramps-end-to-end"
           - group: golden-pending
             index: "1/1"
-            slug: "dragen-genotypes"
-            suites: "dragen-genotypes"
+            slug: "dragen-genotypes-hc-dragen-end-to-end"
+            suites: "dragen-genotypes hc-dragen-end-to-end"
     steps:
       - uses: actions/checkout@v7
 
