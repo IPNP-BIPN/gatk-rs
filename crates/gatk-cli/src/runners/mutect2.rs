@@ -453,6 +453,15 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         overlap_names: Vec::new(),
         expressions: Vec::new(),
         allele_concordance: false,
+        // The annotations' own arguments, which the plugin descriptor hands to their instances.
+        pseudo_depth: std::cell::RefCell::new(
+            gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
+                double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
+                flag(parser, "dirichlet-keep-prior-in-count"),
+                double_or(parser, "pseudo-count-weight-decay-rate", 1.0),
+            ),
+        ),
+        assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
     };
     let mut random = gatk_random();
     let called = m2::call_variants(

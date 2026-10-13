@@ -784,6 +784,16 @@ fn call_mutations(
         )?);
 
         let (trimmed_call, trim_map) = trim_alleles(&vc).map_err(illegal)?;
+        // `Collectors.toMap`, a `HashMap`: the marginalised matrices list their alleles in
+        // `Allele.hashCode` order, not the call's, and an annotation that reads the matrix by row
+        // (`AllelePseudoDepth`, `BaseQualityHistogram`) writes them in that order.
+        let order = gatk_annotation::depth_per_allele::marginalisation_order(
+            &trim_map.iter().map(|(a, _)| a.clone()).collect::<Vec<_>>(),
+        );
+        let trim_map: Vec<(Allele, Vec<Allele>)> = order
+            .iter()
+            .filter_map(|allele| trim_map.iter().find(|(a, _)| a == allele).cloned())
+            .collect();
         let trimmed_fragments = log_likelihoods
             .marginalize(&trim_map)
             .map_err(|e| illegal(format!("{e:?}")))?;
@@ -802,6 +812,11 @@ fn call_mutations(
             overlaps: Vec::new(),
             dbsnp: None,
             resources: Vec::new(),
+            // `Optional.of(logFragmentLikelihoods)`, the region's fragment-by-haplotype matrix.
+            haplotypes: Some(crate::variant_annotator_engine::HaplotypeMatrix::Fragments(
+                &fragments,
+                &*haplotypes,
+            )),
         };
         let annotated = context
             .annotator

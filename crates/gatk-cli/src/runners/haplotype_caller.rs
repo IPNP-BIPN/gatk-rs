@@ -445,6 +445,21 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
              (emit-ref-confidence) must be specified.",
         ));
     }
+    // `isAlleleSpecificExceptHmerLengthOrStrandBiasMode`, checked by the engine's constructor once
+    // the arguments are validated: an `AS_` INFO or genotype annotation other than
+    // `AS_StrandBiasMutectAnnotation`, in VCF mode.
+    let allele_specific = resolved.iter().any(|entry| {
+        matches!(
+            entry.kind,
+            gatk_annotation::catalogue::Kind::Info | gatk_annotation::catalogue::Kind::Genotype
+        ) && entry.name.starts_with("AS_")
+            && entry.name != "AS_StrandBiasMutectAnnotation"
+    });
+    if allele_specific && !emit_reference_confidence {
+        return Err(Thrown::user(
+            "Allele-specific annotations are not yet supported in the VCF mode",
+        ));
+    }
     // `validateAndInitializeArgs`: GVCF mode calls at a threshold of -0.0, which the
     // active-region engine then takes as its own minimum too.
     let calling_threshold = if emit_reference_confidence {
@@ -709,6 +724,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         overlap_names: Vec::new(),
         expressions: Vec::new(),
         allele_concordance: false,
+        // The annotations' own arguments, which the plugin descriptor hands to their instances.
+        pseudo_depth: std::cell::RefCell::new(
+            gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
+                double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
+                flag(parser, "dirichlet-keep-prior-in-count"),
+                double_or(parser, "pseudo-count-weight-decay-rate", 1.0),
+            ),
+        ),
+        assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
     };
 
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {

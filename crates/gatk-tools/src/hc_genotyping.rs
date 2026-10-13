@@ -447,6 +447,12 @@ pub fn assign_genotype_likelihoods_full(
                         overlaps: Vec::new(),
                         dbsnp: None,
                         resources: Vec::new(),
+                        // `preFilteringAlleleLikelihoods`, which without `--flow-filter-alleles`
+                        // is the matrix genotyped here, its haplotypes the ones given event maps.
+                        haplotypes: Some(crate::variant_annotator_engine::HaplotypeMatrix::Reads(
+                            read_likelihoods,
+                            &*haplotypes,
+                        )),
                     };
                     annotator.engine.annotate_context_raw(
                         &call,

@@ -145,17 +145,17 @@ fn scale_log_space(values: &[f64]) -> Vec<f64> {
     values.iter().map(|value| value - max).collect()
 }
 
-/// `GenotypeBuilder.log10PError(e)`: the GQ it implies, capped at `VCFConstants.MAX_GENOTYPE_QUAL`.
+/// `GenotypeBuilder.log10PError(e)` in htsjdk 4.2.0: the GQ it implies, NOT capped.
 ///
 /// ```java
-/// return GQ((int)Math.round(Math.min(pLog10Error * -10, VCFConstants.MAX_GENOTYPE_QUAL)));
+/// return GQ((int)Math.round(pLog10Error * -10));
 /// ```
+///
+/// The cap at `MAX_GENOTYPE_QUAL` is the VCF encoder's (`GQAccessor`), so a GQ over 99 is written
+/// as 99 while an annotation such as `GQ_MEAN` still reads the genotype's real value.
 pub(crate) fn gq_of_log10(log10: f64) -> i32 {
-    java_round((log10 * -10.0).min(MAX_GENOTYPE_QUAL)) as i32
+    java_round(log10 * -10.0) as i32
 }
-
-/// `VCFConstants.MAX_GENOTYPE_QUAL`.
-const MAX_GENOTYPE_QUAL: f64 = 99.0;
 
 /// `GenotypeAssignmentMethod`. GenotypeGVCFs reaches `PREFER_PLS` for the calls it emits and
 /// `BEST_MATCH_TO_ORIGINAL` for the reduction to `--max-alternate-alleles`; ReblockGVCF's
@@ -542,7 +542,7 @@ pub(crate) fn make_genotype_call_with_priors(
                 .push(("PG".to_string(), phred(&log10_priors)));
             let best = max_element_index(&posteriors);
             if !targets.is_empty() {
-                // `log10PError`, which htsjdk 4.2.0 caps at `MAX_GENOTYPE_QUAL`.
+                // `log10PError`; the encoder caps what it writes at 99.
                 genotype.gq = gq_log10_from_posteriors(best, &normalized).map(gq_of_log10);
             }
             genotype.alleles = genotypes_in_canonical_order(ploidy, targets.len())

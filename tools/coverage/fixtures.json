@@ -8098,9 +8098,11 @@
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
         "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
         "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8208,7 +8210,8 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--dragstr-params-path": [
         "null",
@@ -8238,7 +8241,10 @@
         "Held out, as features this port does not carry: somatic reference-confidence mode (--emit-ref-confidence),",
         "mitochondria mode, the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
         "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false, as for HaplotypeCaller: most of what it switches on is not computed in Mutect2's context by this port."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter."
       ],
       "--input": [
         "/work/fixtures/mutect_tn.bam"
@@ -8349,7 +8355,8 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8370,9 +8377,11 @@
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
         "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
         "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones.",
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones.",
         "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
         "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet."
       ],
@@ -8482,7 +8491,8 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--off-ramp-type": [
         "NONE"

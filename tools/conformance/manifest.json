@@ -7448,6 +7448,32 @@
       ]
     },
     {
+      "id": "callers-all-annotations",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller, RampedHaplotypeCaller and Mutect2 with --enable-all-annotations, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--enable-all-annotations (G3.2c, #1332): every annotation GATK discovers, computed in the context each caller gives it. The allele-specific raw data reference-confidence mode writes; AllelePseudoDepth's DD and DF, with the memo its one instance keeps across sites; the flow annotations under the default flow order, CycleSkipStatus writing nothing without an actual one; the pedigree annotations with no pedigree, which answer nothing; OriginalAlignment's OCM where Mutect2's TLOD lets it run; and the jumbo INFO annotations, AssemblyComplexity and HaplotypeFilteringAnnotation, over the caller's read- or fragment-by-haplotype matrix. What a reader would not guess: HaplotypeCaller refuses allele-specific annotations in VCF mode; Mutect2 writes DD, DF and BQHIST in the Allele.hashCode order its HashMap marginalises into; and GQ_MEAN reads the genotype's real GQ, which only the VCF encoder caps at 99 (htsjdk-rs #245). Seven runs over HcDragenEndToEndDump's reads: HaplotypeCaller in VCF (refused), GVCF, BP_RESOLUTION and GVCF in DRAGEN mode, RampedHaplotypeCaller in GVCF, Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\thc-vcf\torg.broadinstitute.hellbender.exceptions.UserException:Allele-specific annotations are not yet supported in the VCF mode",
+        "HAPDOM=1.00"
+      ],
+      "cases": [
+        {
+          "dump": "HcAllAnnotationsDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

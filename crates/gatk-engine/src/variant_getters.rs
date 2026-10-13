@@ -121,6 +121,23 @@ pub fn attribute_value_to_double_array(
         return Ok(None);
     };
 
+    // An in-memory `double[]` (Mutect2's `TLOD`, built with `.toArray()`) takes the array branch,
+    // `Double.parseDouble(String.valueOf(d))` per element, which gives back `d` exactly: Java's
+    // `Double.toString` always round-trips. So the doubles are the answer and no text is needed.
+    if let Value::List(items) = value {
+        if !items.is_empty() && items.iter().all(|item| matches!(item, Value::Double(_))) {
+            return Ok(Some(
+                items
+                    .iter()
+                    .map(|item| match item {
+                        Value::Double(d) => *d,
+                        _ => unreachable!("every item is a double"),
+                    })
+                    .collect(),
+            ));
+        }
+    }
+
     // The Iterable branch is unreachable, so a list takes the same path as a scalar: rendered with
     // String.valueOf, stripped of brackets, split on the comma.
     let rendered =
