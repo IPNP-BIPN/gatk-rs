@@ -7423,7 +7423,7 @@
     },
     {
       "id": "ramps-end-to-end",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "RampedHaplotypeCaller's ramps, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7444,8 +7444,8 @@
       "cases": [
         {
           "dump": "RampsEndToEndDump",
-          "golden": null,
-          "why": "Pending: the golden comes from the PR's candidate-goldens artefact."
+          "golden": "crates/gatk-tools/tests/data/ramps_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38368192193, byte for byte the local dump. Twenty-five rows: the two contigs, the SAM text, the three off ramps' VCFs and zips (entry names, text entries, the haplotype BAM and BAI as hex), the on ramps' VCFs and the three refusals."
         }
       ]
     }
