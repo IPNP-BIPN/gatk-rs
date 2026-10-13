@@ -530,6 +530,11 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.copynumber.ModelSegments());
         declarations("RampedHaplotypeCaller",
                 new org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller());
+        // The two G3 callers, whose runners came last.
+        declarations("HaplotypeCaller",
+                new org.broadinstitute.hellbender.tools.walkers.haplotypecaller.HaplotypeCaller());
+        declarations("Mutect2",
+                new org.broadinstitute.hellbender.tools.walkers.mutect.Mutect2());
         declarations("SplitCRAM",
                 new org.broadinstitute.hellbender.tools.SplitCRAM());
         declarations("VariantEval",
