@@ -1388,6 +1388,51 @@ impl Parser {
         &self.definitions
     }
 
+    /// `ModeArgumentUtils.setArgValues(parser, argValues, modeName)`: each argument a mode names
+    /// takes the mode's value, unless the command line already set it. Returns the arguments the
+    /// mode did set, in the mode's order, which the reference only logs.
+    ///
+    /// An alias the parser does not know is the reference's `IllegalArgumentException`, which is
+    /// a programming error in the mode's table rather than a user's.
+    pub fn set_mode_values(&mut self, pairs: &[(&str, &str)]) -> Result<Vec<String>, Error> {
+        let mut modified = Vec::new();
+        for (alias, value) in pairs {
+            let index = self.index_of_alias(alias).ok_or_else(|| Error {
+                class: "java.lang.IllegalArgumentException",
+                message: format!("alias not found: {alias}"),
+            })?;
+            if self.definitions[index].has_been_set() {
+                continue;
+            }
+            self.definitions[index].set_argument_values(
+                &[(*value).to_string()],
+                false,
+                &TagSurrogates::default(),
+                &Filesystem,
+            )?;
+            modified.push((*alias).to_string());
+        }
+        Ok(modified)
+    }
+
+    /// A field assigned directly by the tool after parsing, as `customCommandLineValidation` does
+    /// with a resolved plugin's field: the value replaces whatever the command line gave, and the
+    /// argument counts as set.
+    pub fn override_value(&mut self, alias: &str, value: &str) -> Result<(), Error> {
+        let index = self.index_of_alias(alias).ok_or_else(|| Error {
+            class: "java.lang.IllegalArgumentException",
+            message: format!("alias not found: {alias}"),
+        })?;
+        let definition = &mut self.definitions[index];
+        definition.has_been_set = false;
+        definition.set_argument_values(
+            &[value.to_string()],
+            false,
+            &TagSurrogates::default(),
+            &Filesystem,
+        )
+    }
+
     /// The definition an alias names, if any. `namedArgumentsDefinitionsByAlias`.
     fn index_of_alias(&self, alias: &str) -> Option<usize> {
         self.definitions

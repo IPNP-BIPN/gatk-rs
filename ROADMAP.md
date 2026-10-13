@@ -471,6 +471,23 @@ copy, which is a worse position than reading the source rather than a better one
 
 ## Milestone G3: the variant callers (individually multi-month)
 
+G3 is not finished. G3.1 below landed the three callers over covering arrays that held out every
+feature the port refused; G3.2 (#1329) ports those features and puts their arguments back in the
+arrays, and G3 is done only when no argument of the three callers is held out as not carried.
+
+- [~] **G3.2, every argument of the callers** (#1329):
+      - [~] G3.2a DRAGEN mode in HaplotypeCaller (#1330): the BQD and FRD genotype models,
+            DRAGstr, the XQ mapping-quality swap, `--sample-name` and the mode's presets;
+      - [~] G3.2b `--disable-optimizations` (#1331);
+      - [~] G3.2c `--enable-all-annotations` (#1332);
+      - [ ] G3.2d Mutect2's somatic reference-confidence mode (#1333);
+      - [ ] G3.2e Mutect2's mitochondria mode (#1334);
+      - [ ] G3.2f the flow-based paths (#1335);
+      - [ ] G3.2g pileup detection and the partially determined PairHMM, with
+            `--dragen-378-concordance-mode` (#1336);
+      - [ ] G3.2h the linked de Bruijn graph (#1337);
+      - [ ] G3.2i the ramp arguments in a covering array (#1340);
+      - [ ] G3.2j the callers' cost (#1341).
 - [x] `HaplotypeCaller`, `Mutect2` and relatives: assembly graph, genotyping. Each run end to end
       by the tool itself on an indexed BAM and a FASTA, golden from the pinned container:
       `hc-end-to-end` (seven runs, the generator carried between them), `hc-gvcf-end-to-end`

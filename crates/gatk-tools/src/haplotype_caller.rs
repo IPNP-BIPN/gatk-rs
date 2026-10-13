@@ -14,8 +14,11 @@
 //! In reference-confidence mode each region's output is a record per base, which the command line
 //! combines into blocks when it writes a GVCF.
 //!
-//! Not ported here: `--alleles`, pileup detection, DRAGEN mode
-//! and the flow-based paths, all refused by the command line.
+//! With `--sample-name` naming one of several samples, only that sample is genotyped and each
+//! region keeps only its reads, but the activity profile reads every sample's reads as that one's.
+//!
+//! Not ported here: `--alleles`, pileup detection and the flow-based paths, all refused by the
+//! command line.
 
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
@@ -35,6 +38,7 @@ use crate::haplotype_caller_engine::{ActiveRegionEvaluator, ActivityType, IsActi
 use crate::hc_genotyping::{CallAnnotator, HcGenotypingArguments};
 use crate::hc_region::{
     assembler_from, call_region, AssemblerArguments, CallRegionContext, RegionAssemblyArguments,
+    RegionAssemblyError,
 };
 use crate::variant_annotator_engine::Engine as AnnotatorEngine;
 
@@ -53,6 +57,11 @@ pub struct HaplotypeCallerArguments {
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
+    /// `--sample-name`, already cleared by the caller when it names the only sample: the samples
+    /// genotyped, and the reads each region keeps.
+    pub sample_name: Option<String>,
+    /// `--disable-optimizations`.
+    pub disable_optimizations: bool,
     /// `--mapping-quality-threshold-for-genotyping`.
     pub mapping_quality_threshold: u8,
     /// `--use-posteriors-to-calculate-qual`.
@@ -72,6 +81,10 @@ pub struct HaplotypeCallerArguments {
 pub struct HaplotypeCallerError {
     pub class: String,
     pub message: String,
+    /// The calls of the regions before the failing one. The reference has already handed them to
+    /// its writer, and closes it in a `finally`, so an error the writer raises over them is the
+    /// one the run reports.
+    pub calls_before: Vec<VariantContext>,
 }
 
 impl HaplotypeCallerError {
@@ -79,6 +92,7 @@ impl HaplotypeCallerError {
         HaplotypeCallerError {
             class: class.to_string(),
             message: message.into(),
+            calls_before: Vec::new(),
         }
     }
 }
@@ -106,8 +120,45 @@ pub fn call_variants(
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
-    let samples = samples_from_header(header);
-    let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
+    let mut calls = Vec::new();
+    match call_variants_into(
+        reads,
+        header,
+        intervals,
+        arguments,
+        annotator,
+        contig_bases,
+        random,
+        &mut calls,
+    ) {
+        Ok(()) => Ok(calls),
+        Err(mut error) => {
+            error.calls_before = calls;
+            Err(error)
+        }
+    }
+}
+
+/// [`call_variants`], appending each region's calls to `calls` as it goes.
+#[allow(clippy::too_many_arguments)]
+fn call_variants_into(
+    reads: &[BamRecord],
+    header: &SamHeader,
+    intervals: &[SimpleInterval],
+    arguments: &HaplotypeCallerArguments,
+    annotator: &AnnotatorEngine,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    random: &mut JavaRandom,
+    calls: &mut Vec<VariantContext>,
+) -> Result<(), HaplotypeCallerError> {
+    let header_samples = samples_from_header(header);
+    let partition: Vec<Option<String>> = header_samples.iter().cloned().map(Some).collect();
+    // `initializeSamples`: one sample named, and the activity profile then reads every sample's
+    // reads as that one's (`splitContextBySampleName(assumedSingleSample, header)`).
+    let samples = match &arguments.sample_name {
+        Some(name) => vec![name.clone()],
+        None => header_samples,
+    };
     let mut evaluator = ActiveRegionEvaluator::new(arguments.is_active.clone(), samples.clone());
     evaluator.configure_from_caller(
         arguments.calling.assignment_method,
@@ -148,7 +199,6 @@ pub fn call_variants(
         .map(|(kind, path)| crate::ramp_files::OnRamp::open(*kind, path))
         .transpose()
         .map_err(|message| HaplotypeCallerError::new("RuntimeException", message))?;
-    let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
         let bases = contig_bases(&contig)
@@ -215,8 +265,15 @@ pub fn call_variants(
             mapping_quality_threshold: arguments.mapping_quality_threshold,
             off_ramp: off_ramp.as_ref(),
             on_ramp: on_ramp.as_ref(),
+            disable_optimizations: arguments.disable_optimizations,
         };
-        for traversed in regions {
+        for mut traversed in regions {
+            // `removeReadsFromAllSamplesExcept`.
+            if let Some(name) = &arguments.sample_name {
+                traversed.region.retain_reads(|read| {
+                    gatk_engine::read_pileup::sample_name(read, header).as_deref() == Some(name)
+                });
+            }
             let region_calls = call_region(
                 traversed.region,
                 &context,
@@ -226,7 +283,13 @@ pub fn call_variants(
                     random,
                 }),
             )
-            .map_err(|e| HaplotypeCallerError::new("GATKException", format!("{e:?}")))?;
+            .map_err(|e| match e {
+                RegionAssemblyError::NoVariationPresent => HaplotypeCallerError::new(
+                    "java.lang.IllegalStateException",
+                    "There is no variation present.".to_string(),
+                ),
+                other => HaplotypeCallerError::new("GATKException", format!("{other:?}")),
+            })?;
             calls.extend(region_calls);
         }
     }
@@ -236,7 +299,7 @@ pub fn call_variants(
             .write(path)
             .map_err(|message| HaplotypeCallerError::new("GATKException", message))?;
     }
-    Ok(calls)
+    Ok(())
 }
 
 /// `IUPACReadTransformer(true)`, HaplotypeCaller's pre-filter transformer: every IUPAC ambiguity
