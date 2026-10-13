@@ -302,22 +302,15 @@ const PEDIGREE_ANNOTATIONS: [&str; 4] = [
     "TransmittedSingleton",
 ];
 
-/// `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`' pedigree step and what it hands the
-/// resolved pedigree annotations: refused when either argument is given and none of them was
-/// resolved, otherwise the PED file's trios, and the founders (`--founder-id`'s, then the file's).
-pub(crate) fn pedigree_arguments(
+/// `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`' pedigree step, which runs while the
+/// command line is parsed, before the tool's own validation: either pedigree argument with no
+/// pedigree annotation resolved is refused.
+pub(crate) fn pedigree_refusal(
     parser: &Parser,
     resolved: &[&gatk_annotation::catalogue::Entry],
-) -> Result<gatk_tools::variant_annotator_engine::PedigreeArguments, Thrown> {
-    let mut founder_ids = arguments(parser, "founder-id");
-    let pedigree = argument(parser, "pedigree");
-    let mut out = gatk_tools::variant_annotator_engine::PedigreeArguments {
-        parent_gq_threshold: number_or(parser, "denovo-parent-gq-threshold", 20),
-        depth_threshold: number_or(parser, "denovo-depth-threshold", 0),
-        ..Default::default()
-    };
-    if founder_ids.is_empty() && pedigree.is_none() {
-        return Ok(out);
+) -> Result<(), Thrown> {
+    if arguments(parser, "founder-id").is_empty() && argument(parser, "pedigree").is_none() {
+        return Ok(());
     }
     if !resolved
         .iter()
@@ -340,6 +333,22 @@ pub(crate) fn pedigree_arguments(
             named.join(", ")
         )));
     }
+    Ok(())
+}
+
+/// What the descriptor hands the resolved pedigree annotations: the PED file's trios, and the
+/// founders (`--founder-id`'s, then the file's). The reference reads the file at the first site
+/// annotated; here it is read once the engine is built, after the tool's own validation.
+pub(crate) fn pedigree_arguments(
+    parser: &Parser,
+) -> Result<gatk_tools::variant_annotator_engine::PedigreeArguments, Thrown> {
+    let mut founder_ids = arguments(parser, "founder-id");
+    let pedigree = argument(parser, "pedigree");
+    let mut out = gatk_tools::variant_annotator_engine::PedigreeArguments {
+        parent_gq_threshold: number_or(parser, "denovo-parent-gq-threshold", 20),
+        depth_threshold: number_or(parser, "denovo-depth-threshold", 0),
+        ..Default::default()
+    };
     if let Some(path) = pedigree {
         let text = std::fs::read_to_string(&path).map_err(|_| {
             Thrown::user(format!(
