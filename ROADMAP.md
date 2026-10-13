@@ -1109,7 +1109,12 @@ here, IPNP-BIPN/picard-rs#107). The boxes below are what it said while it was op
         clipping
   - [x] multi-hit selection (`MultiHitAlignedReadIterator` and the primary-alignment strategies)
 - [x] the remaining ~59 Picard tools, by archetype
-- [x] full parameter coverage on every ported Picard tool
+- [x] full parameter coverage on every ported Picard tool: every argument specific to a tool takes
+      at least two values in its array, and every array matches the reference on every row
+      (IPNP-BIPN/picard-rs#353 to #358). It was ticked before that was true: the arrays then held
+      348 of those arguments at one value. What still does not vary is common to the tools, with
+      its reason written in picard-rs's fixtures (the deflater and log settings, `TMP_DIR`, the
+      output path, and a reference or index switch where a tool's corpus offers one value)
 
 ---
 
