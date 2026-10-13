@@ -719,6 +719,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         priors,
         sample_name: sample_name.clone(),
         disable_optimizations: flag(parser, "disable-optimizations"),
+        ramps_debug_post_assembler_on: flag(parser, "ramps-debug-post-assembler-on"),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
