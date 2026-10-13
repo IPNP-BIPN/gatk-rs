@@ -514,7 +514,11 @@ pub fn clip_low_qual_ends(
     // The length is the read's, and the qualities are indexed with it: a read whose qualities are
     // absent has an empty array, and `getBaseQuality` runs past its end rather than answering.
     let read_length = read.read_bases.len() as i32;
-    let quality = |index: i32| -> Option<u8> { read.base_qualities.get(index as usize).copied() };
+    // Java compares `byte`s, signed: a threshold of -1 (`(byte) (0 - 1)`) clips nothing.
+    let low_qual = low_qual as i8;
+    let quality = |index: i32| -> Option<i8> {
+        read.base_qualities.get(index as usize).map(|&q| q as i8)
+    };
     let mut right = read_length - 1;
     while right >= 0 {
         match quality(right) {

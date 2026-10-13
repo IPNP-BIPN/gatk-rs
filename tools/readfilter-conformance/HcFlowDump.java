@@ -195,5 +195,14 @@ public class HcFlowDump {
         HcAllAnnotationsDump.run(dir, "ramped-collapse-4", org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller::new,
                 bam, fasta, List.of(collapse, "4"));
         HcAllAnnotationsDump.run(dir, "mutect2-collapse-4", Mutect2::new, bam, fasta, List.of(collapse, "4"));
+        // --flow-mode: its presets, set where the command line did not set them.
+        HcAllAnnotationsDump.run(dir, "hc-flow-mode-standard", HaplotypeCaller::new, bam, fasta, List.of("--flow-mode", "STANDARD"));
+        HcAllAnnotationsDump.run(dir, "hc-flow-mode-advanced", HaplotypeCaller::new, bam, fasta, List.of("--flow-mode", "ADVANCED"));
+        HcAllAnnotationsDump.run(dir, "hc-flow-mode-standard-sor-1", HaplotypeCaller::new, bam, fasta,
+                List.of("--flow-mode", "STANDARD", "--flow-filter-alleles-sor-threshold", "1"));
+        HcAllAnnotationsDump.run(dir, "ramped-flow-mode-advanced", org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller::new,
+                bam, fasta, List.of("--flow-mode", "ADVANCED"));
+        HcAllAnnotationsDump.run(dir, "mutect2-flow-mode-standard", Mutect2::new, bam, fasta, List.of("--flow-mode", "STANDARD"));
+        HcAllAnnotationsDump.run(dir, "mutect2-flow-mode-advanced", Mutect2::new, bam, fasta, List.of("--flow-mode", "ADVANCED"));
     }
 }

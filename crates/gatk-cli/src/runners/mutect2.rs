@@ -20,6 +20,8 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // The flow-based presets.
+    "flow-mode",
     // Long hmer collapsing and allele filtering before genotyping.
     "flow-assembly-collapse-hmer-size",
     "flow-assembly-collapse-partial-mode",
@@ -246,6 +248,24 @@ pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
         let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
         parser
             .set_mode_values(&borrowed)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
+    // `FlowMode`: STANDARD, or ADVANCED's pairs before STANDARD's.
+    if let Some(mode) = scalar(parser, "flow-mode").filter(|mode| mode != "NONE") {
+        let pairs = flow_mode_pairs(
+            &mode,
+            &[
+                ("pruning-lod-threshold", "3.0"),
+                (
+                    "enable-dynamic-read-disqualification-for-genotyping",
+                    "true",
+                ),
+                ("dynamic-read-disqualification-threshold", "10"),
+                ("minimum-mapping-quality", "1"),
+            ],
+        );
+        parser
+            .set_mode_values(&pairs)
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     Ok(())

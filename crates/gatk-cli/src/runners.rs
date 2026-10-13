@@ -11107,6 +11107,31 @@ pub(crate) fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::Fl
     }
 }
 
+/// `FlowMode.STANDARD`'s pairs, which both callers share.
+pub(crate) const FLOW_MODE_STANDARD: &[(&str, &str)] = &[
+    ("mbq", "0"),
+    ("flow-filter-alleles", "true"),
+    ("flow-filter-alleles-sor-threshold", "3"),
+    ("flow-assembly-collapse-hmer-size", "-1"),
+    ("override-fragment-softclip-check", "true"),
+    ("flow-likelihood-parallel-threads", "2"),
+    ("flow-likelihood-optimized-comp", "true"),
+    ("likelihood-calculation-engine", "FlowBased"),
+];
+
+/// `--flow-mode`'s pairs: ADVANCED's own (`advanced`), then STANDARD's, as `getNameValuePairs`
+/// appends the parent's.
+pub(crate) fn flow_mode_pairs(
+    mode: &str,
+    advanced: &[(&'static str, &'static str)],
+) -> Vec<(&'static str, &'static str)> {
+    match mode {
+        "STANDARD" => FLOW_MODE_STANDARD.to_vec(),
+        "ADVANCED" => advanced.iter().chain(FLOW_MODE_STANDARD).copied().collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// `FlowBasedAlignmentArgumentCollection`, when `--likelihood-calculation-engine` is `FlowBased`.
 pub(crate) fn flow_engine_arguments(
     parser: &Parser,

@@ -257,6 +257,28 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
             .set_mode_values(DRAGEN_3412_MODE)
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
+    // `FlowMode`: STANDARD, or ADVANCED's pairs before STANDARD's.
+    if flow {
+        let mode = scalar(parser, "flow-mode").unwrap_or_default();
+        let pairs = flow_mode_pairs(
+            &mode,
+            &[
+                ("adaptive-pruning", "true"),
+                ("pruning-lod-threshold", "3.0"),
+                (
+                    "enable-dynamic-read-disqualification-for-genotyping",
+                    "true",
+                ),
+                ("dynamic-read-disqualification-threshold", "10"),
+                ("apply-frd", "true"),
+                ("minimum-mapping-quality", "1"),
+                ("mapping-quality-threshold-for-genotyping", "1"),
+            ],
+        );
+        parser
+            .set_mode_values(&pairs)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
     Ok(())
 }
 
