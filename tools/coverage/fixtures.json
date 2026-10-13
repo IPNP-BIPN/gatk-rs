@@ -8245,8 +8245,9 @@
         "--pair-hmm-implementation at LOGLESS_CACHING, --smith-waterman at JAVA and --likelihood-calculation-engine at",
         "PairHMM for the same reasons.",
         "--emit-ref-confidence is listed NONE first, then GVCF and BP_RESOLUTION, with two lists of TLOD bands and a",
-        "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. Held out, as",
-        "features this port does not carry: mitochondria mode, the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
+        "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
+        "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
+        "does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
         "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
@@ -8366,7 +8367,10 @@
         "GVCF",
         "BP_RESOLUTION"
       ],
-      "--mitochondria-mode": [],
+      "--mitochondria-mode": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [

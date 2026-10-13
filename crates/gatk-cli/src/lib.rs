@@ -518,7 +518,9 @@ fn run_combine_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
 }
 
 fn run_mutect2(args: &[String]) -> Result<Option<String>, Thrown> {
-    runners::mutect2(&parsed("Mutect2", args)?)
+    let mut parser = parsed("Mutect2", args)?;
+    runners::mutect2_modes(&mut parser)?;
+    runners::mutect2(&parser)
 }
 
 fn run_ramped_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown> {

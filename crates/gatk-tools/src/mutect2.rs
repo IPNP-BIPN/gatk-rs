@@ -25,7 +25,7 @@
 //!
 //! Not ported here: `--alleles`, `--germline-resource`,
 //! `--panel-of-normals`, `--f1r2-tar-gz`, the bamout, a germline-sites fraction above zero (whose
-//! generator is unseeded), mitochondria mode and the Permutect datasets, all refused by the
+//! generator is unseeded) and the Permutect datasets, all refused by the
 //! command line.
 
 use std::collections::HashMap;

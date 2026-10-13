@@ -126,6 +126,7 @@ const HONOURED: &[&str] = &[
     "normal-lod",
     "ignore-itr-artifacts",
     "minimum-allele-fraction",
+    "mitochondria-mode",
     // Somatic reference-confidence mode.
     "emit-ref-confidence",
     "gvcf-lod-band",
@@ -203,6 +204,35 @@ fn pcr_model(parser: &Parser) -> PcrErrorModel {
 }
 
 /// `Mutect2.doWork`.
+/// `M2ArgumentCollection.getMitochondriaModeNameValuePairs`, each value as `String.valueOf` writes
+/// it: the default allele frequency 4e-3, the emission and initial LODs 0, all dangling branches
+/// recovered, a pruning threshold of `log10ToLog(-4)`, and `OriginalAlignment`.
+fn mitochondria_mode() -> Vec<(&'static str, String)> {
+    vec![
+        ("af-of-alleles-not-in-resource", "0.004".to_string()),
+        ("tumor-lod-to-emit", "0.0".to_string()),
+        ("initial-tumor-lod", "0.0".to_string()),
+        ("recover-all-dangling-branches", "true".to_string()),
+        // `MathUtils.log10ToLog(-4)`, minus four times the natural logarithm of ten, as
+        // `Double.toString` writes it.
+        ("pruning-lod-threshold", "-9.210340371976184".to_string()),
+        ("annotation", "OriginalAlignment".to_string()),
+    ]
+}
+
+/// `Mutect2.customCommandLineValidation`: `--mitochondria-mode` sets its arguments where the
+/// command line did not.
+pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
+    if flag(parser, "mitochondria-mode") {
+        let pairs = mitochondria_mode();
+        let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        parser
+            .set_mode_values(&borrowed)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
+    Ok(())
+}
+
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
     match scalar(parser, "likelihood-calculation-engine").as_deref() {

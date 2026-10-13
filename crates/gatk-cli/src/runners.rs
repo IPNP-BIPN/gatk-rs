@@ -36,7 +36,7 @@ pub type Outcome = Result<Option<String>, Thrown>;
 mod haplotype_caller;
 pub use haplotype_caller::{haplotype_caller, haplotype_caller_modes, ramped_haplotype_caller};
 mod mutect2;
-pub use mutect2::mutect2;
+pub use mutect2::{mutect2, mutect2_modes};
 mod joint_germline_cnv;
 pub use joint_germline_cnv::joint_germline_cnv_segmentation;
 

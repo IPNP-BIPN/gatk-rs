@@ -7524,6 +7524,30 @@
       ]
     },
     {
+      "id": "mutect2-mitochondria",
+      "status": "golden-pending",
+      "title": "Mutect2 in mitochondria mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--mitochondria-mode (G3.2e, #1334) is argument presets, set where the command line did not set them, as customCommandLineValidation sets them: a default allele frequency of 4e-3, emission and initial LODs of 0, every dangling branch recovered, a pruning LOD threshold of log(10^-4), and the OriginalAlignment annotation. Over HcDragenEndToEndDump's reads: the mode on the first sample, with an explicit --tumor-lod-to-emit it must not override, in GVCF over a window, and over both samples with the second as the normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 7,
+      "expect_contains": [
+        "out\tmitochondria=",
+        "out\tmitochondria-tumor-normal="
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2MitochondriaDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",
