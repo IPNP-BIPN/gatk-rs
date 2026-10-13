@@ -1108,6 +1108,15 @@
       "t": 2,
       "share": 1.0
     },
+    "CreateReadCountPanelOfNormals": {
+      "rows": 25,
+      "accepted": 17,
+      "rejected": 8,
+      "distinct_outputs": 17,
+      "matched": 25,
+      "t": 2,
+      "share": 1.0
+    },
     "AlleleFrequencyQC": {
       "rows": 26,
       "accepted": 0,
@@ -1240,6 +1249,33 @@
       "rejected": 0,
       "distinct_outputs": 14,
       "matched": 21,
+      "t": 2,
+      "share": 1.0
+    },
+    "HaplotypeCaller": {
+      "rows": 42,
+      "accepted": 41,
+      "rejected": 1,
+      "distinct_outputs": 31,
+      "matched": 42,
+      "t": 2,
+      "share": 1.0
+    },
+    "RampedHaplotypeCaller": {
+      "rows": 42,
+      "accepted": 41,
+      "rejected": 1,
+      "distinct_outputs": 31,
+      "matched": 42,
+      "t": 2,
+      "share": 1.0
+    },
+    "Mutect2": {
+      "rows": 25,
+      "accepted": 21,
+      "rejected": 4,
+      "distinct_outputs": 16,
+      "matched": 25,
       "t": 2,
       "share": 1.0
     }
