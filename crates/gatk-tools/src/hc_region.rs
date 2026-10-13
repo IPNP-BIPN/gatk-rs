@@ -71,6 +71,8 @@ pub struct CallRegionContext<'a> {
     pub aligner: &'a dyn SmithWatermanAligner,
     pub trimmer: &'a AssemblyRegionTrimmer,
     pub likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
+    /// `filterStepLikelihoodCalculationEngine`, with stepwise filtering.
+    pub stepwise_engine: Option<&'a crate::flow_likelihood_engine::ReadLikelihoodEngine>,
     pub genotyping: &'a HcGenotypingArguments,
     /// `--mapping-quality-threshold-for-genotyping`, 20 by default.
     pub mapping_quality_threshold: u8,
@@ -425,9 +427,23 @@ pub fn call_region(
         );
     }
     let mut likelihoods = context
-        .likelihood_engine
+        .stepwise_engine
+        .unwrap_or(context.likelihood_engine)
         .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
         .map_err(calling)?;
+    // Stepwise filtering: the main engine scores the reads again over the haplotypes the
+    // filter kept, in their order.
+    let rescore = |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+                   haplotypes: &[Haplotype]|
+     -> Result<(), RegionAssemblyError> {
+        if context.stepwise_engine.is_some() {
+            *likelihoods = context
+                .likelihood_engine
+                .compute_read_likelihoods(haplotypes, context.header, context.samples, &reads)
+                .map_err(calling)?;
+        }
+        Ok(())
+    };
     // The collapsing engine `assembleReads` built for the region: a threshold above zero and a
     // run longer than it in the reference under the padded span. Read back from a post-assembler
     // on ramp, the set has none, and the ramped engine builds one only for a threshold given.
@@ -505,6 +521,7 @@ pub fn call_region(
             &mut suspicious,
             &mut pre_filtering,
         )?;
+        rescore(&mut likelihoods, &haplotypes)?;
     }
     realign_reads_to_their_best_haplotype(
         &mut likelihoods,
@@ -541,6 +558,7 @@ pub fn call_region(
             &mut suspicious,
             &mut pre_filtering,
         )?;
+        rescore(&mut likelihoods, &haplotypes)?;
     }
     finish_region(
         region,

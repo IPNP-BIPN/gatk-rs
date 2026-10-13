@@ -58,6 +58,9 @@ pub struct HaplotypeCallerArguments {
     pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
     /// `--likelihood-calculation-engine FlowBasedHMM`: its arguments.
     pub flow_hmm: Option<crate::flow_likelihood_engine::FlowHmmArguments>,
+    /// `--use-flow-aligner-for-stepwise-hc-filtering`: the FlowBased engine that scores the reads
+    /// for allele filtering, before the main engine scores them again over what is left.
+    pub stepwise_flow: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
     pub genotyping: HcGenotypingArguments,
     pub calling: Configuration,
     pub priors: Priors,
@@ -189,6 +192,20 @@ fn call_variants_into(
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
+    // `filterStepLikelihoodCalculationEngine`.
+    let stepwise_engine = arguments.stepwise_flow.as_ref().map(|flow| {
+        crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
+            crate::flow_likelihood_engine::FlowLikelihoodEngine {
+                arguments: flow.clone(),
+                log10_global_read_mismapping_rate: arguments
+                    .likelihoods
+                    .log10_global_read_mismapping_rate,
+                expected_error_rate_per_base: arguments.likelihoods.expected_error_rate_per_base,
+                dynamic_disqualification: arguments.likelihoods.dynamic_disqualification,
+                read_disqualification_scale: arguments.likelihoods.read_disqualification_scale,
+            },
+        )
+    });
     // `createLikelihoodCalculationEngine`.
     let likelihood_engine = crate::flow_likelihood_engine::ReadLikelihoodEngine::create(
         &arguments.likelihoods,
@@ -283,6 +300,7 @@ fn call_variants_into(
             aligner: &SmithWatermanJavaAligner,
             trimmer: &trimmer,
             likelihood_engine: &likelihood_engine,
+            stepwise_engine: stepwise_engine.as_ref(),
             genotyping: &genotyping,
             mapping_quality_threshold: arguments.mapping_quality_threshold,
             off_ramp: off_ramp.as_ref(),

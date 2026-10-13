@@ -95,6 +95,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         aligner: &SmithWatermanJavaAligner,
         trimmer: &trimmer,
         likelihood_engine: &likelihood_engine,
+        stepwise_engine: None,
         genotyping: &genotyping,
         mapping_quality_threshold: 20,
         off_ramp: None,

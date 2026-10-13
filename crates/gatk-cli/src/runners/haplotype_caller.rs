@@ -25,6 +25,8 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // Stepwise filtering with the flow aligner.
+    "use-flow-aligner-for-stepwise-hc-filtering",
     // Long hmer collapsing.
     "flow-assembly-collapse-hmer-size",
     "flow-assembly-collapse-partial-mode",
@@ -610,6 +612,21 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // `buildRamps`: the off ramp first, then the on ramp.
     let off = if ramped { off_ramp(parser)? } else { None };
     artificial_haplotype_recovery_refusal(parser)?;
+    // The engine's checks of stepwise filtering.
+    if flag(parser, "use-flow-aligner-for-stepwise-hc-filtering") {
+        if scalar(parser, "likelihood-calculation-engine").as_deref() == Some("FlowBased") {
+            return Err(Thrown::user(
+                "'--use-flow-aligner-for-stepwise-hc-filtering' is specified but the selected \
+                 likelihoods engine is FlowBased. This is invalid.",
+            ));
+        }
+        if !flag(parser, "flow-filter-alleles") {
+            return Err(Thrown::user(
+                "'--use-flow-aligner-for-stepwise-hc-filtering' is specified, but allele filtering \
+                 is disabled. Please enable allele filtering with '--flow-filter-alleles'",
+            ));
+        }
+    }
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -650,6 +667,17 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             read_to_haplotype_sw: sw.2,
         },
         flow_engine: flow_engine_arguments(parser),
+        stepwise_flow: flag(parser, "use-flow-aligner-for-stepwise-hc-filtering").then(|| {
+            gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+                flow: flow_arguments(parser),
+                flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
+                    as usize,
+                optimized: flag(parser, "flow-likelihood-optimized-comp"),
+                trim_to_haplotype: scalar(parser, "trim-to-haplotype")
+                    .map_or(true, |v| v == "true"),
+                exact_matching: flag(parser, "exact-matching"),
+            }
+        }),
         flow_hmm: flow_hmm_arguments(
             parser,
             pcr_model(parser),

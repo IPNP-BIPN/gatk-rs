@@ -216,5 +216,17 @@ public class HcFlowDump {
         HcAllAnnotationsDump.run(dir, "hc-flow-hmm-cycle-8", HaplotypeCaller::new, bam, fasta,
                 HcPedigreeDump.concat(hmm, List.of("--flow-order-cycle-length", "8")));
         HcAllAnnotationsDump.run(dir, "mutect2-flow-hmm", Mutect2::new, bam, fasta, hmm);
+        // --use-flow-aligner-for-stepwise-hc-filtering: FlowBased scores for the allele filter,
+        // the main engine's over what it kept.
+        final String stepwise = "--use-flow-aligner-for-stepwise-hc-filtering";
+        HcAllAnnotationsDump.run(dir, "hc-stepwise", HaplotypeCaller::new, bam, fasta,
+                List.of(stepwise, "--flow-filter-alleles", "--flow-filter-alleles-sor-threshold", "1"));
+        HcAllAnnotationsDump.run(dir, "hc-stepwise-hmm", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(hmm, List.of(stepwise, "--flow-filter-alleles")));
+        HcAllAnnotationsDump.run(dir, "ramped-stepwise", org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller::new,
+                bam, fasta, List.of(stepwise, "--flow-filter-alleles"));
+        HcAllAnnotationsDump.run(dir, "hc-stepwise-no-filter", HaplotypeCaller::new, bam, fasta, List.of(stepwise));
+        HcAllAnnotationsDump.run(dir, "hc-stepwise-flow-based", HaplotypeCaller::new, bam, fasta,
+                HcPedigreeDump.concat(flow, List.of(stepwise, "--flow-filter-alleles")));
     }
 }
