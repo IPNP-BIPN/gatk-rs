@@ -716,3 +716,173 @@ pub fn non_symmetrical_impute(
         vec![constant_gcp; read_length],
     )
 }
+
+/// `DragstrReferenceAnalyzer`: the STR period and repeat count at each position of a stretch of
+/// reference, which HaplotypeCaller reads its DRAGstr priors through.
+///
+/// What a reader would not guess:
+///
+///  * the counts are computed over `[start, end)` only, but a run is followed past either edge into
+///    the rest of the bases, so a position near the edge sees the whole run;
+///  * [`repeat_length`](Self::repeat_length) adds, to the stored count of whole units from the
+///    position onwards, the whole units that **precede** it, matched backwards from the unit just
+///    before the position against the unit at it;
+///  * a lookup at `end` itself passes the bounds check and then indexes one past the arrays, which
+///    the reference reports as an `ArrayIndexOutOfBoundsException`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragstrReferenceAnalyzer {
+    start: i32,
+    end: i32,
+    bases: Vec<u8>,
+    period: Vec<i32>,
+    forward_repeats: Vec<i32>,
+}
+
+/// A lookup the reference refuses, as its exception class and message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StrLookupError {
+    pub class: &'static str,
+    pub message: String,
+}
+
+impl DragstrReferenceAnalyzer {
+    /// `DragstrReferenceAnalyzer.of(bases, start, end, maxPeriod)`, refusing bad indexes with the
+    /// `IndexOutOfBoundsException` message.
+    pub fn of(bases: &[u8], start: i32, end: i32, max_period: usize) -> Result<Self, String> {
+        let length = bases.len() as i32;
+        if end < start || start < 0 || end > length {
+            return Err(format!("bad indexes {start} {end} {length}"));
+        }
+        if start >= end {
+            return Ok(DragstrReferenceAnalyzer {
+                start,
+                end,
+                bases: bases.to_vec(),
+                period: Vec::new(),
+                forward_repeats: Vec::new(),
+            });
+        }
+        let mut repeats = Self::process_period_one(bases, start, end);
+        let mut periods = vec![1i32; (end - start) as usize];
+        for period in 2..=max_period as i32 {
+            if length < period << 1 {
+                break;
+            }
+            // The right margin enclosing the last consecutive repeat that could match a unit
+            // starting inside [start, end).
+            let mut right_margin = (end + period).min(length) - 1;
+            let right_most_start = right_margin - period;
+            let mut position = right_most_start;
+            let mut remaining_to_match_unit = period;
+            let mut carry_back = 1;
+            while right_margin < length {
+                let matched = bases[position as usize] == bases[right_margin as usize];
+                position += 1;
+                if !matched {
+                    break;
+                }
+                remaining_to_match_unit -= 1;
+                if remaining_to_match_unit == 0 {
+                    carry_back += 1;
+                    remaining_to_match_unit = period;
+                }
+                right_margin += 1;
+            }
+            let offset = right_most_start - start;
+            if offset >= 0 && carry_back > repeats[offset as usize] {
+                repeats[offset as usize] = carry_back;
+                periods[offset as usize] = period;
+            }
+            let mut position = right_most_start - 1;
+            while position >= start {
+                let offset = (position - start) as usize;
+                if bases[position as usize] == bases[(position + period) as usize] {
+                    remaining_to_match_unit -= 1;
+                    if remaining_to_match_unit == 0 {
+                        carry_back += 1;
+                        remaining_to_match_unit = period;
+                    }
+                    if carry_back > repeats[offset] {
+                        repeats[offset] = carry_back;
+                        periods[offset] = period;
+                    }
+                } else {
+                    carry_back = 1;
+                    remaining_to_match_unit = period;
+                }
+                position -= 1;
+            }
+        }
+        Ok(DragstrReferenceAnalyzer {
+            start,
+            end,
+            bases: bases.to_vec(),
+            period: periods,
+            forward_repeats: repeats,
+        })
+    }
+
+    /// `processPeriodOne`: the homopolymer run length from each position to the run's end.
+    fn process_period_one(bases: &[u8], start: i32, end: i32) -> Vec<i32> {
+        let mut repeats = vec![0i32; (end - start) as usize];
+        let mut last = bases[(end - 1) as usize];
+        let mut right_margin = end as usize;
+        while right_margin < bases.len() && bases[right_margin] == last {
+            right_margin += 1;
+        }
+        let mut carry_back = right_margin as i32 - end;
+        for position in (start..end).rev() {
+            let next = bases[position as usize];
+            carry_back = if next == last { carry_back + 1 } else { 1 };
+            repeats[(position - start) as usize] = carry_back;
+            last = next;
+        }
+        repeats
+    }
+
+    fn lookup(&self, position: i32, array: &[i32]) -> Result<i32, StrLookupError> {
+        let offset = position - self.start;
+        if offset >= 0 && position <= self.end {
+            array
+                .get(offset as usize)
+                .copied()
+                .ok_or_else(|| StrLookupError {
+                    class: "ArrayIndexOutOfBoundsException",
+                    message: format!("Index {offset} out of bounds for length {}", array.len()),
+                })
+        } else {
+            Err(StrLookupError {
+                class: "IllegalArgumentException",
+                message: format!("postion {position} is outside bounds"),
+            })
+        }
+    }
+
+    /// `period(position)`: the STR period at a position, one or more.
+    pub fn period(&self, position: i32) -> Result<i32, StrLookupError> {
+        self.lookup(position, &self.period)
+    }
+
+    /// `repeatLength(position)`: the whole units of the position's period from it onwards, plus
+    /// the whole units matched backwards before it.
+    pub fn repeat_length(&self, position: i32) -> Result<i32, StrLookupError> {
+        let mut result = self.lookup(position, &self.forward_repeats)?;
+        let period = self.period[(position - self.start) as usize];
+        let mut j = position + period;
+        let mut k = period;
+        let mut i = position - 1;
+        while i >= 0 {
+            j -= 1;
+            if self.bases[i as usize] != self.bases[j as usize] {
+                break;
+            }
+            k -= 1;
+            if k == 0 {
+                k = period;
+                result += 1;
+            }
+            i -= 1;
+        }
+        Ok(result)
+    }
+}

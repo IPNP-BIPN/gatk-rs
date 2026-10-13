@@ -8092,10 +8092,13 @@
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
         "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
-        "Held out, as features this port does not carry: DRAGEN mode (--dragen-mode, --apply-bqd, --apply-frd,",
-        "--transform-dragen-mapping-quality, and --dragen-378-concordance-mode, which Barclay refuses beside --dragen-mode),",
-        "the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
-        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
+        "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
+        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
+        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
         "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
         "for the allele-specific ones."
@@ -8184,11 +8187,7 @@
         "-5",
         "-6"
       ],
-      "--dragen-mode": [],
       "--dragen-378-concordance-mode": [],
-      "--apply-bqd": [],
-      "--apply-frd": [],
-      "--transform-dragen-mapping-quality": [],
       "--flow-mode": [],
       "--flow-assembly-collapse-partial-mode": [],
       "--flow-disallow-probs-larger-than-call": [],
@@ -8206,11 +8205,30 @@
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [],
-      "--disable-optimizations": [],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
         "false"
+      ],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
+      ],
+      "--max-effective-depth-adjustment-for-frd": [
+        "0",
+        "4"
+      ],
+      "--sample-name": [
+        "null",
+        "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8350,10 +8368,13 @@
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
         "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
-        "Held out, as features this port does not carry: DRAGEN mode (--dragen-mode, --apply-bqd, --apply-frd,",
-        "--transform-dragen-mapping-quality, and --dragen-378-concordance-mode, which Barclay refuses beside --dragen-mode),",
-        "the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
-        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
+        "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
+        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
+        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
         "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
         "for the allele-specific ones.",
@@ -8444,11 +8465,7 @@
         "-5",
         "-6"
       ],
-      "--dragen-mode": [],
       "--dragen-378-concordance-mode": [],
-      "--apply-bqd": [],
-      "--apply-frd": [],
-      "--transform-dragen-mapping-quality": [],
       "--flow-mode": [],
       "--flow-assembly-collapse-partial-mode": [],
       "--flow-disallow-probs-larger-than-call": [],
@@ -8466,7 +8483,6 @@
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [],
-      "--disable-optimizations": [],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
@@ -8481,7 +8497,27 @@
       "--off-ramp-file": [],
       "--on-ramp-file": [],
       "--ramps-debug-reads": [],
-      "--ramps-debug-post-assembler-on": []
+      "--ramps-debug-post-assembler-on": [],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
+      ],
+      "--max-effective-depth-adjustment-for-frd": [
+        "0",
+        "4"
+      ],
+      "--sample-name": [
+        "null",
+        "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
+      ]
     }
   },
   "constraints": [

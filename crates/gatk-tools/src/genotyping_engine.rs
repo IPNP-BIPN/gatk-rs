@@ -236,6 +236,42 @@ impl GenotypePriors {
         )
     }
 
+    /// `givenHetToHomRatio(log10SnpHet, log10IndelHet, log10OtherHet, hetHomRatio)`: each hom is
+    /// its het less `log10(hetHomRatio)`.
+    pub fn given_het_to_hom_ratio(
+        log10_snp_het: f64,
+        log10_indel_het: f64,
+        log10_other_het: f64,
+        het_hom_ratio: f64,
+    ) -> Self {
+        let log10_ratio = jmath::math::log10(het_hom_ratio);
+        GenotypePriors::new(
+            (log10_snp_het, log10_snp_het - log10_ratio),
+            (log10_indel_het, log10_indel_het - log10_ratio),
+            (log10_other_het, log10_other_het - log10_ratio),
+        )
+    }
+
+    /// `givenDragstrParams(params, period, repeats, snpHeterozygosity, hetHomRatio)`: the indel het
+    /// is DRAGstr's API at the site's STR, times -0.1, and anything else takes the larger of it
+    /// and the SNP het. `snp_heterozygosity` is already a log10, as the reference passes it.
+    pub fn given_dragstr_params(
+        params: &gatk_engine::dragstr::DragstrParams,
+        period: i32,
+        repeats: i32,
+        snp_heterozygosity: f64,
+        het_hom_ratio: f64,
+    ) -> Result<Self, gatk_engine::dragstr::DragstrError> {
+        let indel_het = -0.1 * params.api(period, repeats)?;
+        let other_het = gatk_engine::math_utils::java_max(snp_heterozygosity, indel_het);
+        Ok(GenotypePriors::given_het_to_hom_ratio(
+            snp_heterozygosity,
+            indel_het,
+            other_het,
+            het_hom_ratio,
+        ))
+    }
+
     /// `getLog10Priors(ploidy, alleles)`: zero for the hom-ref genotype, and for every other the
     /// sum over its alleles of the het value (raised by the difference per extra copy) or, at
     /// exactly two copies, the hom value.
@@ -506,8 +542,8 @@ pub(crate) fn make_genotype_call_with_priors(
                 .push(("PG".to_string(), phred(&log10_priors)));
             let best = max_element_index(&posteriors);
             if !targets.is_empty() {
-                genotype.gq = gq_log10_from_posteriors(best, &normalized)
-                    .map(|log10| jmath::math::round(log10 * -10.0) as i32);
+                // `log10PError`, which htsjdk 4.2.0 caps at `MAX_GENOTYPE_QUAL`.
+                genotype.gq = gq_log10_from_posteriors(best, &normalized).map(gq_of_log10);
             }
             genotype.alleles = genotypes_in_canonical_order(ploidy, targets.len())
                 .into_iter()

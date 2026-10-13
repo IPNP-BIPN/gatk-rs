@@ -22,15 +22,24 @@
 //! complementary ones `0|1` against `1|0`, and a call whose partner already sits in another group
 //! empties the whole mapping.
 //!
-//! Not ported here: reference-confidence
-//! mode, contamination downsampling, DRAGstr priors and the BQD/FRD genotyping models, and the
-//! reduction of sites with more alleles than the genotype count allows (refused).
+//! With `--apply-bqd` or `--apply-frd` each sample is genotyped by the DRAGEN models
+//! ([`gatk_engine::dragen_genotypes`]), over the reads whose SOFT-unclipped span overlaps the
+//! context and the reads the HMM disqualified. Those disqualified reads are one list shared by
+//! every event of the region and narrowed in place by each event's overlap, as `marginalize` and
+//! `retainEvidence` share and narrow it in the reference. With a DRAGstr table the priors are
+//! resolved per event from the STR at the site, and an indel call is annotated with the period,
+//! the repeat count and the table's values there.
+//!
+//! Not ported here: contamination downsampling, and the reduction of sites with more alleles than
+//! the genotype count allows (refused).
 
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_mapping::{
     create_allele_mapper, make_merged_variant_context, replace_span_dels,
     variants_from_active_haplotypes,
 };
+use gatk_engine::dragen_genotypes::{indel_prior, DragenGenotypesModel, DragenSample};
+use gatk_engine::dragstr::{DragstrParams, DragstrReferenceAnalyzer};
 use gatk_engine::event_map::{build_event_maps_for_haplotypes, event_start_positions};
 use gatk_engine::genotype_index::genotype_count;
 use gatk_engine::genotype_likelihood_calculator::{compute_log10_genotype_likelihoods, gls_to_pls};
@@ -42,7 +51,7 @@ use htsjdk_vcf::allele::Allele;
 use htsjdk_vcf::genotypes_context::GenotypesContext;
 use htsjdk_vcf::variant::{Genotype, Value, VariantContext};
 
-use crate::genotyping_engine::{EngineError, GenotypingEngine};
+use crate::genotyping_engine::{EngineError, GenotypePriors, GenotypingEngine};
 use crate::variant_annotator_engine::{Engine as AnnotatorEngine, Site};
 use crate::variant_trim::reverse_trim_alleles;
 use gatk_engine::java_random::JavaRandom;
@@ -70,6 +79,33 @@ pub struct HcGenotypingArguments {
     /// `RampedHaplotypeCallerEngine` in place of HaplotypeCaller's, which `callRegion` follows
     /// where the two part.
     pub ramped_engine: bool,
+    /// `--apply-bqd` and `--apply-frd`: the DRAGEN genotype models in place of the independent
+    /// samples model, and the soft-unclipped read overlap that comes with them.
+    pub dragen_models: Option<DragenModelArguments>,
+    /// `--dragstr-params-path`: DRAGstr's genotype priors and the STR annotations.
+    pub dragstr: Option<DragstrGenotyping>,
+}
+
+/// The DRAGEN genotype models' switches.
+#[derive(Debug, Clone)]
+pub struct DragenModelArguments {
+    pub bqd: bool,
+    pub frd: bool,
+    /// `--max-effective-depth-adjustment-for-frd`.
+    pub max_effective_depth_adjustment: i32,
+}
+
+/// What `HaplotypeCallerGenotypingEngine` reads of DRAGstr.
+#[derive(Debug, Clone)]
+pub struct DragstrGenotyping {
+    pub params: DragstrParams,
+    /// Not `--dont-use-dragstr-priors`.
+    pub use_priors: bool,
+    /// `--dragstr-het-hom-ratio`.
+    pub het_hom_ratio: i32,
+    /// `--heterozygosity` and `--indel-heterozygosity`, not yet in log10.
+    pub snp_heterozygosity: f64,
+    pub indel_heterozygosity: f64,
 }
 
 impl Default for HcGenotypingArguments {
@@ -84,6 +120,8 @@ impl Default for HcGenotypingArguments {
             emit_reference_confidence: false,
             ref_confidence: Default::default(),
             ramped_engine: false,
+            dragen_models: None,
+            dragstr: None,
         }
     }
 }
@@ -176,6 +214,61 @@ pub fn assign_genotype_likelihoods_full(
     build_event_maps_for_haplotypes(haplotypes, reference, ref_loc, arguments.max_mnp_distance)
         .map_err(|e| refused(e.message()))?;
     let starts = event_start_positions(haplotypes).map_err(|e| refused(e.message()))?;
+    // `constructDragstrReferenceSTRAnalyzerIfNecessary`: only with DRAGstr's priors in use and an
+    // indel among the haplotypes' events.
+    let dragstrs = match &arguments.dragstr {
+        Some(dragstr)
+            if dragstr.use_priors
+                && !starts.is_empty()
+                && haplotypes.iter().any(|h| {
+                    h.event_map().is_some_and(|events| {
+                        events.events().any(|e| {
+                            contains_inline_indel(
+                                e.ref_allele(),
+                                std::slice::from_ref(e.alt_allele()),
+                            )
+                        })
+                    })
+                }) =>
+        {
+            let first = *starts.first().expect("a start");
+            let last = *starts.last().expect("a start");
+            Some(
+                DragstrReferenceAnalyzer::of(
+                    reference,
+                    first - ref_loc.start,
+                    last - ref_loc.start + 2,
+                    dragstr.params.maximum_period(),
+                )
+                .map_err(|m| EngineError::Runtime {
+                    class: "IndexOutOfBoundsException".to_string(),
+                    message: m,
+                })?,
+            )
+        }
+        _ => None,
+    };
+    let dragen_model = match &arguments.dragen_models {
+        Some(models) => Some(
+            DragenGenotypesModel::new(
+                models.bqd,
+                models.frd,
+                arguments.informative_read_overlap_margin,
+                models.max_effective_depth_adjustment,
+            )
+            .map_err(|message| EngineError::Runtime {
+                class: "GATKException".to_string(),
+                message,
+            })?,
+        ),
+        None => None,
+    };
+    // `marginalize` hands every event's matrix the SAME list of disqualified reads, and
+    // `retainEvidence` narrows that list in place, so each event sees the disqualified reads that
+    // overlapped every earlier event's interval as well as its own.
+    let mut shared_filtered: Vec<Vec<BamRecord>> = (0..samples.len())
+        .map(|s| read_likelihoods.filtered_evidence(s).to_vec())
+        .collect();
     let ploidy = arguments.sample_ploidy;
     let spanning = !arguments.disable_spanning_event_genotyping;
     let mut calls = Vec::new();
@@ -221,13 +314,24 @@ pub fn assign_genotype_likelihoods_full(
                 span.expand_within_contig(arguments.informative_read_overlap_margin, contig_length)
             })
             .ok_or_else(|| refused("no overlap interval".to_string()))?;
-        marginal.retain_evidence(|read| {
-            overlap.overlaps(
-                &overlap.contig,
-                read_utils::start(read),
-                read_utils::end(read),
-            )
-        });
+        let qualifies = |read: &BamRecord| {
+            if dragen_model.is_some() {
+                // `softUnclippedReadOverlapsInterval`.
+                let soft_start = read_utils::soft_start(read);
+                let soft_end = read_utils::soft_end(read);
+                soft_start <= overlap.end && soft_end >= overlap.start && soft_start <= soft_end
+            } else {
+                overlap.overlaps(
+                    &overlap.contig,
+                    read_utils::start(read),
+                    read_utils::end(read),
+                )
+            }
+        };
+        marginal.retain_evidence(qualifies);
+        for reads in shared_filtered.iter_mut() {
+            reads.retain(qualifies);
+        }
         if arguments.emit_reference_confidence {
             // `addNonRefSymbolicAllele` on the merged context, `addNonReferenceAllele` on the
             // matrix, which fills its row from the concrete alleles.
@@ -238,7 +342,64 @@ pub fn assign_genotype_likelihoods_full(
             merged_allele_count += 1;
         }
 
-        let genotypes = genotypes_for_event(&marginal, &merged.alleles, samples, ploidy)?;
+        let offset = loc - ref_loc.start;
+        let dragen = match &dragen_model {
+            Some(model) => {
+                let params = arguments
+                    .dragstr
+                    .as_ref()
+                    .map(|d| d.params.clone())
+                    .unwrap_or_else(DragstrParams::default_params);
+                let api = indel_prior(dragstrs.as_ref(), &params, offset)
+                    .map_err(|e| refused(format!("{e:?}")))?;
+                Some(DragenEvent {
+                    model,
+                    filtered: &shared_filtered,
+                    subset_start: overlap.start,
+                    reference,
+                    offset,
+                    api,
+                })
+            }
+            None => None,
+        };
+        let genotypes =
+            genotypes_for_event(&marginal, &merged.alleles, samples, ploidy, dragen.as_ref())?;
+        // `resolveGenotypePriorCalculator`.
+        if let Some(dragstr) = &arguments.dragstr {
+            let log10_snp = jmath::math::log10(dragstr.snp_heterozygosity);
+            let log10_indel = jmath::math::log10(dragstr.indel_heterozygosity);
+            let priors = if !dragstr.use_priors {
+                GenotypePriors::assuming_hw(log10_snp, log10_indel)
+            } else {
+                match &dragstrs {
+                    None => GenotypePriors::given_het_to_hom_ratio(
+                        log10_snp,
+                        log10_indel,
+                        jmath::math::log10(gatk_engine::math_utils::java_min(
+                            dragstr.snp_heterozygosity,
+                            dragstr.indel_heterozygosity,
+                        )),
+                        f64::from(dragstr.het_hom_ratio),
+                    ),
+                    Some(strs) => {
+                        let period = strs.period(offset + 1).map_err(|e| refused(e.message))?;
+                        let repeats = strs
+                            .repeat_length(offset + 1)
+                            .map_err(|e| refused(e.message))?;
+                        GenotypePriors::given_dragstr_params(
+                            &dragstr.params,
+                            period,
+                            repeats,
+                            log10_snp,
+                            f64::from(dragstr.het_hom_ratio),
+                        )
+                        .map_err(|e| refused(format!("{e:?}")))?
+                    }
+                }
+            };
+            engine.set_genotype_priors(priors);
+        }
         let mut vc = VariantContext::new(
             &merged.contig,
             i64::from(merged.start),
@@ -296,11 +457,38 @@ pub fn assign_genotype_likelihoods_full(
                 }
                 None => call,
             };
-            let call = if call.alleles.len() == merged_allele_count {
+            let mut call = if call.alleles.len() == merged_allele_count {
                 call
             } else {
                 reverse_trim_alleles(&call).map_err(refused)?
             };
+            // `annotateVariantContextWithDragstrParametersUsed`.
+            if let (Some(strs), Some(dragstr)) = (&dragstrs, &arguments.dragstr) {
+                if contains_inline_indel(&call.alleles[0], &call.alleles[1..]) {
+                    let period = strs.period(offset + 1).map_err(|e| refused(e.message))?;
+                    let repeats = strs
+                        .repeat_length(offset + 1)
+                        .map_err(|e| refused(e.message))?;
+                    let table = |v: Result<f64, gatk_engine::dragstr::DragstrError>| {
+                        v.map(|v| Value::Str(gatk_engine::java_format::format_decimals(v, 1)))
+                            .map_err(|e| refused(format!("{e:?}")))
+                    };
+                    let values = vec![
+                        table(dragstr.params.gop(period, repeats))?,
+                        table(dragstr.params.gcp(period, repeats))?,
+                        table(dragstr.params.api(period, repeats))?,
+                    ];
+                    set_attribute(
+                        &mut call,
+                        "DRAGstrInfo",
+                        Value::List(vec![
+                            Value::Int(i64::from(period)),
+                            Value::Int(i64::from(repeats)),
+                        ]),
+                    );
+                    set_attribute(&mut call, "DRAGstrParams", Value::List(values));
+                }
+            }
             calls.push(call);
         }
     }
@@ -521,6 +709,7 @@ fn genotypes_for_event(
     merged_alleles: &[Allele],
     samples: &[String],
     ploidy: usize,
+    dragen: Option<&DragenEvent<'_>>,
 ) -> Result<Vec<Genotype>, EngineError> {
     let genotyping_alleles: Vec<Allele> = if marginal.number_of_alleles() == merged_alleles.len() {
         (0..marginal.number_of_alleles())
@@ -550,12 +739,61 @@ fn genotypes_for_event(
             .iter()
             .map(|&a| (0..evidence).map(|r| marginal.value(s, a, r)).collect())
             .collect();
-        let likelihoods = compute_log10_genotype_likelihoods(ploidy, &matrix);
+        let likelihoods = match dragen {
+            None => compute_log10_genotype_likelihoods(ploidy, &matrix),
+            Some(event) => event
+                .model
+                .sample_log10_likelihoods(
+                    ploidy,
+                    &genotyping_alleles,
+                    &DragenSample {
+                        likelihoods: &matrix,
+                        reads: marginal.sample_evidence(s).unwrap_or(&[]),
+                        filtered: &event.filtered[s],
+                    },
+                    event.subset_start,
+                    event.reference,
+                    event.offset,
+                    event.api,
+                )
+                .map_err(|message| EngineError::Runtime {
+                    class: "GATKException".to_string(),
+                    message,
+                })?,
+        };
         let mut genotype = Genotype::new(sample, vec![Allele::no_call(); ploidy]);
         genotype.pl = Some(gls_to_pls(&likelihoods));
         genotypes.push(genotype);
     }
     Ok(genotypes)
+}
+
+/// What the DRAGEN models read of one event beyond its matrix.
+struct DragenEvent<'a> {
+    model: &'a DragenGenotypesModel,
+    filtered: &'a [Vec<BamRecord>],
+    /// The start of the interval `setVariantCallingSubsetUsed` records.
+    subset_start: i32,
+    reference: &'a [u8],
+    offset: i32,
+    api: f64,
+}
+
+/// `GATKVariantContextUtils.containsInlineIndel(ref, alts)`: an alternate that is neither
+/// symbolic nor the spanning deletion and differs from the reference in length.
+fn contains_inline_indel(reference: &Allele, alternates: &[Allele]) -> bool {
+    let length = |a: &Allele| if a.is_symbolic() { 0 } else { a.len() };
+    alternates.iter().any(|alt| {
+        !alt.is_symbolic() && alt.display_string() != "*" && length(alt) != length(reference)
+    })
+}
+
+/// `VariantContextBuilder.attribute(key, value)`: replaced in place, or appended.
+fn set_attribute(vc: &mut VariantContext, key: &str, value: Value) {
+    match vc.attributes.iter_mut().find(|(k, _)| k == key) {
+        Some((_, slot)) => *slot = value,
+        None => vc.attributes.push((key.to_string(), value)),
+    }
 }
 
 /// `GenotypeIndexCalculator.computeMaxAcceptableAlleleCount(ploidy, maxGenotypeCount)`: the most

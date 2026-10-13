@@ -7269,6 +7269,31 @@
       ]
     },
     {
+      "id": "dragen-genotypes",
+      "status": "oracle-backed",
+      "title": "DRAGENGenotypesModel: the BQD and FRD genotype models, DRAGEN's mapping quality table and the reference STR analyzer",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "The genotype models HaplotypeCaller switches on with --apply-bqd and --apply-frd (G4.1, #1330), measured on their own before the caller uses them. DRAGENGenotypesModel.calculateLikelihoods over hand-built read likelihoods, each case three ways (BQD alone, FRD alone, both), each sample's log10 genotype likelihoods as raw bits and as PLs. The cases cover alternate support at the reads' ends (BQD's dropout) and on reads of poor mapping quality (FRD's foreign reads), the homopolymer adjustment of the error base, ties in the feather-end sort, soft and hard clips, reads that delete the site or cover it only with a soft clip, reads the HMM disqualified, the FRD depth cap, indels with the flat prior and with DRAGstr's API, three alleles, ploidies 1 to 3, two samples and an empty one. Beside them, DRAGENMappingQualityReadTransformer's table from -1 to 257 and its XQ swap, and DragstrReferenceAnalyzer's period and repeat length at every position of eight sequences, with its three refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "gl\tbqd-dropout\tBQD\t0\t",
+        "gl\tfrd-foreign-depth-cap\tFRD\t0\t",
+        "mq\t257\terror\tGATKException",
+        "strerror\tbad--1-5\tIndexOutOfBoundsException"
+      ],
+      "expect_rows": 825,
+      "cases": [
+        {
+          "dump": "DragenGenotypesDump",
+          "golden": "crates/gatk-engine/tests/data/dragen_genotypes.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38414021108, byte for byte the local dump."
+        }
+      ]
+    },
+    {
       "id": "hc-annotated-calls",
       "status": "oracle-backed",
       "title": "HaplotypeCaller's calls with its default annotations",
@@ -7396,6 +7421,57 @@
           "dump": "HcGvcfEndToEndDump",
           "golden": "crates/gatk-tools/tests/data/hc_gvcf_end_to_end.txt.gz",
           "why": "From the pinned container on a real x86-64 runner, the PR's candidate-goldens artefact, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-dragen-end-to-end",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller in DRAGEN mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "why": "DRAGEN mode and DRAGstr in the tool itself (G4.1, #1330), on one contig with three short tandem repeats and two samples' reads built so that each mechanism moves a call: an alternate only near the reads' ends at base quality 22 (BQD), an alternate only on reads mapped at quality 6 to 14 (FRD, and the mode's mapping-quality floor of 1 that lets them in), indels inside an A homopolymer and a CA repeat (DRAGstr's priors, gap penalties and STR annotations), and an XQ tag on every read (--transform-dragen-mapping-quality). Fourteen runs in one JVM: the default, --dragen-mode, the mode with a DRAGstr table, --apply-bqd, --apply-frd with and without a depth cap, the XQ swap, the table alone, without its priors, without its PairHMM scores and with a het:hom ratio of 4, the mode in GVCF on one --sample-name, the mode under an explicit calling threshold it must not override, and the mode beside --flow-mode, refused. Each output compared from its ##INFO lines and #CHROM on.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "DRAGstrInfo=1,10",
+        "error\tdragen-mode-and-flow-mode\torg.broadinstitute.hellbender.exceptions.UserException:dragen mode and flow mode can't be both specified"
+      ],
+      "cases": [
+        {
+          "dump": "HcDragenEndToEndDump",
+          "golden": "crates/gatk-tools/tests/data/hc_dragen_end_to_end.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38442469884, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-disable-optimizations",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller and RampedHaplotypeCaller with --disable-optimizations, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--disable-optimizations (G3.2b, #1331) lifts three shortcuts of callRegion. Lifted, a region the trimmer found no variation in asks the trimmer's result for a variant region it does not have, and the run fails with \"There is no variation present.\": in GVCF mode every region reaches that point, in VCF mode none does on these reads. Over HcDragenEndToEndDump's reads: VCF, VCF with --dragen-mode, GVCF (refused), an interval with no active region, and RampedHaplotypeCaller in VCF and GVCF (refused). One more run measures what the arrays found beside the flag: HaplotypeCaller's writer ignores --lenient, so a BP_RESOLUTION run with the default annotations off is refused over the reference-model records' AD however --lenient is set. The port writes what came before a failure before reporting it, as the reference's closeTool does in its finally.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\tgvcf\tjava.lang.IllegalStateException:There is no variation present.",
+        "error\tlenient-ignored\tjava.lang.IllegalStateException:Key AD found in VariantContext field FORMAT"
+      ],
+      "cases": [
+        {
+          "dump": "HcDisableOptimizationsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_disable_optimizations.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38442469884, byte for byte the local dump."
         }
       ]
     },

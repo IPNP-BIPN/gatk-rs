@@ -522,11 +522,15 @@ fn run_mutect2(args: &[String]) -> Result<Option<String>, Thrown> {
 }
 
 fn run_ramped_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown> {
-    runners::ramped_haplotype_caller(&parsed("RampedHaplotypeCaller", args)?)
+    let mut parser = parsed("RampedHaplotypeCaller", args)?;
+    runners::haplotype_caller_modes(&mut parser, "RampedHaplotypeCaller")?;
+    runners::ramped_haplotype_caller(&parser)
 }
 
 fn run_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown> {
-    runners::haplotype_caller(&parsed("HaplotypeCaller", args)?)
+    let mut parser = parsed("HaplotypeCaller", args)?;
+    runners::haplotype_caller_modes(&mut parser, "HaplotypeCaller")?;
+    runners::haplotype_caller(&parser)
 }
 
 fn run_genotype_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
