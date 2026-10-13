@@ -56,15 +56,11 @@
 //! by a wide margin: a pseudo-fraction lies in `[0, 1]` and a pseudo-depth is a sum of posterior
 //! counts over the reads at one site.
 //!
-//! Above 2^53 the reference stops printing the shortest form, and what it prints instead is not one
-//! thing. On a sweep of 493 such values it gave the shortest form 472 times, the double's exact
-//! value 9 times, and neither 12 times — `2^60` comes out as its exact value rounded to eighteen
-//! significant digits. Those are branches inside Java 17's pre-Schubfach `FloatingDecimal`, not a
-//! rule, and reproducing them would mean transcribing GPL2 source or fitting an implementation to
-//! measurements. Both are refused; see `docs/licence-compatibility-risk.md`.
-//!
-//! There used to be a second limit here, at sixteen significant digits, and it was this port's
-//! fault rather than Java's. See [`closest_of_that_length`].
+//! Above 2^53, at powers of two and at a few other places, the reference does not print the
+//! shortest form: `2^60` comes out as its exact value rounded to eighteen significant digits. Those
+//! are Java 17's pre-Schubfach digits, and the digits here come from `jmath::to_string`, which
+//! reproduces them from the oracle's measured behaviour (htsjdk-rs decision 0046) rather than from
+//! the GPL-2.0 source; see `docs/licence-compatibility-risk.md`.
 //!
 //! # What is not modelled
 //!
@@ -253,94 +249,12 @@ fn render(kept: &[u8], exp10: i32) -> String {
     out
 }
 
-/// The shortest decimal that round-trips, as `(digits, exp10)` with the value `0.<digits> * 10^exp10`.
-///
-/// Rust's `{:e}` produces the shortest round-tripping form, which is what Java 17's
-/// `Double.toString` is *intended* to produce. The two are not guaranteed identical: the
-/// pre-JDK-19 algorithm occasionally emits one digit more than necessary. An extra digit lands at
-/// the seventeenth significant place, so it can only change an answer for a value whose rounding
-/// position is out there too — far beyond the four fraction digits used here for anything of
-/// ordinary magnitude. The conformance suite is what would catch it.
+/// The digits Java 17's `Double.toString` prints, as `(digits, exp10)` with the value
+/// `0.<digits> * 10^exp10`. `DigitList.set` takes the same digits, and they are not always the
+/// shortest that round-trip; `jmath::to_string` reproduces them (htsjdk-rs decision 0046).
 fn shortest_decimal(value: f64) -> (String, i32) {
-    let text = format!("{value:e}");
-    let (mantissa, exponent) = text.split_once('e').expect("scientific form");
-    let exponent: i32 = exponent.parse().expect("exponent");
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
-    let digits = digits.trim_end_matches('0');
-    let digits = if digits.is_empty() { "0" } else { digits };
-    // `{:e}` writes one digit before the point, so `0.<digits>` needs one more.
-    closest_of_that_length(digits, exponent + 1, value)
-}
-
-/// Among the decimals of the length Rust chose, the one nearest the double, ties to even.
-///
-/// "Shortest, then nearest, then even" is the specification every modern shortest-representation
-/// algorithm implements — Ryu, Schubfach, and therefore Java 19 and later. Rust's formatter gets
-/// the length right and does not always get the last digit right: `6.985838094673373e14` is
-/// exactly `698583809467337.25`, so the two sixteen-digit forms `…337.2` and `…337.3` are
-/// **equidistant** and both round-trip. Java prints the even one; Rust prints the other.
-///
-/// Fixing it here is implementing to the specification, not to Java 17: the reference agrees with
-/// the rule, and where it stops agreeing — above 2^53, where its digit generation predates
-/// Schubfach — no rule of this kind reaches it anyway.
-///
-/// The cost is two string parses per call. The exact expansion, which is the expensive part, is
-/// computed only when a neighbour also round-trips, which needs the double to be a short decimal
-/// and is rare.
-fn closest_of_that_length(digits: &str, exp10: i32, value: f64) -> (String, i32) {
-    let length = digits.len();
-    let Ok(number) = digits.parse::<u128>() else {
-        // Beyond what a u128 holds there is no neighbour to consider: the length is already past
-        // anything a double can distinguish.
-        return (digits.to_string(), exp10);
-    };
-    // The scale that turns the digit string back into the value it names.
-    let scale = exp10 - length as i32;
-    let magnitude = value.abs();
-
-    // Reaching the exact expansion needs the double to sit exactly on a midpoint, which needs it
-    // to *be* a short decimal. Testing that first is what keeps this affordable: without the gate
-    // the expansion ran on nearly every value, because at seventeen digits some twenty neighbouring
-    // decimals round-trip. Reading a midpoint back as a double does not help either — it sits
-    // inside the same rounding interval and parses to the same double.
-    if !may_be_a_short_decimal(magnitude) {
-        return (digits.to_string(), exp10);
-    }
-
-    for lower in [number.wrapping_sub(1), number] {
-        let upper = lower + 1;
-        let (lower_text, upper_text) = (lower.to_string(), upper.to_string());
-        // Only a neighbour of the *same* length competes. A shorter one would have been chosen
-        // already, since Rust's answer is the shortest that round-trips.
-        if lower_text.len() != length || upper_text.len() != length {
-            continue;
-        }
-        let both_round_trip = [&lower_text, &upper_text].iter().all(|candidate| {
-            format!("{candidate}e{scale}")
-                .parse::<f64>()
-                .is_ok_and(|parsed| parsed == magnitude)
-        });
-        if !both_round_trip {
-            continue;
-        }
-        // The midpoint of two consecutive n-digit decimals is that pair's lower half with a 5
-        // appended, so the exact comparison this crate already does answers which side the double
-        // falls on.
-        let chosen = match compare_to_exact(&format!("{lower_text}5"), exp10, magnitude) {
-            Ordering::Less => lower_text,
-            Ordering::Greater => upper_text,
-            // Equidistant, and this is the case Rust gets wrong.
-            Ordering::Equal => {
-                if lower % 2 == 0 {
-                    lower_text
-                } else {
-                    upper_text
-                }
-            }
-        };
-        return (chosen, exp10);
-    }
-    (digits.to_string(), exp10)
+    let (digits, exp10) = jmath::to_string::double_digits(value);
+    (digits.iter().map(|d| char::from(b'0' + d)).collect(), exp10)
 }
 
 /// Where the double's exact value sits relative to its own shortest decimal form.
@@ -370,38 +284,6 @@ fn compare_to_exact(digits: &str, exp10: i32, magnitude: f64) -> Ordering {
         }
     }
     Ordering::Equal
-}
-
-/// Whether the double could be a decimal short enough for an equidistant pair to exist at all.
-///
-/// A necessary condition, and a cheap one. Write the value as `odd * 2^power` with `odd` odd. When
-/// `power` is negative the exact decimal is `odd * 5^-power` over `10^-power`, and `5^-power` is
-/// odd too, so nothing cancels: the expansion has at least `digits(odd) + floor(0.699 * -power)`
-/// significant digits. When `power` is positive the value is `odd * 2^power`, at least
-/// `digits(odd) + floor(0.301 * power)` digits by the same argument. A tie between two forms of at
-/// most eighteen digits cannot happen once either exceeds nineteen.
-///
-/// False positives are harmless — the exact comparison then runs and finds no tie. False negatives
-/// would be a bug, which is why the bound is the pessimistic one.
-fn may_be_a_short_decimal(value: f64) -> bool {
-    let bits = value.to_bits();
-    let biased = ((bits >> 52) & 0x7ff) as i32;
-    let fraction = bits & ((1u64 << 52) - 1);
-    let (mantissa, exponent) = if biased == 0 {
-        (fraction, -1074)
-    } else {
-        (fraction | (1u64 << 52), biased - 1075)
-    };
-    if mantissa == 0 {
-        return true;
-    }
-    let shift = mantissa.trailing_zeros() as i32;
-    let power = exponent + shift;
-    let odd_digits = (mantissa >> shift).to_string().len() as u32;
-    if power >= 0 {
-        return odd_digits * 1000 + power as u32 * 301 <= 19_000;
-    }
-    odd_digits * 1000 + (-power) as u32 * 699 <= 19_000
 }
 
 /// The double's exact decimal expansion, as `(digits, exp10)` with the value `0.<digits> * 10^exp10`.
@@ -554,14 +436,14 @@ mod tests {
         );
     }
 
-    /// The one limit that is left, and it is Java's rather than this port's.
+    /// Above 2^53 the reference leaves the shortest form, and so does this port now.
     #[test]
     fn above_two_to_the_fifty_three_the_reference_leaves_the_shortest_form() {
-        // The reference prints `-200971145216768832`, the double's exact value. This gives the
-        // shortest form padded with zeros, and no rule of the kind above reaches the difference.
+        // The reference prints `-200971145216768832`, the double's exact value, where the shortest
+        // form padded with zeros would be `-200971145216768830` (htsjdk-rs decision 0046).
         assert_eq!(
             FRACTION_FORMAT.format(-2.009_711_452_167_688_3e17),
-            "-200971145216768830"
+            "-200971145216768832"
         );
     }
 

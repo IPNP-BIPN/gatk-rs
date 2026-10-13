@@ -11447,32 +11447,9 @@ fn ground_truth_scorer_traverse(
     Ok(())
 }
 
-/// `Float.toString`: the shortest decimal that round-trips as a float, with `E` notation outside
-/// `[1e-3, 1e7)` and always a digit after the point.
+/// `Float.toString` as the pinned Java 17 prints it (htsjdk-rs decision 0046).
 fn java_float_to_string(value: f32) -> String {
-    if value.is_nan() {
-        return "NaN".to_string();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
-    }
-    let magnitude = value.abs();
-    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
-        let rendered = format!("{value:e}");
-        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent");
-        let mantissa = if mantissa.contains('.') {
-            mantissa.to_string()
-        } else {
-            format!("{mantissa}.0")
-        };
-        return format!("{mantissa}E{exponent}");
-    }
-    let rendered = format!("{value}");
-    if rendered.contains('.') {
-        rendered
-    } else {
-        format!("{rendered}.0")
-    }
+    jmath::to_string::float_to_string(value)
 }
 
 /// A flow read the reference throws on, or one the port does not read.

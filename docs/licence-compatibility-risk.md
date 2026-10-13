@@ -33,7 +33,7 @@ Places where it already does, or predictably will:
 | behaviour | JDK source | status |
 |---|---|---|
 | `Math.exp`, `Math.pow` intrinsics | HotSpot, **GPL2 only** | exp withdrawn, pow never written |
-| `Double.toString` / `DecimalFormat` rounding | `java.base`, GPL2+CPE | licence-blocked, decision 0013 |
+| `Double.toString` / `DecimalFormat` rounding | `java.base`, GPL2+CPE | reconstructed from behaviour, htsjdk-rs decision 0046 (2026-10-13) |
 | `String.hashCode` iteration order | `java.base`, GPL2+CPE | reachable wherever a `HashSet` orders output |
 | `Arrays.sort` tie-breaking | `java.base`, GPL2+CPE | reachable in every sort-order claim |
 | `TreeMap` iteration | `java.base`, GPL2+CPE | already relied on by `Histogram` |
@@ -111,6 +111,22 @@ stays closed for this one -- htsjdk-rs decision 0013 blocks `FloatingDecimal` it
 implementation of the *specification* would agree with this port rather than with the oracle, which
 is what Android's `RealToString` demonstrated. Option 3 is the only route that removes them, and it is
 the same decision the 68 wait on.
+
+### Reconstructed from behaviour (2026-10-13)
+
+The paragraph above ruled out fitting an implementation to measurements. On 2026-10-13 the user
+decided otherwise for this one function, and htsjdk-rs decision 0046 records how it was done:
+`Double.toString` and `Float.toString` were queried in the oracle on stratified samples and
+Steele and White's published digit generation, with Gay's published exponent estimate, was fitted
+until every cluster of disagreement closed. Neither the source nor the bytecode of `java.base` was
+read, so the result is MIT and owes nothing to `FloatingDecimal` but its observed outputs. The
+Android `RealToString` objection still holds for an implementation of the *specification*; this is
+an implementation of the *measurements*, which is what makes it agree with the oracle.
+
+It reaches here through `jmath::to_string`: the fifteen `double-to-string` divergences close
+(#399), as does the `string-format` row that inherited one of them. `float` was verified over every
+value; `double` over 25 million sampled values plus a 3.1-million-line sweep CI regenerates in
+htsjdk-rs, which is strong evidence and not a proof.
 
 **The lesson is about the label, not the licence.** Once work is marked licence-blocked it stops
 being examined, and the mark covers whatever was nearby when it was applied. Option 1 was written

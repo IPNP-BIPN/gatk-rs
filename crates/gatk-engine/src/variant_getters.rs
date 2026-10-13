@@ -49,16 +49,6 @@ pub struct NonDoubleValue {
     pub value: String,
 }
 
-/// A value this port will not render, as distinct from one the reference refuses.
-///
-/// The last-resort branch renders its input with `String.valueOf`, so an attribute already held as
-/// a `Double` goes through `Double.toString`, which is its own algorithm and is not ported. Rather
-/// than emit a plausible rendering and compare it to the oracle's, the port says so. Nothing that
-/// comes off a parsed VCF reaches this: htsjdk's decoder keeps INFO values as strings, so the
-/// `Double` case only arises for a context built in memory.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnrenderableDouble;
-
 impl NonDoubleValue {
     pub fn class(&self) -> &'static str {
         "org.broadinstitute.hellbender.exceptions.GATKException"
@@ -90,22 +80,27 @@ fn to_double(text: &str, key: &str, missing_value: f64) -> Result<f64, NonDouble
 /// A list renders as `AbstractCollection.toString`, which is `[a, b]`: square brackets and `", "`
 /// between the elements. That rendering is what the branch then takes apart, which is why the
 /// separator it splits on leaves a space at the front of every field but the first.
-fn java_string_of(value: &Value) -> Result<String, UnrenderableDouble> {
-    Ok(match value {
+fn java_string_of(value: &Value) -> String {
+    match value {
         // `String.valueOf(null)` is the string "null", which then fails to parse; the reference
         // reaches that through an attribute explicitly set to a null element.
         Value::Missing => MISSING_VALUE.to_string(),
         Value::Bool(flag) => flag.to_string(),
         Value::Int(number) => number.to_string(),
-        // `Double.toString` is not ported; see `UnrenderableDouble`.
-        Value::Double(_) => return Err(UnrenderableDouble),
+        // `Double.toString`, as the pinned Java 17 prints it (htsjdk-rs decision 0046). Nothing
+        // off a parsed VCF reaches this, since htsjdk's decoder keeps INFO values as strings; a
+        // context built in memory does.
+        Value::Double(number) => jmath::to_string::double_to_string(*number),
         Value::Str(text) => text.clone(),
-        Value::List(values) => {
-            let parts: Result<Vec<String>, UnrenderableDouble> =
-                values.iter().map(java_string_of).collect();
-            format!("[{}]", parts?.join(", "))
-        }
-    })
+        Value::List(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(java_string_of)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// `attributeValueToDoubleArray`.
@@ -123,8 +118,7 @@ pub fn attribute_value_to_double_array(
 
     // The Iterable branch is unreachable, so a list takes the same path as a scalar: rendered with
     // String.valueOf, stripped of brackets, split on the comma.
-    let rendered =
-        java_string_of(value).expect("no Double-valued attribute; see UnrenderableDouble");
+    let rendered = java_string_of(value);
     let trimmed = rendered.trim_matches(|c: char| c <= ' ');
     let stripped: String = trimmed.chars().filter(|c| *c != '[' && *c != ']').collect();
 
