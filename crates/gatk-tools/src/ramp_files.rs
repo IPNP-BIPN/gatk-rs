@@ -528,3 +528,580 @@ mod tests {
         );
     }
 }
+
+/// Which on ramp a file is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnRampType {
+    PostFilter,
+    PostAssembler,
+}
+
+impl OnRampType {
+    /// `OnRampTypeEnum`'s names; `NONE` is no ramp.
+    pub fn parse(name: &str) -> Option<Option<OnRampType>> {
+        match name {
+            "NONE" => Some(None),
+            "POST_FILTER_ON" => Some(Some(OnRampType::PostFilter)),
+            "POST_ASSEMBLER_ON" => Some(Some(OnRampType::PostAssembler)),
+            _ => None,
+        }
+    }
+}
+
+/// A value read back from `info.json`: what the off ramps write, objects in file order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonValue {
+    Int(i64),
+    Str(String),
+    Object(Vec<(String, JsonValue)>),
+    Array(Vec<JsonValue>),
+}
+
+impl JsonValue {
+    /// `JSONObject.has(key)` then `get(key)`.
+    pub fn get(&self, key: &str) -> Option<&JsonValue> {
+        match self {
+            JsonValue::Object(members) => members.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+
+    /// `getString(key)`.
+    pub fn string(&self, key: &str) -> Result<&str, String> {
+        match self.get(key) {
+            Some(JsonValue::Str(text)) => Ok(text),
+            _ => Err(format!("JSONObject[\"{key}\"] not a string.")),
+        }
+    }
+
+    /// `getInt(key)`.
+    fn int(&self, key: &str) -> Result<i64, String> {
+        match self.get(key) {
+            Some(JsonValue::Int(value)) => Ok(*value),
+            _ => Err(format!("JSONObject[\"{key}\"] is not a int.")),
+        }
+    }
+}
+
+/// The JSON the off ramps write: objects, arrays, strings and integers.
+fn parse_json(text: &str) -> Result<JsonValue, String> {
+    struct Parser<'a> {
+        bytes: &'a [u8],
+        at: usize,
+    }
+    impl Parser<'_> {
+        fn blank(&mut self) {
+            while self.at < self.bytes.len() && self.bytes[self.at].is_ascii_whitespace() {
+                self.at += 1;
+            }
+        }
+        fn expect(&mut self, byte: u8) -> Result<(), String> {
+            self.blank();
+            if self.bytes.get(self.at) == Some(&byte) {
+                self.at += 1;
+                Ok(())
+            } else {
+                Err(format!("expected '{}' at {}", byte as char, self.at))
+            }
+        }
+        fn string(&mut self) -> Result<String, String> {
+            self.expect(b'"')?;
+            let mut out = Vec::new();
+            while let Some(&byte) = self.bytes.get(self.at) {
+                self.at += 1;
+                match byte {
+                    b'"' => return String::from_utf8(out).map_err(|e| e.to_string()),
+                    b'\\' => {
+                        let escaped = *self.bytes.get(self.at).ok_or("an unfinished escape")?;
+                        self.at += 1;
+                        match escaped {
+                            b'n' => out.push(b'\n'),
+                            b't' => out.push(b'\t'),
+                            b'r' => out.push(b'\r'),
+                            b'b' => out.push(8),
+                            b'f' => out.push(12),
+                            b'u' => {
+                                let hex = std::str::from_utf8(
+                                    self.bytes.get(self.at..self.at + 4).ok_or("a short \\u")?,
+                                )
+                                .map_err(|e| e.to_string())?;
+                                let code =
+                                    u32::from_str_radix(hex, 16).map_err(|e| e.to_string())?;
+                                self.at += 4;
+                                let c = char::from_u32(code).unwrap_or('\u{fffd}');
+                                out.extend_from_slice(c.to_string().as_bytes());
+                            }
+                            other => out.push(other),
+                        }
+                    }
+                    other => out.push(other),
+                }
+            }
+            Err("an unterminated string".to_string())
+        }
+        fn value(&mut self) -> Result<JsonValue, String> {
+            self.blank();
+            match self.bytes.get(self.at) {
+                Some(b'{') => {
+                    self.at += 1;
+                    let mut members = Vec::new();
+                    self.blank();
+                    if self.bytes.get(self.at) == Some(&b'}') {
+                        self.at += 1;
+                        return Ok(JsonValue::Object(members));
+                    }
+                    loop {
+                        let key = self.string()?;
+                        self.expect(b':')?;
+                        members.push((key, self.value()?));
+                        self.blank();
+                        match self.bytes.get(self.at) {
+                            Some(b',') => self.at += 1,
+                            Some(b'}') => {
+                                self.at += 1;
+                                return Ok(JsonValue::Object(members));
+                            }
+                            _ => return Err(format!("expected ',' or '}}' at {}", self.at)),
+                        }
+                    }
+                }
+                Some(b'[') => {
+                    self.at += 1;
+                    let mut items = Vec::new();
+                    self.blank();
+                    if self.bytes.get(self.at) == Some(&b']') {
+                        self.at += 1;
+                        return Ok(JsonValue::Array(items));
+                    }
+                    loop {
+                        items.push(self.value()?);
+                        self.blank();
+                        match self.bytes.get(self.at) {
+                            Some(b',') => self.at += 1,
+                            Some(b']') => {
+                                self.at += 1;
+                                return Ok(JsonValue::Array(items));
+                            }
+                            _ => return Err(format!("expected ',' or ']' at {}", self.at)),
+                        }
+                    }
+                }
+                Some(b'"') => Ok(JsonValue::Str(self.string()?)),
+                _ => {
+                    let start = self.at;
+                    while self.at < self.bytes.len()
+                        && (self.bytes[self.at] == b'-' || self.bytes[self.at].is_ascii_digit())
+                    {
+                        self.at += 1;
+                    }
+                    std::str::from_utf8(&self.bytes[start..self.at])
+                        .map_err(|e| e.to_string())?
+                        .parse::<i64>()
+                        .map(JsonValue::Int)
+                        .map_err(|_| format!("an unexpected value at {start}"))
+                }
+            }
+        }
+    }
+    let mut parser = Parser {
+        bytes: text.as_bytes(),
+        at: 0,
+    };
+    parser.value()
+}
+
+/// `new SimpleInterval(String)` for the `contig:start-end` the ramps write.
+fn parse_interval(text: &str) -> Result<SimpleInterval, String> {
+    let bad = || format!("not an interval: {text}");
+    let (contig, range) = text.rsplit_once(':').ok_or_else(bad)?;
+    let (start, end) = range.split_once('-').ok_or_else(bad)?;
+    let number = |s: &str| s.replace(',', "").parse::<i32>().map_err(|_| bad());
+    SimpleInterval::new(contig, number(start)?, number(end)?).ok_or_else(bad)
+}
+
+/// `TextCigarCodec.decode`.
+fn parse_cigar(text: &str) -> Result<htsjdk_bam::cigar::Cigar, String> {
+    use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
+    if text == "*" {
+        return Ok(Cigar::new(Vec::new()));
+    }
+    let mut elements = Vec::new();
+    let mut length = 0u32;
+    for byte in text.bytes() {
+        if byte.is_ascii_digit() {
+            length = length * 10 + u32::from(byte - b'0');
+            continue;
+        }
+        let op = match byte {
+            b'M' => Op::M,
+            b'I' => Op::I,
+            b'D' => Op::D,
+            b'N' => Op::N,
+            b'S' => Op::S,
+            b'H' => Op::H,
+            b'P' => Op::P,
+            b'=' => Op::Eq,
+            b'X' => Op::X,
+            _ => return Err(format!("Malformed CIGAR string: {text}")),
+        };
+        elements.push(CigarElement { length, op });
+        length = 0;
+    }
+    Ok(Cigar::new(elements))
+}
+
+/// `OnRampBase.CSVReader`: a header of column names, then rows split on commas.
+struct CsvTable {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+}
+
+impl CsvTable {
+    fn read(bytes: &[u8]) -> Result<CsvTable, String> {
+        let text = String::from_utf8_lossy(bytes);
+        let mut lines = text.lines();
+        let columns = lines
+            .next()
+            .ok_or("an empty table")?
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let rows = lines
+            .map(|line| line.split(',').map(str::to_string).collect())
+            .collect();
+        Ok(CsvTable { columns, rows })
+    }
+
+    /// `getColumn(name)`: the last column of that name, as the `LinkedHashMap` keeps it.
+    fn column(&self, name: &str) -> Result<usize, String> {
+        self.columns
+            .iter()
+            .rposition(|c| c == name)
+            .ok_or_else(|| format!("java.io.IOException: no such column: {name}"))
+    }
+}
+
+/// `Double.parseDouble`, for the `Double.toString` the ramps write.
+fn parse_double(text: &str) -> Result<f64, String> {
+    text.trim()
+        .parse::<f64>()
+        .map_err(|_| format!("java.lang.NumberFormatException: For input string: \"{text}\""))
+}
+
+/// `Integer.parseInt`.
+fn parse_int(text: &str) -> Result<i32, String> {
+    text.parse::<i32>()
+        .map_err(|_| format!("java.lang.NumberFormatException: For input string: \"{text}\""))
+}
+
+/// An on ramp: the zip an off ramp wrote, read back. `OnRampBase` with `PostFilterOnRamp` and
+/// `PostAssemblerOnRamp`.
+pub struct OnRamp {
+    pub kind: OnRampType,
+    entries: Vec<(String, Vec<u8>)>,
+    regions: Vec<JsonValue>,
+    /// `regionIndex`: `contig:start-end` to the region's place in `regions`, the last one winning.
+    region_index: std::collections::HashMap<String, usize>,
+    /// The haplotype BAM's records in file order, with its contig names, for the post-assembler
+    /// ramp.
+    haplotype_records: Vec<BamRecord>,
+    haplotype_contigs: Vec<String>,
+}
+
+impl OnRamp {
+    /// `new OnRampBase(filename)`: the zip opened and `info.json` read; the post-assembler ramp
+    /// also copies out its haplotype BAM and index.
+    pub fn open(kind: OnRampType, path: &std::path::Path) -> Result<OnRamp, String> {
+        use std::io::Read;
+        let file = std::fs::File::open(path).map_err(|e| format!("java.io.IOException: {e}"))?;
+        let mut archive =
+            zip::ZipArchive::new(file).map_err(|e| format!("java.util.zip.ZipException: {e}"))?;
+        let mut entries = Vec::new();
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).map_err(|e| e.to_string())?;
+            let name = entry.name().map_err(|e| e.to_string())?.to_string();
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+            entries.push((name, bytes));
+        }
+        let mut ramp = OnRamp {
+            kind,
+            entries,
+            regions: Vec::new(),
+            region_index: std::collections::HashMap::new(),
+            haplotype_records: Vec::new(),
+            haplotype_contigs: Vec::new(),
+        };
+        let info = parse_json(&String::from_utf8_lossy(ramp.entry(None, "info.json")?))?;
+        let Some(JsonValue::Array(regions)) = info.get("regions") else {
+            return Err("JSONObject[\"regions\"] is not a JSONArray.".to_string());
+        };
+        for (index, region) in regions.iter().enumerate() {
+            let key = format!(
+                "{}:{}-{}",
+                region.string("contig")?,
+                region.int("start")?,
+                region.int("end")?
+            );
+            ramp.region_index.insert(key, index);
+        }
+        ramp.regions = regions.clone();
+        if kind == OnRampType::PostAssembler {
+            let bam = ramp.entry(None, "haplotypes.bam")?.to_vec();
+            ramp.entry(None, "haplotypes.bai")?;
+            let plain = htsjdk_bgzf::read::decompress_all(&bam).map_err(|e| format!("{e:?}"))?;
+            let reader =
+                htsjdk_bam::reader::BamReader::new(&plain).map_err(|e| format!("{e:?}"))?;
+            ramp.haplotype_contigs = reader
+                .header
+                .text
+                .sequences
+                .iter()
+                .map(|r| r.name.clone())
+                .collect();
+            for record in reader {
+                ramp.haplotype_records
+                    .push(record.map_err(|e| format!("{e:?}"))?);
+            }
+        }
+        Ok(ramp)
+    }
+
+    /// `getEntry(loc, name)`: the first entry of that name, under the region's directory.
+    fn entry(&self, location: Option<&SimpleInterval>, name: &str) -> Result<&[u8], String> {
+        let prefix = location.map_or(String::new(), |l| format!("{}/", location_suffix(l)));
+        let full = format!("{prefix}{name}");
+        self.entries
+            .iter()
+            .find(|(n, _)| *n == full)
+            .map(|(_, bytes)| bytes.as_slice())
+            .ok_or_else(|| format!("java.io.IOException: no such: {full}"))
+    }
+
+    /// `hasRegion(loc)`.
+    pub fn has_region(&self, location: &SimpleInterval) -> bool {
+        self.region_index.contains_key(&interval_text(location))
+    }
+
+    /// `getRegion(loc, name)`: the region's object, then down the dotted path; nothing where a
+    /// level is missing.
+    pub fn region(&self, location: &SimpleInterval, name: &str) -> Option<&JsonValue> {
+        let index = self.region_index.get(&interval_text(location))?;
+        let mut object = self.regions.get(*index)?;
+        for key in name.split('.') {
+            object = object.get(key)?;
+        }
+        Some(object)
+    }
+
+    /// `getHaplotypes(loc, name)`: the haplotype table, one haplotype per row.
+    pub fn haplotypes(
+        &self,
+        location: &SimpleInterval,
+        name: &str,
+    ) -> Result<Vec<Haplotype>, String> {
+        let table = CsvTable::read(self.entry(Some(location), name)?)?;
+        let contig = table.column("contig")?;
+        let start = table.column("start")?;
+        let end = table.column("end")?;
+        let reference = table.column("ref")?;
+        let cigar = table.column("cigar")?;
+        let bases = table.column("bases")?;
+        let score = table.column("score")?;
+        let offset = table.column("alignmentStartHapwrtRef")?;
+        let mut haplotypes = Vec::new();
+        for row in &table.rows {
+            let cell = |i: usize| -> Result<&str, String> {
+                row.get(i).map(String::as_str).ok_or_else(|| {
+                    format!("java.lang.ArrayIndexOutOfBoundsException: Index {i} out of bounds for length {}", row.len())
+                })
+            };
+            let mut haplotype =
+                Haplotype::new(cell(bases)?.as_bytes(), parse_int(cell(reference)?)? != 0)
+                    .map_err(|e| format!("{e:?}"))?;
+            haplotype.set_genome_location(
+                SimpleInterval::new(
+                    cell(contig)?,
+                    parse_int(cell(start)?)?,
+                    parse_int(cell(end)?)?,
+                )
+                .ok_or("a bad haplotype location")?,
+            );
+            haplotype.set_score(parse_double(cell(score)?)?);
+            haplotype
+                .set_cigar(&parse_cigar(cell(cigar)?)?)
+                .map_err(|e| format!("{e:?}"))?;
+            haplotype.set_alignment_start_hap_wrt_ref(parse_int(cell(offset)?)?);
+            haplotypes.push(haplotype);
+        }
+        Ok(haplotypes)
+    }
+
+    /// `PostAssemblerOnRamp.readHaplotypes(region)`: the haplotype reads overlapping the region,
+    /// in file order, keeping those whose special tag names this very region.
+    pub fn bam_haplotypes(&self, location: &SimpleInterval) -> Result<Vec<Haplotype>, String> {
+        let wanted = interval_text(location);
+        let mut haplotypes = Vec::new();
+        for record in &self.haplotype_records {
+            let Some(contig) = usize::try_from(record.reference_index)
+                .ok()
+                .and_then(|i| self.haplotype_contigs.get(i))
+            else {
+                continue;
+            };
+            let end = record.alignment_end();
+            if *contig != location.contig
+                || end < location.start
+                || record.alignment_start > location.end
+            {
+                continue;
+            }
+            let mut is_reference = false;
+            let mut score = f64::NAN;
+            let mut offset = 0;
+            if let Some(TagValue::Str(special)) = record.tags.get(Tag::new(b"XS")) {
+                let tokens: Vec<&str> = special.split(',').collect();
+                is_reference = parse_int(tokens.first().copied().unwrap_or(""))? != 0;
+                score = parse_double(tokens.get(1).copied().unwrap_or(""))?;
+                offset = parse_int(tokens.get(2).copied().unwrap_or(""))?;
+                if tokens.get(3).copied() != Some(wanted.as_str()) {
+                    continue;
+                }
+            }
+            let mut haplotype =
+                Haplotype::new(&record.read_bases, is_reference).map_err(|e| format!("{e:?}"))?;
+            haplotype.set_genome_location(
+                SimpleInterval::new(contig, record.alignment_start, end)
+                    .ok_or("a bad haplotype location")?,
+            );
+            haplotype
+                .set_cigar(&record.cigar)
+                .map_err(|e| format!("{e:?}"))?;
+            haplotype.set_alignment_start_hap_wrt_ref(offset);
+            if !score.is_nan() {
+                haplotype.set_score(score);
+            }
+            haplotypes.push(haplotype);
+        }
+        Ok(haplotypes)
+    }
+
+    /// `PostAssemblerOnRamp.parseAssemblyRegion`: an active region of the object's two spans,
+    /// with no reads.
+    pub fn assembly_region(object: &JsonValue) -> Result<AssemblyRegion, String> {
+        AssemblyRegion::new(
+            parse_interval(object.string("activeSpan")?)?,
+            parse_interval(object.string("paddedSpan")?)?,
+            true,
+        )
+        .map_err(|e| format!("{e:?}"))
+    }
+
+    /// `getRegion(span, name).getString(key)` as an interval.
+    pub fn region_interval(
+        &self,
+        location: &SimpleInterval,
+        name: &str,
+        key: &str,
+    ) -> Result<SimpleInterval, String> {
+        let object = self
+            .region(location, name)
+            .ok_or("java.lang.NullPointerException")?;
+        parse_interval(object.string(key)?)
+    }
+
+    /// `PostFilterOnRamp.getAlleleLikelihoods`: the haplotypes, then per sample the reads the
+    /// table names (looked up by name and supplementary flag, first among the genotyping reads
+    /// then among all the region's, a read found in neither skipped) and their matrix.
+    pub fn allele_likelihoods(
+        &self,
+        location: &SimpleInterval,
+        name: &str,
+        samples: &[String],
+        reads: &[Vec<BamRecord>],
+        all_reads: &[Vec<BamRecord>],
+    ) -> Result<AlleleLikelihoods<BamRecord, Haplotype>, String> {
+        let haplotypes = self.haplotypes(location, &format!("{name}.haplotypes"))?;
+        let supp_name = |read_name: &str, supplementary: bool| {
+            format!("{read_name},{}", if supplementary { 1 } else { 0 })
+        };
+        let by_name = |groups: &[Vec<BamRecord>]| {
+            let mut map: std::collections::HashMap<String, BamRecord> =
+                std::collections::HashMap::new();
+            for read in groups.iter().flatten() {
+                map.insert(
+                    supp_name(&read.read_name, read.flags & 0x800 != 0),
+                    read.clone(),
+                );
+            }
+            map
+        };
+        let first = by_name(reads);
+        let second = by_name(all_reads);
+        let mut evidence = Vec::new();
+        let mut values = Vec::new();
+        for sample in samples {
+            let base = format!("{name}.samples.{sample}");
+            let table = CsvTable::read(self.entry(Some(location), &format!("{base}.reads"))?)?;
+            let name_column = table.column("name")?;
+            let supp_column = table.column("supp")?;
+            let mut enriched = Vec::new();
+            for row in &table.rows {
+                let key = supp_name(
+                    row.get(name_column).map_or("", String::as_str),
+                    parse_int(row.get(supp_column).map_or("", String::as_str))? != 0,
+                );
+                if let Some(read) = first.get(&key).or_else(|| second.get(&key)) {
+                    enriched.push(read.clone());
+                }
+            }
+
+            let matrix = CsvTable::read(self.entry(Some(location), &format!("{base}.matrix"))?)?;
+            const HAPLOTYPE_START_COLUMN: usize = 2;
+            if matrix.columns.len() != haplotypes.len() + HAPLOTYPE_START_COLUMN {
+                return Err(format!(
+                    "java.io.IOException: column count {} does not match number of haplotypes {}",
+                    matrix.columns.len(),
+                    haplotypes.len()
+                ));
+            }
+            let mut sample_values = vec![vec![0.0; enriched.len()]; haplotypes.len()];
+            let mut row_index = 0;
+            for row in &matrix.rows {
+                let read_name = row.first().map_or("", String::as_str);
+                let expected: &BamRecord = enriched.get(row_index).ok_or_else(|| {
+                    format!(
+                        "java.lang.IndexOutOfBoundsException: Index {row_index} out of bounds for length {}",
+                        enriched.len()
+                    )
+                })?;
+                // IGNORE_DANGLING_READS: a row for a read that was not found is passed over.
+                if read_name != expected.read_name {
+                    continue;
+                }
+                for (haplotype, values) in sample_values.iter_mut().enumerate() {
+                    values[row_index] = parse_double(
+                        row.get(haplotype + HAPLOTYPE_START_COLUMN)
+                            .map_or("", String::as_str),
+                    )?;
+                }
+                row_index += 1;
+            }
+            if row_index != enriched.len() {
+                return Err(format!(
+                    "java.io.IOException: {row_index} rows found, but there are {} reads",
+                    enriched.len()
+                ));
+            }
+            evidence.push(enriched);
+            values.push(sample_values);
+        }
+        AlleleLikelihoods::new(
+            gatk_engine::allele_list::SampleList::new(samples),
+            gatk_engine::allele_list::AlleleList::new(&haplotypes),
+            evidence,
+            values,
+        )
+        .map_err(|e| format!("{e:?}"))
+    }
+}

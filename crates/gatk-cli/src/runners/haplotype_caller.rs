@@ -158,8 +158,8 @@ const HONOURED: &[&str] = &[
     "pair-hmm-implementation",
     "smith-waterman",
     "likelihood-calculation-engine",
-    // RampedHaplotypeCaller's own: the off ramp is written, the on ramp refused unless NONE,
-    // and the two debug switches only log.
+    // RampedHaplotypeCaller's own: the off ramp is written, the on ramp read, and the two debug
+    // switches only log.
     "off-ramp-type",
     "off-ramp-file",
     "on-ramp-type",
@@ -200,6 +200,40 @@ fn off_ramp(
             "rampFile must be specified".to_string(),
         )
     })?;
+    Ok(Some((kind, std::path::PathBuf::from(file))))
+}
+
+/// `buildRamps`' on ramp, after the off ramp: its type, the file it is read from, and the rule
+/// that an on ramp comes before any off ramp.
+fn on_ramp(
+    parser: &Parser,
+    off: Option<gatk_tools::ramp_files::OffRampType>,
+) -> Result<Option<(gatk_tools::ramp_files::OnRampType, std::path::PathBuf)>, Thrown> {
+    use gatk_tools::ramp_files::{OffRampType, OnRampType};
+    let Some(name) = scalar(parser, "on-ramp-type") else {
+        return Ok(None);
+    };
+    let kind = OnRampType::parse(&name)
+        .ok_or_else(|| Thrown::command_line(format!("unknown on ramp type {name}")))?;
+    let Some(kind) = kind else {
+        return Ok(None);
+    };
+    let file = scalar(parser, "on-ramp-file").ok_or_else(|| {
+        Thrown::non_user(
+            "java.lang.RuntimeException",
+            "rampFile must be specified".to_string(),
+        )
+    })?;
+    let out_of_order = match kind {
+        OnRampType::PostFilter => off == Some(OffRampType::PreFilter),
+        OnRampType::PostAssembler => off.is_some(),
+    };
+    if out_of_order {
+        return Err(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "an on ramp, if present, must be before the off ramp".to_string(),
+        ));
+    }
     Ok(Some((kind, std::path::PathBuf::from(file))))
 }
 
@@ -249,16 +283,6 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
 /// non-random downsampling. With no ramp the engine still differs from HaplotypeCaller's where
 /// `callRegion` measures read stubs, filters reads and realigns them.
 pub fn ramped_haplotype_caller(parser: &Parser) -> Outcome {
-    for ramp in ["on-ramp-type"] {
-        match scalar(parser, ramp).as_deref() {
-            None | Some("NONE") => {}
-            Some(kind) => {
-                return Err(limitation(&format!(
-                    "the {kind} ramp is not ported; RampedHaplotypeCaller runs without ramps."
-                )))
-            }
-        }
-    }
     run(parser, "RampedHaplotypeCaller")
 }
 
@@ -421,6 +445,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         .map_err(|error| Thrown::command_line(error.message()))?;
     let mismapping = double_or(parser, "phred-scaled-global-read-mismapping-rate", 45.0);
     let sw = smith_waterman_arguments(parser);
+    // `buildRamps`: the off ramp first, then the on ramp.
+    let off = if ramped { off_ramp(parser)? } else { None };
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -547,7 +573,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
         non_random_downsampling: ramped,
-        off_ramp: if ramped { off_ramp(parser)? } else { None },
+        off_ramp: off.clone(),
+        on_ramp: if ramped {
+            on_ramp(parser, off.as_ref().map(|(kind, _)| *kind))?
+        } else {
+            None
+        },
         compression: crate::runners::output_compression(parser),
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {

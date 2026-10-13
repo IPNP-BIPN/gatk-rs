@@ -61,6 +61,8 @@ pub struct HaplotypeCallerArguments {
     pub non_random_downsampling: bool,
     /// RampedHaplotypeCaller's `--off-ramp-type` and `--off-ramp-file`.
     pub off_ramp: Option<(crate::ramp_files::OffRampType, std::path::PathBuf)>,
+    /// RampedHaplotypeCaller's `--on-ramp-type` and `--on-ramp-file`.
+    pub on_ramp: Option<(crate::ramp_files::OnRampType, std::path::PathBuf)>,
     /// The BGZF level and deflater the run writes block-compressed files with.
     pub compression: (u32, htsjdk_bgzf::Deflater),
 }
@@ -139,6 +141,13 @@ pub fn call_variants(
             arguments.compression,
         ))
     });
+    // The on ramp is read whole when the engine is built.
+    let on_ramp = arguments
+        .on_ramp
+        .as_ref()
+        .map(|(kind, path)| crate::ramp_files::OnRamp::open(*kind, path))
+        .transpose()
+        .map_err(|message| HaplotypeCallerError::new("RuntimeException", message))?;
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -205,6 +214,7 @@ pub fn call_variants(
             genotyping: &genotyping,
             mapping_quality_threshold: arguments.mapping_quality_threshold,
             off_ramp: off_ramp.as_ref(),
+            on_ramp: on_ramp.as_ref(),
         };
         for traversed in regions {
             let region_calls = call_region(

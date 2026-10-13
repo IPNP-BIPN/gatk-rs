@@ -7418,7 +7418,7 @@
     {
       "id": "ramps-end-to-end",
       "status": "golden-pending",
-      "title": "RampedHaplotypeCaller's off ramps, end to end",
+      "title": "RampedHaplotypeCaller's ramps, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [],
       "java_props": [
@@ -7427,11 +7427,11 @@
         "-Dsamjdk.use_libdeflate=false",
         "-Dsamjdk.compression_level=2"
       ],
-      "why": "RampedHaplotypeCaller run by instanceMain on HcEndToEndDump's BAM and FASTA with each off ramp (#1278). The covering array cannot vary the ramp arguments, because gatkdoc omits RampedHaplotypeCallerArgumentCollection and the inventory is built from gatkdoc, so this suite is where they are measured. PRE_ASSEMBLER_OFF WRITES ONLY THE REGIONS, POST_ASSEMBLER_OFF THE ASSEMBLED HAPLOTYPES as a CSV and as an indexed BAM of artificial haplotype reads with the trimmer's flanks, PRE_FILTER_OFF THE READ LIKELIHOODS per sample, and info.json lists its keys in HashMap order. An off ramp calls nothing, so each VCF keeps only its header. Four runs: the three off ramps (the post-assembler one through the JDK deflater, so its BAM bytes replay on any machine) and an off ramp without a file, which the reference refuses. The dump runs at samjdk.compression_level 2, the level GATKConfig gives a real gatk invocation and instanceMain never sees (#1032).",
+      "why": "RampedHaplotypeCaller run by instanceMain on HcEndToEndDump's BAM and FASTA with each off ramp and each on ramp (#1278). The covering array cannot vary the ramp arguments, because gatkdoc omits RampedHaplotypeCallerArgumentCollection and the inventory is built from gatkdoc, so this suite is where they are measured. PRE_ASSEMBLER_OFF WRITES ONLY THE REGIONS, POST_ASSEMBLER_OFF THE ASSEMBLED HAPLOTYPES as a CSV and as an indexed BAM of artificial haplotype reads with the trimmer's flanks, PRE_FILTER_OFF THE READ LIKELIHOODS per sample, and info.json lists its keys in HashMap order; an off ramp calls nothing, so its VCF keeps only its header. POST_ASSEMBLER_ON READS THE ASSEMBLY BACK from the haplotype BAM, by region and by the special tag, and still assembles the reads for the region they leave to genotype. POST_FILTER_ON BYPASSES THE ASSEMBLER, adds the table's haplotypes to the reference, trims to the genotyping region the table records, and genotypes the table's likelihoods, matched to the region's reads by name; a region the zip does not hold calls nothing. Nine runs: the three off ramps (the post-assembler one through the JDK deflater and first, so its BAM bytes replay on any machine), an off ramp without a file, the two on ramps over the zips just written (the post-filter one also over a wider interval), an on ramp without a file, and an on ramp after an off ramp, which the reference refuses. The dump runs at samjdk.compression_level 2, the level GATKConfig gives a real gatk invocation and instanceMain never sees (#1032).",
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 20,
+      "expect_rows": 25,
       "expect_contains": [],
       "cases": [
         {
