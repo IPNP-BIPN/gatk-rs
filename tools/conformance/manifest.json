@@ -7360,7 +7360,9 @@
       "status": "oracle-backed",
       "title": "HaplotypeCaller end to end",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "HaplotypeCaller"
+      ],
       "why": "The tool itself, run by instanceMain on an indexed BAM and a FASTA (G3.1e, #1284): the IUPAC transformer and the read filters, the positional downsampler, the activity profile with its soft-clip spreading, the region boundaries, assembly, likelihoods, genotyping, the default annotations and the VCF writer, chained. Two samples over two random contigs: SNPs het and hom, a deletion, an insertion, two SNPs in cis for one sample and in trans for the other, a SNP on the second contig, reads at mapping quality 10, duplicates, high-quality soft clips, an N and an IUPAC base, and sixty reads at one start. Seven runs in one JVM, the generator never reset: the default, two intervals, phasing off (which VCF mode turns off anyway), a calling threshold of 500, no downsampling, the mapping-quality filter disabled, and a minimum base quality of 30.",
       "compare": {
         "mode": "lines"
@@ -7380,7 +7382,9 @@
       "status": "oracle-backed",
       "title": "HaplotypeCaller in reference-confidence mode, end to end",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "HaplotypeCaller"
+      ],
       "why": "The tool with --emit-ref-confidence (G3.1f, #1285), on one sample's reads over two contigs. EVERY BASE IS ACCOUNTED FOR: inactive regions, regions that assemble to the reference and the trimmer's flanks each get a reference-confidence record per base, from the ref-vs-any likelihoods and the count of reads with no plausible indel, the less confident of the two. A <NON_REF> ALLELE IS ADDED TO EVERY CALL, its likelihood the median of each read's non-best concrete alleles, and the calling threshold is zero. THE ANNOTATIONS CHANGE: StrandBiasBySample added, ChromosomeCounts, FisherStrand, StrandOddsRatio and QualByDepth removed, the reducible ones written raw. PHYSICAL PHASING IS ON. AND GVCF COMBINES THE REFERENCE RECORDS INTO GQ-BAND BLOCKS where BP_RESOLUTION writes each one. Five runs: GVCF, BP_RESOLUTION over chr1:1150-1350, GVCF over two intervals, GVCF without phasing, and GVCF with two GQ bands.",
       "compare": {
         "mode": "lines"
@@ -7400,7 +7404,9 @@
       "status": "oracle-backed",
       "title": "Mutect2 end to end",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "Mutect2"
+      ],
       "why": "The somatic caller itself, run by instanceMain on an indexed BAM and a FASTA (G3.1g, #1286). THE ACTIVE REGIONS COME FROM THE TUMOR'S LOG ODDS: per locus the likeliest alternate (a base, another substitution or an indel) against sequencing error. THE CALLS ARE SOMATIC: a tumor allele fraction from the somatic likelihoods model, TLOD, and with a normal NLOD and NALOD. A NORMAL SILENCES A SITE where it carries the tumor's alternate. THE DEFAULT ANNOTATIONS ARE MUTECT2'S. AND THE STATS FILE carries the callable sites. Five runs on HcEndToEndDump's reads: tumor only, tumor-normal, tumor-normal over two intervals, germline sites genotyped, and an initial tumor LOD of 10.",
       "compare": {
         "mode": "lines"
@@ -7420,7 +7426,9 @@
       "status": "golden-pending",
       "title": "RampedHaplotypeCaller's ramps, end to end",
       "harness": "tools/readfilter-conformance",
-      "tools": [],
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
       "java_props": [
         "-Duser.language=en",
         "-Duser.country=US",

@@ -7,10 +7,10 @@ Ports vendored from main at: htsjdk-rs `0e5afcc8f4bb`, picard-rs `d6e5de789adf`
 
 | state | tools | share |
 |---|---:|---:|
-| oracle-backed | 260 | 83.6% |
+| oracle-backed | 262 | 84.2% |
 | golden-pending | 0 | 0.0% |
 | unchecked | 0 | 0.0% |
-| not started | 51 | 16.4% |
+| not started | 49 | 15.8% |
 | **total** | **311** | |
 
 `oracle-backed` means CI re-derives the tool's goldens in the pinned container on every run and compares them. It does **not** mean the tool is byte-identical over its whole argument surface: that is what the argument-coverage column is for. A t-wise array (`tools/coverage/covering.py`, sized in [what-pairwise-coverage-costs.md](what-pairwise-coverage-costs.md)) is run against the reference and the port, and the column reports the fraction of its rows on which the two answered identically, rejections included. `not measured` means the array has never been run against a port binary, which is still true of most tools here.
@@ -149,7 +149,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 
 </details>
 
-## gatk-origin tools (139 of 190 started)
+## gatk-origin tools (141 of 190 started)
 
 | tool | archetype | state | suites | cases | argument coverage | cost (cold / steady) |
 |---|---|---|---|---:|---|---|
@@ -236,6 +236,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.047 |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.053 |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 44/44 rows (100%) | 0.056 / 1.049 |
+| `HaplotypeCaller` | assembly-caller | oracle-backed | hc-end-to-end, hc-gvcf-end-to-end | 2 | not measured | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.074 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.056 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.026 / 0.383 |
@@ -249,6 +250,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.063 |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) | 0.002 / 0.052 |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | t=2, 19/19 rows (100%) | 0.384 / 1.501 |
+| `Mutect2` | assembly-caller | oracle-backed | mutect2-end-to-end | 1 | not measured | not measured |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.048 |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) | 0.002 / 0.068 |
@@ -262,7 +264,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `PrintReads` | record-transform | oracle-backed | expanded-command-line, printreads, tool-argument-declarations, tool-argument-enums | 4 | t=2, 21/21 rows (100%) | 0.003 / 0.040 |
 | `PrintReadsHeader` | record-transform | oracle-backed | print-reads-header | 1 | t=2, 19/19 rows (100%) | 0.002 / 0.062 |
 | `PrintSVEvidence` | unclassified | oracle-backed | print-sv-evidence | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.056 |
-| `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller | 1 | not measured | not measured |
+| `RampedHaplotypeCaller` | assembly-caller | oracle-backed | ramped-haplotype-caller, ramps-end-to-end | 2 | not measured | not measured |
 | `ReadAnonymizer` | unclassified | oracle-backed | read-anonymizer | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.039 |
 | `ReblockGVCF` | unclassified | oracle-backed | reblock-gvcf | 1 | t=2, 56/56 rows (100%) | 0.003 / 0.053 |
 | `ReferenceBlockConcordance` | unclassified | oracle-backed | reference-block-concordance | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.055 |
@@ -293,9 +295,9 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `VariantRecalibrator` | variant-transform | oracle-backed | variant-recalibrator | 1 | t=2, 26/26 rows (100%) | 0.060 / 0.746 |
 | `VariantsToTable` | variant-walker | oracle-backed | variants-to-table | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.049 |
 
-<details><summary>51 not started</summary>
+<details><summary>49 not started</summary>
 
-`ApplyBQSRSpark`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `Mutect2`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
+`ApplyBQSRSpark`, `BQSRPipelineSpark`, `BaseRecalibratorSpark`, `BwaAndMarkDuplicatesPipelineSpark`, `BwaSpark`, `CalcMetadataSpark`, `CollectAllelicCountsSpark`, `CollectBaseDistributionByCycleSpark`, `CollectInsertSizeMetricsSpark`, `CollectMultipleMetricsSpark`, `CollectQualityYieldMetricsSpark`, `CompareDuplicatesSpark`, `CountBasesSpark`, `CountReadsSpark`, `CountVariantsSpark`, `CpxVariantReInterpreterSpark`, `DetermineGermlineContigPloidy`, `DiscoverVariantsFromContigAlignmentsSAMSpark`, `ExtractOriginalAlignmentRecordsByNameSpark`, `ExtractSVEvidenceSpark`, `FindBadGenomicKmersSpark`, `FindBreakpointEvidenceSpark`, `FlagStatSpark`, `GenomicsDBImport`, `GermlineCNVCaller`, `HaplotypeCallerSpark`, `HtsgetReader`, `MarkDuplicatesSpark`, `MeanQualityByCycleSpark`, `NVScoreVariants`, `ParallelCopyGCSDirectoryIntoHDFSSpark`, `PathSeqBwaSpark`, `PathSeqFilterSpark`, `PathSeqPipelineSpark`, `PathSeqScoreSpark`, `PileupSpark`, `PlotDenoisedCopyRatios`, `PlotModeledSegments`, `PostprocessGermlineCNVCalls`, `PrintReadsSpark`, `PrintVariantsSpark`, `QualityScoreDistributionSpark`, `ReadsPipelineSpark`, `RevertSamSpark`, `ScoreVariantAnnotations`, `SortSamSpark`, `StructuralVariationDiscoveryPipelineSpark`, `SvDiscoverFromLocalAssemblyContigAlignmentsSpark`, `TrainVariantAnnotationsModel`
 
 </details>
 
