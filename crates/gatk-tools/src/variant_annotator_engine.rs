@@ -139,6 +139,20 @@ pub struct Engine {
     pub pseudo_depth: std::cell::RefCell<gatk_annotation::allele_pseudo_depth::AllelePseudoDepth>,
     /// `--assembly-complexity-reference-mode`, `AssemblyComplexity`'s one argument.
     pub assembly_complexity_reference_mode: bool,
+    /// What `--pedigree` and `--founder-id` hand the pedigree annotations.
+    pub pedigree: PedigreeArguments,
+}
+
+/// The pedigree annotations' inputs: the trios `--pedigree` gives `PossibleDeNovo` and
+/// `TransmittedSingleton`, and the founders `ExcessHet` and `InbreedingCoeff` restrict their
+/// genotypes to, `--founder-id`'s or, without them, the pedigree's.
+#[derive(Debug, Clone, Default)]
+pub struct PedigreeArguments {
+    pub trios: Vec<gatk_annotation::pedigree::Trio>,
+    pub founder_ids: Vec<String>,
+    /// `--denovo-parent-gq-threshold` and `--denovo-depth-threshold`.
+    pub parent_gq_threshold: i32,
+    pub depth_threshold: i32,
 }
 
 impl Engine {
@@ -257,7 +271,7 @@ impl Engine {
             let values = if use_raw && entry.is_reducible() {
                 annotate_raw(entry, &genotype_annotated, site)?
             } else {
-                annotate_info(entry, &genotype_annotated, site, random)?
+                annotate_info(entry, &genotype_annotated, site, random, &self.pedigree)?
             };
             for (key, value) in values {
                 put(&mut attributes, &key, value);
@@ -556,7 +570,23 @@ fn annotate_info(
     vc: &VariantContext,
     site: &Site<'_>,
     random: &mut JavaRandom,
+    pedigree: &PedigreeArguments,
 ) -> Result<Vec<(String, Value)>, EngineError> {
+    // `getFounderGenotypes`: every genotype, or only the founders' when there are founders.
+    let founders_only = |vc: &VariantContext| -> VariantContext {
+        if pedigree.founder_ids.is_empty() {
+            return vc.clone();
+        }
+        let mut subset = vc.clone();
+        subset.genotypes = GenotypesContext::new(
+            vc.genotypes
+                .iter()
+                .filter(|g| pedigree.founder_ids.contains(&g.sample_name))
+                .cloned()
+                .collect(),
+        );
+        subset
+    };
     use gatk_annotation as a;
     let likelihoods = Some(site.likelihoods);
     let from_trait = |annotation: &dyn InfoFieldAnnotation| {
@@ -602,19 +632,26 @@ fn annotate_info(
         "CountNs" => from_trait(&a::coverage::CountNs),
         "Coverage" => from_trait(&a::coverage::Coverage),
         "ExcessHet" => {
-            if !vc.genotypes.is_empty() && vc.is_variant() {
-                no_likelihoods(vc)?;
+            let founders = founders_only(vc);
+            if !founders.genotypes.is_empty() && founders.is_variant() {
+                no_likelihoods(&founders)?;
             }
-            string("ExcessHet", a::heterozygosity::excess_het(vc))
+            string("ExcessHet", a::heterozygosity::excess_het(&founders))
         }
         "FisherStrand" => from_trait(&a::strand_bias::FisherStrand),
         "FragmentLength" => per_allele(&a::per_allele::FragmentLength, vc, site)?,
         "GenotypeSummaries" => from_trait(&a::site_statistics::GenotypeSummaries),
         "InbreedingCoeff" => {
-            if vc.genotypes.len() >= a::heterozygosity::INBREEDING_MIN_SAMPLES && vc.is_variant() {
-                no_likelihoods(vc)?;
+            let founders = founders_only(vc);
+            if founders.genotypes.len() >= a::heterozygosity::INBREEDING_MIN_SAMPLES
+                && founders.is_variant()
+            {
+                no_likelihoods(&founders)?;
             }
-            string("InbreedingCoeff", a::heterozygosity::inbreeding_coeff(vc))
+            string(
+                "InbreedingCoeff",
+                a::heterozygosity::inbreeding_coeff(&founders),
+            )
         }
         "LikelihoodRankSumTest" => to_values(a::rank_sum::annotate(
             &a::site_statistics::LikelihoodRankSumTest,
@@ -711,9 +748,24 @@ fn annotate_info(
         // `FlowAnnotatorBase`'s members. The flow order is the default `TGCA` here: the reads are
         // not flow based and `--flow-order-for-annotations` is not carried, which is also why
         // `CycleSkipStatus`, which requires an actual flow order, writes nothing.
-        // `PedigreeAnnotation`s with no trio, which is every run here: the command lines that
-        // reach this engine carry no `--pedigree`, and an empty trio set answers an empty map.
-        "PossibleDeNovo" | "TransmittedSingleton" => Vec::new(),
+        // The trios come from `--pedigree`; without one the set is empty and so is the answer.
+        "PossibleDeNovo" => a::pedigree::possible_de_novo(
+            vc,
+            &pedigree.trios,
+            pedigree.parent_gq_threshold,
+            pedigree.depth_threshold,
+        )
+        .into_iter()
+        .map(|(key, ids)| (key, Value::List(ids.into_iter().map(Value::Str).collect())))
+        .collect(),
+        "TransmittedSingleton" => a::pedigree::transmitted_singleton(
+            vc,
+            &pedigree.trios,
+            attribute_int(vc, "AC", 0) as i32,
+        )
+        .into_iter()
+        .map(|(key, ids)| (key, Value::List(ids.into_iter().map(Value::Str).collect())))
+        .collect(),
         "VariantType" | "GcContent" | "HmerIndelLength" | "HmerIndelNuc" | "HmerMotifs"
         | "IndelClassify" | "IndelLength" | "CycleSkipStatus" => flow_values(entry.name, vc, site),
         name => {

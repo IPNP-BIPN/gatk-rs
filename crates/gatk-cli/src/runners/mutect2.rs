@@ -20,6 +20,11 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // The annotation plugin's pedigree arguments.
+    "pedigree",
+    "founder-id",
+    "denovo-parent-gq-threshold",
+    "denovo-depth-threshold",
     "input",
     "output",
     "reference",
@@ -510,6 +515,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
+        pedigree: pedigree_arguments(parser, &resolved)?,
     };
     let mut random = gatk_random();
     let called = m2::call_variants(

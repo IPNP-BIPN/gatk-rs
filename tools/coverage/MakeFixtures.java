@@ -833,6 +833,9 @@ public class MakeFixtures {
                 }
             }
         }
+        // A pedigree over the two samples, for the callers' --pedigree: the normal is the tumour's
+        // mother and the only founder, and with one parent there is no trio.
+        Files.writeString(dir.resolve("callers.ped"), "fam1\ttumor\t0\tnormal\t2\t2\nfam1\tnormal\t0\t0\t2\t1\n");
         // DRAGstr's default table, for HaplotypeCaller's --dragstr-params-path.
         org.broadinstitute.hellbender.utils.dragstr.DragstrParamUtils.print(
                 org.broadinstitute.hellbender.utils.dragstr.DragstrParams.DEFAULT,

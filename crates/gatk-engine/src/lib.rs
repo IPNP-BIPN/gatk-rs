@@ -108,6 +108,7 @@ pub mod recalibration_tables;
 pub mod reference;
 pub mod sa_tag;
 pub mod sam_pileup;
+pub mod sample_db;
 pub mod seq_graph;
 pub mod singular_value_decomposition;
 pub mod slippage_filter;

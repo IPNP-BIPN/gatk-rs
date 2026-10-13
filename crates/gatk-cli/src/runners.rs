@@ -293,6 +293,84 @@ pub(crate) fn resolve_read_filters_in(
     })
 }
 
+/// The pedigree annotations, the ones `GATKAnnotationPluginDescriptor` hands `--pedigree` and
+/// `--founder-id`.
+const PEDIGREE_ANNOTATIONS: [&str; 4] = [
+    "ExcessHet",
+    "InbreedingCoeff",
+    "PossibleDeNovo",
+    "TransmittedSingleton",
+];
+
+/// `GATKAnnotationPluginDescriptor.validateAndResolvePlugins`' pedigree step and what it hands the
+/// resolved pedigree annotations: refused when either argument is given and none of them was
+/// resolved, otherwise the PED file's trios, and the founders (`--founder-id`'s, then the file's).
+pub(crate) fn pedigree_arguments(
+    parser: &Parser,
+    resolved: &[&gatk_annotation::catalogue::Entry],
+) -> Result<gatk_tools::variant_annotator_engine::PedigreeArguments, Thrown> {
+    let mut founder_ids = arguments(parser, "founder-id");
+    let pedigree = argument(parser, "pedigree");
+    let mut out = gatk_tools::variant_annotator_engine::PedigreeArguments {
+        parent_gq_threshold: number_or(parser, "denovo-parent-gq-threshold", 20),
+        depth_threshold: number_or(parser, "denovo-depth-threshold", 0),
+        ..Default::default()
+    };
+    if founder_ids.is_empty() && pedigree.is_none() {
+        return Ok(out);
+    }
+    if !resolved
+        .iter()
+        .any(|entry| PEDIGREE_ANNOTATIONS.contains(&entry.name))
+    {
+        // `allDiscoveredAnnotations` is a `HashMap` of every discovered class.
+        let all: Vec<String> = gatk_annotation::catalogue::CATALOGUE
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect();
+        let order = gatk_engine::java_hash::hash_set_order(&all).unwrap_or(all);
+        let named: Vec<&str> = order
+            .iter()
+            .map(String::as_str)
+            .filter(|name| PEDIGREE_ANNOTATIONS.contains(name))
+            .collect();
+        return Err(Thrown::command_line(format!(
+            "Pedigree argument \"pedigree\" or \"founder-id\" was specified without a pedigree \
+             annotation being requested, (eg: {}))",
+            named.join(", ")
+        )));
+    }
+    if let Some(path) = pedigree {
+        let text = std::fs::read_to_string(&path).map_err(|_| {
+            Thrown::user(format!(
+                "Couldn't read file {path}. Error was: Could not read sample file"
+            ))
+        })?;
+        // `PedReader` names its source by the reader's `Object.toString`, an identity hash; the
+        // path's `String.hashCode` stands in for it.
+        let source = format!(
+            "java.io.InputStreamReader@{:x}",
+            gatk_engine::java_hash::string_hash_code(&path) as u32
+        );
+        let db = gatk_engine::sample_db::read_pedigree(&text, &source)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+        out.trios = db
+            .trios()
+            .into_iter()
+            .map(|trio| gatk_annotation::pedigree::Trio {
+                family_id: trio.family_id.unwrap_or_default(),
+                maternal_id: trio.maternal_id,
+                paternal_id: trio.paternal_id,
+                child_id: trio.child_id,
+            })
+            .collect();
+        // `initializeSampleDBAndSetFounders`: the file's founders, appended to `--founder-id`'s.
+        founder_ids.extend(db.founder_ids());
+    }
+    out.founder_ids = founder_ids;
+    Ok(out)
+}
+
 /// The predicate the resolved list becomes, once a header exists to read a filter against.
 fn read_filter<'a>(
     parser: &'a Parser,
@@ -15677,6 +15755,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         allele_concordance: flag(parser, "resource-allele-concordance"),
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
+        pedigree: Default::default(),
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
 

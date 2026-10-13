@@ -25,6 +25,11 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // The annotation plugin's pedigree arguments.
+    "pedigree",
+    "founder-id",
+    "denovo-parent-gq-threshold",
+    "denovo-depth-threshold",
     // The engine and the walker.
     "input",
     "output",
@@ -735,6 +740,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ),
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
+        pedigree: pedigree_arguments(parser, &resolved)?,
     };
 
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {

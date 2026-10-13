@@ -126,6 +126,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         allele_concordance: false,
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
+        pedigree: Default::default(),
     };
     let mut random = JavaRandom::new(47382911);
     let calls = call_region(

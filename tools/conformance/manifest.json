@@ -7550,6 +7550,31 @@
       ]
     },
     {
+      "id": "hc-pedigree",
+      "status": "golden-pending",
+      "title": "The callers' pedigree arguments, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--pedigree and --founder-id (G3.2k, #1343), the annotation plugin's pedigree arguments. ExcessHet and InbreedingCoeff count only the founders' genotypes, --founder-id's then the PED file's; PossibleDeNovo and TransmittedSingleton walk the PED file's trios, family by family, with --denovo-parent-gq-threshold and --denovo-depth-threshold moving a call between high and low confidence. Either argument with no pedigree annotation resolved is refused, the annotations named in the plugin's HashMap order, which is Mutect2's default. Over HcDragenEndToEndDump's reads with a third sample, a copy of the second under other names: a trio whose child carries what its parents do not, the thresholds, the founders alone, both together, two families with a comment and a missing parent, GVCF mode, an unknown sex code, a malformed PED line (its source named by an identity hash, masked), and the refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 20,
+      "expect_contains": [
+        "hiConfDeNovo=s1",
+        "error\tmutect2-pedigree\torg.broadinstitute.barclay.argparser.CommandLineException:Pedigree argument \"pedigree\" or \"founder-id\" was specified without a pedigree annotation being requested, (eg: InbreedingCoeff, ExcessHet, PossibleDeNovo, TransmittedSingleton))"
+      ],
+      "cases": [
+        {
+          "dump": "HcPedigreeDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

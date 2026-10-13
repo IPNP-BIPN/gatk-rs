@@ -489,6 +489,7 @@ arrays, and G3 is done only when no argument of the three callers is held out as
       - [ ] G3.2h the linked de Bruijn graph (#1337);
       - [ ] G3.2i the ramp arguments in a covering array (#1340);
       - [ ] G3.2j the callers' cost (#1341).
+      - [~] G3.2k `--pedigree` and `--founder-id`, with the de novo thresholds (#1343).
 - [x] `HaplotypeCaller`, `Mutect2` and relatives: assembly graph, genotyping. Each run end to end
       by the tool itself on an indexed BAM and a FASTA, golden from the pinned container:
       `hc-end-to-end` (seven runs, the generator carried between them), `hc-gvcf-end-to-end`

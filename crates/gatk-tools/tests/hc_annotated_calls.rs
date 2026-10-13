@@ -127,6 +127,7 @@ fn run(case: &Case) -> Vec<String> {
         allele_concordance: false,
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
+        pedigree: Default::default(),
     };
     // `Utils.resetRandomGenerator()`.
     let mut random = JavaRandom::new(47382911);

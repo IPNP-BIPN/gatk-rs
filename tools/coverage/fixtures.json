@@ -8103,7 +8103,10 @@
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
         "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
-        "ones."
+        "ones.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8232,6 +8235,22 @@
       "--disable-optimizations": [
         "false",
         "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
       ]
     },
     "Mutect2": {
@@ -8252,7 +8271,10 @@
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
-        "matter."
+        "matter.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -8384,6 +8406,22 @@
       "--minimum-allele-fraction": [
         "0.0",
         "0.05"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8411,7 +8449,10 @@
         "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
         "ones.",
         "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
-        "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet."
+        "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8550,6 +8591,22 @@
       "--disable-optimizations": [
         "false",
         "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
       ]
     }
   },
@@ -8969,6 +9026,26 @@
         "--normal-sample": "normal"
       },
       "why": "mutect_t.bam has no normal sample, so naming one is the same refusal on every row."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--pedigree": "/work/fixtures/callers.ped",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Mutect2's default annotations hold no pedigree annotation, so either pedigree argument without --enable-all-annotations is the same refusal on every row, which the hc-pedigree suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--founder-id": "normal",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Mutect2's default annotations hold no pedigree annotation, so either pedigree argument without --enable-all-annotations is the same refusal on every row, which the hc-pedigree suite measures."
     }
   ],
   "exclude": {

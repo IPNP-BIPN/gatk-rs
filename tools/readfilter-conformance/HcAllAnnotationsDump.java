@@ -115,7 +115,9 @@ public class HcAllAnnotationsDump {
                 cause = cause.getCause();
             }
             System.out.printf("error\t%s\t%s:%s%n", label, cause.getClass().getName(),
-                    ReferenceQueryDump.escape(HcEndToEndDump.masked(String.valueOf(cause.getMessage()), dir)));
+                    ReferenceQueryDump.escape(HcEndToEndDump.masked(String.valueOf(cause.getMessage()), dir)
+                            // PedReader names its reader by Object.toString, an identity hash.
+                            .replaceAll("java\\.io\\.InputStreamReader@[0-9a-f]+", "java.io.InputStreamReader@<hash>")));
             return;
         }
         final StringBuilder body = new StringBuilder();
