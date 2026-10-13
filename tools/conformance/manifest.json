@@ -7267,6 +7267,27 @@
           "golden": "crates/gatk-tools/tests/data/hc_genotyping.txt.gz"
         }
       ]
+    },
+    {
+      "id": "hc-annotated-calls",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller's calls with its default annotations",
+      "harness": "tools/readfilter-conformance",
+      "tools": [],
+      "why": "HaplotypeCaller's calls as it writes them by default (G3.1e, #1284): assignGenotypeLikelihoods with the StandardAnnotation and StandardHCAnnotation set (BaseQualityRankSumTest, ChromosomeCounts, Coverage, DepthPerAlleleBySample, DepthPerSampleHC, ExcessHet, FisherStrand, InbreedingCoeff, MappingQualityRankSumTest, QualByDepth, RMSMappingQuality, ReadPosRankSumTest, StrandOddsRatio), computed by makeAnnotatedCall from the read-by-allele matrix the call was genotyped with, over the padded reference, before the reverse trim; the random generator reset as a tool run resets it, so QualByDepth's jitter of a high QD is measured. Reads are cut from the haplotypes and aligned through the haplotype's CIGAR, with varied base qualities, mapping qualities and strands. Twelve cases: het and hom SNPs, strand bias, a triallelic site, two sites, a deletion, an insertion, homopolymer deletions trimmed, two samples, three samples under HWE, a deep site, ploidy 1.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_contains": [
+        "call\tstrand-biased\tchr1\t1020\t.\tA\tC\t455.64\t.\tAC=1;AF=0.500;AN=2;BaseQRankSum=0.287;DP=16;ExcessHet=0.0000;FS=11.139"
+      ],
+      "expect_rows": 276,
+      "cases": [
+        {
+          "dump": "HcAnnotatedCallsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_annotated_calls.txt.gz"
+        }
+      ]
     }
   ],
   "probes": []
