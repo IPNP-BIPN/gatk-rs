@@ -22,6 +22,8 @@ htsjdk-vcf.workspace = true
 # The coverage filter takes a median, which is commons-math's `Median` and therefore jmath's.
 jmath.workspace = true
 md-5.workspace = true
+# RampedHaplotypeCaller's off and on ramps are zip files of the run's state.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # One corpus parser for the whole workspace: two parsers would be two corpora.

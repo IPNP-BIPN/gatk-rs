@@ -97,6 +97,8 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         likelihood_engine: &likelihood_engine,
         genotyping: &genotyping,
         mapping_quality_threshold: 20,
+        off_ramp: None,
+        on_ramp: None,
     };
     let mut engine = GenotypingEngine::new(
         Configuration {

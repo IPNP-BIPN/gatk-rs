@@ -11,10 +11,11 @@
 //! for HaplotypeCaller (k-mers 10 and 25, 128 paths, a prune factor of 2, dangling branches of 4
 //! recovered, a minimum base quality of 10).
 
+use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::assembly_based_caller_utils::{finalize_region, FinalizeArguments, FinalizeError};
 use gatk_engine::assembly_region::AssemblyRegion;
-use gatk_engine::assembly_region_trimmer::AssemblyRegionTrimmer;
-use gatk_engine::assembly_result_set::AssemblyResultSet;
+use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimResult};
+use gatk_engine::assembly_result_set::{AssemblyResultSet, ResultSetError};
 use gatk_engine::haplotype::Haplotype;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine;
@@ -30,6 +31,7 @@ use gatk_engine::smith_waterman::{
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
+use crate::ramp_files::{OnRamp, OnRampType};
 use crate::reference_confidence_model::calculate_ref_confidence;
 
 use crate::genotyping_engine::GenotypingEngine;
@@ -70,6 +72,12 @@ pub struct CallRegionContext<'a> {
     pub genotyping: &'a HcGenotypingArguments,
     /// `--mapping-quality-threshold-for-genotyping`, 20 by default.
     pub mapping_quality_threshold: u8,
+    /// RampedHaplotypeCaller's off ramp: the region's state is written to it at the ramp's point,
+    /// and the region answers no calls.
+    pub off_ramp: Option<&'a std::cell::RefCell<crate::ramp_files::OffRamp>>,
+    /// RampedHaplotypeCaller's on ramp: the assembly or the likelihoods are read back from it
+    /// instead of computed.
+    pub on_ramp: Option<&'a crate::ramp_files::OnRamp>,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -96,34 +104,200 @@ pub fn call_region(
     if !region.is_active() || region.reads().is_empty() {
         return reference_model_for_no_variation(region, true, context);
     }
-    let mut untrimmed = assemble_reads(
-        &mut region,
-        context.assembly,
-        context.header,
-        context.samples,
-        context.contig_bases,
-        context.assembler,
-        context.aligner,
-    )?;
-    let events = untrimmed
-        .variation_events(context.genotyping.max_mnp_distance)
-        .map_err(|e| calling(format!("{e:?}")))?;
-    let padded = region.padded_span().clone();
-    let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
-    let trimmed = context
-        .trimmer
-        .trim(&region, &events, padded_bases, padded.start)
-        .map_err(|e| calling(format!("{e:?}")))?;
-    if trimmed.variant_span.is_none() {
-        return reference_model_for_no_variation(region, false, context);
+    // The pre-assembler off ramp: the region's place, before anything is assembled.
+    let ramp_kind = context.off_ramp.map(|ramp| ramp.borrow().kind);
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PreAssembler) {
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_assembly(
+                region.span(),
+                &crate::ramp_files::region_description(&region),
+                "assemblyResult",
+                None,
+                None,
+                None,
+                context.header,
+            );
+        }
+        return Ok(Vec::new());
     }
-    let variant_region = context
-        .trimmer
-        .variant_region(&trimmed, &region, context.header)
-        .map_err(|e| calling(format!("{e:?}")))?;
-    let mut assembly = untrimmed
-        .trim_to(variant_region)
-        .map_err(|e| calling(format!("{e:?}")))?;
+    let on_kind = context.on_ramp.map(|ramp| ramp.kind);
+    // The post-assembler on ramp's flanks, which stand in for the trimmer's.
+    let mut ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)> = None;
+    let (mut assembly, trimmed) = if let (Some(OnRampType::PostAssembler), Some(ramp)) =
+        (on_kind, context.on_ramp)
+    {
+        // The assembly read back: its haplotypes, its padded reference and its flanks.
+        let flank = |key: &str| {
+            ramp.region(region.span(), key)
+                .map(OnRamp::assembly_region)
+                .transpose()
+                .map_err(calling)
+        };
+        let left = flank("assemblyResult.nonVariantLeftFlankRegion")?;
+        let right = flank("assemblyResult.nonVariantRightFlankRegion")?;
+        let Some(object) = ramp.region(region.span(), "assemblyResult") else {
+            return Ok(Vec::new());
+        };
+        let haplotypes = ramp.bam_haplotypes(region.span()).map_err(calling)?;
+        let padded_loc = ramp
+            .region_interval(region.span(), "assemblyResult", "paddedReferenceLoc")
+            .map_err(calling)?;
+        let genotyping =
+            OnRamp::assembly_region(object.get("regionForGenotyping").ok_or_else(|| {
+                calling("JSONObject[\"regionForGenotyping\"] not found.".to_string())
+            })?)
+            .map_err(calling)?;
+        let mut set = AssemblyResultSet::new();
+        set.set_padded_reference_loc(padded_loc.clone());
+        set.set_region_for_genotyping(genotyping);
+        for haplotype in haplotypes {
+            set.add(haplotype).map_err(|e| calling(format!("{e:?}")))?;
+        }
+        set.set_full_reference_with_padding(
+            context.contig_bases[padded_loc.start as usize - 1..padded_loc.end as usize].to_vec(),
+        );
+        // The reads are still assembled, for the region they leave to genotype.
+        let untrimmed = assemble_reads(
+            &mut region,
+            context.assembly,
+            context.header,
+            context.samples,
+            context.contig_bases,
+            context.assembler,
+            context.aligner,
+        )?;
+        set.set_region_for_genotyping(
+            untrimmed
+                .region_for_genotyping()
+                .expect("an assembled set has its region")
+                .clone(),
+        );
+        let events = set
+            .variation_events(context.genotyping.max_mnp_distance)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let padded = region.padded_span().clone();
+        let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
+        let trimmed = context
+            .trimmer
+            .trim(&region, &events, padded_bases, padded.start)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        // `getVariantRegion()` validates rather than answers: no variation is an error here.
+        if trimmed.variant_span.is_none() {
+            return Err(calling(
+                "java.lang.IllegalArgumentException: There is no variation present.".to_string(),
+            ));
+        }
+        let variant_region = context
+            .trimmer
+            .variant_region(&trimmed, &region, context.header)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        // "assembler bailing out": a trim the set refuses is a region with no calls.
+        let assembly = match set.trim_to(variant_region) {
+            Ok(assembly) => assembly,
+            Err(ResultSetError::IllegalState(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(calling(format!("{e:?}"))),
+        };
+        ramp_flanks = Some((left, right));
+        (assembly, trimmed)
+    } else {
+        let post_filter = on_kind == Some(OnRampType::PostFilter);
+        let mut untrimmed = if post_filter {
+            // `bypassAssembly`: the region is finalized, and the set holds the reference alone.
+            assemble_bypassed(&mut region, context)?
+        } else {
+            assemble_reads(
+                &mut region,
+                context.assembly,
+                context.header,
+                context.samples,
+                context.contig_bases,
+                context.assembler,
+                context.aligner,
+            )?
+        };
+        if let (true, Some(ramp)) = (post_filter, context.on_ramp) {
+            if !ramp.has_region(region.span()) {
+                return Ok(Vec::new());
+            }
+            for haplotype in ramp
+                .haplotypes(region.span(), "readLikelihoods.haplotypes")
+                .map_err(calling)?
+            {
+                if !haplotype.is_reference() {
+                    untrimmed
+                        .add(haplotype)
+                        .map_err(|e| calling(format!("{e:?}")))?;
+                }
+            }
+        }
+        let events = untrimmed
+            .variation_events(context.genotyping.max_mnp_distance)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let padded = region.padded_span().clone();
+        let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
+        let trimmed = context
+            .trimmer
+            .trim(&region, &events, padded_bases, padded.start)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let variant_region = match (post_filter, context.on_ramp) {
+            // The genotyping region the likelihoods were computed over, from the ramp.
+            (true, Some(ramp)) => {
+                let span = ramp
+                    .region_interval(region.span(), "readLikelihoods", "r4g")
+                    .map_err(calling)?;
+                let padded_span = ramp
+                    .region_interval(region.span(), "readLikelihoods", "r4gp")
+                    .map_err(calling)?;
+                region
+                    .trim(&span, &padded_span, context.header)
+                    .map_err(|e| calling(format!("{e:?}")))?
+            }
+            _ => {
+                if trimmed.variant_span.is_none() {
+                    return reference_model_for_no_variation(region, false, context);
+                }
+                context
+                    .trimmer
+                    .variant_region(&trimmed, &region, context.header)
+                    .map_err(|e| calling(format!("{e:?}")))?
+            }
+        };
+        let assembly = untrimmed
+            .trim_to(variant_region)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        (assembly, trimmed)
+    };
+    // The post-assembler off ramp: the trimmed assembly, its spans and the flanks.
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PostAssembler) {
+        let left = context
+            .trimmer
+            .non_variant_left_flank_region(&trimmed, &region, context.header)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let right = context
+            .trimmer
+            .non_variant_right_flank_region(&trimmed, &region, context.header)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        let padded_loc = assembly
+            .padded_reference_loc()
+            .expect("a trimmed set has its padded reference")
+            .clone();
+        let genotyping = assembly
+            .region_for_genotyping()
+            .expect("a trimmed set has its region")
+            .clone();
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_assembly(
+                region.span(),
+                &crate::ramp_files::region_description(&region),
+                "assemblyResult",
+                Some((&padded_loc, &genotyping, assembly.haplotype_list())),
+                left.as_ref(),
+                right.as_ref(),
+                context.header,
+            );
+        }
+        return Ok(Vec::new());
+    }
 
     // The read stubs the trim left, then `filterNonPassingReads`, whose reads the annotations
     // still see.
@@ -187,10 +361,6 @@ pub fn call_region(
         reads[index].push(read.clone());
     }
     let mut haplotypes: Vec<_> = assembly.haplotype_list().to_vec();
-    let mut likelihoods = context
-        .likelihood_engine
-        .compute_read_likelihoods(&haplotypes, context.samples, &reads)
-        .map_err(|e| calling(format!("{e:?}")))?;
     let ref_loc = assembly
         .padded_reference_loc()
         .expect("a trimmed set has its padded reference")
@@ -199,6 +369,52 @@ pub fn call_region(
         .reference_haplotype()
         .expect("a trimmed set has its reference")
         .clone();
+    // The post-filter on ramp: the likelihoods are the file's, over the file's haplotypes and the
+    // reads it names. What the engine would have computed in their place is never read.
+    if let (Some(OnRampType::PostFilter), Some(ramp)) = (on_kind, context.on_ramp) {
+        let mut all_reads: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
+        for read in region.reads() {
+            let sample = sample_name(read, context.header);
+            if let Some(index) = context
+                .samples
+                .iter()
+                .position(|s| Some(s) == sample.as_ref())
+            {
+                all_reads[index].push(read.clone());
+            }
+        }
+        let likelihoods = ramp
+            .allele_likelihoods(
+                region.span(),
+                "readLikelihoods",
+                context.samples,
+                &reads,
+                &all_reads,
+            )
+            .map_err(calling)?;
+        haplotypes = (0..likelihoods.number_of_alleles())
+            .filter_map(|index| likelihoods.get_allele(index).cloned())
+            .collect();
+        return finish_region(
+            region,
+            context,
+            engine,
+            annotator,
+            &mut haplotypes,
+            &likelihoods,
+            &assembly,
+            &ref_loc,
+            &reference_haplotype,
+            &genotyping_region,
+            &filtered,
+            &trimmed,
+            ramp_flanks,
+        );
+    }
+    let mut likelihoods = context
+        .likelihood_engine
+        .compute_read_likelihoods(&haplotypes, context.samples, &reads)
+        .map_err(|e| calling(format!("{e:?}")))?;
     realign_reads_to_their_best_haplotype(
         &mut likelihoods,
         &reference_haplotype,
@@ -212,19 +428,67 @@ pub fn call_region(
         },
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // The pre-filter off ramp: the realigned likelihoods, before any allele is filtered.
+    if ramp_kind == Some(crate::ramp_files::OffRampType::PreFilter) {
+        if let Some(ramp) = context.off_ramp {
+            ramp.borrow_mut().add_likelihoods(
+                region.span(),
+                "readLikelihoods",
+                &likelihoods,
+                &genotyping_region,
+            );
+        }
+        return Ok(Vec::new());
+    }
+    finish_region(
+        region,
+        context,
+        engine,
+        annotator,
+        &mut haplotypes,
+        &likelihoods,
+        &assembly,
+        &ref_loc,
+        &reference_haplotype,
+        &genotyping_region,
+        &filtered,
+        &trimmed,
+        ramp_flanks,
+    )
+}
+
+/// The genotyping and, in reference-confidence mode, the flanks and the per-base records: what
+/// `callRegion` does once the likelihoods are in hand, whether computed or read from an on ramp.
+#[allow(clippy::too_many_arguments)]
+fn finish_region(
+    region: AssemblyRegion,
+    context: &CallRegionContext<'_>,
+    engine: &mut GenotypingEngine,
+    annotator: Option<CallAnnotator<'_>>,
+    haplotypes: &mut [Haplotype],
+    likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    assembly: &AssemblyResultSet,
+    ref_loc: &SimpleInterval,
+    reference_haplotype: &Haplotype,
+    genotyping_region: &AssemblyRegion,
+    filtered: &[Vec<BamRecord>],
+    trimmed: &TrimResult,
+    ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)>,
+) -> Result<Vec<VariantContext>, RegionAssemblyError> {
+    let calling = |e: String| RegionAssemblyError::Calling(e);
     let contig_length = context.contig_bases.len() as i32;
     let calls = assign_genotype_likelihoods_full(
         engine,
         context.genotyping,
-        &mut haplotypes,
-        &likelihoods,
+        haplotypes,
+        likelihoods,
         context.samples,
         assembly.full_reference_with_padding(),
-        &ref_loc,
+        ref_loc,
         genotyping_region.span(),
         contig_length,
         annotator,
-        &filtered,
+        filtered,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     if !context.genotyping.emit_reference_confidence {
@@ -242,11 +506,20 @@ pub fn call_region(
     }
     // The left flank, the genotyping region base by base with its calls, then the right flank.
     let mut result = Vec::new();
-    if let Some(flank) = context
-        .trimmer
-        .non_variant_left_flank_region(&trimmed, &region, context.header)
-        .map_err(|e| calling(format!("{e:?}")))?
-    {
+    let (left, right) = match ramp_flanks {
+        Some(flanks) => flanks,
+        None => (
+            context
+                .trimmer
+                .non_variant_left_flank_region(trimmed, &region, context.header)
+                .map_err(|e| calling(format!("{e:?}")))?,
+            context
+                .trimmer
+                .non_variant_right_flank_region(trimmed, &region, context.header)
+                .map_err(|e| calling(format!("{e:?}")))?,
+        ),
+    };
+    if let Some(flank) = left {
         result.extend(reference_model_for_no_variation(flank, false, context)?);
     }
     let sample = &context.samples[0];
@@ -264,11 +537,7 @@ pub fn call_region(
         )
         .map_err(|e| calling(format!("{e:?}")))?,
     );
-    if let Some(flank) = context
-        .trimmer
-        .non_variant_right_flank_region(&trimmed, &region, context.header)
-        .map_err(|e| calling(format!("{e:?}")))?
-    {
+    if let Some(flank) = right {
         result.extend(reference_model_for_no_variation(flank, false, context)?);
     }
     Ok(result)
@@ -494,6 +763,34 @@ pub fn assemble_reads(
             &arguments.haplotype_to_reference_sw,
         )
         .map_err(RegionAssemblyError::Assembler)
+}
+
+/// `assembleReads` with `bypassAssembly`, as the post-filter on ramp runs it: the region finalized
+/// as for an assembly, then `generateEmptyLLocalAssemblyResult`, a set holding the reference
+/// haplotype alone with the whole region to genotype.
+fn assemble_bypassed(
+    region: &mut AssemblyRegion,
+    context: &CallRegionContext<'_>,
+) -> Result<AssemblyResultSet, RegionAssemblyError> {
+    finalize_region(
+        region,
+        &finalize_arguments(context.assembly),
+        context.header,
+        context.samples,
+    )
+    .map_err(RegionAssemblyError::Finalize)?;
+    let contig_length = context.contig_bases.len() as i32;
+    let ref_loc = padded_reference_loc(region, REFERENCE_PADDING_FOR_ASSEMBLY, contig_length);
+    let full_reference =
+        context.contig_bases[ref_loc.start as usize - 1..ref_loc.end as usize].to_vec();
+    let ref_haplotype = reference_haplotype(region, context.contig_bases, &ref_loc)?;
+    let mut set = AssemblyResultSet::new();
+    set.set_region_for_genotyping(region.clone());
+    set.set_full_reference_with_padding(full_reference);
+    set.set_padded_reference_loc(ref_loc);
+    set.add(ref_haplotype)
+        .map_err(|e| RegionAssemblyError::Calling(format!("{e:?}")))?;
+    Ok(set)
 }
 
 /// `createReferenceHaplotype(region, paddedReferenceLoc, reader)`: the padded span's bases, a
