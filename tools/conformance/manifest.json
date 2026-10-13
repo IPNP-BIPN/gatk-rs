@@ -7477,7 +7477,7 @@
     },
     {
       "id": "callers-all-annotations",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller, RampedHaplotypeCaller and Mutect2 with --enable-all-annotations, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7497,13 +7497,14 @@
       "cases": [
         {
           "dump": "HcAllAnnotationsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_all_annotations.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "mutect2-gvcf",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2 in somatic reference-confidence mode, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7521,13 +7522,14 @@
       "cases": [
         {
           "dump": "Mutect2GvcfDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/mutect2_gvcf.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "mutect2-mitochondria",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2 in mitochondria mode, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7545,7 +7547,8 @@
       "cases": [
         {
           "dump": "Mutect2MitochondriaDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/mutect2_mitochondria.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
         }
       ]
     },
