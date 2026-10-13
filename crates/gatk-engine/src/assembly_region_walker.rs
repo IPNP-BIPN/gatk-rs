@@ -41,7 +41,6 @@ use crate::assembly_region_iterator::{
     AssemblyRegionArgs, ReadShard, TraversedRegion,
 };
 use crate::interval::SimpleInterval;
-use crate::java_random::JavaRandom;
 use crate::locus_iterator::AlignmentContext;
 use crate::locus_iterator::{self, LocusIteratorOptions};
 use crate::read_states::{DownsamplingInfo, ReadStateError, ReadStateManager};
@@ -248,11 +247,10 @@ impl Located for AlignmentContext<'_> {
     }
 }
 
-/// `traverse()` as a tool with a real evaluator runs it: each shard's reads through the
-/// positional downsampler (`max_reads_per_alignment_start` per start, none at zero), drawing from
-/// `random`, then the evaluator handed the locus and its `AlignmentContext`, `None` for a locus
-/// no read covers. The evaluator answers the probability and, for a `HIGH_QUALITY_SOFT_CLIPS`
-/// state, its value.
+/// `traverse()` as a tool with a real evaluator runs it: each shard's reads through the tool's
+/// downsampler (`createDownsampler()`, which is `downsample` here), then the evaluator handed the
+/// locus and its `AlignmentContext`, `None` for a locus no read covers. The evaluator answers the
+/// probability and, for a `HIGH_QUALITY_SOFT_CLIPS` state, its value.
 ///
 /// The downsampler runs over the whole shard before the first locus, where the reference pulls
 /// reads lazily as the loci advance: the draws are the same, and only their interleaving with a
@@ -264,7 +262,7 @@ pub fn traverse_with_pileups(
     samples: &[Option<String>],
     args: &AssemblyRegionArgs,
     header: &SamHeader,
-    random: &mut JavaRandom,
+    downsample: &mut dyn FnMut(&[BamRecord]) -> Vec<BamRecord>,
     is_active: &mut dyn FnMut(&SimpleInterval, Option<&AlignmentContext<'_>>) -> ActivityAnswer,
 ) -> Result<Vec<TraversedRegion>, WalkerError> {
     let shards = make_read_shards(intervals, args.assembly_region_padding, header)
@@ -282,15 +280,7 @@ pub fn traverse_with_pileups(
             })
             .cloned()
             .collect();
-        let shard_reads = if needs_downsampler(args) {
-            crate::downsampling::positional_downsample(
-                &queried,
-                args.max_reads_per_alignment_start as usize,
-                random,
-            )
-        } else {
-            queried
-        };
+        let shard_reads = downsample(&queried);
 
         let states = ReadStateManager::new(samples.to_vec(), DownsamplingInfo::NONE)?;
         let contexts = locus_iterator::contexts(

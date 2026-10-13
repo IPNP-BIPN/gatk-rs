@@ -20,7 +20,8 @@
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
-use gatk_engine::assembly_region_walker::traverse_with_pileups;
+use gatk_engine::assembly_region_walker::{needs_downsampler, traverse_with_pileups};
+use gatk_engine::downsampling::positional_downsample;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_random::JavaRandom;
 use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
@@ -117,7 +118,18 @@ pub fn call_variants(
             &partition,
             &arguments.region,
             header,
-            random,
+            &mut |reads| {
+                // `createDownsampler()`: a `PositionalDownsampler` only above zero.
+                if needs_downsampler(&arguments.region) {
+                    positional_downsample(
+                        reads,
+                        arguments.region.max_reads_per_alignment_start as usize,
+                        random,
+                    )
+                } else {
+                    reads.to_vec()
+                }
+            },
             &mut |locus, context| {
                 let Some(context) = context else {
                     return (0.0, None);

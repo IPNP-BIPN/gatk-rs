@@ -401,6 +401,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CombineGVCFs" => Some(run_combine_gvcfs),
         "GenotypeGVCFs" => Some(run_genotype_gvcfs),
         "HaplotypeCaller" => Some(run_haplotype_caller),
+        "Mutect2" => Some(run_mutect2),
         "ReblockGVCF" => Some(run_reblock_gvcf),
         "VariantEval" => Some(run_variant_eval),
         "GnarlyGenotyper" => Some(run_gnarly_genotyper),
@@ -513,6 +514,10 @@ fn run_update_vcf_sequence_dictionary(args: &[String]) -> Result<Option<String>,
 
 fn run_combine_gvcfs(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::combine_gvcfs(&parsed("CombineGVCFs", args)?)
+}
+
+fn run_mutect2(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::mutect2(&parsed("Mutect2", args)?)
 }
 
 fn run_haplotype_caller(args: &[String]) -> Result<Option<String>, Thrown> {
