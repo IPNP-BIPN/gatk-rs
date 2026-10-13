@@ -804,6 +804,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         disable_optimizations: flag(parser, "disable-optimizations"),
         flow_collapse_hmer_size: number_or(parser, "flow-assembly-collapse-hmer-size", 0),
         flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
+        ramps_debug_post_assembler_on: flag(parser, "ramps-debug-post-assembler-on"),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),

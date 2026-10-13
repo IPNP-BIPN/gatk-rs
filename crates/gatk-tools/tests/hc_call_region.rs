@@ -101,6 +101,8 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         off_ramp: None,
         on_ramp: None,
         disable_optimizations: false,
+        ramps_debug_post_assembler_on: false,
+        collapse: Default::default(),
     };
     let mut engine = GenotypingEngine::new(
         Configuration {

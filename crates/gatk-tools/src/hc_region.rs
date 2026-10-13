@@ -88,6 +88,9 @@ pub struct CallRegionContext<'a> {
     pub disable_optimizations: bool,
     /// The haplotype collapsing settings.
     pub collapse: CollapseSettings,
+    /// `--ramps-debug-post-assembler-on`: the post-assembler on ramp's assembly is checked against
+    /// a fresh one, which then stands in its place.
+    pub ramps_debug_post_assembler_on: bool,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -133,7 +136,9 @@ pub fn call_region(
     let on_kind = context.on_ramp.map(|ramp| ramp.kind);
     // The post-assembler on ramp's flanks, which stand in for the trimmer's.
     let mut ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)> = None;
-    let (mut assembly, trimmed) = if let (Some(OnRampType::PostAssembler), Some(ramp)) =
+    // With the debug switch, the ramp's assembly is only what the fresh one is checked against.
+    let mut debug_assembly: Option<AssemblyResultSet> = None;
+    let from_ramp = if let (Some(OnRampType::PostAssembler), Some(ramp)) =
         (on_kind, context.on_ramp)
     {
         // The assembly read back: its haplotypes, its padded reference and its flanks.
@@ -207,8 +212,18 @@ pub fn call_region(
             Err(ResultSetError::IllegalState(_)) => return Ok(Vec::new()),
             Err(e) => return Err(calling(format!("{e:?}"))),
         };
-        ramp_flanks = Some((left, right));
-        (assembly, trimmed)
+        if context.ramps_debug_post_assembler_on {
+            debug_assembly = Some(assembly);
+            None
+        } else {
+            ramp_flanks = Some((left, right));
+            Some((assembly, trimmed))
+        }
+    } else {
+        None
+    };
+    let (mut assembly, trimmed) = if let Some(assembled) = from_ramp {
+        assembled
     } else {
         let post_filter = on_kind == Some(OnRampType::PostFilter);
         let mut untrimmed = if post_filter {
@@ -280,6 +295,18 @@ pub fn call_region(
             .map_err(|e| calling(format!("{e:?}")))?;
         (assembly, trimmed)
     };
+    if let Some(debug) = &debug_assembly {
+        crate::ramp_files::compare_haplotypes(assembly.haplotype_list(), debug.haplotype_list())
+            .map_err(calling)?;
+        let reads = |set: &AssemblyResultSet| {
+            set.region_for_genotyping()
+                .expect("a trimmed set has its region")
+                .reads()
+                .to_vec()
+        };
+        crate::ramp_files::compare_reads(&reads(&assembly), &reads(debug), context.header)
+            .map_err(calling)?;
+    }
     // The post-assembler off ramp: the trimmed assembly, its spans and the flanks.
     if ramp_kind == Some(crate::ramp_files::OffRampType::PostAssembler) {
         let left = context

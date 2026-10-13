@@ -73,6 +73,8 @@ pub struct HaplotypeCallerArguments {
     /// `--flow-assembly-collapse-partial-mode`.
     pub flow_collapse_hmer_size: i32,
     pub flow_collapse_partial_mode: bool,
+    /// `--ramps-debug-post-assembler-on`.
+    pub ramps_debug_post_assembler_on: bool,
     /// `--mapping-quality-threshold-for-genotyping`.
     pub mapping_quality_threshold: u8,
     /// `--use-posteriors-to-calculate-qual`.
@@ -311,6 +313,7 @@ fn call_variants_into(
                 determined: collapse_threshold,
                 partial: arguments.flow_collapse_partial_mode,
             },
+            ramps_debug_post_assembler_on: arguments.ramps_debug_post_assembler_on,
         };
         for mut traversed in regions {
             // `removeReadsFromAllSamplesExcept`.
@@ -333,6 +336,15 @@ fn call_variants_into(
                     "java.lang.IllegalStateException",
                     "There is no variation present.".to_string(),
                 ),
+                // A message the reference's own exception names, as `class: message`.
+                RegionAssemblyError::Calling(message)
+                    if message.starts_with("java.lang.RuntimeException: ") =>
+                {
+                    HaplotypeCallerError::new(
+                        "java.lang.RuntimeException",
+                        message["java.lang.RuntimeException: ".len()..].to_string(),
+                    )
+                }
                 other => HaplotypeCallerError::new("GATKException", format!("{other:?}")),
             })?;
             calls.extend(region_calls);
