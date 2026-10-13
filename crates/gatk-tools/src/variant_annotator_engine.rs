@@ -1028,6 +1028,7 @@ fn per_allele<A: gatk_annotation::per_allele::PerAlleleAnnotation>(
 }
 
 /// One genotype annotation's `annotate(ref, vc, genotype, builder, likelihoods)`.
+#[allow(clippy::too_many_arguments)]
 fn annotate_genotype(
     entry: &Entry,
     vc: &VariantContext,
