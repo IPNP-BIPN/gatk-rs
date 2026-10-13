@@ -268,6 +268,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         &[],
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
+    pedigree_refusal(parser, &resolved)?;
     let ReadWalkerStart {
         source,
         header,
@@ -515,7 +516,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
-        pedigree: pedigree_arguments(parser, &resolved)?,
+        pedigree: pedigree_arguments(parser)?,
     };
     let mut random = gatk_random();
     let called = m2::call_variants(

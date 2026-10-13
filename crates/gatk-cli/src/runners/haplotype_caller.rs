@@ -395,6 +395,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         &[],
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
+    pedigree_refusal(parser, &resolved)?;
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
@@ -740,7 +741,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ),
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
-        pedigree: pedigree_arguments(parser, &resolved)?,
+        pedigree: pedigree_arguments(parser)?,
     };
 
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {
