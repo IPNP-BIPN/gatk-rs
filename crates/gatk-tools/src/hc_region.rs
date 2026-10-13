@@ -50,6 +50,9 @@ pub enum RegionAssemblyError {
     Finalize(FinalizeError),
     Assembler(AssemblerError),
     IllegalState(String),
+    /// `AssemblyRegionTrimmer.Result.getVariantRegion` on a region with no variation, which
+    /// `--disable-optimizations` reaches: the reference's `IllegalStateException`.
+    NoVariationPresent,
     /// A later stage of `callRegion`, with its message.
     Calling(String),
 }
@@ -78,6 +81,10 @@ pub struct CallRegionContext<'a> {
     /// RampedHaplotypeCaller's on ramp: the assembly or the likelihoods are read back from it
     /// instead of computed.
     pub on_ramp: Option<&'a crate::ramp_files::OnRamp>,
+    /// `--disable-optimizations`: a region with no variation or no reads left is genotyped
+    /// anyway. One the trimmer found no variation in then fails, as the reference's
+    /// `getVariantRegion` does.
+    pub disable_optimizations: bool,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -254,7 +261,10 @@ pub fn call_region(
             }
             _ => {
                 if trimmed.variant_span.is_none() {
-                    return reference_model_for_no_variation(region, false, context);
+                    if !context.disable_optimizations {
+                        return reference_model_for_no_variation(region, false, context);
+                    }
+                    return Err(RegionAssemblyError::NoVariationPresent);
                 }
                 context
                     .trimmer
@@ -338,14 +348,14 @@ pub fn call_region(
                 || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
         });
     }
-    if !assembly.is_variation_present() {
+    if !assembly.is_variation_present() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
     }
     let genotyping_region = assembly
         .region_for_genotyping()
         .expect("a trimmed set has its region")
         .clone();
-    if genotyping_region.reads().is_empty() {
+    if genotyping_region.reads().is_empty() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
     }
 

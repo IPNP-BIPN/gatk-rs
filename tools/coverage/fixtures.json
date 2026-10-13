@@ -8096,8 +8096,9 @@
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
-        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
+        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
@@ -8206,7 +8207,6 @@
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [],
-      "--disable-optimizations": [],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
@@ -8228,6 +8228,10 @@
       "--sample-name": [
         "null",
         "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8375,8 +8379,9 @@
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, the linked de Bruijn graph, and",
-        "--disable-optimizations. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
+        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
@@ -8487,7 +8492,6 @@
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [],
-      "--disable-optimizations": [],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
@@ -8519,6 +8523,10 @@
       "--sample-name": [
         "null",
         "tumor"
+      ],
+      "--disable-optimizations": [
+        "false",
+        "true"
       ]
     }
   },

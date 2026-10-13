@@ -154,6 +154,7 @@ const HONOURED: &[&str] = &[
     "dont-use-dragstr-priors",
     "dont-use-dragstr-pair-hmm-scores",
     "sample-name",
+    "disable-optimizations",
     // DRAGEN mode and DRAGstr.
     "dragen-mode",
     "apply-bqd",
@@ -707,6 +708,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         },
         priors,
         sample_name: sample_name.clone(),
+        disable_optimizations: flag(parser, "disable-optimizations"),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
         use_posteriors_to_calculate_qual: flag(parser, "use-posteriors-to-calculate-qual"),
@@ -757,8 +759,18 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         &mut random,
     );
     drop(random);
-    let mut written =
-        called.map_err(|error| Thrown::non_user(java_class_name(&error.class), error.message))?;
+    // A failure mid-traversal still writes what came before it, and the writer's own refusal of
+    // those records, raised as it closes, is what the run reports.
+    let (mut written, failure) = match called {
+        Ok(calls) => (calls, None),
+        Err(error) => (
+            error.calls_before,
+            Some(Thrown::non_user(
+                java_class_name(&error.class),
+                error.message,
+            )),
+        ),
+    };
 
     // `makeVCFHeader`.
     let compound =
@@ -897,7 +909,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         written = combined;
     }
     apply_sites_only(parser, &mut vcf_header, &mut written);
-    let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
+    // `HaplotypeCallerEngine.makeVCFWriter`, which never allows a key the header lacks.
+    let text = write_vcf_strict_or_lenient(false, &vcf_header, &written)?;
+    if let Some(failure) = failure {
+        return Err(failure);
+    }
     write_variant_output(parser, &output, &text)?;
     Ok(None)
 }
