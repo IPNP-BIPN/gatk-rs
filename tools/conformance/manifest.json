@@ -7575,6 +7575,32 @@
       ]
     },
     {
+      "id": "hc-linked-graph",
+      "status": "golden-pending",
+      "title": "The callers with the linked de Bruijn graph, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--linked-de-bruijn-graph (G3.2h, #1337): JunctionTreeLinkedDeBruijnGraph and JunctionTreeKBestHaplotypeFinder. Each k-mer size in turn, the configured ones then six larger, is a read threading graph with no non-unique k-mers and cycles allowed, its dangling ends recovered along the stored reference path; each read is threaded through it again to record, at every vertex leading into a merge, which way it went at each later fork, and the finder walks from the reference source following those junction trees where three threads vouch for them and the edge weights where not, grafting a fork edge no path took onto the best path through its vertex. The first size that yields haplotypes is kept, in the order found, after the reference. What a reader would not guess: --disable-artificial-haplotype-recovery is refused in this mode, the only one that reads it, because the test in setArtificialHaplotypeRecoveryMode is the wrong way round, and the refusal names --experimental-dangling-branch-recover, which does not exist; and paths of exactly equal score leave the finder's queue in an order the reference takes from identity hashes, which no call here depends on. Over HcEndToEndDump's reads (two SNPs thirty bases apart in cis for one sample and in trans for the other) and HcDragenEndToEndDump's (short tandem repeats, which give the graph cycles): HaplotypeCaller with the graph, without the recovery (refused), the recovery switch alone, a fixed k-mer size of 15, every dangling branch recovered, GVCF mode, RampedHaplotypeCaller, Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "error\thc-linked-no-recovery\torg.broadinstitute.hellbender.exceptions.UserException:Argument '--experimental-dangling-branch-recover' requires '--linked-de-bruijn-graph' to be set",
+        "1946.50"
+      ],
+      "cases": [
+        {
+          "dump": "HcLinkedGraphDump",
+          "golden": null
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

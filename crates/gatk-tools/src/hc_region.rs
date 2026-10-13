@@ -659,6 +659,8 @@ pub struct AssemblerArguments {
     pub recover_dangling_branches: bool,
     pub recover_all_dangling_branches: bool,
     pub min_dangling_branch_length: i32,
+    /// `--disable-artificial-haplotype-recovery`.
+    pub disable_artificial_haplotype_recovery: bool,
 }
 
 impl Default for AssemblerArguments {
@@ -680,10 +682,12 @@ impl Default for AssemblerArguments {
                 max_unpruned_variants: 100,
                 enable_legacy_graph_cycle_detection: false,
                 min_matching_bases_to_dangling_end_recovery: -1,
+                use_linked_debruijn_graphs: false,
             },
             recover_dangling_branches: true,
             recover_all_dangling_branches: false,
             min_dangling_branch_length: 4,
+            disable_artificial_haplotype_recovery: false,
         }
     }
 }
@@ -702,6 +706,8 @@ pub fn assembler_from(
     assembler.set_recover_dangling_branches(arguments.recover_dangling_branches);
     assembler.set_recover_all_dangling_branches(arguments.recover_all_dangling_branches);
     assembler.set_min_dangling_branch_length(arguments.min_dangling_branch_length);
+    assembler
+        .set_artificial_haplotype_recovery_mode(arguments.disable_artificial_haplotype_recovery)?;
     assembler.set_min_base_quality_to_use_in_assembly(min_base_quality_score);
     Ok(assembler)
 }
@@ -722,6 +728,7 @@ pub fn haplotype_caller_assembler(min_base_quality_score: u8) -> ReadThreadingAs
         max_unpruned_variants: 100,
         enable_legacy_graph_cycle_detection: false,
         min_matching_bases_to_dangling_end_recovery: -1,
+        use_linked_debruijn_graphs: false,
     };
     let mut assembler = ReadThreadingAssembler::new(&settings).expect("valid defaults");
     assembler.set_recover_dangling_branches(true);

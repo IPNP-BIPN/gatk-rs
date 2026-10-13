@@ -25,6 +25,9 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // The linked de Bruijn graph and its artificial haplotype recovery.
+    "linked-de-bruijn-graph",
+    "disable-artificial-haplotype-recovery",
     // The annotation plugin's pedigree arguments.
     "pedigree",
     "founder-id",
@@ -567,6 +570,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let sw = smith_waterman_arguments(parser);
     // `buildRamps`: the off ramp first, then the on ramp.
     let off = if ramped { off_ramp(parser)? } else { None };
+    artificial_haplotype_recovery_refusal(parser)?;
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -1032,9 +1036,29 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
                 "num-matching-bases-in-dangling-end-to-recover",
                 -1,
             ),
+            use_linked_debruijn_graphs: flag(parser, "linked-de-bruijn-graph"),
         },
         recover_dangling_branches: !flag(parser, "do-not-recover-dangling-branches"),
         recover_all_dangling_branches: flag(parser, "recover-all-dangling-branches"),
         min_dangling_branch_length: number_or(parser, "min-dangling-branch-length", 4),
+        disable_artificial_haplotype_recovery: flag(
+            parser,
+            "disable-artificial-haplotype-recovery",
+        ),
     }
+}
+
+/// `ReadThreadingAssembler.setArtificialHaplotypeRecoveryMode`, which the engine's constructor
+/// reaches: its test is the wrong way round, so disabling the recovery is refused WITH the linked
+/// graph, and the refusal names an argument that does not exist.
+pub(super) fn artificial_haplotype_recovery_refusal(parser: &Parser) -> Result<(), Thrown> {
+    if flag(parser, "disable-artificial-haplotype-recovery")
+        && flag(parser, "linked-de-bruijn-graph")
+    {
+        return Err(Thrown::user(
+            "Argument '--experimental-dangling-branch-recover' requires '--linked-de-bruijn-graph' \
+             to be set",
+        ));
+    }
+    Ok(())
 }

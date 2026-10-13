@@ -20,6 +20,9 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // The linked de Bruijn graph and its artificial haplotype recovery.
+    "linked-de-bruijn-graph",
+    "disable-artificial-haplotype-recovery",
     // The annotation plugin's pedigree arguments.
     "pedigree",
     "founder-id",
@@ -391,6 +394,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
+    super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,

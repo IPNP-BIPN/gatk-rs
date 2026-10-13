@@ -19,8 +19,13 @@
 //!    alternative are removed and the reference haplotype added at the end, where it stays for
 //!    the graphs that follow, and the result set is replaced by that set.
 //!
-//! The linked de Bruijn graph mode, the read error corrector, the flow-based haplotype collapsing
-//! and the debugging graph output are not ported.
+//! In the linked de Bruijn graph mode (`assembleGraphsAndExpandKmersGivenHaplotypes`) each k-mer
+//! size is tried in turn, its read threading graph kept as it is rather than made a sequence
+//! graph, and its haplotypes found along the junction trees; the first size that yields any is
+//! kept, and the result set gets them in the order found, after the reference it starts with.
+//!
+//! The read error corrector, the flow-based haplotype collapsing and the debugging graph output
+//! are not ported.
 
 use htsjdk_bam::cigar::{Cigar, Op};
 use htsjdk_bam::header::SamHeader;
@@ -38,6 +43,7 @@ use crate::haplotype_alignment::HaplotypeCigarError;
 use crate::interval::SimpleInterval;
 use crate::kbest_haplotype::find_best_haplotypes;
 use crate::read_pileup::sample_name;
+use crate::read_threading_graph::junction_trees::{self, JunctionTreeError};
 use crate::read_threading_graph::{
     prune_adaptive, prune_low_weight_chains, AdaptivePruning, GraphError, ReadThreadingGraph,
 };
@@ -82,6 +88,10 @@ pub enum AssemblerError {
     Cigar(HaplotypeCigarError),
     Allele(AlleleError),
     ResultSet(ResultSetError),
+    /// `UserException`: disabling artificial haplotype recovery without the linked graph.
+    User(String),
+    /// The junction-tree search's refusals.
+    JunctionTree(JunctionTreeError),
 }
 
 impl From<GraphError> for AssemblerError {
@@ -125,6 +135,10 @@ pub struct ReadThreadingAssembler {
     prune_factor: i32,
     chain_pruner: ChainPruner,
     min_matching_bases_to_dangling_end_recovery: i32,
+    /// `!generateSeqGraph`: the linked de Bruijn graph mode.
+    linked: bool,
+    /// `recoverHaplotypesFromEdgesNotCoveredInJunctionTrees`.
+    recover_uncovered_haplotypes: bool,
 }
 
 /// The constructor's arguments, in its order, without `useLinkedDebruijnGraphs`.
@@ -143,6 +157,8 @@ pub struct AssemblerSettings {
     pub max_unpruned_variants: i32,
     pub enable_legacy_graph_cycle_detection: bool,
     pub min_matching_bases_to_dangling_end_recovery: i32,
+    /// `useLinkedDebruijnGraphs`.
+    pub use_linked_debruijn_graphs: bool,
 }
 
 impl ReadThreadingAssembler {
@@ -182,7 +198,29 @@ impl ReadThreadingAssembler {
             chain_pruner,
             min_matching_bases_to_dangling_end_recovery: settings
                 .min_matching_bases_to_dangling_end_recovery,
+            linked: settings.use_linked_debruijn_graphs,
+            recover_uncovered_haplotypes: true,
         })
+    }
+
+    /// `setArtificialHaplotypeRecoveryMode`: its test is the wrong way round, so disabling the
+    /// recovery is refused in the linked graph mode, the only one that reads it, and the refusal
+    /// names another argument.
+    pub fn set_artificial_haplotype_recovery_mode(
+        &mut self,
+        disable: bool,
+    ) -> Result<(), AssemblerError> {
+        if disable {
+            if self.linked {
+                return Err(AssemblerError::User(
+                    "Argument '--experimental-dangling-branch-recover' requires \
+                     '--linked-de-bruijn-graph' to be set"
+                        .to_string(),
+                ));
+            }
+            self.recover_uncovered_haplotypes = false;
+        }
+        Ok(())
     }
 
     /// `setRecoverDanglingBranches`.
@@ -245,6 +283,19 @@ impl ReadThreadingAssembler {
         let active_region_extended_location = region.padded_span().clone();
         ref_haplotype.set_genome_location(active_region_extended_location.clone());
         result_set.add(ref_haplotype.clone())?;
+
+        if self.linked {
+            self.assemble_graphs_and_expand_kmers_given_haplotypes(
+                &reads,
+                &ref_haplotype,
+                &active_region_extended_location,
+                &mut result_set,
+                aligner,
+                dangling_end_sw_parameters,
+                haplotype_to_reference_sw_parameters,
+            )?;
+            return Ok(result_set);
+        }
 
         // `assembleKmerGraphsAndHaplotypeCall`.
         let mut graphs = Vec::new();
@@ -329,53 +380,18 @@ impl ReadThreadingAssembler {
                 if return_haplotypes.contains(&h) {
                     continue;
                 }
-                let h_bases = h.bases();
-                let Some(cigar) = calculate_cigar(
+                let Some(h) = aligned_haplotype(
+                    h,
                     &ref_bases,
-                    &h_bases,
+                    ref_reference_length,
+                    active_region_start,
+                    active_region_window,
                     aligner,
                     haplotype_to_reference_sw_parameters,
-                    SwOverhangStrategy::SoftClip,
                 )?
                 else {
-                    // A failed cigar: the haplotype is ignored.
                     continue;
                 };
-                if cigar.is_empty() {
-                    return Err(AssemblerError::IllegalState(format!(
-                        "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
-                         expecting reference length of {}",
-                        cigar.to_text(),
-                        cigar.reference_length(),
-                        ref_reference_length
-                    )));
-                } else if path_is_too_divergent_from_reference(&cigar)
-                    || cigar.reference_length() < MIN_HAPLOTYPE_REFERENCE_LENGTH
-                {
-                    continue;
-                } else if cigar.reference_length() != ref_reference_length {
-                    let with_indel_strategy = calculate_cigar(
-                        &ref_bases,
-                        &h_bases,
-                        aligner,
-                        haplotype_to_reference_sw_parameters,
-                        SwOverhangStrategy::Indel,
-                    )?
-                    .ok_or(AssemblerError::NullPointer("cigarWithIndelStrategy"))?;
-                    if with_indel_strategy.reference_length() == ref_reference_length {
-                        continue;
-                    }
-                    return Err(AssemblerError::IllegalState(format!(
-                        "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
-                         expecting reference length of {}",
-                        cigar.to_text(),
-                        cigar.reference_length(),
-                        ref_reference_length
-                    )));
-                }
-                h.set_cigar(&cigar).map_err(AssemblerError::Cigar)?;
-                h.set_alignment_start_hap_wrt_ref(active_region_start);
-                h.set_genome_location(active_region_window.clone());
                 return_haplotypes.push(h.clone());
                 result_set.add(h)?;
             }
@@ -500,6 +516,225 @@ impl ReadThreadingAssembler {
         Ok(Some(result))
     }
 
+    /// `getExpandedKmerList`: the configured sizes, then six more ten apart unless the sizes may
+    /// not grow.
+    fn expanded_kmer_list(&self) -> Result<Vec<usize>, AssemblerError> {
+        let mut sizes = self.kmer_sizes.clone();
+        if !self.dont_increase_kmer_sizes_for_cycles {
+            let mut kmer_size = self.max_kmer_size()? + KMER_SIZE_ITERATION_INCREASE;
+            for _ in 0..MAX_KMER_ITERATIONS_TO_ATTEMPT {
+                sizes.push(kmer_size);
+                kmer_size += KMER_SIZE_ITERATION_INCREASE;
+            }
+        }
+        Ok(sizes)
+    }
+
+    /// `assembleGraphsAndExpandKmersGivenHaplotypes`.
+    #[allow(clippy::too_many_arguments)]
+    fn assemble_graphs_and_expand_kmers_given_haplotypes(
+        &self,
+        reads: &[SampleRead],
+        ref_haplotype: &Haplotype,
+        active_region_window: &SimpleInterval,
+        result_set: &mut AssemblyResultSet,
+        aligner: &dyn SmithWatermanAligner,
+        dangling_end_sw_parameters: &SwParameters,
+        haplotype_to_reference_sw_parameters: &SwParameters,
+    ) -> Result<(), AssemblerError> {
+        let sizes = self.expanded_kmer_list()?;
+        let mut saved: Vec<Vec<Haplotype>> = Vec::new();
+        let mut adequate = false;
+        for (i, &kmer_size) in sizes.iter().enumerate() {
+            if adequate {
+                continue;
+            }
+            let last_cycle = i == sizes.len() - 1;
+            let Some((status, graph)) = self.create_linked_graph(
+                reads,
+                ref_haplotype,
+                kmer_size,
+                last_cycle || self.allow_non_unique_kmers_in_ref,
+                aligner,
+                dangling_end_sw_parameters,
+            )?
+            else {
+                continue;
+            };
+            match status {
+                AssemblyStatus::AssembledSomeVariation => {
+                    let mut graph = graph.expect("an assembled graph");
+                    sanity_check_linked_graph(&graph, ref_haplotype)?;
+                    let trees = graph.post_process_for_haplotype_finding();
+                    let discovered = self.find_best_linked_paths(
+                        &graph,
+                        &trees,
+                        ref_haplotype,
+                        active_region_window,
+                        aligner,
+                        haplotype_to_reference_sw_parameters,
+                    )?;
+                    if !discovered.is_empty() {
+                        for h in &discovered {
+                            result_set.add(h.clone())?;
+                        }
+                        adequate = true;
+                    }
+                    saved.push(discovered);
+                }
+                AssemblyStatus::JustAssembledReference => adequate = true,
+                _ => {}
+            }
+        }
+        if !adequate {
+            // The last size that found anything beyond the reference.
+            if let Some(found) = saved.iter().rev().find(|found| found.len() > 1) {
+                for h in found {
+                    result_set.add(h.clone())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `createGraph` and `getAssemblyResult` for the linked graph: no cycle check and never of low
+    /// complexity, its status `ASSEMBLED_SOME_VARIATION` whenever it has its reference ends. `None`
+    /// where the reference returns null.
+    fn create_linked_graph(
+        &self,
+        reads: &[SampleRead],
+        ref_haplotype: &Haplotype,
+        kmer_size: usize,
+        allow_non_unique_kmers_in_ref: bool,
+        aligner: &dyn SmithWatermanAligner,
+        dangling_end_sw_parameters: &SwParameters,
+    ) -> Result<Option<(AssemblyStatus, Option<ReadThreadingGraph>)>, AssemblerError> {
+        let ref_bases = ref_haplotype.bases();
+        if ref_bases.len() < kmer_size {
+            return Ok(Some((AssemblyStatus::Failed, None)));
+        }
+        if !allow_non_unique_kmers_in_ref && has_non_unique_kmers(&ref_bases, kmer_size) {
+            return Ok(None);
+        }
+        let mut graph = ReadThreadingGraph::new_linked(
+            kmer_size,
+            self.min_base_quality_to_use_in_assembly,
+            self.num_pruning_samples,
+        );
+        graph.set_min_matching_bases_to_dangling_end_recovery(
+            self.min_matching_bases_to_dangling_end_recovery,
+        );
+        graph.set_threading_start_only_at_existing_vertex(!self.recover_dangling_branches);
+        graph.add_sequence(&ref_bases, true)?;
+        for read in reads {
+            graph.add_read(&read.sample, &read.bases, &read.qualities)?;
+        }
+        graph.build_graph_if_necessary()?;
+        if self.prune_before_cycle_counting {
+            self.prune(&mut graph)?;
+        }
+        // `getAssemblyResult`.
+        if !self.prune_before_cycle_counting {
+            self.prune(&mut graph)?;
+        }
+        if self.recover_dangling_branches {
+            graph.recover_dangling_tails(
+                self.prune_factor,
+                self.min_dangling_branch_length,
+                self.recover_all_dangling_branches,
+                aligner,
+                dangling_end_sw_parameters,
+            )?;
+            graph.recover_dangling_heads(
+                self.prune_factor,
+                self.min_dangling_branch_length,
+                self.recover_all_dangling_branches,
+                aligner,
+                dangling_end_sw_parameters,
+            )?;
+        }
+        if self.remove_paths_not_connected_to_ref {
+            graph.remove_paths_not_connected_to_ref()?;
+        }
+        // `getResultSetForRTGraph`.
+        let status = if graph.reference_source_vertex().is_none()
+            || graph.reference_sink_vertex().is_none()
+        {
+            AssemblyStatus::JustAssembledReference
+        } else {
+            AssemblyStatus::AssembledSomeVariation
+        };
+        if self.recover_all_dangling_branches && graph.has_cycles() {
+            return Ok(None);
+        }
+        Ok(Some((status, Some(graph))))
+    }
+
+    /// `findBestPaths` over one linked graph, with no result set: the haplotypes found, the
+    /// reference bases found as an alternative replaced by the reference haplotype at the end.
+    fn find_best_linked_paths(
+        &self,
+        graph: &ReadThreadingGraph,
+        trees: &junction_trees::JunctionTrees,
+        ref_haplotype: &Haplotype,
+        active_region_window: &SimpleInterval,
+        aligner: &dyn SmithWatermanAligner,
+        haplotype_to_reference_sw_parameters: &SwParameters,
+    ) -> Result<Vec<Haplotype>, AssemblerError> {
+        let mut return_haplotypes: Vec<Haplotype> = Vec::new();
+        let active_region_start = ref_haplotype.alignment_start_hap_wrt_ref();
+        let ref_bases = ref_haplotype.bases();
+        let ref_reference_length = ref_haplotype
+            .cigar()
+            .ok_or(AssemblerError::NullPointer("refHaplotype.getCigar()"))?
+            .reference_length();
+        let (Some(source), Some(sink)) = (
+            graph.reference_source_vertex(),
+            graph.reference_sink_vertex(),
+        ) else {
+            return Err(AssemblerError::IllegalArgument(
+                "Both source and sink cannot be null".to_string(),
+            ));
+        };
+        let best = junction_trees::find_best_haplotypes(
+            graph,
+            trees,
+            source,
+            sink,
+            self.num_best_haplotypes_per_graph,
+            self.recover_uncovered_haplotypes,
+        )
+        .map_err(AssemblerError::JunctionTree)?;
+        for path in best {
+            let mut h =
+                Haplotype::new(&path.bases(graph), false).map_err(AssemblerError::Allele)?;
+            h.set_score(path.score);
+            h.set_kmer_size(graph.kmer_size() as i32);
+            if return_haplotypes.contains(&h) {
+                continue;
+            }
+            if let Some(h) = aligned_haplotype(
+                h,
+                &ref_bases,
+                ref_reference_length,
+                active_region_start,
+                active_region_window,
+                aligner,
+                haplotype_to_reference_sw_parameters,
+            )? {
+                return_haplotypes.push(h);
+            }
+        }
+        if !return_haplotypes.is_empty() {
+            let tmp_ref = Haplotype::new(&ref_bases, false).map_err(AssemblerError::Allele)?;
+            return_haplotypes.retain(|h| *h != tmp_ref);
+            if !return_haplotypes.contains(ref_haplotype) {
+                return_haplotypes.push(ref_haplotype.clone());
+            }
+        }
+        Ok(return_haplotypes)
+    }
+
     /// `chainPruner.pruneLowWeightChains(graph)`.
     fn prune(&self, graph: &mut ReadThreadingGraph) -> Result<(), AssemblerError> {
         match &self.chain_pruner {
@@ -548,6 +783,68 @@ impl ReadThreadingAssembler {
             discovered_haplotypes: Vec::new(),
         })
     }
+}
+
+/// The per-path half of `findBestPaths`: the haplotype aligned to the reference haplotype, or
+/// `None` where the reference drops it.
+#[allow(clippy::too_many_arguments)]
+fn aligned_haplotype(
+    mut h: Haplotype,
+    ref_bases: &[u8],
+    ref_reference_length: u32,
+    active_region_start: i32,
+    active_region_window: &SimpleInterval,
+    aligner: &dyn SmithWatermanAligner,
+    haplotype_to_reference_sw_parameters: &SwParameters,
+) -> Result<Option<Haplotype>, AssemblerError> {
+    let h_bases = h.bases();
+    let Some(cigar) = calculate_cigar(
+        ref_bases,
+        &h_bases,
+        aligner,
+        haplotype_to_reference_sw_parameters,
+        SwOverhangStrategy::SoftClip,
+    )?
+    else {
+        // A failed cigar: the haplotype is ignored.
+        return Ok(None);
+    };
+    if cigar.is_empty() {
+        return Err(AssemblerError::IllegalState(format!(
+            "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
+             expecting reference length of {}",
+            cigar.to_text(),
+            cigar.reference_length(),
+            ref_reference_length
+        )));
+    } else if path_is_too_divergent_from_reference(&cigar)
+        || cigar.reference_length() < MIN_HAPLOTYPE_REFERENCE_LENGTH
+    {
+        return Ok(None);
+    } else if cigar.reference_length() != ref_reference_length {
+        let with_indel_strategy = calculate_cigar(
+            ref_bases,
+            &h_bases,
+            aligner,
+            haplotype_to_reference_sw_parameters,
+            SwOverhangStrategy::Indel,
+        )?
+        .ok_or(AssemblerError::NullPointer("cigarWithIndelStrategy"))?;
+        if with_indel_strategy.reference_length() == ref_reference_length {
+            return Ok(None);
+        }
+        return Err(AssemblerError::IllegalState(format!(
+            "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
+             expecting reference length of {}",
+            cigar.to_text(),
+            cigar.reference_length(),
+            ref_reference_length
+        )));
+    }
+    h.set_cigar(&cigar).map_err(AssemblerError::Cigar)?;
+    h.set_alignment_start_hap_wrt_ref(active_region_start);
+    h.set_genome_location(active_region_window.clone());
+    Ok(Some(h))
 }
 
 /// A read as the graph takes it: its sample, and its bases and qualities once soft clips are hard
@@ -607,6 +904,31 @@ fn sanity_check_reference_graph(
         ));
     };
     if reference_bytes(graph, source, sink) != ref_haplotype.bases() {
+        return Err(AssemblerError::IllegalState(
+            "Mismatch between the reference haplotype and the reference assembly graph path."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// `sanityCheckReferenceGraph` on the linked graph, whose reference bytes follow the stored
+/// reference path.
+fn sanity_check_linked_graph(
+    graph: &ReadThreadingGraph,
+    ref_haplotype: &Haplotype,
+) -> Result<(), AssemblerError> {
+    let Some(source) = graph.reference_source_vertex() else {
+        return Err(AssemblerError::IllegalState(
+            "All reference graphs must have a reference source vertex.".to_string(),
+        ));
+    };
+    let Some(sink) = graph.reference_sink_vertex() else {
+        return Err(AssemblerError::IllegalState(
+            "All reference graphs must have a reference sink vertex.".to_string(),
+        ));
+    };
+    if graph.linked_reference_bytes(source, sink) != ref_haplotype.bases() {
         return Err(AssemblerError::IllegalState(
             "Mismatch between the reference haplotype and the reference assembly graph path."
                 .to_string(),

@@ -8096,8 +8096,8 @@
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
-        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
@@ -8106,7 +8106,10 @@
         "ones.",
         "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
         "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
-        "thresholds matter only where PossibleDeNovo runs."
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8209,7 +8212,10 @@
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
@@ -8251,6 +8257,10 @@
       "--denovo-depth-threshold": [
         "0",
         "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8266,15 +8276,18 @@
         "--emit-ref-confidence is listed NONE first, then GVCF and BP_RESOLUTION, with two lists of TLOD bands and a",
         "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
         "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
-        "does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
-        "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "--read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
         "matter.",
         "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
         "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
-        "thresholds matter only where PossibleDeNovo runs."
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -8383,7 +8396,10 @@
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
       "--emit-ref-confidence": [
         "NONE",
         "GVCF",
@@ -8422,6 +8438,10 @@
       "--denovo-depth-threshold": [
         "0",
         "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8440,8 +8460,8 @@
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
         "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
         "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
-        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM.",
+        "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
         "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
@@ -8454,7 +8474,10 @@
         "switches only log.",
         "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
         "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
-        "thresholds matter only where PossibleDeNovo runs."
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8557,7 +8580,10 @@
       "--pileup-detection": [],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
@@ -8709,6 +8735,10 @@
           "max": null,
           "deprecated": false
         }
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
       ]
     }
   },
@@ -9208,6 +9238,36 @@
         "--on-ramp-file": "/work/fixtures/ramp_pre_filter.zip"
       },
       "why": "An on ramp over the other ramp's zip reads an entry the zip does not hold, the same IOException on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
     }
   ],
   "exclude": {

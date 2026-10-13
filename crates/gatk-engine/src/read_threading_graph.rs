@@ -35,6 +35,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 mod dangling_ends;
+pub mod junction_trees;
 
 /// `ANONYMOUS_SAMPLE`: the sample every sequence added without one belongs to, the reference's
 /// included.
@@ -176,6 +177,10 @@ pub struct ReadThreadingGraph {
     already_built: bool,
     /// `minMatchingBasesToDanglingEndRecovery`: -1 takes the legacy dangling-head merge.
     min_matching_bases: i32,
+    /// `JunctionTreeLinkedDeBruijnGraph` rather than `ReadThreadingGraph`: no non-unique k-mers, a
+    /// k-mer merges wherever it is already tracked, the pending sequences are kept for threading
+    /// junction trees, and the reference ends are the first and last vertex of the reference path.
+    linked: bool,
 }
 
 impl ReadThreadingGraph {
@@ -208,7 +213,27 @@ impl ReadThreadingGraph {
             increase_counts_through_branches: false,
             already_built: false,
             min_matching_bases: -1,
+            linked: false,
         }
+    }
+
+    /// `JunctionTreeLinkedDeBruijnGraph(kmerSize, debugGraphTransformations,
+    /// minBaseQualityToUseInAssembly, numPruningSamples, numDanglingMatchingPrefixBases)`, without
+    /// the debugging switch.
+    pub fn new_linked(
+        kmer_size: usize,
+        min_base_quality: u8,
+        pruning_samples: usize,
+    ) -> ReadThreadingGraph {
+        ReadThreadingGraph {
+            linked: true,
+            ..ReadThreadingGraph::new(kmer_size, min_base_quality, pruning_samples)
+        }
+    }
+
+    /// Whether this is the linked de Bruijn graph.
+    pub fn is_linked(&self) -> bool {
+        self.linked
     }
 
     /// `setThreadingStartOnlyAtExistingVertex`.
@@ -354,9 +379,18 @@ impl ReadThreadingGraph {
         if self.already_built {
             return Ok(());
         }
-        self.non_unique = self.determine_non_uniques();
+        // `preprocessReads()`: the linked graph tracks no non-unique k-mers.
+        if !self.linked {
+            self.non_unique = self.determine_non_uniques();
+        }
 
-        let pending = std::mem::take(&mut self.pending);
+        // `shouldRemoveReadsAfterGraphConstruction()`: the linked graph keeps them, to thread
+        // junction trees.
+        let pending = if self.linked {
+            self.pending.clone()
+        } else {
+            std::mem::take(&mut self.pending)
+        };
         for (_, sequences) in &pending {
             for sequence in sequences {
                 self.thread_sequence(sequence)?;
@@ -365,7 +399,6 @@ impl ReadThreadingGraph {
                 edge.flush_single_sample_multiplicity();
             }
         }
-        // `shouldRemoveReadsAfterGraphConstruction()` is true: the pending pile is cleared.
         self.already_built = true;
         for (_, vertex) in self.kmer_entries.iter().flatten() {
             self.vertices[*vertex].additional_info.push('+');
@@ -407,6 +440,11 @@ impl ReadThreadingGraph {
 
     /// `isThreadingStart`.
     fn is_threading_start(&self, kmer: &[u8]) -> bool {
+        if self.linked {
+            // Its set of k-mers is never filled, so a thread that may start only at an existing
+            // vertex never starts.
+            return !self.start_only_at_existing_vertex;
+        }
         if self.start_only_at_existing_vertex {
             self.kmer_index.contains_key(kmer)
         } else {
@@ -544,7 +582,16 @@ impl ReadThreadingGraph {
         }
 
         let kmer = &sequence[kmer_start..kmer_start + self.kmer_size];
-        // `getNextKmerVertexForChainExtension`.
+        // `getNextKmerVertexForChainExtension`: the linked graph merges into any tracked k-mer,
+        // the reference source's included, and never refuses.
+        if self.linked {
+            let next = match self.kmer_vertex(kmer, true) {
+                Some(vertex) => vertex,
+                None => self.create_vertex(kmer),
+            };
+            self.add_edge(previous, next, is_ref, count);
+            return Ok(next);
+        }
         let merge = self.kmer_vertex(kmer, false);
         if is_ref && merge.is_some() {
             return Err(GraphError::UniqueVertexOnReference);
@@ -573,7 +620,7 @@ impl ReadThreadingGraph {
 
     /// `isLowQualityGraph()`: more than a quarter as many non-unique k-mers as tracked ones.
     pub fn is_low_quality_graph(&self) -> bool {
-        self.non_unique.len() * 4 > self.kmer_to_vertex().count()
+        !self.linked && self.non_unique.len() * 4 > self.kmer_to_vertex().count()
     }
 
     /// `isRefSource(v)`: no incoming reference edge and an outgoing one, or the only vertex.
@@ -600,11 +647,23 @@ impl ReadThreadingGraph {
 
     /// `getReferenceSourceVertex()`: the first vertex, in vertex order, that is a reference source.
     pub fn reference_source_vertex(&self) -> Option<usize> {
+        if self.linked {
+            return self
+                .reference_path
+                .as_ref()
+                .and_then(|path| path.first().copied());
+        }
         self.vertex_ids().find(|&v| self.is_ref_source(v))
     }
 
     /// `getReferenceSinkVertex()`.
     pub fn reference_sink_vertex(&self) -> Option<usize> {
+        if self.linked {
+            return self
+                .reference_path
+                .as_ref()
+                .and_then(|path| path.last().copied());
+        }
         self.vertex_ids().find(|&v| self.is_ref_sink(v))
     }
 
@@ -762,6 +821,56 @@ impl ReadThreadingGraph {
     }
 }
 
+impl ReadThreadingGraph {
+    /// `getAdditionalSequence(v)`: the whole k-mer at a source, else its last base.
+    pub fn additional_sequence(&self, vertex: usize) -> Vec<u8> {
+        if self.in_degree(vertex) == 0 {
+            self.vertices[vertex].sequence.clone()
+        } else {
+            vec![self.vertices[vertex].suffix()]
+        }
+    }
+
+    /// `JunctionTreeLinkedDeBruijnGraph.getReferenceBytes(from, to, true, true)`: from the first
+    /// occurrence of `from` on the reference path to the last of `to`.
+    pub fn linked_reference_bytes(&self, from: usize, to: usize) -> Vec<u8> {
+        let path = self.reference_path.as_deref().unwrap_or(&[]);
+        let from_index = path.iter().position(|&v| v == from);
+        let to_index = path.iter().rposition(|&v| v == to);
+        let mut bytes = self.additional_sequence_as_source(from);
+        let start = from_index.map(|i| i as isize).unwrap_or(-1) + 1;
+        let end = to_index.map(|i| i as isize).unwrap_or(-1);
+        let mut i = start;
+        while i < end {
+            bytes.extend(self.additional_sequence(path[i as usize]));
+            i += 1;
+        }
+        bytes.extend(self.additional_sequence(to));
+        bytes
+    }
+
+    /// `getAdditionalSequence(v, true)`: the whole k-mer.
+    fn additional_sequence_as_source(&self, vertex: usize) -> Vec<u8> {
+        self.vertices[vertex].sequence.clone()
+    }
+
+    /// `addVertex` and `addEdge(source, target)` for the symbolic end the junction trees need: the
+    /// edge factory's default edge, multiplicity one and not on the reference.
+    fn add_symbolic_end(&mut self, sink: usize) -> usize {
+        let vertex = self.vertices.len();
+        self.vertices.push(Vertex {
+            sequence: vec![b'_'],
+            additional_info: String::new(),
+        });
+        self.vertex_alive.push(true);
+        self.outgoing.push(Vec::new());
+        self.incoming.push(Vec::new());
+        let edge = self.edges.len();
+        self.add_edge(sink, vertex, false, 1);
+        edge
+    }
+}
+
 /// A `Path` as `ChainPruner.findChain` builds it: its edges in order, and the vertex it ends on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chain {
@@ -900,6 +1009,11 @@ impl<T: Clone, F: Fn(&T, &T) -> std::cmp::Ordering> JavaPriorityQueue<T, F> {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.heap.is_empty()
+    }
+
+    /// `size()`.
+    pub(crate) fn len(&self) -> usize {
+        self.heap.len()
     }
 
     /// `offer` / `siftUpUsingComparator`.

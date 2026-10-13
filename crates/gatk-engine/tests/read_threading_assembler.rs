@@ -191,6 +191,7 @@ fn run(case: &Case) -> Vec<String> {
         max_unpruned_variants: case.int("maxUnprunedVariants"),
         enable_legacy_graph_cycle_detection: case.flag("legacyCycles"),
         min_matching_bases_to_dangling_end_recovery: case.int("minMatching"),
+        use_linked_debruijn_graphs: false,
     };
     let mut assembler = ReadThreadingAssembler::new(&settings).unwrap();
     assembler.set_recover_dangling_branches(case.flag("recoverDangling"));
