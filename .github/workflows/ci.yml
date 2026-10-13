@@ -479,12 +479,8 @@ jobs:
             suites: "hc-phasing hc-region-assembly hc-call-region hc-end-to-end hc-gvcf-end-to-end"
           - group: oracle-backed
             index: "66/66"
-            slug: "mutect2-end-to-end-ramps-end-to-end"
-            suites: "mutect2-end-to-end ramps-end-to-end"
-          - group: golden-pending
-            index: "1/1"
-            slug: "hc-dragen-end-to-end-hc-disable-optimizations"
-            suites: "hc-dragen-end-to-end hc-disable-optimizations"
+            slug: "hc-dragen-end-to-end-hc-disable-optimizations-mutect2-end-to-end-ramps-end-to-end"
+            suites: "hc-dragen-end-to-end hc-disable-optimizations mutect2-end-to-end ramps-end-to-end"
     steps:
       - uses: actions/checkout@v7
 
