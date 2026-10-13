@@ -280,6 +280,31 @@ pub fn assembly_regions<T: Located>(
     header: &SamHeader,
     is_active: &dyn Fn(&EmittedLocus, Option<&T>) -> f64,
 ) -> Result<Vec<TraversedRegion>, RegionError> {
+    assembly_regions_with_states(
+        contexts,
+        reads,
+        shard,
+        args,
+        header,
+        &mut |locus, context| (is_active(locus, context), None),
+    )
+}
+
+/// What an evaluator answers for one locus: the active probability, and the average count of
+/// high-quality soft clips when the state is `HIGH_QUALITY_SOFT_CLIPS`.
+pub type ActivityAnswer = (f64, Option<f64>);
+
+/// The same traversal for an evaluator that answers a whole `ActivityProfileState`: the
+/// probability, and the average high-quality soft-clip count when the state's type is
+/// `HIGH_QUALITY_SOFT_CLIPS`, which the profile spreads before banding.
+pub fn assembly_regions_with_states<T: Located>(
+    contexts: &[T],
+    reads: &[BamRecord],
+    shard: &ReadShard,
+    args: &AssemblyRegionArgs,
+    header: &SamHeader,
+    is_active: &mut dyn FnMut(&EmittedLocus, Option<&T>) -> ActivityAnswer,
+) -> Result<Vec<TraversedRegion>, RegionError> {
     let loci = interval_alignment_contexts(contexts, &shard.intervals, header);
 
     let contig = shard
@@ -342,7 +367,8 @@ pub fn assembly_regions<T: Located>(
         }
 
         let context = locus.context.map(|position| &contexts[position]);
-        profile.add(locus.interval.start, is_active(locus, context));
+        let (prob, hq_soft_clips) = is_active(locus, context);
+        profile.add_state(locus.interval.start, prob, hq_soft_clips);
 
         // A pending region becomes ready only once the loci have advanced past the end of its
         // padded span, which is what guarantees its reads have been read.
