@@ -236,7 +236,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `GroupedSVCluster` | sv-caller | oracle-backed | grouped-sv-cluster | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.047 |
 | `GtfToBed` | assembly-caller | oracle-backed | gtf-to-bed | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.053 |
 | `HaplotypeBasedVariantRecaller` | assembly-caller | oracle-backed | haplotype-based-variant-recaller | 1 | t=2, 44/44 rows (100%) | 0.056 / 1.049 |
-| `HaplotypeCaller` | assembly-caller | oracle-backed | hc-end-to-end, hc-gvcf-end-to-end | 2 | t=2, 42/42 rows (100%) | not measured |
+| `HaplotypeCaller` | assembly-caller | oracle-backed | hc-dragen-end-to-end, hc-end-to-end, hc-gvcf-end-to-end | 3 | t=2, 42/42 rows (100%) | not measured |
 | `IndexFeatureFile` | unclassified | oracle-backed | index-feature-file, tool-argument-declarations, tool-argument-enums, usage-text | 4 | t=2, 8/8 rows (100%) | 0.002 / 0.074 |
 | `JointGermlineCNVSegmentation` | sv-caller | oracle-backed | joint-germline-cnv-segmentation | 1 | t=2, 22/22 rows (100%) | 0.002 / 0.056 |
 | `LearnReadOrientationModel` | assembly-caller | oracle-backed | learn-read-orientation-model | 1 | t=2, 12/12 rows (100%) | 0.026 / 0.383 |
