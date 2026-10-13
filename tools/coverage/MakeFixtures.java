@@ -849,6 +849,21 @@ public class MakeFixtures {
                 "--intervals", "chr1:900-2100",
                 "--output", dir.resolve("mutect.vcf").toString(),
         });
+        // RampedHaplotypeCaller's on-ramp files, its own off ramps over the tumour and normal: the
+        // read likelihoods before filtering, and the assembled haplotypes.
+        for (final String[] ramp : new String[][] {
+                {"PRE_FILTER_OFF", "ramp_pre_filter.zip"}, {"POST_ASSEMBLER_OFF", "ramp_post_assembler.zip"}}) {
+            Files.deleteIfExists(dir.resolve(ramp[1]));
+            new org.broadinstitute.hellbender.tools.walkers.haplotypecaller.RampedHaplotypeCaller().instanceMain(new String[] {
+                    "--input", bam.toString(),
+                    "--reference", dir.resolve("mutect_ref.fasta").toString(),
+                    "--pair-hmm-implementation", "LOGLESS_CACHING",
+                    "--smith-waterman", "JAVA",
+                    "--off-ramp-type", ramp[0],
+                    "--off-ramp-file", dir.resolve(ramp[1]).toString(),
+                    "--output", dir.resolve("ramp_off.vcf").toString(),
+            });
+        }
         // The same calls with a stats table saying nothing was callable, which switches the
         // empirical priors off.
         // REPLACE_EXISTING because the conformance runner builds the corpus a second time into the

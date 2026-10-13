@@ -283,6 +283,7 @@ def summarize_all(inventory_path, t, fixtures, numeric_policy, limit=None, exclu
         # A tool that declares its own fixture values gets them here, so sizing the programme
         # counts the array a tool will actually run rather than the one its shared paths imply.
         own = domains.for_tool(fixtures, per_tool_fixtures or {}, tool["name"])
+        tool = domains.with_hidden(tool, per_tool_fixtures or {})
         domain, excluded = domains.build(tool, own, numeric_policy, excluded_by_hand)
         params = sorted(domain)
         if len(params) < t:
@@ -374,7 +375,7 @@ def main(argv):
             print(f"\nwrote {args.json}")
         return 0
 
-    tool = load_tool(args.tool, args.inventory)
+    tool = domains.with_hidden(load_tool(args.tool, args.inventory), per_tool_fixtures)
     fixtures = domains.for_tool(fixtures, per_tool_fixtures, tool["name"])
     domain, excluded = domains.build(tool, fixtures, args.numeric_policy, hand_excluded)
     params = sorted(domain)

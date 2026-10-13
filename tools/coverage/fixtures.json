@@ -8448,8 +8448,10 @@
         "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
         "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
         "ones.",
-        "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
-        "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet.",
+        "The ramp arguments are hidden, so gatkdoc and the inventory omit them; they are declared under $hidden",
+        "and varied: each off ramp into /work/out, where its zip is compared member by member, and each on ramp",
+        "over a zip RampedHaplotypeCaller's own off ramp wrote from mutect_tn.bam (MakeFixtures). The two debug",
+        "switches only log.",
         "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
         "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
         "thresholds matter only where PossibleDeNovo runs."
@@ -8563,15 +8565,32 @@
         "true"
       ],
       "--off-ramp-type": [
-        "NONE"
+        "NONE",
+        "PRE_FILTER_OFF",
+        "PRE_ASSEMBLER_OFF",
+        "POST_ASSEMBLER_OFF"
       ],
       "--on-ramp-type": [
-        "NONE"
+        "NONE",
+        "POST_FILTER_ON",
+        "POST_ASSEMBLER_ON"
       ],
-      "--off-ramp-file": [],
-      "--on-ramp-file": [],
-      "--ramps-debug-reads": [],
-      "--ramps-debug-post-assembler-on": [],
+      "--off-ramp-file": [
+        "/work/out/ramp.zip",
+        "/work/out/ramps/off.zip"
+      ],
+      "--on-ramp-file": [
+        "/work/fixtures/ramp_pre_filter.zip",
+        "/work/fixtures/ramp_post_assembler.zip"
+      ],
+      "--ramps-debug-reads": [
+        "null",
+        "rgT:1001f"
+      ],
+      "--ramps-debug-post-assembler-on": [
+        "false",
+        "true"
+      ],
       "--dragstr-params-path": [
         "null",
         "/work/fixtures/dragstr.txt"
@@ -8607,6 +8626,89 @@
       "--denovo-depth-threshold": [
         "0",
         "30"
+      ],
+      "$hidden": [
+        {
+          "name": "--off-ramp-type",
+          "short": null,
+          "type": "OffRampTypeEnum",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": [
+            "NONE",
+            "PRE_FILTER_OFF",
+            "PRE_ASSEMBLER_OFF",
+            "POST_ASSEMBLER_OFF"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--off-ramp-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--on-ramp-type",
+          "short": null,
+          "type": "OnRampTypeEnum",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": [
+            "NONE",
+            "POST_FILTER_ON",
+            "POST_ASSEMBLER_ON"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--on-ramp-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--ramps-debug-reads",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--ramps-debug-post-assembler-on",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
       ]
     }
   },
@@ -9046,6 +9148,66 @@
         "--enable-all-annotations": "false"
       },
       "why": "Mutect2's default annotations hold no pedigree annotation, so either pedigree argument without --enable-all-annotations is the same refusal on every row, which the hc-pedigree suite measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "PRE_FILTER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "PRE_ASSEMBLER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "POST_ASSEMBLER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_FILTER_ON",
+        "--off-ramp-type": "PRE_FILTER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_FILTER_ON",
+        "--on-ramp-file": "/work/fixtures/ramp_post_assembler.zip"
+      },
+      "why": "An on ramp over the other ramp's zip reads an entry the zip does not hold, the same IOException on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--on-ramp-file": "/work/fixtures/ramp_pre_filter.zip"
+      },
+      "why": "An on ramp over the other ramp's zip reads an entry the zip does not hold, the same IOException on every such row."
     }
   ],
   "exclude": {
