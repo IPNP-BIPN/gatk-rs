@@ -7551,7 +7551,7 @@
     },
     {
       "id": "hc-pedigree",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' pedigree arguments, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7570,13 +7570,14 @@
       "cases": [
         {
           "dump": "HcPedigreeDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_pedigree.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-linked-graph",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers with the linked de Bruijn graph, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7596,7 +7597,8 @@
       "cases": [
         {
           "dump": "HcLinkedGraphDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_linked_graph.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
         }
       ]
     },
