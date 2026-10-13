@@ -317,7 +317,7 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `HaplotypeCallerEngine.makeStandardHCReadFilters`, which `HaplotypeBasedVariantRecaller`
         // returns as its own: the engine's mapping-quality floor of twenty first, the wellformed
         // filter last.
-        "HaplotypeBasedVariantRecaller" => Some(&[
+        "HaplotypeCaller" | "HaplotypeBasedVariantRecaller" => Some(&[
             "MappingQualityReadFilter",
             "MappingQualityAvailableReadFilter",
             "MappedReadFilter",
@@ -347,7 +347,7 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
             "NotDuplicateReadFilter",
             "MappingQualityReadFilter",
         ]),
-        "GetNormalArtifactData" | "CollectF1R2Counts" => {
+        "Mutect2" | "GetNormalArtifactData" | "CollectF1R2Counts" => {
             Some(&crate::get_normal_artifact_data::STANDARD_MUTECT2_READ_FILTERS)
         }
         // `DepthOfCoverage.getDefaultReadFilters` is the locus walker's two with two of its own

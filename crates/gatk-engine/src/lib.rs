@@ -94,6 +94,7 @@ pub mod qual_quantizer;
 pub mod read;
 pub mod read_group;
 pub mod read_pileup;
+pub mod read_realignment;
 pub mod read_states;
 pub mod read_threading_assembler;
 pub mod read_threading_graph;

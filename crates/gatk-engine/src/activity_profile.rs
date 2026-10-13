@@ -236,6 +236,12 @@ impl ActivityProfile {
 
     /// `add`, which refuses a position that is not exactly one past the last one.
     pub fn add(&mut self, start: i32, is_active_prob: f64) {
+        self.add_state(start, is_active_prob, None);
+    }
+
+    /// `add(ActivityProfileState)` for a state that may be `HIGH_QUALITY_SOFT_CLIPS`, whose value
+    /// (the average number of high-quality soft-clipped bases) is `hq_soft_clips`.
+    pub fn add_state(&mut self, start: i32, is_active_prob: f64, hq_soft_clips: Option<f64>) {
         match self.region_stop {
             None => {
                 self.region_start = Some(start);
@@ -251,31 +257,50 @@ impl ActivityProfile {
             }
         }
 
-        for state in self.process_state(start, is_active_prob) {
+        for state in self.process_state(start, is_active_prob, hq_soft_clips) {
             self.incorporate(state);
         }
     }
 
     /// `BandPassActivityProfile.processState` over `ActivityProfile.processState`.
     ///
-    /// The soft-clip branch of the parent is not here: it needs `ActivityProfileState.Type`, which
-    /// only `HaplotypeCaller`'s activity calculation produces, and it is its own slice.
-    fn process_state(&self, start: i32, is_active_prob: f64) -> Vec<(i32, f64)> {
-        let Some(kernel) = &self.kernel else {
-            return vec![(start, is_active_prob)];
+    /// The parent's soft-clip branch first: a `HIGH_QUALITY_SOFT_CLIPS` state becomes one state per
+    /// position within the soft-clip count (truncated, and capped at the propagation distance) of
+    /// it, each with its probability. The band then smooths **each** of those around the locus
+    /// that was added, not around its own position, so the spread only multiplies the state's
+    /// weight; and a state of probability zero is the added state itself, unsmoothed.
+    fn process_state(
+        &self,
+        start: i32,
+        is_active_prob: f64,
+        hq_soft_clips: Option<f64>,
+    ) -> Vec<(i32, f64)> {
+        let super_states: Vec<(i32, f64)> = match hq_soft_clips {
+            Some(clips) => {
+                let count = (clips as i32).min(self.max_prob_propagation_distance());
+                (-count..=count)
+                    .filter_map(|offset| self.loc_for_offset(start, offset))
+                    .map(|position| (position, is_active_prob))
+                    .collect()
+            }
+            None => vec![(start, is_active_prob)],
         };
-        // A probability of exactly zero is added unfiltered, so it lands on one position instead
-        // of being spread over the band.
-        if is_active_prob <= 0.0 {
-            return vec![(start, is_active_prob)];
-        }
+        let Some(kernel) = &self.kernel else {
+            return super_states;
+        };
         let mut states = Vec::new();
-        for offset in -self.filter_size..=self.filter_size {
-            if let Some(position) = self.loc_for_offset(start, offset) {
-                states.push((
-                    position,
-                    is_active_prob * kernel[(offset + self.filter_size) as usize],
-                ));
+        for (_, prob) in super_states {
+            if prob > 0.0 {
+                for offset in -self.filter_size..=self.filter_size {
+                    if let Some(position) = self.loc_for_offset(start, offset) {
+                        states.push((
+                            position,
+                            prob * kernel[(offset + self.filter_size) as usize],
+                        ));
+                    }
+                }
+            } else {
+                states.push((start, is_active_prob));
             }
         }
         states

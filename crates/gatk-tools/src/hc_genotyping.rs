@@ -62,6 +62,11 @@ pub struct HcGenotypingArguments {
     /// `doPhysicalPhasing`, which the tool sets from `--do-not-run-physical-phasing`. Off here
     /// unless asked for, so that the genotyping can be measured on its own.
     pub do_physical_phasing: bool,
+    /// Reference-confidence mode: `<NON_REF>` added to every event and to its likelihoods, and
+    /// the reducible annotations written raw.
+    pub emit_reference_confidence: bool,
+    /// The reference-confidence model's switches, read only in that mode.
+    pub ref_confidence: crate::reference_confidence_model::RefConfidenceArguments,
 }
 
 impl Default for HcGenotypingArguments {
@@ -73,6 +78,8 @@ impl Default for HcGenotypingArguments {
             max_genotype_count: 1024,
             max_mnp_distance: 0,
             do_physical_phasing: false,
+            emit_reference_confidence: false,
+            ref_confidence: Default::default(),
         }
     }
 }
@@ -124,7 +131,39 @@ pub fn assign_genotype_likelihoods_annotated(
     ref_loc: &SimpleInterval,
     active_region_window: &SimpleInterval,
     contig_length: i32,
+    annotator: Option<CallAnnotator<'_>>,
+) -> Result<Vec<VariantContext>, EngineError> {
+    assign_genotype_likelihoods_full(
+        engine,
+        arguments,
+        haplotypes,
+        read_likelihoods,
+        samples,
+        reference,
+        ref_loc,
+        active_region_window,
+        contig_length,
+        annotator,
+        &[],
+    )
+}
+
+/// `assignGenotypeLikelihoods` as `callRegion` runs it: with the annotations, and with each
+/// sample's reads filtered before genotyping, which the annotations still see
+/// (`addEvidence(overlappingFilteredReads, 0)`) wherever they overlap a call.
+#[allow(clippy::too_many_arguments)]
+pub fn assign_genotype_likelihoods_full(
+    engine: &mut GenotypingEngine,
+    arguments: &HcGenotypingArguments,
+    haplotypes: &mut [Haplotype],
+    read_likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    samples: &[String],
+    reference: &[u8],
+    ref_loc: &SimpleInterval,
+    active_region_window: &SimpleInterval,
+    contig_length: i32,
     mut annotator: Option<CallAnnotator<'_>>,
+    filtered_reads: &[Vec<BamRecord>],
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -147,12 +186,12 @@ pub fn assign_genotype_likelihoods_annotated(
         let ref_base = Allele::create(&reference[(loc - ref_loc.start) as usize..][..1], true)
             .map_err(|e| refused(e.to_string()))?;
         let replaced = replace_span_dels(events, &ref_base, loc);
-        let Some(merged) =
+        let Some(mut merged) =
             make_merged_variant_context(&replaced).map_err(|e| refused(format!("{e:?}")))?
         else {
             continue;
         };
-        let merged_allele_count = merged.alleles.len();
+        let mut merged_allele_count = merged.alleles.len();
         let mapper = create_allele_mapper(&merged, loc, haplotypes, spanning)
             .map_err(|e| refused(format!("{e:?}")))?;
         // `removeAltAllelesIfTooManyGenotypes`.
@@ -185,6 +224,15 @@ pub fn assign_genotype_likelihoods_annotated(
                 read_utils::end(read),
             )
         });
+        if arguments.emit_reference_confidence {
+            // `addNonRefSymbolicAllele` on the merged context, `addNonReferenceAllele` on the
+            // matrix, which fills its row from the concrete alleles.
+            merged
+                .alleles
+                .push(Allele::from_str("<NON_REF>", false).expect("a symbolic allele"));
+            marginal.add_non_reference_allele();
+            merged_allele_count += 1;
+        }
 
         let genotypes = genotypes_for_event(&marginal, &merged.alleles, samples, ploidy)?;
         let mut vc = VariantContext::new(
@@ -208,16 +256,39 @@ pub fn assign_genotype_likelihoods_annotated(
             // over a reference context whose window is the padded reference.
             let call = match annotator.as_mut() {
                 Some(annotator) => {
+                    // `prepareReadAlleleLikelihoodsForAnnotation`: the genotyping matrix, with the
+                    // filtered reads overlapping the call added at no likelihood.
+                    let mut for_annotation = marginal.clone();
+                    if call.alleles.len() != for_annotation.number_of_alleles() {
+                        for_annotation.update_non_ref_allele_likelihoods(&call.alleles);
+                    }
+                    for (s, reads) in filtered_reads.iter().enumerate() {
+                        let overlapping: Vec<BamRecord> = reads
+                            .iter()
+                            .filter(|read| {
+                                overlap.overlaps(
+                                    &overlap.contig,
+                                    read_utils::start(read),
+                                    read_utils::end(read),
+                                )
+                            })
+                            .cloned()
+                            .collect();
+                        for_annotation.add_evidence(s, &overlapping, 0.0);
+                    }
                     let site = Site {
-                        likelihoods: &marginal,
+                        likelihoods: &for_annotation,
                         window: (i64::from(ref_loc.start), reference),
                         overlaps: Vec::new(),
                         dbsnp: None,
                         resources: Vec::new(),
                     };
-                    annotator
-                        .engine
-                        .annotate_context(&call, &site, annotator.random)?
+                    annotator.engine.annotate_context_raw(
+                        &call,
+                        &site,
+                        annotator.random,
+                        arguments.emit_reference_confidence,
+                    )?
                 }
                 None => call,
             };
