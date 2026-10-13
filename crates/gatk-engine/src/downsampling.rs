@@ -174,6 +174,96 @@ pub fn positional_downsample(
     out
 }
 
+/// `MutectDownsampler` over a coordinate-sorted stream, run to exhaustion.
+///
+/// Reads are grouped in strides of `stride` bases from the first read of each; a stride holding
+/// `max_suspicious_reads_per_alignment_start * stride` reads of mapping quality 50 or less is
+/// dropped whole from the read that reaches that count on; and a stride with more than
+/// `max_reads_per_alignment_start * stride` reads keeps a reservoir of that many among its reads of
+/// mapping quality **above** 50 only, drawing from the shared generator. A zero or negative
+/// maximum is no maximum. Each finished stride is sorted by start, as `consumeFinalizedItems`
+/// sorts what it hands back.
+pub fn mutect_downsample(
+    reads: &[htsjdk_bam::record::BamRecord],
+    max_reads_per_alignment_start: i32,
+    max_suspicious_reads_per_alignment_start: i32,
+    stride: i32,
+    random: &mut JavaRandom,
+) -> Vec<htsjdk_bam::record::BamRecord> {
+    const SUSPICIOUS_MAPPING_QUALITY: u8 = 50;
+    let stride = stride.max(1);
+    let max_coverage = if max_reads_per_alignment_start <= 0 {
+        usize::MAX
+    } else {
+        (max_reads_per_alignment_start * stride) as usize
+    };
+    let max_suspicious = if max_suspicious_reads_per_alignment_start <= 0 {
+        usize::MAX
+    } else {
+        (stride * max_suspicious_reads_per_alignment_start) as usize
+    };
+    let mut out: Vec<htsjdk_bam::record::BamRecord> = Vec::with_capacity(reads.len());
+    let mut pending: Vec<&htsjdk_bam::record::BamRecord> = Vec::new();
+    let mut first: Option<(i32, i32)> = None;
+    let mut reject = false;
+    let mut suspicious = 0usize;
+    let finalize = |pending: &mut Vec<&htsjdk_bam::record::BamRecord>,
+                    reject: bool,
+                    out: &mut Vec<htsjdk_bam::record::BamRecord>,
+                    random: &mut JavaRandom| {
+        if !reject {
+            let mut batch: Vec<htsjdk_bam::record::BamRecord> = if pending.len() <= max_coverage {
+                pending.iter().map(|r| (*r).clone()).collect()
+            } else {
+                let mut reservoir: ReservoirDownsampler<'_, htsjdk_bam::record::BamRecord> =
+                    ReservoirDownsampler::new(max_coverage);
+                for read in pending
+                    .iter()
+                    .filter(|r| r.mapping_quality > SUSPICIOUS_MAPPING_QUALITY)
+                {
+                    reservoir.submit(read, &read.read_name, &mut SlotSource::Random(random));
+                }
+                reservoir.signal_end_of_input();
+                reservoir
+                    .consume_finalized_items()
+                    .into_iter()
+                    .cloned()
+                    .collect()
+            };
+            batch.sort_by_key(|r| r.alignment_start);
+            out.extend(batch);
+        }
+        pending.clear();
+    };
+    for read in reads {
+        if read.reference_index < 0 || read.alignment_start <= 0 {
+            out.push(read.clone());
+            continue;
+        }
+        match first {
+            None => first = Some((read.reference_index, read.alignment_start)),
+            Some((contig, start)) => {
+                if read.reference_index != contig || read.alignment_start >= start + stride {
+                    finalize(&mut pending, reject, &mut out, random);
+                    first = Some((read.reference_index, read.alignment_start));
+                    reject = false;
+                    suspicious = 0;
+                }
+            }
+        }
+        if reject {
+            continue;
+        }
+        if read.mapping_quality <= SUSPICIOUS_MAPPING_QUALITY {
+            suspicious += 1;
+        }
+        reject |= suspicious >= max_suspicious;
+        pending.push(read);
+    }
+    finalize(&mut pending, reject, &mut out, random);
+    out
+}
+
 /// `LevelingDownsampler`: given several stacks and a total target, remove items evenly until the
 /// sum fits.
 ///

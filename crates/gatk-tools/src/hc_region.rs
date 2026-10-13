@@ -30,6 +30,8 @@ use gatk_engine::smith_waterman::{
 use htsjdk_bam::record::BamRecord;
 use htsjdk_vcf::variant::VariantContext;
 
+use crate::reference_confidence_model::calculate_ref_confidence;
+
 use crate::genotyping_engine::GenotypingEngine;
 use crate::hc_genotyping::{
     assign_genotype_likelihoods_full, CallAnnotator, HcGenotypingArguments,
@@ -92,7 +94,7 @@ pub fn call_region(
     let calling = |e: String| RegionAssemblyError::Calling(e);
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
     if !region.is_active() || region.reads().is_empty() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, true, context);
     }
     let mut untrimmed = assemble_reads(
         &mut region,
@@ -113,7 +115,7 @@ pub fn call_region(
         .trim(&region, &events, padded_bases, padded.start)
         .map_err(|e| calling(format!("{e:?}")))?;
     if trimmed.variant_span.is_none() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, false, context);
     }
     let variant_region = context
         .trimmer
@@ -152,14 +154,14 @@ pub fn call_region(
             || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
     });
     if !assembly.is_variation_present() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, false, context);
     }
     let genotyping_region = assembly
         .region_for_genotyping()
         .expect("a trimmed set has its region")
         .clone();
     if genotyping_region.reads().is_empty() {
-        return Ok(Vec::new());
+        return reference_model_for_no_variation(region, false, context);
     }
 
     // `splitReadsBySample`, then the likelihoods against the trimmed haplotypes.
@@ -195,7 +197,7 @@ pub fn call_region(
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     let contig_length = context.contig_bases.len() as i32;
-    assign_genotype_likelihoods_full(
+    let calls = assign_genotype_likelihoods_full(
         engine,
         context.genotyping,
         &mut haplotypes,
@@ -208,7 +210,116 @@ pub fn call_region(
         annotator,
         &filtered,
     )
-    .map_err(|e| calling(format!("{e:?}")))
+    .map_err(|e| calling(format!("{e:?}")))?;
+    if !context.genotyping.emit_reference_confidence {
+        return Ok(calls);
+    }
+
+    // `containsCalls`: a genotype with any allele called.
+    let contains_calls = calls.iter().any(|call| {
+        call.genotypes
+            .iter()
+            .any(|g| g.alleles.iter().any(|a| !a.is_no_call()))
+    });
+    if !contains_calls {
+        return reference_model_for_no_variation(region, false, context);
+    }
+    // The left flank, the genotyping region base by base with its calls, then the right flank.
+    let mut result = Vec::new();
+    if let Some(flank) = context
+        .trimmer
+        .non_variant_left_flank_region(&trimmed, &region, context.header)
+        .map_err(|e| calling(format!("{e:?}")))?
+    {
+        result.extend(reference_model_for_no_variation(flank, false, context)?);
+    }
+    let sample = &context.samples[0];
+    result.extend(
+        calculate_ref_confidence(
+            &reference_haplotype.bases(),
+            genotyping_region.span(),
+            genotyping_region.padded_span().start,
+            likelihoods.sample_evidence(0).unwrap_or(&[]),
+            sample,
+            context.genotyping.sample_ploidy,
+            &calls,
+            context.header,
+            &context.genotyping.ref_confidence,
+        )
+        .map_err(|e| calling(format!("{e:?}")))?,
+    );
+    if let Some(flank) = context
+        .trimmer
+        .non_variant_right_flank_region(&trimmed, &region, context.header)
+        .map_err(|e| calling(format!("{e:?}")))?
+    {
+        result.extend(reference_model_for_no_variation(flank, false, context)?);
+    }
+    Ok(result)
+}
+
+/// `referenceModelForNoVariation(region, needsToBeFinalized)`: nothing outside reference-confidence
+/// mode; otherwise the region finalized when it has not been, its non-passing reads removed, and
+/// a reference-confidence record for each base of its span against its own reads, with no calls.
+fn reference_model_for_no_variation(
+    mut region: AssemblyRegion,
+    needs_to_be_finalized: bool,
+    context: &CallRegionContext<'_>,
+) -> Result<Vec<VariantContext>, RegionAssemblyError> {
+    if !context.genotyping.emit_reference_confidence {
+        return Ok(Vec::new());
+    }
+    if needs_to_be_finalized {
+        // `usePileupDetection`, off by default, is what tracks the hard-clipped reads here.
+        let mut arguments = finalize_arguments(context.assembly);
+        arguments.track_hardclipped_reads = false;
+        finalize_region(&mut region, &arguments, context.header, context.samples)
+            .map_err(RegionAssemblyError::Finalize)?;
+    }
+    let threshold = context.mapping_quality_threshold;
+    region.retain_reads(|read| !fails_genotyping_filters(read, threshold));
+    let padded = region.padded_span().clone();
+    let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
+    let sample = &context.samples[0];
+    let evidence: Vec<BamRecord> = region
+        .reads()
+        .iter()
+        .filter(|read| sample_name(read, context.header).as_ref() == Some(sample))
+        .cloned()
+        .collect();
+    calculate_ref_confidence(
+        ref_bases,
+        region.span(),
+        padded.start,
+        &evidence,
+        sample,
+        context.genotyping.sample_ploidy,
+        &[],
+        context.header,
+        &context.genotyping.ref_confidence,
+    )
+    .map_err(|e| RegionAssemblyError::Calling(format!("{e:?}")))
+}
+
+/// `filterNonPassingReads`' test: too short, mapped below the genotyping threshold, or with a
+/// mate on another contig.
+fn fails_genotyping_filters(read: &BamRecord, mapping_quality_threshold: u8) -> bool {
+    unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
+        || read.mapping_quality < mapping_quality_threshold
+        || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read)
+}
+
+/// The `finalizeRegion` switches HaplotypeCaller passes.
+fn finalize_arguments(arguments: &RegionAssemblyArguments) -> FinalizeArguments {
+    FinalizeArguments {
+        error_correct_reads: false,
+        dont_use_soft_clipped_bases: arguments.dont_use_soft_clipped_bases,
+        min_tail_quality: arguments.min_base_quality_score.wrapping_sub(1),
+        correct_overlapping_base_qualities: !arguments.do_not_correct_overlapping_base_qualities,
+        soft_clip_low_quality_ends: arguments.soft_clip_low_quality_ends,
+        override_softclip_fragment_check: arguments.override_softclip_fragment_check,
+        track_hardclipped_reads: true,
+    }
 }
 
 /// HaplotypeCaller's `minBaseQualityScore` and the switches `assembleReads` passes on.
@@ -284,22 +395,8 @@ pub fn assemble_reads(
     assembler: &ReadThreadingAssembler,
     aligner: &dyn SmithWatermanAligner,
 ) -> Result<AssemblyResultSet, RegionAssemblyError> {
-    finalize_region(
-        region,
-        &FinalizeArguments {
-            error_correct_reads: false,
-            dont_use_soft_clipped_bases: arguments.dont_use_soft_clipped_bases,
-            min_tail_quality: arguments.min_base_quality_score.wrapping_sub(1),
-            correct_overlapping_base_qualities: !arguments
-                .do_not_correct_overlapping_base_qualities,
-            soft_clip_low_quality_ends: arguments.soft_clip_low_quality_ends,
-            override_softclip_fragment_check: arguments.override_softclip_fragment_check,
-            track_hardclipped_reads: true,
-        },
-        header,
-        samples,
-    )
-    .map_err(RegionAssemblyError::Finalize)?;
+    finalize_region(region, &finalize_arguments(arguments), header, samples)
+        .map_err(RegionAssemblyError::Finalize)?;
     let contig_length = contig_bases.len() as i32;
     let ref_loc = padded_reference_loc(region, REFERENCE_PADDING_FOR_ASSEMBLY, contig_length);
     let full_reference = contig_bases[ref_loc.start as usize - 1..ref_loc.end as usize].to_vec();

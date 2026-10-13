@@ -475,8 +475,8 @@ jobs:
             suites: "dragstr-likelihoods hc-is-active hc-genotyping hc-annotated-calls hc-phasing"
           - group: oracle-backed
             index: "65/65"
-            slug: "hc-region-assembly-hc-call-region-hc-end-to-end"
-            suites: "hc-region-assembly hc-call-region hc-end-to-end"
+            slug: "hc-region-assembly-hc-call-region-hc-end-to-end-hc-gvcf-end-to-end-mutect2-end-to-end"
+            suites: "hc-region-assembly hc-call-region hc-end-to-end hc-gvcf-end-to-end mutect2-end-to-end"
     steps:
       - uses: actions/checkout@v7
 

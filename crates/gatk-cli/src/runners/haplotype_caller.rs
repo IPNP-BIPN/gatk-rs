@@ -114,6 +114,11 @@ const HONOURED: &[&str] = &[
     "dynamic-read-disqualification-threshold",
     "disable-symmetric-hmm-normalizing",
     "disable-cap-base-qualities-to-map-quality",
+    // Reference confidence.
+    "emit-ref-confidence",
+    "gvcf-gq-bands",
+    "floor-blocks",
+    "indel-size-to-eliminate-in-ref-model",
 ];
 
 fn limitation(what: &str) -> Thrown {
@@ -169,12 +174,50 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
         &[],
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
+    let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
+    let emit_reference_confidence = emit_mode != "NONE";
+    // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
+    // annotations a GVCF cannot carry removed.
+    let mut resolved = resolved;
+    if emit_reference_confidence {
+        if !resolved
+            .iter()
+            .any(|entry| entry.name == "StrandBiasBySample")
+        {
+            resolved.push(catalogue::entry("StrandBiasBySample").expect("a known annotation"));
+            resolved.sort_by(|a, b| a.name.cmp(b.name));
+        }
+        resolved.retain(|entry| {
+            !matches!(
+                entry.name,
+                "ChromosomeCounts" | "FisherStrand" | "StrandOddsRatio" | "QualByDepth"
+            )
+        });
+    }
     let ReadWalkerStart {
         source,
         header,
         intervals,
         filters,
     } = read_walker_startup(parser, "HaplotypeCaller")?;
+    if emit_reference_confidence && hc::samples_from_header(&header).len() != 1 {
+        return Err(Thrown::command_line(
+            "Argument emit-ref-confidence has a bad value: Can only be used in single sample \
+             mode currently. Use the --sample-name argument to run on a single sample out of a \
+             multi-sample BAM file.",
+        ));
+    }
+    // `validateAndInitializeArgs`: GVCF mode calls at a threshold of -0.0, which the
+    // active-region engine then takes as its own minimum too.
+    let calling_threshold = if emit_reference_confidence {
+        -0.0
+    } else {
+        double_or(
+            parser,
+            "standard-min-confidence-threshold-for-calling",
+            30.0,
+        )
+    };
     let output = argument(parser, "output").ok_or_else(|| {
         Thrown::command_line("Argument output was missing: Argument 'output' is required")
     })?;
@@ -212,11 +255,7 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
     }
 
     let ploidy = number_or(parser, "sample-ploidy", 2).max(0) as usize;
-    let calling_confidence = double_or(
-        parser,
-        "standard-min-confidence-threshold-for-calling",
-        30.0,
-    );
+    let calling_confidence = calling_threshold;
     let max_alternate_alleles = number_or(parser, "max-alternate-alleles", 6).max(0) as usize;
     let priors = Priors {
         snp_heterozygosity: double_or(parser, "heterozygosity", 1e-3),
@@ -326,7 +365,25 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
             disable_spanning_event_genotyping: flag(parser, "disable-spanning-event-genotyping"),
             max_genotype_count: number_or(parser, "max-genotype-count", 1024).max(0) as usize,
             max_mnp_distance: number_or(parser, "max-mnp-distance", 0),
-            do_physical_phasing: false,
+            // Phasing is only for diploid samples, and only with reference confidence.
+            do_physical_phasing: emit_reference_confidence
+                && ploidy == 2
+                && !flag(parser, "do-not-run-physical-phasing"),
+            emit_reference_confidence,
+            ref_confidence: gatk_tools::reference_confidence_model::RefConfidenceArguments {
+                indel_informative_depth_indel_size: number_or(
+                    parser,
+                    "indel-size-to-eliminate-in-ref-model",
+                    10,
+                )
+                .max(0) as usize,
+                ref_model_deletion_quality: number_or(
+                    parser,
+                    "reference-model-deletion-quality",
+                    30,
+                ) as u8,
+                use_soft_clipped_bases: !flag(parser, "override-fragment-softclip-check"),
+            },
         },
         calling: Configuration {
             standard_confidence_for_calling: calling_confidence,
@@ -339,8 +396,9 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
             emit_all_active_sites: false,
             allele_specific: false,
             emit_all_confident_sites: false,
-            annotate_all_sites_with_pls: false,
-            force_keep_all_alleles: false,
+            annotate_all_sites_with_pls: emit_reference_confidence,
+            // `forceKeepAllele` is true for every allele with reference confidence.
+            force_keep_all_alleles: emit_reference_confidence,
             assignment_method: SubsetMethod::UsePlsToAssign,
         },
         priors,
@@ -401,16 +459,41 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
             "Number of alternate alleles discovered (but not necessarily genotyped) at this site",
         ));
     }
-    lines.extend(catalogue::descriptions(&resolved, false, false));
+    lines.extend(catalogue::descriptions(
+        &resolved,
+        emit_reference_confidence,
+        false,
+    ));
     lines.push(compound("INFO", "MLEAC", Cardinality::A, LineType::Integer, "Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed"));
     lines.push(compound("INFO", "MLEAF", Cardinality::A, LineType::Float, "Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed"));
     for id in ["GT", "GQ", "DP", "PL"] {
         lines.extend(htsjdk_vcf::standard_header_lines::standard_format_line(id));
     }
+    if arguments.genotyping.do_physical_phasing {
+        lines.push(compound("FORMAT", "PID", Cardinality::Fixed(1), LineType::String, "Physical phasing ID information, where each unique ID within a given sample (but not across samples) connects records within a phasing group"));
+        lines.push(compound("FORMAT", "PGT", Cardinality::Fixed(1), LineType::String, "Physical phasing haplotype information, describing how the alternate alleles are phased in relation to one another; will always be heterozygous and is not intended to describe called alleles"));
+        lines.extend(htsjdk_vcf::standard_header_lines::standard_format_line(
+            "PS",
+        ));
+    }
     lines.push(HeaderLine::Filter {
         id: "LowQual".to_string(),
         description: "Low quality".to_string(),
     });
+    if emit_reference_confidence {
+        lines.push(HeaderLine::Structured {
+            key: "ALT".to_string(),
+            fields: vec![
+                ("ID".to_string(), "NON_REF".to_string()),
+                (
+                    "Description".to_string(),
+                    "Represents any possible alternative allele not already represented at this \
+                     location by REF and ALT"
+                        .to_string(),
+                ),
+            ],
+        });
+    }
     for (index, sequence) in header.sequences.iter().enumerate() {
         lines.push(HeaderLine::Contig {
             index: index as i32,
@@ -430,8 +513,45 @@ pub fn haplotype_caller(parser: &Parser) -> Outcome {
         lines: unique,
         samples: hc::samples_from_header(&header),
     };
+    // `GVCFWriter`: the reference records combined into GQ-band blocks.
+    if emit_mode == "GVCF" {
+        let bands: Vec<i32> = arguments_or_default_bands(parser);
+        let partitions = gatk_tools::gvcf_blocks::parse_partitions(&bands).map_err(|message| {
+            Thrown::command_line(format!(
+                "Argument GQBands has a bad value: are malformed: {message}"
+            ))
+        })?;
+        gatk_tools::gvcf_blocks::add_ranges_to_header(&mut vcf_header, &partitions);
+        let mut combiner = gatk_tools::gvcf_blocks::BlockCombiner::new(
+            partitions,
+            flag(parser, "floor-blocks"),
+            None,
+        );
+        let mut combined = Vec::new();
+        for vc in written {
+            combiner
+                .submit(vc)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+            combined.extend(combiner.drain());
+        }
+        combiner.end_of_input();
+        combined.extend(combiner.drain());
+        written = combined;
+    }
     apply_sites_only(parser, &mut vcf_header, &mut written);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
     write_variant_output(parser, &output, &text)?;
     Ok(None)
+}
+
+/// `--gvcf-gq-bands`, which defaults to every GQ from 1 to 60 and then 70, 80, 90 and 99.
+fn arguments_or_default_bands(parser: &Parser) -> Vec<i32> {
+    let given: Vec<i32> = arguments(parser, "gvcf-gq-bands")
+        .iter()
+        .filter_map(|band| band.trim().parse().ok())
+        .collect();
+    if !given.is_empty() {
+        return given;
+    }
+    (1..=60).chain([70, 80, 90, 99]).collect()
 }

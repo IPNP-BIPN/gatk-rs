@@ -8,18 +8,20 @@
 //! [`call_region`] as soon as its contig's regions are known. The calls come out in region order,
 //! which is coordinate order since the regions do not overlap.
 //!
-//! What a reader would not guess: physical phasing is **off** in VCF mode whatever
-//! `--do-not-run-physical-phasing` says, since `validateAndInitializeArgs` turns it off unless
-//! reference confidence is emitted; and the samples are the read groups' `SM` values **sorted**,
+//! What a reader would not guess: the samples are the read groups' `SM` values **sorted**,
 //! because `ReadUtils.getSamplesFromHeader` collects them in a `TreeSet`.
 //!
-//! Not ported here: reference-confidence (GVCF) mode, `--alleles`, pileup detection, DRAGEN mode
+//! In reference-confidence mode each region's output is a record per base, which the command line
+//! combines into blocks when it writes a GVCF.
+//!
+//! Not ported here: `--alleles`, pileup detection, DRAGEN mode
 //! and the flow-based paths, all refused by the command line.
 
 use gatk_engine::allele_frequency_calculator::{AlleleFrequencyCalculator, Priors};
 use gatk_engine::assembly_region_iterator::{group_intervals_by_contig, AssemblyRegionArgs};
 use gatk_engine::assembly_region_trimmer::{AssemblyRegionTrimmer, TrimmerArguments};
-use gatk_engine::assembly_region_walker::traverse_with_pileups;
+use gatk_engine::assembly_region_walker::{needs_downsampler, traverse_with_pileups};
+use gatk_engine::downsampling::positional_downsample;
 use gatk_engine::interval::SimpleInterval;
 use gatk_engine::java_random::JavaRandom;
 use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
@@ -102,11 +104,7 @@ pub fn call_variants(
     let assembler = haplotype_caller_assembler(arguments.assembly.min_base_quality_score);
     let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
         .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
-    // Phasing needs reference confidence, which VCF mode never emits.
-    let genotyping = HcGenotypingArguments {
-        do_physical_phasing: false,
-        ..arguments.genotyping.clone()
-    };
+    let genotyping = arguments.genotyping.clone();
 
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
@@ -120,7 +118,18 @@ pub fn call_variants(
             &partition,
             &arguments.region,
             header,
-            random,
+            &mut |reads| {
+                // `createDownsampler()`: a `PositionalDownsampler` only above zero.
+                if needs_downsampler(&arguments.region) {
+                    positional_downsample(
+                        reads,
+                        arguments.region.max_reads_per_alignment_start as usize,
+                        random,
+                    )
+                } else {
+                    reads.to_vec()
+                }
+            },
             &mut |locus, context| {
                 let Some(context) = context else {
                     return (0.0, None);
