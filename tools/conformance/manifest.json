@@ -7793,7 +7793,7 @@
     },
     {
       "id": "hc-bamout",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' --bam-output, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7814,13 +7814,14 @@
       "cases": [
         {
           "dump": "HcBamoutDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_bamout.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-debug-outputs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' debug outputs and switches, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7861,7 +7862,8 @@
       "cases": [
         {
           "dump": "HcDebugOutputsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_debug_outputs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, the local dump line for line once the declared rules have masked the identity hashes."
         }
       ]
     },
