@@ -641,7 +641,15 @@ fn featurize(
         let rq = match tag(read, b"rq") {
             Some(htsjdk_bam::tag::TagValue::Float(v)) => *v,
             Some(htsjdk_bam::tag::TagValue::Str(s)) => s.trim().parse().unwrap_or(0.0),
-            _ => return Err(runtime("java.lang.NullPointerException", "null")),
+            // Java 17's helpful message for the unboxing of a missing tag.
+            _ => {
+                return Err(runtime(
+                    "java.lang.NullPointerException",
+                    "Cannot invoke \"java.lang.Float.floatValue()\" because the return value of \
+                     \"org.broadinstitute.hellbender.utils.read.GATKRead.getAttributeAsFloat(String)\" \
+                     is null",
+                ))
+            }
         };
         result.push(Some((1000.0 * rq) as i64));
     }

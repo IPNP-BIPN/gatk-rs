@@ -16598,6 +16598,8 @@ fn java_class_name(class: &str) -> &'static str {
         "java.lang.IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
         "java.lang.ClassCastException" => "java.lang.ClassCastException",
         "java.lang.NumberFormatException" => "java.lang.NumberFormatException",
+        "java.lang.NullPointerException" => "java.lang.NullPointerException",
+        "java.util.NoSuchElementException" => "java.util.NoSuchElementException",
         "org.broadinstitute.hellbender.exceptions.GATKException" => {
             "org.broadinstitute.hellbender.exceptions.GATKException"
         }
