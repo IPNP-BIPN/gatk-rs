@@ -149,6 +149,9 @@ pub struct ReadThreadingAssembler {
     /// `setDebugGraphTransformations`: every step's graph in its own file in the working
     /// directory, and only the first small graph in the graph output.
     debug_graph_transformations: bool,
+    /// `--error-correction-log-odds`: the reads are corrected from their pileup before assembly
+    /// when it is not negative infinity.
+    pileup_error_correction_log_odds: f64,
 }
 
 /// `haplotypeHistogram` and `kmersUsedHistogram`, both `new Histogram(1.0)`: bins of one, counted.
@@ -243,6 +246,7 @@ impl ReadThreadingAssembler {
             histograms: None,
             graph_output: None,
             debug_graph_transformations: false,
+            pileup_error_correction_log_odds: f64::NEG_INFINITY,
         })
     }
 
@@ -295,6 +299,16 @@ impl ReadThreadingAssembler {
     /// `setDebugHistogramOutput`: start keeping the histograms.
     pub fn set_graph_output(&mut self, path: std::path::PathBuf) {
         self.graph_output = Some(path);
+    }
+
+    /// Whether `PileupReadErrorCorrector` runs, which replaces the k-mer corrector.
+    pub fn pileup_error_correction_enabled(&self) -> bool {
+        self.pileup_error_correction_log_odds != f64::NEG_INFINITY
+    }
+
+    /// `PileupReadErrorCorrector`'s threshold.
+    pub fn set_pileup_error_correction_log_odds(&mut self, value: f64) {
+        self.pileup_error_correction_log_odds = value;
     }
 
     /// `setDebugGraphTransformations`.
@@ -456,8 +470,21 @@ impl ReadThreadingAssembler {
         region: &AssemblyRegion,
         header: &SamHeader,
     ) -> Result<Vec<SampleRead>, AssemblerError> {
-        region
-            .reads()
+        // `readErrorCorrector.correctReads(assemblyRegion.getReads())`. The k-mer corrector of
+        // `--error-correct-reads` is never given any k-mers, so it corrects nothing.
+        let corrected;
+        let reads = if self.pileup_error_correction_log_odds == f64::NEG_INFINITY {
+            region.reads()
+        } else {
+            corrected = crate::pileup_read_error_corrector::correct_reads(
+                region.reads(),
+                header,
+                self.pileup_error_correction_log_odds,
+            )
+            .map_err(AssemblerError::IllegalState)?;
+            &corrected[..]
+        };
+        reads
             .iter()
             .map(|read| {
                 let clipped = hard_clip_soft_clipped_bases(read, Some(header), 0)

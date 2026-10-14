@@ -187,6 +187,11 @@ const HONOURED: &[&str] = &[
     "debug-genotyper-output",
     "graph-output",
     "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -769,6 +774,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             read_to_haplotype_sw: sw.2,
             capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
                 .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
         flow_engine: flow_engine_arguments(parser),
         stepwise_flow: flag(parser, "use-flow-aligner-for-stepwise-hc-filtering").then(|| {
@@ -1292,6 +1303,11 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
         disable_artificial_haplotype_recovery: flag(
             parser,
             "disable-artificial-haplotype-recovery",
+        ),
+        pileup_error_correction_log_odds: double_or(
+            parser,
+            "error-correction-log-odds",
+            f64::NEG_INFINITY,
         ),
         graph_output: argument(parser, "graph-output").map(std::path::PathBuf::from),
         debug_graph_transformations: flag(parser, "debug-graph-transformations"),

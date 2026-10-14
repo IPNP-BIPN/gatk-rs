@@ -94,6 +94,7 @@ pub mod pd_pair_hmm;
 pub mod permutation;
 pub mod persistence_optimizer;
 pub mod pileup;
+pub mod pileup_read_error_corrector;
 pub mod pileup_summary;
 pub mod qual_quantizer;
 pub mod read;

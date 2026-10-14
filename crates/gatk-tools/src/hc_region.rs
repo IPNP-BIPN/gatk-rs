@@ -1245,7 +1245,7 @@ fn read_group(read: &BamRecord) -> Option<&str> {
 /// The `finalizeRegion` switches HaplotypeCaller passes.
 fn finalize_arguments(arguments: &RegionAssemblyArguments) -> FinalizeArguments {
     FinalizeArguments {
-        error_correct_reads: false,
+        error_correct_reads: arguments.error_correct_reads,
         dont_use_soft_clipped_bases: arguments.dont_use_soft_clipped_bases,
         min_tail_quality: arguments.min_base_quality_score.wrapping_sub(1),
         correct_overlapping_base_qualities: !arguments.do_not_correct_overlapping_base_qualities,
@@ -1270,6 +1270,11 @@ pub struct RegionAssemblyArguments {
     pub read_to_haplotype_sw: SwParameters,
     /// `--capture-assembly-failure-bam`, with the BGZF settings its writer inherits.
     pub capture_assembly_failure_bam: Option<(u32, htsjdk_bgzf::Deflater)>,
+    /// `--error-correct-reads`: the region is finalized with a minimum tail quality of 6, and the
+    /// k-mer corrector built (and its k-mer length checked), which then corrects nothing.
+    pub error_correct_reads: bool,
+    /// `--kmer-length-for-read-error-correction`.
+    pub kmer_length_for_read_error_correction: i32,
 }
 
 impl Default for RegionAssemblyArguments {
@@ -1284,6 +1289,8 @@ impl Default for RegionAssemblyArguments {
             haplotype_to_reference_sw: NEW_SW_PARAMETERS,
             read_to_haplotype_sw: ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
             capture_assembly_failure_bam: None,
+            error_correct_reads: false,
+            kmer_length_for_read_error_correction: 25,
         }
     }
 }
@@ -1300,6 +1307,8 @@ pub struct AssemblerArguments {
     pub min_dangling_branch_length: i32,
     /// `--disable-artificial-haplotype-recovery`.
     pub disable_artificial_haplotype_recovery: bool,
+    /// `--error-correction-log-odds`.
+    pub pileup_error_correction_log_odds: f64,
     /// `--graph-output`.
     pub graph_output: Option<std::path::PathBuf>,
     /// `--debug-graph-transformations`.
@@ -1331,6 +1340,7 @@ impl Default for AssemblerArguments {
             recover_all_dangling_branches: false,
             min_dangling_branch_length: 4,
             disable_artificial_haplotype_recovery: false,
+            pileup_error_correction_log_odds: f64::NEG_INFINITY,
             graph_output: None,
             debug_graph_transformations: false,
         }
@@ -1355,6 +1365,7 @@ pub fn assembler_from(
         .set_artificial_haplotype_recovery_mode(arguments.disable_artificial_haplotype_recovery)?;
     assembler.set_min_base_quality_to_use_in_assembly(min_base_quality_score);
     assembler.set_debug_graph_transformations(arguments.debug_graph_transformations);
+    assembler.set_pileup_error_correction_log_odds(arguments.pileup_error_correction_log_odds);
     if let Some(path) = &arguments.graph_output {
         assembler.set_graph_output(path.clone());
     }
@@ -1415,6 +1426,17 @@ pub fn assemble_reads(
 ) -> Result<AssemblyResultSet, RegionAssemblyError> {
     finalize_region(region, &finalize_arguments(arguments), header, samples)
         .map_err(RegionAssemblyError::Finalize)?;
+    // `new NearbyKmerErrorCorrector(kmerLength, ...)`, built for each region when the pileup
+    // corrector is off.
+    if arguments.error_correct_reads
+        && !assembler.pileup_error_correction_enabled()
+        && arguments.kmer_length_for_read_error_correction <= 0
+    {
+        return Err(RegionAssemblyError::Calling(format!(
+            "java.lang.IllegalArgumentException: kmerLength must be > 0 but got {}",
+            arguments.kmer_length_for_read_error_correction
+        )));
+    }
     let contig_length = contig_bases.len() as i32;
     let ref_loc = padded_reference_loc(region, REFERENCE_PADDING_FOR_ASSEMBLY, contig_length);
     let full_reference = contig_bases[ref_loc.start as usize - 1..ref_loc.end as usize].to_vec();

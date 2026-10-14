@@ -183,6 +183,11 @@ const HONOURED: &[&str] = &[
     "debug-assembly",
     "graph-output",
     "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
@@ -485,6 +490,12 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             read_to_haplotype_sw: sw.2,
             capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
                 .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
         flow_engine: flow_engine_arguments(parser),
         flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
