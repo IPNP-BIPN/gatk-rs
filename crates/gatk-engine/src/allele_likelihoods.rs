@@ -363,7 +363,17 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// qualities) is a transient attribute in the reference.
     pub fn filter_poorly_modeled_evidence(
         &mut self,
+        log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
+    ) -> Result<(), LikelihoodsError> {
+        self.filter_poorly_modeled_evidence_named(log10_min_true_likelihood, None)
+    }
+
+    /// `filterPoorlyModeledEvidence` with `--debug-genotyper-output`, which prints each removed
+    /// read by `name` and asks the threshold for it a second time.
+    pub fn filter_poorly_modeled_evidence_named(
+        &mut self,
         mut log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
+        name: Option<&dyn Fn(&E) -> String>,
     ) -> Result<(), LikelihoodsError> {
         if self.alleles.number_of_alleles() == 0 {
             return Err(LikelihoodsError::NoAlleles);
@@ -376,6 +386,17 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                 })
                 .collect();
             for &i in &remove {
+                if let Some(name) = name.filter(|_| crate::genotyper_debug::is_enabled()) {
+                    let evidence = &self.evidence_by_sample[sample][i];
+                    let maximum = self.maximum_likelihood_over_all_alleles(sample, i);
+                    let threshold = log10_min_true_likelihood(sample, i, evidence);
+                    crate::genotyper_debug::println(&format!(
+                        "disqualified read: {i} {} with max likelihood {} and threshold {}",
+                        name(evidence),
+                        crate::tsv_table::java_double_to_string(maximum),
+                        crate::tsv_table::java_double_to_string(threshold)
+                    ));
+                }
                 let evidence = self.evidence_by_sample[sample][i].clone();
                 self.filtered_evidence[sample].push(evidence);
             }

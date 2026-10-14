@@ -94,6 +94,23 @@ public class HcDebugOutputsDump {
         withFile(dir, "hc-region-state-filter", hc, e2eBam, e2eFasta, state,
                 List.of("-L", "chr1:1100-1300", "--flow-filter-alleles"));
         withFile(dir, "ramped-region-state", ramped, e2eBam, e2eFasta, state, List.of("-L", "chr2"));
+        final String genotyper = "--debug-genotyper-output";
+        withFile(dir, "hc-genotyper", hc, e2eBam, e2eFasta, genotyper, List.of("-L", "chr2"));
+        withFile(dir, "hc-genotyper-cis", hc, e2eBam, e2eFasta, genotyper, List.of("-L", "chr1:1150-1300"));
+        withFile(dir, "hc-genotyper-dynamic", hc, e2eBam, e2eFasta, genotyper,
+                List.of("-L", "chr1:900-1050", "--enable-dynamic-read-disqualification-for-genotyping"));
+        withFile(dir, "hc-genotyper-legacy", hc, e2eBam, e2eFasta, genotyper,
+                List.of("-L", "chr1:700-800", "--enable-legacy-assembly-region-trimming"));
+        withFile(dir, "hc-genotyper-dragen", hc, e2eBam, e2eFasta, genotyper, List.of("-L", "chr1:900-1050", "--dragen-mode"));
+        withFile(dir, "hc-genotyper-pdhmm", hc, e2eBam, e2eFasta, genotyper, List.of("-L", "chr1:1150-1300", "--use-pdhmm"));
+        withFile(dir, "hc-genotyper-dragen-snp", hc, e2eBam, e2eFasta, genotyper,
+                List.of("-L", "chr1:1150-1300", "--dragen-mode"));
+        withFile(dir, "hc-genotyper-disqualify", hc, e2eBam, e2eFasta, genotyper,
+                List.of("-L", "chr1:900-1050", "--expected-mismatch-rate-for-read-disqualification", "0.0"));
+        withFile(dir, "hc-genotyper-disqualify-dynamic", hc, e2eBam, e2eFasta, genotyper,
+                List.of("-L", "chr1:900-1050", "--expected-mismatch-rate-for-read-disqualification", "0.0",
+                        "--enable-dynamic-read-disqualification-for-genotyping", "--dynamic-read-disqualification-threshold", "0.02"));
+        withFile(dir, "ramped-genotyper", ramped, e2eBam, e2eFasta, genotyper, List.of("-L", "chr2"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));

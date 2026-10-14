@@ -56,6 +56,7 @@ pub mod fragment;
 pub mod gatk_report;
 pub mod genotype_index;
 pub mod genotype_likelihood_calculator;
+pub mod genotyper_debug;
 pub mod germline_filter;
 pub mod haplotype;
 pub mod haplotype_alignment;

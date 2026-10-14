@@ -214,6 +214,7 @@ pub mod variant_overlap;
 pub mod variant_recalibrator;
 pub mod variant_recalibrator_model;
 pub mod variant_trim;
+pub mod variant_type;
 pub mod variants_to_table;
 pub mod vcf_comparator;
 pub mod vcf_format_converter;

@@ -13857,7 +13857,7 @@ fn variant_context_to_string(
     let attributes = format!("{{{}}}", attributes.join(", "));
     format!(
         "[VC Unknown @ {position} Q{qual} of type={} alleles=[{alleles}] attr={attributes} GT={} filters={}",
-        variant_type_name(&record.reference, &record.alternates),
+        gatk_tools::variant_type::type_name(&record.reference, &record.alternates),
         raw_genotypes,
         record.filters.join(",")
     )
@@ -13870,35 +13870,6 @@ fn attribute_to_string(value: &gatk_tools::variants_to_table::Value) -> String {
         gatk_tools::variants_to_table::Value::One(one) => one.clone(),
         gatk_tools::variants_to_table::Value::Many(many) => format!("[{}]", many.join(", ")),
     }
-}
-
-/// `VariantContext.getType()`, by the same rule [`gatk_tools::remove_nearby_indels`] ports: length
-/// decides, and two alternates that disagree are MIXED.
-fn variant_type_name(reference: &str, alternates: &[String]) -> &'static str {
-    if alternates.is_empty() || (alternates.len() == 1 && alternates[0] == ".") {
-        return "NO_VARIATION";
-    }
-    let mut kind: Option<&'static str> = None;
-    for alternate in alternates {
-        let this =
-            if alternate.starts_with('<') || alternate.contains('[') || alternate.contains(']') {
-                "SYMBOLIC"
-            } else if alternate.len() == reference.len() {
-                if reference.len() == 1 {
-                    "SNP"
-                } else {
-                    "MNP"
-                }
-            } else {
-                "INDEL"
-            };
-        match kind {
-            None => kind = Some(this),
-            Some(seen) if seen == this => {}
-            Some(_) => return "MIXED",
-        }
-    }
-    kind.unwrap_or("NO_VARIATION")
 }
 
 /// The records a variant walker's traversal reaches, which is a QUERY by interval and not a filter.
@@ -20162,7 +20133,7 @@ fn java_variant_context_string(
     };
     format!(
         "[VC {source} @ {position} Q{qual} of type={} alleles=[{alleles}] attr={{{attributes}}} GT={genotypes} filters={}",
-        variant_type_name(&reference, &alternates),
+        gatk_tools::variant_type::type_name(&reference, &alternates),
         record.filters.clone().unwrap_or_default().join(",")
     )
 }

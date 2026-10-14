@@ -184,6 +184,7 @@ const HONOURED: &[&str] = &[
     "alm-interval",
     "pair-hmm-results-file",
     "debug-assembly-region-state",
+    "debug-genotyper-output",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -711,6 +712,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         haplotype_histogram_output: argument(parser, "haplotype-debug-histogram-output")
             .map(std::path::PathBuf::from),
         assembly_state_output: argument(parser, "debug-assembly-region-state")
+            .map(std::path::PathBuf::from),
+        genotyper_debug_output: argument(parser, "debug-genotyper-output")
             .map(std::path::PathBuf::from),
         alm: argument(parser, "alm-path").map(|path| {
             (

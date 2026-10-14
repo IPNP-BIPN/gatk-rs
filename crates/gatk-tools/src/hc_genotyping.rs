@@ -344,6 +344,15 @@ pub fn assign_genotype_likelihoods_full(
         for reads in shared_filtered.iter_mut() {
             reads.retain(qualifies);
         }
+        if gatk_engine::genotyper_debug::is_enabled() {
+            print_event(
+                &merged,
+                &mapper,
+                read_likelihoods,
+                &marginal,
+                &shared_filtered,
+            );
+        }
         if arguments.emit_reference_confidence {
             // `addNonRefSymbolicAllele` on the merged context, `addNonReferenceAllele` on the
             // matrix, which fills its row from the concrete alleles.
@@ -958,4 +967,97 @@ fn max_acceptable_allele_count(ploidy: usize, max_genotype_count: usize) -> usiz
         alleles += 1;
     }
     alleles
+}
+
+/// The `--debug-genotyper-output` block for one event: the merged context, which haplotypes
+/// back each allele, and the read-by-allele matrix as is and less each read's best value. A read
+/// is numbered by its place among the region's reads, before the overlap kept a subset.
+fn print_event(
+    merged: &gatk_engine::allele_mapping::MergedContext,
+    mapper: &[(Allele, Vec<usize>)],
+    read_likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    marginal: &AlleleLikelihoods<BamRecord, Allele>,
+    filtered: &[Vec<BamRecord>],
+) {
+    use gatk_engine::genotyper_debug::println;
+    use gatk_engine::tsv_table::java_double_to_string;
+    let allele = |a: &Allele| {
+        let text = a.display_string();
+        if a.is_reference() {
+            format!("{text}*")
+        } else {
+            text
+        }
+    };
+    let mut alleles = merged.alleles.clone();
+    // `ParsingUtils.sortList`: the reference first, then by bases.
+    alleles.sort_by(|a, b| {
+        b.is_reference()
+            .cmp(&a.is_reference())
+            .then(a.display_string().cmp(&b.display_string()))
+    });
+    let position = if merged.start == merged.end {
+        format!("{}:{}", merged.contig, merged.start)
+    } else {
+        format!("{}:{}-{}", merged.contig, merged.start, merged.end)
+    };
+    let reference = merged.reference().display_string();
+    let alternates: Vec<String> = merged.alleles[1..]
+        .iter()
+        .map(Allele::display_string)
+        .collect();
+    let evidence: usize = (0..marginal.number_of_samples())
+        .map(|s| marginal.sample_evidence_count(s))
+        .sum();
+    println("\n=============================================================================");
+    println(&format!(
+        "Event at: [VC {} @ {position} Q. of type={} alleles=[{}] attr={{}} GT=[] filters= with {evidence} reads and {} disqualified",
+        merged.source,
+        crate::variant_type::type_name(&reference, &alternates),
+        alleles.iter().map(allele).collect::<Vec<_>>().join(", "),
+        filtered.first().map_or(0, Vec::len)
+    ));
+    println("=============================================================================");
+    println("haplotype alleles key:");
+    for (a, haplotypes) in mapper {
+        let indices: Vec<String> = haplotypes.iter().map(usize::to_string).collect();
+        println(&format!(
+            "Allele: {} Haps: {}",
+            allele(a),
+            indices.join(", ")
+        ));
+    }
+    println("Read-allele matrix:");
+    let count = marginal.number_of_alleles();
+    let names: Vec<String> = (0..count)
+        .filter_map(|a| marginal.get_allele(a).map(allele))
+        .collect();
+    println(&names.join(" "));
+    for normalized in [false, true] {
+        if normalized {
+            println("Normalized Read-Allele matrix:");
+        }
+        for s in 0..marginal.number_of_samples() {
+            let all = read_likelihoods.sample_evidence(s).unwrap_or(&[]);
+            for (r, read) in marginal
+                .sample_evidence(s)
+                .unwrap_or(&[])
+                .iter()
+                .enumerate()
+            {
+                let index = all.iter().position(|x| x == read).map_or(-1, |i| i as i64);
+                let mut line = format!("read: {index} {}", read.read_name);
+                let max = (0..count)
+                    .map(|a| marginal.value(s, a, r))
+                    .fold(f64::NEG_INFINITY, f64::max);
+                for a in 0..count {
+                    let value = marginal.value(s, a, r);
+                    let value = if normalized { value - max } else { value };
+                    line.push(' ');
+                    line.push_str(&java_double_to_string(value));
+                }
+                println(&line);
+            }
+        }
+    }
 }

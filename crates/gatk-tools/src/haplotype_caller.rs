@@ -69,6 +69,8 @@ pub struct HaplotypeCallerArguments {
     pub alm: Option<(std::path::PathBuf, Option<String>)>,
     /// `--debug-assembly-region-state`.
     pub assembly_state_output: Option<std::path::PathBuf>,
+    /// `--debug-genotyper-output`.
+    pub genotyper_debug_output: Option<std::path::PathBuf>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -210,6 +212,12 @@ pub fn call_variants(
         &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
     >,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
+    // `HaplotypeCallerGenotypingDebugger.initialize`, as the engine starts: its stream is never
+    // closed, but writes through, so the file holds what was printed before any failure.
+    let _genotyper_debug = arguments
+        .genotyper_debug_output
+        .clone()
+        .map(GenotyperDebugFile::open);
     let mut calls = Vec::new();
     // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
     // then with its header line and closed as the engine shuts down, after a failure too.
@@ -661,4 +669,22 @@ pub fn iupac_to_n(read: &mut BamRecord) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The `--debug-genotyper-output` file, written with what was printed when the run ends.
+struct GenotyperDebugFile(std::path::PathBuf);
+
+impl GenotyperDebugFile {
+    fn open(path: std::path::PathBuf) -> GenotyperDebugFile {
+        gatk_engine::genotyper_debug::initialize();
+        GenotyperDebugFile(path)
+    }
+}
+
+impl Drop for GenotyperDebugFile {
+    fn drop(&mut self) {
+        let text = gatk_engine::genotyper_debug::take().unwrap_or_default();
+        // The reference opens the file as the engine starts and reports nothing after.
+        let _ = std::fs::write(&self.0, text);
+    }
 }

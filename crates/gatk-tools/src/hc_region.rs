@@ -180,6 +180,14 @@ pub fn call_region(
     if context.just_determine_active_regions {
         return Ok(Vec::new());
     }
+    use gatk_engine::genotyper_debug as debugger;
+    if debugger::is_enabled() && !context.genotyping.ramped_engine {
+        let span = region.span();
+        debugger::println(&format!(
+            "calling for region: {}:{}-{}",
+            span.contig, span.start, span.end
+        ));
+    }
     if !region.is_active() {
         return reference_model_for_no_variation(region, true, context);
     }
@@ -330,6 +338,8 @@ pub fn call_region(
     } else {
         None
     };
+    // The untrimmed haplotypes, for `--debug-genotyper-output`.
+    let mut untrimmed_haplotypes: Vec<Haplotype> = Vec::new();
     // The good pileup events, injected once the set is trimmed.
     let mut good_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
     let mut bad_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
@@ -351,6 +361,9 @@ pub fn call_region(
                 context.aligner,
             )?
         };
+        if debugger::is_enabled() {
+            untrimmed_haplotypes = untrimmed.haplotype_list().to_vec();
+        }
         // `addAssembledVariantsToEventMapOutput`, HaplotypeCaller's only.
         if let (Some(queue), false) = (context.assembly_variants, context.genotyping.ramped_engine)
         {
@@ -601,6 +614,10 @@ pub fn call_region(
         let failing =
             fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg);
         if failing {
+            debugger::println(&format!(
+                "Filtered before assembly the read: {}",
+                gatk_engine::assembly_region::render_read(read, context.header)
+            ));
             let sample = sample_name(read, context.header);
             let index = context
                 .samples
@@ -630,6 +647,46 @@ pub fn call_region(
         .clone();
     if genotyping_region.reads().is_empty() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
+    }
+    if debugger::is_enabled() && !ramped {
+        let span = region.span();
+        debugger::println("\n=================================================");
+        debugger::println(&format!(
+            "assemblyRegion: {}:{}-{}",
+            span.contig, span.start, span.end
+        ));
+        debugger::println("=================================================");
+        // "Unclipped" counts the trimmed haplotypes and lists the untrimmed ones.
+        let describe = |h: &Haplotype| {
+            let (start, end) = h.genome_location().map_or((0, 0), |l| (l.start, l.end));
+            format!(
+                "[{}-{}] k={} len: {} {}{}",
+                start,
+                end,
+                h.kmer_size(),
+                h.bases().len(),
+                h.cigar().map_or(String::new(), |c| c.to_text()),
+                if h.is_reference() { "ref" } else { "" }
+            )
+        };
+        let trimmed_haplotypes = assembly.haplotype_list();
+        debugger::println(&format!(
+            "\nUnclipped Haplotypes({}):",
+            trimmed_haplotypes.len()
+        ));
+        for h in &untrimmed_haplotypes {
+            debugger::println(&describe(h));
+            debugger::println(&crate::pd_haplotypes::haplotype_string(h));
+        }
+        debugger::println(&format!(
+            "\nClipped Haplotyes({}):",
+            trimmed_haplotypes.len()
+        ));
+        for h in trimmed_haplotypes {
+            debugger::println(&describe(h));
+            debugger::println(&crate::pd_haplotypes::haplotype_string(h));
+        }
+        debugger::println("");
     }
 
     // `splitReadsBySample`, then the likelihoods against the trimmed haplotypes.
@@ -858,6 +915,38 @@ pub fn call_region(
             },
         )
         .map_err(|e| calling(format!("{e:?}")))?;
+    }
+    // Each read of the first sample after realignment, with its likelihoods.
+    if debugger::is_enabled() && !ramped {
+        for (counter, read) in likelihoods
+            .sample_evidence(0)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            debugger::println(&format!(
+                "read {counter}: {} cigar: {} mapQ: {} loc: [{}-{}] unclippedloc: [{}-{}] length:{}",
+                read.read_name,
+                if read.cigar.elements.is_empty() { "*".to_string() } else { read.cigar.to_text() },
+                read.mapping_quality,
+                gatk_engine::read_utils::start(read),
+                gatk_engine::read_utils::end(read),
+                gatk_engine::read_utils::unclipped_start(read),
+                gatk_engine::read_utils::unclipped_end(read),
+                read.read_bases.len()
+            ));
+            let scores: String = (0..likelihoods.number_of_alleles())
+                .map(|h| {
+                    format!(
+                        ",{}",
+                        gatk_engine::tsv_table::java_double_to_string(
+                            likelihoods.value(0, h, counter)
+                        )
+                    )
+                })
+                .collect();
+            debugger::println(&scores);
+        }
     }
     if let (true, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
