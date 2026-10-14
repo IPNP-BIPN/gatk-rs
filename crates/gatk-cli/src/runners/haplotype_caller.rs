@@ -182,6 +182,7 @@ const HONOURED: &[&str] = &[
     "debug-assembly-variants-out",
     "alm-path",
     "alm-interval",
+    "pair-hmm-results-file",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -820,6 +821,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             } else {
                 dragstr_params.clone()
             },
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
             sample_ploidy: ploidy,

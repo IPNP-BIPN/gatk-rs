@@ -85,6 +85,10 @@ public class HcDebugOutputsDump {
                 List.of("--alm-interval", "chr1:1100-1350", "--use-pdhmm", "-L", "chr1:1150-1300"));
         withFile(dir, "ramped-alm", ramped, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr2", "-L", "chr2"));
         withFile(dir, "mutect2-alm", m2, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr2", "-L", "chr2"));
+        final String hmmResults = "--pair-hmm-results-file";
+        withFile(dir, "hc-pairhmm-results", hc, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
+        withFile(dir, "ramped-pairhmm-results", ramped, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
+        withFile(dir, "mutect2-pairhmm-results", m2, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));

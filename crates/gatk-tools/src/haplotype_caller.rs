@@ -215,8 +215,12 @@ pub fn call_variants(
         .pdhmm
         .as_ref()
         .map(|_| {
+            // Its own results file is `--pdhmm-results-file`, not the PairHMM's.
             gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine::new(
-                arguments.likelihoods.clone(),
+                gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments {
+                    results_file: None,
+                    ..arguments.likelihoods.clone()
+                },
             )
         })
         .transpose()

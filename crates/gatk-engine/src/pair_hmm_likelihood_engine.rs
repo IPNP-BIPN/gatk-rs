@@ -120,6 +120,8 @@ pub struct LikelihoodEngineArguments {
     pub modify_soft_clipped_bases: bool,
     /// `dragstrParams`: with them, `DragstrPairHMMInputScoreImputator` replaces the standard one.
     pub dragstr_params: Option<DragstrParams>,
+    /// `--pair-hmm-results-file`: every read-haplotype pair scored, appended as it is.
+    pub results_file: Option<std::path::PathBuf>,
 }
 
 impl Default for LikelihoodEngineArguments {
@@ -136,6 +138,7 @@ impl Default for LikelihoodEngineArguments {
             disable_cap_read_qualities_to_map_q: false,
             modify_soft_clipped_bases: false,
             dragstr_params: None,
+            results_file: None,
         }
     }
 }
@@ -175,6 +178,13 @@ impl PairHmmLikelihoodEngine {
         }
         if arguments.base_quality_score_threshold < MIN_USABLE_Q_SCORE as i8 {
             return Err(LikelihoodEngineError::BaseQualityThresholdTooLow);
+        }
+        // `setAndInitializeDebugOutputStream`: the file opened with its header line.
+        if let Some(path) = &arguments.results_file {
+            let _ = std::fs::write(
+                path,
+                "# hap-bases read-bases read-qual read-ins-qual read-del-qual gcp expected-result",
+            );
         }
         Ok(PairHmmLikelihoodEngine {
             arguments,
@@ -312,6 +322,25 @@ impl PairHmmLikelihoodEngine {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
                     sample_values[a][r] = likelihood;
+                    // `writeToResultsFileIfApplicable`.
+                    if let Some(path) = &self.arguments.results_file {
+                        let fastq = |q: &[u8]| -> String {
+                            q.iter().map(|&b| b.saturating_add(33) as char).collect()
+                        };
+                        let line = format!(
+                            "\n{} {} {} {} {} {} {}",
+                            String::from_utf8_lossy(haplotype),
+                            String::from_utf8_lossy(&read.bases),
+                            fastq(&read.qualities),
+                            fastq(&insertion),
+                            fastq(&deletion),
+                            fastq(&gap_continuation),
+                            java_scientific(likelihood),
+                        );
+                        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
+                            let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+                        }
+                    }
                 }
             }
             hmm_qualities.push(processed.into_iter().map(|p| p.qualities).collect());

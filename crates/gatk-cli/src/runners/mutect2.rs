@@ -179,6 +179,7 @@ const HONOURED: &[&str] = &[
     // Declared for Mutect2 and read only by HaplotypeCaller's engine.
     "alm-path",
     "alm-interval",
+    "pair-hmm-results-file",
     "debug-assembly",
     // Force-calling.
     "alleles",
@@ -520,6 +521,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
             modify_soft_clipped_bases: true,
             dragstr_params: None,
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         normal_samples: normal_samples.clone(),
         initial_log_odds: if emit_reference_confidence {
