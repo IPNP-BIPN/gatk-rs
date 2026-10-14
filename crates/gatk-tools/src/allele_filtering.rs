@@ -456,8 +456,12 @@ impl JavaHashCode for EventKey {
         };
         let mut total: i32 = 17;
         total = total.wrapping_mul(37).wrapping_add(self.0.start());
-        total = total.wrapping_mul(37).wrapping_add(hash_of(self.0.ref_allele()));
-        total.wrapping_mul(37).wrapping_add(hash_of(self.0.alt_allele()))
+        total = total
+            .wrapping_mul(37)
+            .wrapping_add(hash_of(self.0.ref_allele()));
+        total
+            .wrapping_mul(37)
+            .wrapping_add(hash_of(self.0.alt_allele()))
     }
 }
 
@@ -513,7 +517,11 @@ fn write_interaction_graph(
     let mut matrix: JavaHashMap<EventKey, JavaHashMap<EventKey, i32>> = JavaHashMap::new();
     for disabled in &all {
         let off = carriers.get(disabled).cloned().unwrap_or_default();
-        let enabled: Vec<usize> = everyone.iter().copied().filter(|h| !off.contains(h)).collect();
+        let enabled: Vec<usize> = everyone
+            .iter()
+            .copied()
+            .filter(|h| !off.contains(h))
+            .collect();
         let mut row: JavaHashMap<EventKey, i32> = JavaHashMap::new();
         for key in initial.keys().filter(|k| *k != disabled) {
             row.insert(key.clone(), quality(&key.0, &enabled)?);
@@ -538,7 +546,11 @@ fn write_interaction_graph(
         for to in row.keys() {
             let diff = row.get(to).copied().unwrap_or(0) - initial.get(to).copied().unwrap_or(0);
             if diff < 0 {
-                text.push_str(&format!("  {} -> {} [ label=\"{diff}.0\" ];\n", id(from), id(to)));
+                text.push_str(&format!(
+                    "  {} -> {} [ label=\"{diff}.0\" ];\n",
+                    id(from),
+                    id(to)
+                ));
             }
         }
     }
@@ -547,9 +559,8 @@ fn write_interaction_graph(
     let start = members.iter().map(Event::start).min().unwrap_or(0);
     let end = members.iter().map(Event::start).max().unwrap_or(0);
     let name = format!("allele.interaction.{}.{start}-{end}.dot", first.contig());
-    std::fs::write(&name, text).map_err(|_| {
-        format!("java.lang.RuntimeException: Unable to write a DOT file{name}")
-    })
+    std::fs::write(&name, text)
+        .map_err(|_| format!("java.lang.RuntimeException: Unable to write a DOT file{name}"))
 }
 
 /// `SimpleAllele.hashCode`: `Arrays.hashCode(bases) * 31 + Boolean.hashCode(isRef)`.

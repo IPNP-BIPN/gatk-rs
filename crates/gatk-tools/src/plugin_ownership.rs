@@ -34,7 +34,9 @@ pub const ANNOTATION_GROUP_SELECTOR: &str = "annotation-group";
 /// default.
 pub fn default_annotation_groups(tool: &str) -> &'static [&'static str] {
     match tool {
-        "HaplotypeCaller" | "RampedHaplotypeCaller" => &["StandardAnnotation", "StandardHCAnnotation"],
+        "HaplotypeCaller" | "RampedHaplotypeCaller" => {
+            &["StandardAnnotation", "StandardHCAnnotation"]
+        }
         "Mutect2" => &["StandardMutectAnnotation"],
         "GenotypeGVCFs" | "CombineGVCFs" => &["StandardAnnotation"],
         "ReblockGVCF" | "VCFComparator" => &["StandardAnnotation", "AS_StandardAnnotation"],
