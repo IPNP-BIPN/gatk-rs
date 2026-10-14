@@ -200,6 +200,7 @@ fn thrown_class(message: &str) -> Option<&str> {
 
 /// The run: `reads` already filtered and in coordinate order, `intervals` the traversal
 /// intervals, and `contig_bases` a contig's whole sequence by name.
+#[allow(clippy::too_many_arguments)]
 pub fn call_variants(
     reads: &[BamRecord],
     header: &SamHeader,

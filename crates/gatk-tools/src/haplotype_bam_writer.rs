@@ -77,8 +77,10 @@ impl HaplotypeBamWriter {
     /// `new HaplotypeBAMWriter(type, path, ...)`: the source's dictionary, coordinate order, its
     /// read groups and the artificial one (unless `NO_HAPLOTYPES`), its programs and one more.
     pub fn new(kind: WriterType, source: &SamHeader) -> HaplotypeBamWriter {
-        let mut header = SamHeader::default();
-        header.sequences = source.sequences.clone();
+        let mut header = SamHeader {
+            sequences: source.sequences.clone(),
+            ..SamHeader::default()
+        };
         header.attributes.set("SO", "coordinate");
         header.read_groups = source.read_groups.clone();
         if kind != WriterType::NoHaplotypes {
@@ -103,6 +105,7 @@ impl HaplotypeBamWriter {
     /// calledHaplotypes, readLikelihoods, callableRegion)`: `called` are the genotyping engine's
     /// called haplotypes in the order its set was filled, `extra_called` one added to the copy (the
     /// reference, under `--disable-optimizations`), `supported` each read's `XA`.
+    #[allow(clippy::too_many_arguments)]
     pub fn write_region(
         &mut self,
         haplotypes: &[Haplotype],
@@ -201,21 +204,22 @@ impl HaplotypeBamWriter {
             .iter()
             .position(|s| s.name == padded_reference_loc.contig)
             .map_or(-1, |i| i as i32);
-        let mut record = BamRecord::default();
-        record.read_name = format!("{HAPLOTYPE_SAMPLE_TAG}_{}_{index}", self.counter);
+        let mut record = BamRecord {
+            read_name: format!("{HAPLOTYPE_SAMPLE_TAG}_{}_{index}", self.counter),
+            base_qualities: vec![b'!'; bases.len()],
+            read_bases: bases,
+            alignment_start: padded_reference_loc.start + haplotype.alignment_start_hap_wrt_ref(),
+            cigar: haplotype
+                .cigar()
+                .cloned()
+                .ok_or_else(|| "java.lang.NullPointerException".to_string())?,
+            mapping_quality: if best { BEST_HAPLOTYPE_MQ } else { OTHER_MQ },
+            reference_index,
+            mate_reference_index: -1,
+            flags: 0x10,
+            ..BamRecord::default()
+        };
         self.counter += 1;
-        record.base_qualities = vec![b'!'; bases.len()];
-        record.read_bases = bases;
-        record.alignment_start =
-            padded_reference_loc.start + haplotype.alignment_start_hap_wrt_ref();
-        record.cigar = haplotype
-            .cigar()
-            .cloned()
-            .ok_or_else(|| "java.lang.NullPointerException".to_string())?;
-        record.mapping_quality = if best { BEST_HAPLOTYPE_MQ } else { OTHER_MQ };
-        record.reference_index = reference_index;
-        record.mate_reference_index = -1;
-        record.flags = 0x10;
         set_tag(
             &mut record,
             HAPLOTYPE_SAMPLE_TAG
