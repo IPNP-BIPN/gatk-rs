@@ -55,6 +55,8 @@ pub struct HaplotypeCallerArguments {
     pub given_alleles: Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>,
     /// `--bam-output` and how it is written.
     pub bamout: Option<BamoutArguments>,
+    /// `--assembly-region-out`.
+    pub assembly_region_out: Option<std::path::PathBuf>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -221,6 +223,10 @@ pub fn call_variants(
             b.kind, header,
         ))
     });
+    let region_out = arguments
+        .assembly_region_out
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
     let outcome = call_variants_into(
         reads,
         header,
@@ -232,8 +238,14 @@ pub fn call_variants(
         pd_engine.as_ref(),
         results.as_ref(),
         bamout.as_ref(),
+        region_out.as_ref(),
         &mut calls,
     );
+    if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
+        std::fs::write(path, text.into_inner()).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
     // The writer closes with the engine, after a failure too.
     if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
         close_bamout(writer.into_inner(), settings)
@@ -266,6 +278,7 @@ fn call_variants_into(
     pd_engine: Option<&gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine>,
     pd_results: Option<&std::cell::RefCell<String>>,
     bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::cell::RefCell<String>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -502,6 +515,10 @@ fn call_variants_into(
             },
         };
         for mut traversed in regions {
+            if let Some(out) = region_out {
+                out.borrow_mut()
+                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
+            }
             // `removeReadsFromAllSamplesExcept`.
             if let Some(name) = &arguments.sample_name {
                 traversed.region.retain_reads(|read| {

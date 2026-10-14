@@ -61,6 +61,28 @@ const READ_LENGTH_FILTER_THRESHOLD: i32 = 10;
 /// `AssemblyBasedCallerUtils.MINIMUM_READ_LENGTH_AFTER_TRIMMING`.
 const MINIMUM_READ_LENGTH_AFTER_TRIMMING: i32 = 10;
 
+/// `--assembly-region-out`'s header: `IGVUtils.printIGVFormatHeader(out, "line",
+/// "AssemblyRegions")`.
+pub const ASSEMBLY_REGION_OUT_HEADER: &str =
+    "#track graphType=line\nChromosome\tStart\tEnd\tFeature\tAssemblyRegions\n";
+
+/// `AssemblyRegionWalker.writeAssemblyRegion`: an end marker at the region's start, then the
+/// region with its size, 1 when active and -1 when not, each `printIGVFormatRow`'s zero-based start
+/// and `%.5f` values.
+pub fn assembly_region_rows(region: &AssemblyRegion) -> String {
+    let span = region.span();
+    let value = if region.is_active() { 1.0 } else { -1.0 };
+    format!(
+        "{c}\t{s0}\t{s}\tend-marker\t{zero:.5}\n{c}\t{s0}\t{e}\tsize={size}\t{value:.5}\n",
+        c = span.contig,
+        s0 = span.start - 1,
+        s = span.start,
+        e = span.end,
+        zero = 0.0,
+        size = span.end - span.start + 1,
+    )
+}
+
 /// What `callRegion` runs with, beside the region.
 pub struct CallRegionContext<'a> {
     pub header: &'a SamHeader,

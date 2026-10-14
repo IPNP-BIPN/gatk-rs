@@ -171,6 +171,7 @@ const HONOURED: &[&str] = &[
     "permutect-dataset-mode",
     "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
     "debug-assembly",
     // Force-calling.
     "alleles",
@@ -435,6 +436,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
         given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
         bamout: argument(parser, "bam-output").map(|path| {
             let (level, deflater) = super::output_compression(parser);
             gatk_tools::haplotype_caller::BamoutArguments {

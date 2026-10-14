@@ -100,6 +100,8 @@ pub struct Mutect2Arguments {
     pub given_alleles: Option<(Vec<VariantContext>, bool)>,
     /// `--bam-output` and how it is written.
     pub bamout: Option<crate::haplotype_caller::BamoutArguments>,
+    /// `--assembly-region-out`.
+    pub assembly_region_out: Option<std::path::PathBuf>,
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
     pub likelihoods: LikelihoodEngineArguments,
@@ -188,6 +190,10 @@ pub fn call_variants(
             b.kind, header,
         ))
     });
+    let region_out = arguments
+        .assembly_region_out
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
     let outcome = call_variants_with(
         reads,
         header,
@@ -197,7 +203,12 @@ pub fn call_variants(
         contig_bases,
         random,
         bamout.as_ref(),
+        region_out.as_ref(),
     );
+    if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
+        std::fs::write(path, text.into_inner())
+            .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e.to_string()))?;
+    }
     if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
         crate::haplotype_caller::close_bamout(writer.into_inner(), settings)
             .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e))?;
@@ -216,6 +227,7 @@ fn call_variants_with(
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
     bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::cell::RefCell<String>>,
 ) -> Result<Mutect2Output, Mutect2Error> {
     let samples = samples_of(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
@@ -318,6 +330,10 @@ fn call_variants_with(
             bamout,
         };
         for traversed in regions {
+            if let Some(out) = region_out {
+                out.borrow_mut()
+                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
+            }
             calls.extend(call_region(traversed.region, &context, random)?);
         }
     }

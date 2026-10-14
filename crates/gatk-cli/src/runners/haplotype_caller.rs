@@ -173,6 +173,7 @@ const HONOURED: &[&str] = &[
     // The bamout.
     "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -688,6 +689,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
         given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
         bamout: argument(parser, "bam-output").map(|path| {
             let (level, deflater) = super::output_compression(parser);
             gatk_tools::haplotype_caller::BamoutArguments {
