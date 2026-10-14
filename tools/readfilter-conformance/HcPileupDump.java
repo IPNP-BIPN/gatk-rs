@@ -1,5 +1,5 @@
 /*
- * The callers with pileup detection, end to end (G3.2g, #1338).
+ * The callers with pileup detection, end to end (G3.2g, #1336).
  *
  * --pileup-detection counts, at every locus of an active region's span, the substitutions (and
  * with --pileup-detection-enable-indel-pileup-calling the insertions and deletions) its pileup
