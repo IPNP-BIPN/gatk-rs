@@ -1300,6 +1300,10 @@ pub struct AssemblerArguments {
     pub min_dangling_branch_length: i32,
     /// `--disable-artificial-haplotype-recovery`.
     pub disable_artificial_haplotype_recovery: bool,
+    /// `--graph-output`.
+    pub graph_output: Option<std::path::PathBuf>,
+    /// `--debug-graph-transformations`.
+    pub debug_graph_transformations: bool,
 }
 
 impl Default for AssemblerArguments {
@@ -1327,6 +1331,8 @@ impl Default for AssemblerArguments {
             recover_all_dangling_branches: false,
             min_dangling_branch_length: 4,
             disable_artificial_haplotype_recovery: false,
+            graph_output: None,
+            debug_graph_transformations: false,
         }
     }
 }
@@ -1348,6 +1354,10 @@ pub fn assembler_from(
     assembler
         .set_artificial_haplotype_recovery_mode(arguments.disable_artificial_haplotype_recovery)?;
     assembler.set_min_base_quality_to_use_in_assembly(min_base_quality_score);
+    assembler.set_debug_graph_transformations(arguments.debug_graph_transformations);
+    if let Some(path) = &arguments.graph_output {
+        assembler.set_graph_output(path.clone());
+    }
     Ok(assembler)
 }
 
@@ -1434,7 +1444,11 @@ pub fn assemble_reads(
                     let _ = std::fs::write("assemblyFailure.bam", bam);
                 }
             }
-            RegionAssemblyError::Assembler(error)
+            match error {
+                // A dot file the reference cannot write, its exception as thrown.
+                AssemblerError::Thrown(message) => RegionAssemblyError::Calling(message),
+                error => RegionAssemblyError::Assembler(error),
+            }
         })
 }
 

@@ -7812,6 +7812,53 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-debug-outputs",
+      "status": "golden-pending",
+      "title": "The callers' debug outputs and switches, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The debug outputs and switches of G3.2m (#1347). --assembly-region-out writes each region the walker hands over in IGV's TAB format; --haplotype-debug-histogram-output the two histograms at shutdown (HaplotypeCaller only); --debug-assembly-variants-out every assembled event through a PriorityQueue written in its array order, 200 at a time once 300 wait; --alm-path the read-by-haplotype matrix of each region whose first haplotype lies in --alm-interval; --pair-hmm-results-file every PairHMM call; --debug-assembly-region-state the region's reads, haplotypes and filtering; --debug-genotyper-output the trimmer's spans, the region banner and haplotypes, every processed read's qualities, disqualifications (the threshold asked twice), each event's matrix and the DRAGEN models' BQD and FRD workings; --graph-output each assembled region's final graphs replacing the file, and --debug-graph-transformations each step's graph in the working directory, named by region, k-mer size, section and step, a linked graph's junction-tree files named by the reference's bases, which a padded region of default size makes too long for the file system (the reference's CouldNotReadInputFile). --keep-rg, --just-determine-active-regions and --dont-genotype end to end. Vertex numbers, junction-tree node names and FRD's printed arrays are System.identityHashCode, masked on both sides, and a file holding junction trees comes out of identity-keyed HashMaps and is compared as a set of lines.",
+      "compare": {
+        "mode": "lines",
+        "rules": [
+          {
+            "rule": "mask_identity_hashes",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "Vertex ids and labels, junction-tree node names and FRD's double[] renderings are System.identityHashCode, different in every JVM run."
+          },
+          {
+            "rule": "sort_segments_with",
+            "marker": "TreadingNode_",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "A linked graph's junction trees are printed from HashMaps keyed by identity, in the JVM's order."
+          }
+        ]
+      },
+      "expect_rows": 214,
+      "expect_contains": [
+        "file\thc-genotyper=calling for region",
+        "dot\thc-graph-debug\tchr1:",
+        "TreadingNode_",
+        "File name too long"
+      ],
+      "cases": [
+        {
+          "dump": "HcDebugOutputsDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

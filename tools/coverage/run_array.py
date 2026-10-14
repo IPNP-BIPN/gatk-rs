@@ -22,8 +22,8 @@ Two modes, and the difference is the whole point of Milestone C:
 
 import argparse
 import hashlib
-import re
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -251,11 +251,33 @@ def read_output(out_dir, row_args=()):
                 parts.append(f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)")
                 continue
         try:
-            parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
+            text = without_start_time(raw.decode("utf-8"))
+            parts.append(f"{name}: {identity_hashes_masked(name, text)}")
         except UnicodeDecodeError:
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def identity_hashes_masked(name, text):
+    """HaplotypeCaller's debug files with the JVM's identity hashes masked.
+
+    A dot file (`--graph-output`) names each vertex `..._id_<hash>_seq_...` and labels it
+    `(<hash>)`, and a linked graph's junction-tree nodes `TreadingNode_<hex>`, printed from
+    identity-keyed hash maps in the JVM's order, so a file holding them is compared as a sorted
+    set of lines. `--debug-genotyper-output` prints FRD's `double[]` as `[D@<hex>`. Nothing else
+    in either file is touched.
+    """
+    if name.endswith(".dot"):
+        text = re.sub(r"_id_-?\d+_", "_id_N_", text)
+        text = re.sub(r"\((-?\d+)\)", "(N)", text)
+        if "TreadingNode_" in text:
+            text = re.sub(r"TreadingNode_[0-9a-f]+", "TreadingNode_N", text)
+            text = "UNORDERED " + "\n".join(sorted(text.split("\n")))
+        return text
+    if name == "genotyper.txt":
+        return re.sub(r"\[D@[0-9a-f]+", "[D@N", text)
+    return text
 
 
 def unordered_traversals(name, row_args):

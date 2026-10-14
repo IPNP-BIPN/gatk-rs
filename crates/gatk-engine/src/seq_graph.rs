@@ -49,12 +49,17 @@ pub struct SeqEdge {
     pub target: usize,
     pub is_ref: bool,
     pub multiplicity: i32,
+    /// A `MultiSampleEdge`'s pruning multiplicity, which only the dot files show: the
+    /// multiplicity it was copied with. `None` for a plain `BaseEdge`.
+    pub pruning: Option<i32>,
 }
 
 /// `SeqGraph`.
 #[derive(Debug, Clone, Default)]
 pub struct SeqGraph {
     sequences: Vec<Vec<u8>>,
+    /// `BaseVertex.additionalInfo`, which only the dot files show.
+    info: Vec<String>,
     vertex_alive: Vec<bool>,
     edges: Vec<SeqEdge>,
     edge_alive: Vec<bool>,
@@ -70,6 +75,7 @@ impl SeqGraph {
     /// `addVertex(new SeqVertex(sequence))`: always a new vertex, identity being the vertex.
     pub fn add_vertex(&mut self, sequence: &[u8]) -> usize {
         self.sequences.push(sequence.to_vec());
+        self.info.push(String::new());
         self.vertex_alive.push(true);
         self.outgoing.push(Vec::new());
         self.incoming.push(Vec::new());
@@ -85,6 +91,18 @@ impl SeqGraph {
         is_ref: bool,
         multiplicity: i32,
     ) -> Option<usize> {
+        self.add_edge_with(source, target, is_ref, multiplicity, None)
+    }
+
+    /// `addEdge(source, target, e)` for an edge that may be a `MultiSampleEdge`.
+    fn add_edge_with(
+        &mut self,
+        source: usize,
+        target: usize,
+        is_ref: bool,
+        multiplicity: i32,
+        pruning: Option<i32>,
+    ) -> Option<usize> {
         if self.edge_between(source, target).is_some() {
             return None;
         }
@@ -94,11 +112,24 @@ impl SeqGraph {
             target,
             is_ref,
             multiplicity,
+            pruning,
         });
         self.edge_alive.push(true);
         self.outgoing[source].push(edge);
         self.incoming[target].push(edge);
         Some(edge)
+    }
+
+    /// `addEdge(source, target, edge.copy())`: a `MultiSampleEdge`'s copy starts its pruning
+    /// multiplicity again from its multiplicity.
+    fn add_edge_copy(&mut self, source: usize, target: usize, edge: &SeqEdge) -> Option<usize> {
+        let pruning = edge.pruning.map(|_| edge.multiplicity);
+        self.add_edge_with(source, target, edge.is_ref, edge.multiplicity, pruning)
+    }
+
+    /// `BaseVertex.getAdditionalInfo()`.
+    pub fn info(&self, vertex: usize) -> &str {
+        &self.info[vertex]
     }
 
     pub fn vertex_ids(&self) -> impl Iterator<Item = usize> + '_ {
@@ -265,14 +296,16 @@ impl SeqGraph {
             } else {
                 seq.add_vertex(&sequence[sequence.len() - 1..])
             };
+            seq.info[map[v]] = graph.vertex(v).additional_info.clone();
         }
         for e in graph.edge_ids() {
             let edge = graph.edge(e);
-            seq.add_edge(
+            seq.add_edge_with(
                 map[edge.source],
                 map[edge.target],
                 edge.is_ref,
                 edge.multiplicity,
+                Some(edge.multiplicity),
             );
         }
         seq
@@ -437,22 +470,12 @@ impl SeqGraph {
             .collect();
         let added = self.add_vertex(&sequence);
         for e in self.outgoing[last].clone() {
-            let SeqEdge {
-                target,
-                is_ref,
-                multiplicity,
-                ..
-            } = self.edges[e];
-            self.add_edge(added, target, is_ref, multiplicity);
+            let edge = self.edges[e];
+            self.add_edge_copy(added, edge.target, &edge);
         }
         for e in self.incoming[first].clone() {
-            let SeqEdge {
-                source,
-                is_ref,
-                multiplicity,
-                ..
-            } = self.edges[e];
-            self.add_edge(source, added, is_ref, multiplicity);
+            let edge = self.edges[e];
+            self.add_edge_copy(edge.source, added, &edge);
         }
         for &v in chain {
             self.remove_vertex(v);
@@ -607,20 +630,10 @@ impl SeqGraph {
             } else {
                 suffix_v
             };
-            self.add_edge(
-                suffix_v,
-                out_edge.target,
-                out_edge.is_ref,
-                out_edge.multiplicity,
-            );
+            self.add_edge_copy(suffix_v, out_edge.target, &out_edge);
             for e in self.incoming[mid].clone() {
-                let SeqEdge {
-                    source,
-                    is_ref,
-                    multiplicity,
-                    ..
-                } = self.edges[e];
-                self.add_edge(source, incoming_target, is_ref, multiplicity);
+                let edge = self.edges[e];
+                self.add_edge_copy(edge.source, incoming_target, &edge);
             }
         }
         for &mid in &to_split {
@@ -688,24 +701,14 @@ impl SeqGraph {
         let new_v = self.add_vertex(&sequence);
         for &prev in &prevs {
             for e in self.incoming[prev].clone() {
-                let SeqEdge {
-                    source,
-                    is_ref,
-                    multiplicity,
-                    ..
-                } = self.edges[e];
+                let edge = self.edges[e];
                 // Refused, and its multiplicity lost, when `source -> new_v` already exists.
-                self.add_edge(source, new_v, is_ref, multiplicity);
+                self.add_edge_copy(edge.source, new_v, &edge);
             }
         }
         for e in self.outgoing[v].clone() {
-            let SeqEdge {
-                target,
-                is_ref,
-                multiplicity,
-                ..
-            } = self.edges[e];
-            self.add_edge(new_v, target, is_ref, multiplicity);
+            let edge = self.edges[e];
+            self.add_edge_copy(new_v, edge.target, &edge);
         }
         for &prev in &prevs {
             self.remove_vertex(prev);
@@ -811,6 +814,7 @@ struct SplitEdge {
     target: SplitVertex,
     is_ref: bool,
     multiplicity: i32,
+    pruning: Option<i32>,
 }
 
 impl Splitter {
@@ -855,16 +859,22 @@ impl Splitter {
                     target: m,
                     is_ref: to_mid.0,
                     multiplicity: to_mid.1,
+                    pruning: to_mid.2,
                 });
                 edges.push(SplitEdge {
                     source: m,
                     target: SplitVertex::Suffix,
                     is_ref: from_mid.0,
                     multiplicity: from_mid.1,
+                    pruning: from_mid.2,
                 });
             } else {
                 // `toMid.copy().add(fromMid)`: the sum, and the OR of the reference flags.
-                let combined = (to_mid.0 || from_mid.0, to_mid.1 + from_mid.1);
+                let combined = (
+                    to_mid.0 || from_mid.0,
+                    to_mid.1 + from_mid.1,
+                    to_mid.2.map(|_| to_mid.1),
+                );
                 match edges
                     .iter_mut()
                     .find(|e| e.source == SplitVertex::Prefix && e.target == SplitVertex::Suffix)
@@ -878,6 +888,7 @@ impl Splitter {
                         target: SplitVertex::Suffix,
                         is_ref: combined.0,
                         multiplicity: combined.1,
+                        pruning: combined.2,
                     }),
                 }
             }
@@ -951,7 +962,13 @@ impl Splitter {
                 return Err(SeqGraphError::NoSuchVertex);
             };
             if outer
-                .add_edge(source, target, edges[i].is_ref, edges[i].multiplicity)
+                .add_edge_with(
+                    source,
+                    target,
+                    edges[i].is_ref,
+                    edges[i].multiplicity,
+                    edges[i].pruning,
+                )
                 .is_some()
             {
                 taken[i] = true;
@@ -979,15 +996,19 @@ impl Splitter {
 
     /// `processEdgeToRemove(v, incomingEdgeOf(v))` (or the outgoing one): a copy of the single
     /// edge, or a new zero-multiplicity edge, reference if the vertex is a reference node.
-    fn process_edge(outer: &SeqGraph, v: usize, incoming: bool) -> (bool, i32) {
+    fn process_edge(outer: &SeqGraph, v: usize, incoming: bool) -> (bool, i32, Option<i32>) {
         let edges = if incoming {
             outer.incoming_edges(v)
         } else {
             outer.outgoing_edges(v)
         };
         match edges.first() {
-            Some(&e) => (outer.edge(e).is_ref, outer.edge(e).multiplicity),
-            None => (outer.is_reference_node(v), 0),
+            Some(&e) => {
+                let edge = outer.edge(e);
+                let pruning = edge.pruning.map(|_| edge.multiplicity);
+                (edge.is_ref, edge.multiplicity, pruning)
+            }
+            None => (outer.is_reference_node(v), 0, None),
         }
     }
 }

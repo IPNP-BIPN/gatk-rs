@@ -185,6 +185,8 @@ const HONOURED: &[&str] = &[
     "pair-hmm-results-file",
     "debug-assembly-region-state",
     "debug-genotyper-output",
+    "graph-output",
+    "debug-graph-transformations",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -972,10 +974,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         Ok(calls) => (calls, None),
         Err(error) => (
             error.calls_before,
-            Some(Thrown::non_user(
-                java_class_name(&error.class),
-                error.message,
-            )),
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
         ),
     };
 
@@ -1289,6 +1293,8 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
             parser,
             "disable-artificial-haplotype-recovery",
         ),
+        graph_output: argument(parser, "graph-output").map(std::path::PathBuf::from),
+        debug_graph_transformations: flag(parser, "debug-graph-transformations"),
     }
 }
 

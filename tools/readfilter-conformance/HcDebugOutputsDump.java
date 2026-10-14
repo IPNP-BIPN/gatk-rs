@@ -17,6 +17,7 @@
  *     sam\t<set>=<the SAM text the BAM was written from, escaped>
  *     out\t<label>=<the output's ##INFO and ##FORMAT lines and its body from #CHROM on, escaped>
  *     file\t<label>=<the debug file the run wrote, escaped>
+ *     dot\t<label>\t<name>=<a dot file the run wrote in the working directory, escaped>
  *     error\t<label>\t<exception class>:<message>
  *
  * Usage: HcDebugOutputsDump
@@ -111,6 +112,20 @@ public class HcDebugOutputsDump {
                 List.of("-L", "chr1:900-1050", "--expected-mismatch-rate-for-read-disqualification", "0.0",
                         "--enable-dynamic-read-disqualification-for-genotyping", "--dynamic-read-disqualification-threshold", "0.02"));
         withFile(dir, "ramped-genotyper", ramped, e2eBam, e2eFasta, genotyper, List.of("-L", "chr2"));
+        withDots(dir, "hc-graph", hc, e2eBam, e2eFasta, List.of());
+        withDots(dir, "hc-graph-debug", hc, e2eBam, e2eFasta,
+                List.of("-L", "chr1:900-1300", "--debug-graph-transformations"));
+        withDots(dir, "hc-graph-adaptive", hc, e2eBam, e2eFasta,
+                List.of("-L", "chr1:900-1300", "--adaptive-pruning", "--debug-graph-transformations"));
+        withDots(dir, "hc-graph-linked", hc, e2eBam, e2eFasta,
+                List.of("-L", "chr1:900-1300", "--linked-de-bruijn-graph", "--assembly-region-padding", "30",
+                        "--debug-graph-transformations"));
+        withDots(dir, "hc-graph-linked-long-name", hc, e2eBam, e2eFasta,
+                List.of("-L", "chr2", "--linked-de-bruijn-graph", "--debug-graph-transformations"));
+        withDots(dir, "mutect2-graph", m2, e2eBam, e2eFasta,
+                List.of("-L", "chr1:1150-1300", "--debug-graph-transformations"));
+        withDots(dir, "ramped-graph", ramped, e2eBam, e2eFasta,
+                List.of("-L", "chr2", "--debug-graph-transformations"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));
@@ -125,6 +140,26 @@ public class HcDebugOutputsDump {
     }
 
     /** A run writing one debug file, then the file. */
+    /**
+     * --graph-output, and with --debug-graph-transformations every step's graph, which the
+     * assembler writes in the working directory: each printed by name, in name order, then
+     * deleted.
+     */
+    static void withDots(final Path dir, final String label,
+                         final java.util.function.Supplier<org.broadinstitute.hellbender.cmdline.CommandLineProgram> tool,
+                         final Path bam, final Path fasta, final List<String> extra) throws Exception {
+        withFile(dir, label, tool, bam, fasta, "--graph-output", extra);
+        final Path cwd = Path.of("").toAbsolutePath();
+        final List<Path> dots;
+        try (java.util.stream.Stream<Path> listing = Files.list(cwd)) {
+            dots = listing.filter(p -> p.getFileName().toString().endsWith(".dot")).sorted().toList();
+        }
+        for (final Path dot : dots) {
+            System.out.printf("dot\t%s\t%s=%s%n", label, dot.getFileName(), ReferenceQueryDump.escape(Files.readString(dot)));
+            Files.delete(dot);
+        }
+    }
+
     static void withFile(final Path dir, final String label,
                          final java.util.function.Supplier<org.broadinstitute.hellbender.cmdline.CommandLineProgram> tool,
                          final Path bam, final Path fasta, final String argument, final List<String> extra) throws Exception {

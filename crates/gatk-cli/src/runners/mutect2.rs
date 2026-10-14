@@ -181,6 +181,8 @@ const HONOURED: &[&str] = &[
     "alm-interval",
     "pair-hmm-results-file",
     "debug-assembly",
+    "graph-output",
+    "debug-graph-transformations",
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
@@ -643,6 +645,8 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let called = called.map_err(|error| {
         if error.class == "PortLimitation" {
             limitation(&error.message)
+        } else if error.class.contains("UserException") {
+            Thrown::user(error.message)
         } else {
             Thrown::non_user(java_class_name(&error.class), error.message)
         }
