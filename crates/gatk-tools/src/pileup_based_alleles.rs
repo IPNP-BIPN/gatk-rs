@@ -70,6 +70,8 @@ pub struct PileupDetectionArguments {
     pub template_length_std: f64,
     pub assembly_bad_read_threshold: f64,
     pub assembly_bad_read_edit_distance: f64,
+    /// `--print-pileupcalling-status`: the haplotype building printed as it goes.
+    pub debug_stdout: bool,
 }
 
 impl Default for PileupDetectionArguments {
@@ -93,6 +95,7 @@ impl Default for PileupDetectionArguments {
             template_length_std: 0.0,
             assembly_bad_read_threshold: 0.0,
             assembly_bad_read_edit_distance: 0.12,
+            debug_stdout: false,
         }
     }
 }
@@ -499,19 +502,36 @@ fn tree_set_add(set: &mut Vec<Haplotype>, haplotype: Haplotype) {
 
 /// `removeHaplotypesWithBadAlleles`: every haplotype whose event map holds a bad event. A
 /// haplotype with no map is kept, which is every haplotype of a freshly trimmed set.
-pub fn remove_haplotypes_with_bad_alleles(assembly: &mut AssemblyResultSet, bad: &[Event]) {
+pub fn remove_haplotypes_with_bad_alleles(
+    assembly: &mut AssemblyResultSet,
+    bad: &[Event],
+    debug: bool,
+) {
     if bad.is_empty() {
         return;
     }
-    let flagged: Vec<Haplotype> = assembly
-        .haplotype_list()
-        .iter()
-        .filter(|h| {
-            h.event_map()
-                .is_some_and(|map| map.events().any(|e| bad.contains(e)))
-        })
-        .cloned()
-        .collect();
+    // Per bad event, every haplotype carrying it, so one carrying two is listed twice.
+    let mut flagged: Vec<Haplotype> = Vec::new();
+    for event in bad {
+        for haplotype in assembly.haplotype_list() {
+            if haplotype
+                .event_map()
+                .is_some_and(|map| map.events().any(|e| e == event))
+            {
+                flagged.push(haplotype.clone());
+            }
+        }
+    }
+    if !flagged.is_empty() && debug {
+        crate::tool_stdout::println(&format!(
+            "Found Assembly Haps with filtered Variants:\n{}",
+            flagged
+                .iter()
+                .map(crate::pd_haplotypes::haplotype_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
     for haplotype in &flagged {
         assembly.remove_haplotype(haplotype);
     }
@@ -556,7 +576,14 @@ pub fn inject_pileup_events(
 
     let mut ordered: Vec<&Event> = good.iter().collect();
     ordered.sort_by_key(|e| e.start());
+    let debug = arguments.debug_stdout;
     for event in ordered {
+        if debug {
+            crate::tool_stdout::println(&format!(
+                "Processing new Haplotypes for Pileup Allele that was not in the assembly: {}",
+                crate::pd_haplotypes::event_string(event)
+            ));
+        }
         if !event.is_indel()
             && assembled_indels.iter().any(|indel| {
                 within_distance_of(event, indel, arguments.snp_adjacent_to_assembly_indel)
@@ -591,6 +618,15 @@ pub fn inject_pileup_events(
             arguments.num_haplotypes_to_iterate,
             kmer_size,
         );
+        if debug {
+            crate::tool_stdout::println(&format!(
+                "Constructed the following new Pileup Haplotypes after filtering:\n{}",
+                kept.iter()
+                    .map(crate::pd_haplotypes::haplotype_string)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
+        }
         for haplotype in kept {
             tree_set_add(&mut base_haplotypes, haplotype);
         }

@@ -404,6 +404,7 @@ fn call_variants_into(
                             use_determined_haplotypes: pdhmm.use_determined_haplotypes,
                             snp_adjacent_to_assembly_indel: detection
                                 .snp_adjacent_to_assembly_indel,
+                            debug: detection.debug_stdout,
                         },
                         gga_fallback: pdhmm.gga_fallback,
                         overlap_range: if pdhmm.overlap_optimization {

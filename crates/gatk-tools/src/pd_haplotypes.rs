@@ -23,12 +23,14 @@
 //! haplotypes (or 128 fully determined ones from a branch) abandons the construction and leaves the
 //! assembled haplotypes as they were, without marking the set as overwritten.
 
+use crate::pileup_based_alleles::EventKey;
 use gatk_engine::assembly_result_set::AssemblyResultSet;
 use gatk_engine::cigar_builder::CigarBuilder;
 use gatk_engine::cigar_utils::calculate_cigar;
 use gatk_engine::event_map::{build_event_maps_for_haplotypes, Event};
 use gatk_engine::haplotype::{pd_bytes, Haplotype, PartiallyDetermined};
 use gatk_engine::interval::SimpleInterval;
+use gatk_engine::java_hash::JavaHashMap;
 use gatk_engine::smith_waterman::{SmithWatermanAligner, SwOverhangStrategy, SwParameters};
 use htsjdk_bam::cigar::{Cigar, CigarElement, Op};
 use htsjdk_vcf::allele::Allele;
@@ -48,6 +50,8 @@ pub struct PdArguments {
     pub use_determined_haplotypes: bool,
     /// `--pileup-detection-snp-adjacent-to-assembled-indel-range`.
     pub snp_adjacent_to_assembly_indel: i32,
+    /// `--print-pileupcalling-status`.
+    pub debug: bool,
 }
 
 type Failure = String;
@@ -100,6 +104,115 @@ fn within_distance_of(event: &Event, other: &Event, distance: i32) -> bool {
     event.contig() == other.contig()
         && event.start() <= other.end() + distance
         && other.start() - distance <= event.end()
+}
+
+/// `SimpleAllele.toString()`: the display string, starred for the reference.
+pub fn allele_string(allele: &Allele) -> String {
+    format!(
+        "{}{}",
+        allele.display_string(),
+        if allele.is_reference() { "*" } else { "" }
+    )
+}
+
+/// `Event.toString()`, whose attributes are always null here.
+pub fn event_string(event: &Event) -> String {
+    let location = if event.start() == event.end() {
+        event.start().to_string()
+    } else {
+        format!("{}-{}", event.start(), event.end())
+    };
+    format!(
+        "[Event @ {}:{location}, {}->{}, null]",
+        event.contig(),
+        allele_string(event.ref_allele()),
+        allele_string(event.alt_allele())
+    )
+}
+
+/// `getDRAGENDebugEventString(offset)`.
+fn dragen_string(event: &Event, offset: i32) -> String {
+    format!(
+        "({}{},Rlen={},{})",
+        event.start() - offset + i32::from(event.is_simple_deletion()),
+        if event.is_simple_insertion() {
+            ".5"
+        } else {
+            ""
+        },
+        event.end() - event.start() + 1,
+        allele_string(event.alt_allele())
+    )
+}
+
+/// `formatEventsLikeDragenLogs(events, refStart, delimiter)`.
+fn format_events<'a>(
+    events: impl IntoIterator<Item = &'a Event>,
+    offset: i32,
+    delimiter: &str,
+) -> String {
+    events
+        .into_iter()
+        .map(|e| dragen_string(e, offset))
+        .collect::<Vec<_>>()
+        .join(delimiter)
+}
+
+/// The iteration order of a `HashSet<Event>` filled in `events`' order.
+fn hash_set_order(events: &[Event]) -> Vec<Event> {
+    let mut set: JavaHashMap<EventKey, ()> = JavaHashMap::new();
+    for event in events {
+        set.insert(EventKey(event.clone()), ());
+    }
+    set.keys().map(|k| k.0.clone()).collect()
+}
+
+/// `PartiallyDeterminedHaplotype.toString()`, or `Haplotype.toString()` for any other.
+pub fn haplotype_string(haplotype: &Haplotype) -> String {
+    let bases = haplotype.bases();
+    let Some(pd) = haplotype.partially_determined() else {
+        return String::from_utf8_lossy(&bases).into_owned();
+    };
+    let display: String = bases
+        .iter()
+        .zip(&pd.alternate_bases)
+        .map(|(&b, &alt)| if alt & !7 != 0 { 'P' } else { b as char })
+        .collect();
+    let flags: Vec<String> = pd
+        .alternate_bases
+        .iter()
+        .map(|&b| (b as i8).to_string())
+        .collect();
+    let start = haplotype.genome_location().map_or(0, |l| l.start);
+    let events: Vec<String> = pd
+        .constituent_events
+        .iter()
+        .map(|e| {
+            format!(
+                "{}{}",
+                if pd.determined_events.contains(e) {
+                    "*"
+                } else {
+                    ""
+                },
+                dragen_string(e, start)
+            )
+        })
+        .collect();
+    format!(
+        "HapLen:{}, {display}\nUnresolved Bases[{}] [{}]\n{} {}",
+        bases.len(),
+        pd.alternate_bases.len(),
+        flags.join(", "),
+        haplotype.cigar().map_or(String::new(), |c| c.to_text()),
+        events.join("->")
+    )
+}
+
+fn print(debug: bool, line: impl FnOnce() -> String) {
+    if debug {
+        crate::tool_stdout::println(&line());
+    }
 }
 
 fn bases(allele: &Allele) -> Vec<u8> {
@@ -249,10 +362,14 @@ fn equivalent_events(
     sw: &SwParameters,
     all: &[Event],
     tested: &[Event],
+    debug: bool,
 ) -> Result<bool, Failure> {
     let mut realigned = construct_haplotype_from_events(reference, tested, false)?;
     let ref_bases = reference.bases();
     if realigned.bases() == ref_bases {
+        print(debug, || {
+            "Events add up to the reference! disallowing pair".to_string()
+        });
         return Ok(true);
     }
     let cigar = calculate_cigar(
@@ -276,6 +393,9 @@ fn equivalent_events(
         .events()
         .filter(|event| !tested.contains(event))
         .any(|event| all.contains(event));
+    let start = reference_start(reference)?;
+    print(debug, || format_events(map.events(), start, "\n"));
+    print(debug && equivalent, || "Events mismatched!".to_string());
     Ok(equivalent)
 }
 
@@ -286,8 +406,10 @@ fn disallowed_combinations(
     aligner: &dyn SmithWatermanAligner,
     sw: &SwParameters,
     events: &[Event],
+    debug: bool,
 ) -> Result<Vec<Vec<Event>>, Failure> {
     let mut disallowed: Vec<Vec<Event>> = Vec::new();
+    let start = reference_start(reference)?;
     let sorted = |mut list: Vec<Event>| {
         list.sort_by(snp_first);
         list
@@ -299,7 +421,10 @@ fn disallowed_combinations(
         for (j, second) in events.iter().enumerate() {
             if j != i && !events_overlap(first, second) && (!second.is_indel() || j > i) {
                 let pair = sorted(vec![first.clone(), second.clone()]);
-                if equivalent_events(reference, aligner, sw, events, &pair)? {
+                print(debug, || {
+                    format!("Testing events: {}", format_events(&pair, start, "->"))
+                });
+                if equivalent_events(reference, aligner, sw, events, &pair, debug)? {
                     disallowed.push(pair);
                 }
             }
@@ -327,7 +452,10 @@ fn disallowed_combinations(
                         continue;
                     }
                     let trio = sorted(vec![first.clone(), second.clone(), third.clone()]);
-                    if equivalent_events(reference, aligner, sw, events, &trio)? {
+                    print(debug, || {
+                        format!("Testing events: {}", format_events(&trio, start, "->"))
+                    });
+                    if equivalent_events(reference, aligner, sw, events, &trio, debug)? {
                         disallowed.push(trio);
                     }
                 }
@@ -429,13 +557,15 @@ impl EventGroup {
             }
             subset -= 1;
         }
+        // `Collectors.toSet()` over the bits in ascending order: a `HashSet`'s order.
         let output: Vec<Vec<Event>> = maximal
             .iter()
             .map(|&bits| {
-                (0..self.events.len())
+                let ascending: Vec<Event> = (0..self.events.len())
                     .filter(|i| bits & (1 << i) != 0)
                     .map(|i| self.events[i].clone())
-                    .collect()
+                    .collect();
+                hash_set_order(&ascending)
             })
             .collect();
         if cached_case {
@@ -515,25 +645,38 @@ fn event_groups(
         .map(Some)
 }
 
-/// `computeBranches`: none past the branch limit.
+/// A branch: a `HashSet<Event>`, whose iteration order the debug output shows.
+type Branch = JavaHashMap<EventKey, ()>;
+
+fn branch_events(branch: &Branch) -> Vec<Event> {
+    branch.keys().map(|k| k.0.clone()).collect()
+}
+
+/// `computeBranches`: none past the branch limit. Each branch in its `HashSet`'s order.
 fn compute_branches(
     groups: &mut [EventGroup],
     determined: &[Event],
     locus: &[Event],
 ) -> Option<Vec<Vec<Event>>> {
-    let union = |a: &[Event], b: &[Event]| {
-        let mut out = a.to_vec();
-        for e in b {
-            if !out.contains(e) {
-                out.push(e.clone());
+    // `Sets.newHashSet(Sets.union(branch, setToAdd))`: the branch's elements, then the set's that
+    // it lacks, into a set sized for them.
+    let union = |branch: &Branch, set: &[Event]| -> Branch {
+        let mut elements = branch_events(branch);
+        for e in set {
+            if !elements.contains(e) {
+                elements.push(e.clone());
             }
+        }
+        let mut out = JavaHashMap::with_capacity(Branch::copy_capacity(elements.len()));
+        for e in elements {
+            out.insert(EventKey(e), ());
         }
         out
     };
-    let mut branches: Vec<Vec<Event>> = vec![Vec::new()];
+    let mut branches: Vec<Branch> = vec![JavaHashMap::new()];
     for group in groups.iter_mut() {
         let sets = group.event_sets(determined, locus);
-        let extra: Vec<Vec<Event>> = if sets.len() < 2 {
+        let extra: Vec<Branch> = if sets.len() < 2 {
             Vec::new()
         } else {
             branches
@@ -543,7 +686,12 @@ fn compute_branches(
         };
         if let Some(first) = sets.first() {
             for branch in branches.iter_mut() {
-                *branch = union(branch, first);
+                for e in first {
+                    let key = EventKey(e.clone());
+                    if !branch.contains_key(&key) {
+                        branch.insert(key, ());
+                    }
+                }
             }
         }
         branches.extend(extra);
@@ -551,7 +699,7 @@ fn compute_branches(
             return None;
         }
     }
-    Some(branches)
+    Some(branches.iter().map(branch_events).collect())
 }
 
 /// `createNewPDHaplotypeFromEvents(refHap, determinedEvents, determinedLocus, constituentEvents,
@@ -736,13 +884,58 @@ pub fn generate_pd_haplotypes(
         .ok_or_else(|| "java.lang.NullPointerException".to_string())?
         .span()
         .clone();
+    let debug = arguments.debug;
+    let ref_start = reference_start(&reference)?;
     let assembled = set.variation_events(0).map_err(|e| format!("{e:?}"))?;
+    // `removeBadPileupEventsMessage`.
+    if debug {
+        let removed: Vec<String> = assembled
+            .iter()
+            .filter(|e| bad.contains(e))
+            .map(event_string)
+            .collect();
+        if !removed.is_empty() {
+            crate::tool_stdout::println(&format!(
+                "Removing assembly variant due to columnwise heuristics: [{}]",
+                removed.join(", ")
+            ));
+        }
+    }
     let events = final_events(&assembled, bad, good, arguments);
+    print(debug, || {
+        format!(
+            "Variants to PDHapDetermination:\n{}",
+            format_events(&events, ref_start, "->")
+        )
+    });
 
-    let disallowed = disallowed_combinations(&reference, aligner, sw, &events)?;
+    let disallowed = disallowed_combinations(&reference, aligner, sw, &events, debug)?;
+    print(debug, || {
+        format!(
+            "disallowed groups:{}",
+            disallowed
+                .iter()
+                .map(|group| format_events(group, ref_start, "->"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
     let Some(mut groups) = event_groups(&events, &disallowed)? else {
+        print(debug, || {
+            "Found event group with too many variants! Aborting haplotype building".to_string()
+        });
         return Ok(());
     };
+    print(debug, || {
+        format!(
+            "Event groups after merging:\n{}",
+            groups
+                .iter()
+                .map(|g| format!("EventGroup: {}", format_events(&g.events, ref_start, "->")))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
 
     let mut loci: Vec<(i32, Vec<Event>)> = Vec::new();
     for event in &events {
@@ -763,8 +956,21 @@ pub fn generate_pd_haplotypes(
     if determined_mode {
         output.push(reference.clone());
     }
+    let span_string = format!(
+        "{}:{}-{}",
+        calling_span.contig, calling_span.start, calling_span.end
+    );
     for (locus, here) in &loci {
+        print(debug, || {
+            format!(
+                "working with variants: [{}] at position {locus}",
+                here.iter().map(event_string).collect::<Vec<_>>().join(", ")
+            )
+        });
         if !(calling_span.start <= *locus && *locus <= calling_span.end) {
+            print(debug, || {
+                format!("Skipping determined hap construction! Outside of span: {span_string}")
+            });
             continue;
         }
         let first: i64 = if determined_mode { 0 } else { -1 };
@@ -774,16 +980,55 @@ pub fn generate_pd_haplotypes(
             } else {
                 vec![here[index as usize].clone()]
             };
+            print(debug, || {
+                format!(
+                    "Working with determined allele(s) at site: {}",
+                    if determined.is_empty() {
+                        format!("[ref:{}]", locus - ref_start)
+                    } else {
+                        format_events(&determined, ref_start, ", ")
+                    }
+                )
+            });
             let Some(branches) = compute_branches(&mut groups, &determined, here) else {
+                print(debug, || {
+                    format!(
+                        "Found too many branches for variants at: {locus} aborting and falling back to Assembly Variants!"
+                    )
+                });
                 return Ok(());
             };
+            // `branchExcludeAllelesMessage`.
+            if debug {
+                crate::tool_stdout::println("Branches:");
+                for (i, included) in branches.iter().enumerate() {
+                    crate::tool_stdout::println(&format!("Branch {i} VCs:"));
+                    let excluded: Vec<Event> = events
+                        .iter()
+                        .filter(|e| !included.contains(e))
+                        .cloned()
+                        .collect();
+                    crate::tool_stdout::println(&format!(
+                        "exclude:{}",
+                        format_events(&hash_set_order(&excluded), ref_start, "->")
+                    ));
+                    crate::tool_stdout::println(&format!(
+                        "include:{}",
+                        format_events(included, ref_start, "->")
+                    ));
+                }
+            }
             for branch in &branches {
-                if !determined_mode {
+                let branch_haplotypes: Vec<Haplotype> = if !determined_mode {
                     let mut in_order = branch.clone();
                     in_order.sort_by(snp_first);
-                    let haplotype =
-                        new_pd_haplotype(&reference, &determined, *locus, &in_order, here)?;
-                    push(&mut output, haplotype);
+                    vec![new_pd_haplotype(
+                        &reference,
+                        &determined,
+                        *locus,
+                        &in_order,
+                        here,
+                    )?]
                 } else {
                     let mut full: Vec<Vec<Event>> = vec![determined.clone()];
                     for (other, at_other) in &loci {
@@ -799,25 +1044,79 @@ pub fn generate_pd_haplotypes(
                             }
                             full.extend(children);
                             if full.len() > MAX_BRANCH_PD_HAPS {
+                                print(debug, || {
+                                    format!(
+                                        "Too many branch haplotypes [{}] generated from site, falling back on assembly variants!",
+                                        full.len()
+                                    )
+                                });
                                 return Ok(());
                             }
                         }
                     }
                     for events in &full {
-                        let haplotype = construct_haplotype_from_events(&reference, events, true)?;
-                        push(&mut output, haplotype);
+                        print(debug, || {
+                            format!(
+                                "Constructing Haplotype From Events:{}",
+                                format_events(events, ref_start, "->")
+                            )
+                        });
                     }
+                    full.iter()
+                        .map(|events| construct_haplotype_from_events(&reference, events, true))
+                        .collect::<Result<Vec<_>, _>>()?
+                };
+                // `branchHaplotypesDebugMessage`.
+                print(debug, || {
+                    format!(
+                        "Constructed Haps for Branch{}:",
+                        format_events(branch, ref_start, ",")
+                    )
+                });
+                print(debug, || {
+                    branch_haplotypes
+                        .iter()
+                        .map(|h| {
+                            format!(
+                                "{} {}",
+                                h.cigar().map_or(String::new(), |c| c.to_text()),
+                                haplotype_string(h)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                });
+                for haplotype in branch_haplotypes {
+                    push(&mut output, haplotype);
                 }
                 if output.len() > MAX_PD_HAPS_TO_GENERATE {
+                    print(debug, || {
+                        format!(
+                            "Too many branch haplotypes found, aborting [{}]",
+                            output.len()
+                        )
+                    });
                     return Ok(());
                 }
             }
         }
     }
     set.store_assembly_haplotypes();
+    let count = output.len();
     output.sort_by_key(|h| h.bases());
     set.replace_all_haplotypes(&output)
         .map_err(|e| format!("{e:?}"))?;
+    print(debug, || {
+        format!(
+            "Constructed Haps for Branch{}",
+            set.haplotype_list()
+                .iter()
+                .map(haplotype_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
     set.set_partially_determined_mode(!determined_mode);
+    print(debug, || format!("Returning {count} to the HMM"));
     Ok(())
 }
