@@ -275,7 +275,7 @@ fn call_variants_with(
     let mut callable_sites = 0u64;
     let mut active_error: Option<Mutect2Error> = None;
     // `new F1R2CountsCollector(f1r2Args, header, f1r2TarGz, tumorSamples)`.
-    let mut f1r2 = arguments.f1r2.clone().map(|args| {
+    let mut f1r2 = arguments.f1r2.map(|args| {
         let tumor: Vec<String> = samples
             .iter()
             .filter(|s| !arguments.normal_samples.contains(s))
@@ -524,6 +524,7 @@ fn is_next_to_useful_soft_clip(pe: &gatk_engine::pileup::PileupElement<'_>) -> b
 }
 
 /// `Mutect2Engine.isActive` for a locus, counting the callable sites as it goes.
+#[allow(clippy::too_many_arguments)]
 fn is_active(
     context: Option<&AlignmentContext<'_>>,
     ref_base: u8,
@@ -554,7 +555,9 @@ fn is_active(
             .then(|| String::from_utf8_lossy(&bases[position - 2..=position]).to_ascii_uppercase());
         let elements: Vec<crate::collect_f1r2_counts::Element> = tumor_pileup
             .iter()
-            .map(|pe| crate::collect_f1r2_counts::Element::from_pileup(pe, sample_name(pe.read, header)))
+            .map(|pe| {
+                crate::collect_f1r2_counts::Element::from_pileup(pe, sample_name(pe.read, header))
+            })
             .collect();
         collector.process(&elements, kmer.as_deref());
     }
