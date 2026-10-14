@@ -973,6 +973,80 @@ public class MakeFixtures {
      * carries a t0 string, and one holds a 13-base hmer, longer than either maximal class. One read is
      * supplementary and one fails the vendor check, which AddFlowSNVQuality's switches drop.
      */
+    /**
+     * flow_calls.bam: mutect_t.bam's reads as Ultima flow reads, for the callers' flow-based
+     * engines: one read group under TGCA (no mc, so the maximal class is twelve), every read given
+     * a tp array (mostly zero, some +-1) with qualities that follow it, and every other one a t0
+     * string. Its calls are mutect_t.bam's, scored in flow space.
+     */
+    static void flowCallsFixtures(final Path dir) throws Exception {
+        final java.util.Random random = new java.util.Random(20261014L);
+        try (final htsjdk.samtools.SamReader reader =
+                     htsjdk.samtools.SamReaderFactory.makeDefault().open(dir.resolve("mutect_t.bam"))) {
+            final SAMFileHeader header = reader.getFileHeader().clone();
+            final SAMReadGroupRecord group = new SAMReadGroupRecord("rgFlow");
+            group.setSample("tumor");
+            group.setPlatform("ULTIMA");
+            group.setFlowOrder("TGCATGCATGCA");
+            header.setReadGroups(List.of(group));
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, true, dir.resolve("flow_calls.bam").toFile())) {
+                int n = 0;
+                for (final SAMRecord record : reader) {
+                    record.setHeader(header);
+                    record.setAttribute("RG", "rgFlow");
+                    final int length = record.getReadLength();
+                    final byte[] tp = new byte[length];
+                    final byte[] quals = new byte[length];
+                    final StringBuilder t0 = new StringBuilder();
+                    for (int i = 0; i < length; i++) {
+                        final int roll = random.nextInt(10);
+                        tp[i] = (byte) (roll < 7 ? 0 : roll < 9 ? 1 : -1);
+                        quals[i] = (byte) (tp[i] == 0 ? 30 + random.nextInt(11) : 8 + random.nextInt(15));
+                        t0.append((char) ('!' + 10 + random.nextInt(31)));
+                    }
+                    record.setBaseQualities(quals);
+                    record.setAttribute("tp", tp);
+                    if (n++ % 2 == 0) {
+                        record.setAttribute("t0", t0.toString());
+                    }
+                    writer.addAlignment(record);
+                }
+            }
+        }
+    }
+
+    /**
+     * The callers' `--alleles` over `mutect_ref.fasta`, inside the reads' chr1:900-2100: a SNP, a
+     * filtered SNP, a three-base deletion, a two-base insertion, and a multiallelic record whose
+     * MNP shares its second base, all made from the reference so their REF alleles hold.
+     */
+    static void givenAllelesFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final java.util.function.IntFunction<String> at = pos -> bases.substring(pos - 1, pos);
+        final java.util.function.Function<String, String> other = b -> b.equals("A") ? "C" : "A";
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n")
+                .append("##FILTER=<ID=LowQual,Description=\"Low quality\">\n")
+                .append("##contig=<ID=chr1,length=").append(bases.length()).append(">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        vcf.append("chr1\t1000\t.\t").append(at.apply(1000)).append('\t').append(other.apply(at.apply(1000))).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1100\t.\t").append(at.apply(1100)).append('\t').append(other.apply(at.apply(1100))).append("\t.\tLowQual\t.\n");
+        vcf.append("chr1\t1200\t.\t").append(bases, 1199, 1203).append('\t').append(at.apply(1200)).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1300\t.\t").append(at.apply(1300)).append('\t').append(at.apply(1300)).append("GA\t.\t.\t.\n");
+        final String mnp = bases.substring(1399, 1401);
+        vcf.append("chr1\t1400\t.\t").append(mnp).append('\t').append(other.apply(mnp.substring(0, 1))).append(mnp.substring(1))
+                .append(',').append(other.apply(mnp.substring(0, 1))).append(other.apply(mnp.substring(1))).append("\t.\t.\t.\n");
+        final Path path = dir.resolve("given_alleles.vcf");
+        Files.writeString(path, vcf.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(Paths.get(path + ".idx"));
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -2911,9 +2985,11 @@ public class MakeFixtures {
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
         mutectFixtures(dir);
+        givenAllelesFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
+        flowCallsFixtures(dir);
         flowSnvFixtures(dir);
         groundTruthFixtures(dir);
         haplotypeRecallerFixtures(dir);

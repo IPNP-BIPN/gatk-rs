@@ -908,6 +908,7 @@ impl GenotypingEngine {
         result: &AfCalculationResult,
         alleles: &[Allele],
         vc: &VariantContext,
+        forced: &[Allele],
     ) -> (Vec<Allele>, Vec<i32>, bool) {
         let mut output = Vec::new();
         let mut mle_counts = Vec::new();
@@ -919,9 +920,11 @@ impl GenotypingEngine {
             let plausible =
                 result.passes_threshold(alt, self.configuration.standard_confidence_for_calling);
             let spurious_span_del = is_span_del(allele) && !self.is_covered_by_deletion(vc);
-            let to_output =
-                (plausible || self.configuration.force_keep_all_alleles || lone_non_ref)
-                    && !spurious_span_del;
+            let to_output = (plausible
+                || self.configuration.force_keep_all_alleles
+                || lone_non_ref
+                || forced.contains(allele))
+                && !spurious_span_del;
             monomorphic &= !(plausible && !spurious_span_del);
             if to_output {
                 output.push(allele.clone());
@@ -935,6 +938,17 @@ impl GenotypingEngine {
     pub fn calculate_genotypes(
         &mut self,
         vc: &VariantContext,
+    ) -> Result<Option<VariantContext>, EngineError> {
+        self.calculate_genotypes_forcing(vc, &[])
+    }
+
+    /// `calculateGenotypes(vc, gpc, givenAlleles)`, `forced` being the alternates
+    /// `allelesConsistentWithGivenAlleles` found: each is output whatever its confidence, and a
+    /// site with one is emitted whatever its quality.
+    pub fn calculate_genotypes_forcing(
+        &mut self,
+        vc: &VariantContext,
+        forced: &[Allele],
     ) -> Result<Option<VariantContext>, EngineError> {
         if Self::cannot_be_genotyped(vc) || vc.genotypes.is_empty() {
             return Ok(None);
@@ -971,7 +985,7 @@ impl GenotypingEngine {
             default_ploidy,
         )?;
         let (alternatives, mle_counts, monomorphic) =
-            self.output_allele_subset(&result, &reduced_alleles, vc);
+            self.output_allele_subset(&result, &reduced_alleles, vc, forced);
 
         // `+ 0.0` turns a -0.0 into 0.0, twice, as the reference writes it.
         let log10_confidence = if !monomorphic || self.configuration.annotate_all_sites_with_pls {
@@ -987,7 +1001,11 @@ impl GenotypingEngine {
         let passes_emit =
             (self.configuration.emit_all_confident_sites || !monomorphic) && passes_call;
         let first_is_non_ref = alternatives.first().is_some_and(|a| *a == non_ref());
-        if !passes_emit && !self.configuration.emit_all_active_sites && !first_is_non_ref {
+        if !passes_emit
+            && !self.configuration.emit_all_active_sites
+            && !first_is_non_ref
+            && forced.is_empty()
+        {
             return Ok(None);
         }
         if !self.configuration.emit_all_active_sites
@@ -1078,7 +1096,15 @@ impl GenotypingEngine {
                 Value::List(
                     mle_counts
                         .iter()
-                        .map(|c| Value::Double((*c as f64 / an).min(1.0)))
+                        .map(|c| {
+                            // `Math.min(1.0, count / AN)`, which keeps the NaN of no chromosomes.
+                            let frequency = *c as f64 / an;
+                            Value::Double(if frequency.is_nan() {
+                                frequency
+                            } else {
+                                frequency.min(1.0)
+                            })
+                        })
                         .collect(),
                 ),
             ));

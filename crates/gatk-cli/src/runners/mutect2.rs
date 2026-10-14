@@ -20,6 +20,17 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // The flow annotations' flow order.
+    "flow-order-for-annotations",
+    // The flow-based presets.
+    "flow-mode",
+    // Long hmer collapsing and allele filtering before genotyping.
+    "flow-assembly-collapse-hmer-size",
+    "flow-assembly-collapse-partial-mode",
+    "flow-filter-alleles",
+    "flow-filter-alleles-qual-threshold",
+    "flow-filter-alleles-sor-threshold",
+    "flow-filter-lone-alleles",
     // The linked de Bruijn graph and its artificial haplotype recovery.
     "linked-de-bruijn-graph",
     "disable-artificial-haplotype-recovery",
@@ -154,13 +165,33 @@ const HONOURED: &[&str] = &[
     "max-num-haplotypes-in-population",
     "disable-artificial-haplotype-recovery",
     "independent-mates",
-    // Without a panel of normals, a Permutect dataset, a bamout, --alleles, a native PairHMM or a
-    // DRAGstr model these change nothing; --debug-assembly is logged only.
+    // Without a panel of normals or a Permutect dataset these change nothing; the bamout is
+    // written; --debug-assembly is logged only.
     "genotype-pon-sites",
     "permutect-dataset-mode",
+    "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
+    "capture-assembly-failure-bam",
+    // Kept by the assembler and never printed: only HaplotypeCaller's engine prints it.
+    "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
+    // Declared for Mutect2 and read only by HaplotypeCaller's engine.
+    "alm-path",
+    "alm-interval",
+    "pair-hmm-results-file",
     "debug-assembly",
+    "graph-output",
+    "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
+    // Force-calling.
+    "alleles",
     "force-call-filtered-alleles",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-pair-hmm-scores",
     // The implementations, refused below when they name a kernel this port does not carry.
@@ -180,7 +211,11 @@ fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations("Mutect2").unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
-        if !definition.has_been_set() || HONOURED.contains(&name) {
+        if !definition.has_been_set()
+            || HONOURED.contains(&name)
+            || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+            || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
+        {
             continue;
         }
         let read_filter_argument = declarations.iter().any(|declaration| {
@@ -238,13 +273,31 @@ pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
             .set_mode_values(&borrowed)
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
+    // `FlowMode`: STANDARD, or ADVANCED's pairs before STANDARD's.
+    if let Some(mode) = scalar(parser, "flow-mode").filter(|mode| mode != "NONE") {
+        let pairs = flow_mode_pairs(
+            &mode,
+            &[
+                ("pruning-lod-threshold", "3.0"),
+                (
+                    "enable-dynamic-read-disqualification-for-genotyping",
+                    "true",
+                ),
+                ("dynamic-read-disqualification-threshold", "10"),
+                ("minimum-mapping-quality", "1"),
+            ],
+        );
+        parser
+            .set_mode_values(&pairs)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
     Ok(())
 }
 
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") => {}
+        None | Some("PairHMM") | Some("FlowBased") | Some("FlowBasedHMM") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for Mutect2."
@@ -272,6 +325,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
+    let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
     let ReadWalkerStart {
         source,
         header,
@@ -396,6 +450,22 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
+        given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
+        pileup_detection: super::pileup_detection_arguments(parser),
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
             indel_padding_for_genotyping: region.indel_padding_for_genotyping,
@@ -418,7 +488,17 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
+        flow_engine: flow_engine_arguments(parser),
+        flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,
@@ -454,6 +534,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
             modify_soft_clipped_bases: true,
             dragstr_params: None,
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         normal_samples: normal_samples.clone(),
         initial_log_odds: if emit_reference_confidence {
@@ -479,6 +560,13 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         consider_germline_active: genotype_germline_sites
             && double_or(parser, "genotype-germline-sites-fraction", 1.0) >= 1.0,
         min_af,
+        flow_collapse_hmer_size: match number_or(parser, "flow-assembly-collapse-hmer-size", 0) {
+            -1 => gatk_tools::haplotype_collapsing::determine_collapse_threshold(&header)
+                .map_err(|(class, message)| Thrown::non_user(class, message))?,
+            size => size,
+        },
+        flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
+        filter_alleles: super::haplotype_caller::allele_filter_arguments(parser),
         default_af,
         informative_read_overlap_margin: number_or(
             parser,
@@ -521,8 +609,17 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
         pedigree: pedigree_arguments(parser)?,
+        flow_order_for_annotations: annotation_flow_order.clone(),
     };
     let mut random = gatk_random();
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = m2::call_variants(
         &reads,
         &header,
@@ -531,15 +628,46 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
+    // `--debug-assembly-variants-out`: an empty header, the queue, indexed on the fly.
+    if let Some((path, queue)) = &assembly_variants {
+        let empty = htsjdk_vcf::header::VcfHeader {
+            lines: Vec::new(),
+            samples: Vec::new(),
+        };
+        let text = super::write_vcf_strict_or_lenient(false, &empty, &queue.borrow().records())?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     drop(random);
-    let called = called.map_err(|error| {
-        if error.class == "PortLimitation" {
-            limitation(&error.message)
-        } else {
-            Thrown::non_user(java_class_name(&error.class), error.message)
-        }
-    })?;
+    // A failure mid-traversal still writes the calls before it, as the writer closes.
+    let (called_calls, callable_sites, failure) = match called {
+        Ok(output) => (output.calls, output.callable_sites, None),
+        Err(error) if error.class == "PortLimitation" => return Err(limitation(&error.message)),
+        Err(error) => (
+            error.calls_before,
+            0,
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
+        ),
+    };
 
     // `Mutect2Engine.writeHeader`.
     let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
@@ -644,7 +772,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         });
     }
     let mut vcf_header = VcfHeader { lines, samples };
-    let mut written = called.calls;
+    let mut written = called_calls;
     // `SomaticGVCFWriter`: the reference records combined into blocks by TLOD band.
     if emit_mode == "GVCF" {
         let bands: Vec<f64> = {
@@ -684,10 +812,13 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
     write_variant_output(parser, &output, &text)?;
+    if let Some(failure) = failure {
+        return Err(failure);
+    }
     // `MutectStats.writeToFile`, beside the output.
     let stats = format!(
         "statistic\tvalue\ncallable\t{}\n",
-        gatk_engine::tsv_table::java_double_to_string(called.callable_sites as f64)
+        gatk_engine::tsv_table::java_double_to_string(callable_sites as f64)
     );
     std::fs::write(format!("{output}.stats"), stats)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}.stats: {error}")))?;

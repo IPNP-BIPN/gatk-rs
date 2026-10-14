@@ -35,6 +35,8 @@
 //!    **diploid** index of that pair whatever the ploidy, less `log10(2)`;
 //!  * FRD sees the likelihoods BQD has already raised.
 
+use crate::genotyper_debug as debug;
+use crate::tsv_table::java_double_to_string;
 use htsjdk_bam::record::BamRecord;
 use htsjdk_bam::tag::{Tag, TagValue};
 use htsjdk_vcf::allele::Allele;
@@ -148,7 +150,10 @@ pub fn indel_prior(
     offset_for_ref_into_event: i32,
 ) -> Result<f64, IndelPriorError> {
     match dragstrs {
-        None => Ok(FLAT_SNP_HET_PRIOR),
+        None => {
+            debug::println("No API from DRAGStrs found, falling back on snp het prior for indels");
+            Ok(FLAT_SNP_HET_PRIOR)
+        }
         Some(strs) => {
             let period = strs
                 .period(offset_for_ref_into_event + 1)
@@ -156,7 +161,14 @@ pub fn indel_prior(
             let repeats = strs
                 .repeat_length(offset_for_ref_into_event + 1)
                 .map_err(IndelPriorError::Lookup)?;
-            params.api(period, repeats).map_err(IndelPriorError::Params)
+            let api = params
+                .api(period, repeats)
+                .map_err(IndelPriorError::Params)?;
+            debug::println(&format!(
+                "API found: {} with period used: {period}  and repeats: {repeats}",
+                java_double_to_string(api)
+            ));
+            Ok(api)
         }
     }
 }
@@ -298,6 +310,8 @@ impl DragenGenotypesModel {
         });
 
         let mut likelihoods = compute_log10_genotype_likelihoods(ploidy, sample.likelihoods);
+        debug::println("\n Standard Genotyping Likelihoods Results:");
+        debug::println(&java_doubles(&likelihoods));
         if self.compute_bqd {
             let bqd = bqd_likelihoods(
                 ploidy,
@@ -308,7 +322,7 @@ impl DragenGenotypesModel {
                 padded_reference,
                 offset_for_ref_into_event,
             )?;
-            apply_adjustment(&mut likelihoods, &bqd);
+            apply_adjustment(&mut likelihoods, "BQD", &bqd);
         }
         if self.compute_frd {
             let mut all = forward;
@@ -323,14 +337,18 @@ impl DragenGenotypesModel {
                 api,
                 self.max_effective_depth_adjustment,
             )?;
-            apply_adjustment(&mut likelihoods, &frd);
+            apply_adjustment(&mut likelihoods, "FRD", &frd);
         }
+        debug::println("merged matrix:");
+        debug::println(&java_doubles(&likelihoods));
         Ok(likelihoods)
     }
 }
 
 /// `applyLikelihoodsAdjusmentToBaseline`: the larger of the two, genotype by genotype.
-fn apply_adjustment(initial: &mut [f64], adjustment: &[f64]) {
+fn apply_adjustment(initial: &mut [f64], name: &str, adjustment: &[f64]) {
+    debug::println(&format!("{name} adjusted likelihoods:"));
+    debug::println(&java_doubles(adjustment));
     for (value, adjusted) in initial.iter_mut().zip(adjustment) {
         *value = java_max(*value, *adjusted);
     }
@@ -383,8 +401,10 @@ fn bqd_likelihoods(
                 offset_for_ref_into_event,
                 error_base,
             );
-            let forward_score = bqd_for_strand(likelihoods, forward, forward_adjustment, gt, error);
-            let reverse_score = bqd_for_strand(likelihoods, reverse, reverse_adjustment, gt, error);
+            let forward_score =
+                bqd_for_strand(likelihoods, forward, forward_adjustment, true, gt, error);
+            let reverse_score =
+                bqd_for_strand(likelihoods, reverse, reverse_adjustment, false, gt, error);
             let score = (forward_score + reverse_score) * -0.1;
             output[index] = java_max(output[index], score);
         }
@@ -397,12 +417,18 @@ fn bqd_for_strand(
     likelihoods: &[Vec<f64>],
     reads: &[DragenRead],
     homopolymer_adjustment: f64,
+    forwards: bool,
     homozygous: usize,
     error: usize,
 ) -> f64 {
     if reads.is_empty() {
         return 0.0;
     }
+    debug::println(&format!(
+        "errorAllele index: {error} theta: {} homopolymerAdjustment: {}",
+        if forwards { "1" } else { "2" },
+        java_double_to_string(homopolymer_adjustment)
+    ));
     let log10_error = jmath::math::log10(BQD_FIXED_ERROR_RATE);
     let log10_non_error = jmath::math::log10(1.0 - BQD_FIXED_ERROR_RATE);
     let size = reads.len();
@@ -444,13 +470,34 @@ fn bqd_for_strand(
         );
     }
     let mut min_score = f64::INFINITY;
+    let mut n_used = 0;
     for n in 0..mean_quality.len() {
-        let score =
-            mean_quality[n] + error_allele[n] + (genotype[genotype.len() - 1] - genotype[n]);
+        let remaining = genotype[genotype.len() - 1] - genotype[n];
+        let score = mean_quality[n] + error_allele[n] + remaining;
+        if debug::is_enabled() {
+            debug::println(&format!(
+                "n={n}: {}, cum_phred_bq={}, cum_prob_r_Error={}, prob_G_remaining={}",
+                fixed(score, 0, 2),
+                fixed(mean_quality[n], 0, 2),
+                fixed(error_allele[n], 0, 2),
+                fixed(remaining, 0, 2)
+            ));
+        }
         if min_score > score {
             min_score = score;
+            n_used = n;
         }
     }
+    // The reference prints theta as 1 or 0 and the n's suffix as 1 or 2.
+    debug::println(&format!(
+        "theta={} n{}={n_used:2}, best_phred_score ={} q_mean={}, alpha={}, Ph(E)={};  ",
+        i32::from(forwards),
+        if forwards { 1 } else { 2 },
+        fixed(min_score, 5, 2),
+        fixed(mean_quality[n_used], 5, 2),
+        fixed(BQD_FIXED_ERROR_RATE, 4, 2),
+        fixed(error_allele[n_used], 4, 2)
+    ));
     min_score
 }
 
@@ -483,16 +530,34 @@ fn frd_likelihoods(
             }) * -0.1
         };
         let thresholds = critical_values(reads, prior)?;
+        if debug::is_enabled() {
+            let values: Vec<String> = thresholds
+                .iter()
+                .map(|t| java_double_to_string(*t))
+                .collect();
+            debug::println(&format!(
+                "fIndex: {foreign} criticalValues: \n{}",
+                values.join("\n")
+            ));
+        }
         for gt in 0..alleles.len() {
             if gt == foreign {
                 continue;
             }
             let index = homozygous_index(gt, ploidy);
+            debug::println(&format!("indexForGT {index}"));
+            debug::println("\nForwards Strands: ");
             let forward =
                 frd_for_strand(likelihoods, gt, foreign, reads, |c| !c.reverse, &thresholds);
+            debug::println("\nReverse Strands: ");
             let reverse =
                 frd_for_strand(likelihoods, gt, foreign, reads, |c| c.reverse, &thresholds);
+            debug::println("\nBoth Strands: ");
             let both = frd_for_strand(likelihoods, gt, foreign, reads, |_| true, &thresholds);
+            // The reference prints the three arrays' identities, which no run reproduces.
+            debug::println(&format!(
+                "gtAlleleIndex : {gt} fAlleleIndex: {foreign} forwards: [D@0 reverse: [D@0 both: [D@0"
+            ));
             let mut best = forward;
             if best[0] < reverse[0] {
                 best = reverse;
@@ -519,6 +584,18 @@ fn frd_likelihoods(
                     + ((best_score - ploidy_model)
                         * ((f64::from(depth.min(max_effective_depth)) * 1.0) / f64::from(depth)));
                 output[index] = java_max(output[index], adjusted + best[1]);
+                if debug::is_enabled() {
+                    debug::println(&format!(
+                        "best FRD likelihoods: {} P(F) score used: {}  use MaxEffectiveDepth: {max_effective_depth}",
+                        java_double_to_string(best_score),
+                        java_double_to_string(best[1])
+                    ));
+                    debug::println(&format!(
+                        "Using array index {closest} for mixture gt with likelihood of {} adjusted based on depth: {depth}",
+                        java_double_to_string(ploidy_model)
+                    ));
+                    debug::println(&format!("p_rG_adj : {}", java_double_to_string(adjusted)));
+                }
             } else {
                 output[index] = java_max(output[index], best[0]);
             }
@@ -560,6 +637,7 @@ fn frd_for_strand(
     }
     let mut max_lpspi = f64::NEG_INFINITY;
     let mut lpf_applied = 0.0;
+    let mut counter = 0;
     let foreign_given_cutoff = |container: &DragenRead, read: usize, log_prob_f: f64| {
         if container.phred_pf + 0.0000001 <= log_prob_f {
             f64::NEG_INFINITY
@@ -606,10 +684,38 @@ fn frd_for_strand(
         }
         let lpsi = log_prob_f + cumulative;
         local_max = java_max(local_max, lpsi);
+        if debug::is_enabled() {
+            debug::println(&format!(
+                "beta: {} localMaxLpspi: {} for lpf: {} with LP_R_GF: {} index: {counter}",
+                java_double_to_string(foreign_fraction),
+                java_double_to_string(local_max),
+                java_double_to_string(log_prob_f),
+                java_double_to_string(cumulative)
+            ));
+            counter += 1;
+        }
         if local_max > max_lpspi {
             max_lpspi = java_max(max_lpspi, local_max);
             lpf_applied = log_prob_f;
         }
     }
     [max_lpspi, lpf_applied]
+}
+
+/// `Arrays.toString(double[])`.
+fn java_doubles(values: &[f64]) -> String {
+    let values: Vec<String> = values.iter().map(|v| java_double_to_string(*v)).collect();
+    format!("[{}]", values.join(", "))
+}
+
+/// `String.format("%W.Pf", value)`: right-aligned in `width`.
+fn fixed(value: f64, width: usize, places: usize) -> String {
+    let text = if value.is_nan() {
+        "NaN".to_string()
+    } else if value.is_infinite() {
+        if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string()
+    } else {
+        crate::java_format::format_decimals(value, places)
+    };
+    format!("{text:>width$}")
 }

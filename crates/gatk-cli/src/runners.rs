@@ -293,6 +293,52 @@ pub(crate) fn resolve_read_filters_in(
     })
 }
 
+/// The flow annotations, the `FlowAnnotatorBase` classes `--flow-order-for-annotations` goes to.
+const FLOW_ANNOTATIONS: [&str; 8] = [
+    "CycleSkipStatus",
+    "GcContent",
+    "HmerIndelLength",
+    "HmerIndelNuc",
+    "HmerMotifs",
+    "IndelClassify",
+    "IndelLength",
+    "VariantType",
+];
+
+/// `validateAndResolvePlugins`' flow step: `--flow-order-for-annotations` with no flow annotation
+/// resolved is refused, the flow annotations named in the plugin's `HashMap` order. What the
+/// annotations then read is the first entry naming no read group.
+pub(crate) fn flow_order_for_annotations(
+    parser: &Parser,
+    resolved: &[&gatk_annotation::catalogue::Entry],
+) -> Result<Option<String>, Thrown> {
+    let entries = arguments(parser, "flow-order-for-annotations");
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    if !resolved
+        .iter()
+        .any(|entry| FLOW_ANNOTATIONS.contains(&entry.name))
+    {
+        let all: Vec<String> = gatk_annotation::catalogue::CATALOGUE
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect();
+        let order = gatk_engine::java_hash::hash_set_order(&all).unwrap_or(all);
+        let named: Vec<&str> = order
+            .iter()
+            .map(String::as_str)
+            .filter(|name| FLOW_ANNOTATIONS.contains(name))
+            .collect();
+        return Err(Thrown::command_line(format!(
+            "Flow argument \"flow-order-for-annotations\" was specified without a flow based \
+             annotation being requested, (eg: {}))",
+            named.join(", ")
+        )));
+    }
+    Ok(entries.into_iter().find(|entry| !entry.contains(':')))
+}
+
 /// The pedigree annotations, the ones `GATKAnnotationPluginDescriptor` hands `--pedigree` and
 /// `--founder-id`.
 const PEDIGREE_ANNOTATIONS: [&str; 4] = [
@@ -9809,6 +9855,17 @@ pub fn fasta_alternate_reference_maker(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `--alleles`, with `--force-call-filtered-alleles`: the records to force-call.
+pub(crate) fn given_alleles(
+    parser: &Parser,
+) -> Result<Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>, Thrown> {
+    let Some(path) = argument(parser, "alleles") else {
+        return Ok(None);
+    };
+    let (records, _) = feature_variants(&path)?;
+    Ok(Some((records, flag(parser, "force-call-filtered-alleles"))))
+}
+
 /// A `FeatureInput<VariantContext>`: the file's records and the samples its header declares.
 ///
 /// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec
@@ -11090,8 +11147,128 @@ fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+/// `PileupDetectionArgumentCollection`'s pileup detection arguments, as a command line sets them.
+pub(crate) fn pileup_detection_arguments(
+    parser: &Parser,
+) -> gatk_tools::pileup_based_alleles::PileupDetectionArguments {
+    let defaults = gatk_tools::pileup_based_alleles::PileupDetectionArguments::default();
+    let boolean = |name: &str, default: bool| {
+        scalar(parser, name).map_or(default, |text| text.eq_ignore_ascii_case("true"))
+    };
+    gatk_tools::pileup_based_alleles::PileupDetectionArguments {
+        use_pileup_detection: boolean("pileup-detection", false),
+        detect_indels: boolean("pileup-detection-enable-indel-pileup-calling", false),
+        active_region_phred_threshold: double_or(
+            parser,
+            "pileup-detection-active-region-phred-threshold",
+            defaults.active_region_phred_threshold,
+        ),
+        num_haplotypes_to_iterate: number_or(
+            parser,
+            "num-artificial-haplotypes-to-add-per-allele",
+            defaults.num_haplotypes_to_iterate,
+        ),
+        filtering_kmer_size: number_or(
+            parser,
+            "artifical-haplotype-filtering-kmer-size",
+            defaults.filtering_kmer_size,
+        ),
+        snp_threshold: double_or(
+            parser,
+            "pileup-detection-snp-alt-threshold",
+            defaults.snp_threshold,
+        ),
+        indel_threshold: double_or(
+            parser,
+            "pileup-detection-indel-alt-threshold",
+            defaults.indel_threshold,
+        ),
+        pileup_absolute_depth: double_or(
+            parser,
+            "pileup-detection-absolute-alt-depth",
+            defaults.pileup_absolute_depth,
+        ),
+        snp_adjacent_to_assembly_indel: number_or(
+            parser,
+            "pileup-detection-snp-adjacent-to-assembled-indel-range",
+            defaults.snp_adjacent_to_assembly_indel,
+        ),
+        quality_for_snps_in_pileup_detection: number_or(
+            parser,
+            "pileup-detection-snp-basequality-filter",
+            defaults.quality_for_snps_in_pileup_detection,
+        ),
+        bad_read_threshold: double_or(
+            parser,
+            "pileup-detection-bad-read-tolerance",
+            defaults.bad_read_threshold,
+        ),
+        bad_read_proper_pair: boolean("pileup-detection-proper-pair-read-badness", true),
+        bad_read_edit_distance: double_or(
+            parser,
+            "pileup-detection-edit-distance-read-badness-threshold",
+            defaults.bad_read_edit_distance,
+        ),
+        bad_read_secondary_or_supplementary: boolean(
+            "pileup-detection-chimeric-read-badness",
+            true,
+        ),
+        template_length_mean: double_or(
+            parser,
+            "pileup-detection-template-mean-badness-threshold",
+            defaults.template_length_mean,
+        ),
+        template_length_std: double_or(
+            parser,
+            "pileup-detection-template-std-badness-threshold",
+            defaults.template_length_std,
+        ),
+        assembly_bad_read_threshold: double_or(
+            parser,
+            "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+            defaults.assembly_bad_read_threshold,
+        ),
+        assembly_bad_read_edit_distance: double_or(
+            parser,
+            "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+            defaults.assembly_bad_read_edit_distance,
+        ),
+        debug_stdout: boolean("print-pileupcalling-status", false),
+    }
+}
+
+/// The pileup detection arguments, which the port reads.
+pub(crate) const PILEUP_DETECTION_ARGUMENTS: &[&str] = &[
+    "pileup-detection",
+    "pileup-detection-enable-indel-pileup-calling",
+    "pileup-detection-active-region-phred-threshold",
+    "num-artificial-haplotypes-to-add-per-allele",
+    "artifical-haplotype-filtering-kmer-size",
+    "pileup-detection-snp-alt-threshold",
+    "pileup-detection-indel-alt-threshold",
+    "pileup-detection-absolute-alt-depth",
+    "pileup-detection-snp-adjacent-to-assembled-indel-range",
+    "pileup-detection-snp-basequality-filter",
+    "pileup-detection-bad-read-tolerance",
+    "pileup-detection-proper-pair-read-badness",
+    "pileup-detection-edit-distance-read-badness-threshold",
+    "pileup-detection-chimeric-read-badness",
+    "pileup-detection-template-mean-badness-threshold",
+    "pileup-detection-template-std-badness-threshold",
+    "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+    "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+    // `debugPileupStdout` only prints to standard output.
+    "print-pileupcalling-status",
+    // The PDHMM's, which HaplotypeCaller reads and Mutect2 declares without reading.
+    "use-pdhmm",
+    "use-pdhmm-overlap-optimization",
+    "pdhmm-results-file",
+    "make-determined-haps-from-pd-code",
+    "fallback-gga-if-pdhmm-fails",
+];
+
 /// `FlowBasedArgumentCollection`, as a command line sets it.
-fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
+pub(crate) fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
     gatk_tools::flow_based_read::FlowArguments {
         use_t0_tag: flag(parser, "flow-use-t0-tag"),
         remove_longer_than_one_indels: flag(parser, "flow-remove-non-single-base-pair-indels"),
@@ -11106,6 +11283,103 @@ fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments
         keep_boundary_flows: flag(parser, "keep-boundary-flows"),
     }
 }
+
+/// `FlowMode.STANDARD`'s pairs, which both callers share.
+pub(crate) const FLOW_MODE_STANDARD: &[(&str, &str)] = &[
+    ("mbq", "0"),
+    ("flow-filter-alleles", "true"),
+    ("flow-filter-alleles-sor-threshold", "3"),
+    ("flow-assembly-collapse-hmer-size", "-1"),
+    ("override-fragment-softclip-check", "true"),
+    ("flow-likelihood-parallel-threads", "2"),
+    ("flow-likelihood-optimized-comp", "true"),
+    ("likelihood-calculation-engine", "FlowBased"),
+];
+
+/// `--flow-mode`'s pairs: ADVANCED's own (`advanced`), then STANDARD's, as `getNameValuePairs`
+/// appends the parent's.
+pub(crate) fn flow_mode_pairs(
+    mode: &str,
+    advanced: &[(&'static str, &'static str)],
+) -> Vec<(&'static str, &'static str)> {
+    match mode {
+        "STANDARD" => FLOW_MODE_STANDARD.to_vec(),
+        "ADVANCED" => advanced.iter().chain(FLOW_MODE_STANDARD).copied().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// `FlowBasedAlignmentArgumentCollection`, when `--likelihood-calculation-engine` is `FlowBased`.
+pub(crate) fn flow_engine_arguments(
+    parser: &Parser,
+) -> Option<gatk_tools::flow_likelihood_engine::FlowEngineArguments> {
+    if scalar(parser, "likelihood-calculation-engine").as_deref() != Some("FlowBased") {
+        return None;
+    }
+    Some(gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+        flow: flow_arguments(parser),
+        flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0) as usize,
+        optimized: flag(parser, "flow-likelihood-optimized-comp"),
+        trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
+        exact_matching: flag(parser, "exact-matching"),
+    })
+}
+
+/// `FlowBasedHMMEngine`'s arguments, when `--likelihood-calculation-engine` is `FlowBasedHMM`.
+pub(crate) fn flow_hmm_arguments(
+    parser: &Parser,
+    pcr_error_model: gatk_engine::pair_hmm_likelihood_engine::PcrErrorModel,
+    dragstr_params: Option<gatk_engine::dragstr::DragstrParams>,
+) -> Option<gatk_tools::flow_likelihood_engine::FlowHmmArguments> {
+    if scalar(parser, "likelihood-calculation-engine").as_deref() != Some("FlowBasedHMM") {
+        return None;
+    }
+    Some(gatk_tools::flow_likelihood_engine::FlowHmmArguments {
+        flow: gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+            flow: flow_arguments(parser),
+            flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
+                as usize,
+            optimized: flag(parser, "flow-likelihood-optimized-comp"),
+            trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
+            exact_matching: flag(parser, "exact-matching"),
+        },
+        constant_gcp: number_or(parser, "pair-hmm-gap-continuation-penalty", 10) as u8,
+        pcr_error_model,
+        dragstr_params,
+        min_usable_indel_score: number_or(parser, "flow-hmm-engine-min-indel-adjust", 6),
+        flat_insertion_penalty: number_or(parser, "flow-hmm-engine-flat-insertion-penatly", 45)
+            as u8,
+        flat_deletion_penalty: number_or(parser, "flow-hmm-engine-flat-deletion-penatly", 45) as u8,
+    })
+}
+
+/// The flow matrix arguments every flow-capable caller honours: what shapes a read's matrix, and
+/// the scaling and quantization only the vestigial layouts read.
+pub(crate) const FLOW_MATRIX_ARGUMENTS: &[&str] = &[
+    "flow-use-t0-tag",
+    "flow-remove-non-single-base-pair-indels",
+    "flow-remove-one-zero-probs",
+    "flow-fill-empty-bins-value",
+    "flow-symmetric-indel-probs",
+    "flow-report-insertion-or-deletion",
+    "flow-disallow-probs-larger-than-call",
+    "flow-lump-probs",
+    "flow-retain-max-n-probs-base-format",
+    "flow-matrix-mods",
+    "keep-boundary-flows",
+    "flow-order-cycle-length",
+    "flow-probability-scaling-factor",
+    "flow-quantization-bins",
+    // The engine's own: a thread count changes no value, and the rest are read above.
+    "flow-likelihood-parallel-threads",
+    "flow-likelihood-optimized-comp",
+    "trim-to-haplotype",
+    "exact-matching",
+    // FlowBasedHMM's.
+    "flow-hmm-engine-min-indel-adjust",
+    "flow-hmm-engine-flat-insertion-penatly",
+    "flow-hmm-engine-flat-deletion-penatly",
+];
 
 /// `GroundTruthScorer`: every mapped flow read scored against the reference under it, into a CSV
 /// row and, with `--report-file`, the error-rate report.
@@ -13583,7 +13857,7 @@ fn variant_context_to_string(
     let attributes = format!("{{{}}}", attributes.join(", "));
     format!(
         "[VC Unknown @ {position} Q{qual} of type={} alleles=[{alleles}] attr={attributes} GT={} filters={}",
-        variant_type_name(&record.reference, &record.alternates),
+        gatk_tools::variant_type::type_name(&record.reference, &record.alternates),
         raw_genotypes,
         record.filters.join(",")
     )
@@ -13596,35 +13870,6 @@ fn attribute_to_string(value: &gatk_tools::variants_to_table::Value) -> String {
         gatk_tools::variants_to_table::Value::One(one) => one.clone(),
         gatk_tools::variants_to_table::Value::Many(many) => format!("[{}]", many.join(", ")),
     }
-}
-
-/// `VariantContext.getType()`, by the same rule [`gatk_tools::remove_nearby_indels`] ports: length
-/// decides, and two alternates that disagree are MIXED.
-fn variant_type_name(reference: &str, alternates: &[String]) -> &'static str {
-    if alternates.is_empty() || (alternates.len() == 1 && alternates[0] == ".") {
-        return "NO_VARIATION";
-    }
-    let mut kind: Option<&'static str> = None;
-    for alternate in alternates {
-        let this =
-            if alternate.starts_with('<') || alternate.contains('[') || alternate.contains(']') {
-                "SYMBOLIC"
-            } else if alternate.len() == reference.len() {
-                if reference.len() == 1 {
-                    "SNP"
-                } else {
-                    "MNP"
-                }
-            } else {
-                "INDEL"
-            };
-        match kind {
-            None => kind = Some(this),
-            Some(seen) if seen == this => {}
-            Some(_) => return "MIXED",
-        }
-    }
-    kind.unwrap_or("NO_VARIATION")
 }
 
 /// The records a variant walker's traversal reaches, which is a QUERY by interval and not a filter.
@@ -15765,6 +16010,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
         pedigree: Default::default(),
+        flow_order_for_annotations: None,
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
 
@@ -17208,6 +17454,26 @@ fn display_date_time() -> String {
 /// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
 /// with the index the arguments ask for beside it.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    write_variant_file(
+        parser,
+        output,
+        text,
+        flag(parser, "create-output-variant-index"),
+        flag(parser, "create-output-variant-md5"),
+        None,
+    )
+}
+
+/// A VCF written as `createVCFWriter` writes it: indexed on the fly when asked, digested when
+/// asked, with the index's dictionary the header's `##contig` lines unless one is given.
+pub(crate) fn write_variant_file(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    create_index: bool,
+    create_md5: bool,
+    index_dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     let bytes = if block_compressed {
         let (level, deflater) = output_compression(parser);
@@ -17226,30 +17492,31 @@ fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(),
 
     // `--create-output-variant-md5`, which digests the file as it was WRITTEN: a block compressed
     // output is digested compressed, because the digest is taken by the stream the writer wraps.
-    if flag(parser, "create-output-variant-md5") {
+    if create_md5 {
         write_file(
             &format!("{output}.md5"),
             gatk_tools::gather_bam_files::md5_file(&bytes).as_bytes(),
         )?;
     }
 
-    if !flag(parser, "create-output-variant-index") {
+    if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = text
-        .lines()
-        .take_while(|line| line.starts_with('#'))
-        .filter_map(|line| {
-            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-            let length = body
-                .split(',')
-                .find_map(|f| f.strip_prefix("length="))
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0);
-            Some((name.to_string(), length))
-        })
-        .collect();
+    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
+        text.lines()
+            .take_while(|line| line.starts_with('#'))
+            .filter_map(|line| {
+                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+                let length = body
+                    .split(',')
+                    .find_map(|f| f.strip_prefix("length="))
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                Some((name.to_string(), length))
+            })
+            .collect()
+    });
     let mut source = index_feature_file::Source::new(output);
     source.timestamp = modified_millis(output);
     let index = match index_feature_file::index_kind(output) {
@@ -19866,7 +20133,7 @@ fn java_variant_context_string(
     };
     format!(
         "[VC {source} @ {position} Q{qual} of type={} alleles=[{alleles}] attr={{{attributes}}} GT={genotypes} filters={}",
-        variant_type_name(&reference, &alternates),
+        gatk_tools::variant_type::type_name(&reference, &alternates),
         record.filters.clone().unwrap_or_default().join(",")
     )
 }

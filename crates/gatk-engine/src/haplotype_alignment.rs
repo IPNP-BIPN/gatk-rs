@@ -26,6 +26,8 @@ pub struct HaplotypeAlignment {
     score: f64,
     kmer_size: i32,
     event_map: Option<EventMap>,
+    /// `isCollapsed`: the flow-based collapsing engine lengthened one of its hmers.
+    collapsed: bool,
 }
 
 impl Default for HaplotypeAlignment {
@@ -38,6 +40,7 @@ impl Default for HaplotypeAlignment {
             score: f64::NAN,
             kmer_size: 0,
             event_map: None,
+            collapsed: false,
         }
     }
 }
@@ -134,6 +137,16 @@ impl Haplotype {
     /// `getEventMap()`.
     pub fn event_map(&self) -> Option<&EventMap> {
         self.alignment.event_map.as_ref()
+    }
+
+    /// `isCollapsed()`.
+    pub fn is_collapsed(&self) -> bool {
+        self.alignment.collapsed
+    }
+
+    /// `setCollapsed(collapsed)`.
+    pub fn set_collapsed(&mut self, collapsed: bool) {
+        self.alignment.collapsed = collapsed;
     }
 
     /// `setEventMap(EventMap)`.

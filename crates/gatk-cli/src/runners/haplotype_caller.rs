@@ -25,6 +25,18 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // The flow annotations' flow order.
+    "flow-order-for-annotations",
+    // Stepwise filtering with the flow aligner.
+    "use-flow-aligner-for-stepwise-hc-filtering",
+    // Long hmer collapsing.
+    "flow-assembly-collapse-hmer-size",
+    "flow-assembly-collapse-partial-mode",
+    // Allele filtering before genotyping.
+    "flow-filter-alleles",
+    "flow-filter-alleles-qual-threshold",
+    "flow-filter-alleles-sor-threshold",
+    "flow-filter-lone-alleles",
     // The linked de Bruijn graph and its artificial haplotype recovery.
     "linked-de-bruijn-graph",
     "disable-artificial-haplotype-recovery",
@@ -155,9 +167,32 @@ const HONOURED: &[&str] = &[
     "use-posteriors-to-calculate-qual",
     // Without contamination the filtered read map is the genotyping one either way.
     "use-filtered-reads-for-annotations",
-    // Without --alleles, a bamout or a native PairHMM these change nothing.
+    // Force-calling.
+    "alleles",
     "force-call-filtered-alleles",
+    // The bamout.
+    "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
+    "capture-assembly-failure-bam",
+    "keep-rg",
+    "just-determine-active-regions",
+    "dont-genotype",
+    "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
+    "alm-path",
+    "alm-interval",
+    "pair-hmm-results-file",
+    "debug-assembly-region-state",
+    "debug-genotyper-output",
+    "graph-output",
+    "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
     "dont-use-dragstr-pair-hmm-scores",
@@ -165,6 +200,7 @@ const HONOURED: &[&str] = &[
     "disable-optimizations",
     // DRAGEN mode and DRAGstr.
     "dragen-mode",
+    "dragen-378-concordance-mode",
     "apply-bqd",
     "apply-frd",
     "transform-dragen-mapping-quality",
@@ -223,13 +259,47 @@ const DRAGEN_3412_MODE: &[(&str, &str)] = &[
     ("use-posteriors-to-calculate-qual", "true"),
 ];
 
+/// `getDragenVersion378NameValuePairs`: what `--dragen-378-concordance-mode` sets, 3.4.12's
+/// arguments with a calling threshold of 1.0, and pileup detection with its heuristics and the
+/// PDHMM.
+const DRAGEN_378_MODE: &[(&str, &str)] = &[
+    ("apply-bqd", "true"),
+    ("apply-frd", "true"),
+    ("transform-dragen-mapping-quality", "true"),
+    ("soft-clip-low-quality-ends", "true"),
+    ("mapping-quality-threshold-for-genotyping", "1"),
+    ("minimum-mapping-quality", "1"),
+    ("allele-informative-reads-overlap-margin", "1"),
+    ("disable-cap-base-qualities-to-map-quality", "true"),
+    (
+        "enable-dynamic-read-disqualification-for-genotyping",
+        "true",
+    ),
+    ("expected-mismatch-rate-for-read-disqualification", "0.03"),
+    ("genotype-assignment-method", "USE_POSTERIOR_PROBABILITIES"),
+    ("padding-around-indels", "150"),
+    ("standard-min-confidence-threshold-for-calling", "1.0"),
+    ("use-posteriors-to-calculate-qual", "true"),
+    ("pileup-detection", "true"),
+    ("pileup-detection-absolute-alt-depth", "0"),
+    ("pileup-detection-bad-read-tolerance", "0.40"),
+    ("pileup-detection-enable-indel-pileup-calling", "true"),
+    ("pileup-detection-active-region-phred-threshold", "3.0"),
+    ("use-pdhmm", "true"),
+    (
+        "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+        "0.4",
+    ),
+];
+
 /// `HaplotypeCaller.customCommandLineValidation`, which runs as the last step of parsing: DRAGEN
 /// mode beside flow mode is refused; otherwise DRAGEN mode lowers the resolved mapping-quality
 /// filter to 1 **whatever the command line said**, and then sets its arguments where the command
-/// line did not. `--dragen-378-concordance-mode` is refused before this, as an argument the port
-/// does not carry.
+/// line did not, 3.7.8's pairs for `--dragen-378-concordance-mode`.
 pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thrown> {
-    let dragen = flag(parser, "dragen-mode");
+    // `isDragenGATKMode()`: either DRAGEN version.
+    let dragen_378 = flag(parser, "dragen-378-concordance-mode");
+    let dragen = flag(parser, "dragen-mode") || dragen_378;
     let flow = scalar(parser, "flow-mode").is_some_and(|mode| mode != "NONE");
     if dragen && flow {
         return Err(Thrown::user(
@@ -246,7 +316,33 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
                 .map_err(|error| Thrown::command_line(error.message))?;
         }
         parser
-            .set_mode_values(DRAGEN_3412_MODE)
+            .set_mode_values(if dragen_378 {
+                DRAGEN_378_MODE
+            } else {
+                DRAGEN_3412_MODE
+            })
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
+    // `FlowMode`: STANDARD, or ADVANCED's pairs before STANDARD's.
+    if flow {
+        let mode = scalar(parser, "flow-mode").unwrap_or_default();
+        let pairs = flow_mode_pairs(
+            &mode,
+            &[
+                ("adaptive-pruning", "true"),
+                ("pruning-lod-threshold", "3.0"),
+                (
+                    "enable-dynamic-read-disqualification-for-genotyping",
+                    "true",
+                ),
+                ("dynamic-read-disqualification-threshold", "10"),
+                ("apply-frd", "true"),
+                ("minimum-mapping-quality", "1"),
+                ("mapping-quality-threshold-for-genotyping", "1"),
+            ],
+        );
+        parser
+            .set_mode_values(&pairs)
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     Ok(())
@@ -320,7 +416,11 @@ fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
     let declarations = gatk_tools::tool_declarations::declarations(tool).unwrap_or(&[]);
     for definition in parser.definitions() {
         let name = definition.long_name();
-        if !definition.has_been_set() || HONOURED.contains(&name) {
+        if !definition.has_been_set()
+            || HONOURED.contains(&name)
+            || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+            || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
+        {
             continue;
         }
         let read_filter_argument = declarations.iter().any(|declaration| {
@@ -364,7 +464,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // FASTEST_AVAILABLE resolves to it wherever GKL's native kernel does not load, which is the
     // reference container; a kernel named outright is refused.
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
-        None | Some("PairHMM") => {}
+        None | Some("PairHMM") | Some("FlowBased") | Some("FlowBasedHMM") => {}
         Some(other) => {
             return Err(limitation(&format!(
                 "the {other} likelihood engine is not ported for HaplotypeCaller."
@@ -386,7 +486,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .unwrap_or_else(|| "USE_PLS_TO_ASSIGN".to_string()),
     )
     .unwrap_or(SubsetMethod::UsePlsToAssign);
-    let resolved = catalogue::resolve(
+    let mut resolved = catalogue::resolve(
         &catalogue::AnnotationArguments {
             annotations: arguments(parser, "annotation"),
             groups: arguments(parser, "annotation-group"),
@@ -399,11 +499,21 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     )
     .map_err(|error| Thrown::command_line(error.message()))?;
     pedigree_refusal(parser, &resolved)?;
+    let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
+    // `makeVariantAnnotations`: allele filtering brings its own annotation.
+    if flag(parser, "flow-filter-alleles") {
+        resolved
+            .push(catalogue::entry("HaplotypeFilteringAnnotation").expect("a known annotation"));
+    }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
+    if flag(parser, "dont-genotype") && emit_reference_confidence {
+        return Err(Thrown::user(
+            "You cannot request gVCF output and 'do not genotype' at the same time",
+        ));
+    }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
-    let mut resolved = resolved;
     if emit_reference_confidence {
         if !resolved
             .iter()
@@ -571,6 +681,21 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // `buildRamps`: the off ramp first, then the on ramp.
     let off = if ramped { off_ramp(parser)? } else { None };
     artificial_haplotype_recovery_refusal(parser)?;
+    // The engine's checks of stepwise filtering.
+    if flag(parser, "use-flow-aligner-for-stepwise-hc-filtering") {
+        if scalar(parser, "likelihood-calculation-engine").as_deref() == Some("FlowBased") {
+            return Err(Thrown::user(
+                "'--use-flow-aligner-for-stepwise-hc-filtering' is specified but the selected \
+                 likelihoods engine is FlowBased. This is invalid.",
+            ));
+        }
+        if !flag(parser, "flow-filter-alleles") {
+            return Err(Thrown::user(
+                "'--use-flow-aligner-for-stepwise-hc-filtering' is specified, but allele filtering \
+                 is disabled. Please enable allele filtering with '--flow-filter-alleles'",
+            ));
+        }
+    }
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -585,6 +710,44 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         },
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
+        pileup_detection: super::pileup_detection_arguments(parser),
+        given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
+        keep_rg: scalar(parser, "keep-rg"),
+        just_determine_active_regions: flag(parser, "just-determine-active-regions"),
+        dont_genotype: flag(parser, "dont-genotype"),
+        haplotype_histogram_output: argument(parser, "haplotype-debug-histogram-output")
+            .map(std::path::PathBuf::from),
+        assembly_state_output: argument(parser, "debug-assembly-region-state")
+            .map(std::path::PathBuf::from),
+        genotyper_debug_output: argument(parser, "debug-genotyper-output")
+            .map(std::path::PathBuf::from),
+        alm: argument(parser, "alm-path").map(|path| {
+            (
+                std::path::PathBuf::from(path),
+                scalar(parser, "alm-interval"),
+            )
+        }),
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
+        pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
+            use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
+            gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")
+                .is_none_or(|text| text.eq_ignore_ascii_case("true")),
+            overlap_optimization: flag(parser, "use-pdhmm-overlap-optimization"),
+            results_file: argument(parser, "pdhmm-results-file").map(std::path::PathBuf::from),
+        }),
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,
@@ -595,6 +758,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             min_base_quality_score: min_base_quality,
             ref_model_deletion_quality: number_or(parser, "reference-model-deletion-quality", 30)
                 as u8,
+            flow_based_model: flow_based_model(parser),
         },
         assembly: RegionAssemblyArguments {
             min_base_quality_score: min_base_quality,
@@ -608,7 +772,35 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
+        flow_engine: flow_engine_arguments(parser),
+        stepwise_flow: flag(parser, "use-flow-aligner-for-stepwise-hc-filtering").then(|| {
+            gatk_tools::flow_likelihood_engine::FlowEngineArguments {
+                flow: flow_arguments(parser),
+                flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
+                    as usize,
+                optimized: flag(parser, "flow-likelihood-optimized-comp"),
+                trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
+                exact_matching: flag(parser, "exact-matching"),
+            }
+        }),
+        flow_hmm: flow_hmm_arguments(
+            parser,
+            pcr_model(parser),
+            if flag(parser, "dont-use-dragstr-pair-hmm-scores") {
+                None
+            } else {
+                dragstr_params.clone()
+            },
+        ),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,
@@ -648,6 +840,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             } else {
                 dragstr_params.clone()
             },
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
             sample_ploidy: ploidy,
@@ -677,6 +870,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                     30,
                 ) as u8,
                 use_soft_clipped_bases: !flag(parser, "override-fragment-softclip-check"),
+                flow_based_model: flow_based_model(parser),
             },
             ramped_engine: ramped,
             dragen_models: (flag(parser, "apply-bqd") || flag(parser, "apply-frd")).then(|| {
@@ -699,6 +893,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                     indel_heterozygosity: priors.indel_heterozygosity,
                 }
             }),
+            filter_alleles: allele_filter_arguments(parser),
         },
         calling: Configuration {
             standard_confidence_for_calling: calling_confidence,
@@ -719,6 +914,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         priors,
         sample_name: sample_name.clone(),
         disable_optimizations: flag(parser, "disable-optimizations"),
+        flow_collapse_hmer_size: number_or(parser, "flow-assembly-collapse-hmer-size", 0),
+        flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
         ramps_debug_post_assembler_on: flag(parser, "ramps-debug-post-assembler-on"),
         mapping_quality_threshold: number_or(parser, "mapping-quality-threshold-for-genotyping", 20)
             as u8,
@@ -747,6 +944,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         ),
         assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
         pedigree: pedigree_arguments(parser)?,
+        flow_order_for_annotations: annotation_flow_order.clone(),
     };
 
     let mut contig_bases = |contig: &str| -> Result<Vec<u8>, String> {
@@ -761,6 +959,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| format!("{error:?}"))
     };
     let mut random = gatk_random();
+    // `--debug-assembly-variants-out`'s queue, ordered by the reads' dictionary.
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = hc::call_variants(
         &reads,
         &header,
@@ -769,6 +976,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
     drop(random);
     // A failure mid-traversal still writes what came before it, and the writer's own refusal of
@@ -777,10 +985,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         Ok(calls) => (calls, None),
         Err(error) => (
             error.calls_before,
-            Some(Thrown::non_user(
-                java_class_name(&error.class),
-                error.message,
-            )),
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
         ),
     };
 
@@ -827,6 +1037,24 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         id: "LowQual".to_string(),
         description: "Low quality".to_string(),
     });
+    if arguments.flow_collapse_hmer_size > 0 || arguments.flow_collapse_hmer_size == -1 {
+        lines.push(compound(
+            "INFO",
+            "XC",
+            Cardinality::Fixed(1),
+            LineType::Integer,
+            "Indicates longer hmer collapsing took place (this is a flow-based specific tag)",
+        ));
+    }
+    if arguments.genotyping.filter_alleles.is_some() {
+        lines.push(compound(
+            "INFO",
+            "SUSP_NOISY_ADJACENT_TP_VARIANT",
+            Cardinality::Fixed(0),
+            LineType::Flag,
+            "Indicates a locus where false positive allele might be affecting a true positive allele",
+        ));
+    }
     if assignment_method == SubsetMethod::UsePosteriorProbabilities {
         lines.push(compound(
             "FORMAT",
@@ -895,6 +1123,35 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             None => hc::samples_from_header(&header),
         },
     };
+    // `--debug-assembly-variants-out`: `makeVCFHeader` without the tool's default lines and without
+    // genotypes, then the queue, indexed on the fly, written as the engine shuts down.
+    if let Some((path, queue)) = &assembly_variants {
+        let debug_header = VcfHeader {
+            lines: vcf_header
+                .lines
+                .iter()
+                .filter(|line| !matches!(line.key(), "GATKCommandLine" | "source"))
+                .cloned()
+                .collect(),
+            samples: Vec::new(),
+        };
+        let records = queue.borrow().records();
+        let text = write_vcf_strict_or_lenient(false, &debug_header, &records)?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     // `GVCFWriter`: the reference records combined into GQ-band blocks.
     if emit_mode == "GVCF" {
         let bands: Vec<i32> = arguments_or_default_bands(parser);
@@ -923,10 +1180,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     // `HaplotypeCallerEngine.makeVCFWriter`, which never allows a key the header lacks.
     let text = write_vcf_strict_or_lenient(false, &vcf_header, &written)?;
+    // The writer is closed whether or not the traversal failed, so what came before is written.
+    write_variant_output(parser, &output, &text)?;
     if let Some(failure) = failure {
         return Err(failure);
     }
-    write_variant_output(parser, &output, &text)?;
     Ok(None)
 }
 
@@ -1046,7 +1304,36 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
             parser,
             "disable-artificial-haplotype-recovery",
         ),
+        pileup_error_correction_log_odds: double_or(
+            parser,
+            "error-correction-log-odds",
+            f64::NEG_INFINITY,
+        ),
+        graph_output: argument(parser, "graph-output").map(std::path::PathBuf::from),
+        debug_graph_transformations: flag(parser, "debug-graph-transformations"),
     }
+}
+
+/// `--flow-filter-alleles` and its thresholds.
+pub(super) fn allele_filter_arguments(
+    parser: &Parser,
+) -> Option<gatk_tools::allele_filtering::AlleleFilterArguments> {
+    flag(parser, "flow-filter-alleles").then(|| {
+        gatk_tools::allele_filtering::AlleleFilterArguments {
+            qual_threshold: double_or(parser, "flow-filter-alleles-qual-threshold", 30.0) as f32,
+            sor_threshold: double_or(parser, "flow-filter-alleles-sor-threshold", 3.0) as f32,
+            filter_lone_alleles: flag(parser, "flow-filter-lone-alleles"),
+        }
+    })
+}
+
+/// `isFlowBased`: a likelihood engine of the flow-based kind, which the reference confidence model
+/// is built with.
+pub(super) fn flow_based_model(parser: &Parser) -> bool {
+    matches!(
+        scalar(parser, "likelihood-calculation-engine").as_deref(),
+        Some("FlowBased") | Some("FlowBasedHMM")
+    )
 }
 
 /// `ReadThreadingAssembler.setArtificialHaplotypeRecoveryMode`, which the engine's constructor

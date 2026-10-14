@@ -84,9 +84,41 @@ pub struct Event {
     stop: i32,
     ref_allele: Allele,
     alt_allele: Allele,
+    /// The `XC` variant attribute: a substitution found on a collapsed haplotype. Equality does
+    /// not read it.
+    collapsed: bool,
 }
 
 impl Event {
+    /// `Event.toString()`: `[Event @ contig:start(-stop), REF*->ALT, attributes]`, the attributes
+    /// being null unless the event was found on a collapsed haplotype.
+    pub fn java_string(&self) -> String {
+        let location = if self.start == self.stop {
+            self.start.to_string()
+        } else {
+            format!("{}-{}", self.start, self.stop)
+        };
+        let allele = |a: &Allele| {
+            format!(
+                "{}{}",
+                a.display_string(),
+                if a.is_reference() { "*" } else { "" }
+            )
+        };
+        format!(
+            "[Event @ {}:{location}, {}->{}, {}]",
+            self.contig,
+            allele(&self.ref_allele),
+            allele(&self.alt_allele),
+            if self.collapsed { "{XC=1}" } else { "null" }
+        )
+    }
+
+    /// Whether the event carries the `XC` attribute.
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
     /// `new Event(contig, start, ref, alt)`.
     pub fn new(
         contig: &str,
@@ -105,6 +137,7 @@ impl Event {
             stop,
             ref_allele,
             alt_allele,
+            collapsed: false,
         })
     }
 
@@ -435,12 +468,15 @@ fn get_events(
                         &slice(&alignment, alignment_pos + start, alignment_pos + end + 1)?,
                         false,
                     )?;
-                    proposed.push(Event::new(
+                    let mut event = Event::new(
                         &ref_loc.contig,
                         ref_loc.start + (ref_pos + start) as i32,
                         ref_allele,
                         alt_allele,
-                    )?);
+                    )?;
+                    // `setVariantAttribute(EXT_COLLAPSED_TAG, "1")`.
+                    event.collapsed = haplotype.is_collapsed();
+                    proposed.push(event);
                 }
                 ref_pos += length;
                 alignment_pos += length;
@@ -464,7 +500,11 @@ pub fn build_event_maps_for_haplotypes(
         ));
     }
     for haplotype in haplotypes.iter_mut() {
-        let map = EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?;
+        // A partially determined haplotype knows its variants: its determined events.
+        let map = match haplotype.partially_determined() {
+            Some(pd) => EventMap::new(pd.determined_events.clone())?,
+            None => EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?,
+        };
         haplotype.set_event_map(map);
     }
     Ok(())

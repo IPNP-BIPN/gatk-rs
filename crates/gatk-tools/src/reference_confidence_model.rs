@@ -73,6 +73,10 @@ pub struct RefConfidenceArguments {
     pub ref_model_deletion_quality: u8,
     /// `!--dont-use-soft-clipped-bases`.
     pub use_soft_clipped_bases: bool,
+    /// `flowBasedModel`: a deletion takes the quality of the base after it when that base is the
+    /// reference's (an hmer deletion, taken as left aligned), and one below the threshold is
+    /// skipped like a base.
+    pub flow_based_model: bool,
 }
 
 impl Default for RefConfidenceArguments {
@@ -81,6 +85,7 @@ impl Default for RefConfidenceArguments {
             indel_informative_depth_indel_size: 10,
             ref_model_deletion_quality: 30,
             use_soft_clipped_bases: true,
+            flow_based_model: false,
         }
     }
 }
@@ -333,11 +338,19 @@ fn ref_vs_any(
     let mut read_count = 0usize;
     for element in pileup {
         let qual = if element.is_deletion() {
-            arguments.ref_model_deletion_quality
+            // `getDeletionQuality(p, refBase, true)`.
+            let next = (element.offset + 1) as usize;
+            if arguments.flow_based_model && element.read.read_bases[next] == ref_base {
+                element.read.base_qualities[next]
+            } else {
+                arguments.ref_model_deletion_quality
+            }
         } else {
             element.qual()
         };
-        if (qual as i8) <= (BASE_QUAL_THRESHOLD as i8) && !element.is_deletion() {
+        if (qual as i8) <= (BASE_QUAL_THRESHOLD as i8)
+            && (arguments.flow_based_model || !element.is_deletion())
+        {
             continue;
         }
         if !arguments.use_soft_clipped_bases {

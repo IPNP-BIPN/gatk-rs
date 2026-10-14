@@ -43,6 +43,8 @@ pub struct EventContext {
     pub end: i32,
     pub reference: Allele,
     pub alternate: Allele,
+    /// The `XC` attribute of the event it was made from, which a spanning deletion keeps.
+    pub collapsed: bool,
 }
 
 /// The merged context: its source, span, and alleles with the reference first.
@@ -114,6 +116,7 @@ pub fn variants_from_active_haplotypes(
                 end: event.end(),
                 reference: event.ref_allele().clone(),
                 alternate: event.alt_allele().clone(),
+                collapsed: event.is_collapsed(),
             });
         }
     }
@@ -267,6 +270,13 @@ pub fn create_allele_mapper(
         result.iter().position(|(a, _)| a == allele)
     };
     for (h, haplotype) in haplotypes.iter().enumerate() {
+        // A partially determined haplotype supports nothing away from its determined position.
+        if haplotype
+            .partially_determined()
+            .is_some_and(|pd| pd.determined_position != loc)
+        {
+            continue;
+        }
         let map = haplotype.event_map().ok_or(MappingError::NoEventMap)?;
         let overlapping = map.overlapping_events(loc);
         if overlapping.is_empty() {
