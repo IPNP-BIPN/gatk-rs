@@ -469,7 +469,7 @@ pub fn events_for_trimming(assembled: &[Event], good: &[Event], bad: &[Event]) -
             e.alt_allele().display_string(),
         )
     };
-    events.sort_by(|a, b| key(a).cmp(&key(b)));
+    events.sort_by_key(key);
     events.dedup_by(|a, b| key(a) == key(b));
     events
 }

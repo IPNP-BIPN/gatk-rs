@@ -329,7 +329,7 @@ pub fn determine_collapse_threshold(
         let platform = group
             .attributes
             .get("PL")
-            .and_then(|pl| crate::flow_based_read::platform(pl));
+            .and_then(crate::flow_based_read::platform);
         let max_class = match platform {
             Some("ULTIMA") if group.attributes.get("FO").is_none() => {
                 return Err((

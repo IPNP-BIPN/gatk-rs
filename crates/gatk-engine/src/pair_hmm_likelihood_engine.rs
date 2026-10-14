@@ -361,13 +361,13 @@ impl PairHmmLikelihoodEngine {
 
 /// `log10MinTrueLikelihood(maximumErrorPerBase, capLikelihoods)` for a read whose prepared
 /// qualities are `length` long: Q40 for each tolerated error, at most two when capped.
+/// A read's insertion and deletion opening penalties and its continuation penalties.
+type Imputed = (Vec<u8>, Vec<u8>, Vec<u8>);
+
 impl PairHmmLikelihoodEngine {
     /// `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
     /// continuation penalty, or the DRAGstr penalties of its sequence.
-    fn impute(
-        &self,
-        read: &ProcessedRead,
-    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), LikelihoodEngineError> {
+    fn impute(&self, read: &ProcessedRead) -> Result<Imputed, LikelihoodEngineError> {
         Ok(match &self.arguments.dragstr_params {
             Some(params) => {
                 let (gop, gcp) =

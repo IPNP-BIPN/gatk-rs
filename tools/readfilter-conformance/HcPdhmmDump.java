@@ -1,5 +1,5 @@
 /*
- * The callers with the partially determined PairHMM, end to end (G3.2g, #1338).
+ * The callers with the partially determined PairHMM, end to end (G3.2g, #1336).
  *
  * --use-pdhmm replaces the assembled haplotypes, once trimmed, by partially determined ones:
  * every assembled event (less the bad pileup events, with the good ones) is grouped with the

@@ -483,7 +483,7 @@ arrays, and G3 is done only when no argument of the three callers is held out as
       - [~] G3.2c `--enable-all-annotations` (#1332);
       - [~] G3.2d Mutect2's somatic reference-confidence mode (#1333);
       - [~] G3.2e Mutect2's mitochondria mode (#1334);
-      - [ ] G3.2f the flow-based paths (#1335);
+      - [~] G3.2f the flow-based paths (#1335);
       - [ ] G3.2g pileup detection and the partially determined PairHMM, with
             `--dragen-378-concordance-mode` (#1336);
       - [~] G3.2h the linked de Bruijn graph (#1337);
