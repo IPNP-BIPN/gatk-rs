@@ -353,6 +353,34 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
     Ok(())
 }
 
+/// What `buildRamps` leaves when it refuses: it runs once `HaplotypeCallerEngine` is built, so
+/// every output the engine opened is there, empty (the walker's `--assembly-region-out` with its
+/// header): the region state, the genotyper's output, the bamout and its index, the allele
+/// likelihoods, the assembled variants and the PairHMM results.
+fn leave_engine_files(parser: &Parser) {
+    if let Some(path) = argument(parser, "assembly-region-out") {
+        let _ = std::fs::write(path, gatk_tools::hc_region::ASSEMBLY_REGION_OUT_HEADER);
+    }
+    for name in [
+        "debug-assembly-region-state",
+        "debug-genotyper-output",
+        "alm-path",
+        "debug-assembly-variants-out",
+        "pair-hmm-results-file",
+    ] {
+        if let Some(path) = argument(parser, name) {
+            let _ = std::fs::write(path, "");
+        }
+    }
+    if let Some(path) = argument(parser, "bam-output") {
+        let path = std::path::PathBuf::from(path);
+        let _ = std::fs::write(&path, "");
+        if scalar(parser, "create-output-bam-index").is_none_or(|v| v == "true") {
+            let _ = std::fs::write(path.with_extension("bai"), "");
+        }
+    }
+}
+
 /// `buildRamps`' off ramp: its type, and the file it is written to, which a type other than `NONE`
 /// requires.
 fn off_ramp(
@@ -684,7 +712,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let mismapping = double_or(parser, "phred-scaled-global-read-mismapping-rate", 45.0);
     let sw = smith_waterman_arguments(parser);
     // `buildRamps`: the off ramp first, then the on ramp.
-    let off = if ramped { off_ramp(parser)? } else { None };
+    let off = if ramped {
+        off_ramp(parser).inspect_err(|e| {
+            if !matches!(e.failure, Failure::CommandLine) {
+                leave_engine_files(parser);
+            }
+        })?
+    } else {
+        None
+    };
     artificial_haplotype_recovery_refusal(parser)?;
     // The engine's checks of stepwise filtering.
     if flag(parser, "use-flow-aligner-for-stepwise-hc-filtering") {
@@ -931,7 +967,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         non_random_downsampling: ramped,
         off_ramp: off.clone(),
         on_ramp: if ramped {
-            on_ramp(parser, off.as_ref().map(|(kind, _)| *kind))?
+            on_ramp(parser, off.as_ref().map(|(kind, _)| *kind)).inspect_err(|e| {
+                if !matches!(e.failure, Failure::CommandLine) {
+                    leave_engine_files(parser);
+                }
+            })?
         } else {
             None
         },

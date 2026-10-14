@@ -614,10 +614,13 @@ pub fn call_region(
         let failing =
             fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg);
         if failing {
-            debugger::println(&format!(
-                "Filtered before assembly the read: {}",
-                gatk_engine::assembly_region::render_read(read, context.header)
-            ));
+            // The ramped engine filters, and prints, only once it genotypes: `finish_region`.
+            if !ramped {
+                debugger::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
             let sample = sample_name(read, context.header);
             let index = context
                 .samples
@@ -1052,6 +1055,18 @@ fn finish_region(
     given: &[gatk_engine::event_map::Event],
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
+    // `genotype()`'s `filterNonPassingReads`, in the ramped engine: after the likelihoods.
+    use gatk_engine::genotyper_debug as debugger;
+    if context.genotyping.ramped_engine && debugger::is_enabled() {
+        for read in genotyping_region.reads() {
+            if fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg) {
+                debugger::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
+        }
+    }
     let contig_length = context.contig_bases.len() as i32;
     let mut bamout_tags = context
         .bamout
