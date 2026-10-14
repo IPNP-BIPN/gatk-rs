@@ -817,7 +817,7 @@ pub fn ploidy_at(regions: &[PloidyRegion], contig: &str, start: i32, end: i32) -
 fn genotyping_engine_for(arguments: &HaplotypeCallerArguments, ploidy: usize) -> GenotypingEngine {
     let priors = Priors {
         sample_ploidy: ploidy,
-        ..arguments.priors.clone()
+        ..arguments.priors
     };
     let mut engine = GenotypingEngine::new(
         crate::genotyping_engine::Configuration {
