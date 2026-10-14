@@ -125,6 +125,8 @@ fn run(case: &Case) -> Vec<String> {
         overlap_names: Vec::new(),
         expressions: Vec::new(),
         allele_concordance: false,
+        pseudo_depth: Default::default(),
+        assembly_complexity_reference_mode: false,
     };
     // `Utils.resetRandomGenerator()`.
     let mut random = JavaRandom::new(47382911);

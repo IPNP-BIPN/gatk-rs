@@ -36,7 +36,7 @@ pub type Outcome = Result<Option<String>, Thrown>;
 mod haplotype_caller;
 pub use haplotype_caller::{haplotype_caller, haplotype_caller_modes, ramped_haplotype_caller};
 mod mutect2;
-pub use mutect2::mutect2;
+pub use mutect2::{mutect2, mutect2_modes};
 mod joint_germline_cnv;
 pub use joint_germline_cnv::joint_germline_cnv_segmentation;
 
@@ -15675,6 +15675,8 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
         overlap_names: overlap_names.clone(),
         expressions,
         allele_concordance: flag(parser, "resource-allele-concordance"),
+        pseudo_depth: Default::default(),
+        assembly_complexity_reference_mode: false,
     };
     let minimum_base_quality = number_or(parser, "min-base-quality-score", 10);
 
@@ -15785,6 +15787,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             }
         }
         let site = va::Site {
+            haplotypes: None,
             likelihoods: &likelihoods,
             window: window
                 .as_ref()

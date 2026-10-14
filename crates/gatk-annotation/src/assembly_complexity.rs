@@ -77,6 +77,20 @@ pub fn annotate<E: Clone + PartialEq>(
     let haplotypes: Vec<&Haplotype> = (0..n)
         .map(|a| likelihoods.get_allele(a).expect("an allele index"))
         .collect();
+    annotate_with_event_maps(vc, likelihoods, &haplotypes, germline_mode)
+}
+
+/// [`annotate`], reading each allele's event map from `haplotypes[allele]` rather than from the
+/// matrix's own allele. HaplotypeCaller's matrix and its genotyping haplotypes are ONE set of
+/// objects in the reference, so the event maps the genotyping built are the ones read here; a port
+/// that holds them as two copies hands over the copy that carries them.
+pub fn annotate_with_event_maps<E: Clone + PartialEq>(
+    vc: &VariantContext,
+    likelihoods: &AlleleLikelihoods<E, Haplotype>,
+    haplotypes: &[&Haplotype],
+    germline_mode: bool,
+) -> Result<Complexity, ComplexityError> {
+    let n = likelihoods.number_of_alleles();
     let maps: Vec<&EventMap> = haplotypes
         .iter()
         .map(|h| h.event_map().ok_or(ComplexityError::NullPointer))

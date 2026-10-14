@@ -8099,9 +8099,11 @@
         "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
         "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8208,7 +8210,8 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--dragstr-params-path": [
         "null",
@@ -8235,17 +8238,28 @@
       "$why": [
         "mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about twenty reads deep each, with a",
         "somatic SNV, a germline het, a two-read site, a forward-only alternate, a low-quality one and one near the",
-        "reads' starts. --normal-sample names the normal or nothing, which makes both samples tumours.",
+        "reads' starts; mutect_t.bam is its tumour alone, which somatic reference-confidence mode needs, since it takes",
+        "one sample. --normal-sample names the normal or nothing, which makes both samples tumours; naming it over",
+        "mutect_t.bam is the reference's refusal.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at false, as for HaplotypeCaller;",
         "--pair-hmm-implementation at LOGLESS_CACHING, --smith-waterman at JAVA and --likelihood-calculation-engine at",
         "PairHMM for the same reasons.",
-        "Held out, as features this port does not carry: somatic reference-confidence mode (--emit-ref-confidence),",
-        "mitochondria mode, the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
+        "--emit-ref-confidence is listed NONE first, then GVCF and BP_RESOLUTION, with two lists of TLOD bands and a",
+        "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
+        "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
+        "does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
         "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false, as for HaplotypeCaller: most of what it switches on is not computed in Mutect2's context by this port."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter."
+      ],
+      "$lists": [
+        "--gvcf-lod-band"
       ],
       "--input": [
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/mutect_t.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8348,12 +8362,28 @@
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [],
-      "--emit-ref-confidence": [],
-      "--mitochondria-mode": [],
+      "--emit-ref-confidence": [
+        "NONE",
+        "GVCF",
+        "BP_RESOLUTION"
+      ],
+      "--mitochondria-mode": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
+      ],
+      "--gvcf-lod-band": [
+        "-1.5 -1.0 -0.5",
+        "-2.0 -1.75 0.0"
+      ],
+      "--minimum-allele-fraction": [
+        "0.0",
+        "0.05"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8375,9 +8405,11 @@
         "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
         "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones.",
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones.",
         "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
         "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet."
       ],
@@ -8486,7 +8518,8 @@
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--off-ramp-type": [
         "NONE"
@@ -8906,6 +8939,36 @@
         "--disable-read-filter": "MappedReadFilter"
       },
       "why": "A filter both enabled and disabled is refused by the plugin descriptor while the command line is parsed."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "GVCF"
+      },
+      "why": "Somatic reference-confidence mode takes one sample, and mutect_tn.bam has two: every such row is the same refusal, which the mutect2-gvcf suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "BP_RESOLUTION"
+      },
+      "why": "Somatic reference-confidence mode takes one sample, and mutect_tn.bam has two: every such row is the same refusal, which the mutect2-gvcf suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_t.bam",
+        "--normal-sample": "normal"
+      },
+      "why": "mutect_t.bam has no normal sample, so naming one is the same refusal on every row."
     }
   ],
   "exclude": {
