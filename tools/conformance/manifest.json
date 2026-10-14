@@ -7604,7 +7604,7 @@
     },
     {
       "id": "hc-flow",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' flow-based paths, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7625,13 +7625,14 @@
       "cases": [
         {
           "dump": "HcFlowDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_flow.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38495970490, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-allele-filtering",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "--flow-filter-alleles in the callers, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7651,7 +7652,8 @@
       "cases": [
         {
           "dump": "HcAlleleFilteringDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_allele_filtering.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38495970490, byte for byte the local dump."
         }
       ]
     },

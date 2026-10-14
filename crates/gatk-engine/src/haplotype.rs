@@ -72,42 +72,12 @@ pub struct Haplotype {
     /// reference, its path score and the k-mer size of its graph. None of it takes part in
     /// equality; the accessors are in [`crate::haplotype_alignment`].
     pub(crate) alignment: HaplotypeAlignment,
-    /// `PartiallyDeterminedHaplotype`'s own state, for a haplotype that is one.
-    pd: Option<Box<PartiallyDetermined>>,
+    /// `PartiallyDeterminedHaplotype`'s own state, for a haplotype that is one; its accessors are
+    /// in [`crate::partially_determined`].
+    pub(crate) pd: Option<Box<PartiallyDetermined>>,
 }
 
-/// What a `PartiallyDeterminedHaplotype` adds to its haplotype.
-///
-/// Its bases are the reference with every event of its branch applied except where the event is
-/// undetermined: there the bases are the reference's (or the insertion's) and the alternate byte
-/// beside each says what else the base may be: `SNP` with the bases it may also be, or the start
-/// and end of a deletion that may or may not be there.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PartiallyDetermined {
-    /// `alternateBases`, one flag byte per base.
-    pub alternate_bases: Vec<u8>,
-    /// `constituentBuiltEvents`, in the order the haplotype was built from them.
-    pub constituent_events: Vec<crate::event_map::Event>,
-    /// `determinedEvents`: none when the reference is the determined allele, else one.
-    pub determined_events: Vec<crate::event_map::Event>,
-    /// `determinedPosition`.
-    pub determined_position: i32,
-    /// `getMaximumExtentOfSiteDeterminedAlleles()`: from the first start to the last end of every
-    /// event at the determined locus.
-    pub determined_extent: crate::interval::SimpleInterval,
-}
-
-/// `PartiallyDeterminedHaplotype.SNP`, `DEL_START`, `DEL_END` and the four bases.
-pub mod pd_bytes {
-    pub const SNP: u8 = 1;
-    pub const DEL_START: u8 = 2;
-    pub const DEL_END: u8 = 4;
-    pub const A: u8 = 8;
-    pub const C: u8 = 16;
-    pub const G: u8 = 32;
-    pub const T: u8 = 64;
-    pub const N: u8 = 128;
-}
+pub use crate::partially_determined::{pd_bytes, PartiallyDetermined};
 
 impl Haplotype {
     /// `new Haplotype(bases, isRef)`.
@@ -126,21 +96,6 @@ impl Haplotype {
             alignment: HaplotypeAlignment::default(),
             pd: None,
         })
-    }
-
-    /// `isPartiallyDetermined()`.
-    pub fn is_partially_determined(&self) -> bool {
-        self.pd.is_some()
-    }
-
-    /// The `PartiallyDeterminedHaplotype` state, for one.
-    pub fn partially_determined(&self) -> Option<&PartiallyDetermined> {
-        self.pd.as_deref()
-    }
-
-    /// Makes this haplotype a `PartiallyDeterminedHaplotype`.
-    pub fn set_partially_determined(&mut self, pd: PartiallyDetermined) {
-        self.pd = Some(Box::new(pd));
     }
 
     /// `new Haplotype(bases)`, which is the two-argument one with `isRef` false.
@@ -181,29 +136,21 @@ impl Haplotype {
     ///
     /// `Arrays.hashCode` is `31 * result + element` from a seed of 1, over the signed byte values,
     /// wrapping like Java's `int`.
+    ///
+    /// A partially determined haplotype hashes its alternate bytes as well, which
+    /// [`crate::partially_determined::hash_code`] adds.
     pub fn java_hash_code(&self) -> i32 {
-        let hash = |bytes: &[u8]| {
-            let mut result: i32 = 1;
-            for byte in bytes {
-                result = result.wrapping_mul(31).wrapping_add(i32::from(*byte as i8));
-            }
-            result
-        };
-        let bases = hash(&self.bases());
-        match &self.pd {
-            None => bases,
-            // `Objects.hash(Arrays.hashCode(getBases()), Arrays.hashCode(alternateBases))`.
-            Some(pd) => 31i32
-                .wrapping_add(bases)
-                .wrapping_mul(31)
-                .wrapping_add(hash(&pd.alternate_bases)),
+        let mut result: i32 = 1;
+        for base in self.bases() {
+            result = result.wrapping_mul(31).wrapping_add(i32::from(base as i8));
         }
+        crate::partially_determined::hash_code(result, self.pd.as_deref())
     }
 }
 
-/// `Haplotype.equals`: the uniqueness value, the reference flag, and the bases, and for a partially
-/// determined one its own fields as well. Not the allele's
-/// own equality, which stops at the last two.
+/// `Haplotype.equals`: the uniqueness value, the reference flag, and the bases. Not the allele's
+/// own equality, which stops at the last two. A partially determined haplotype compares its own
+/// fields as well, which [`crate::partially_determined::equals`] decides.
 ///
 /// The last two are asked of the allele in one comparison: `Allele`'s own equality is the bases,
 /// the reference flag, and the two flags derived from the bases, so it answers the same question
@@ -211,17 +158,7 @@ impl Haplotype {
 impl PartialEq for Haplotype {
     fn eq(&self, other: &Self) -> bool {
         let same = self.uniqueness_value == other.uniqueness_value && self.allele == other.allele;
-        match (&self.pd, &other.pd) {
-            // `PartiallyDeterminedHaplotype.equals`: only another one, at the same determined
-            // position and with the same alternate bases.
-            (Some(this), Some(that)) => {
-                same && this.determined_position == that.determined_position
-                    && this.alternate_bases == that.alternate_bases
-            }
-            (Some(_), None) => false,
-            // `Haplotype.equals`, which does not ask whether the other is partially determined.
-            (None, _) => same,
-        }
+        crate::partially_determined::equals(same, self.pd.as_deref(), other.pd.as_deref())
     }
 }
 
