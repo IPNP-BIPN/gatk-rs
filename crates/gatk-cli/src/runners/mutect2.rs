@@ -594,7 +594,8 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             None => Vec::new(),
         },
         genotype_pon_sites: flag(parser, "genotype-pon-sites"),
-        permutect: permutect_datasets(parser, &header, &normal_samples)?.map(std::cell::RefCell::new),
+        permutect: permutect_datasets(parser, &header, &normal_samples)?
+            .map(std::cell::RefCell::new),
         f1r2: argument(parser, "f1r2-tar-gz").map(|_| gatk_tools::collect_f1r2_counts::Args {
             min_median_map_qual: number_or(parser, "f1r2-median-mq", 50),
             min_base_quality: number_or(parser, "f1r2-min-bq", 20),
@@ -870,11 +871,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             argument(parser, "permutect-training-dataset"),
             argument(parser, "permutect-test-dataset"),
         ];
-        for (engine, path) in permutect
-            .engines
-            .iter()
-            .zip(paths.iter().flatten())
-        {
+        for (engine, path) in permutect.engines.iter().zip(paths.iter().flatten()) {
             write_file(path, engine.text.as_bytes())?;
             let sibling = |name: &str| {
                 std::path::Path::new(path)
@@ -882,7 +879,10 @@ pub fn mutect2(parser: &Parser) -> Outcome {
                     .to_string_lossy()
                     .to_string()
             };
-            write_file(&sibling("contigs.table"), permutect.contigs_table().as_bytes())?;
+            write_file(
+                &sibling("contigs.table"),
+                permutect.contigs_table().as_bytes(),
+            )?;
             write_file(
                 &sibling("read-groups.table"),
                 permutect.read_groups_table().as_bytes(),
@@ -940,7 +940,11 @@ fn permutect_datasets(
     use gatk_tools::permutect_dataset as permutect;
     let mut engines = Vec::new();
     for (dataset, truth, training) in [
-        ("permutect-training-dataset", "permutect-training-truth", true),
+        (
+            "permutect-training-dataset",
+            "permutect-training-truth",
+            true,
+        ),
         ("permutect-test-dataset", "permutect-test-truth", false),
     ] {
         if argument(parser, dataset).is_none() {

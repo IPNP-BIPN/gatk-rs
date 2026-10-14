@@ -190,9 +190,7 @@ impl Datasets {
             let truth: Option<Vec<VariantContext>> = engine.truth.as_ref().map(|records| {
                 records
                     .iter()
-                    .filter(|t| {
-                        t.contig == vc.contig && t.start <= vc.start && t.stop >= vc.start
-                    })
+                    .filter(|t| t.contig == vc.contig && t.start <= vc.start && t.stop >= vc.start)
                     .cloned()
                     .collect()
             });
@@ -300,8 +298,8 @@ fn add_datum(
         .filter(|s| !normal_samples.contains(s))
         .cloned()
         .collect();
-    let tumor_samples = gatk_engine::java_hash::hash_set_order(&tumor_in_order)
-        .unwrap_or(tumor_in_order);
+    let tumor_samples =
+        gatk_engine::java_hash::hash_set_order(&tumor_in_order).unwrap_or(tumor_in_order);
     let num_alt = vc.alleles.len() - 1;
     // The doubles the reference's call still holds, which the annotated record here carries as
     // written: read from the call before its annotations.
@@ -413,18 +411,21 @@ fn add_datum(
         return Ok(());
     }
 
-    let complexity = assembly_complexity::annotate_with_event_maps(vc, fragments, haplotypes, false)
-        .map_err(|e| match e {
-            assembly_complexity::ComplexityError::NoCarrier => {
-                runtime("java.util.NoSuchElementException", "No value present")
-            }
-            assembly_complexity::ComplexityError::NullPointer => {
-                runtime("java.lang.NullPointerException", "null")
-            }
-            assembly_complexity::ComplexityError::NoReference => {
-                runtime("java.lang.IndexOutOfBoundsException", "no reference haplotype")
-            }
-        })?;
+    let complexity = assembly_complexity::annotate_with_event_maps(
+        vc, fragments, haplotypes, false,
+    )
+    .map_err(|e| match e {
+        assembly_complexity::ComplexityError::NoCarrier => {
+            runtime("java.util.NoSuchElementException", "No value present")
+        }
+        assembly_complexity::ComplexityError::NullPointer => {
+            runtime("java.lang.NullPointerException", "null")
+        }
+        assembly_complexity::ComplexityError::NoReference => runtime(
+            "java.lang.IndexOutOfBoundsException",
+            "no reference haplotype",
+        ),
+    })?;
     let tumor_reads = read_vectors(
         vc,
         &tumor_samples,
@@ -444,11 +445,23 @@ fn add_datum(
         let total: i32 = complexity.equivalence_counts.iter().sum();
         let counts = &complexity.equivalence_counts;
         let features = [
-            if counts.len() < 2 { 0.0 } else { f64::from(counts[1]) / f64::from(total) },
-            if counts.len() < 3 { 0.0 } else { f64::from(counts[2]) / f64::from(total) },
+            if counts.len() < 2 {
+                0.0
+            } else {
+                f64::from(counts[1]) / f64::from(total)
+            },
+            if counts.len() < 3 {
+                0.0
+            } else {
+                f64::from(counts[2]) / f64::from(total)
+            },
             f64::from(complexity.edit_distances[n]),
             complexity.dominance[n],
-            if tumor_ads[n + 1] == 0 { 0.0 } else { tlod / f64::from(tumor_ads[n + 1]) },
+            if tumor_ads[n + 1] == 0 {
+                0.0
+            } else {
+                tlod / f64::from(tumor_ads[n + 1])
+            },
         ];
         let text = &mut engine.text;
         text.push_str(labels[n].name());
@@ -527,7 +540,7 @@ fn read_vectors(
             by_allele[index].push(evidence[best.evidence_index].clone());
         }
     }
-    for index in 0..allele_count {
+    for (index, reads_of_allele) in by_allele.iter().enumerate() {
         let allele = reads.get_allele(index).expect("an allele");
         let downsample = if allele.is_reference() {
             arguments.max_ref_count
@@ -537,12 +550,12 @@ fn read_vectors(
                 .find(|(a, _)| a == allele)
                 .map_or(arguments.max_alt_count, |(_, n)| *n)
         };
-        if by_allele[index].len() > downsample {
+        if reads_of_allele.len() > downsample {
             return Err(DatasetError::Limitation(format!(
                 "a Permutect read set of {} reads above its downsampling count of {downsample} is \
                  cut by Collections.shuffle without a generator, which the reference does not \
                  reproduce from run to run.",
-                by_allele[index].len()
+                reads_of_allele.len()
             )));
         }
     }
@@ -573,7 +586,13 @@ fn read_vectors(
         };
         let mut vectors = Vec::new();
         for read in &by_allele[index] {
-            vectors.push(featurize(read, vc, &best_haplotypes, arguments.mode, read_groups)?);
+            vectors.push(featurize(
+                read,
+                vc,
+                &best_haplotypes,
+                arguments.mode,
+                read_groups,
+            )?);
         }
         out.push(vectors);
     }
@@ -627,7 +646,8 @@ fn featurize(
             ));
         }
         let mate_start = i64::from(gatk_engine::read_utils::mate_start(read));
-        let fragment_start = mate_start.min(i64::from(gatk_engine::read_utils::unclipped_start(read)));
+        let fragment_start =
+            mate_start.min(i64::from(gatk_engine::read_utils::unclipped_start(read)));
         let fragment_end = fragment_start + fragment_length;
         result.push(Some(vc.start - fragment_start));
         result.push(Some(fragment_end - vc.stop));
@@ -654,7 +674,10 @@ fn featurize(
         result.push(Some((1000.0 * rq) as i64));
     }
     let Some((_, haplotype)) = best_haplotypes.iter().find(|(r, _)| r == read) else {
-        result.extend(std::iter::repeat_n(Some(0), FEATURES_PER_RANGE * RANGES.len()));
+        result.extend(std::iter::repeat_n(
+            Some(0),
+            FEATURES_PER_RANGE * RANGES.len(),
+        ));
         return Ok(result);
     };
     let haplotype_bases = haplotype.bases();

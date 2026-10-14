@@ -280,8 +280,13 @@ pub fn hard_clip_bases(
             if quals.len() < end {
                 return Err(ClipError::IndexOutOfBounds);
             }
-            let text: String = quals[copy_start..end].iter().map(|&q| (q + 33) as char).collect();
-            clipped.tags.insert(tag, htsjdk_bam::tag::TagValue::Str(text));
+            let text: String = quals[copy_start..end]
+                .iter()
+                .map(|&q| (q + 33) as char)
+                .collect();
+            clipped
+                .tags
+                .insert(tag, htsjdk_bam::tag::TagValue::Str(text));
         }
     }
     clipped.cigar = new_cigar;
