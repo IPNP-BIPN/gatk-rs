@@ -8002,7 +8002,7 @@
     },
     {
       "id": "mutect2-f1r2",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2's F1R2 counts, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8020,7 +8020,8 @@
       "cases": [
         {
           "dump": "Mutect2F1r2Dump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/mutect2_f1r2.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38572721634, byte for byte the local dump."
         }
       ]
     }
