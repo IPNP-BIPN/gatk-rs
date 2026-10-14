@@ -453,9 +453,13 @@ pub fn call_region(
             None,
         );
     }
-    let mut likelihoods = context
-        .stepwise_engine
-        .unwrap_or(context.likelihood_engine)
+    // Stepwise filtering scores with the flow aligner first; the ramped engine has no filtering
+    // engine and scores with the main one, rescoring after the filter all the same.
+    let first_engine = match (ramped, context.stepwise_engine) {
+        (false, Some(engine)) => engine,
+        _ => context.likelihood_engine,
+    };
+    let mut likelihoods = first_engine
         .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
         .map_err(calling)?;
     // Stepwise filtering: the main engine scores the reads again over the haplotypes the
@@ -727,7 +731,7 @@ fn finish_region(
             &context.genotyping.ref_confidence,
             None,
         )
-        .map_err(|e| calling(format!("{e:?}")))?,
+        .map_err(engine_failure)?,
     );
     if let Some(flank) = right {
         result.extend(reference_model_for_no_variation(flank, false, context)?);
@@ -776,7 +780,27 @@ fn reference_model_for_no_variation(
         &context.genotyping.ref_confidence,
         None,
     )
-    .map_err(|e| RegionAssemblyError::Calling(format!("{e:?}")))
+    .map_err(engine_failure)
+}
+
+/// A reference exception as `class: message`, with the class fully qualified, which is how the
+/// caller recognises one; a limitation as it was.
+fn engine_failure(error: crate::genotyping_engine::EngineError) -> RegionAssemblyError {
+    match error {
+        crate::genotyping_engine::EngineError::Runtime { class, message } => {
+            RegionAssemblyError::Calling(format!("{}: {message}", qualified_class(&class)))
+        }
+        other => RegionAssemblyError::Calling(format!("{other:?}")),
+    }
+}
+
+/// A class the engine names short, fully qualified.
+pub(crate) fn qualified_class(class: &str) -> String {
+    match class {
+        "GATKException" => "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
+        short if !short.contains('.') => format!("java.lang.{short}"),
+        full => full.to_string(),
+    }
 }
 
 /// `filterNonPassingReads`' test: too short, mapped below the genotyping threshold, or with a

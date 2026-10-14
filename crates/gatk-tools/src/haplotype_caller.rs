@@ -122,6 +122,13 @@ pub fn samples_from_header(header: &SamHeader) -> Vec<String> {
     samples
 }
 
+/// The fully qualified class a `class: message` names, `java.lang.` or GATK's own.
+fn thrown_class(message: &str) -> Option<&str> {
+    let (class, _) = message.split_once(": ")?;
+    let qualified = class.starts_with("java.lang.") || class.starts_with("org.broadinstitute.");
+    (qualified && !class.contains(' ')).then_some(class)
+}
+
 /// The run: `reads` already filtered and in coordinate order, `intervals` the traversal
 /// intervals, and `contig_bases` a contig's whole sequence by name.
 pub fn call_variants(
@@ -337,13 +344,9 @@ fn call_variants_into(
                     "There is no variation present.".to_string(),
                 ),
                 // A message the reference's own exception names, as `class: message`.
-                RegionAssemblyError::Calling(message)
-                    if message.starts_with("java.lang.RuntimeException: ") =>
-                {
-                    HaplotypeCallerError::new(
-                        "java.lang.RuntimeException",
-                        message["java.lang.RuntimeException: ".len()..].to_string(),
-                    )
+                RegionAssemblyError::Calling(message) if thrown_class(&message).is_some() => {
+                    let class = thrown_class(&message).expect("just matched");
+                    HaplotypeCallerError::new(class, message[class.len() + 2..].to_string())
                 }
                 other => HaplotypeCallerError::new("GATKException", format!("{other:?}")),
             })?;

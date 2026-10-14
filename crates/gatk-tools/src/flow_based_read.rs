@@ -131,7 +131,7 @@ pub(crate) fn platform(pl: &str) -> Option<&'static str> {
     }
 }
 
-/// `FlowBasedReadUtils.getReadGroupInfo`, for a read already known to carry flow tags.
+/// `FlowBasedReadUtils.getReadGroupInfo`: a read without flow tags is refused first.
 ///
 /// A group that is not flow-based yields a null flow order, which the matrix construction
 /// dereferences; the port refuses it instead.
@@ -139,6 +139,15 @@ pub fn read_group_info(
     read: &BamRecord,
     header: &SamHeader,
 ) -> Result<ReadGroupInfo, FlowReadError> {
+    if !has_flow_tags(read) {
+        return Err(FlowReadError::thrown(
+            "java.lang.IllegalArgumentException",
+            format!(
+                "read must be flow based: {}",
+                gatk_engine::assembly_region::render_read(read, header)
+            ),
+        ));
+    }
     let Some(group) = gatk_engine::read_group::resolve(read, header) else {
         return Err(FlowReadError::limitation(
             "a flow read whose read group the header does not declare".to_string(),

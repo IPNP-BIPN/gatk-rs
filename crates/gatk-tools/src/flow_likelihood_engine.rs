@@ -79,6 +79,21 @@ pub enum FlowEngineError {
     Likelihoods(String),
 }
 
+impl FlowEngineError {
+    /// A reference exception as `class: message`; anything else as the port describes it.
+    pub fn render(&self) -> String {
+        match self {
+            FlowEngineError::Read(error) if !error.port_limitation && !error.class.is_empty() => {
+                format!("{}: {}", error.class, error.message)
+            }
+            FlowEngineError::Thrown(class, message) => {
+                format!("{}: {message}", crate::hc_region::qualified_class(class))
+            }
+            other => format!("{other:?}"),
+        }
+    }
+}
+
 /// A read as the engine scores it: its flow matrix, and its alignment start and end, length and
 /// trimming in bases.
 struct ScoredRead {
@@ -389,10 +404,10 @@ impl ReadLikelihoodEngine {
                 .map_err(|e| format!("{e:?}")),
             ReadLikelihoodEngine::FlowBased(engine) => engine
                 .compute_read_likelihoods(haplotypes, header, samples, reads)
-                .map_err(|e| format!("{e:?}")),
+                .map_err(|e| e.render()),
             ReadLikelihoodEngine::FlowBasedHmm(engine) => engine
                 .compute_read_likelihoods(haplotypes, header, samples, reads)
-                .map_err(|e| format!("{e:?}")),
+                .map_err(|e| e.render()),
         }
     }
 

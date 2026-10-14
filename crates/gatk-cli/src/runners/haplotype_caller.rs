@@ -1027,10 +1027,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     // `HaplotypeCallerEngine.makeVCFWriter`, which never allows a key the header lacks.
     let text = write_vcf_strict_or_lenient(false, &vcf_header, &written)?;
+    // The writer is closed whether or not the traversal failed, so what came before is written.
+    write_variant_output(parser, &output, &text)?;
     if let Some(failure) = failure {
         return Err(failure);
     }
-    write_variant_output(parser, &output, &text)?;
     Ok(None)
 }
 
