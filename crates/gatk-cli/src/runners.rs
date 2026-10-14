@@ -7434,18 +7434,7 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
                     element.read.read_name
                 )));
             }
-            let flags = element.read.flags;
-            elements.push(f1r2::Element {
-                sample: sample.unwrap_or_default(),
-                base: element.base(),
-                qual: element.qual(),
-                reverse_strand: flags & 0x10 != 0,
-                first_of_pair: flags & 0x1 != 0 && flags & 0x40 != 0,
-                mapping_quality: element.mapping_qual() as i32,
-                deletion: element.is_deletion(),
-                after_insertion: element.is_after_insertion(),
-                before_deletion_start: element.is_before_deletion_start(),
-            });
+            elements.push(f1r2::Element::from_pileup(element, sample));
         }
         // `getKmerAround(position, 1)`: the window widened within the contig, and no k-mer at all
         // when the contig's end cut it short.
@@ -14637,6 +14626,7 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
         emit_all_confident_sites: true,
         annotate_all_sites_with_pls: true,
         force_keep_all_alleles: true,
+        force_keep_non_ref: false,
         assignment_method: genotyping::SubsetMethod::from_name(&assignment)
             .unwrap_or(genotyping::SubsetMethod::UsePlsToAssign),
     };
@@ -16448,6 +16438,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         emit_all_confident_sites: false,
         annotate_all_sites_with_pls: false,
         force_keep_all_alleles: false,
+        force_keep_non_ref: false,
         // `createMinimalArgs` sets PREFER_PLS whatever `--genotype-assignment-method` says.
         assignment_method: genotyping::SubsetMethod::PreferPls,
     };
@@ -16607,6 +16598,8 @@ fn java_class_name(class: &str) -> &'static str {
         "java.lang.IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
         "java.lang.ClassCastException" => "java.lang.ClassCastException",
         "java.lang.NumberFormatException" => "java.lang.NumberFormatException",
+        "java.lang.NullPointerException" => "java.lang.NullPointerException",
+        "java.util.NoSuchElementException" => "java.util.NoSuchElementException",
         "org.broadinstitute.hellbender.exceptions.GATKException" => {
             "org.broadinstitute.hellbender.exceptions.GATKException"
         }

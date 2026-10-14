@@ -25,6 +25,22 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // Allele filtering's interaction graphs, written to the working directory.
+    "flow-filter-alleles-debug-graphs",
+    // Read by nothing in GATK 4.6.2: --recover-dangling-heads and --use-new-qual-calculator are
+    // deprecated and never consulted, and --native-pair-hmm-threads only sizes the native
+    // PairHMM's thread pool.
+    "recover-dangling-heads",
+    "use-new-qual-calculator",
+    "native-pair-hmm-threads",
+    // The annotation plugin's own arguments, handed to the annotations' instances;
+    // --allow-old-rms-mapping-quality-annotation-data only reaches raw MQ read from a VCF, which
+    // a caller never reads.
+    "dirichlet-prior-pseudo-count",
+    "dirichlet-keep-prior-in-count",
+    "pseudo-count-weight-decay-rate",
+    "assembly-complexity-reference-mode",
+    "allow-old-rms-mapping-quality-annotation-data",
     // The flow annotations' flow order.
     "flow-order-for-annotations",
     // Stepwise filtering with the flow aligner.
@@ -164,6 +180,7 @@ const HONOURED: &[&str] = &[
     "dbsnp",
     "comparison",
     "population-callset",
+    "ploidy-regions",
     "num-reference-samples-if-no-call",
     // Genotyping options.
     "all-site-pls",
@@ -172,6 +189,8 @@ const HONOURED: &[&str] = &[
     "use-posteriors-to-calculate-qual",
     // Without contamination the filtered read map is the genotyping one either way.
     "use-filtered-reads-for-annotations",
+    "contamination-fraction-to-filter",
+    "contamination-fraction-per-sample-file",
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
@@ -351,6 +370,191 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     Ok(())
+}
+
+/// `--contamination-fraction-to-filter` and `--contamination-fraction-per-sample-file`, as
+/// `StandardCallerArgumentCollection` holds them: `None` unless `isSampleContaminationPresent()`.
+/// The file is read by `AlleleBiasedDownsamplingUtils.loadContaminationFile`: lines trimmed, blank
+/// ones skipped, two tab-separated fields of which the second is a fraction in [0, 1]; a sample
+/// the reads do not hold is ignored, so only a duplicate among the reads' samples is refused.
+fn contamination_downsampling(
+    parser: &Parser,
+    samples: &[String],
+) -> Result<Option<gatk_tools::hc_genotyping::ContaminationDownsampling>, Thrown> {
+    let default_fraction = scalar(parser, "contamination-fraction-to-filter")
+        .and_then(|text| gatk_tools::variant_recalibrator_model::java_parse_double(&text))
+        .unwrap_or(0.0);
+    let is_set = |f: f64| !f.is_nan() && f > 0.0;
+    let mut per_sample: Vec<(String, f64)> = Vec::new();
+    if let Some(path) = argument(parser, "contamination-fraction-per-sample-file") {
+        let malformed =
+            |message: String| Thrown::user(format!("Unknown file is malformed: {message}"));
+        // `XReadLines` fails with a `NoSuchFileException`, whose message is the path as given.
+        let bytes = std::fs::read(&path).map_err(|_| {
+            let absolute = std::path::absolute(&path).unwrap_or_else(|_| path.clone().into());
+            Thrown::user(format!(
+                "I/O Error while reading sample-contamination file {}: {path}",
+                absolute.display()
+            ))
+        })?;
+        let text = if path.ends_with(".gz") {
+            let mut out = String::new();
+            std::io::Read::read_to_string(
+                &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+                &mut out,
+            )
+            .map_err(|e| Thrown::user(format!("Couldn't read file. Error was: {e}")))?;
+            out
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        for raw in text.lines() {
+            let line = raw.trim_matches(|c: char| c <= ' ');
+            if line.is_empty() {
+                continue;
+            }
+            // `String.split`, which drops trailing empty fields.
+            let mut fields: Vec<&str> = line.split('\t').collect();
+            while fields.last() == Some(&"") {
+                fields.pop();
+            }
+            if fields.len() != 2 {
+                return Err(malformed(format!(
+                    "Contamination file must have exactly two, tab-delimited columns. Offending line:\n{line}"
+                )));
+            }
+            if fields[0].is_empty() || fields[1].is_empty() {
+                return Err(malformed(format!(
+                    "Contamination file can not have empty strings in either column. Offending line:\n{line}"
+                )));
+            }
+            let Some(fraction) =
+                gatk_tools::variant_recalibrator_model::java_parse_double(fields[1])
+            else {
+                return Err(malformed(format!(
+                    "Contamination file contains unparsable double in the second field. Offending line: {line}"
+                )));
+            };
+            let sample = fields[0];
+            if per_sample.iter().any(|(name, _)| name == sample) {
+                return Err(malformed(format!(
+                    "Contamination file contains duplicate entries for input name {sample}"
+                )));
+            }
+            // Two comparisons, as the reference writes them: a NaN passes both.
+            #[allow(clippy::manual_range_contains)]
+            if fraction < 0.0 || fraction > 1.0 {
+                return Err(malformed(format!(
+                    "Contamination file contains unacceptable contamination value (must be 0<=x<=1): {line}"
+                )));
+            }
+            if samples.iter().any(|name| name == sample) {
+                per_sample.push((sample.to_string(), fraction));
+            }
+        }
+    }
+    if !is_set(default_fraction) && !per_sample.iter().any(|(_, f)| is_set(*f)) {
+        return Ok(None);
+    }
+    Ok(Some(gatk_tools::hc_genotyping::ContaminationDownsampling {
+        per_sample,
+        default_fraction,
+        use_filtered_reads_for_annotations: flag(parser, "use-filtered-reads-for-annotations"),
+        random: std::sync::Arc::new(std::sync::Mutex::new(
+            gatk_engine::well19937c::Well19937c::gatk(),
+        )),
+    }))
+}
+
+/// `--ploidy-regions`, read as `HaplotypeCallerEngine` reads it: each BED feature a `SimpleCount`
+/// whose name is the ploidy, then every interval checked against the reads' dictionary. Each
+/// refusal comes once the engine has opened `--debug-assembly-region-state` and
+/// `--debug-genotyper-output` (empty) and the walker `--assembly-region-out` (its header).
+fn ploidy_regions(
+    parser: &Parser,
+    header: &htsjdk_bam::header::SamHeader,
+) -> Result<Vec<gatk_tools::haplotype_caller::PloidyRegion>, Thrown> {
+    let Some(path) = argument(parser, "ploidy-regions") else {
+        return Ok(Vec::new());
+    };
+    let refuse = |thrown: Thrown| {
+        if let Some(out) = argument(parser, "assembly-region-out") {
+            let _ = std::fs::write(out, gatk_tools::hc_region::ASSEMBLY_REGION_OUT_HEADER);
+        }
+        for name in ["debug-assembly-region-state", "debug-genotyper-output"] {
+            if let Some(out) = argument(parser, name) {
+                let _ = std::fs::write(out, "");
+            }
+        }
+        thrown
+    };
+    let (_, text) = open_feature_input(&path)?;
+    let mut regions = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty()
+            || line.starts_with('#')
+            || line.starts_with("track")
+            || line.starts_with("browser")
+        {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let contig = fields[0].to_string();
+        let start = fields
+            .get(1)
+            .and_then(|f| f.trim().parse::<i32>().ok())
+            .unwrap_or(0)
+            + 1;
+        let end = fields
+            .get(2)
+            .and_then(|f| f.trim().parse::<i32>().ok())
+            .unwrap_or(0);
+        let place = format!("{contig}:{start}-{end}");
+        let count = match fields.get(3).and_then(|f| f.trim().parse::<i64>().ok()) {
+            Some(count) if count <= i64::from(i32::MAX) && count >= i64::from(i32::MIN) => count,
+            _ => {
+                return Err(refuse(Thrown::non_user(
+                    "java.lang.IllegalArgumentException",
+                    format!("Error parsing name into integer for feature at {place}."),
+                )))
+            }
+        };
+        if count < 0 {
+            return Err(refuse(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("Can't construct SimpleCount with negative count at {place}."),
+            )));
+        }
+        regions.push(gatk_tools::haplotype_caller::PloidyRegion {
+            contig,
+            start,
+            end,
+            ploidy: count as usize,
+        });
+    }
+    for region in &regions {
+        let on_dictionary = header.sequences.iter().any(|s| {
+            s.name == region.contig
+                && region.start >= 1
+                && i64::from(region.end) <= i64::from(s.length)
+        });
+        if !on_dictionary {
+            return Err(refuse(Thrown::user(format!(
+                "Invalid region provided for --ploidy-regions at {}:{}-{}. Contig name or endpoint \
+                 doesn't match read sequence dictionary.",
+                region.contig, region.start, region.end
+            ))));
+        }
+    }
+    // `SimpleCount` takes a zero, and the engine then builds a genotyper for it, whose
+    // `HomogeneousPloidyModel` refuses any ploidy that is not positive.
+    if regions.iter().any(|r| r.ploidy == 0) {
+        return Err(refuse(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "does not support negative ploidy",
+        )));
+    }
+    Ok(regions)
 }
 
 /// What `buildRamps` leaves when it refuses: it runs once `HaplotypeCallerEngine` is built, so
@@ -585,6 +789,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     } else {
         header_samples.len()
     };
+    // `validateAndInitializeArgs`: the contamination file, read for `initializeSamples`' set.
+    let sample_set: Vec<String> = match &sample_name {
+        Some(name) => vec![name.clone()],
+        None => header_samples.clone(),
+    };
+    let contamination = contamination_downsampling(parser, &sample_set)?;
     if emit_reference_confidence && sample_count != 1 {
         return Err(Thrown::command_line(
             "Argument emit-ref-confidence has a bad value: Can only be used in single sample \
@@ -668,17 +878,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
 
     // `DragstrParamUtils.parse(hcArgs.likelihoodArgs.dragstrParams)`.
-    let dragstr_params = match argument(parser, "dragstr-params-path") {
-        None => None,
-        Some(path) => {
-            let text = std::fs::read_to_string(&path)
-                .map_err(|_| Thrown::user(format!("Couldn't read file {path}")))?;
-            Some(
-                gatk_engine::dragstr::parse(&text, &path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            )
-        }
-    };
+    let dragstr_params = dragstr_params(parser)?;
     let ploidy = number_or(parser, "sample-ploidy", 2).max(0) as usize;
     let calling_confidence = calling_threshold;
     let max_alternate_alleles = number_or(parser, "max-alternate-alleles", 6).max(0) as usize;
@@ -790,6 +990,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             overlap_optimization: flag(parser, "use-pdhmm-overlap-optimization"),
             results_file: argument(parser, "pdhmm-results-file").map(std::path::PathBuf::from),
         }),
+        ploidy_regions: ploidy_regions(parser, &header)?,
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,
@@ -885,6 +1086,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
+            contamination: contamination.clone(),
             population: population.clone(),
             resources,
             sample_ploidy: ploidy,
@@ -953,6 +1155,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             annotate_all_sites_with_pls: emit_reference_confidence || flag(parser, "all-site-pls"),
             // `forceKeepAllele` is true for every allele with reference confidence.
             force_keep_all_alleles: emit_reference_confidence,
+            force_keep_non_ref: true,
             assignment_method,
         },
         priors,
@@ -1413,6 +1616,7 @@ pub(super) fn allele_filter_arguments(
             qual_threshold: double_or(parser, "flow-filter-alleles-qual-threshold", 30.0) as f32,
             sor_threshold: double_or(parser, "flow-filter-alleles-sor-threshold", 3.0) as f32,
             filter_lone_alleles: flag(parser, "flow-filter-lone-alleles"),
+            write_filtering_graphs: flag(parser, "flow-filter-alleles-debug-graphs"),
         }
     })
 }
@@ -1439,4 +1643,24 @@ pub(super) fn artificial_haplotype_recovery_refusal(parser: &Parser) -> Result<(
         ));
     }
     Ok(())
+}
+
+/// `--dragstr-params-path`, parsed as `DragstrParamUtils.parse` reads it.
+pub(crate) fn dragstr_params(
+    parser: &Parser,
+) -> Result<Option<gatk_engine::dragstr::DragstrParams>, Thrown> {
+    let Some(path) = argument(parser, "dragstr-params-path") else {
+        return Ok(None);
+    };
+    // `CouldNotReadInputFile(message, e)` around the `NoSuchFileException`, whose message is the
+    // path as given.
+    let text = std::fs::read_to_string(&path).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file. Error was: {path} with exception: {path}"
+        ))
+    })?;
+    Ok(Some(
+        gatk_engine::dragstr::parse(&text, &path)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    ))
 }

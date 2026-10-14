@@ -113,6 +113,7 @@ fn run(case: &Case) -> Vec<String> {
             emit_all_confident_sites: false,
             annotate_all_sites_with_pls: false,
             force_keep_all_alleles: false,
+            force_keep_non_ref: true,
             assignment_method: SubsetMethod::UsePlsToAssign,
         },
         AlleleFrequencyCalculator::make_calculator(&priors),

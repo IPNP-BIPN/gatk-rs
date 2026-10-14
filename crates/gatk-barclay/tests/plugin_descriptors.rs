@@ -82,6 +82,8 @@ fn definitions() -> Vec<Definition> {
     ambiguous.controlled_by = Some(PluginControl {
         predecessor: "AmbiguousBaseReadFilter",
         selector: SELECTOR,
+        groups: &[],
+        group_selector: None,
     });
 
     // `MappingQualityReadFilter.minMappingQualityScore`, whose default is 10.
@@ -101,6 +103,8 @@ fn definitions() -> Vec<Definition> {
     mapping_quality.controlled_by = Some(PluginControl {
         predecessor: "MappingQualityReadFilter",
         selector: SELECTOR,
+        groups: &[],
+        group_selector: None,
     });
 
     let tool = Definition::new(

@@ -1200,6 +1200,17 @@ fn reference_model_for_no_variation(
     }
     let threshold = context.mapping_quality_threshold;
     let keep_rg = context.keep_rg;
+    // `filterNonPassingReads`, which prints each read it removes.
+    if gatk_engine::genotyper_debug::is_enabled() {
+        for read in region.reads() {
+            if fails_genotyping_filters(read, threshold, keep_rg) {
+                gatk_engine::genotyper_debug::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
+        }
+    }
     region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     let padded = region.padded_span().clone();
     let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];

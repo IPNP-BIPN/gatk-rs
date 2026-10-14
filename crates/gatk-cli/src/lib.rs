@@ -1063,11 +1063,20 @@ fn parser_for(
         None => parser,
         Some((minimum, maximum)) => parser.with_positional_arguments(minimum, maximum),
     };
-    let parser = match gatk_tools::plugin_ownership::default_filters(tool) {
-        None => parser,
-        Some(defaults) => {
-            parser.with_default_plugins(defaults.iter().map(|name| (*name).to_string()).collect())
-        }
+    // The read-filter descriptor's defaults and the annotation descriptor's default groups: no
+    // filter is named like a group, so one list answers both descriptors.
+    let mut defaults: Vec<String> = gatk_tools::plugin_ownership::default_filters(tool)
+        .map(|names| names.iter().map(|name| (*name).to_string()).collect())
+        .unwrap_or_default();
+    defaults.extend(
+        gatk_tools::plugin_ownership::default_annotation_groups(tool)
+            .iter()
+            .map(|name| (*name).to_string()),
+    );
+    let parser = if defaults.is_empty() {
+        parser
+    } else {
+        parser.with_default_plugins(defaults)
     };
     // `GATKReadFilterPluginDescriptor.validateAndResolvePlugins()`, which the parser runs before
     // it walks the definitions. The resolution itself is the same one the runner asks for; what

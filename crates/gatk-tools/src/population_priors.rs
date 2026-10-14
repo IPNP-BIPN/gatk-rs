@@ -34,8 +34,20 @@ const OPTIONS: Options = Options {
 };
 
 impl PopulationPriors {
-    /// `calculatePosteriorProbs(vc, getMatchingPriors(position, ...), numRefSamplesForPrior, options)`.
-    pub fn apply(&self, vc: &VariantContext) -> VariantContext {
+    /// `calculatePosteriorProbs(vc, getMatchingPriors(position, ...), numRefSamplesForPrior, options)`,
+    /// which refuses a record whose largest ploidy (two without genotypes) is not two: a haploid
+    /// or triploid `--ploidy-regions` interval meets that refusal at its first record.
+    pub fn apply(&self, vc: &VariantContext) -> Result<VariantContext, String> {
+        let max_ploidy = vc
+            .genotypes
+            .iter()
+            .map(|genotype| genotype.alleles.len())
+            .max()
+            .filter(|&ploidy| ploidy > 0)
+            .unwrap_or(2);
+        if max_ploidy != 2 {
+            return Err("Genotype posteriors not yet implemented for ploidy != 2".to_string());
+        }
         let matching: Vec<Record> = self
             .records
             .iter()
@@ -77,7 +89,7 @@ impl PopulationPriors {
             set(&mut out, "PG", join(prior));
             chromosome_counts(&mut out);
         }
-        out
+        Ok(out)
     }
 }
 
