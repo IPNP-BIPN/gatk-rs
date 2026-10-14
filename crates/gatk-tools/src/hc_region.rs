@@ -714,8 +714,16 @@ pub fn call_region(
         .expect("a trimmed set has its reference")
         .clone();
     // The post-filter on ramp: the likelihoods are the file's, over the file's haplotypes and the
-    // reads it names. What the engine would have computed in their place is never read.
+    // reads it names. The engine still computes its own first (`computeReadLikelihoods` runs
+    // before `filter()` reads the ramp), with what that prints and writes, and never reads them.
     if let (Some(OnRampType::PostFilter), Some(ramp)) = (on_kind, context.on_ramp) {
+        let computed = context
+            .likelihood_engine
+            .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
+            .map_err(calling)?;
+        if let Some(alm) = context.alm {
+            alm.borrow_mut().write(&computed);
+        }
         let mut all_reads: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
         for read in region.reads() {
             let sample = sample_name(read, context.header);
