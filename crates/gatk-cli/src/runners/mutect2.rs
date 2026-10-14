@@ -165,13 +165,33 @@ const HONOURED: &[&str] = &[
     "max-num-haplotypes-in-population",
     "disable-artificial-haplotype-recovery",
     "independent-mates",
-    // Without a panel of normals, a Permutect dataset, a bamout, --alleles, a native PairHMM or a
-    // DRAGstr model these change nothing; --debug-assembly is logged only.
+    // Without a panel of normals or a Permutect dataset these change nothing; the bamout is
+    // written; --debug-assembly is logged only.
     "genotype-pon-sites",
     "permutect-dataset-mode",
+    "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
+    "capture-assembly-failure-bam",
+    // Kept by the assembler and never printed: only HaplotypeCaller's engine prints it.
+    "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
+    // Declared for Mutect2 and read only by HaplotypeCaller's engine.
+    "alm-path",
+    "alm-interval",
+    "pair-hmm-results-file",
     "debug-assembly",
+    "graph-output",
+    "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
+    // Force-calling.
+    "alleles",
     "force-call-filtered-alleles",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-pair-hmm-scores",
     // The implementations, refused below when they name a kernel this port does not carry.
@@ -194,6 +214,7 @@ fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
         if !definition.has_been_set()
             || HONOURED.contains(&name)
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+            || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
             continue;
         }
@@ -429,6 +450,22 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
+        given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
+        pileup_detection: super::pileup_detection_arguments(parser),
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
             indel_padding_for_genotyping: region.indel_padding_for_genotyping,
@@ -451,6 +488,14 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
         flow_engine: flow_engine_arguments(parser),
         flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
@@ -489,6 +534,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
             modify_soft_clipped_bases: true,
             dragstr_params: None,
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         normal_samples: normal_samples.clone(),
         initial_log_odds: if emit_reference_confidence {
@@ -566,6 +612,14 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         flow_order_for_annotations: annotation_flow_order.clone(),
     };
     let mut random = gatk_random();
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = m2::call_variants(
         &reads,
         &header,
@@ -574,7 +628,30 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
+    // `--debug-assembly-variants-out`: an empty header, the queue, indexed on the fly.
+    if let Some((path, queue)) = &assembly_variants {
+        let empty = htsjdk_vcf::header::VcfHeader {
+            lines: Vec::new(),
+            samples: Vec::new(),
+        };
+        let text = super::write_vcf_strict_or_lenient(false, &empty, &queue.borrow().records())?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     drop(random);
     // A failure mid-traversal still writes the calls before it, as the writer closes.
     let (called_calls, callable_sites, failure) = match called {
@@ -583,10 +660,12 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         Err(error) => (
             error.calls_before,
             0,
-            Some(Thrown::non_user(
-                java_class_name(&error.class),
-                error.message,
-            )),
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
         ),
     };
 

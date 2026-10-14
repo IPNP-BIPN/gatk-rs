@@ -248,9 +248,20 @@ fn every_depth_and_fraction_matches_the_reference() {
                         .join(",")
                 })
                 .unwrap_or_default(),
-            _ => informative_depth(Some(&likelihoods), "s1", true)
-                .map(|d| d.to_string())
-                .unwrap_or_default(),
+            // The dump's `dp` row counts the informative reads over the whole matrix, which is
+            // `DepthPerSampleHC` only where the matrix holds the variant's alleles and no more:
+            // the annotation marginalizes to them first, and `hc_pileup` measures that case.
+            _ if vc.alleles.len() == likelihoods.number_of_alleles() => {
+                informative_depth(&vc, Some(&likelihoods), "s1", true)
+                    .map(|d| d.to_string())
+                    .unwrap_or_default()
+            }
+            _ => likelihoods
+                .best_alleles_breaking_ties_for_sample(0, None)
+                .iter()
+                .filter(|best| best.is_informative())
+                .count()
+                .to_string(),
         };
         if ours != expected && kind == "af" {
             // Decision 0012: an all-zero AD divides zero by zero, and the NaN's sign is the FPU's.

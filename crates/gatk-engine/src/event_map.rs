@@ -90,6 +90,30 @@ pub struct Event {
 }
 
 impl Event {
+    /// `Event.toString()`: `[Event @ contig:start(-stop), REF*->ALT, attributes]`, the attributes
+    /// being null unless the event was found on a collapsed haplotype.
+    pub fn java_string(&self) -> String {
+        let location = if self.start == self.stop {
+            self.start.to_string()
+        } else {
+            format!("{}-{}", self.start, self.stop)
+        };
+        let allele = |a: &Allele| {
+            format!(
+                "{}{}",
+                a.display_string(),
+                if a.is_reference() { "*" } else { "" }
+            )
+        };
+        format!(
+            "[Event @ {}:{location}, {}->{}, {}]",
+            self.contig,
+            allele(&self.ref_allele),
+            allele(&self.alt_allele),
+            if self.collapsed { "{XC=1}" } else { "null" }
+        )
+    }
+
     /// Whether the event carries the `XC` attribute.
     pub fn is_collapsed(&self) -> bool {
         self.collapsed
@@ -476,7 +500,11 @@ pub fn build_event_maps_for_haplotypes(
         ));
     }
     for haplotype in haplotypes.iter_mut() {
-        let map = EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?;
+        // A partially determined haplotype knows its variants: its determined events.
+        let map = match haplotype.partially_determined() {
+            Some(pd) => EventMap::new(pd.determined_events.clone())?,
+            None => EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?,
+        };
         haplotype.set_event_map(map);
     }
     Ok(())

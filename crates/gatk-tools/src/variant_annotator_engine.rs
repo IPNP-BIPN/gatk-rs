@@ -1258,7 +1258,7 @@ fn annotate_genotype(
         }
         "DepthPerSampleHC" => {
             if let Some(depth) =
-                a::depth_per_allele::informative_depth(Some(likelihoods), sample, called)
+                a::depth_per_allele::informative_depth(vc, Some(likelihoods), sample, called)
             {
                 built.dp = Some(depth);
             }

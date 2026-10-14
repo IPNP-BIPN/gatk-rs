@@ -192,6 +192,8 @@ pub fn assign_genotype_likelihoods_annotated(
         &[],
         &std::collections::BTreeSet::new(),
         None,
+        &[],
+        None,
     )
 }
 
@@ -213,6 +215,8 @@ pub fn assign_genotype_likelihoods_full(
     filtered_reads: &[Vec<BamRecord>],
     suspicious_locations: &std::collections::BTreeSet<i32>,
     pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
+    given: &[gatk_engine::event_map::Event],
+    mut bamout: Option<&mut BamoutTags>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -340,6 +344,15 @@ pub fn assign_genotype_likelihoods_full(
         for reads in shared_filtered.iter_mut() {
             reads.retain(qualifies);
         }
+        if gatk_engine::genotyper_debug::is_enabled() {
+            print_event(
+                &merged,
+                &mapper,
+                read_likelihoods,
+                &marginal,
+                &shared_filtered,
+            );
+        }
         if arguments.emit_reference_confidence {
             // `addNonRefSymbolicAllele` on the merged context, `addNonReferenceAllele` on the
             // matrix, which fills its row from the concrete alleles.
@@ -415,7 +428,13 @@ pub fn assign_genotype_likelihoods_full(
         );
         vc.stop = i64::from(merged.end);
         vc.genotypes = GenotypesContext::new(genotypes);
-        if let Some(call) = engine.calculate_genotypes(&vc)? {
+        // `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`.
+        let forced = crate::given_alleles::alleles_consistent_with_given_alleles(
+            given,
+            &vc.alleles[0],
+            &vc.alleles[1..],
+        );
+        if let Some(call) = engine.calculate_genotypes_forcing(&vc, &forced)? {
             for allele in &call.alleles {
                 if let Some((_, indices)) = mapper.iter().find(|(a, _)| a == allele) {
                     for &h in indices {
@@ -424,6 +443,16 @@ pub fn assign_genotype_likelihoods_full(
                         }
                     }
                 }
+            }
+            // `annotateReadLikelihoodsWithSupportedAlleles(call, readAlleleLikelihoods)`, for the
+            // bamout: the matrix the annotations read, marginalized to the call's alleles.
+            if let Some(tags) = bamout.as_deref_mut() {
+                let mut for_tags = marginal.clone();
+                if call.alleles.len() != for_tags.number_of_alleles() {
+                    for_tags.update_non_ref_allele_likelihoods(&call.alleles);
+                }
+                tags.add_supported_alleles(&call, &for_tags)
+                    .map_err(|e| refused(format!("{e:?}")))?;
             }
             // `makeAnnotatedCall`: the annotations read the matrix the call was genotyped with,
             // over a reference context whose window is the padded reference.
@@ -526,11 +555,111 @@ pub fn assign_genotype_likelihoods_full(
             calls.push(call);
         }
     }
+    if let Some(tags) = bamout {
+        tags.called = called.clone();
+    }
     if arguments.do_physical_phasing {
         let called: Vec<&Haplotype> = called.iter().map(|&h| &haplotypes[h]).collect();
         return phase_calls(calls, &called);
     }
     Ok(calls)
+}
+
+/// What a bamout needs of genotyping: the haplotypes called, in the order the reference's
+/// `HashSet` was filled, and the `XA` tag each read collects, by read.
+#[derive(Debug, Clone, Default)]
+pub struct BamoutTags {
+    /// Indices into the genotyped haplotypes.
+    pub called: Vec<usize>,
+    /// `XA` by read name and flags.
+    pub supported: Vec<((String, u16), String)>,
+}
+
+impl BamoutTags {
+    /// `annotateReadLikelihoodsWithSupportedAlleles(vc, likelihoods)`: each read informative for
+    /// one of the call's alleles gains `contig:start=index`, after a comma when it has one.
+    pub fn add_supported_alleles(
+        &mut self,
+        call: &VariantContext,
+        likelihoods: &AlleleLikelihoods<BamRecord>,
+    ) -> Result<(), gatk_engine::allele_likelihoods::LikelihoodsError> {
+        let new_to_old: Vec<(Allele, Vec<Allele>)> =
+            gatk_annotation::depth_per_allele::marginalisation_order(&call.alleles)
+                .into_iter()
+                .map(|a| (a.clone(), vec![a]))
+                .collect();
+        let marginal = likelihoods.marginalize(&new_to_old)?;
+        for sample in 0..marginal.number_of_samples() {
+            let evidence = marginal.sample_evidence(sample).unwrap_or(&[]);
+            for best in marginal.best_alleles_breaking_ties_for_sample(sample, None) {
+                if !best.is_informative() {
+                    continue;
+                }
+                let Some(allele) = best.allele else { continue };
+                let index = call
+                    .alleles
+                    .iter()
+                    .position(|a| *a == allele)
+                    .map_or(-1, |i| i as i64);
+                let read = &evidence[best.evidence_index];
+                let text = format!("{}:{}={index}", call.contig, call.start);
+                self.append((read.read_name.clone(), read.flags), &text);
+            }
+        }
+        Ok(())
+    }
+
+    /// The same over fragments, `annotateReadLikelihoodsWithSupportedAlleles(vc, likelihoods,
+    /// Fragment::getReads)`: every read of an informative fragment gains the tag.
+    pub fn add_supported_alleles_fragments(
+        &mut self,
+        call: &VariantContext,
+        likelihoods: &AlleleLikelihoods<gatk_engine::fragment::Fragment>,
+    ) -> Result<(), gatk_engine::allele_likelihoods::LikelihoodsError> {
+        let new_to_old: Vec<(Allele, Vec<Allele>)> =
+            gatk_annotation::depth_per_allele::marginalisation_order(&call.alleles)
+                .into_iter()
+                .map(|a| (a.clone(), vec![a]))
+                .collect();
+        let marginal = likelihoods.marginalize(&new_to_old)?;
+        for sample in 0..marginal.number_of_samples() {
+            let evidence = marginal.sample_evidence(sample).unwrap_or(&[]);
+            for best in marginal.best_alleles_breaking_ties_for_sample(sample, None) {
+                if !best.is_informative() {
+                    continue;
+                }
+                let Some(allele) = best.allele else { continue };
+                let index = call
+                    .alleles
+                    .iter()
+                    .position(|a| *a == allele)
+                    .map_or(-1, |i| i as i64);
+                let text = format!("{}:{}={index}", call.contig, call.start);
+                for read in &evidence[best.evidence_index].reads {
+                    self.append((read.read_name.clone(), read.flags), &text);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn append(&mut self, key: (String, u16), text: &str) {
+        match self.supported.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, value)) => {
+                value.push_str(", ");
+                value.push_str(text);
+            }
+            None => self.supported.push((key, text.to_string())),
+        }
+    }
+
+    /// The `XA` a read collected.
+    pub fn supported_for(&self, read: &BamRecord) -> Option<&str> {
+        self.supported
+            .iter()
+            .find(|((name, flags), _)| *name == read.read_name && *flags == read.flags)
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 /// `PhaseGroup`: which alternate index of a het genotype holds the phased alternate.
@@ -838,4 +967,97 @@ fn max_acceptable_allele_count(ploidy: usize, max_genotype_count: usize) -> usiz
         alleles += 1;
     }
     alleles
+}
+
+/// The `--debug-genotyper-output` block for one event: the merged context, which haplotypes
+/// back each allele, and the read-by-allele matrix as is and less each read's best value. A read
+/// is numbered by its place among the region's reads, before the overlap kept a subset.
+fn print_event(
+    merged: &gatk_engine::allele_mapping::MergedContext,
+    mapper: &[(Allele, Vec<usize>)],
+    read_likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    marginal: &AlleleLikelihoods<BamRecord, Allele>,
+    filtered: &[Vec<BamRecord>],
+) {
+    use gatk_engine::genotyper_debug::println;
+    use gatk_engine::tsv_table::java_double_to_string;
+    let allele = |a: &Allele| {
+        let text = a.display_string();
+        if a.is_reference() {
+            format!("{text}*")
+        } else {
+            text
+        }
+    };
+    let mut alleles = merged.alleles.clone();
+    // `ParsingUtils.sortList`: the reference first, then by bases.
+    alleles.sort_by(|a, b| {
+        b.is_reference()
+            .cmp(&a.is_reference())
+            .then(a.display_string().cmp(&b.display_string()))
+    });
+    let position = if merged.start == merged.end {
+        format!("{}:{}", merged.contig, merged.start)
+    } else {
+        format!("{}:{}-{}", merged.contig, merged.start, merged.end)
+    };
+    let reference = merged.reference().display_string();
+    let alternates: Vec<String> = merged.alleles[1..]
+        .iter()
+        .map(Allele::display_string)
+        .collect();
+    let evidence: usize = (0..marginal.number_of_samples())
+        .map(|s| marginal.sample_evidence_count(s))
+        .sum();
+    println("\n=============================================================================");
+    println(&format!(
+        "Event at: [VC {} @ {position} Q. of type={} alleles=[{}] attr={{}} GT=[] filters= with {evidence} reads and {} disqualified",
+        merged.source,
+        crate::variant_type::type_name(&reference, &alternates),
+        alleles.iter().map(allele).collect::<Vec<_>>().join(", "),
+        filtered.first().map_or(0, Vec::len)
+    ));
+    println("=============================================================================");
+    println("haplotype alleles key:");
+    for (a, haplotypes) in mapper {
+        let indices: Vec<String> = haplotypes.iter().map(usize::to_string).collect();
+        println(&format!(
+            "Allele: {} Haps: {}",
+            allele(a),
+            indices.join(", ")
+        ));
+    }
+    println("Read-allele matrix:");
+    let count = marginal.number_of_alleles();
+    let names: Vec<String> = (0..count)
+        .filter_map(|a| marginal.get_allele(a).map(allele))
+        .collect();
+    println(&names.join(" "));
+    for normalized in [false, true] {
+        if normalized {
+            println("Normalized Read-Allele matrix:");
+        }
+        for s in 0..marginal.number_of_samples() {
+            let all = read_likelihoods.sample_evidence(s).unwrap_or(&[]);
+            for (r, read) in marginal
+                .sample_evidence(s)
+                .unwrap_or(&[])
+                .iter()
+                .enumerate()
+            {
+                let index = all.iter().position(|x| x == read).map_or(-1, |i| i as i64);
+                let mut line = format!("read: {index} {}", read.read_name);
+                let max = (0..count)
+                    .map(|a| marginal.value(s, a, r))
+                    .fold(f64::NEG_INFINITY, f64::max);
+                for a in 0..count {
+                    let value = marginal.value(s, a, r);
+                    let value = if normalized { value - max } else { value };
+                    line.push(' ');
+                    line.push_str(&java_double_to_string(value));
+                }
+                println(&line);
+            }
+        }
+    }
 }

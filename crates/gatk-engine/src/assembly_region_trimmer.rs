@@ -153,6 +153,10 @@ impl AssemblyRegionTrimmer {
             &interval(&span.contig, min_start, max_end)?,
             region.padded_span(),
         )?;
+        crate::genotyper_debug::println(&format!(
+            "Padded and trimmed the region to this span: {}:{}-{}",
+            padded.contig, padded.start, padded.end
+        ));
         result(Some(variant_span), Some(padded))
     }
 
@@ -168,9 +172,11 @@ impl AssemblyRegionTrimmer {
         let range = region.span();
         let mut found_non_snp = false;
         let mut variant_span: Option<SimpleInterval> = None;
+        let mut within: Vec<&Event> = Vec::new();
         for event in events {
             let location = interval(event.contig(), event.start(), event.end())?;
             if range.overlaps_interval(&location) {
+                within.push(event);
                 found_non_snp = found_non_snp || !event.is_snp();
                 variant_span = Some(match variant_span {
                     None => location,
@@ -190,6 +196,22 @@ impl AssemblyRegionTrimmer {
             self.expand_within_contig(range, self.arguments.max_extension_into_region_padding)?;
         let ideal = self.expand_within_contig(&variant_span, padding)?;
         let final_span = merge_with_contiguous(&intersect(&maximum, &ideal)?, &variant_span)?;
+        if crate::genotyper_debug::is_enabled() {
+            let show = |i: &SimpleInterval| format!("{}:{}-{}", i.contig, i.start, i.end);
+            let events: Vec<String> = within.iter().map(|e| e.java_string()).collect();
+            crate::genotyper_debug::println(&format!("events       : [{}]", events.join(", ")));
+            crate::genotyper_debug::println(&format!(
+                "region       : AssemblyRegion {} active?={} nReads={}",
+                show(range),
+                region.is_active(),
+                region.reads().len()
+            ));
+            crate::genotyper_debug::println(&format!("callableSpan : {}", show(&variant_span)));
+            crate::genotyper_debug::println(&format!("padding      : {padding}"));
+            crate::genotyper_debug::println(&format!("idealSpan    : {}", show(&ideal)));
+            crate::genotyper_debug::println(&format!("maximumSpan  : {}", show(&maximum)));
+            crate::genotyper_debug::println(&format!("finalSpan    : {}", show(&final_span)));
+        }
         result(Some(variant_span), Some(final_span))
     }
 
