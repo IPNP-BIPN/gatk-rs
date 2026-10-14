@@ -372,6 +372,39 @@ pub fn call_region(
     // unless the construction gave up. The reference is kept aside: the set no longer has one.
     let assembled_reference = assembly.reference_haplotype().cloned();
     if let Some(pd) = &context.pd {
+        // `getVariationEvents(0)`, then what `--print-pileupcalling-status` prints.
+        let assembly_variants = assembly
+            .variation_events(0)
+            .map_err(|e| calling(format!("{e:?}")))?;
+        if pd.arguments.debug {
+            use crate::pd_haplotypes::event_string;
+            use crate::tool_stdout::println;
+            println("Generating PDHaplotypes for PDHMM");
+            println("Assembled Variants to use:");
+            assembly_variants
+                .iter()
+                .for_each(|e| println(&event_string(e)));
+            println("Good Pileup Variants to use:");
+            good_pileup_events
+                .iter()
+                .for_each(|e| println(&event_string(e)));
+            println("Bad Pileup Variants to filter:");
+            bad_pileup_events
+                .iter()
+                .for_each(|e| println(&event_string(e)));
+            println("Adding Variants To Reference Haplotype:");
+            if let Some(reference) = assembly.reference_haplotype() {
+                println(&crate::pd_haplotypes::haplotype_string(reference));
+                if let Some(l) = reference.genome_location() {
+                    println(&format!("FinalSpan: {}:{}-{}", l.contig, l.start, l.end));
+                }
+            }
+            let span = region.span();
+            println(&format!(
+                "CallingSpan: {}:{}-{}",
+                span.contig, span.start, span.end
+            ));
+        }
         crate::pd_haplotypes::generate_pd_haplotypes(
             &mut assembly,
             &bad_pileup_events,
@@ -393,6 +426,7 @@ pub fn call_region(
         crate::pileup_based_alleles::remove_haplotypes_with_bad_alleles(
             &mut assembly,
             &bad_pileup_events,
+            detection.debug_stdout,
         );
         crate::pileup_based_alleles::inject_pileup_events(
             &mut assembly,
