@@ -141,6 +141,12 @@ pub struct Mutect2Arguments {
     pub panel_of_normals: Vec<VariantContext>,
     /// `--genotype-pon-sites`: the panel's loci are not left inactive.
     pub genotype_pon_sites: bool,
+    /// `--f1r2-tar-gz`'s collector arguments: the tumour pileup of every locus `isActive` examines
+    /// is counted.
+    pub f1r2: Option<crate::collect_f1r2_counts::Args>,
+    /// `--permutect-training-dataset` and `--permutect-test-dataset`: the engines each annotated
+    /// call feeds, whose text the caller writes once the run ends, a failed one too.
+    pub permutect: Option<std::cell::RefCell<crate::permutect_dataset::Datasets>>,
     pub informative_read_overlap_margin: i32,
     pub max_mnp_distance: i32,
     pub phred_scaled_global_read_mismapping_rate: f64,
@@ -162,6 +168,8 @@ pub struct Mutect2Arguments {
 pub struct Mutect2Output {
     pub calls: Vec<VariantContext>,
     pub callable_sites: u64,
+    /// `--f1r2-tar-gz`'s members, with their histograms, by name.
+    pub f1r2_files: Option<Vec<(String, String)>>,
 }
 
 /// What a run refuses, with the Java class it would be thrown as.
@@ -269,6 +277,15 @@ fn call_variants_with(
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;
     let mut active_error: Option<Mutect2Error> = None;
+    // `new F1R2CountsCollector(f1r2Args, header, f1r2TarGz, tumorSamples)`.
+    let mut f1r2 = arguments.f1r2.map(|args| {
+        let tumor: Vec<String> = samples
+            .iter()
+            .filter(|s| !arguments.normal_samples.contains(s))
+            .cloned()
+            .collect();
+        crate::collect_f1r2_counts::Collector::new(args, &tumor)
+    });
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -341,6 +358,7 @@ fn call_variants_with(
                     &mut tumor_buffer,
                     &mut normal_buffer,
                     &mut callable_sites,
+                    f1r2.as_mut().map(|collector| (collector, &bases[..])),
                 ) {
                     Ok(prob) => prob,
                     Err(error) => {
@@ -396,6 +414,7 @@ fn call_variants_with(
     Ok(Mutect2Output {
         calls,
         callable_sites,
+        f1r2_files: f1r2.map(|collector| collector.files(true)),
     })
 }
 
@@ -508,6 +527,7 @@ fn is_next_to_useful_soft_clip(pe: &gatk_engine::pileup::PileupElement<'_>) -> b
 }
 
 /// `Mutect2Engine.isActive` for a locus, counting the callable sites as it goes.
+#[allow(clippy::too_many_arguments)]
 fn is_active(
     context: Option<&AlignmentContext<'_>>,
     ref_base: u8,
@@ -516,6 +536,7 @@ fn is_active(
     tumor: &mut PileupQualBuffer,
     normal: &mut PileupQualBuffer,
     callable_sites: &mut u64,
+    f1r2: Option<(&mut crate::collect_f1r2_counts::Collector, &[u8])>,
 ) -> Result<f64, Mutect2Error> {
     let Some(context) = context.filter(|c| !c.pileup.elements.is_empty()) else {
         return Ok(0.0);
@@ -529,6 +550,20 @@ fn is_active(
     };
     let tumor_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
         pileup.iter().filter(|pe| !is_normal(pe)).collect();
+    // `f1R2CountsCollector.process(tumorPileup, ref)`, with `getKmerAround(position, 1)`: no k-mer
+    // where the contig's end cuts the window short.
+    if let Some((collector, bases)) = f1r2 {
+        let position = context.position as usize;
+        let kmer = (position >= 2 && position < bases.len())
+            .then(|| String::from_utf8_lossy(&bases[position - 2..=position]).to_ascii_uppercase());
+        let elements: Vec<crate::collect_f1r2_counts::Element> = tumor_pileup
+            .iter()
+            .map(|pe| {
+                crate::collect_f1r2_counts::Element::from_pileup(pe, sample_name(pe.read, header))
+            })
+            .collect();
+        collector.process(&elements, kmer.as_deref());
+    }
     tumor.accumulate(
         &tumor_pileup,
         context.position,
@@ -542,6 +577,14 @@ fn is_active(
         log_likelihood_ratio((tumor_pileup.len() - alt_quals.len()) as i32, &alt_quals, 1);
     if tumor_log_odds < arguments.initial_log_odds {
         return Ok(0.0);
+    }
+    // A training dataset wants every candidate, germline and panel sites included.
+    if arguments
+        .permutect
+        .as_ref()
+        .is_some_and(|p| p.borrow().engines.iter().any(|e| e.training))
+    {
+        return Ok(1.0);
     }
     if !arguments.normal_samples.is_empty() && !arguments.genotype_germline_sites {
         let normal_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
@@ -1526,6 +1569,35 @@ fn call_mutations(
                 EngineError::Limitation(what) => failure("PortLimitation", what),
                 EngineError::Runtime { class, message } => failure(&class, message),
             })?;
+        // `permutectTrainingDatasetEngines` then `permutectTestDatasetEngines`, `addData`.
+        if let Some(permutect) = &arguments.permutect {
+            let contig_index = context
+                .header
+                .sequences
+                .iter()
+                .position(|s| s.name == annotated.contig)
+                .unwrap_or(0);
+            let haplotype_refs: Vec<&Haplotype> = haplotypes.iter().collect();
+            permutect
+                .borrow_mut()
+                .add_data(
+                    reference_window,
+                    &annotated,
+                    &trimmed_call,
+                    &trimmed_reads,
+                    &fragments,
+                    &haplotype_refs,
+                    contig_index,
+                )
+                .map_err(|e| match e {
+                    crate::permutect_dataset::DatasetError::Limitation(what) => {
+                        failure("PortLimitation", what)
+                    }
+                    crate::permutect_dataset::DatasetError::Runtime { class, message } => {
+                        failure(&class, message)
+                    }
+                })?;
+        }
         // `annotateReadLikelihoodsWithSupportedAlleles(trimmedCall, trimmedLikelihoods,
         // Fragment::getReads)`, for the bamout.
         if let Some(tags) = bamout.as_deref_mut() {
