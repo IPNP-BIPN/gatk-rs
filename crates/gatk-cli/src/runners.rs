@@ -9855,6 +9855,17 @@ pub fn fasta_alternate_reference_maker(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `--alleles`, with `--force-call-filtered-alleles`: the records to force-call.
+pub(crate) fn given_alleles(
+    parser: &Parser,
+) -> Result<Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>, Thrown> {
+    let Some(path) = argument(parser, "alleles") else {
+        return Ok(None);
+    };
+    let (records, _) = feature_variants(&path)?;
+    Ok(Some((records, flag(parser, "force-call-filtered-alleles"))))
+}
+
 /// A `FeatureInput<VariantContext>`: the file's records and the samples its header declares.
 ///
 /// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec

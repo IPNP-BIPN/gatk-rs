@@ -51,6 +51,8 @@ pub struct HaplotypeCallerArguments {
     pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
     /// `--use-pdhmm` and its switches.
     pub pdhmm: Option<PdhmmArguments>,
+    /// `--alleles`' records, and `--force-call-filtered-alleles`.
+    pub given_alleles: Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -309,6 +311,36 @@ fn call_variants_into(
             },
             &mut |locus, context| {
                 let ref_base = bases[locus.start as usize - 1];
+                // A locus a usable given record overlaps is active, before anything else.
+                if let Some((records, force_call_filtered)) = &arguments.given_alleles {
+                    if crate::given_alleles::forced_at(
+                        records,
+                        &locus.contig,
+                        locus.start,
+                        *force_call_filtered,
+                    ) {
+                        if detection.use_pileup_detection {
+                            let summary = match context {
+                                Some(context) => crate::pileup_based_alleles::LocusSummary::new(
+                                    context,
+                                    0.0,
+                                    ref_base,
+                                    &bases,
+                                    i32::from(arguments.assembly.min_base_quality_score),
+                                    detection,
+                                ),
+                                None => crate::pileup_based_alleles::LocusSummary::empty(
+                                    &locus.contig,
+                                    locus.start,
+                                    0.0,
+                                    ref_base,
+                                ),
+                            };
+                            loci.push(summary);
+                        }
+                        return (1.0, None);
+                    }
+                }
                 let Some(context) = context else {
                     if detection.use_pileup_detection {
                         loci.push(crate::pileup_based_alleles::LocusSummary::empty(
@@ -390,6 +422,10 @@ fn call_variants_into(
             pileup: (detection.use_pileup_detection && !genotyping.ramped_engine)
                 .then_some((detection, loci.as_slice())),
             // RampedHaplotypeCallerEngine makes no PD haplotypes.
+            given_alleles: arguments
+                .given_alleles
+                .as_ref()
+                .map(|(records, force)| (records.as_slice(), *force)),
             pd: match (&arguments.pdhmm, pd_engine) {
                 (Some(pdhmm), Some(engine)) if !genotyping.ramped_engine => {
                     Some(crate::hc_region::PdContext {

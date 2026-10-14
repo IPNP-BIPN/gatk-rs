@@ -8118,7 +8118,9 @@
         "size) take their default first and one value that moves the outcome.",
         "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
         "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
-        "with --dragen-mode, which every row sets; hc-pdhmm measures it."
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8849,6 +8851,14 @@
       "--fallback-gga-if-pdhmm-fails": [
         "true",
         "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8883,7 +8893,9 @@
         "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
         "size) take their default first and one value that moves the outcome.",
-        "Mutect2 declares the PDHMM's arguments and reads none of them; they vary all the same."
+        "Mutect2 declares the PDHMM's arguments and reads none of them; they vary all the same.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -9601,6 +9613,14 @@
       "--fallback-gga-if-pdhmm-fails": [
         "true",
         "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -9645,7 +9665,9 @@
         "size) take their default first and one value that moves the outcome.",
         "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
         "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
-        "with --dragen-mode, which every row sets; hc-pdhmm measures it."
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -10484,6 +10506,14 @@
       "--fallback-gga-if-pdhmm-fails": [
         "true",
         "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
       ]
     }
   },

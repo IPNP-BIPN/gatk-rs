@@ -7703,6 +7703,33 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-alleles",
+      "status": "golden-pending",
+      "title": "The callers force-calling, --alleles, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "Force-calling (G3.2l, #1346). A locus a usable given record overlaps is active before its pileup is looked at, and Mutect2 then counts no callable site there. A region's given events are the records over its padded span, filtered ones dropped unless --force-call-filtered-alleles, split one per alternate and right trimmed only when split, so an MNP sharing its last base with the reference becomes a SNP; HaplotypeCaller keeps those starting at or after the region's start, so one in the right padding stays, while Mutect2 and the ramped engine keep every one. A region with given events and no reads is still called by HaplotypeCaller. The trimmer sees the given events beside the assembled ones, and each one the assembly lacks is inserted into the five best haplotypes, the reference first then by score, a list rather than a set, so nothing inserted is inserted into again. An alternate consistent with a given event (the same length change, one allele a prefix of the other) is output whatever its confidence and its site emitted whatever its quality; Mutect2 keeps it past its tumour and normal odds. RampedHaplotypeCaller only genotypes with them. Found on the way: MLEAF at a site with no called chromosome is Math.min(1.0, NaN), so NaN; and DepthPerSampleHC's marginalization. Over HcEndToEndDump's reads and HcPileupDump's paired set, with given VCFs made from the reference: alleles the reads carry and do not, a deletion, an insertion, a multiallelic record, a filtered record and one with no reads; GVCF mode, no assembly, beside pileup detection and the PDHMM, under intervals, RampedHaplotypeCaller, and Mutect2 tumour-only, tumour-normal and in GVCF mode, which the reference refuses for two samples.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 19,
+      "expect_contains": [
+        "error\tmutect2-alleles-gvcf\tjava.lang.IllegalArgumentException:readLikelihoods must contain exactly one sample but it contained 2",
+        "MLEAF=NaN",
+        "out\tpaired-mutect2-alleles="
+      ],
+      "cases": [
+        {
+          "dump": "HcAllelesDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

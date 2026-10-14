@@ -96,6 +96,8 @@ pub struct Mutect2Arguments {
     pub region: AssemblyRegionArgs,
     /// `PileupDetectionArgumentCollection`.
     pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
+    /// `--alleles`' records, and `--force-call-filtered-alleles`.
+    pub given_alleles: Option<(Vec<VariantContext>, bool)>,
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
     pub likelihoods: LikelihoodEngineArguments,
@@ -221,6 +223,13 @@ pub fn call_variants(
                 )
             },
             &mut |locus, context| {
+                // A locus a usable given record overlaps is active, and nothing else is counted.
+                let forced = arguments
+                    .given_alleles
+                    .as_ref()
+                    .is_some_and(|(records, force)| {
+                        crate::given_alleles::forced_at(records, &locus.contig, locus.start, *force)
+                    });
                 if detection.use_pileup_detection {
                     let ref_base = bases[locus.start as usize - 1];
                     loci.push(match context {
@@ -239,6 +248,9 @@ pub fn call_variants(
                             ref_base,
                         ),
                     });
+                }
+                if forced {
+                    return (1.0, None);
                 }
                 let prob = is_active(
                     context,
@@ -571,6 +583,18 @@ fn call_region(
         return reference_model_for_no_variation(region, context);
     }
     remove_unmarked_duplicates(&mut region, context.header)?;
+    // The given events: the usable records over the padded span, split, wherever they start.
+    let given = match &arguments.given_alleles {
+        Some((records, force_call_filtered)) => crate::given_alleles::given_events(
+            records,
+            &region.span().contig,
+            region.padded_span(),
+            i32::MIN,
+            *force_call_filtered,
+        )
+        .map_err(calling)?,
+        None => Vec::new(),
+    };
 
     let mut untrimmed = assemble_reads(
         &mut region,
@@ -597,6 +621,9 @@ fn call_region(
         events =
             crate::pileup_based_alleles::events_for_trimming(&events, &good_pileup_events, &[]);
     }
+    if !given.is_empty() {
+        events = crate::pileup_based_alleles::events_for_trimming(&events, &given, &[]);
+    }
     let padded = region.padded_span().clone();
     let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let trimmed = context
@@ -613,8 +640,16 @@ fn call_region(
     let mut assembly = untrimmed
         .trim_to(variant_region)
         .map_err(|e| calling(format!("{e:?}")))?;
-    // `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles` that the trimmed set's
-    // missing event maps leave without effect.
+    // `addGivenAlleles`, then `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles`
+    // that the trimmed set's missing event maps leave without effect.
+    crate::given_alleles::add_given_alleles(
+        &mut assembly,
+        &given,
+        arguments.max_mnp_distance,
+        &SmithWatermanJavaAligner,
+        &arguments.assembly.haplotype_to_reference_sw,
+    )
+    .map_err(calling)?;
     crate::pileup_based_alleles::inject_pileup_events(
         &mut assembly,
         &region,
@@ -732,6 +767,7 @@ fn call_region(
         window,
         context,
         random,
+        &given,
     )?;
     if !arguments.emit_reference_confidence {
         return Ok(calls);
@@ -849,6 +885,7 @@ fn call_mutations(
     reference_window: (i64, &[u8]),
     context: &RegionContext<'_>,
     random: &mut JavaRandom,
+    given: &[Event],
 ) -> Result<Vec<VariantContext>, Mutect2Error> {
     let arguments = context.arguments;
     let illegal = |e: String| failure("IllegalArgumentException", e);
@@ -951,15 +988,23 @@ fn call_mutations(
             somatic_log_odds(&normal_matrix, ref_index, alt_pseudocount)?;
 
         let normal_threshold = arguments.normal_log_odds;
+        // `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`: kept whatever their odds.
+        let forced = crate::given_alleles::alleles_consistent_with_given_alleles(
+            given,
+            &merged.alleles[0],
+            &merged.alleles[1..],
+        );
+        let is_forced = |a: usize| forced.contains(&alleles[a]);
         let tumor_alts: Vec<usize> = merged_alternates(&merged.alleles, &alleles)
             .into_iter()
-            .filter(|&a| tumor_log_odds[&a] > arguments.emission_log_odds)
+            .filter(|&a| is_forced(a) || tumor_log_odds[&a] > arguments.emission_log_odds)
             .collect();
         let to_genotype: Vec<usize> = tumor_alts
             .iter()
             .copied()
             .filter(|&a| {
-                !has_normal
+                is_forced(a)
+                    || !has_normal
                     || arguments.consider_germline_active
                     || normal_log_odds[&a] > normal_threshold
             })

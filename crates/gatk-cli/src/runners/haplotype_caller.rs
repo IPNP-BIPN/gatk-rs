@@ -167,8 +167,10 @@ const HONOURED: &[&str] = &[
     "use-posteriors-to-calculate-qual",
     // Without contamination the filtered read map is the genotyping one either way.
     "use-filtered-reads-for-annotations",
-    // Without --alleles, a bamout or a native PairHMM these change nothing.
+    // Force-calling.
+    "alleles",
     "force-call-filtered-alleles",
+    // Without a bamout or a native PairHMM these change nothing.
     "bam-writer-type",
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -685,6 +687,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
+        given_alleles: super::given_alleles(parser)?,
         pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
             use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
             gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")

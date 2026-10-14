@@ -487,8 +487,8 @@ jobs:
             suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-pedigree hc-linked-graph"
           - group: golden-pending
             index: "2/2"
-            slug: "hc-pileup-hc-pdhmm"
-            suites: "hc-pileup hc-pdhmm"
+            slug: "hc-pileup-hc-pdhmm-hc-alleles"
+            suites: "hc-pileup hc-pdhmm hc-alleles"
     steps:
       - uses: actions/checkout@v7
 

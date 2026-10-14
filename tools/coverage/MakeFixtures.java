@@ -1016,6 +1016,37 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * The callers' `--alleles` over `mutect_ref.fasta`, inside the reads' chr1:900-2100: a SNP, a
+     * filtered SNP, a three-base deletion, a two-base insertion, and a multiallelic record whose
+     * MNP shares its second base, all made from the reference so their REF alleles hold.
+     */
+    static void givenAllelesFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final java.util.function.IntFunction<String> at = pos -> bases.substring(pos - 1, pos);
+        final java.util.function.Function<String, String> other = b -> b.equals("A") ? "C" : "A";
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n")
+                .append("##FILTER=<ID=LowQual,Description=\"Low quality\">\n")
+                .append("##contig=<ID=chr1,length=").append(bases.length()).append(">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        vcf.append("chr1\t1000\t.\t").append(at.apply(1000)).append('\t').append(other.apply(at.apply(1000))).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1100\t.\t").append(at.apply(1100)).append('\t').append(other.apply(at.apply(1100))).append("\t.\tLowQual\t.\n");
+        vcf.append("chr1\t1200\t.\t").append(bases, 1199, 1203).append('\t').append(at.apply(1200)).append("\t.\t.\t.\n");
+        vcf.append("chr1\t1300\t.\t").append(at.apply(1300)).append('\t').append(at.apply(1300)).append("GA\t.\t.\t.\n");
+        final String mnp = bases.substring(1399, 1401);
+        vcf.append("chr1\t1400\t.\t").append(mnp).append('\t').append(other.apply(mnp.substring(0, 1))).append(mnp.substring(1))
+                .append(',').append(other.apply(mnp.substring(0, 1))).append(other.apply(mnp.substring(1))).append("\t.\t.\t.\n");
+        final Path path = dir.resolve("given_alleles.vcf");
+        Files.writeString(path, vcf.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(Paths.get(path + ".idx"));
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -2954,6 +2985,7 @@ public class MakeFixtures {
         md5Bam(dir.resolve("md5header.bam"), dir.resolve("reference.fasta"));
         splitCram(dir);
         mutectFixtures(dir);
+        givenAllelesFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);

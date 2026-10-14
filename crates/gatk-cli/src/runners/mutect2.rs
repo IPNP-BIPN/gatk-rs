@@ -165,13 +165,16 @@ const HONOURED: &[&str] = &[
     "max-num-haplotypes-in-population",
     "disable-artificial-haplotype-recovery",
     "independent-mates",
-    // Without a panel of normals, a Permutect dataset, a bamout, --alleles, a native PairHMM or a
-    // DRAGstr model these change nothing; --debug-assembly is logged only.
+    // Without a panel of normals, a Permutect dataset or a bamout these change nothing;
+    // --debug-assembly is logged only.
     "genotype-pon-sites",
     "permutect-dataset-mode",
     "bam-writer-type",
     "debug-assembly",
+    // Force-calling.
+    "alleles",
     "force-call-filtered-alleles",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-pair-hmm-scores",
     // The implementations, refused below when they name a kernel this port does not carry.
@@ -430,6 +433,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
+        given_alleles: super::given_alleles(parser)?,
         pileup_detection: super::pileup_detection_arguments(parser),
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,

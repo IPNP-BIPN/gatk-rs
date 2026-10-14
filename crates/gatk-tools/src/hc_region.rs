@@ -99,6 +99,8 @@ pub struct CallRegionContext<'a> {
     )>,
     /// `--use-pdhmm`: partially determined haplotypes and the engine that scores them.
     pub pd: Option<PdContext<'a>>,
+    /// `--alleles`: the records, and `--force-call-filtered-alleles`.
+    pub given_alleles: Option<(&'a [htsjdk_vcf::variant::VariantContext], bool)>,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -135,7 +137,27 @@ pub fn call_region(
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
-    if !region.is_active() || region.reads().is_empty() {
+    if !region.is_active() {
+        return reference_model_for_no_variation(region, true, context);
+    }
+    // The given events: the records over the padded span, split; HaplotypeCaller keeps those
+    // starting in the region, the ramped engine every one.
+    let given: Vec<gatk_engine::event_map::Event> = match context.given_alleles {
+        Some((records, force_call_filtered)) => crate::given_alleles::given_events(
+            records,
+            &region.span().contig,
+            region.padded_span(),
+            if context.genotyping.ramped_engine {
+                i32::MIN
+            } else {
+                region.span().start
+            },
+            force_call_filtered,
+        )
+        .map_err(calling)?,
+        None => Vec::new(),
+    };
+    if given.is_empty() && region.reads().is_empty() {
         return reference_model_for_no_variation(region, true, context);
     }
     // The pre-assembler off ramp: the region's place, before anything is assembled.
@@ -294,6 +316,10 @@ pub fn call_region(
             good_pileup_events = good;
             bad_pileup_events = bad;
         }
+        // `givenAlleles.forEach(allVariationEvents::add)`, which the ramped engine does not do.
+        if !given.is_empty() && !context.genotyping.ramped_engine {
+            events = crate::pileup_based_alleles::events_for_trimming(&events, &given, &[]);
+        }
         let padded = region.padded_span().clone();
         let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
         let trimmed = context
@@ -331,6 +357,17 @@ pub fn call_region(
             .map_err(|e| calling(format!("{e:?}")))?;
         (assembly, trimmed)
     };
+    // `addGivenAlleles`, HaplotypeCaller's only.
+    if !context.genotyping.ramped_engine {
+        crate::given_alleles::add_given_alleles(
+            &mut assembly,
+            &given,
+            context.genotyping.max_mnp_distance,
+            context.aligner,
+            &context.assembly.haplotype_to_reference_sw,
+        )
+        .map_err(calling)?;
+    }
     // `generatePDHaplotypes`: the assembled haplotypes replaced by partially determined ones,
     // unless the construction gave up. The reference is kept aside: the set no longer has one.
     let assembled_reference = assembly.reference_haplotype().cloned();
@@ -525,6 +562,7 @@ pub fn call_region(
             ramp_flanks,
             &std::collections::BTreeSet::new(),
             None,
+            &given,
         );
     }
     let mut likelihoods = match (&context.pd, context.stepwise_engine) {
@@ -705,6 +743,7 @@ pub fn call_region(
         ramp_flanks,
         &suspicious,
         pre_filtering.as_ref().map(|(l, h)| (l, h.as_slice())),
+        &given,
     )
 }
 
@@ -765,6 +804,7 @@ fn finish_region(
     ramp_flanks: Option<(Option<AssemblyRegion>, Option<AssemblyRegion>)>,
     suspicious: &std::collections::BTreeSet<i32>,
     pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
+    given: &[gatk_engine::event_map::Event],
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     let contig_length = context.contig_bases.len() as i32;
@@ -782,6 +822,7 @@ fn finish_region(
         filtered,
         suspicious,
         pre_filtering,
+        given,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
     if !context.genotyping.emit_reference_confidence {

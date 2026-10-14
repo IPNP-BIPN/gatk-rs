@@ -603,14 +603,14 @@ pub fn inject_pileup_events(
 }
 
 /// `isSymbolic`: a no-call, `-`, `*`, or a symbolic allele.
-fn is_symbolic(allele: &Allele) -> bool {
+pub(crate) fn is_symbolic(allele: &Allele) -> bool {
     let text = allele.display_string();
     allele.is_no_call() || text == "-" || text == "*" || allele.is_symbolic()
 }
 
 /// `makeHaplotypeWithInsertedEvent`: none when the base haplotype already has an event over this
 /// one (a haplotype made here has no event map, so it never does) or `insertAllele` refuses.
-fn make_haplotype_with_inserted_event(
+pub(crate) fn make_haplotype_with_inserted_event(
     base: &Haplotype,
     reference: &Haplotype,
     event: &Event,

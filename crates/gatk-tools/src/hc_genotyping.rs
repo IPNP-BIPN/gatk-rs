@@ -192,6 +192,7 @@ pub fn assign_genotype_likelihoods_annotated(
         &[],
         &std::collections::BTreeSet::new(),
         None,
+        &[],
     )
 }
 
@@ -213,6 +214,7 @@ pub fn assign_genotype_likelihoods_full(
     filtered_reads: &[Vec<BamRecord>],
     suspicious_locations: &std::collections::BTreeSet<i32>,
     pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
+    given: &[gatk_engine::event_map::Event],
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -415,7 +417,13 @@ pub fn assign_genotype_likelihoods_full(
         );
         vc.stop = i64::from(merged.end);
         vc.genotypes = GenotypesContext::new(genotypes);
-        if let Some(call) = engine.calculate_genotypes(&vc)? {
+        // `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`.
+        let forced = crate::given_alleles::alleles_consistent_with_given_alleles(
+            given,
+            &vc.alleles[0],
+            &vc.alleles[1..],
+        );
+        if let Some(call) = engine.calculate_genotypes_forcing(&vc, &forced)? {
             for allele in &call.alleles {
                 if let Some((_, indices)) = mapper.iter().find(|(a, _)| a == allele) {
                     for &h in indices {
