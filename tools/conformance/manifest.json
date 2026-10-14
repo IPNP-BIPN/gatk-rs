@@ -7951,7 +7951,7 @@
     },
     {
       "id": "hc-contamination",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Contamination downsampling in the callers, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7970,7 +7970,8 @@
       "cases": [
         {
           "dump": "HcContaminationDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_contamination.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38557839761, byte for byte the local dump."
         }
       ]
     },
