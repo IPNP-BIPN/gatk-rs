@@ -7973,6 +7973,30 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "mutect2-resources",
+      "status": "golden-pending",
+      "title": "Mutect2's germline resource and panel of normals, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--germline-resource, --max-population-af, --panel-of-normals and --genotype-pon-sites (G3.2r, #1352). POPAF is minus log10 of the AF of the resource record whose alleles match the call's once both are against the longer reference (alleleIndices), the default allele frequency otherwise, a record whose AF is not one value per alternate skipped and a same-length reference with other bases refused. In tumour-only calling a locus with a resource allele of AF at least --max-population-af is inactive when that allele is an indel and the likeliest tumour allele is one, or a substitution and the likeliest tumour base is the resource reference's first base, unless --genotype-germline-sites; the panel's loci are inactive unless --genotype-pon-sites, and a call starting on one is flagged PON. Resources written from a first plain run's calls over HcDragenEndToEndDump's reads: common, rare and missing AFs, a multiallelic record, a longer representation, a wrong-length AF, tumour-normal, GVCF mode, and the refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 21,
+      "expect_contains": [
+        "out\tgermline=",
+        "out\tpon-genotyped="
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2ResourcesDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

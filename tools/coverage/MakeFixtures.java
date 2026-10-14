@@ -1105,6 +1105,50 @@ public class MakeFixtures {
                 StandardCharsets.UTF_8);
     }
 
+    /**
+     * Mutect2's `--germline-resource` and `--panel-of-normals` over `mutect_ref.fasta`, at the
+     * sites `resources.vcf` covers: a record for every alternate base, with an AF from common to
+     * rare (and a missing one) in the resource, and the panel at every other site.
+     */
+    static void germlineFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##contig=<ID=chr1,length=" + bases.length() + ">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String[] frequencies = {"0.5", "0.02", "0.001", "1e-5", "."};
+        final StringBuilder germline = new StringBuilder(header);
+        final StringBuilder pon = new StringBuilder(header);
+        int n = 0;
+        int site = 0;
+        for (final int pos : new int[] {1000, 1100, 1200, 1400, 1600, 1800, 1950}) {
+            final String ref = bases.substring(pos - 1, pos);
+            for (final char alt : "ACGT".toCharArray()) {
+                if (ref.charAt(0) == alt) {
+                    continue;
+                }
+                germline.append("chr1\t").append(pos).append("\t.\t").append(ref).append('\t').append(alt)
+                        .append("\t.\t.\tAF=").append(frequencies[n++ % frequencies.length]).append('\n');
+                if (site % 2 == 0) {
+                    pon.append("chr1\t").append(pos).append("\t.\t").append(ref).append('\t').append(alt)
+                            .append("\t.\t.\t.\n");
+                }
+            }
+            site++;
+        }
+        for (final String[] file : new String[][] {{"m2_germline.vcf", germline.toString()}, {"m2_pon.vcf", pon.toString()}}) {
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, file[1], StandardCharsets.UTF_8);
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(Paths.get(path + ".idx"));
+        }
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -3047,6 +3091,7 @@ public class MakeFixtures {
         resourceFixtures(dir);
         ploidyRegionFixtures(dir);
         contaminationFixtures(dir);
+        germlineFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);

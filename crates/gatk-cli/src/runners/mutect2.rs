@@ -165,8 +165,11 @@ const HONOURED: &[&str] = &[
     "max-num-haplotypes-in-population",
     "disable-artificial-haplotype-recovery",
     "independent-mates",
-    // Without a panel of normals or a Permutect dataset these change nothing; the bamout is
-    // written; --debug-assembly is logged only.
+    // The germline resource and the panel of normals, read whole.
+    "germline-resource",
+    "panel-of-normals",
+    // Without a Permutect dataset this changes nothing; the bamout is written; --debug-assembly
+    // is logged only.
     "genotype-pon-sites",
     "permutect-dataset-mode",
     "bam-output",
@@ -568,6 +571,16 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         flow_collapse_partial_mode: flag(parser, "flow-assembly-collapse-partial-mode"),
         filter_alleles: super::haplotype_caller::allele_filter_arguments(parser),
         default_af,
+        germline_resource: match argument(parser, "germline-resource") {
+            Some(path) => resource_records(&path)?,
+            None => Vec::new(),
+        },
+        max_population_af: double_or(parser, "max-population-af", 0.01),
+        panel_of_normals: match argument(parser, "panel-of-normals") {
+            Some(path) => resource_records(&path)?,
+            None => Vec::new(),
+        },
+        genotype_pon_sites: flag(parser, "genotype-pon-sites"),
         informative_read_overlap_margin: number_or(
             parser,
             "allele-informative-reads-overlap-margin",
@@ -824,4 +837,21 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}.stats: {error}")))?;
     // `onTraversalSuccess` returns "SUCCESS", which `handleResult` prints.
     Ok(Some("SUCCESS".to_string()))
+}
+
+/// A feature input the engine queries, read whole: a path that is not there is refused as
+/// `GATKTool` refuses it, by its URI.
+fn resource_records(path: &str) -> Result<Vec<htsjdk_vcf::variant::VariantContext>, Thrown> {
+    if std::fs::metadata(path).is_err() {
+        return Err(Thrown {
+            failure: Failure::User,
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile",
+            message: Some(format!(
+                "Couldn't read file file://{}. Error was: It doesn't exist.",
+                java_absolute_path(path)
+            )),
+        });
+    }
+    Ok(feature_variants(path)?.0)
 }
