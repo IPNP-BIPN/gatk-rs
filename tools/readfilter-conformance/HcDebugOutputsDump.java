@@ -71,6 +71,12 @@ public class HcDebugOutputsDump {
         withFile(dir, "hc-histogram-empty", hc, e2eBam, e2eFasta, histogram, List.of("-L", "chr2:10-20"));
         withFile(dir, "ramped-histogram", ramped, e2eBam, e2eFasta, histogram, List.of());
         withFile(dir, "mutect2-histogram", m2, e2eBam, e2eFasta, histogram, List.of());
+        final String variantsOut = "--debug-assembly-variants-out";
+        withFile(dir, "hc-assembly-variants", hc, e2eBam, e2eFasta, variantsOut, List.of());
+        withFile(dir, "hc-assembly-variants-chr2", hc, e2eBam, e2eFasta, variantsOut, List.of("-L", "chr2"));
+        withFile(dir, "ramped-assembly-variants", ramped, e2eBam, e2eFasta, variantsOut, List.of("-L", "chr2"));
+        withFile(dir, "mutect2-assembly-variants", m2, e2eBam, e2eFasta, variantsOut, List.of());
+        withFile(dir, "mutect2-assembly-variants-chr2", m2, e2eBam, e2eFasta, variantsOut, List.of("-L", "chr2"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));

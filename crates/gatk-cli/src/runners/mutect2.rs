@@ -172,8 +172,10 @@ const HONOURED: &[&str] = &[
     "bam-output",
     "bam-writer-type",
     "assembly-region-out",
+    "capture-assembly-failure-bam",
     // Kept by the assembler and never printed: only HaplotypeCaller's engine prints it.
     "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
     "debug-assembly",
     // Force-calling.
     "alleles",
@@ -475,6 +477,8 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
         },
         flow_engine: flow_engine_arguments(parser),
         flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
@@ -590,6 +594,14 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         flow_order_for_annotations: annotation_flow_order.clone(),
     };
     let mut random = gatk_random();
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = m2::call_variants(
         &reads,
         &header,
@@ -598,7 +610,30 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
+    // `--debug-assembly-variants-out`: an empty header, the queue, indexed on the fly.
+    if let Some((path, queue)) = &assembly_variants {
+        let empty = htsjdk_vcf::header::VcfHeader {
+            lines: Vec::new(),
+            samples: Vec::new(),
+        };
+        let text = super::write_vcf_strict_or_lenient(false, &empty, &queue.borrow().records())?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     drop(random);
     let called = called.map_err(|error| {
         if error.class == "PortLimitation" {

@@ -174,10 +174,12 @@ const HONOURED: &[&str] = &[
     "bam-output",
     "bam-writer-type",
     "assembly-region-out",
+    "capture-assembly-failure-bam",
     "keep-rg",
     "just-determine-active-regions",
     "dont-genotype",
     "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -748,6 +750,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
         },
         flow_engine: flow_engine_arguments(parser),
         stepwise_flow: flag(parser, "use-flow-aligner-for-stepwise-hc-filtering").then(|| {
@@ -926,6 +930,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| format!("{error:?}"))
     };
     let mut random = gatk_random();
+    // `--debug-assembly-variants-out`'s queue, ordered by the reads' dictionary.
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = hc::call_variants(
         &reads,
         &header,
@@ -934,6 +947,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
     drop(random);
     // A failure mid-traversal still writes what came before it, and the writer's own refusal of
@@ -1078,6 +1092,35 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             None => hc::samples_from_header(&header),
         },
     };
+    // `--debug-assembly-variants-out`: `makeVCFHeader` without the tool's default lines and without
+    // genotypes, then the queue, indexed on the fly, written as the engine shuts down.
+    if let Some((path, queue)) = &assembly_variants {
+        let debug_header = VcfHeader {
+            lines: vcf_header
+                .lines
+                .iter()
+                .filter(|line| !matches!(line.key(), "GATKCommandLine" | "source"))
+                .cloned()
+                .collect(),
+            samples: Vec::new(),
+        };
+        let records = queue.borrow().records();
+        let text = write_vcf_strict_or_lenient(false, &debug_header, &records)?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     // `GVCFWriter`: the reference records combined into GQ-band blocks.
     if emit_mode == "GVCF" {
         let bands: Vec<i32> = arguments_or_default_bands(parser);

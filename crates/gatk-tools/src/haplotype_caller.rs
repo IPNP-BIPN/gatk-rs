@@ -202,6 +202,9 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
     let mut calls = Vec::new();
     // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
@@ -247,6 +250,7 @@ pub fn call_variants(
         results.as_ref(),
         bamout.as_ref(),
         region_out.as_ref(),
+        assembly_variants,
         &mut calls,
     );
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
@@ -287,6 +291,9 @@ fn call_variants_into(
     pd_results: Option<&std::cell::RefCell<String>>,
     bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     region_out: Option<&std::cell::RefCell<String>>,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -521,6 +528,7 @@ fn call_variants_into(
             keep_rg: arguments.keep_rg.as_deref(),
             just_determine_active_regions: arguments.just_determine_active_regions,
             dont_genotype: arguments.dont_genotype,
+            assembly_variants,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()

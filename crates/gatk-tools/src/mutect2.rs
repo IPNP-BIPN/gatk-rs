@@ -183,6 +183,9 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
 ) -> Result<Mutect2Output, Mutect2Error> {
     // `createBamWriter`, closed with the engine, after a failure too.
     let bamout = arguments.bamout.as_ref().map(|b| {
@@ -204,6 +207,7 @@ pub fn call_variants(
         random,
         bamout.as_ref(),
         region_out.as_ref(),
+        assembly_variants,
     );
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
         std::fs::write(path, text.into_inner())
@@ -228,6 +232,9 @@ fn call_variants_with(
     random: &mut JavaRandom,
     bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     region_out: Option<&std::cell::RefCell<String>>,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
 ) -> Result<Mutect2Output, Mutect2Error> {
     let samples = samples_of(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
@@ -328,6 +335,7 @@ fn call_variants_with(
             annotator,
             pileup_loci: &loci,
             bamout,
+            assembly_variants,
         };
         for traversed in regions {
             if let Some(out) = region_out {
@@ -528,6 +536,9 @@ struct RegionContext<'a> {
     pileup_loci: &'a [crate::pileup_based_alleles::LocusSummary],
     /// `--bam-output`.
     bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    /// `--debug-assembly-variants-out`'s queue.
+    assembly_variants:
+        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
 }
 
 fn calling(message: impl Into<String>) -> Mutect2Error {
@@ -662,6 +673,15 @@ fn call_region(
         &SmithWatermanJavaAligner,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // `addAssembledVariantsToEventMapOutput`.
+    if let Some(queue) = context.assembly_variants {
+        for event in untrimmed
+            .variation_events(arguments.max_mnp_distance)
+            .map_err(|e| calling(format!("{e:?}")))?
+        {
+            queue.borrow_mut().add_event(&event);
+        }
+    }
     let mut events = untrimmed
         .variation_events(arguments.max_mnp_distance)
         .map_err(|e| calling(format!("{e:?}")))?;

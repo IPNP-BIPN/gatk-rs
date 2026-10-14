@@ -131,6 +131,10 @@ pub struct CallRegionContext<'a> {
     pub just_determine_active_regions: bool,
     /// `--dont-genotype`.
     pub dont_genotype: bool,
+    /// `--debug-assembly-variants-out`'s queue, which HaplotypeCaller's engine fills and the
+    /// ramped engine does not.
+    pub assembly_variants:
+        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -320,6 +324,16 @@ pub fn call_region(
                 context.aligner,
             )?
         };
+        // `addAssembledVariantsToEventMapOutput`, HaplotypeCaller's only.
+        if let (Some(queue), false) = (context.assembly_variants, context.genotyping.ramped_engine)
+        {
+            for event in untrimmed
+                .variation_events(context.genotyping.max_mnp_distance)
+                .map_err(|e| calling(format!("{e:?}")))?
+            {
+                queue.borrow_mut().add_event(&event);
+            }
+        }
         if let (true, Some(ramp)) = (post_filter, context.on_ramp) {
             if !ramp.has_region(region.span()) {
                 return Ok(Vec::new());
@@ -1095,6 +1109,8 @@ pub struct RegionAssemblyArguments {
     pub dangling_end_sw: SwParameters,
     pub haplotype_to_reference_sw: SwParameters,
     pub read_to_haplotype_sw: SwParameters,
+    /// `--capture-assembly-failure-bam`, with the BGZF settings its writer inherits.
+    pub capture_assembly_failure_bam: Option<(u32, htsjdk_bgzf::Deflater)>,
 }
 
 impl Default for RegionAssemblyArguments {
@@ -1108,6 +1124,7 @@ impl Default for RegionAssemblyArguments {
             dangling_end_sw: STANDARD_NGS,
             haplotype_to_reference_sw: NEW_SW_PARAMETERS,
             read_to_haplotype_sw: ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+            capture_assembly_failure_bam: None,
         }
     }
 }
@@ -1244,7 +1261,22 @@ pub fn assemble_reads(
             &arguments.dangling_end_sw,
             &arguments.haplotype_to_reference_sw,
         )
-        .map_err(RegionAssemblyError::Assembler)
+        .map_err(|error| {
+            // `--capture-assembly-failure-bam`: the region's reads, as the assembly saw them, in
+            // `assemblyFailure.bam` in the working directory, then the exception again.
+            if let Some((level, deflater)) = arguments.capture_assembly_failure_bam {
+                let mut reads = region.reads().to_vec();
+                if header.attributes.get("SO") == Some("coordinate") {
+                    reads.sort_by(htsjdk_bam::coordinate::compare);
+                }
+                if let Ok((bam, _)) =
+                    crate::sam_output::write_records_with(header, &reads, false, level, deflater)
+                {
+                    let _ = std::fs::write("assemblyFailure.bam", bam);
+                }
+            }
+            RegionAssemblyError::Assembler(error)
+        })
 }
 
 /// `assembleReads` with `bypassAssembly`, as the post-filter on ramp runs it: the region finalized

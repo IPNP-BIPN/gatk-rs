@@ -17483,6 +17483,26 @@ fn display_date_time() -> String {
 /// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
 /// with the index the arguments ask for beside it.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    write_variant_file(
+        parser,
+        output,
+        text,
+        flag(parser, "create-output-variant-index"),
+        flag(parser, "create-output-variant-md5"),
+        None,
+    )
+}
+
+/// A VCF written as `createVCFWriter` writes it: indexed on the fly when asked, digested when
+/// asked, with the index's dictionary the header's `##contig` lines unless one is given.
+pub(crate) fn write_variant_file(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    create_index: bool,
+    create_md5: bool,
+    index_dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     let bytes = if block_compressed {
         let (level, deflater) = output_compression(parser);
@@ -17501,30 +17521,31 @@ fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(),
 
     // `--create-output-variant-md5`, which digests the file as it was WRITTEN: a block compressed
     // output is digested compressed, because the digest is taken by the stream the writer wraps.
-    if flag(parser, "create-output-variant-md5") {
+    if create_md5 {
         write_file(
             &format!("{output}.md5"),
             gatk_tools::gather_bam_files::md5_file(&bytes).as_bytes(),
         )?;
     }
 
-    if !flag(parser, "create-output-variant-index") {
+    if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = text
-        .lines()
-        .take_while(|line| line.starts_with('#'))
-        .filter_map(|line| {
-            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-            let length = body
-                .split(',')
-                .find_map(|f| f.strip_prefix("length="))
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0);
-            Some((name.to_string(), length))
-        })
-        .collect();
+    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
+        text.lines()
+            .take_while(|line| line.starts_with('#'))
+            .filter_map(|line| {
+                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+                let length = body
+                    .split(',')
+                    .find_map(|f| f.strip_prefix("length="))
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                Some((name.to_string(), length))
+            })
+            .collect()
+    });
     let mut source = index_feature_file::Source::new(output);
     source.timestamp = modified_millis(output);
     let index = match index_feature_file::index_kind(output) {

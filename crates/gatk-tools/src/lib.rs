@@ -21,6 +21,7 @@ pub mod annotated_interval;
 pub mod apply_bqsr;
 pub mod apply_vqsr;
 pub mod ase_read_counter;
+pub mod assembly_variants_out;
 pub mod base_recalibrator;
 pub mod build_bam_index;
 pub mod bwa_index_image;
