@@ -154,6 +154,7 @@ impl ActiveRegionEvaluator {
             emit_all_confident_sites: false,
             annotate_all_sites_with_pls: false,
             force_keep_all_alleles: false,
+            force_keep_non_ref: false,
             assignment_method: SubsetMethod::UsePlsToAssign,
         };
         let engine = GenotypingEngine::new(

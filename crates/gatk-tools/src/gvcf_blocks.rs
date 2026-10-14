@@ -205,22 +205,28 @@ struct HomRefBlock {
     end: i64,
     ploidy: usize,
     min_pls: Option<Vec<i32>>,
+    /// The element-wise minimum of the `PP`s, which decides `GQ` where there is one.
+    min_pps: Option<Vec<i32>>,
     /// `-1` when no genotype has had a PL or a GQ.
     min_gq: i32,
 }
 
-fn refuse_posteriors(genotype: &Genotype) -> Result<(), EngineError> {
-    if genotype
+/// `PosteriorProbabilitiesUtils.parsePosteriorsIntoPhredSpace` for a genotype that carries `PP`:
+/// its values, or its `PL` when they start with a `.`.
+fn posteriors(genotype: &Genotype) -> Option<Vec<i32>> {
+    let (_, value) = genotype
         .extended
         .iter()
-        .any(|(key, _)| key == PHRED_SCALED_POSTERIORS_KEY)
-    {
-        return Err(EngineError::Limitation(
-            "a reference block whose genotype carries PP (phred-scaled posteriors) is not ported."
-                .to_string(),
-        ));
+        .find(|(key, _)| key == PHRED_SCALED_POSTERIORS_KEY)?;
+    let text = value.format().unwrap_or_default();
+    if text.starts_with('.') {
+        return genotype.pl.clone();
     }
-    Ok(())
+    Some(
+        text.split(',')
+            .map(|part| part.trim().parse().unwrap_or(0))
+            .collect(),
+    )
 }
 
 impl HomRefBlock {
@@ -231,7 +237,6 @@ impl HomRefBlock {
         default_ploidy: usize,
     ) -> Result<HomRefBlock, EngineError> {
         let g = &starting.genotypes[0];
-        refuse_posteriors(g)?;
         // `startingVC.getMaxPloidy(defaultPloidy)`.
         let max = starting
             .genotypes
@@ -241,10 +246,12 @@ impl HomRefBlock {
             .unwrap_or(0);
         let ploidy = if max == 0 { default_ploidy } else { max };
         let min_pls = g.pl.clone();
-        let min_gq = match (&min_pls, g.gq) {
-            (Some(pls), _) => calculate_gq_from_pls(pls)?,
-            (None, Some(gq)) => gq,
-            (None, None) => -1,
+        let min_pps = posteriors(g);
+        let min_gq = match (&min_pps, &min_pls, g.gq) {
+            (Some(pps), _, _) => calculate_gq_from_pls(pps)?,
+            (None, Some(pls), _) => calculate_gq_from_pls(pls)?,
+            (None, None, Some(gq)) => gq,
+            (None, None, None) => -1,
         };
         Ok(HomRefBlock {
             starting: starting.clone(),
@@ -255,6 +262,7 @@ impl HomRefBlock {
             end: end_attribute(starting).unwrap_or(starting.start),
             ploidy,
             min_pls,
+            min_pps,
             min_gq,
         })
     }
@@ -290,7 +298,6 @@ impl HomRefBlock {
                 self.min_gq_bound, self.max_gq_bound
             )));
         }
-        refuse_posteriors(genotype)?;
         match (&mut self.min_pls, &genotype.pl) {
             (None, pls) => self.min_pls = pls.clone(),
             (Some(min), Some(pls)) => {
@@ -307,10 +314,28 @@ impl HomRefBlock {
             }
             (Some(_), None) => {}
         }
-        self.min_gq = match &self.min_pls {
-            Some(pls) => calculate_gq_from_pls(pls)?,
-            None if self.min_gq == -1 => gq,
-            None => self.min_gq.min(gq),
+        if let Some(pps) = posteriors(genotype) {
+            match &mut self.min_pps {
+                None => self.min_pps = Some(pps),
+                Some(min) => {
+                    if pps.len() != min.len() {
+                        return Err(gatk_exception(format!(
+                            "trying to merge different PP array sizes: {} != {}",
+                            pps.len(),
+                            min.len()
+                        )));
+                    }
+                    for (slot, pp) in min.iter_mut().zip(&pps) {
+                        *slot = (*slot).min(*pp);
+                    }
+                }
+            }
+        }
+        self.min_gq = match (&self.min_pps, &self.min_pls) {
+            (Some(pps), _) => calculate_gq_from_pls(pps)?,
+            (None, Some(pls)) => calculate_gq_from_pls(pls)?,
+            (None, None) if self.min_gq == -1 => gq,
+            (None, None) => self.min_gq.min(gq),
         };
         self.end = new_end;
         if let Some(dp) = genotype.dp {
@@ -339,6 +364,13 @@ impl HomRefBlock {
         if !self.dps.is_empty() {
             genotype.dp =
                 Some(crate::reference_confidence_merger::java_round(median(&self.dps)) as i32);
+        }
+        if let Some(pps) = &self.min_pps {
+            let text: Vec<String> = pps.iter().map(i32::to_string).collect();
+            genotype.extended.push((
+                PHRED_SCALED_POSTERIORS_KEY.to_string(),
+                Value::Str(text.join(",")),
+            ));
         }
         vc.genotypes = GenotypesContext::new(vec![genotype]);
         vc

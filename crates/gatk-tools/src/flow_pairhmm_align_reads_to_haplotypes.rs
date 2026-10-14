@@ -224,9 +224,10 @@ fn within_one_ulp(x: f64, y: f64) -> bool {
     (order(x) - order(y)).abs() <= 1
 }
 
-/// `Math.log10`, at run time.
+/// `Math.log10`, correctly rounded as the JVM's is: the platform's can be an ulp away, which a
+/// sum of a read's flows carries into its likelihood.
 fn log10(value: f64) -> f64 {
-    std::hint::black_box(value).log10()
+    jmath::math::log10(value)
 }
 
 /// `FlowBasedHaplotype`: the haplotype's key and the base each of its flows reads.

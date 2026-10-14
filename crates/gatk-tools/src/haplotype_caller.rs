@@ -47,6 +47,8 @@ use crate::variant_annotator_engine::Engine as AnnotatorEngine;
 pub struct HaplotypeCallerArguments {
     pub region: AssemblyRegionArgs,
     pub is_active: IsActiveArguments,
+    /// `--ploidy-regions`: each interval with the ploidy its name gives.
+    pub ploidy_regions: Vec<PloidyRegion>,
     /// `PileupDetectionArgumentCollection`.
     pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
     /// `--use-pdhmm` and its switches.
@@ -122,6 +124,8 @@ pub struct HaplotypeCallerError {
     /// its writer, and closes it in a `finally`, so an error the writer raises over them is the
     /// one the run reports.
     pub calls_before: Vec<VariantContext>,
+    /// Raised as the engine is built, before the VCF writer exists: nothing is written.
+    pub at_startup: bool,
 }
 
 impl HaplotypeCallerError {
@@ -130,6 +134,25 @@ impl HaplotypeCallerError {
             class: class.to_string(),
             message: message.into(),
             calls_before: Vec::new(),
+            at_startup: false,
+        }
+    }
+}
+
+/// What the engine leaves when it fails as it is built, after the outputs it opens before the
+/// allele-likelihood writer: `--assembly-region-out`'s header (the walker opens it first), an empty
+/// `--debug-assembly-region-state`, and the bamout and its index, created and never flushed.
+fn leave_startup_files(arguments: &HaplotypeCallerArguments) {
+    if let Some(path) = &arguments.assembly_region_out {
+        let _ = std::fs::write(path, crate::hc_region::ASSEMBLY_REGION_OUT_HEADER);
+    }
+    if let Some(path) = &arguments.assembly_state_output {
+        let _ = std::fs::write(path, "");
+    }
+    if let Some(bamout) = &arguments.bamout {
+        let _ = std::fs::write(&bamout.path, "");
+        if bamout.create_index {
+            let _ = std::fs::write(bamout.path.with_extension("bai"), "");
         }
     }
 }
@@ -259,7 +282,11 @@ pub fn call_variants(
                 crate::allele_likelihood_writer::parse_simple_interval(interval.as_deref())
                     .map_err(|message| {
                         let (class, rest) = message.split_once(": ").expect("class: message");
-                        HaplotypeCallerError::new(class, rest.to_string())
+                        leave_startup_files(arguments);
+                        HaplotypeCallerError {
+                            at_startup: true,
+                            ..HaplotypeCallerError::new(class, rest.to_string())
+                        }
                     })?,
             ),
         )),
@@ -359,17 +386,48 @@ fn call_variants_into(
         arguments.use_posteriors_to_calculate_qual,
         arguments.calling.annotate_all_sites_with_pls,
     );
-    let mut engine = GenotypingEngine::new(
-        arguments.calling,
-        AlleleFrequencyCalculator::make_calculator(&arguments.priors),
-    );
-    // `resolveGenotypePriorCalculator` without DRAGstr: Hardy-Weinberg over the two
-    // heterozygosities, which only `USE_POSTERIOR_PROBABILITIES` reads.
-    engine.set_genotype_priors(GenotypePriors::assuming_hw(
-        jmath::math::log10(arguments.priors.snp_heterozygosity),
-        jmath::math::log10(arguments.priors.indel_heterozygosity),
-    ));
-    engine.set_use_posteriors_to_calculate_qual(arguments.use_posteriors_to_calculate_qual);
+    let mut engine = genotyping_engine_for(arguments, arguments.calling.sample_ploidy);
+    // `--ploidy-regions`: for each custom ploidy, an activity engine, a genotyping engine and the
+    // genotyping arguments `copyWithNewPloidy` gives. That copy is a serialization round trip,
+    // and `AssemblyBasedCallerArgumentCollection` is not `Serializable`: its fields come back at
+    // their defaults. The genotyping engine then sees no reference-confidence mode (it keeps only
+    // `<NON_REF>` of the alternates it cannot call), no DRAGstr parameters and an informative
+    // read overlap margin of 2.
+    let mut custom_evaluators = std::collections::BTreeMap::new();
+    let mut custom_engines = std::collections::BTreeMap::new();
+    let mut custom_genotyping = std::collections::BTreeMap::new();
+    for region in &arguments.ploidy_regions {
+        let ploidy = region.ploidy;
+        if custom_engines.contains_key(&ploidy) {
+            continue;
+        }
+        let mut custom = genotyping_engine_for(arguments, ploidy);
+        custom.configuration.force_keep_all_alleles = false;
+        custom_engines.insert(ploidy, custom);
+        custom_genotyping.insert(
+            ploidy,
+            HcGenotypingArguments {
+                sample_ploidy: ploidy,
+                informative_read_overlap_margin: HcGenotypingArguments::default()
+                    .informative_read_overlap_margin,
+                dragstr: None,
+                ..arguments.genotyping.clone()
+            },
+        );
+        let mut local = ActiveRegionEvaluator::new(
+            IsActiveArguments {
+                sample_ploidy: ploidy,
+                ..arguments.is_active.clone()
+            },
+            samples.clone(),
+        );
+        local.configure_from_caller(
+            arguments.calling.assignment_method,
+            arguments.use_posteriors_to_calculate_qual,
+            arguments.calling.annotate_all_sites_with_pls,
+        );
+        custom_evaluators.insert(ploidy, local);
+    }
     let mut assembler = assembler_from(
         &arguments.assembler,
         arguments.assembly.min_base_quality_score,
@@ -441,6 +499,9 @@ fn call_variants_into(
         // `region.getAlignmentData()`: every locus walked, kept only with pileup detection.
         let detection = &arguments.pileup_detection;
         let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
+        // The reads `isActive` gives `MZ`: every read of a non-empty pileup it examines.
+        let mut seen: std::collections::HashSet<crate::pileup_based_alleles::ReadKey> =
+            std::collections::HashSet::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -503,8 +564,23 @@ fn call_variants_into(
                     }
                     return (0.0, None);
                 };
-                let state = evaluator.is_active(context, ref_base, header);
+                // `getLocalActiveGenotyper(ref)`: the activity engine of the locus's ploidy.
+                let local = match ploidy_at(
+                    &arguments.ploidy_regions,
+                    &locus.contig,
+                    locus.start,
+                    locus.start,
+                ) {
+                    Some(ploidy) => custom_evaluators
+                        .get_mut(&ploidy)
+                        .expect("an evaluator per custom ploidy"),
+                    None => &mut evaluator,
+                };
+                let state = local.is_active(context, ref_base, header);
                 if detection.use_pileup_detection {
+                    for element in &context.pileup.elements {
+                        seen.insert(crate::pileup_based_alleles::read_key(element.read));
+                    }
                     let score = state.as_ref().map_or(0.0, |s| s.original_active_prob);
                     loci.push(crate::pileup_based_alleles::LocusSummary::new(
                         context,
@@ -548,7 +624,7 @@ fn call_variants_into(
         };
         let trimmer = AssemblyRegionTrimmer::new(arguments.trimmer.clone(), bases.len() as i32)
             .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
-        let context = CallRegionContext {
+        let mut context = CallRegionContext {
             header,
             samples: &samples,
             contig_bases: &bases,
@@ -607,6 +683,13 @@ fn call_variants_into(
             },
         };
         for mut traversed in regions {
+            if detection.use_pileup_detection {
+                crate::pileup_based_alleles::tag_mismatch_percentage(
+                    &mut traversed.region,
+                    &seen,
+                    &bases,
+                );
+            }
             if let Some(out) = region_out {
                 out.borrow_mut()
                     .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
@@ -617,10 +700,29 @@ fn call_variants_into(
                     gatk_engine::read_pileup::sample_name(read, header).as_deref() == Some(name)
                 });
             }
+            // `getLocalGenotypingEngine(region)`: the engine, and the arguments, of the span's
+            // ploidy.
+            let span = traversed.region.span().clone();
+            let local = ploidy_at(
+                &arguments.ploidy_regions,
+                &span.contig,
+                span.start,
+                span.end,
+            );
+            context.genotyping = match local {
+                Some(ploidy) => &custom_genotyping[&ploidy],
+                None => &genotyping,
+            };
+            let local_engine = match local {
+                Some(ploidy) => custom_engines
+                    .get_mut(&ploidy)
+                    .expect("an engine per custom ploidy"),
+                None => &mut engine,
+            };
             let region_calls = call_region(
                 traversed.region,
                 &context,
-                &mut engine,
+                local_engine,
                 Some(CallAnnotator {
                     engine: annotator,
                     random,
@@ -688,4 +790,46 @@ impl Drop for GenotyperDebugFile {
         // The reference opens the file as the engine starts and reports nothing after.
         let _ = std::fs::write(&self.0, text);
     }
+}
+
+/// One `--ploidy-regions` interval (`SimpleCount`): 1-based, inclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PloidyRegion {
+    pub contig: String,
+    pub start: i32,
+    pub end: i32,
+    pub ploidy: usize,
+}
+
+/// `getPloidyToUseAtThisSite`: the largest ploidy of the intervals overlapping the span, `None`
+/// for the default.
+pub fn ploidy_at(regions: &[PloidyRegion], contig: &str, start: i32, end: i32) -> Option<usize> {
+    regions
+        .iter()
+        .filter(|r| r.contig == contig && r.start <= end && start <= r.end)
+        .map(|r| r.ploidy)
+        .max()
+}
+
+/// The genotyping engine `HaplotypeCallerGenotypingEngine` builds over the caller's arguments at
+/// a ploidy: its calculator and Hardy-Weinberg priors (without DRAGstr, read only by
+/// `USE_POSTERIOR_PROBABILITIES`).
+fn genotyping_engine_for(arguments: &HaplotypeCallerArguments, ploidy: usize) -> GenotypingEngine {
+    let priors = Priors {
+        sample_ploidy: ploidy,
+        ..arguments.priors
+    };
+    let mut engine = GenotypingEngine::new(
+        crate::genotyping_engine::Configuration {
+            sample_ploidy: ploidy,
+            ..arguments.calling
+        },
+        AlleleFrequencyCalculator::make_calculator(&priors),
+    );
+    engine.set_genotype_priors(GenotypePriors::assuming_hw(
+        jmath::math::log10(arguments.priors.snp_heterozygosity),
+        jmath::math::log10(arguments.priors.indel_heterozygosity),
+    ));
+    engine.set_use_posteriors_to_calculate_qual(arguments.use_posteriors_to_calculate_qual);
+    engine
 }

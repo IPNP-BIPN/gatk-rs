@@ -194,7 +194,7 @@ impl LocusSummary {
 /// `addMismatchPercentageToRead`: an `MZ` the read already carries, else the mismatches (the `NM`
 /// tag, or `calculateSamNmTag` over the reference) less the indel bases, per thousand aligned
 /// bases.
-fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
+pub fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
     if let Some(TagValue::Int(value)) = read.tags.get(Tag::new(&MISMATCH_BASES_PERCENTAGE_TAG)) {
         return *value as i32;
     }
@@ -226,6 +226,37 @@ fn mismatch_percentage(read: &BamRecord, contig_bases: &[u8]) -> i32 {
     let aligned = sum(|op| matches!(op, Op::M | Op::Eq | Op::X));
     // `(int) (1000.0 * adjusted / aligned)`, a saturating cast as Java's is.
     (MISMATCH_BASES_PERCENTAGE_ADJUSTMENT * f64::from(nm - indel) / f64::from(aligned)) as i32
+}
+
+/// A read as `isActive`'s pileups hold it: what identifies it among the walker's reads.
+pub type ReadKey = (String, u16, i32);
+
+pub fn read_key(read: &BamRecord) -> ReadKey {
+    (read.read_name.clone(), read.flags, read.alignment_start)
+}
+
+/// `addMismatchPercentageToRead` as `isActive` calls it on every read of a non-empty pileup with
+/// pileup detection: each of the region's reads the walker saw gains `MZ`, computed as it was then.
+pub fn tag_mismatch_percentage(
+    region: &mut gatk_engine::assembly_region::AssemblyRegion,
+    seen: &std::collections::HashSet<ReadKey>,
+    contig_bases: &[u8],
+) {
+    for read in region.reads_mut() {
+        if read
+            .tags
+            .get(Tag::new(&MISMATCH_BASES_PERCENTAGE_TAG))
+            .is_some()
+            || !seen.contains(&read_key(read))
+        {
+            continue;
+        }
+        let value = mismatch_percentage(read, contig_bases);
+        read.tags.insert(
+            Tag::new(&MISMATCH_BASES_PERCENTAGE_TAG),
+            TagValue::Int(i64::from(value)),
+        );
+    }
 }
 
 /// `isBadPileupRead`.

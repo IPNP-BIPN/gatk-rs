@@ -5603,61 +5603,6 @@ pub fn depth_of_coverage(parser: &Parser) -> Outcome {
     Ok(Some("success".to_string()))
 }
 
-/// One record as the posteriors read it: the alleles, the counts in INFO, and the genotypes.
-fn posterior_record(
-    vc: &htsjdk_vcf::variant::VariantContext,
-) -> gatk_tools::calculate_genotype_posteriors::Record {
-    use gatk_tools::calculate_genotype_posteriors as posteriors;
-
-    let mut attributes = std::collections::BTreeMap::new();
-    for key in ["AC", "AN", "MLEAC"] {
-        if let Some((_, value)) = vc.attributes.iter().find(|(name, _)| name == key) {
-            if let Some(text) = value.format() {
-                attributes.insert(key.to_string(), text);
-            }
-        }
-    }
-    posteriors::Record {
-        id: vc.id.clone(),
-        start: vc.start as i32,
-        alleles: vc
-            .alleles
-            .iter()
-            .map(|allele| posteriors::Allele {
-                bases: allele.display_string(),
-                is_ref: allele.is_reference(),
-            })
-            .collect(),
-        attributes,
-        genotypes: vc
-            .genotypes
-            .iter()
-            .map(|genotype| posteriors::Genotype {
-                sample: genotype.sample_name.clone(),
-                alleles: genotype
-                    .alleles
-                    .iter()
-                    .filter_map(|allele| {
-                        vc.alleles.iter().position(|candidate| candidate == allele)
-                    })
-                    .collect(),
-                depth: genotype.dp,
-                likelihoods: genotype.pl.clone(),
-                posteriors: genotype
-                    .extended
-                    .iter()
-                    .find(|(key, _)| key == "PP")
-                    .and_then(|(_, value)| value.format())
-                    .map(|text| {
-                        text.split(',')
-                            .filter_map(|piece| piece.trim().parse().ok())
-                            .collect()
-                    }),
-            })
-            .collect(),
-    }
-}
-
 /// `CalculateGenotypePosteriors.apply`: likelihoods turned into posteriors under a prior built
 /// from allele counts.
 ///
@@ -5720,7 +5665,12 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             exception: "htsjdk.tribble.TribbleException",
             message: Some(failure.error.message()),
         })?;
-        supporting.extend(support.records.iter().map(posterior_record));
+        supporting.extend(
+            support
+                .records
+                .iter()
+                .map(gatk_tools::calculate_genotype_posteriors::record_from_vc),
+        );
     }
 
     let number = |name: &str, default: f64| -> f64 {
@@ -5775,7 +5725,7 @@ pub fn calculate_genotype_posteriors(parser: &Parser) -> Outcome {
             continue;
         }
 
-        let record = posterior_record(&vc);
+        let record = gatk_tools::calculate_genotype_posteriors::record_from_vc(&vc);
         let matching: Vec<posteriors::Record> = supporting
             .iter()
             .filter(|resource| resource.start == record.start)
@@ -7484,18 +7434,7 @@ pub fn collect_f1r2_counts(parser: &Parser) -> Outcome {
                     element.read.read_name
                 )));
             }
-            let flags = element.read.flags;
-            elements.push(f1r2::Element {
-                sample: sample.unwrap_or_default(),
-                base: element.base(),
-                qual: element.qual(),
-                reverse_strand: flags & 0x10 != 0,
-                first_of_pair: flags & 0x1 != 0 && flags & 0x40 != 0,
-                mapping_quality: element.mapping_qual() as i32,
-                deletion: element.is_deletion(),
-                after_insertion: element.is_after_insertion(),
-                before_deletion_start: element.is_before_deletion_start(),
-            });
+            elements.push(f1r2::Element::from_pileup(element, sample));
         }
         // `getKmerAround(position, 1)`: the window widened within the contig, and no k-mer at all
         // when the contig's end cut it short.
@@ -9864,6 +9803,64 @@ pub(crate) fn given_alleles(
     };
     let (records, _) = feature_variants(&path)?;
     Ok(Some((records, flag(parser, "force-call-filtered-alleles"))))
+}
+
+/// The callers' variant resources: the overlap annotator's names with their records (the
+/// comparisons, then dbSNP under `DB`), dbSNP's records for the rsID, and `--population-callset`
+/// with `--num-reference-samples-if-no-call`.
+#[allow(clippy::type_complexity)]
+pub(crate) fn variant_resources(
+    parser: &Parser,
+) -> Result<
+    (
+        Vec<String>,
+        gatk_tools::hc_genotyping::VariantResources,
+        Option<gatk_tools::population_priors::PopulationPriors>,
+    ),
+    Thrown,
+> {
+    let comps = tagged_values(parser, "comparison");
+    let dbsnp = argument(parser, "dbsnp");
+    let dbsnp_records = match &dbsnp {
+        Some(path) => Some(feature_variants(path)?.0),
+        None => None,
+    };
+    let mut comp_records = Vec::new();
+    for (path, _) in &comps {
+        comp_records.push(feature_variants(path)?.0);
+    }
+    let overlaps = overlap_map(&comps, dbsnp.as_deref())?;
+    let names = overlaps.iter().map(|(_, name, _)| name.clone()).collect();
+    let resources = gatk_tools::hc_genotyping::VariantResources {
+        overlaps: overlaps
+            .iter()
+            .map(|(_, _, source)| {
+                comp_records
+                    .get(*source)
+                    .or(dbsnp_records.as_ref())
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .collect(),
+        dbsnp: dbsnp_records,
+    };
+    let population = match argument(parser, "population-callset") {
+        Some(path) => Some(gatk_tools::population_priors::PopulationPriors {
+            records: feature_variants(&path)?
+                .0
+                .iter()
+                .map(|vc| {
+                    (
+                        vc.contig.clone(),
+                        gatk_tools::calculate_genotype_posteriors::record_from_vc(vc),
+                    )
+                })
+                .collect(),
+            num_ref_if_missing: number_or(parser, "num-reference-samples-if-no-call", 0),
+        }),
+        None => None,
+    };
+    Ok((names, resources, population))
 }
 
 /// A `FeatureInput<VariantContext>`: the file's records and the samples its header declares.
@@ -14629,6 +14626,7 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
         emit_all_confident_sites: true,
         annotate_all_sites_with_pls: true,
         force_keep_all_alleles: true,
+        force_keep_non_ref: false,
         assignment_method: genotyping::SubsetMethod::from_name(&assignment)
             .unwrap_or(genotyping::SubsetMethod::UsePlsToAssign),
     };
@@ -15717,6 +15715,43 @@ impl gatk_tools::variant_eval_engine::ReferenceBases for ReferenceBases<'_> {
     }
 }
 
+/// `VariantAnnotatorEngine.initializeOverlapAnnotator`: every comparison under its name, then
+/// dbSNP under `DB`, each with the index of its records (the comparisons', then dbSNP's).
+///
+/// The map is a `LinkedHashMap` keyed by `FeatureInput`, which is equal to another naming the same
+/// path under the same tag: a repeated comparison keeps its first slot and its last name, and one
+/// that is the dbSNP file itself, untagged, is renamed `DB` where it stands.
+#[allow(clippy::type_complexity)]
+pub(crate) fn overlap_map(
+    comps: &[(String, Option<String>)],
+    dbsnp: Option<&str>,
+) -> Result<Vec<((String, Option<String>), String, usize)>, Thrown> {
+    use gatk_tools::variant_annotator_engine as va;
+    let name_of =
+        |(path, tag): &(String, Option<String>)| tag.clone().unwrap_or_else(|| absolute_path(path));
+    let mut overlaps: Vec<((String, Option<String>), String, usize)> = Vec::new();
+    for (index, comp) in comps.iter().enumerate() {
+        match overlaps.iter_mut().find(|(key, ..)| key == comp) {
+            Some(slot) => slot.1 = name_of(comp),
+            None => overlaps.push((comp.clone(), name_of(comp), index)),
+        }
+    }
+    if overlaps.iter().any(|(_, name, _)| name == va::DBSNP_KEY) {
+        return Err(Thrown::non_user(
+            "org.broadinstitute.hellbender.exceptions.GATKException",
+            "The map of overlaps must not contain DB",
+        ));
+    }
+    if let Some(path) = dbsnp {
+        let key = (path.to_string(), None);
+        match overlaps.iter_mut().find(|(other, ..)| *other == key) {
+            Some(slot) => slot.1 = va::DBSNP_KEY.to_string(),
+            None => overlaps.push((key, va::DBSNP_KEY.to_string(), comps.len())),
+        }
+    }
+    Ok(overlaps)
+}
+
 /// `VariantAnnotator`: a VCF walked record by record, each annotated from the reads, the
 /// reference and the feature inputs that overlap it.
 ///
@@ -15874,30 +15909,7 @@ pub fn variant_annotator(parser: &Parser) -> Outcome {
             )));
         }
     }
-    // `initializeOverlapAnnotator`: every comparison under its name, then dbSNP under `DB`.
-    // The map is a `LinkedHashMap` keyed by `FeatureInput`, which is equal to another naming the
-    // same path under the same tag: a repeated comparison keeps its first slot and its last name,
-    // and one that is the dbSNP file itself, untagged, is renamed `DB` where it stands.
-    let mut overlaps: Vec<((String, Option<String>), String, usize)> = Vec::new();
-    for (index, comp) in comps.iter().enumerate() {
-        match overlaps.iter_mut().find(|(key, ..)| key == comp) {
-            Some(slot) => slot.1 = name_of(comp),
-            None => overlaps.push((comp.clone(), name_of(comp), index)),
-        }
-    }
-    if overlaps.iter().any(|(_, name, _)| name == va::DBSNP_KEY) {
-        return Err(Thrown::non_user(
-            "org.broadinstitute.hellbender.exceptions.GATKException",
-            "The map of overlaps must not contain DB",
-        ));
-    }
-    if let Some(path) = &dbsnp {
-        let key = (path.clone(), None);
-        match overlaps.iter_mut().find(|(other, ..)| *other == key) {
-            Some(slot) => slot.1 = va::DBSNP_KEY.to_string(),
-            None => overlaps.push((key, va::DBSNP_KEY.to_string(), comps.len())),
-        }
-    }
+    let overlaps = overlap_map(&comps, dbsnp.as_deref())?;
     let overlap_names: Vec<String> = overlaps.iter().map(|(_, name, _)| name.clone()).collect();
     // `addExpressions`, over the `HashSet` the argument is.
     let resource_names: Vec<String> = resources.iter().map(name_of).collect();
@@ -16426,6 +16438,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         emit_all_confident_sites: false,
         annotate_all_sites_with_pls: false,
         force_keep_all_alleles: false,
+        force_keep_non_ref: false,
         // `createMinimalArgs` sets PREFER_PLS whatever `--genotype-assignment-method` says.
         assignment_method: genotyping::SubsetMethod::PreferPls,
     };
@@ -16585,6 +16598,8 @@ fn java_class_name(class: &str) -> &'static str {
         "java.lang.IndexOutOfBoundsException" => "java.lang.IndexOutOfBoundsException",
         "java.lang.ClassCastException" => "java.lang.ClassCastException",
         "java.lang.NumberFormatException" => "java.lang.NumberFormatException",
+        "java.lang.NullPointerException" => "java.lang.NullPointerException",
+        "java.util.NoSuchElementException" => "java.util.NoSuchElementException",
         "org.broadinstitute.hellbender.exceptions.GATKException" => {
             "org.broadinstitute.hellbender.exceptions.GATKException"
         }

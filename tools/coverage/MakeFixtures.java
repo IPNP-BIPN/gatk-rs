@@ -1047,6 +1047,151 @@ public class MakeFixtures {
                 .write(Paths.get(path + ".idx"));
     }
 
+    /**
+     * The callers' variant resources (--dbsnp, --comparison, --population-callset) over
+     * `mutect_ref.fasta`: at each of the mutect reads' variant sites, and at one site they do not
+     * vary, a record for every alternate base, each with an rsID and allele counts, so whatever
+     * a caller finds there one record shares its event.
+     */
+    static void resourceFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n")
+                .append("##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n")
+                .append("##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n")
+                .append("##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"MLE allele count\">\n")
+                .append("##contig=<ID=chr1,length=").append(bases.length()).append(">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        int id = 1;
+        for (final int pos : new int[] {1000, 1100, 1200, 1400, 1600, 1800, 1950}) {
+            final String ref = bases.substring(pos - 1, pos);
+            for (final char alt : "ACGT".toCharArray()) {
+                if (ref.charAt(0) == alt) {
+                    continue;
+                }
+                vcf.append("chr1\t").append(pos).append("\trs").append(id).append('\t').append(ref).append('\t')
+                        .append(alt).append("\t.\t.\tAC=").append(id % 7 + 1).append(";AN=40;MLEAC=")
+                        .append(id % 5 + 1).append('\n');
+                id++;
+            }
+        }
+        final Path path = dir.resolve("resources.vcf");
+        Files.writeString(path, vcf.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(Paths.get(path + ".idx"));
+    }
+
+    /**
+     * The callers' `--ploidy-regions` over `mutect_ref.fasta`: one haploid interval over the sites
+     * at 1000, 1100 and 1200, and a mixed file whose triploid, haploid and tetraploid intervals
+     * cover the other sites, the last two overlapping so the larger ploidy wins there.
+     */
+    static void ploidyRegionFixtures(final Path dir) throws Exception {
+        Files.writeString(dir.resolve("ploidy_haploid.bed"), "chr1\t900\t1250\t1\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("ploidy_mixed.bed"),
+                "chr1\t0\t1150\t3\nchr1\t1350\t1700\t1\nchr1\t1500\t1900\t4\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The callers' `--contamination-fraction-per-sample-file`: the tumour and the normal of the
+     * mutect reads at their own fractions, and a sample the reads do not hold, which is ignored.
+     */
+    static void contaminationFixtures(final Path dir) throws Exception {
+        Files.writeString(dir.resolve("contamination.txt"), "tumor\t0.15\nnormal\t0.3\nabsent\t0.5\n",
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Mutect2's `--germline-resource` and `--panel-of-normals` over `mutect_ref.fasta`, at the
+     * sites `resources.vcf` covers: a record for every alternate base, with an AF from common to
+     * rare (and a missing one) in the resource, and the panel at every other site.
+     */
+    static void germlineFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final String header = "##fileformat=VCFv4.2\n"
+                + "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency\">\n"
+                + "##contig=<ID=chr1,length=" + bases.length() + ">\n"
+                + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+        final String[] frequencies = {"0.5", "0.02", "0.001", "1e-5", "."};
+        final StringBuilder germline = new StringBuilder(header);
+        final StringBuilder pon = new StringBuilder(header);
+        int n = 0;
+        int site = 0;
+        for (final int pos : new int[] {1000, 1100, 1200, 1400, 1600, 1800, 1950}) {
+            final String ref = bases.substring(pos - 1, pos);
+            for (final char alt : "ACGT".toCharArray()) {
+                if (ref.charAt(0) == alt) {
+                    continue;
+                }
+                germline.append("chr1\t").append(pos).append("\t.\t").append(ref).append('\t').append(alt)
+                        .append("\t.\t.\tAF=").append(frequencies[n++ % frequencies.length]).append('\n');
+                if (site % 2 == 0) {
+                    pon.append("chr1\t").append(pos).append("\t.\t").append(ref).append('\t').append(alt)
+                            .append("\t.\t.\t.\n");
+                }
+            }
+            site++;
+        }
+        for (final String[] file : new String[][] {{"m2_germline.vcf", germline.toString()}, {"m2_pon.vcf", pon.toString()}}) {
+            final Path path = dir.resolve(file[0]);
+            Files.writeString(path, file[1], StandardCharsets.UTF_8);
+            htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                            htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                    .write(Paths.get(path + ".idx"));
+        }
+    }
+
+    /**
+     * mutect_paired.bam: mutect_t.bam's reads paired, each read with the next as its mate (same
+     * name, both mapped, the earlier one first of pair), each carrying Ultima's si and rq tags, so
+     * Mutect2's Permutect datasets can featurize them in either mode.
+     */
+    static void mutectPairedFixtures(final Path dir) throws Exception {
+        try (final htsjdk.samtools.SamReader reader =
+                     htsjdk.samtools.SamReaderFactory.makeDefault().open(dir.resolve("mutect_t.bam"))) {
+            final SAMFileHeader header = reader.getFileHeader().clone();
+            final List<SAMRecord> records = new ArrayList<>();
+            for (final SAMRecord record : reader) {
+                records.add(record);
+            }
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, true, dir.resolve("mutect_paired.bam").toFile())) {
+                for (int i = 0; i + 1 < records.size(); i += 2) {
+                    final SAMRecord a = records.get(i);
+                    final SAMRecord b = records.get(i + 1);
+                    final int insert = Math.max(a.getAlignmentEnd(), b.getAlignmentEnd())
+                            - Math.min(a.getAlignmentStart(), b.getAlignmentStart()) + 1;
+                    b.setReadName(a.getReadName());
+                    for (final SAMRecord[] pair : new SAMRecord[][] {{a, b}, {b, a}}) {
+                        final SAMRecord read = pair[0];
+                        final SAMRecord mate = pair[1];
+                        read.setHeader(header);
+                        read.setReadPairedFlag(true);
+                        read.setProperPairFlag(true);
+                        read.setFirstOfPairFlag(read == a);
+                        read.setSecondOfPairFlag(read == b);
+                        read.setMateReferenceName(mate.getReferenceName());
+                        read.setMateAlignmentStart(mate.getAlignmentStart());
+                        read.setMateNegativeStrandFlag(mate.getReadNegativeStrandFlag());
+                        read.setInferredInsertSize(read == a ? insert : -insert);
+                        read.setAttribute("si", 100 + i);
+                        read.setAttribute("rq", (float) (0.9 - 0.1 * (i % 5)));
+                    }
+                    writer.addAlignment(a);
+                    writer.addAlignment(b);
+                }
+            }
+        }
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -2986,10 +3131,15 @@ public class MakeFixtures {
         splitCram(dir);
         mutectFixtures(dir);
         givenAllelesFixtures(dir);
+        resourceFixtures(dir);
+        ploidyRegionFixtures(dir);
+        contaminationFixtures(dir);
+        germlineFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
         flowCallsFixtures(dir);
+        mutectPairedFixtures(dir);
         flowSnvFixtures(dir);
         groundTruthFixtures(dir);
         haplotypeRecallerFixtures(dir);

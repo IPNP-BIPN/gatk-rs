@@ -614,10 +614,13 @@ pub fn call_region(
         let failing =
             fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg);
         if failing {
-            debugger::println(&format!(
-                "Filtered before assembly the read: {}",
-                gatk_engine::assembly_region::render_read(read, context.header)
-            ));
+            // The ramped engine filters, and prints, only once it genotypes: `finish_region`.
+            if !ramped {
+                debugger::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
             let sample = sample_name(read, context.header);
             let index = context
                 .samples
@@ -711,8 +714,16 @@ pub fn call_region(
         .expect("a trimmed set has its reference")
         .clone();
     // The post-filter on ramp: the likelihoods are the file's, over the file's haplotypes and the
-    // reads it names. What the engine would have computed in their place is never read.
+    // reads it names. The engine still computes its own first (`computeReadLikelihoods` runs
+    // before `filter()` reads the ramp), with what that prints and writes, and never reads them.
     if let (Some(OnRampType::PostFilter), Some(ramp)) = (on_kind, context.on_ramp) {
+        let computed = context
+            .likelihood_engine
+            .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
+            .map_err(calling)?;
+        if let Some(alm) = context.alm {
+            alm.borrow_mut().write(&computed);
+        }
         let mut all_reads: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
         for read in region.reads() {
             let sample = sample_name(read, context.header);
@@ -1052,6 +1063,18 @@ fn finish_region(
     given: &[gatk_engine::event_map::Event],
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
+    // `genotype()`'s `filterNonPassingReads`, in the ramped engine: after the likelihoods.
+    use gatk_engine::genotyper_debug as debugger;
+    if context.genotyping.ramped_engine && debugger::is_enabled() {
+        for read in genotyping_region.reads() {
+            if fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg) {
+                debugger::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
+        }
+    }
     let contig_length = context.contig_bases.len() as i32;
     let mut bamout_tags = context
         .bamout
@@ -1147,6 +1170,7 @@ fn finish_region(
             context.header,
             &context.genotyping.ref_confidence,
             None,
+            context.genotyping.population.as_ref(),
         )
         .map_err(engine_failure)?,
     );
@@ -1176,6 +1200,17 @@ fn reference_model_for_no_variation(
     }
     let threshold = context.mapping_quality_threshold;
     let keep_rg = context.keep_rg;
+    // `filterNonPassingReads`, which prints each read it removes.
+    if gatk_engine::genotyper_debug::is_enabled() {
+        for read in region.reads() {
+            if fails_genotyping_filters(read, threshold, keep_rg) {
+                gatk_engine::genotyper_debug::println(&format!(
+                    "Filtered before assembly the read: {}",
+                    gatk_engine::assembly_region::render_read(read, context.header)
+                ));
+            }
+        }
+    }
     region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     let padded = region.padded_span().clone();
     let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
@@ -1197,6 +1232,7 @@ fn reference_model_for_no_variation(
         context.header,
         &context.genotyping.ref_confidence,
         None,
+        context.genotyping.population.as_ref(),
     )
     .map_err(engine_failure)
 }
