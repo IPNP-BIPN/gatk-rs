@@ -7551,7 +7551,7 @@
     },
     {
       "id": "hc-pedigree",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' pedigree arguments, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7570,13 +7570,14 @@
       "cases": [
         {
           "dump": "HcPedigreeDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_pedigree.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-linked-graph",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers with the linked de Bruijn graph, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7596,6 +7597,60 @@
       "cases": [
         {
           "dump": "HcLinkedGraphDump",
+          "golden": "crates/gatk-tools/tests/data/hc_linked_graph.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-flow",
+      "status": "golden-pending",
+      "title": "The callers' flow-based paths, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The flow-based paths of the callers (G3.2f, #1335), over Ultima reads (tp and t0 tags, a read group under TGCA) on a contig with a SNP, a deletion in an A homopolymer with a SNP twenty bases on, and an insertion in a C homopolymer. The FlowBased engine: each sample's reads as flow reads under the first read's group, trimmed in bases to the first haplotype (invalid below ten), the haplotype clipped to the flows the read covers widened by four, the read's matrix read along it stepping four flows; optimised, exact, untrimmed, with the matrix switches and dynamic disqualification. FlowBasedHMM: a PairHMM over flows with flat imputed indel penalties, the PCR model and its own floor, refusing a cycle other than four. Long hmer collapsing: haplotypes put back to the reference's hmer lengths where the alignment deleted bases beside an hmer as long as the threshold, merged when identical, a substitution on such a haplotype tagged XC; -1 reads the threshold from the read groups. --flow-mode's presets, set where the command line did not. Stepwise filtering: FlowBased scores for the allele filter, the main engine's over what it kept, with the reference's two refusals. --flow-order-for-annotations: what the flow annotations read is the first entry naming no read group (a read's group is looked up and the answer dropped), CycleSkipStatus writes only with one, and the argument without a flow annotation is refused in the plugin's HashMap order. Found on the way: low-quality tails are clipped comparing signed bytes, so --min-base-quality-score 0 (the flow mode's) clips nothing.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 38,
+      "expect_contains": [
+        "XC=1",
+        "X_CSS=cycle-skip",
+        "error\thc-flow-hmm-cycle-8\torg.broadinstitute.hellbender.exceptions.GATKException:FlowBasedHMMEngine requires flow order of 4 elements but cycle length is specified as 8"
+      ],
+      "cases": [
+        {
+          "dump": "HcFlowDump",
+          "golden": null
+        }
+      ]
+    },
+    {
+      "id": "hc-allele-filtering",
+      "status": "golden-pending",
+      "title": "--flow-filter-alleles in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "AlleleFiltering (G3.2f, #1335): alleles no haplotype carries together are linked three bases apart or less, or twenty and equal up to one hmer once inserted in the reference; within each group the weakest by quality against its inverse (germline PLs, or for Mutect2 ten times the somatic log odds) or the most strand-biased has its haplotypes disabled until none qualifies, a lone allele only on the stringent quality of one unless --flow-filter-lone-alleles. What a reader would not guess: the haplotypes kept come out in the order of a HashSet over their bases, whether or not any went; every allele weighed where a candidate was found marks its start SUSP_NOISY_ADJACENT_TP_VARIANT; and HaplotypeCaller adds HaplotypeFilteringAnnotation, fed the matrix before filtering. Over HcEndToEndDump's reads: the defaults, quality thresholds of 300 and 2000, a strand odds ratio of 0.5, lone alleles, RampedHaplotypeCaller, GVCF mode, and Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 12,
+      "expect_contains": [
+        "SUSP_NOISY_ADJACENT_TP_VARIANT",
+        "FILTERED_HAPS="
+      ],
+      "cases": [
+        {
+          "dump": "HcAlleleFilteringDump",
           "golden": null
         }
       ]

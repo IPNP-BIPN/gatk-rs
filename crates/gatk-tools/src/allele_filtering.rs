@@ -428,8 +428,9 @@ impl Marginal {
                 table[1][1] += sample_table[3];
             }
         }
-        for column in 0..2 {
-            table[0][column] += table[1][column];
+        let second = table[1];
+        for (cell, below) in table[0].iter_mut().zip(second) {
+            *cell += below;
         }
         Ok(gatk_annotation::strand_bias::calculate_sor(table))
     }

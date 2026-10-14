@@ -380,9 +380,9 @@ impl EventGroup {
                 })
                 .collect();
             if !bits.is_empty() {
-                for subset in 1..(1usize << size) {
-                    if bits.iter().any(|&m| subset & m == m) {
-                        allowed[subset] = false;
+                for (subset, slot) in allowed.iter_mut().enumerate().skip(1) {
+                    if bits.iter().copied().any(|m| subset & m == m) {
+                        *slot = false;
                     }
                 }
             }

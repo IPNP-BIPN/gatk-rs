@@ -11308,7 +11308,7 @@ pub(crate) fn flow_engine_arguments(
         flow: flow_arguments(parser),
         flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0) as usize,
         optimized: flag(parser, "flow-likelihood-optimized-comp"),
-        trim_to_haplotype: scalar(parser, "trim-to-haplotype").map_or(true, |v| v == "true"),
+        trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
         exact_matching: flag(parser, "exact-matching"),
     })
 }
@@ -11328,7 +11328,7 @@ pub(crate) fn flow_hmm_arguments(
             flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
                 as usize,
             optimized: flag(parser, "flow-likelihood-optimized-comp"),
-            trim_to_haplotype: scalar(parser, "trim-to-haplotype").map_or(true, |v| v == "true"),
+            trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
             exact_matching: flag(parser, "exact-matching"),
         },
         constant_gcp: number_or(parser, "pair-hmm-gap-continuation-penalty", 10) as u8,

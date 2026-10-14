@@ -118,6 +118,7 @@ fn run(case: &Case) -> Vec<String> {
         AlleleFrequencyCalculator::make_calculator(&priors),
     );
     let annotator = Engine {
+        flow_order_for_annotations: None,
         resolved: ANNOTATIONS
             .iter()
             .map(|name| catalogue::entry(name).unwrap())
