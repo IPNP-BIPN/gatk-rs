@@ -126,6 +126,10 @@ const HONOURED: &[&str] = &[
     "normal-lod",
     "ignore-itr-artifacts",
     "minimum-allele-fraction",
+    "mitochondria-mode",
+    // Somatic reference-confidence mode.
+    "emit-ref-confidence",
+    "gvcf-lod-band",
     // The read-threading assembler, shared with HaplotypeCaller.
     "allow-non-unique-kmers-in-ref",
     "dont-increase-kmer-sizes-for-cycles",
@@ -200,6 +204,35 @@ fn pcr_model(parser: &Parser) -> PcrErrorModel {
 }
 
 /// `Mutect2.doWork`.
+/// `M2ArgumentCollection.getMitochondriaModeNameValuePairs`, each value as `String.valueOf` writes
+/// it: the default allele frequency 4e-3, the emission and initial LODs 0, all dangling branches
+/// recovered, a pruning threshold of `log10ToLog(-4)`, and `OriginalAlignment`.
+fn mitochondria_mode() -> Vec<(&'static str, String)> {
+    vec![
+        ("af-of-alleles-not-in-resource", "0.004".to_string()),
+        ("tumor-lod-to-emit", "0.0".to_string()),
+        ("initial-tumor-lod", "0.0".to_string()),
+        ("recover-all-dangling-branches", "true".to_string()),
+        // `MathUtils.log10ToLog(-4)`, minus four times the natural logarithm of ten, as
+        // `Double.toString` writes it.
+        ("pruning-lod-threshold", "-9.210340371976184".to_string()),
+        ("annotation", "OriginalAlignment".to_string()),
+    ]
+}
+
+/// `Mutect2.customCommandLineValidation`: `--mitochondria-mode` sets its arguments where the
+/// command line did not.
+pub fn mutect2_modes(parser: &mut Parser) -> Result<(), Thrown> {
+    if flag(parser, "mitochondria-mode") {
+        let pairs = mitochondria_mode();
+        let borrowed: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        parser
+            .set_mode_values(&borrowed)
+            .map_err(|error| Thrown::non_user(error.class, error.message))?;
+    }
+    Ok(())
+}
+
 pub fn mutect2(parser: &Parser) -> Outcome {
     refuse_unported(parser)?;
     match scalar(parser, "likelihood-calculation-engine").as_deref() {
@@ -348,6 +381,10 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         }
     };
     let genotype_germline_sites = flag(parser, "genotype-germline-sites");
+    // `getInitialLogOdds()` and `getEmissionLogOdds()`: minus infinity in reference-confidence mode.
+    let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
+    let emit_reference_confidence = emit_mode != "NONE";
+    let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     let arguments = Mutect2Arguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -409,8 +446,16 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             dragstr_params: None,
         },
         normal_samples: normal_samples.clone(),
-        initial_log_odds: log10_to_log(double_or(parser, "initial-tumor-lod", 2.0)),
-        emission_log_odds: log10_to_log(double_or(parser, "tumor-lod-to-emit", 3.0)),
+        initial_log_odds: if emit_reference_confidence {
+            f64::NEG_INFINITY
+        } else {
+            log10_to_log(double_or(parser, "initial-tumor-lod", 2.0))
+        },
+        emission_log_odds: if emit_reference_confidence {
+            f64::NEG_INFINITY
+        } else {
+            log10_to_log(double_or(parser, "tumor-lod-to-emit", 3.0))
+        },
         normal_log_odds: log10_to_log(double_or(parser, "normal-lod", 2.2)),
         pcr_snv_qual: number_or(parser, "pcr-snv-qual", 40),
         pcr_indel_qual: number_or(parser, "pcr-indel-qual", 40),
@@ -423,7 +468,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         genotype_germline_sites,
         consider_germline_active: genotype_germline_sites
             && double_or(parser, "genotype-germline-sites-fraction", 1.0) >= 1.0,
-        min_af: double_or(parser, "minimum-allele-fraction", 0.0),
+        min_af,
         default_af,
         informative_read_overlap_margin: number_or(
             parser,
@@ -447,12 +492,24 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             assembler
         },
         independent_mates: flag(parser, "independent-mates"),
+        emit_reference_confidence,
+        somatic_ref_confidence:
+            gatk_tools::reference_confidence_model::SomaticRefConfidence::from_min_af(min_af),
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {
         resolved: resolved.clone(),
         overlap_names: Vec::new(),
         expressions: Vec::new(),
         allele_concordance: false,
+        // The annotations' own arguments, which the plugin descriptor hands to their instances.
+        pseudo_depth: std::cell::RefCell::new(
+            gatk_annotation::allele_pseudo_depth::AllelePseudoDepth::new(
+                double_or(parser, "dirichlet-prior-pseudo-count", 1.0),
+                flag(parser, "dirichlet-keep-prior-in-count"),
+                double_or(parser, "pseudo-count-weight-decay-rate", 1.0),
+            ),
+        ),
+        assembly_complexity_reference_mode: flag(parser, "assembly-complexity-reference-mode"),
     };
     let mut random = gatk_random();
     let called = m2::call_variants(
@@ -544,6 +601,28 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             value: sample.clone(),
         });
     }
+    // `referenceConfidenceModel.getVCFHeaderLines()` and the genotypes' `TLOD`.
+    if emit_reference_confidence {
+        lines.push(HeaderLine::Structured {
+            key: "ALT".to_string(),
+            fields: vec![
+                ("ID".to_string(), "NON_REF".to_string()),
+                (
+                    "Description".to_string(),
+                    "Represents any possible alternative allele not already represented at this \
+                     location by REF and ALT"
+                        .to_string(),
+                ),
+            ],
+        });
+        lines.push(compound(
+            "FORMAT",
+            "TLOD",
+            A,
+            Float,
+            "Log 10 likelihood ratio score of variant existing versus not existing",
+        ));
+    }
     for (index, sequence) in header.sequences.iter().enumerate() {
         lines.push(HeaderLine::Contig {
             index: index as i32,
@@ -555,6 +634,42 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     }
     let mut vcf_header = VcfHeader { lines, samples };
     let mut written = called.calls;
+    // `SomaticGVCFWriter`: the reference records combined into blocks by TLOD band.
+    if emit_mode == "GVCF" {
+        let bands: Vec<f64> = {
+            let given: Vec<f64> = super::arguments(parser, "gvcf-lod-band")
+                .iter()
+                .filter_map(|band| band.trim().parse().ok())
+                .collect();
+            if given.is_empty() {
+                // `for (double i = -2.5; i <= 1; i = i + 0.5)`.
+                let mut defaults = Vec::new();
+                let mut i = -2.5f64;
+                while i <= 1.0 {
+                    defaults.push(i);
+                    i += 0.5;
+                }
+                defaults
+            } else {
+                given
+            }
+        };
+        let (partitions, precision) = gatk_tools::gvcf_blocks::parse_lod_partitions(&bands)
+            .map_err(|message| Thrown::non_user("java.lang.IllegalArgumentException", message))?;
+        gatk_tools::gvcf_blocks::add_ranges_to_header(&mut vcf_header, &partitions);
+        let mut combiner =
+            gatk_tools::gvcf_blocks::SomaticBlockCombiner::new(partitions, precision);
+        let mut combined = Vec::new();
+        for vc in written {
+            combiner
+                .submit(vc)
+                .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{error:?}")))?;
+            combined.extend(combiner.drain());
+        }
+        combiner.end_of_input();
+        combined.extend(combiner.drain());
+        written = combined;
+    }
     apply_sites_only(parser, &mut vcf_header, &mut written);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
     write_variant_output(parser, &output, &text)?;

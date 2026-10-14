@@ -544,6 +544,7 @@ fn finish_region(
             &calls,
             context.header,
             &context.genotyping.ref_confidence,
+            None,
         )
         .map_err(|e| calling(format!("{e:?}")))?,
     );
@@ -592,6 +593,7 @@ fn reference_model_for_no_variation(
         &[],
         context.header,
         &context.genotyping.ref_confidence,
+        None,
     )
     .map_err(|e| RegionAssemblyError::Calling(format!("{e:?}")))
 }

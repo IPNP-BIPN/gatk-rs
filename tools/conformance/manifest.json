@@ -7476,6 +7476,83 @@
       ]
     },
     {
+      "id": "callers-all-annotations",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller, RampedHaplotypeCaller and Mutect2 with --enable-all-annotations, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--enable-all-annotations (G3.2c, #1332): every annotation GATK discovers, computed in the context each caller gives it. The allele-specific raw data reference-confidence mode writes; AllelePseudoDepth's DD and DF, with the memo its one instance keeps across sites; the flow annotations under the default flow order, CycleSkipStatus writing nothing without an actual one; the pedigree annotations with no pedigree, which answer nothing; OriginalAlignment's OCM where Mutect2's TLOD lets it run; and the jumbo INFO annotations, AssemblyComplexity and HaplotypeFilteringAnnotation, over the caller's read- or fragment-by-haplotype matrix. What a reader would not guess: HaplotypeCaller refuses allele-specific annotations in VCF mode; Mutect2 writes DD, DF and BQHIST in the Allele.hashCode order its HashMap marginalises into; and GQ_MEAN reads the genotype's real GQ, which only the VCF encoder caps at 99 (htsjdk-rs #245). Seven runs over HcDragenEndToEndDump's reads: HaplotypeCaller in VCF (refused), GVCF, BP_RESOLUTION and GVCF in DRAGEN mode, RampedHaplotypeCaller in GVCF, Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\thc-vcf\torg.broadinstitute.hellbender.exceptions.UserException:Allele-specific annotations are not yet supported in the VCF mode",
+        "HAPDOM=1.00"
+      ],
+      "cases": [
+        {
+          "dump": "HcAllAnnotationsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_all_annotations.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-gvcf",
+      "status": "oracle-backed",
+      "title": "Mutect2 in somatic reference-confidence mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--emit-ref-confidence in Mutect2 (G3.2d, #1333). The activity and emission thresholds drop to minus infinity, so every region is active and every alternate is emitted, <NON_REF> among them with the median likelihood addNonReferenceAllele gives it. A base without a call is a record whose likelihood is the somatic log odds of its alternate reads under a Beta prior from --minimum-allele-fraction, written as a FORMAT TLOD, with no indel model and so no GQ or PL. SomaticGVCFWriter merges those records into blocks by TLOD band: the bands are decimal LODs binned to the precision their smallest gap needs, from Integer.MIN_VALUE to Integer.MAX_VALUE, and a block carries the smallest TLOD it saw and a diploid hom-ref genotype whatever the sample. Over the first sample of HcDragenEndToEndDump's reads: GVCF over the contig and over a window, BP_RESOLUTION, GVCF with three bands a quarter apart, GVCF with every annotation, and the two-sample BAM, refused. Found on the way and fixed: bestAllelesBreakingTies() gives a tie to the reference allele, and the port took the first maximum, which agrees only while the reference is the first allele of the matrix; AssemblyComplexity over four haplotypes is where they parted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\ttwo-samples\tjava.lang.IllegalArgumentException:readLikelihoods must contain exactly one sample but it contained 2",
+        "GVCFBlock-2147483648--25"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2GvcfDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_gvcf.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-mitochondria",
+      "status": "oracle-backed",
+      "title": "Mutect2 in mitochondria mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--mitochondria-mode (G3.2e, #1334) is argument presets, set where the command line did not set them, as customCommandLineValidation sets them: a default allele frequency of 4e-3, emission and initial LODs of 0, every dangling branch recovered, a pruning LOD threshold of log(10^-4), and the OriginalAlignment annotation. Over HcDragenEndToEndDump's reads: the mode on the first sample, with an explicit --tumor-lod-to-emit it must not override, in GVCF over a window, and over both samples with the second as the normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 7,
+      "expect_contains": [
+        "out\tmitochondria=",
+        "out\tmitochondria-tumor-normal="
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2MitochondriaDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_mitochondria.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",

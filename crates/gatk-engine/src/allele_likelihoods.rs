@@ -631,13 +631,31 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     }
 
     /// `bestAllelesBreakingTies(sample, tieBreakingPriority)`.
+    ///
+    /// `None` is the no-argument form, `tieBreakingPriority = a -> a.isReference() ? 1 : 0`: a tie
+    /// goes to the reference allele wherever it sits in the matrix. The reference never searches
+    /// with null priorities here, and taking the first maximum instead agrees only while the
+    /// reference is the first allele, which a haplotype matrix or a hash-ordered one need not be.
     pub fn best_alleles_breaking_ties_for_sample(
         &self,
         sample_index: usize,
         priorities: Option<&[f64]>,
     ) -> Vec<BestAllele<A>> {
+        let reference_first: Vec<f64>;
+        let priorities = match priorities {
+            Some(given) => given,
+            None => {
+                reference_first = self
+                    .alleles
+                    .as_slice()
+                    .iter()
+                    .map(|a| if a.is_reference() { 1.0 } else { 0.0 })
+                    .collect();
+                &reference_first
+            }
+        };
         (0..self.sample_evidence_count(sample_index))
-            .map(|evidence| self.search_best_allele(sample_index, evidence, true, priorities))
+            .map(|evidence| self.search_best_allele(sample_index, evidence, true, Some(priorities)))
             .collect()
     }
 }
