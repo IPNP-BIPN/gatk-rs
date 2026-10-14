@@ -173,10 +173,18 @@ const HONOURED: &[&str] = &[
     // The germline resource and the panel of normals, read whole.
     "germline-resource",
     "panel-of-normals",
-    // Without a Permutect dataset this changes nothing; the bamout is written; --debug-assembly
-    // is logged only.
+    // The panel's loci genotyped.
     "genotype-pon-sites",
+    // The Permutect datasets, their mode, their truths and their downsampling.
     "permutect-dataset-mode",
+    "permutect-training-dataset",
+    "permutect-test-dataset",
+    "permutect-training-truth",
+    "permutect-test-truth",
+    "permutect-ref-downsample",
+    "permutect-alt-downsample",
+    "permutect-non-artifact-ratio",
+    // The bamout is written; --debug-assembly is logged only.
     "bam-output",
     "bam-writer-type",
     "assembly-region-out",
@@ -586,6 +594,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             None => Vec::new(),
         },
         genotype_pon_sites: flag(parser, "genotype-pon-sites"),
+        permutect: permutect_datasets(parser, &header, &normal_samples)?.map(std::cell::RefCell::new),
         f1r2: argument(parser, "f1r2-tar-gz").map(|_| gatk_tools::collect_f1r2_counts::Args {
             min_median_map_qual: number_or(parser, "f1r2-median-mq", 50),
             min_base_quality: number_or(parser, "f1r2-min-bq", 20),
@@ -853,6 +862,33 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
     write_variant_output(parser, &output, &text)?;
+    // `SomaticGenotypingEngine.close`, a failed run's too: each dataset as far as it got, and the
+    // contig and read group tables beside it.
+    if let Some(permutect) = &arguments.permutect {
+        let permutect = permutect.borrow();
+        let paths = [
+            argument(parser, "permutect-training-dataset"),
+            argument(parser, "permutect-test-dataset"),
+        ];
+        for (engine, path) in permutect
+            .engines
+            .iter()
+            .zip(paths.iter().flatten())
+        {
+            write_file(path, engine.text.as_bytes())?;
+            let sibling = |name: &str| {
+                std::path::Path::new(path)
+                    .with_file_name(name)
+                    .to_string_lossy()
+                    .to_string()
+            };
+            write_file(&sibling("contigs.table"), permutect.contigs_table().as_bytes())?;
+            write_file(
+                &sibling("read-groups.table"),
+                permutect.read_groups_table().as_bytes(),
+            )?;
+        }
+    }
     if let Some(failure) = failure {
         return Err(failure);
     }
@@ -892,4 +928,45 @@ fn resource_records(path: &str) -> Result<Vec<htsjdk_vcf::variant::VariantContex
         });
     }
     Ok(feature_variants(path)?.0)
+}
+
+/// `--permutect-training-dataset` and `--permutect-test-dataset`, each with its truth, as
+/// `SomaticGenotypingEngine` builds their engines.
+fn permutect_datasets(
+    parser: &Parser,
+    header: &htsjdk_bam::header::SamHeader,
+    normal_samples: &[String],
+) -> Result<Option<gatk_tools::permutect_dataset::Datasets>, Thrown> {
+    use gatk_tools::permutect_dataset as permutect;
+    let mut engines = Vec::new();
+    for (dataset, truth, training) in [
+        ("permutect-training-dataset", "permutect-training-truth", true),
+        ("permutect-test-dataset", "permutect-test-truth", false),
+    ] {
+        if argument(parser, dataset).is_none() {
+            continue;
+        }
+        let truth = match argument(parser, truth) {
+            Some(path) => Some(resource_records(&path)?),
+            None => None,
+        };
+        engines.push(permutect::DatasetEngine::new(training, truth));
+    }
+    if engines.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(permutect::Datasets {
+        arguments: permutect::DatasetArguments {
+            max_ref_count: number_or(parser, "permutect-ref-downsample", 10).max(0) as usize,
+            max_alt_count: number_or(parser, "permutect-alt-downsample", 20).max(0) as usize,
+            non_artifact_ratio: number_or(parser, "permutect-non-artifact-ratio", 1),
+            mode: scalar(parser, "permutect-dataset-mode")
+                .and_then(|name| permutect::DatasetMode::from_name(&name))
+                .unwrap_or(permutect::DatasetMode::Illumina),
+        },
+        engines,
+        normal_samples: normal_samples.to_vec(),
+        read_groups: header.read_groups.iter().map(|g| g.id.clone()).collect(),
+        contigs: header.sequences.iter().map(|s| s.name.clone()).collect(),
+    }))
 }

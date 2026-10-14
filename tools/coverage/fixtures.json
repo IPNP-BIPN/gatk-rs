@@ -9202,7 +9202,8 @@
         "The debug outputs Mutect2 declares (G3.2m) are varied, unset first, each under /work/out: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations, --debug-assembly-variants-out, --haplotype-debug-histogram-output (never written: only HaplotypeCaller's engine prints it), --capture-assembly-failure-bam, --pair-hmm-results-file and --alm-path (read by HaplotypeCaller's engine only), its --alm-interval listing an interval first. Vertex numbers are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The germline resource and the panel of normals (G3.2r) are varied, unset first: m2_germline.vcf gives every alternate base at the mutect sites an AF from 0.5 to 1e-5 or none, so POPAF and, in tumour-only calling with --max-population-af 0.01 or 0.6, the common indels' loci move; m2_pon.vcf covers every other site, inactive unless --genotype-pon-sites and flagged PON when called.",
-        "The F1R2 counts (G3.2s) are varied, unset first: --f1r2-tar-gz under /work/out, compared member by member with the alt histograms' columns sorted, with --f1r2-median-mq 50 or 20, --f1r2-min-bq 20 or 10 and --f1r2-max-depth 200 or 30."
+        "The F1R2 counts (G3.2s) are varied, unset first: --f1r2-tar-gz under /work/out, compared member by member with the alt histograms' columns sorted, with --f1r2-median-mq 50 or 20, --f1r2-min-bq 20 or 10 and --f1r2-max-depth 200 or 30.",
+        "The Permutect datasets (G3.2t) are varied, unset first: a training and a test dataset under /work/out (their contigs.table and read-groups.table beside them), m2_pon.vcf as either truth, both downsampling counts at 1000 or 500 so no read set is shuffled, a non-artifact ratio of 1 or 3, and ILLUMINA or ULTIMA mode; mutect_paired.bam is mutect_t.bam's reads as mate pairs with Ultima's si and rq, which ILLUMINA mode needs (an unpaired read is refused) and ULTIMA mode reads."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -9210,7 +9211,8 @@
       "--input": [
         "/work/fixtures/mutect_tn.bam",
         "/work/fixtures/mutect_t.bam",
-        "/work/fixtures/flow_calls.bam"
+        "/work/fixtures/flow_calls.bam",
+        "/work/fixtures/mutect_paired.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -10139,6 +10141,38 @@
       "--f1r2-max-depth": [
         "200",
         "30"
+      ],
+      "--permutect-training-dataset": [
+        "null",
+        "/work/out/training.dataset"
+      ],
+      "--permutect-test-dataset": [
+        "null",
+        "/work/out/test.dataset"
+      ],
+      "--permutect-training-truth": [
+        "null",
+        "/work/fixtures/m2_pon.vcf"
+      ],
+      "--permutect-test-truth": [
+        "null",
+        "/work/fixtures/m2_pon.vcf"
+      ],
+      "--permutect-ref-downsample": [
+        "1000",
+        "500"
+      ],
+      "--permutect-alt-downsample": [
+        "1000",
+        "500"
+      ],
+      "--permutect-non-artifact-ratio": [
+        "1",
+        "3"
+      ],
+      "--permutect-dataset-mode": [
+        "ILLUMINA",
+        "ULTIMA"
       ]
     },
     "RampedHaplotypeCaller": {

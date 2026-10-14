@@ -8023,6 +8023,30 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "mutect2-permutect",
+      "status": "golden-pending",
+      "title": "Mutect2's Permutect datasets, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--permutect-training-dataset, --permutect-test-dataset, their truths, --permutect-ref-downsample, --permutect-alt-downsample, --permutect-non-artifact-ratio and --permutect-dataset-mode (G3.2t, #1354). Every annotated call adds one datum per alternate its engine labels (the training engine from POPAF, TLOD, the AD fractions, PON and a queue per variant type, the test engine from its truth), with the reference bases, five variant features written %.2f from floats, the tumour's featurized reads (FeaturizedReadSets: read group, MQ, BQ, orientation, positions, fragment ends in ILLUMINA mode or si and rq in ULTIMA mode, and the mismatches, indels and bad qualities against the best haplotype, by distance from the variant), the pre-downsampling counts and the two error log likelihoods; closing writes contigs.table and read-groups.table (a HashMap's order). A training dataset makes every candidate active. Downsampling past a read set's size shuffles without a generator, which the reference cannot reproduce, so the runs downsample to counts no read set reaches; ILLUMINA mode refuses an unpaired read. Over HcDragenEndToEndDump's reads paired, with Ultima tags, with a normal, two tumours and unpaired.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 53,
+      "expect_contains": [
+        "file\ttest\ttest.dataset=",
+        "error\tunpaired\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2PermutectDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

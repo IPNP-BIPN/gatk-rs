@@ -144,6 +144,9 @@ pub struct Mutect2Arguments {
     /// `--f1r2-tar-gz`'s collector arguments: the tumour pileup of every locus `isActive` examines
     /// is counted.
     pub f1r2: Option<crate::collect_f1r2_counts::Args>,
+    /// `--permutect-training-dataset` and `--permutect-test-dataset`: the engines each annotated
+    /// call feeds, whose text the caller writes once the run ends, a failed one too.
+    pub permutect: Option<std::cell::RefCell<crate::permutect_dataset::Datasets>>,
     pub informative_read_overlap_margin: i32,
     pub max_mnp_distance: i32,
     pub phred_scaled_global_read_mismapping_rate: f64,
@@ -574,6 +577,14 @@ fn is_active(
         log_likelihood_ratio((tumor_pileup.len() - alt_quals.len()) as i32, &alt_quals, 1);
     if tumor_log_odds < arguments.initial_log_odds {
         return Ok(0.0);
+    }
+    // A training dataset wants every candidate, germline and panel sites included.
+    if arguments
+        .permutect
+        .as_ref()
+        .is_some_and(|p| p.borrow().engines.iter().any(|e| e.training))
+    {
+        return Ok(1.0);
     }
     if !arguments.normal_samples.is_empty() && !arguments.genotype_germline_sites {
         let normal_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
@@ -1558,6 +1569,35 @@ fn call_mutations(
                 EngineError::Limitation(what) => failure("PortLimitation", what),
                 EngineError::Runtime { class, message } => failure(&class, message),
             })?;
+        // `permutectTrainingDatasetEngines` then `permutectTestDatasetEngines`, `addData`.
+        if let Some(permutect) = &arguments.permutect {
+            let contig_index = context
+                .header
+                .sequences
+                .iter()
+                .position(|s| s.name == annotated.contig)
+                .unwrap_or(0);
+            let haplotype_refs: Vec<&Haplotype> = haplotypes.iter().collect();
+            permutect
+                .borrow_mut()
+                .add_data(
+                    reference_window,
+                    &annotated,
+                    &trimmed_call,
+                    &trimmed_reads,
+                    &fragments,
+                    &haplotype_refs,
+                    contig_index,
+                )
+                .map_err(|e| match e {
+                    crate::permutect_dataset::DatasetError::Limitation(what) => {
+                        failure("PortLimitation", what)
+                    }
+                    crate::permutect_dataset::DatasetError::Runtime { class, message } => {
+                        failure(&class, message)
+                    }
+                })?;
+        }
         // `annotateReadLikelihoodsWithSupportedAlleles(trimmedCall, trimmedLikelihoods,
         // Fragment::getReads)`, for the bamout.
         if let Some(tags) = bamout.as_deref_mut() {
