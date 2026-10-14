@@ -7785,6 +7785,33 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-bamout",
+      "status": "golden-pending",
+      "title": "The callers' --bam-output, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--bam-output (G3.2m, #1347). The writer's header is the reads' dictionary in coordinate order, their read groups and an ArtificialHaplotypeRG (sample HC, centre BI) unless NO_HAPLOTYPES, their programs and a bare HaplotypeBAMWriter. Each called region adds its haplotypes as reads, HC_<n>_<index> with n counting across the run, qualities of 33, mapping quality 60, the reverse-strand flag alone, HC holding the haplotype's hashCode and CR the callable region; with CALLED_HAPLOTYPES they come in the order of a HashSet copied from the genotyping engine's, under --disable-optimizations with the reference added, and a region with no called haplotype writes nothing at all. Then the region's reads as they were scored: realigned (except with the PDHMM), OS and OE dropped, AR the location of the best haplotype with the reference and the fewest CIGAR elements winning ties, CR the callable region, and XA the alleles each was informative for, one comma-separated entry per call; Mutect2 reads them off fragments, so both mates of an informative fragment gain it, and writes its haplotypes before allele filtering. Nothing is presorted: htsjdk sorts by coordinate as it closes. Each writer type, the index switch, GVCF mode, --disable-optimizations, the PDHMM, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal, compared as SAM text.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 33,
+      "expect_contains": [
+        "bai\thc-bamout-no-haplotypes=false",
+        "ArtificialHaplotypeRG",
+        "XA:Z:"
+      ],
+      "cases": [
+        {
+          "dump": "HcBamoutDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

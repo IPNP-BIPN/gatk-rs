@@ -53,6 +53,8 @@ pub struct HaplotypeCallerArguments {
     pub pdhmm: Option<PdhmmArguments>,
     /// `--alleles`' records, and `--force-call-filtered-alleles`.
     pub given_alleles: Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>,
+    /// `--bam-output` and how it is written.
+    pub bamout: Option<BamoutArguments>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -128,6 +130,38 @@ pub fn samples_from_header(header: &SamHeader) -> Vec<String> {
     samples
 }
 
+/// `--bam-output`, `--bam-writer-type`, `--create-output-bam-index`, `--create-output-bam-md5` and
+/// the BGZF settings the writer inherits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BamoutArguments {
+    pub kind: crate::haplotype_bam_writer::WriterType,
+    pub path: std::path::PathBuf,
+    pub create_index: bool,
+    pub create_md5: bool,
+    pub level: u32,
+    pub deflater: htsjdk_bgzf::Deflater,
+}
+
+/// `HaplotypeBAMWriter.close()`: the BAM, its index (the output's extension replaced by `.bai`)
+/// and its MD5.
+pub fn close_bamout(
+    writer: crate::haplotype_bam_writer::HaplotypeBamWriter,
+    arguments: &BamoutArguments,
+) -> Result<(), String> {
+    let (bam, bai) = writer.finish(arguments.create_index, arguments.level, arguments.deflater)?;
+    std::fs::write(&arguments.path, &bam).map_err(|e| e.to_string())?;
+    if let Some(bai) = bai {
+        std::fs::write(arguments.path.with_extension("bai"), bai).map_err(|e| e.to_string())?;
+    }
+    if arguments.create_md5 {
+        let mut digest = arguments.path.clone().into_os_string();
+        digest.push(".md5");
+        std::fs::write(digest, crate::gather_bam_files::md5_file(&bam))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// `--use-pdhmm`'s arguments.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdhmmArguments {
@@ -182,6 +216,11 @@ pub fn call_variants(
                 .to_string(),
         )
     });
+    let bamout = arguments.bamout.as_ref().map(|b| {
+        std::cell::RefCell::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
+            b.kind, header,
+        ))
+    });
     let outcome = call_variants_into(
         reads,
         header,
@@ -192,8 +231,14 @@ pub fn call_variants(
         random,
         pd_engine.as_ref(),
         results.as_ref(),
+        bamout.as_ref(),
         &mut calls,
     );
+    // The writer closes with the engine, after a failure too.
+    if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
+        close_bamout(writer.into_inner(), settings)
+            .map_err(|e| HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e))?;
+    }
     if let (Some(path), Some(text)) = (&results_file, &results) {
         std::fs::write(path, text.borrow().as_bytes()).map_err(|e| {
             HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
@@ -220,6 +265,7 @@ fn call_variants_into(
     random: &mut JavaRandom,
     pd_engine: Option<&gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine>,
     pd_results: Option<&std::cell::RefCell<String>>,
+    bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -429,6 +475,7 @@ fn call_variants_into(
             pileup: (detection.use_pileup_detection && !genotyping.ramped_engine)
                 .then_some((detection, loci.as_slice())),
             // RampedHaplotypeCallerEngine makes no PD haplotypes.
+            bamout,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()

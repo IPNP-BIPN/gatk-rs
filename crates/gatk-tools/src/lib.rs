@@ -104,6 +104,7 @@ pub mod ground_truth_scorer;
 pub mod grouped_sv_cluster;
 pub mod gtf_to_bed;
 pub mod gvcf_blocks;
+pub mod haplotype_bam_writer;
 pub mod haplotype_based_variant_recaller;
 pub mod haplotype_caller;
 pub mod haplotype_caller_engine;

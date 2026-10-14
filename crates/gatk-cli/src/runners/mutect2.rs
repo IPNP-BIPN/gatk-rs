@@ -165,10 +165,11 @@ const HONOURED: &[&str] = &[
     "max-num-haplotypes-in-population",
     "disable-artificial-haplotype-recovery",
     "independent-mates",
-    // Without a panel of normals, a Permutect dataset or a bamout these change nothing;
-    // --debug-assembly is logged only.
+    // Without a panel of normals or a Permutect dataset these change nothing; the bamout is
+    // written; --debug-assembly is logged only.
     "genotype-pon-sites",
     "permutect-dataset-mode",
+    "bam-output",
     "bam-writer-type",
     "debug-assembly",
     // Force-calling.
@@ -434,6 +435,19 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
         given_alleles: super::given_alleles(parser)?,
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
         pileup_detection: super::pileup_detection_arguments(parser),
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,

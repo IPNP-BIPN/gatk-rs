@@ -170,8 +170,10 @@ const HONOURED: &[&str] = &[
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
-    // Without a bamout or a native PairHMM these change nothing.
+    // The bamout.
+    "bam-output",
     "bam-writer-type",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
     "dont-use-dragstr-pair-hmm-scores",
@@ -686,6 +688,19 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
         given_alleles: super::given_alleles(parser)?,
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
         pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
             use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
             gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")

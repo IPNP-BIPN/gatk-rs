@@ -101,6 +101,8 @@ pub struct CallRegionContext<'a> {
     pub pd: Option<PdContext<'a>>,
     /// `--alleles`: the records, and `--force-call-filtered-alleles`.
     pub given_alleles: Option<(&'a [htsjdk_vcf::variant::VariantContext], bool)>,
+    /// `--bam-output`.
+    pub bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -812,6 +814,9 @@ fn finish_region(
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     let contig_length = context.contig_bases.len() as i32;
+    let mut bamout_tags = context
+        .bamout
+        .map(|_| crate::hc_genotyping::BamoutTags::default());
     let calls = assign_genotype_likelihoods_full(
         engine,
         context.genotyping,
@@ -827,8 +832,31 @@ fn finish_region(
         suspicious,
         pre_filtering,
         given,
+        bamout_tags.as_mut(),
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // `writeReadsAlignedToHaplotypes`, with the called haplotypes and the read tags genotyping
+    // left.
+    if let (Some(writer), Some(tags)) = (context.bamout, &bamout_tags) {
+        let called: Vec<Haplotype> = tags.called.iter().map(|&h| haplotypes[h].clone()).collect();
+        let reference = if context.disable_optimizations {
+            assembly.reference_haplotype()
+        } else {
+            None
+        };
+        writer
+            .borrow_mut()
+            .write_region(
+                haplotypes,
+                ref_loc,
+                &called,
+                reference,
+                likelihoods,
+                genotyping_region.span(),
+                &|read| tags.supported_for(read).map(str::to_string),
+            )
+            .map_err(calling)?;
+    }
     if !context.genotyping.emit_reference_confidence {
         return Ok(calls);
     }

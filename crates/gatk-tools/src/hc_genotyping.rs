@@ -193,6 +193,7 @@ pub fn assign_genotype_likelihoods_annotated(
         &std::collections::BTreeSet::new(),
         None,
         &[],
+        None,
     )
 }
 
@@ -215,6 +216,7 @@ pub fn assign_genotype_likelihoods_full(
     suspicious_locations: &std::collections::BTreeSet<i32>,
     pre_filtering: Option<(&AlleleLikelihoods<BamRecord, Haplotype>, &[Haplotype])>,
     given: &[gatk_engine::event_map::Event],
+    mut bamout: Option<&mut BamoutTags>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let refused = |message: String| EngineError::Runtime {
         class: "IllegalArgumentException".to_string(),
@@ -433,6 +435,16 @@ pub fn assign_genotype_likelihoods_full(
                     }
                 }
             }
+            // `annotateReadLikelihoodsWithSupportedAlleles(call, readAlleleLikelihoods)`, for the
+            // bamout: the matrix the annotations read, marginalized to the call's alleles.
+            if let Some(tags) = bamout.as_deref_mut() {
+                let mut for_tags = marginal.clone();
+                if call.alleles.len() != for_tags.number_of_alleles() {
+                    for_tags.update_non_ref_allele_likelihoods(&call.alleles);
+                }
+                tags.add_supported_alleles(&call, &for_tags)
+                    .map_err(|e| refused(format!("{e:?}")))?;
+            }
             // `makeAnnotatedCall`: the annotations read the matrix the call was genotyped with,
             // over a reference context whose window is the padded reference.
             let call = match annotator.as_mut() {
@@ -534,11 +546,111 @@ pub fn assign_genotype_likelihoods_full(
             calls.push(call);
         }
     }
+    if let Some(tags) = bamout {
+        tags.called = called.clone();
+    }
     if arguments.do_physical_phasing {
         let called: Vec<&Haplotype> = called.iter().map(|&h| &haplotypes[h]).collect();
         return phase_calls(calls, &called);
     }
     Ok(calls)
+}
+
+/// What a bamout needs of genotyping: the haplotypes called, in the order the reference's
+/// `HashSet` was filled, and the `XA` tag each read collects, by read.
+#[derive(Debug, Clone, Default)]
+pub struct BamoutTags {
+    /// Indices into the genotyped haplotypes.
+    pub called: Vec<usize>,
+    /// `XA` by read name and flags.
+    pub supported: Vec<((String, u16), String)>,
+}
+
+impl BamoutTags {
+    /// `annotateReadLikelihoodsWithSupportedAlleles(vc, likelihoods)`: each read informative for
+    /// one of the call's alleles gains `contig:start=index`, after a comma when it has one.
+    pub fn add_supported_alleles(
+        &mut self,
+        call: &VariantContext,
+        likelihoods: &AlleleLikelihoods<BamRecord>,
+    ) -> Result<(), gatk_engine::allele_likelihoods::LikelihoodsError> {
+        let new_to_old: Vec<(Allele, Vec<Allele>)> =
+            gatk_annotation::depth_per_allele::marginalisation_order(&call.alleles)
+                .into_iter()
+                .map(|a| (a.clone(), vec![a]))
+                .collect();
+        let marginal = likelihoods.marginalize(&new_to_old)?;
+        for sample in 0..marginal.number_of_samples() {
+            let evidence = marginal.sample_evidence(sample).unwrap_or(&[]);
+            for best in marginal.best_alleles_breaking_ties_for_sample(sample, None) {
+                if !best.is_informative() {
+                    continue;
+                }
+                let Some(allele) = best.allele else { continue };
+                let index = call
+                    .alleles
+                    .iter()
+                    .position(|a| *a == allele)
+                    .map_or(-1, |i| i as i64);
+                let read = &evidence[best.evidence_index];
+                let text = format!("{}:{}={index}", call.contig, call.start);
+                self.append((read.read_name.clone(), read.flags), &text);
+            }
+        }
+        Ok(())
+    }
+
+    /// The same over fragments, `annotateReadLikelihoodsWithSupportedAlleles(vc, likelihoods,
+    /// Fragment::getReads)`: every read of an informative fragment gains the tag.
+    pub fn add_supported_alleles_fragments(
+        &mut self,
+        call: &VariantContext,
+        likelihoods: &AlleleLikelihoods<gatk_engine::fragment::Fragment>,
+    ) -> Result<(), gatk_engine::allele_likelihoods::LikelihoodsError> {
+        let new_to_old: Vec<(Allele, Vec<Allele>)> =
+            gatk_annotation::depth_per_allele::marginalisation_order(&call.alleles)
+                .into_iter()
+                .map(|a| (a.clone(), vec![a]))
+                .collect();
+        let marginal = likelihoods.marginalize(&new_to_old)?;
+        for sample in 0..marginal.number_of_samples() {
+            let evidence = marginal.sample_evidence(sample).unwrap_or(&[]);
+            for best in marginal.best_alleles_breaking_ties_for_sample(sample, None) {
+                if !best.is_informative() {
+                    continue;
+                }
+                let Some(allele) = best.allele else { continue };
+                let index = call
+                    .alleles
+                    .iter()
+                    .position(|a| *a == allele)
+                    .map_or(-1, |i| i as i64);
+                let text = format!("{}:{}={index}", call.contig, call.start);
+                for read in &evidence[best.evidence_index].reads {
+                    self.append((read.read_name.clone(), read.flags), &text);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn append(&mut self, key: (String, u16), text: &str) {
+        match self.supported.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, value)) => {
+                value.push_str(", ");
+                value.push_str(text);
+            }
+            None => self.supported.push((key, text.to_string())),
+        }
+    }
+
+    /// The `XA` a read collected.
+    pub fn supported_for(&self, read: &BamRecord) -> Option<&str> {
+        self.supported
+            .iter()
+            .find(|((name, flags), _)| *name == read.read_name && *flags == read.flags)
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 /// `PhaseGroup`: which alternate index of a het genotype holds the phased alternate.

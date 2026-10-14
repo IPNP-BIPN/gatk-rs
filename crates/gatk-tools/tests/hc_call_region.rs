@@ -107,6 +107,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         pileup: None,
         pd: None,
         given_alleles: None,
+        bamout: None,
         collapse: Default::default(),
     };
     let mut engine = GenotypingEngine::new(
