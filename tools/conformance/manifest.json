@@ -8052,7 +8052,7 @@
     },
     {
       "id": "hc-allele-graphs",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers' allele-filtering interaction graphs, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8072,13 +8072,14 @@
       "cases": [
         {
           "dump": "HcAlleleGraphsDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_allele_graphs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "mutect2-dragstr",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2 with DRAGstr's PairHMM gap penalties, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8096,7 +8097,8 @@
       "cases": [
         {
           "dump": "Mutect2DragstrDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/mutect2_dragstr.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
         }
       ]
     }
