@@ -57,6 +57,12 @@ pub struct HaplotypeCallerArguments {
     pub bamout: Option<BamoutArguments>,
     /// `--assembly-region-out`.
     pub assembly_region_out: Option<std::path::PathBuf>,
+    /// `--keep-rg`.
+    pub keep_rg: Option<String>,
+    /// `--just-determine-active-regions`.
+    pub just_determine_active_regions: bool,
+    /// `--dont-genotype`.
+    pub dont_genotype: bool,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -489,6 +495,9 @@ fn call_variants_into(
                 .then_some((detection, loci.as_slice())),
             // RampedHaplotypeCallerEngine makes no PD haplotypes.
             bamout,
+            keep_rg: arguments.keep_rg.as_deref(),
+            just_determine_active_regions: arguments.just_determine_active_regions,
+            dont_genotype: arguments.dont_genotype,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()

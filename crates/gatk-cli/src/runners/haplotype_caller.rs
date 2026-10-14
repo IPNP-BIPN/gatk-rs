@@ -174,6 +174,9 @@ const HONOURED: &[&str] = &[
     "bam-output",
     "bam-writer-type",
     "assembly-region-out",
+    "keep-rg",
+    "just-determine-active-regions",
+    "dont-genotype",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -489,6 +492,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
+    if flag(parser, "dont-genotype") && emit_reference_confidence {
+        return Err(Thrown::user(
+            "You cannot request gVCF output and 'do not genotype' at the same time",
+        ));
+    }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
     if emit_reference_confidence {
@@ -690,6 +698,9 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         pileup_detection: super::pileup_detection_arguments(parser),
         given_alleles: super::given_alleles(parser)?,
         assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
+        keep_rg: scalar(parser, "keep-rg"),
+        just_determine_active_regions: flag(parser, "just-determine-active-regions"),
+        dont_genotype: flag(parser, "dont-genotype"),
         bamout: argument(parser, "bam-output").map(|path| {
             let (level, deflater) = super::output_compression(parser);
             gatk_tools::haplotype_caller::BamoutArguments {

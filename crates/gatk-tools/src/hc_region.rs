@@ -125,6 +125,12 @@ pub struct CallRegionContext<'a> {
     pub given_alleles: Option<(&'a [htsjdk_vcf::variant::VariantContext], bool)>,
     /// `--bam-output`.
     pub bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    /// `--keep-rg`: reads of any other read group are filtered before genotyping.
+    pub keep_rg: Option<&'a str>,
+    /// `--just-determine-active-regions`.
+    pub just_determine_active_regions: bool,
+    /// `--dont-genotype`.
+    pub dont_genotype: bool,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -161,6 +167,10 @@ pub fn call_region(
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
+    // `--just-determine-active-regions`: both engines leave before anything.
+    if context.just_determine_active_regions {
+        return Ok(Vec::new());
+    }
     if !region.is_active() {
         return reference_model_for_no_variation(region, true, context);
     }
@@ -523,9 +533,8 @@ pub fn call_region(
     }
     let mut filtered: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
     for read in genotyping_region.reads() {
-        let failing = unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
-            || read.mapping_quality < context.mapping_quality_threshold
-            || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read);
+        let failing =
+            fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg);
         if failing {
             let sample = sample_name(read, context.header);
             let index = context
@@ -540,14 +549,15 @@ pub fn call_region(
     // `genotype()`, so they are scored and realigned, then added again for the annotations.
     let threshold = context.mapping_quality_threshold;
     if !ramped {
-        genotyping_region.retain_reads(|read| {
-            !(unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
-                || read.mapping_quality < threshold
-                || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
-        });
+        let keep_rg = context.keep_rg;
+        genotyping_region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     }
     if !assembly.is_variation_present() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
+    }
+    // `--dont-genotype`: the user asked to stop here.
+    if context.dont_genotype {
+        return Ok(Vec::new());
     }
     let genotyping_region = assembly
         .region_for_genotyping()
@@ -992,7 +1002,8 @@ fn reference_model_for_no_variation(
             .map_err(RegionAssemblyError::Finalize)?;
     }
     let threshold = context.mapping_quality_threshold;
-    region.retain_reads(|read| !fails_genotyping_filters(read, threshold));
+    let keep_rg = context.keep_rg;
+    region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     let padded = region.padded_span().clone();
     let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let sample = &context.samples[0];
@@ -1039,10 +1050,23 @@ pub(crate) fn qualified_class(class: &str) -> String {
 
 /// `filterNonPassingReads`' test: too short, mapped below the genotyping threshold, or with a
 /// mate on another contig.
-fn fails_genotyping_filters(read: &BamRecord, mapping_quality_threshold: u8) -> bool {
+fn fails_genotyping_filters(
+    read: &BamRecord,
+    mapping_quality_threshold: u8,
+    keep_rg: Option<&str>,
+) -> bool {
     unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
         || read.mapping_quality < mapping_quality_threshold
         || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read)
+        || keep_rg.is_some_and(|keep| read_group(read) != Some(keep))
+}
+
+/// The read's `RG`.
+fn read_group(read: &BamRecord) -> Option<&str> {
+    match read.tags.get(htsjdk_bam::tag::Tag::new(b"RG")) {
+        Some(htsjdk_bam::tag::TagValue::Str(group)) => Some(group.as_str()),
+        _ => None,
+    }
 }
 
 /// The `finalizeRegion` switches HaplotypeCaller passes.
