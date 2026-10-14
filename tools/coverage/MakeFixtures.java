@@ -1149,6 +1149,49 @@ public class MakeFixtures {
         }
     }
 
+    /**
+     * mutect_paired.bam: mutect_t.bam's reads paired, each read with the next as its mate (same
+     * name, both mapped, the earlier one first of pair), each carrying Ultima's si and rq tags, so
+     * Mutect2's Permutect datasets can featurize them in either mode.
+     */
+    static void mutectPairedFixtures(final Path dir) throws Exception {
+        try (final htsjdk.samtools.SamReader reader =
+                     htsjdk.samtools.SamReaderFactory.makeDefault().open(dir.resolve("mutect_t.bam"))) {
+            final SAMFileHeader header = reader.getFileHeader().clone();
+            final List<SAMRecord> records = new ArrayList<>();
+            for (final SAMRecord record : reader) {
+                records.add(record);
+            }
+            try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                    .makeBAMWriter(header, true, dir.resolve("mutect_paired.bam").toFile())) {
+                for (int i = 0; i + 1 < records.size(); i += 2) {
+                    final SAMRecord a = records.get(i);
+                    final SAMRecord b = records.get(i + 1);
+                    final int insert = Math.max(a.getAlignmentEnd(), b.getAlignmentEnd())
+                            - Math.min(a.getAlignmentStart(), b.getAlignmentStart()) + 1;
+                    b.setReadName(a.getReadName());
+                    for (final SAMRecord[] pair : new SAMRecord[][] {{a, b}, {b, a}}) {
+                        final SAMRecord read = pair[0];
+                        final SAMRecord mate = pair[1];
+                        read.setHeader(header);
+                        read.setReadPairedFlag(true);
+                        read.setProperPairFlag(true);
+                        read.setFirstOfPairFlag(read == a);
+                        read.setSecondOfPairFlag(read == b);
+                        read.setMateReferenceName(mate.getReferenceName());
+                        read.setMateAlignmentStart(mate.getAlignmentStart());
+                        read.setMateNegativeStrandFlag(mate.getReadNegativeStrandFlag());
+                        read.setInferredInsertSize(read == a ? insert : -insert);
+                        read.setAttribute("si", 100 + i);
+                        read.setAttribute("rq", (float) (0.9 - 0.1 * (i % 5)));
+                    }
+                    writer.addAlignment(a);
+                    writer.addAlignment(b);
+                }
+            }
+        }
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -3096,6 +3139,7 @@ public class MakeFixtures {
         geneExpressionFixtures(dir);
         flowFixtures(dir);
         flowCallsFixtures(dir);
+        mutectPairedFixtures(dir);
         flowSnvFixtures(dir);
         groundTruthFixtures(dir);
         haplotypeRecallerFixtures(dir);

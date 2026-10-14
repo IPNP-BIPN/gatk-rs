@@ -8024,6 +8024,83 @@
           "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38572721634, byte for byte the local dump."
         }
       ]
+    },
+    {
+      "id": "mutect2-permutect",
+      "status": "oracle-backed",
+      "title": "Mutect2's Permutect datasets, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--permutect-training-dataset, --permutect-test-dataset, their truths, --permutect-ref-downsample, --permutect-alt-downsample, --permutect-non-artifact-ratio and --permutect-dataset-mode (G3.2t, #1354). Every annotated call adds one datum per alternate its engine labels (the training engine from POPAF, TLOD, the AD fractions, PON and a queue per variant type, the test engine from its truth), with the reference bases, five variant features written %.2f from floats, the tumour's featurized reads (FeaturizedReadSets: read group, MQ, BQ, orientation, positions, fragment ends in ILLUMINA mode or si and rq in ULTIMA mode, and the mismatches, indels and bad qualities against the best haplotype, by distance from the variant), the pre-downsampling counts and the two error log likelihoods; closing writes contigs.table and read-groups.table (a HashMap's order). A training dataset makes every candidate active. Downsampling past a read set's size shuffles without a generator, which the reference cannot reproduce, so the runs downsample to counts no read set reaches; ILLUMINA mode refuses an unpaired read. Over HcDragenEndToEndDump's reads paired, with Ultima tags, with a normal, two tumours and unpaired.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 53,
+      "expect_contains": [
+        "file\ttest\ttest.dataset=",
+        "error\tunpaired\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2PermutectDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_permutect.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38607376351, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-allele-graphs",
+      "status": "oracle-backed",
+      "title": "The callers' allele-filtering interaction graphs, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--flow-filter-alleles-debug-graphs (G3.2u, #1355). With --flow-filter-alleles, AlleleFiltering writes each linked group of two or more alleles no haplotype carries together to allele.interaction.<contig>.<first>-<last>.dot in the working directory: a vertex per allele labelled with its quality against its inverse, an edge to each allele whose quality drops when the first one's haplotypes are disabled, weighted by the drop, in jgrapht's DOTExporter format. Over a contig whose reads tile four haplotypes (a group of two SNVs and a group of three): HaplotypeCaller at the default and a 300 threshold, the switch without the filter, RampedHaplotypeCaller and Mutect2.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "out\thc-graphs=",
+        "graph\thc-graphs\tallele.interaction."
+      ],
+      "cases": [
+        {
+          "dump": "HcAlleleGraphsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_allele_graphs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-dragstr",
+      "status": "oracle-backed",
+      "title": "Mutect2 with DRAGstr's PairHMM gap penalties, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--dragstr-params-path and --dragstr-het-hom-ratio in Mutect2 (G3.2u, #1355). The table reaches Mutect2 through createLikelihoodCalculationEngine alone: the PairHMM's gap penalties at each read's short tandem repeats, unless --dont-use-dragstr-pair-hmm-scores, when the table is not even read; the het-hom ratio feeds HaplotypeCaller's genotype priors and changes nothing here. Over HcDragenEndToEndDump's reads, with an A homopolymer and a CA repeat: the default table, a ratio, the scores off (with a path that is not there), a normal, and a missing table.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "out\tdragstr=",
+        "error\tdragstr-missing\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2DragstrDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_dragstr.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
+        }
+      ]
     }
   ],
   "probes": []
