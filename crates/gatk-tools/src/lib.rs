@@ -144,6 +144,7 @@ pub mod pathseq_kmers;
 pub mod pathseq_kryo;
 pub mod pathseq_taxonomy;
 pub mod pd_haplotypes;
+pub mod permutect_dataset;
 pub mod picard_gather_vcfs;
 pub mod picard_update_vcf_dictionary;
 pub mod pileup;

@@ -70,6 +70,9 @@ JAVA_OPENS = " ".join(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPEN
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
 
+# A fixture value for an argument the row does not give at all; see `as_cli`.
+UNSET = "<unset>"
+
 
 # A corpus built once and handed to every row, by `measure.py` when it runs many tools. The files are
 # mounted READ-ONLY into every container, so one copy serves any number of runs, concurrent ones
@@ -138,6 +141,12 @@ def as_cli(args, positional=(), tagged=(), lists=()):
     out = []
     for pair in args:
         name, _, value = pair.partition("=")
+        # `<unset>`: the row leaves the argument off the command line altogether. A covering array
+        # gives every argument a value in every row, and an annotation's own argument is refused
+        # whenever it is SET without its annotation, so the value that means "not given" has to
+        # exist for the pairs that enable it to be the only ones that carry it.
+        if value == UNSET:
+            continue
         if name in tagged:
             # One value naming several tagged inputs: `tag:path` words, each written as
             # `--name:tag path`. `VCFComparator` tells its two `--variant`s apart by tag alone, so
