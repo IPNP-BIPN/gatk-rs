@@ -1,7 +1,9 @@
 /*
  * The callers' debug outputs and switches, end to end (G3.2m, #1347).
  *
- * --assembly-region-out writes each region the walker hands over, an end marker at its start and
+ * --haplotype-debug-histogram-output counts, as HaplotypeCaller's engine shuts down, the haplotypes
+ * each assembly recovered and the k-mer size of each graph that assembled variation; Mutect2 keeps
+ * them and never prints them. --assembly-region-out writes each region the walker hands over, an end marker at its start and
  * then the region with its size, 1 when active and -1 when not, in IGV's TAB format. --keep-rg
  * filters every other read group's reads before genotyping, --just-determine-active-regions stops
  * HaplotypeCaller before anything (the ramped engine only once inactive regions have their
@@ -63,6 +65,12 @@ public class HcDebugOutputsDump {
                 List.of("-ERC", "GVCF", "--sample-name", "s1", "-L", "chr2"));
         withFile(dir, "ramped-region-out", ramped, e2eBam, e2eFasta, "--assembly-region-out", List.of("-L", "chr2"));
         withFile(dir, "mutect2-region-out", m2, e2eBam, e2eFasta, "--assembly-region-out", List.of());
+        final String histogram = "--haplotype-debug-histogram-output";
+        withFile(dir, "hc-histogram", hc, e2eBam, e2eFasta, histogram, List.of());
+        withFile(dir, "hc-histogram-linked", hc, e2eBam, e2eFasta, histogram, List.of("--linked-de-bruijn-graph"));
+        withFile(dir, "hc-histogram-empty", hc, e2eBam, e2eFasta, histogram, List.of("-L", "chr2:10-20"));
+        withFile(dir, "ramped-histogram", ramped, e2eBam, e2eFasta, histogram, List.of());
+        withFile(dir, "mutect2-histogram", m2, e2eBam, e2eFasta, histogram, List.of());
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));

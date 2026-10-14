@@ -172,6 +172,8 @@ const HONOURED: &[&str] = &[
     "bam-output",
     "bam-writer-type",
     "assembly-region-out",
+    // Kept by the assembler and never printed: only HaplotypeCaller's engine prints it.
+    "haplotype-debug-histogram-output",
     "debug-assembly",
     // Force-calling.
     "alleles",

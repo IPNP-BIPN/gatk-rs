@@ -139,6 +139,38 @@ pub struct ReadThreadingAssembler {
     linked: bool,
     /// `recoverHaplotypesFromEdgesNotCoveredInJunctionTrees`.
     recover_uncovered_haplotypes: bool,
+    /// `setDebugHistogramOutput`: the two histograms, kept while the assembler runs.
+    histograms: Option<std::cell::RefCell<DebugHistograms>>,
+}
+
+/// `haplotypeHistogram` and `kmersUsedHistogram`, both `new Histogram(1.0)`: bins of one, counted.
+#[derive(Debug, Clone, Default)]
+pub struct DebugHistograms {
+    pub haplotypes: std::collections::BTreeMap<i64, u64>,
+    pub kmers: std::collections::BTreeMap<i64, u64>,
+}
+
+impl DebugHistograms {
+    /// `Histogram.toString()` for a bin size of one: `value,count` pairs in ascending order,
+    /// joined by commas, and `NaN` when empty.
+    pub fn render(bins: &std::collections::BTreeMap<i64, u64>) -> String {
+        if bins.is_empty() {
+            return "NaN".to_string();
+        }
+        bins.iter()
+            .map(|(value, count)| format!("{value},{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// `printDebugHistograms()`'s file.
+    pub fn report(&self) -> String {
+        format!(
+            "Histogram over the number of haplotypes recovered per active region:\n{}\n\nHistogram over the average kmer size used for assembly:\n{}\n",
+            Self::render(&self.haplotypes),
+            Self::render(&self.kmers)
+        )
+    }
 }
 
 /// The constructor's arguments, in its order, without `useLinkedDebruijnGraphs`.
@@ -200,6 +232,7 @@ impl ReadThreadingAssembler {
                 .min_matching_bases_to_dangling_end_recovery,
             linked: settings.use_linked_debruijn_graphs,
             recover_uncovered_haplotypes: true,
+            histograms: None,
         })
     }
 
@@ -249,6 +282,31 @@ impl ReadThreadingAssembler {
         self.remove_paths_not_connected_to_ref = value;
     }
 
+    /// `setDebugHistogramOutput`: start keeping the histograms.
+    pub fn keep_debug_histograms(&mut self) {
+        self.histograms = Some(std::cell::RefCell::new(DebugHistograms::default()));
+    }
+
+    /// The histograms kept, if any.
+    pub fn debug_histograms(&self) -> Option<DebugHistograms> {
+        self.histograms.as_ref().map(|h| h.borrow().clone())
+    }
+
+    fn count_kmer_size(&self, kmer_size: usize) {
+        if let Some(h) = &self.histograms {
+            *h.borrow_mut().kmers.entry(kmer_size as i64).or_insert(0) += 1;
+        }
+    }
+
+    fn count_haplotypes(&self, set: &AssemblyResultSet) {
+        if let Some(h) = &self.histograms {
+            *h.borrow_mut()
+                .haplotypes
+                .entry(set.haplotype_count() as i64)
+                .or_insert(0) += 1;
+        }
+    }
+
     /// `runLocalAssembly`, without a read error corrector or a haplotype collapsing engine.
     #[allow(clippy::too_many_arguments)]
     pub fn run_local_assembly(
@@ -294,6 +352,7 @@ impl ReadThreadingAssembler {
                 dangling_end_sw_parameters,
                 haplotype_to_reference_sw_parameters,
             )?;
+            self.count_haplotypes(&result_set);
             return Ok(result_set);
         }
 
@@ -303,7 +362,9 @@ impl ReadThreadingAssembler {
             if result.status == AssemblyStatus::AssembledSomeVariation {
                 let graph = result.seq_graph.expect("a graph that assembled variation");
                 sanity_check_reference_graph(&graph, &ref_haplotype)?;
-                graphs.push((graph, result.kmer_size.expect("a graph has a k-mer size")));
+                let kmer_size = result.kmer_size.expect("a graph has a k-mer size");
+                self.count_kmer_size(kmer_size);
+                graphs.push((graph, kmer_size));
             }
         }
         self.find_best_paths(
@@ -314,6 +375,7 @@ impl ReadThreadingAssembler {
             aligner,
             haplotype_to_reference_sw_parameters,
         )?;
+        self.count_haplotypes(&result_set);
         Ok(result_set)
     }
 
@@ -565,6 +627,7 @@ impl ReadThreadingAssembler {
                 AssemblyStatus::AssembledSomeVariation => {
                     let mut graph = graph.expect("an assembled graph");
                     sanity_check_linked_graph(&graph, ref_haplotype)?;
+                    self.count_kmer_size(kmer_size);
                     let trees = graph.post_process_for_haplotype_finding();
                     let discovered = self.find_best_linked_paths(
                         &graph,

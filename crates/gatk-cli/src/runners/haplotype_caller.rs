@@ -177,6 +177,7 @@ const HONOURED: &[&str] = &[
     "keep-rg",
     "just-determine-active-regions",
     "dont-genotype",
+    "haplotype-debug-histogram-output",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -701,6 +702,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         keep_rg: scalar(parser, "keep-rg"),
         just_determine_active_regions: flag(parser, "just-determine-active-regions"),
         dont_genotype: flag(parser, "dont-genotype"),
+        haplotype_histogram_output: argument(parser, "haplotype-debug-histogram-output")
+            .map(std::path::PathBuf::from),
         bamout: argument(parser, "bam-output").map(|path| {
             let (level, deflater) = super::output_compression(parser);
             gatk_tools::haplotype_caller::BamoutArguments {

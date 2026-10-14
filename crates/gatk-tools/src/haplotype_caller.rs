@@ -63,6 +63,8 @@ pub struct HaplotypeCallerArguments {
     pub just_determine_active_regions: bool,
     /// `--dont-genotype`.
     pub dont_genotype: bool,
+    /// `--haplotype-debug-histogram-output`.
+    pub haplotype_histogram_output: Option<std::path::PathBuf>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -312,11 +314,32 @@ fn call_variants_into(
         jmath::math::log10(arguments.priors.indel_heterozygosity),
     ));
     engine.set_use_posteriors_to_calculate_qual(arguments.use_posteriors_to_calculate_qual);
-    let assembler = assembler_from(
+    let mut assembler = assembler_from(
         &arguments.assembler,
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
+    // `--haplotype-debug-histogram-output`: kept as the assembler runs, printed as the engine shuts
+    // down, after a failure too.
+    if arguments.haplotype_histogram_output.is_some() {
+        assembler.keep_debug_histograms();
+    }
+    let assembler = assembler;
+    struct HistogramsOnShutdown<'a> {
+        assembler: &'a gatk_engine::read_threading_assembler::ReadThreadingAssembler,
+        path: Option<&'a std::path::Path>,
+    }
+    impl Drop for HistogramsOnShutdown<'_> {
+        fn drop(&mut self) {
+            if let (Some(path), Some(histograms)) = (self.path, self.assembler.debug_histograms()) {
+                let _ = std::fs::write(path, histograms.report());
+            }
+        }
+    }
+    let _histograms = HistogramsOnShutdown {
+        assembler: &assembler,
+        path: arguments.haplotype_histogram_output.as_deref(),
+    };
     // `filterStepLikelihoodCalculationEngine`.
     let stepwise_engine = arguments.stepwise_flow.as_ref().map(|flow| {
         crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
