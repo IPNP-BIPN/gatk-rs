@@ -7924,7 +7924,7 @@
     },
     {
       "id": "hc-ploidy",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "--ploidy-regions in the callers, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7943,7 +7943,8 @@
       "cases": [
         {
           "dump": "HcPloidyDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_ploidy.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38549036872, byte for byte the local dump."
         }
       ]
     }
