@@ -25,6 +25,37 @@
 /// the tool handed the descriptor an instance of it as a default.
 pub const SELECTOR: &str = "read-filter";
 
+/// The arguments that name annotations and annotation groups.
+pub const ANNOTATION_SELECTOR: &str = "annotation";
+pub const ANNOTATION_GROUP_SELECTOR: &str = "annotation-group";
+
+/// `getDefaultVariantAnnotationGroups()`: the groups a tool's annotation descriptor is built with,
+/// which make their annotations' own arguments valid. VariantAnnotator keeps GATKTool's empty
+/// default.
+pub fn default_annotation_groups(tool: &str) -> &'static [&'static str] {
+    match tool {
+        "HaplotypeCaller" | "RampedHaplotypeCaller" => &["StandardAnnotation", "StandardHCAnnotation"],
+        "Mutect2" => &["StandardMutectAnnotation"],
+        "GenotypeGVCFs" | "CombineGVCFs" => &["StandardAnnotation"],
+        "ReblockGVCF" | "VCFComparator" => &["StandardAnnotation", "AS_StandardAnnotation"],
+        _ => &[],
+    }
+}
+
+/// The annotation whose own `@Argument` an annotation-descriptor argument is: only valid when that
+/// annotation is enabled by name, by a default, or through a group.
+pub fn annotation_owner(long_name: &str) -> Option<&'static str> {
+    match long_name {
+        "dirichlet-prior-pseudo-count"
+        | "dirichlet-keep-prior-in-count"
+        | "pseudo-count-weight-decay-rate" => Some("AllelePseudoDepth"),
+        "assembly-complexity-reference-mode" => Some("AssemblyComplexity"),
+        "allow-old-rms-mapping-quality-annotation-data" => Some("RMSMappingQuality"),
+        "denovo-depth-threshold" | "denovo-parent-gq-threshold" => Some("PossibleDeNovo"),
+        _ => None,
+    }
+}
+
 /// One controlled argument, and the filter that declared it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ownership {
