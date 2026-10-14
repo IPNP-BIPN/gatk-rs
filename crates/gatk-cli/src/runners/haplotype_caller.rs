@@ -180,6 +180,8 @@ const HONOURED: &[&str] = &[
     "dont-genotype",
     "haplotype-debug-histogram-output",
     "debug-assembly-variants-out",
+    "alm-path",
+    "alm-interval",
     // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
@@ -706,6 +708,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         dont_genotype: flag(parser, "dont-genotype"),
         haplotype_histogram_output: argument(parser, "haplotype-debug-histogram-output")
             .map(std::path::PathBuf::from),
+        alm: argument(parser, "alm-path").map(|path| {
+            (
+                std::path::PathBuf::from(path),
+                scalar(parser, "alm-interval"),
+            )
+        }),
         bamout: argument(parser, "bam-output").map(|path| {
             let (level, deflater) = super::output_compression(parser);
             gatk_tools::haplotype_caller::BamoutArguments {

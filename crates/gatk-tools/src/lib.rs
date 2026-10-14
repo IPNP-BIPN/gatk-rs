@@ -11,6 +11,7 @@ pub mod add_flow_snv_quality;
 pub mod add_original_alignment_tags;
 pub mod allele_filtering;
 pub mod allele_frequency_qc;
+pub mod allele_likelihood_writer;
 pub mod analyze_covariates;
 pub mod analyze_saturation_mutagenesis;
 pub mod analyze_saturation_mutagenesis_engine;

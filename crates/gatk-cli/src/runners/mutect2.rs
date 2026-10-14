@@ -176,6 +176,9 @@ const HONOURED: &[&str] = &[
     // Kept by the assembler and never printed: only HaplotypeCaller's engine prints it.
     "haplotype-debug-histogram-output",
     "debug-assembly-variants-out",
+    // Declared for Mutect2 and read only by HaplotypeCaller's engine.
+    "alm-path",
+    "alm-interval",
     "debug-assembly",
     // Force-calling.
     "alleles",

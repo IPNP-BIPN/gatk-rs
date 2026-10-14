@@ -65,6 +65,8 @@ pub struct HaplotypeCallerArguments {
     pub dont_genotype: bool,
     /// `--haplotype-debug-histogram-output`.
     pub haplotype_histogram_output: Option<std::path::PathBuf>,
+    /// `--alm-path` and `--alm-interval`.
+    pub alm: Option<(std::path::PathBuf, Option<String>)>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -234,6 +236,20 @@ pub fn call_variants(
             b.kind, header,
         ))
     });
+    // `createAlleleLikelihoodWriter`: the interval is parsed as the engine starts, and the file
+    // created then, written as regions go.
+    let alm = match &arguments.alm {
+        Some((_, interval)) => Some(std::cell::RefCell::new(
+            crate::allele_likelihood_writer::AlleleLikelihoodWriter::new(
+                crate::allele_likelihood_writer::parse_simple_interval(interval.as_deref())
+                    .map_err(|message| {
+                        let (class, rest) = message.split_once(": ").expect("class: message");
+                        HaplotypeCallerError::new(class, rest.to_string())
+                    })?,
+            ),
+        )),
+        None => None,
+    };
     let region_out = arguments
         .assembly_region_out
         .as_ref()
@@ -251,8 +267,14 @@ pub fn call_variants(
         bamout.as_ref(),
         region_out.as_ref(),
         assembly_variants,
+        alm.as_ref(),
         &mut calls,
     );
+    if let (Some((path, _)), Some(alm)) = (&arguments.alm, alm) {
+        std::fs::write(path, alm.into_inner().text).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
     if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
         std::fs::write(path, text.into_inner()).map_err(|e| {
             HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
@@ -294,6 +316,7 @@ fn call_variants_into(
     assembly_variants: Option<
         &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
     >,
+    alm: Option<&std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -529,6 +552,7 @@ fn call_variants_into(
             just_determine_active_regions: arguments.just_determine_active_regions,
             dont_genotype: arguments.dont_genotype,
             assembly_variants,
+            alm,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()

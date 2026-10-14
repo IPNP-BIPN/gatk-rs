@@ -77,6 +77,14 @@ public class HcDebugOutputsDump {
         withFile(dir, "ramped-assembly-variants", ramped, e2eBam, e2eFasta, variantsOut, List.of("-L", "chr2"));
         withFile(dir, "mutect2-assembly-variants", m2, e2eBam, e2eFasta, variantsOut, List.of());
         withFile(dir, "mutect2-assembly-variants-chr2", m2, e2eBam, e2eFasta, variantsOut, List.of("-L", "chr2"));
+        final String alm = "--alm-path";
+        withFile(dir, "hc-alm", hc, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr2", "-L", "chr2"));
+        withFile(dir, "hc-alm-window", hc, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr1:1000-1400"));
+        withFile(dir, "hc-alm-no-interval", hc, e2eBam, e2eFasta, alm, List.of());
+        withFile(dir, "hc-alm-pdhmm", hc, e2eBam, e2eFasta, alm,
+                List.of("--alm-interval", "chr1:1100-1350", "--use-pdhmm", "-L", "chr1:1150-1300"));
+        withFile(dir, "ramped-alm", ramped, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr2", "-L", "chr2"));
+        withFile(dir, "mutect2-alm", m2, e2eBam, e2eFasta, alm, List.of("--alm-interval", "chr2", "-L", "chr2"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));

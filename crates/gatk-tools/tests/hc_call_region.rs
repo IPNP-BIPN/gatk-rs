@@ -112,6 +112,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         just_determine_active_regions: false,
         dont_genotype: false,
         assembly_variants: None,
+        alm: None,
         collapse: Default::default(),
     };
     let mut engine = GenotypingEngine::new(

@@ -135,6 +135,9 @@ pub struct CallRegionContext<'a> {
     /// ramped engine does not.
     pub assembly_variants:
         Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    /// `--alm-path`'s writer.
+    pub alm:
+        Option<&'a std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -712,6 +715,11 @@ pub fn call_region(
     });
     if let (false, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
+    }
+    // `alleleLikelihoodWriter.writeAlleleLikelihoods`: HaplotypeCaller's after its uncollapsing,
+    // the ramped engine's before.
+    if let Some(alm) = context.alm {
+        alm.borrow_mut().write(&likelihoods);
     }
     // `filterAlleles`: HaplotypeCaller's engine before realigning, the ramped one after its
     // pre-filter off ramp.
