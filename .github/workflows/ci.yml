@@ -482,9 +482,13 @@ jobs:
             slug: "hc-dragen-end-to-end-hc-disable-optimizations-mutect2-end-to-end-ramps-end-to-end"
             suites: "hc-dragen-end-to-end hc-disable-optimizations mutect2-end-to-end ramps-end-to-end"
           - group: golden-pending
-            index: "1/1"
+            index: "1/2"
             slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-pedigree-hc-linked-graph"
             suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-pedigree hc-linked-graph"
+          - group: golden-pending
+            index: "2/2"
+            slug: "hc-pileup"
+            suites: "hc-pileup"
     steps:
       - uses: actions/checkout@v7
 

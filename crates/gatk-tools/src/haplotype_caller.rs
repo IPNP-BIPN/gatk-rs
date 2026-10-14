@@ -47,6 +47,8 @@ use crate::variant_annotator_engine::Engine as AnnotatorEngine;
 pub struct HaplotypeCallerArguments {
     pub region: AssemblyRegionArgs,
     pub is_active: IsActiveArguments,
+    /// `PileupDetectionArgumentCollection`.
+    pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -236,6 +238,9 @@ fn call_variants_into(
         let bases = contig_bases(&contig)
             .map_err(|message| HaplotypeCallerError::new("UserException", message))?;
         let mut failure: Option<HaplotypeCallerError> = None;
+        // `region.getAlignmentData()`: every locus walked, kept only with pileup detection.
+        let detection = &arguments.pileup_detection;
+        let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -256,11 +261,31 @@ fn call_variants_into(
                 }
             },
             &mut |locus, context| {
+                let ref_base = bases[locus.start as usize - 1];
                 let Some(context) = context else {
+                    if detection.use_pileup_detection {
+                        loci.push(crate::pileup_based_alleles::LocusSummary::empty(
+                            &locus.contig,
+                            locus.start,
+                            0.0,
+                            ref_base,
+                        ));
+                    }
                     return (0.0, None);
                 };
-                let ref_base = bases[locus.start as usize - 1];
-                match evaluator.is_active(context, ref_base, header) {
+                let state = evaluator.is_active(context, ref_base, header);
+                if detection.use_pileup_detection {
+                    let score = state.as_ref().map_or(0.0, |s| s.original_active_prob);
+                    loci.push(crate::pileup_based_alleles::LocusSummary::new(
+                        context,
+                        score,
+                        ref_base,
+                        &bases,
+                        i32::from(arguments.assembly.min_base_quality_score),
+                        detection,
+                    ));
+                }
+                match state {
                     Ok(state) => (
                         state.prob,
                         (state.kind == ActivityType::HighQualitySoftClips)
@@ -314,6 +339,9 @@ fn call_variants_into(
                 partial: arguments.flow_collapse_partial_mode,
             },
             ramps_debug_post_assembler_on: arguments.ramps_debug_post_assembler_on,
+            // RampedHaplotypeCallerEngine reads no pileup events.
+            pileup: (detection.use_pileup_detection && !genotyping.ramped_engine)
+                .then_some((detection, loci.as_slice())),
         };
         for mut traversed in regions {
             // `removeReadsFromAllSamplesExcept`.

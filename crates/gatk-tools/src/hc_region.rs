@@ -91,6 +91,12 @@ pub struct CallRegionContext<'a> {
     /// `--ramps-debug-post-assembler-on`: the post-assembler on ramp's assembly is checked against
     /// a fresh one, which then stands in its place.
     pub ramps_debug_post_assembler_on: bool,
+    /// Pileup detection: its arguments and the loci walked, `region.getAlignmentData()` being
+    /// those of a region's active span.
+    pub pileup: Option<(
+        &'a crate::pileup_based_alleles::PileupDetectionArguments,
+        &'a [crate::pileup_based_alleles::LocusSummary],
+    )>,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -222,6 +228,8 @@ pub fn call_region(
     } else {
         None
     };
+    // The good pileup events, injected once the set is trimmed.
+    let mut good_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
     let (mut assembly, trimmed) = if let Some(assembled) = from_ramp {
         assembled
     } else {
@@ -255,9 +263,20 @@ pub fn call_region(
                 }
             }
         }
-        let events = untrimmed
+        let mut events = untrimmed
             .variation_events(context.genotyping.max_mnp_distance)
             .map_err(|e| calling(format!("{e:?}")))?;
+        // `goodAndBadPileupEvents`: the bad ones leave the trimmer's events, the good ones join.
+        if let Some((detection, loci)) = context.pileup {
+            let (good, bad) = crate::pileup_based_alleles::good_and_bad_pileup_events(
+                crate::pileup_based_alleles::region_loci(loci, &region),
+                detection,
+                context.contig_bases,
+            )
+            .map_err(calling)?;
+            events = crate::pileup_based_alleles::events_for_trimming(&events, &good, &bad);
+            good_pileup_events = good;
+        }
         let padded = region.padded_span().clone();
         let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
         let trimmed = context
@@ -295,6 +314,20 @@ pub fn call_region(
             .map_err(|e| calling(format!("{e:?}")))?;
         (assembly, trimmed)
     };
+    // `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles` that the trimmed set's
+    // missing event maps leave without effect.
+    if let Some((detection, _)) = context.pileup {
+        crate::pileup_based_alleles::inject_pileup_events(
+            &mut assembly,
+            &region,
+            detection,
+            context.aligner,
+            &context.assembly.haplotype_to_reference_sw,
+            &good_pileup_events,
+            context.genotyping.max_mnp_distance,
+        )
+        .map_err(calling)?;
+    }
     if let Some(debug) = &debug_assembly {
         crate::ramp_files::compare_haplotypes(assembly.haplotype_list(), debug.haplotype_list())
             .map_err(calling)?;

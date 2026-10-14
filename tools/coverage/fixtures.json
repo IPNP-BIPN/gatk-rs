@@ -8113,7 +8113,10 @@
         "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
         "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
         "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
-        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8256,7 +8259,10 @@
         "false",
         "true"
       ],
-      "--pileup-detection": [],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [
@@ -8429,6 +8435,222 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -8499,6 +8721,78 @@
       "--use-flow-aligner-for-stepwise-hc-filtering": [
         "false",
         "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -8529,7 +8823,10 @@
         "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
         "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
         "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
-        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -8678,7 +8975,10 @@
         "false",
         "true"
       ],
-      "--pileup-detection": [],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [
@@ -8836,6 +9136,222 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -8902,6 +9418,78 @@
         "0",
         "4",
         "-1"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8941,7 +9529,10 @@
         "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
         "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
         "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
-        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden."
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -9084,7 +9675,10 @@
         "false",
         "true"
       ],
-      "--pileup-detection": [],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
       "--use-pdhmm": [],
       "--use-pdhmm-overlap-optimization": [],
       "--linked-de-bruijn-graph": [
@@ -9361,6 +9955,222 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--disable-artificial-haplotype-recovery": [
@@ -9433,6 +10243,78 @@
         "-1"
       ],
       "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
         "false",
         "true"
       ]

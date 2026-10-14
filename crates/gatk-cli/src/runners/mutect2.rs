@@ -194,6 +194,7 @@ fn refuse_unported(parser: &Parser) -> Result<(), Thrown> {
         if !definition.has_been_set()
             || HONOURED.contains(&name)
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+            || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
             continue;
         }
@@ -429,6 +430,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
     let arguments = Mutect2Arguments {
+        pileup_detection: super::pileup_detection_arguments(parser),
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
             indel_padding_for_genotyping: region.indel_padding_for_genotyping,

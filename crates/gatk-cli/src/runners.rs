@@ -11136,6 +11136,119 @@ fn double_or(parser: &Parser, long_name: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+/// `PileupDetectionArgumentCollection`'s pileup detection arguments, as a command line sets them.
+pub(crate) fn pileup_detection_arguments(
+    parser: &Parser,
+) -> gatk_tools::pileup_based_alleles::PileupDetectionArguments {
+    let defaults = gatk_tools::pileup_based_alleles::PileupDetectionArguments::default();
+    let boolean = |name: &str, default: bool| {
+        scalar(parser, name).map_or(default, |text| text.eq_ignore_ascii_case("true"))
+    };
+    gatk_tools::pileup_based_alleles::PileupDetectionArguments {
+        use_pileup_detection: boolean("pileup-detection", false),
+        detect_indels: boolean("pileup-detection-enable-indel-pileup-calling", false),
+        active_region_phred_threshold: double_or(
+            parser,
+            "pileup-detection-active-region-phred-threshold",
+            defaults.active_region_phred_threshold,
+        ),
+        num_haplotypes_to_iterate: number_or(
+            parser,
+            "num-artificial-haplotypes-to-add-per-allele",
+            defaults.num_haplotypes_to_iterate,
+        ),
+        filtering_kmer_size: number_or(
+            parser,
+            "artifical-haplotype-filtering-kmer-size",
+            defaults.filtering_kmer_size,
+        ),
+        snp_threshold: double_or(
+            parser,
+            "pileup-detection-snp-alt-threshold",
+            defaults.snp_threshold,
+        ),
+        indel_threshold: double_or(
+            parser,
+            "pileup-detection-indel-alt-threshold",
+            defaults.indel_threshold,
+        ),
+        pileup_absolute_depth: double_or(
+            parser,
+            "pileup-detection-absolute-alt-depth",
+            defaults.pileup_absolute_depth,
+        ),
+        snp_adjacent_to_assembly_indel: number_or(
+            parser,
+            "pileup-detection-snp-adjacent-to-assembled-indel-range",
+            defaults.snp_adjacent_to_assembly_indel,
+        ),
+        quality_for_snps_in_pileup_detection: number_or(
+            parser,
+            "pileup-detection-snp-basequality-filter",
+            defaults.quality_for_snps_in_pileup_detection,
+        ),
+        bad_read_threshold: double_or(
+            parser,
+            "pileup-detection-bad-read-tolerance",
+            defaults.bad_read_threshold,
+        ),
+        bad_read_proper_pair: boolean("pileup-detection-proper-pair-read-badness", true),
+        bad_read_edit_distance: double_or(
+            parser,
+            "pileup-detection-edit-distance-read-badness-threshold",
+            defaults.bad_read_edit_distance,
+        ),
+        bad_read_secondary_or_supplementary: boolean(
+            "pileup-detection-chimeric-read-badness",
+            true,
+        ),
+        template_length_mean: double_or(
+            parser,
+            "pileup-detection-template-mean-badness-threshold",
+            defaults.template_length_mean,
+        ),
+        template_length_std: double_or(
+            parser,
+            "pileup-detection-template-std-badness-threshold",
+            defaults.template_length_std,
+        ),
+        assembly_bad_read_threshold: double_or(
+            parser,
+            "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+            defaults.assembly_bad_read_threshold,
+        ),
+        assembly_bad_read_edit_distance: double_or(
+            parser,
+            "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+            defaults.assembly_bad_read_edit_distance,
+        ),
+    }
+}
+
+/// The pileup detection arguments, which the port reads.
+pub(crate) const PILEUP_DETECTION_ARGUMENTS: &[&str] = &[
+    "pileup-detection",
+    "pileup-detection-enable-indel-pileup-calling",
+    "pileup-detection-active-region-phred-threshold",
+    "num-artificial-haplotypes-to-add-per-allele",
+    "artifical-haplotype-filtering-kmer-size",
+    "pileup-detection-snp-alt-threshold",
+    "pileup-detection-indel-alt-threshold",
+    "pileup-detection-absolute-alt-depth",
+    "pileup-detection-snp-adjacent-to-assembled-indel-range",
+    "pileup-detection-snp-basequality-filter",
+    "pileup-detection-bad-read-tolerance",
+    "pileup-detection-proper-pair-read-badness",
+    "pileup-detection-edit-distance-read-badness-threshold",
+    "pileup-detection-chimeric-read-badness",
+    "pileup-detection-template-mean-badness-threshold",
+    "pileup-detection-template-std-badness-threshold",
+    "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+    "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+    // `debugPileupStdout` only prints to standard output.
+    "print-pileupcalling-status",
+];
+
 /// `FlowBasedArgumentCollection`, as a command line sets it.
 pub(crate) fn flow_arguments(parser: &Parser) -> gatk_tools::flow_based_read::FlowArguments {
     gatk_tools::flow_based_read::FlowArguments {

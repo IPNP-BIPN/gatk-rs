@@ -94,6 +94,8 @@ const MAX_QUAL: f64 = 93.0;
 #[derive(Debug, Clone)]
 pub struct Mutect2Arguments {
     pub region: AssemblyRegionArgs,
+    /// `PileupDetectionArgumentCollection`.
+    pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
     pub likelihoods: LikelihoodEngineArguments,
@@ -199,6 +201,10 @@ pub fn call_variants(
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
         let bases = contig_bases(&contig).map_err(|message| failure("UserException", message))?;
+        // `region.getAlignmentData()`, kept only with pileup detection. Mutect2's `isActive` never
+        // sets an original active probability, so every locus scores zero.
+        let detection = &arguments.pileup_detection;
+        let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -215,6 +221,25 @@ pub fn call_variants(
                 )
             },
             &mut |locus, context| {
+                if detection.use_pileup_detection {
+                    let ref_base = bases[locus.start as usize - 1];
+                    loci.push(match context {
+                        Some(context) => crate::pileup_based_alleles::LocusSummary::new(
+                            context,
+                            0.0,
+                            ref_base,
+                            &bases,
+                            i32::from(arguments.assembly.min_base_quality_score),
+                            detection,
+                        ),
+                        None => crate::pileup_based_alleles::LocusSummary::empty(
+                            &locus.contig,
+                            locus.start,
+                            0.0,
+                            ref_base,
+                        ),
+                    });
+                }
                 let prob = is_active(
                     context,
                     bases[locus.start as usize - 1],
@@ -240,6 +265,7 @@ pub fn call_variants(
             trimmer: &trimmer,
             likelihood_engine: &likelihood_engine,
             annotator,
+            pileup_loci: &loci,
         };
         for traversed in regions {
             calls.extend(call_region(traversed.region, &context, random)?);
@@ -432,6 +458,8 @@ struct RegionContext<'a> {
     trimmer: &'a AssemblyRegionTrimmer,
     likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
     annotator: &'a AnnotatorEngine,
+    /// The loci walked, with pileup detection.
+    pileup_loci: &'a [crate::pileup_based_alleles::LocusSummary],
 }
 
 fn calling(message: impl Into<String>) -> Mutect2Error {
@@ -554,9 +582,21 @@ fn call_region(
         &SmithWatermanJavaAligner,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
-    let events = untrimmed
+    let mut events = untrimmed
         .variation_events(arguments.max_mnp_distance)
         .map_err(|e| calling(format!("{e:?}")))?;
+    // `goodAndBadPileupEvents`: the good events join the trimmer's, the bad ones are not taken
+    // out of them.
+    let (good_pileup_events, _) = crate::pileup_based_alleles::good_and_bad_pileup_events(
+        crate::pileup_based_alleles::region_loci(context.pileup_loci, &region),
+        &arguments.pileup_detection,
+        context.contig_bases,
+    )
+    .map_err(calling)?;
+    if !good_pileup_events.is_empty() {
+        events =
+            crate::pileup_based_alleles::events_for_trimming(&events, &good_pileup_events, &[]);
+    }
     let padded = region.padded_span().clone();
     let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let trimmed = context
@@ -573,6 +613,18 @@ fn call_region(
     let mut assembly = untrimmed
         .trim_to(variant_region)
         .map_err(|e| calling(format!("{e:?}")))?;
+    // `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles` that the trimmed set's
+    // missing event maps leave without effect.
+    crate::pileup_based_alleles::inject_pileup_events(
+        &mut assembly,
+        &region,
+        &arguments.pileup_detection,
+        &SmithWatermanJavaAligner,
+        &arguments.assembly.haplotype_to_reference_sw,
+        &good_pileup_events,
+        arguments.max_mnp_distance,
+    )
+    .map_err(calling)?;
     if !assembly.is_variation_present() {
         return reference_model_for_no_variation(region, context);
     }

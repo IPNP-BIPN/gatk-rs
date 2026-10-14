@@ -357,6 +357,7 @@ fn refuse_unported(parser: &Parser, tool: &str) -> Result<(), Thrown> {
         if !definition.has_been_set()
             || HONOURED.contains(&name)
             || super::FLOW_MATRIX_ARGUMENTS.contains(&name)
+            || super::PILEUP_DETECTION_ARGUMENTS.contains(&name)
         {
             continue;
         }
@@ -644,6 +645,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         },
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
+        pileup_detection: super::pileup_detection_arguments(parser),
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,
