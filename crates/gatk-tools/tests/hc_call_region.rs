@@ -94,7 +94,9 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         assembler: &assembler,
         aligner: &SmithWatermanJavaAligner,
         trimmer: &trimmer,
-        likelihood_engine: &likelihood_engine,
+        likelihood_engine: &gatk_tools::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
+            likelihood_engine,
+        ),
         stepwise_engine: None,
         genotyping: &genotyping,
         mapping_quality_threshold: 20,
@@ -120,6 +122,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         AlleleFrequencyCalculator::make_calculator(&Priors::default()),
     );
     let annotator = Engine {
+        flow_order_for_annotations: None,
         resolved: ANNOTATIONS
             .iter()
             .map(|n| catalogue::entry(n).unwrap())

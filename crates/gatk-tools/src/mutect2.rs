@@ -631,7 +631,7 @@ fn call_region(
             partial_mode: arguments.flow_collapse_partial_mode,
             full_ref: assembly.full_reference_with_padding().to_vec(),
             ref_loc: ref_loc.clone(),
-            parameters: arguments.assembly.haplotype_to_reference_sw.clone(),
+            parameters: arguments.assembly.haplotype_to_reference_sw,
         };
         crate::hc_region::uncollapse(
             &engine,

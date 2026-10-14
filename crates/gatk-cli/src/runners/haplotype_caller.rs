@@ -423,7 +423,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .unwrap_or_else(|| "USE_PLS_TO_ASSIGN".to_string()),
     )
     .unwrap_or(SubsetMethod::UsePlsToAssign);
-    let resolved = catalogue::resolve(
+    let mut resolved = catalogue::resolve(
         &catalogue::AnnotationArguments {
             annotations: arguments(parser, "annotation"),
             groups: arguments(parser, "annotation-group"),
@@ -438,7 +438,6 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     pedigree_refusal(parser, &resolved)?;
     let annotation_flow_order = flow_order_for_annotations(parser, &resolved)?;
     // `makeVariantAnnotations`: allele filtering brings its own annotation.
-    let mut resolved = resolved;
     if flag(parser, "flow-filter-alleles") {
         resolved
             .push(catalogue::entry("HaplotypeFilteringAnnotation").expect("a known annotation"));
@@ -447,7 +446,6 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     let emit_reference_confidence = emit_mode != "NONE";
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
-    let mut resolved = resolved;
     if emit_reference_confidence {
         if !resolved
             .iter()
@@ -676,8 +674,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
                 flow_order_cycle_length: number_or(parser, "flow-order-cycle-length", 4).max(0)
                     as usize,
                 optimized: flag(parser, "flow-likelihood-optimized-comp"),
-                trim_to_haplotype: scalar(parser, "trim-to-haplotype")
-                    .map_or(true, |v| v == "true"),
+                trim_to_haplotype: scalar(parser, "trim-to-haplotype").is_none_or(|v| v == "true"),
                 exact_matching: flag(parser, "exact-matching"),
             }
         }),

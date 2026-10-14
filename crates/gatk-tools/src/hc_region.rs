@@ -494,7 +494,7 @@ pub fn call_region(
         partial_mode: context.collapse.partial,
         full_ref: assembly.full_reference_with_padding().to_vec(),
         ref_loc: ref_loc.clone(),
-        parameters: context.assembly.haplotype_to_reference_sw.clone(),
+        parameters: context.assembly.haplotype_to_reference_sw,
     });
     if let (false, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
