@@ -67,6 +67,8 @@ pub struct HaplotypeCallerArguments {
     pub haplotype_histogram_output: Option<std::path::PathBuf>,
     /// `--alm-path` and `--alm-interval`.
     pub alm: Option<(std::path::PathBuf, Option<String>)>,
+    /// `--debug-assembly-region-state`.
+    pub assembly_state_output: Option<std::path::PathBuf>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -254,6 +256,10 @@ pub fn call_variants(
         )),
         None => None,
     };
+    let assembly_state = arguments
+        .assembly_state_output
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(String::new()));
     let region_out = arguments
         .assembly_region_out
         .as_ref()
@@ -272,8 +278,14 @@ pub fn call_variants(
         region_out.as_ref(),
         assembly_variants,
         alm.as_ref(),
+        assembly_state.as_ref(),
         &mut calls,
     );
+    if let (Some(path), Some(state)) = (&arguments.assembly_state_output, assembly_state) {
+        std::fs::write(path, state.into_inner()).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
     if let (Some((path, _)), Some(alm)) = (&arguments.alm, alm) {
         std::fs::write(path, alm.into_inner().text).map_err(|e| {
             HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
@@ -321,6 +333,7 @@ fn call_variants_into(
         &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
     >,
     alm: Option<&std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
+    assembly_state: Option<&std::cell::RefCell<String>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -557,6 +570,7 @@ fn call_variants_into(
             dont_genotype: arguments.dont_genotype,
             assembly_variants,
             alm,
+            assembly_state,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()

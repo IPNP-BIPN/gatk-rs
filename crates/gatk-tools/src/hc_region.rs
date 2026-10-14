@@ -135,6 +135,8 @@ pub struct CallRegionContext<'a> {
     /// ramped engine does not.
     pub assembly_variants:
         Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    /// `--debug-assembly-region-state`'s stream.
+    pub assembly_state: Option<&'a std::cell::RefCell<String>>,
     /// `--alm-path`'s writer.
     pub alm:
         Option<&'a std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
@@ -200,6 +202,28 @@ pub fn call_region(
     };
     if given.is_empty() && region.reads().is_empty() {
         return reference_model_for_no_variation(region, true, context);
+    }
+    // `--debug-assembly-region-state`: the region and its reads, one per line for HaplotypeCaller
+    // and run together for the ramped engine.
+    if let Some(state) = context.assembly_state {
+        let mut text = format!(
+            "\n\n\n\n{}:{}-{}\nNumber of reads in region: {}     they are:",
+            region.span().contig,
+            region.span().start,
+            region.span().end,
+            region.reads().len()
+        );
+        let ramped = context.genotyping.ramped_engine;
+        if !ramped {
+            text.push('\n');
+        }
+        for read in region.reads() {
+            text.push_str(&format!("{}   {}", read.read_name, read.flags));
+            if !ramped {
+                text.push('\n');
+            }
+        }
+        state.borrow_mut().push_str(&text);
     }
     // The pre-assembler off ramp: the region's place, before anything is assembled.
     let ramp_kind = context.off_ramp.map(|ramp| ramp.borrow().kind);
@@ -351,6 +375,30 @@ pub fn call_region(
                         .map_err(|e| calling(format!("{e:?}")))?;
                 }
             }
+        }
+        // `--debug-assembly-region-state`: the haplotypes found, sorted.
+        if let Some(state) = context.assembly_state {
+            let ramped = context.genotyping.ramped_engine;
+            let mut names: Vec<String> = untrimmed
+                .haplotype_list()
+                .iter()
+                .map(crate::pd_haplotypes::haplotype_string)
+                .collect();
+            names.sort();
+            let mut text = format!(
+                "\nThere were {} haplotypes found. Here they are:",
+                names.len()
+            );
+            if !ramped {
+                text.push('\n');
+            }
+            for name in names {
+                text.push_str(&name);
+                if !ramped {
+                    text.push('\n');
+                }
+            }
+            state.borrow_mut().push_str(&text);
         }
         let mut events = untrimmed
             .variation_events(context.genotyping.max_mnp_distance)
@@ -727,46 +775,60 @@ pub fn call_region(
     // `preFilteringAlleleLikelihoods`: what the jumbo annotations see, its haplotypes given their
     // event maps and its count of filtered haplotypes set.
     let mut pre_filtering: Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)> = None;
-    let filter =
-        |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
-         haplotypes: &mut Vec<Haplotype>,
-         suspicious: &mut std::collections::BTreeSet<i32>,
-         pre_filtering: &mut Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)>|
-         -> Result<(), RegionAssemblyError> {
-            if let Some(arguments) = &context.genotyping.filter_alleles {
-                let filtered = crate::allele_filtering::filter_alleles(
-                    likelihoods,
-                    assembly.full_reference_with_padding(),
-                    &ref_loc,
-                    context.genotyping.max_mnp_distance,
-                    arguments,
-                    crate::allele_filtering::FilterModel::Germline {
-                        ploidy: context.genotyping.sample_ploidy,
-                    },
-                )
-                .map_err(calling)?;
-                let mut before = likelihoods.clone();
-                before.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
-                let mut before_haplotypes: Vec<Haplotype> = (0..before.number_of_alleles())
-                    .filter_map(|index| before.get_allele(index).cloned())
-                    .collect();
-                gatk_engine::event_map::build_event_maps_for_haplotypes(
-                    &mut before_haplotypes,
-                    assembly.full_reference_with_padding(),
-                    &ref_loc,
-                    context.genotyping.max_mnp_distance,
-                )
-                .map_err(|e| calling(e.message()))?;
-                *pre_filtering = Some((before, before_haplotypes));
-                let kept = filtered.likelihoods;
-                *haplotypes = (0..kept.number_of_alleles())
-                    .filter_map(|index| kept.get_allele(index).cloned())
-                    .collect();
-                *likelihoods = kept;
-                *suspicious = filtered.suspicious_locations;
+    let filter = |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+                  haplotypes: &mut Vec<Haplotype>,
+                  suspicious: &mut std::collections::BTreeSet<i32>,
+                  pre_filtering: &mut Option<(
+        AlleleLikelihoods<BamRecord, Haplotype>,
+        Vec<Haplotype>,
+    )>|
+     -> Result<(), RegionAssemblyError> {
+        if let Some(arguments) = &context.genotyping.filter_alleles {
+            let filtered = crate::allele_filtering::filter_alleles(
+                likelihoods,
+                assembly.full_reference_with_padding(),
+                &ref_loc,
+                context.genotyping.max_mnp_distance,
+                arguments,
+                crate::allele_filtering::FilterModel::Germline {
+                    ploidy: context.genotyping.sample_ploidy,
+                },
+            )
+            .map_err(calling)?;
+            let mut before = likelihoods.clone();
+            before.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
+            let mut before_haplotypes: Vec<Haplotype> = (0..before.number_of_alleles())
+                .filter_map(|index| before.get_allele(index).cloned())
+                .collect();
+            gatk_engine::event_map::build_event_maps_for_haplotypes(
+                &mut before_haplotypes,
+                assembly.full_reference_with_padding(),
+                &ref_loc,
+                context.genotyping.max_mnp_distance,
+            )
+            .map_err(|e| calling(e.message()))?;
+            *pre_filtering = Some((before, before_haplotypes));
+            let kept = filtered.likelihoods;
+            *haplotypes = (0..kept.number_of_alleles())
+                .filter_map(|index| kept.get_allele(index).cloned())
+                .collect();
+            // `--debug-assembly-region-state`: what the filter kept.
+            if let Some(state) = context.assembly_state {
+                let mut text = format!(
+                        "\nThere were {} haplotypes found after subsetting by alleles. Here they are:\n",
+                        haplotypes.len()
+                    );
+                for h in haplotypes.iter() {
+                    text.push_str(&crate::pd_haplotypes::haplotype_string(h));
+                    text.push('\n');
+                }
+                state.borrow_mut().push_str(&text);
             }
-            Ok(())
-        };
+            *likelihoods = kept;
+            *suspicious = filtered.suspicious_locations;
+        }
+        Ok(())
+    };
     if !ramped {
         filter(
             &mut likelihoods,

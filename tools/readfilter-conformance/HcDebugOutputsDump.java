@@ -89,6 +89,11 @@ public class HcDebugOutputsDump {
         withFile(dir, "hc-pairhmm-results", hc, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
         withFile(dir, "ramped-pairhmm-results", ramped, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
         withFile(dir, "mutect2-pairhmm-results", m2, e2eBam, e2eFasta, hmmResults, List.of("-L", "chr2:380-420"));
+        final String state = "--debug-assembly-region-state";
+        withFile(dir, "hc-region-state", hc, e2eBam, e2eFasta, state, List.of("-L", "chr2"));
+        withFile(dir, "hc-region-state-filter", hc, e2eBam, e2eFasta, state,
+                List.of("-L", "chr1:1100-1300", "--flow-filter-alleles"));
+        withFile(dir, "ramped-region-state", ramped, e2eBam, e2eFasta, state, List.of("-L", "chr2"));
         HcAllAnnotationsDump.run(dir, "hc-keep-rg", hc, e2eBam, e2eFasta, List.of("--keep-rg", "rg1"));
         HcAllAnnotationsDump.run(dir, "ramped-keep-rg", ramped, e2eBam, e2eFasta, List.of("--keep-rg", "rg2"));
         HcAllAnnotationsDump.run(dir, "hc-just-active", hc, e2eBam, e2eFasta, List.of("--just-determine-active-regions"));
