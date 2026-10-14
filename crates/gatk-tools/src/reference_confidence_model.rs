@@ -105,6 +105,7 @@ pub fn calculate_ref_confidence(
     header: &SamHeader,
     arguments: &RefConfidenceArguments,
     somatic: Option<&SomaticRefConfidence>,
+    population: Option<&crate::population_priors::PopulationPriors>,
 ) -> Result<Vec<VariantContext>, EngineError> {
     let mut reads: Vec<BamRecord> = evidence.to_vec();
     reads.sort_by(read_utils::compare_read_coordinate);
@@ -137,7 +138,10 @@ pub fn calculate_ref_confidence(
         let offset = position - span.start;
         let overlapping = overlapping_variant_context(&span.contig, position, variant_calls);
         if let Some(site) = overlapping.filter(|site| site.start == i64::from(position)) {
-            results.push(site.clone());
+            results.push(match population {
+                Some(priors) => priors.apply(site),
+                None => site.clone(),
+            });
             continue;
         }
         let pileup = by_position
@@ -157,7 +161,7 @@ pub fn calculate_ref_confidence(
             )?);
             continue;
         }
-        results.push(reference_confidence_context(
+        let block = reference_confidence_context(
             ploidy,
             ref_bases,
             sample,
@@ -168,7 +172,11 @@ pub fn calculate_ref_confidence(
             offset,
             arguments,
             &mut cache,
-        )?);
+        )?;
+        results.push(match population {
+            Some(priors) => priors.apply(&block),
+            None => block,
+        });
     }
     Ok(results)
 }

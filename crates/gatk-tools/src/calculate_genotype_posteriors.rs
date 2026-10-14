@@ -509,3 +509,54 @@ pub fn apply(
         record, &matching, num_ref, options,
     ))
 }
+
+/// One record as the posteriors read it: the alleles, the counts in INFO, and the genotypes.
+pub fn record_from_vc(vc: &htsjdk_vcf::variant::VariantContext) -> Record {
+    let mut attributes = std::collections::BTreeMap::new();
+    for key in ["AC", "AN", "MLEAC"] {
+        if let Some((_, value)) = vc.attributes.iter().find(|(name, _)| name == key) {
+            if let Some(text) = value.format() {
+                attributes.insert(key.to_string(), text);
+            }
+        }
+    }
+    Record {
+        id: vc.id.clone(),
+        start: vc.start as i32,
+        alleles: vc
+            .alleles
+            .iter()
+            .map(|allele| Allele {
+                bases: allele.display_string(),
+                is_ref: allele.is_reference(),
+            })
+            .collect(),
+        attributes,
+        genotypes: vc
+            .genotypes
+            .iter()
+            .map(|genotype| Genotype {
+                sample: genotype.sample_name.clone(),
+                alleles: genotype
+                    .alleles
+                    .iter()
+                    .filter_map(|allele| {
+                        vc.alleles.iter().position(|candidate| candidate == allele)
+                    })
+                    .collect(),
+                depth: genotype.dp,
+                likelihoods: genotype.pl.clone(),
+                posteriors: genotype
+                    .extended
+                    .iter()
+                    .find(|(key, _)| key == "PP")
+                    .and_then(|(_, value)| value.format())
+                    .map(|text| {
+                        text.split(',')
+                            .filter_map(|piece| piece.trim().parse().ok())
+                            .collect()
+                    }),
+            })
+            .collect(),
+    }
+}

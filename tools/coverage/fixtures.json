@@ -8122,7 +8122,8 @@
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
-        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden."
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -9125,6 +9126,22 @@
         "-Infinity",
         "10.0",
         "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
       ]
     },
     "Mutect2": {
@@ -10120,7 +10137,8 @@
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
-        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden."
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -11231,6 +11249,22 @@
         "-Infinity",
         "10.0",
         "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
       ]
     }
   },

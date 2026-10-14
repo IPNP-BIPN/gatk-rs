@@ -86,6 +86,27 @@ pub struct HcGenotypingArguments {
     pub dragstr: Option<DragstrGenotyping>,
     /// `--flow-filter-alleles`, with its thresholds.
     pub filter_alleles: Option<crate::allele_filtering::AlleleFilterArguments>,
+    /// `--population-callset`, which only the reference-confidence model reads.
+    pub population: Option<crate::population_priors::PopulationPriors>,
+    /// `--comparison` (in the annotator's overlap order) and `--dbsnp`, read whole.
+    pub resources: VariantResources,
+}
+
+/// The feature inputs the annotator's overlap annotator queries at each call.
+#[derive(Debug, Clone, Default)]
+pub struct VariantResources {
+    /// Each overlap name's records, in the annotator's `overlap_names` order.
+    pub overlaps: Vec<Vec<VariantContext>>,
+    pub dbsnp: Option<Vec<VariantContext>>,
+}
+
+/// `featureContext.getValues(input, start)`: the records on the call's contig that start where it
+/// does.
+fn starting_at<'r>(records: &'r [VariantContext], vc: &VariantContext) -> Vec<&'r VariantContext> {
+    records
+        .iter()
+        .filter(|record| record.contig == vc.contig && record.start == vc.start)
+        .collect()
 }
 
 /// The DRAGEN genotype models' switches.
@@ -125,6 +146,8 @@ impl Default for HcGenotypingArguments {
             dragen_models: None,
             dragstr: None,
             filter_alleles: None,
+            population: None,
+            resources: VariantResources::default(),
         }
     }
 }
@@ -481,8 +504,17 @@ pub fn assign_genotype_likelihoods_full(
                     let site = Site {
                         likelihoods: &for_annotation,
                         window: (i64::from(ref_loc.start), reference),
-                        overlaps: Vec::new(),
-                        dbsnp: None,
+                        overlaps: arguments
+                            .resources
+                            .overlaps
+                            .iter()
+                            .map(|records| starting_at(records, &call))
+                            .collect(),
+                        dbsnp: arguments
+                            .resources
+                            .dbsnp
+                            .as_ref()
+                            .map(|records| starting_at(records, &call)),
                         resources: Vec::new(),
                         // `preFilteringAlleleLikelihoods`, which without `--flow-filter-alleles`
                         // is the matrix genotyped here, its haplotypes the ones given event maps.

@@ -158,8 +158,13 @@ const HONOURED: &[&str] = &[
     "recover-all-dangling-branches",
     "min-dangling-branch-length",
     "max-num-haplotypes-in-population",
-    // Only the linked de Bruijn graph reads it, and that graph is not ported.
+    // Read by the linked de Bruijn graph's haplotype search alone.
     "disable-artificial-haplotype-recovery",
+    // The variant resources: the overlap annotator's inputs and the reference-confidence priors.
+    "dbsnp",
+    "comparison",
+    "population-callset",
+    "num-reference-samples-if-no-call",
     // Genotyping options.
     "all-site-pls",
     "output-mode",
@@ -696,6 +701,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             ));
         }
     }
+    let (overlap_names, resources, population) = super::variant_resources(parser)?;
     let arguments = HaplotypeCallerArguments {
         trimmer: TrimmerArguments {
             assembly_region_padding: region.assembly_region_padding,
@@ -843,6 +849,8 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
+            population: population.clone(),
+            resources,
             sample_ploidy: ploidy,
             informative_read_overlap_margin: number_or(
                 parser,
@@ -931,7 +939,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     };
     let annotator = gatk_tools::variant_annotator_engine::Engine {
         resolved: resolved.clone(),
-        overlap_names: Vec::new(),
+        overlap_names: overlap_names.clone(),
         expressions: Vec::new(),
         allele_concordance: false,
         // The annotations' own arguments, which the plugin descriptor hands to their instances.
@@ -1021,10 +1029,45 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         emit_reference_confidence,
         false,
     ));
+    // The overlap annotator's flags: a standard line where there is one (`DB`), a membership flag
+    // otherwise.
+    for name in &overlap_names {
+        lines.push(
+            htsjdk_vcf::standard_header_lines::standard_info_line(name).unwrap_or_else(|| {
+                compound(
+                    "INFO",
+                    name,
+                    Cardinality::Fixed(0),
+                    LineType::Flag,
+                    &format!("{name} Membership"),
+                )
+            }),
+        );
+    }
     lines.push(compound("INFO", "MLEAC", Cardinality::A, LineType::Integer, "Maximum likelihood expectation (MLE) for the allele counts (not necessarily the same as the AC), for each ALT allele, in the same order as listed"));
     lines.push(compound("INFO", "MLEAF", Cardinality::A, LineType::Float, "Maximum likelihood expectation (MLE) for the allele frequency (not necessarily the same as the AF), for each ALT allele, in the same order as listed"));
     for id in ["GT", "GQ", "DP", "PL"] {
         lines.extend(htsjdk_vcf::standard_header_lines::standard_format_line(id));
+    }
+    // `supportVariants != null`: the counts and the priors the posteriors write.
+    if population.is_some() {
+        for id in ["AC", "AF", "AN"] {
+            lines.extend(htsjdk_vcf::standard_header_lines::standard_info_line(id));
+        }
+        lines.push(compound(
+            "FORMAT",
+            "PP",
+            Cardinality::G,
+            LineType::Integer,
+            "Phred-scaled Posterior Genotype Probabilities",
+        ));
+        lines.push(compound(
+            "INFO",
+            "PG",
+            Cardinality::G,
+            LineType::Integer,
+            "Genotype Likelihood Prior",
+        ));
     }
     if arguments.genotyping.do_physical_phasing {
         lines.push(compound("FORMAT", "PID", Cardinality::Fixed(1), LineType::String, "Physical phasing ID information, where each unique ID within a given sample (but not across samples) connects records within a phasing group"));

@@ -634,6 +634,7 @@ fn somatic_ref_confidence(
             ..RefConfidenceArguments::default()
         },
         Some(&context.arguments.somatic_ref_confidence),
+        None,
     )
     .map_err(|e| match e {
         EngineError::Limitation(what) => failure("PortLimitation", what),

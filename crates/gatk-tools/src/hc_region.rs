@@ -1147,6 +1147,7 @@ fn finish_region(
             context.header,
             &context.genotyping.ref_confidence,
             None,
+            context.genotyping.population.as_ref(),
         )
         .map_err(engine_failure)?,
     );
@@ -1197,6 +1198,7 @@ fn reference_model_for_no_variation(
         context.header,
         &context.genotyping.ref_confidence,
         None,
+        context.genotyping.population.as_ref(),
     )
     .map_err(engine_failure)
 }

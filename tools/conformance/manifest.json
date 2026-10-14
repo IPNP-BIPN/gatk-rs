@@ -7892,6 +7892,31 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-resources",
+      "status": "golden-pending",
+      "title": "HaplotypeCaller's variant resources, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--dbsnp, --comparison and --population-callset (G3.2o, #1349). The overlap annotator is the comparisons under their tags (an untagged one under its absolute path), then dbSNP under DB, a comparison naming the dbSNP file itself being renamed DB and one tagged DB refused; at each call the records starting where it does give the rsID (the ID column) and the flags, with a standard header line for DB and a membership flag otherwise. --population-callset turns the reference-confidence model's posteriors on for every block and every call it emits, the priors from the callset's records that start there or from --num-reference-samples-if-no-call, with the model's fixed options: a call gains PP, PG and recomputed AC, AF and AN, its genotype and GQ from the posteriors, and a hom-ref block gains PP, which the GVCF block combiner keeps as an element-wise minimum and from which it takes GQ. VCF mode only gains the header lines. Resources written from a first plain run's calls over HcEndToEndDump's reads; HaplotypeCaller in VCF, GVCF and base-pair-resolution mode and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "error\thc-comp-tagged-db\torg.broadinstitute.hellbender.exceptions.GATKException:The map of overlaps must not contain DB",
+        "GT:DP:GQ:MIN_DP:PL:PP"
+      ],
+      "cases": [
+        {
+          "dump": "HcResourcesDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

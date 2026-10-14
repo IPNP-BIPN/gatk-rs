@@ -491,8 +491,8 @@ jobs:
             suites: "hc-alleles hc-bamout hc-debug-outputs"
           - group: golden-pending
             index: "1/1"
-            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-error-correction"
-            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-error-correction"
+            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-error-correction-hc-resources"
+            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-error-correction hc-resources"
     steps:
       - uses: actions/checkout@v7
 

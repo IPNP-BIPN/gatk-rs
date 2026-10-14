@@ -1047,6 +1047,44 @@ public class MakeFixtures {
                 .write(Paths.get(path + ".idx"));
     }
 
+    /**
+     * The callers' variant resources (--dbsnp, --comparison, --population-callset) over
+     * `mutect_ref.fasta`: at each of the mutect reads' variant sites, and at one site they do not
+     * vary, a record for every alternate base, each with an rsID and allele counts, so whatever
+     * a caller finds there one record shares its event.
+     */
+    static void resourceFixtures(final Path dir) throws Exception {
+        final String bases;
+        try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
+                     htsjdk.samtools.reference.ReferenceSequenceFileFactory.getReferenceSequenceFile(dir.resolve("mutect_ref.fasta"))) {
+            bases = new String(file.getSequence("chr1").getBases(), StandardCharsets.US_ASCII).toUpperCase();
+        }
+        final StringBuilder vcf = new StringBuilder("##fileformat=VCFv4.2\n")
+                .append("##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">\n")
+                .append("##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele number\">\n")
+                .append("##INFO=<ID=MLEAC,Number=A,Type=Integer,Description=\"MLE allele count\">\n")
+                .append("##contig=<ID=chr1,length=").append(bases.length()).append(">\n")
+                .append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n");
+        int id = 1;
+        for (final int pos : new int[] {1000, 1100, 1200, 1400, 1600, 1800, 1950}) {
+            final String ref = bases.substring(pos - 1, pos);
+            for (final char alt : "ACGT".toCharArray()) {
+                if (ref.charAt(0) == alt) {
+                    continue;
+                }
+                vcf.append("chr1\t").append(pos).append("\trs").append(id).append('\t').append(ref).append('\t')
+                        .append(alt).append("\t.\t.\tAC=").append(id % 7 + 1).append(";AN=40;MLEAC=")
+                        .append(id % 5 + 1).append('\n');
+                id++;
+            }
+        }
+        final Path path = dir.resolve("resources.vcf");
+        Files.writeString(path, vcf.toString(), StandardCharsets.UTF_8);
+        htsjdk.tribble.index.IndexFactory.createDynamicIndex(path, new htsjdk.variant.vcf.VCFCodec(),
+                        htsjdk.tribble.index.IndexFactory.IndexBalanceApproach.FOR_SEEK_TIME)
+                .write(Paths.get(path + ".idx"));
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -2986,6 +3024,7 @@ public class MakeFixtures {
         splitCram(dir);
         mutectFixtures(dir);
         givenAllelesFixtures(dir);
+        resourceFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
