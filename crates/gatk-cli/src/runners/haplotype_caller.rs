@@ -412,7 +412,8 @@ fn contamination_downsampling(
                     "Contamination file can not have empty strings in either column. Offending line:\n{line}"
                 )));
             }
-            let Some(fraction) = gatk_tools::variant_recalibrator_model::java_parse_double(fields[1])
+            let Some(fraction) =
+                gatk_tools::variant_recalibrator_model::java_parse_double(fields[1])
             else {
                 return Err(malformed(format!(
                     "Contamination file contains unparsable double in the second field. Offending line: {line}"

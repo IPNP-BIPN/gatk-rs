@@ -395,7 +395,10 @@ pub fn assign_genotype_likelihoods_full(
             reads.retain(qualifies);
         }
         if let Some(contamination) = &arguments.contamination {
-            let mut random = contamination.random.lock().expect("the random data generator");
+            let mut random = contamination
+                .random
+                .lock()
+                .expect("the random data generator");
             marginal
                 .contamination_downsampling(|sample| contamination.fraction(sample), &mut random)
                 .map_err(|e| refused(format!("{e:?}")))?;

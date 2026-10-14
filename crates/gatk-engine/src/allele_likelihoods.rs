@@ -430,7 +430,8 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                     if !best.is_informative() {
                         continue;
                     }
-                    if let Some(index) = best.allele.as_ref().and_then(|a| self.index_of_allele(a)) {
+                    if let Some(index) = best.allele.as_ref().and_then(|a| self.index_of_allele(a))
+                    {
                         by_allele[index].push(r);
                     }
                 }
