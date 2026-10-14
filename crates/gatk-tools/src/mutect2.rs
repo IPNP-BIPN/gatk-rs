@@ -592,12 +592,12 @@ fn is_active(
                         ),
                     ));
                 };
-                if best_tumor == INDEL && germline_alt.len() != germline_ref.len() {
-                    return Ok(0.0);
-                } else if best_tumor < OTHER_SUBSTITUTION
+                let indel = best_tumor == INDEL && germline_alt.len() != germline_ref.len();
+                let substitution = best_tumor < OTHER_SUBSTITUTION
                     && germline_alt.len() == germline_ref.len()
-                    && Some(&b"ACGT"[best_tumor]) == germline_ref.display_string().as_bytes().first()
-                {
+                    && Some(&b"ACGT"[best_tumor])
+                        == germline_ref.display_string().as_bytes().first();
+                if indel || substitution {
                     return Ok(0.0);
                 }
             }
@@ -635,7 +635,11 @@ fn overlapping<'r>(
 
 /// `Mutect2Engine.getAttributeAsDoubleList(vc, key, default)`: each value of the attribute, `.`
 /// as the default; nothing when the attribute is absent.
-fn attribute_as_double_list(vc: &VariantContext, key: &str, default: f64) -> Result<Vec<f64>, String> {
+fn attribute_as_double_list(
+    vc: &VariantContext,
+    key: &str,
+    default: f64,
+) -> Result<Vec<f64>, String> {
     let Some(text) = vc
         .attributes
         .iter()
@@ -670,7 +674,10 @@ fn allele_to_string(allele: &Allele) -> String {
 /// maps through the `null` both mappings give it, which is index 0 (and so does an allele the
 /// mapping drops, such as a symbolic one against a longer reference); two of `alleles2` that land
 /// on one key are `Collectors.toMap`'s duplicate key.
-fn allele_indices(alleles1: &[Allele], alleles2: &[Allele]) -> Result<Vec<Option<usize>>, Mutect2Error> {
+fn allele_indices(
+    alleles1: &[Allele],
+    alleles2: &[Allele],
+) -> Result<Vec<Option<usize>>, Mutect2Error> {
     let (ref1, ref2) = (&alleles1[0], &alleles2[0]);
     let common = if ref1.len() < ref2.len() {
         ref2
@@ -695,7 +702,9 @@ fn allele_indices(alleles1: &[Allele], alleles2: &[Allele]) -> Result<Vec<Option
     let to_common1 = mapping(ref1, &alleles1[1..])?;
     let to_common2 = mapping(ref2, &alleles2[1..])?;
     let key = |map: &[(Allele, Allele)], allele: &Allele| {
-        map.iter().find(|(from, _)| from == allele).map(|(_, to)| to.clone())
+        map.iter()
+            .find(|(from, _)| from == allele)
+            .map(|(_, to)| to.clone())
     };
     let mut common_to_index2: Vec<(Option<Allele>, usize)> = Vec::new();
     for (n, allele) in alleles2.iter().enumerate() {
