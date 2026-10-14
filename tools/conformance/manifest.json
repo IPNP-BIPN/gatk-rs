@@ -7864,6 +7864,32 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-error-correction",
+      "status": "golden-pending",
+      "title": "Read error correction in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--error-correction-log-odds and --error-correct-reads (G3.2n, #1348). The pileup corrector piles up a copy of each region's reads with the samples in getSamplesFromHeader's sorted order, takes the first plurality of A, C, G and T as the reference, and where Mutect2's log likelihood ratio of the other bases' qualities is below the threshold corrects them to it at quality 30, except beside an indel or a soft clip and at a read end with three edits in fifteen bases; only the assembly sees them. The k-mer corrector is never given a k-mer and corrects nothing: --error-correct-reads finalizes regions with a minimum tail quality of 6 and refuses a k-mer length of zero unless the pileup corrector replaces it. Over HcEndToEndDump's reads and the same reads with three per cent of their bases miscalled from a fixed seed, at five thresholds, in GVCF mode, with the linked graph, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 24,
+      "expect_contains": [
+        "out\thc-pileup-corrector-1000.0=",
+        "error\thc-kmer-corrector-zero\tjava.lang.IllegalArgumentException:kmerLength must be > 0 but got 0"
+      ],
+      "cases": [
+        {
+          "dump": "HcErrorCorrectionDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

@@ -8121,7 +8121,8 @@
         "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
-        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array."
+        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8830,6 +8831,54 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -9059,6 +9108,23 @@
       "--dont-genotype": [
         "false",
         "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
       ]
     },
     "Mutect2": {
@@ -9096,7 +9162,8 @@
         "Mutect2 declares the PDHMM's arguments and reads none of them; they vary all the same.",
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
-        "The debug outputs Mutect2 declares (G3.2m) are varied, unset first, each under /work/out: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations, --debug-assembly-variants-out, --haplotype-debug-histogram-output (never written: only HaplotypeCaller's engine prints it), --capture-assembly-failure-bam, --pair-hmm-results-file and --alm-path (read by HaplotypeCaller's engine only), its --alm-interval listing an interval first. Vertex numbers are identity hashes, masked by run_array."
+        "The debug outputs Mutect2 declares (G3.2m) are varied, unset first, each under /work/out: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations, --debug-assembly-variants-out, --haplotype-debug-histogram-output (never written: only HaplotypeCaller's engine prints it), --capture-assembly-failure-bam, --pair-hmm-results-file and --alm-path (read by HaplotypeCaller's engine only), its --alm-interval listing an interval first. Vertex numbers are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -9736,6 +9803,54 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -9940,6 +10055,23 @@
       "--alm-interval": [
         "chr1:900-1300",
         "null"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -9987,7 +10119,8 @@
         "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
         "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
-        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array."
+        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -10800,6 +10933,54 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--disable-artificial-haplotype-recovery": [
@@ -11033,6 +11214,23 @@
       "--dont-genotype": [
         "false",
         "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
       ]
     }
   },

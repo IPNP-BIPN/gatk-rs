@@ -693,7 +693,8 @@ fn call_region(
         // An exception the reference throws as it is, `class: message`.
         crate::hc_region::RegionAssemblyError::Calling(message)
             if message.split_once(": ").is_some_and(|(class, _)| {
-                class.starts_with("org.broadinstitute.") && !class.contains(' ')
+                (class.starts_with("org.broadinstitute.") || class.starts_with("java.lang."))
+                    && !class.contains(' ')
             }) =>
         {
             let (class, rest) = message.split_once(": ").expect("just checked");
