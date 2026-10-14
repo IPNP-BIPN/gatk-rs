@@ -25,6 +25,22 @@ use htsjdk_vcf::header::{Cardinality, HeaderLine, LineType, VcfHeader};
 /// The tool's arguments this port reads. Any other argument the tool declares, apart from the
 /// read-filter plugin's, is refused when the command line sets it.
 const HONOURED: &[&str] = &[
+    // Allele filtering's interaction graphs, written to the working directory.
+    "flow-filter-alleles-debug-graphs",
+    // Read by nothing in GATK 4.6.2: --recover-dangling-heads and --use-new-qual-calculator are
+    // deprecated and never consulted, and --native-pair-hmm-threads only sizes the native
+    // PairHMM's thread pool.
+    "recover-dangling-heads",
+    "use-new-qual-calculator",
+    "native-pair-hmm-threads",
+    // The annotation plugin's own arguments, handed to the annotations' instances;
+    // --allow-old-rms-mapping-quality-annotation-data only reaches raw MQ read from a VCF, which
+    // a caller never reads.
+    "dirichlet-prior-pseudo-count",
+    "dirichlet-keep-prior-in-count",
+    "pseudo-count-weight-decay-rate",
+    "assembly-complexity-reference-mode",
+    "allow-old-rms-mapping-quality-annotation-data",
     // The flow annotations' flow order.
     "flow-order-for-annotations",
     // Stepwise filtering with the flow aligner.
@@ -862,17 +878,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
 
     // `DragstrParamUtils.parse(hcArgs.likelihoodArgs.dragstrParams)`.
-    let dragstr_params = match argument(parser, "dragstr-params-path") {
-        None => None,
-        Some(path) => {
-            let text = std::fs::read_to_string(&path)
-                .map_err(|_| Thrown::user(format!("Couldn't read file {path}")))?;
-            Some(
-                gatk_engine::dragstr::parse(&text, &path)
-                    .map_err(|error| Thrown::user(format!("{error:?}")))?,
-            )
-        }
-    };
+    let dragstr_params = dragstr_params(parser)?;
     let ploidy = number_or(parser, "sample-ploidy", 2).max(0) as usize;
     let calling_confidence = calling_threshold;
     let max_alternate_alleles = number_or(parser, "max-alternate-alleles", 6).max(0) as usize;
@@ -1610,6 +1616,7 @@ pub(super) fn allele_filter_arguments(
             qual_threshold: double_or(parser, "flow-filter-alleles-qual-threshold", 30.0) as f32,
             sor_threshold: double_or(parser, "flow-filter-alleles-sor-threshold", 3.0) as f32,
             filter_lone_alleles: flag(parser, "flow-filter-lone-alleles"),
+            write_filtering_graphs: flag(parser, "flow-filter-alleles-debug-graphs"),
         }
     })
 }
@@ -1636,4 +1643,24 @@ pub(super) fn artificial_haplotype_recovery_refusal(parser: &Parser) -> Result<(
         ));
     }
     Ok(())
+}
+
+/// `--dragstr-params-path`, parsed as `DragstrParamUtils.parse` reads it.
+pub(crate) fn dragstr_params(
+    parser: &Parser,
+) -> Result<Option<gatk_engine::dragstr::DragstrParams>, Thrown> {
+    let Some(path) = argument(parser, "dragstr-params-path") else {
+        return Ok(None);
+    };
+    // `CouldNotReadInputFile(message, e)` around the `NoSuchFileException`, whose message is the
+    // path as given.
+    let text = std::fs::read_to_string(&path).map_err(|_| {
+        Thrown::user(format!(
+            "Couldn't read file. Error was: {path} with exception: {path}"
+        ))
+    })?;
+    Ok(Some(
+        gatk_engine::dragstr::parse(&text, &path)
+            .map_err(|error| Thrown::user(format!("{error:?}")))?,
+    ))
 }

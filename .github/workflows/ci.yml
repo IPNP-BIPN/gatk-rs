@@ -495,8 +495,8 @@ jobs:
             suites: "hc-debug-outputs hc-error-correction hc-resources hc-ploidy hc-contamination"
           - group: oracle-backed
             index: "70/70"
-            slug: "mutect2-resources-mutect2-f1r2-mutect2-permutect"
-            suites: "mutect2-resources mutect2-f1r2 mutect2-permutect"
+            slug: "mutect2-resources-mutect2-f1r2-mutect2-permutect-hc-allele-graphs-mutect2-dragstr"
+            suites: "mutect2-resources mutect2-f1r2 mutect2-permutect hc-allele-graphs mutect2-dragstr"
     steps:
       - uses: actions/checkout@v7
 
