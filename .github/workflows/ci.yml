@@ -499,8 +499,8 @@ jobs:
             suites: "mutect2-resources"
           - group: golden-pending
             index: "1/1"
-            slug: "mutect2-f1r2-mutect2-permutect"
-            suites: "mutect2-f1r2 mutect2-permutect"
+            slug: "mutect2-f1r2-mutect2-permutect-hc-allele-graphs-mutect2-dragstr"
+            suites: "mutect2-f1r2 mutect2-permutect hc-allele-graphs mutect2-dragstr"
     steps:
       - uses: actions/checkout@v7
 

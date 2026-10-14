@@ -20,6 +20,25 @@ const DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING: f64 = 1e-6;
 
 /// The tool's arguments this port reads, beside the engine's and the read filters'.
 const HONOURED: &[&str] = &[
+    // Allele filtering's interaction graphs, written to the working directory.
+    "flow-filter-alleles-debug-graphs",
+    // Read by nothing that changes the output: --native-pair-hmm-threads sizes the native
+    // PairHMM's thread pool, and the somatic reference-confidence model overrides the only method
+    // that reads --reference-model-deletion-quality.
+    "native-pair-hmm-threads",
+    "reference-model-deletion-quality",
+    // DRAGstr's PairHMM gap penalties; the het-hom ratio is read by HaplotypeCaller's genotyping
+    // priors alone.
+    "dragstr-params-path",
+    "dragstr-het-hom-ratio",
+    // The annotation plugin's own arguments, handed to the annotations' instances;
+    // --allow-old-rms-mapping-quality-annotation-data only reaches raw MQ read from a VCF, which
+    // a caller never reads.
+    "dirichlet-prior-pseudo-count",
+    "dirichlet-keep-prior-in-count",
+    "pseudo-count-weight-decay-rate",
+    "assembly-complexity-reference-mode",
+    "allow-old-rms-mapping-quality-annotation-data",
     // The flow annotations' flow order.
     "flow-order-for-annotations",
     // The flow-based presets.
@@ -465,6 +484,14 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     let emit_reference_confidence = emit_mode != "NONE";
     let min_af = double_or(parser, "minimum-allele-fraction", 0.0);
     super::haplotype_caller::artificial_haplotype_recovery_refusal(parser)?;
+    // `createLikelihoodCalculationEngine`: DRAGstr's gap penalties in the PairHMM and the flow
+    // HMM unless `--dont-use-dragstr-pair-hmm-scores`; Mutect2 reads DRAGstr nowhere else, so
+    // `--dragstr-het-hom-ratio` changes nothing.
+    let pair_hmm_dragstr = if flag(parser, "dont-use-dragstr-pair-hmm-scores") {
+        None
+    } else {
+        super::haplotype_caller::dragstr_params(parser)?
+    };
     let arguments = Mutect2Arguments {
         given_alleles: super::given_alleles(parser)?,
         assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
@@ -514,7 +541,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
             ),
         },
         flow_engine: flow_engine_arguments(parser),
-        flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), None),
+        flow_hmm: flow_hmm_arguments(parser, pcr_model(parser), pair_hmm_dragstr.clone()),
         likelihoods: LikelihoodEngineArguments {
             gap_continuation_penalty: number_or(parser, "pair-hmm-gap-continuation-penalty", 10)
                 as i8,
@@ -549,7 +576,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
                 "disable-cap-base-qualities-to-map-quality",
             ),
             modify_soft_clipped_bases: true,
-            dragstr_params: None,
+            dragstr_params: pair_hmm_dragstr.clone(),
             results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         normal_samples: normal_samples.clone(),

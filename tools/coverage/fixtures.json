@@ -8125,7 +8125,8 @@
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
         "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
-        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads."
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8882,6 +8883,78 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -9162,6 +9235,38 @@
       "--use-filtered-reads-for-annotations": [
         "false",
         "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "1.0",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "false",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "1.0",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "false",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
       ]
     },
     "Mutect2": {
@@ -9203,7 +9308,8 @@
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The germline resource and the panel of normals (G3.2r) are varied, unset first: m2_germline.vcf gives every alternate base at the mutect sites an AF from 0.5 to 1e-5 or none, so POPAF and, in tumour-only calling with --max-population-af 0.01 or 0.6, the common indels' loci move; m2_pon.vcf covers every other site, inactive unless --genotype-pon-sites and flagged PON when called.",
         "The F1R2 counts (G3.2s) are varied, unset first: --f1r2-tar-gz under /work/out, compared member by member with the alt histograms' columns sorted, with --f1r2-median-mq 50 or 20, --f1r2-min-bq 20 or 10 and --f1r2-max-depth 200 or 30.",
-        "The Permutect datasets (G3.2t) are varied, unset first: a training and a test dataset under /work/out (their contigs.table and read-groups.table beside them), m2_pon.vcf as either truth, both downsampling counts at 1000 or 500 so no read set is shuffled, a non-artifact ratio of 1 or 3, and ILLUMINA or ULTIMA mode; mutect_paired.bam is mutect_t.bam's reads as mate pairs with Ultima's si and rq, which ILLUMINA mode needs (an unpaired read is refused) and ULTIMA mode reads."
+        "The Permutect datasets (G3.2t) are varied, unset first: a training and a test dataset under /work/out (their contigs.table and read-groups.table beside them), m2_pon.vcf as either truth, both downsampling counts at 1000 or 500 so no read set is shuffled, a non-artifact ratio of 1 or 3, and ILLUMINA or ULTIMA mode; mutect_paired.bam is mutect_t.bam's reads as mate pairs with Ultima's si and rq, which ILLUMINA mode needs (an unpaired read is refused) and ULTIMA mode reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite. Mutect2's --dragstr-params-path is dragstr.txt, its PairHMM gap penalties; --dragstr-het-hom-ratio 2 or 4 changes nothing there."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -9892,6 +9998,78 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -10173,6 +10351,46 @@
       "--permutect-dataset-mode": [
         "ILLUMINA",
         "ULTIMA"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "1.0",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "false",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "1.0",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "false",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -10224,7 +10442,8 @@
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
         "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
-        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads."
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -11085,6 +11304,78 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--disable-artificial-haplotype-recovery": [
@@ -11369,6 +11660,38 @@
       "--use-filtered-reads-for-annotations": [
         "false",
         "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "1.0",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "false",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "1.0",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "false",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
       ]
     }
   },

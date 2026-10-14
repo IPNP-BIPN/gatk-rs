@@ -42,6 +42,9 @@ pub struct AlleleFilterArguments {
     pub sor_threshold: f32,
     /// `--flow-filter-lone-alleles`.
     pub filter_lone_alleles: bool,
+    /// `--flow-filter-alleles-debug-graphs`: each linked group's interaction graph, as DOT, in the
+    /// working directory.
+    pub write_filtering_graphs: bool,
 }
 
 impl Default for AlleleFilterArguments {
@@ -50,6 +53,7 @@ impl Default for AlleleFilterArguments {
             qual_threshold: 30.0,
             sor_threshold: 3.0,
             filter_lone_alleles: false,
+            write_filtering_graphs: false,
         }
     }
 }
@@ -181,6 +185,10 @@ pub fn filter_alleles(
     let mut suspicious = BTreeSet::new();
     for set in &sets {
         let in_set = |event: &Event| set.iter().any(|&c| columns[c] == *event);
+        if arguments.write_filtering_graphs && set.len() > 1 {
+            let members: Vec<Event> = set.iter().map(|&c| columns[c].clone()).collect();
+            write_interaction_graph(likelihoods, &events, &members, model)?;
+        }
         let mut active: JavaHashMap<HaplotypeKey, ()> = JavaHashMap::copy_of(keys.iter());
         loop {
             let mut active_alleles: Vec<Event> = Vec::new();
@@ -434,6 +442,114 @@ impl Marginal {
         }
         Ok(gatk_annotation::strand_bias::calculate_sor(table))
     }
+}
+
+/// An allele as a hash key: `Event.hashCode`, `HashCodeBuilder` over the start and the two
+/// alleles.
+#[derive(Debug, Clone, PartialEq)]
+struct EventKey(Event);
+
+impl JavaHashCode for EventKey {
+    fn java_hash_code(&self) -> i32 {
+        let hash_of = |allele: &Allele| {
+            allele_hash(allele.display_string().as_bytes(), allele.is_reference())
+        };
+        let mut total: i32 = 17;
+        total = total.wrapping_mul(37).wrapping_add(self.0.start());
+        total = total.wrapping_mul(37).wrapping_add(hash_of(self.0.ref_allele()));
+        total.wrapping_mul(37).wrapping_add(hash_of(self.0.alt_allele()))
+    }
+}
+
+/// `Event.toString()`, with `Allele.toString()` starring the reference.
+fn event_label(event: &Event) -> String {
+    let position = if event.start() == event.end() {
+        event.start().to_string()
+    } else {
+        format!("{}-{}", event.start(), event.end())
+    };
+    format!(
+        "[Event @ {}:{position}, {}*->{}, null]",
+        event.contig(),
+        event.ref_allele().display_string(),
+        event.alt_allele().display_string()
+    )
+}
+
+/// `getInteractionMatrix`, `interactionMatrixToGraph` and `printInteractionGraph`: each allele's
+/// quality against its inverse over every haplotype, then again with each other allele's carriers
+/// disabled; an edge from the disabled allele to each one whose quality drops, weighted by the
+/// drop. The vertices, the rows and each row's columns come in the order of a `HashMap` over the
+/// events, and jgrapht's `DOTExporter` numbers the vertices from one in that order.
+fn write_interaction_graph(
+    likelihoods: &AlleleLikelihoods<BamRecord, Haplotype>,
+    events: &[Vec<Event>],
+    members: &[Event],
+    model: FilterModel,
+) -> Result<(), String> {
+    let haplotype_count = likelihoods.number_of_alleles();
+    let limitation = |e: gatk_engine::java_hash::HashOrderError| format!("port limitation: {e:?}");
+    // `alleleHaplotypeMap`: the group's alleles in the order the haplotypes first carry them.
+    let mut carriers: JavaHashMap<EventKey, Vec<usize>> = JavaHashMap::new();
+    for (h, haplotype_events) in events.iter().enumerate().take(haplotype_count) {
+        for event in haplotype_events.iter().filter(|e| members.contains(e)) {
+            let key = EventKey(event.clone());
+            let mut list = carriers.get(&key).cloned().unwrap_or_default();
+            list.push(h);
+            carriers.insert(key, list);
+        }
+    }
+    carriers.check().map_err(limitation)?;
+    let all: Vec<EventKey> = carriers.keys().cloned().collect();
+    let everyone: Vec<usize> = (0..haplotype_count).collect();
+    let quality = |event: &Event, enabled: &[usize]| -> Result<i32, String> {
+        Marginal::new(likelihoods, events, enabled, event)?.quality(model)
+    };
+    let mut initial: JavaHashMap<EventKey, i32> = JavaHashMap::new();
+    for key in &all {
+        initial.insert(key.clone(), quality(&key.0, &everyone)?);
+    }
+    initial.check().map_err(limitation)?;
+    let mut matrix: JavaHashMap<EventKey, JavaHashMap<EventKey, i32>> = JavaHashMap::new();
+    for disabled in &all {
+        let off = carriers.get(disabled).cloned().unwrap_or_default();
+        let enabled: Vec<usize> = everyone.iter().copied().filter(|h| !off.contains(h)).collect();
+        let mut row: JavaHashMap<EventKey, i32> = JavaHashMap::new();
+        for key in initial.keys().filter(|k| *k != disabled) {
+            row.insert(key.clone(), quality(&key.0, &enabled)?);
+        }
+        row.check().map_err(limitation)?;
+        matrix.insert(disabled.clone(), row);
+    }
+    matrix.check().map_err(limitation)?;
+    let vertices: Vec<&EventKey> = initial.keys().collect();
+    let id = |key: &EventKey| vertices.iter().position(|v| *v == key).map_or(0, |i| i + 1);
+    let mut text = String::from("strict digraph G {\n");
+    for (index, key) in vertices.iter().enumerate() {
+        text.push_str(&format!(
+            "  {} [ label=\"{} = {}\" ];\n",
+            index + 1,
+            event_label(&key.0),
+            initial.get(key).copied().unwrap_or(0)
+        ));
+    }
+    for from in matrix.keys() {
+        let row = matrix.get(from).expect("a row");
+        for to in row.keys() {
+            let diff = row.get(to).copied().unwrap_or(0) - initial.get(to).copied().unwrap_or(0);
+            if diff < 0 {
+                text.push_str(&format!("  {} -> {} [ label=\"{diff}.0\" ];\n", id(from), id(to)));
+            }
+        }
+    }
+    text.push_str("}\n");
+    let first = members.first().expect("a group of two or more");
+    let start = members.iter().map(Event::start).min().unwrap_or(0);
+    let end = members.iter().map(Event::start).max().unwrap_or(0);
+    let name = format!("allele.interaction.{}.{start}-{end}.dot", first.contig());
+    std::fs::write(&name, text).map_err(|_| {
+        format!("java.lang.RuntimeException: Unable to write a DOT file{name}")
+    })
 }
 
 /// `SimpleAllele.hashCode`: `Arrays.hashCode(bases) * 31 + Boolean.hashCode(isRef)`.
