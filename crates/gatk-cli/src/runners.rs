@@ -9855,6 +9855,17 @@ pub fn fasta_alternate_reference_maker(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `--alleles`, with `--force-call-filtered-alleles`: the records to force-call.
+pub(crate) fn given_alleles(
+    parser: &Parser,
+) -> Result<Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>, Thrown> {
+    let Some(path) = argument(parser, "alleles") else {
+        return Ok(None);
+    };
+    let (records, _) = feature_variants(&path)?;
+    Ok(Some((records, flag(parser, "force-call-filtered-alleles"))))
+}
+
 /// A `FeatureInput<VariantContext>`: the file's records and the samples its header declares.
 ///
 /// The codec is chosen by the file's NAME, which is `FeatureManager`'s rule, and a name no codec
@@ -13846,7 +13857,7 @@ fn variant_context_to_string(
     let attributes = format!("{{{}}}", attributes.join(", "));
     format!(
         "[VC Unknown @ {position} Q{qual} of type={} alleles=[{alleles}] attr={attributes} GT={} filters={}",
-        variant_type_name(&record.reference, &record.alternates),
+        gatk_tools::variant_type::type_name(&record.reference, &record.alternates),
         raw_genotypes,
         record.filters.join(",")
     )
@@ -13859,35 +13870,6 @@ fn attribute_to_string(value: &gatk_tools::variants_to_table::Value) -> String {
         gatk_tools::variants_to_table::Value::One(one) => one.clone(),
         gatk_tools::variants_to_table::Value::Many(many) => format!("[{}]", many.join(", ")),
     }
-}
-
-/// `VariantContext.getType()`, by the same rule [`gatk_tools::remove_nearby_indels`] ports: length
-/// decides, and two alternates that disagree are MIXED.
-fn variant_type_name(reference: &str, alternates: &[String]) -> &'static str {
-    if alternates.is_empty() || (alternates.len() == 1 && alternates[0] == ".") {
-        return "NO_VARIATION";
-    }
-    let mut kind: Option<&'static str> = None;
-    for alternate in alternates {
-        let this =
-            if alternate.starts_with('<') || alternate.contains('[') || alternate.contains(']') {
-                "SYMBOLIC"
-            } else if alternate.len() == reference.len() {
-                if reference.len() == 1 {
-                    "SNP"
-                } else {
-                    "MNP"
-                }
-            } else {
-                "INDEL"
-            };
-        match kind {
-            None => kind = Some(this),
-            Some(seen) if seen == this => {}
-            Some(_) => return "MIXED",
-        }
-    }
-    kind.unwrap_or("NO_VARIATION")
 }
 
 /// The records a variant walker's traversal reaches, which is a QUERY by interval and not a filter.
@@ -17472,6 +17454,26 @@ fn display_date_time() -> String {
 /// The VCF a variant-writing tool leaves behind: the text, block compressed where the name says so,
 /// with the index the arguments ask for beside it.
 fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(), Thrown> {
+    write_variant_file(
+        parser,
+        output,
+        text,
+        flag(parser, "create-output-variant-index"),
+        flag(parser, "create-output-variant-md5"),
+        None,
+    )
+}
+
+/// A VCF written as `createVCFWriter` writes it: indexed on the fly when asked, digested when
+/// asked, with the index's dictionary the header's `##contig` lines unless one is given.
+pub(crate) fn write_variant_file(
+    parser: &Parser,
+    output: &str,
+    text: &str,
+    create_index: bool,
+    create_md5: bool,
+    index_dictionary: Option<Vec<(String, i32)>>,
+) -> Result<(), Thrown> {
     let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
     let bytes = if block_compressed {
         let (level, deflater) = output_compression(parser);
@@ -17490,30 +17492,31 @@ fn write_variant_output(parser: &Parser, output: &str, text: &str) -> Result<(),
 
     // `--create-output-variant-md5`, which digests the file as it was WRITTEN: a block compressed
     // output is digested compressed, because the digest is taken by the stream the writer wraps.
-    if flag(parser, "create-output-variant-md5") {
+    if create_md5 {
         write_file(
             &format!("{output}.md5"),
             gatk_tools::gather_bam_files::md5_file(&bytes).as_bytes(),
         )?;
     }
 
-    if !flag(parser, "create-output-variant-index") {
+    if !create_index {
         return Ok(());
     }
-    let dictionary: Vec<(String, i32)> = text
-        .lines()
-        .take_while(|line| line.starts_with('#'))
-        .filter_map(|line| {
-            let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
-            let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
-            let length = body
-                .split(',')
-                .find_map(|f| f.strip_prefix("length="))
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0);
-            Some((name.to_string(), length))
-        })
-        .collect();
+    let dictionary: Vec<(String, i32)> = index_dictionary.unwrap_or_else(|| {
+        text.lines()
+            .take_while(|line| line.starts_with('#'))
+            .filter_map(|line| {
+                let body = line.strip_prefix("##contig=<")?.trim_end_matches('>');
+                let name = body.split(',').find_map(|f| f.strip_prefix("ID="))?;
+                let length = body
+                    .split(',')
+                    .find_map(|f| f.strip_prefix("length="))
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+                Some((name.to_string(), length))
+            })
+            .collect()
+    });
     let mut source = index_feature_file::Source::new(output);
     source.timestamp = modified_millis(output);
     let index = match index_feature_file::index_kind(output) {
@@ -20130,7 +20133,7 @@ fn java_variant_context_string(
     };
     format!(
         "[VC {source} @ {position} Q{qual} of type={} alleles=[{alleles}] attr={{{attributes}}} GT={genotypes} filters={}",
-        variant_type_name(&reference, &alternates),
+        gatk_tools::variant_type::type_name(&reference, &alternates),
         record.filters.clone().unwrap_or_default().join(",")
     )
 }

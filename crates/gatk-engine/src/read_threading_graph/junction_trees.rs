@@ -100,6 +100,41 @@ impl JunctionTrees {
             .filter(|&tree| !self.nodes[self.trees[tree].1].children.is_empty())
     }
 
+    /// `getExtraGraphFileLines()`: each tree (only those with a child once `pruned`) as its vertex's
+    /// edge to a point, then its nodes depth first. The reference walks hash maps keyed by
+    /// identity here, so its order is the JVM's; a node is named by its index in hex.
+    pub fn dot_lines(&self, graph: &ReadThreadingGraph, pruned: bool) -> Vec<String> {
+        let mut out = Vec::new();
+        for &(vertex, root) in &self.trees {
+            if pruned && self.nodes[root].children.is_empty() {
+                continue;
+            }
+            out.push(format!(
+                "\t{} -> TreadingNode_{root:x} [color=blue];",
+                crate::graph_dot::read_threading_vertex_name(graph, vertex)
+            ));
+            out.push(format!("\tTreadingNode_{root:x} [shape=point];"));
+            self.node_dot_lines(graph, root, &mut out);
+        }
+        out
+    }
+
+    /// `edgesForNodeRecursive`.
+    fn node_dot_lines(&self, graph: &ReadThreadingGraph, node: usize, out: &mut Vec<String>) {
+        for &(edge, child) in &self.nodes[node].children {
+            out.push(format!(
+                "\tTreadingNode_{node:x} -> TreadingNode_{child:x}[color=blue,label=\"{}\"]; ",
+                self.nodes[child].count
+            ));
+            let target = graph.edge(edge).target;
+            out.push(format!(
+                "\tTreadingNode_{child:x} [label=\"{}\",shape=plaintext]",
+                char::from(graph.vertex(target).suffix())
+            ));
+            self.node_dot_lines(graph, child, out);
+        }
+    }
+
     fn root(&self, tree: usize) -> usize {
         self.trees[tree].1
     }
