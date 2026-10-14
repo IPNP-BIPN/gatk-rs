@@ -494,7 +494,7 @@ fn add_datum(
             normal_ads[n + 1]
         ));
         let log10_to_log = gatk_engine::allele_likelihoods::log10_to_log;
-        let seq_error = -log10_to_log(tlod) - (f64::from(tumor_depth) + 1.0).ln();
+        let seq_error = -log10_to_log(tlod) - jmath::math::log(f64::from(tumor_depth) + 1.0);
         text.push_str(&format_decimals(seq_error, 3));
         text.push('\n');
         let nalod = if normal_samples.is_empty() {
@@ -502,7 +502,8 @@ fn add_datum(
         } else {
             doubles(numbers, "NALOD").get(n).copied().unwrap_or(0.0)
         };
-        let normal_seq_error = -log10_to_log(nalod) - (f64::from(normal_depth) + 1.0).ln();
+        let normal_seq_error =
+            -log10_to_log(nalod) - jmath::math::log(f64::from(normal_depth) + 1.0);
         text.push_str(&format_decimals(normal_seq_error, 3));
         text.push('\n');
     }
