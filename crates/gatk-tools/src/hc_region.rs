@@ -61,6 +61,28 @@ const READ_LENGTH_FILTER_THRESHOLD: i32 = 10;
 /// `AssemblyBasedCallerUtils.MINIMUM_READ_LENGTH_AFTER_TRIMMING`.
 const MINIMUM_READ_LENGTH_AFTER_TRIMMING: i32 = 10;
 
+/// `--assembly-region-out`'s header: `IGVUtils.printIGVFormatHeader(out, "line",
+/// "AssemblyRegions")`.
+pub const ASSEMBLY_REGION_OUT_HEADER: &str =
+    "#track graphType=line\nChromosome\tStart\tEnd\tFeature\tAssemblyRegions\n";
+
+/// `AssemblyRegionWalker.writeAssemblyRegion`: an end marker at the region's start, then the
+/// region with its size, 1 when active and -1 when not, each `printIGVFormatRow`'s zero-based start
+/// and `%.5f` values.
+pub fn assembly_region_rows(region: &AssemblyRegion) -> String {
+    let span = region.span();
+    let value = if region.is_active() { 1.0 } else { -1.0 };
+    format!(
+        "{c}\t{s0}\t{s}\tend-marker\t{zero:.5}\n{c}\t{s0}\t{e}\tsize={size}\t{value:.5}\n",
+        c = span.contig,
+        s0 = span.start - 1,
+        s = span.start,
+        e = span.end,
+        zero = 0.0,
+        size = span.end - span.start + 1,
+    )
+}
+
 /// What `callRegion` runs with, beside the region.
 pub struct CallRegionContext<'a> {
     pub header: &'a SamHeader,
@@ -101,6 +123,23 @@ pub struct CallRegionContext<'a> {
     pub pd: Option<PdContext<'a>>,
     /// `--alleles`: the records, and `--force-call-filtered-alleles`.
     pub given_alleles: Option<(&'a [htsjdk_vcf::variant::VariantContext], bool)>,
+    /// `--bam-output`.
+    pub bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    /// `--keep-rg`: reads of any other read group are filtered before genotyping.
+    pub keep_rg: Option<&'a str>,
+    /// `--just-determine-active-regions`.
+    pub just_determine_active_regions: bool,
+    /// `--dont-genotype`.
+    pub dont_genotype: bool,
+    /// `--debug-assembly-variants-out`'s queue, which HaplotypeCaller's engine fills and the
+    /// ramped engine does not.
+    pub assembly_variants:
+        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
+    /// `--debug-assembly-region-state`'s stream.
+    pub assembly_state: Option<&'a std::cell::RefCell<String>>,
+    /// `--alm-path`'s writer.
+    pub alm:
+        Option<&'a std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
 }
 
 /// What `--use-pdhmm` runs with.
@@ -137,6 +176,18 @@ pub fn call_region(
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     // `referenceModelForNoVariation` answers nothing outside reference-confidence mode.
+    // `--just-determine-active-regions`: both engines leave before anything.
+    if context.just_determine_active_regions {
+        return Ok(Vec::new());
+    }
+    use gatk_engine::genotyper_debug as debugger;
+    if debugger::is_enabled() && !context.genotyping.ramped_engine {
+        let span = region.span();
+        debugger::println(&format!(
+            "calling for region: {}:{}-{}",
+            span.contig, span.start, span.end
+        ));
+    }
     if !region.is_active() {
         return reference_model_for_no_variation(region, true, context);
     }
@@ -159,6 +210,28 @@ pub fn call_region(
     };
     if given.is_empty() && region.reads().is_empty() {
         return reference_model_for_no_variation(region, true, context);
+    }
+    // `--debug-assembly-region-state`: the region and its reads, one per line for HaplotypeCaller
+    // and run together for the ramped engine.
+    if let Some(state) = context.assembly_state {
+        let mut text = format!(
+            "\n\n\n\n{}:{}-{}\nNumber of reads in region: {}     they are:",
+            region.span().contig,
+            region.span().start,
+            region.span().end,
+            region.reads().len()
+        );
+        let ramped = context.genotyping.ramped_engine;
+        if !ramped {
+            text.push('\n');
+        }
+        for read in region.reads() {
+            text.push_str(&format!("{}   {}", read.read_name, read.flags));
+            if !ramped {
+                text.push('\n');
+            }
+        }
+        state.borrow_mut().push_str(&text);
     }
     // The pre-assembler off ramp: the region's place, before anything is assembled.
     let ramp_kind = context.off_ramp.map(|ramp| ramp.borrow().kind);
@@ -265,6 +338,8 @@ pub fn call_region(
     } else {
         None
     };
+    // The untrimmed haplotypes, for `--debug-genotyper-output`.
+    let mut untrimmed_haplotypes: Vec<Haplotype> = Vec::new();
     // The good pileup events, injected once the set is trimmed.
     let mut good_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
     let mut bad_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
@@ -286,6 +361,19 @@ pub fn call_region(
                 context.aligner,
             )?
         };
+        if debugger::is_enabled() {
+            untrimmed_haplotypes = untrimmed.haplotype_list().to_vec();
+        }
+        // `addAssembledVariantsToEventMapOutput`, HaplotypeCaller's only.
+        if let (Some(queue), false) = (context.assembly_variants, context.genotyping.ramped_engine)
+        {
+            for event in untrimmed
+                .variation_events(context.genotyping.max_mnp_distance)
+                .map_err(|e| calling(format!("{e:?}")))?
+            {
+                queue.borrow_mut().add_event(&event);
+            }
+        }
         if let (true, Some(ramp)) = (post_filter, context.on_ramp) {
             if !ramp.has_region(region.span()) {
                 return Ok(Vec::new());
@@ -300,6 +388,30 @@ pub fn call_region(
                         .map_err(|e| calling(format!("{e:?}")))?;
                 }
             }
+        }
+        // `--debug-assembly-region-state`: the haplotypes found, sorted.
+        if let Some(state) = context.assembly_state {
+            let ramped = context.genotyping.ramped_engine;
+            let mut names: Vec<String> = untrimmed
+                .haplotype_list()
+                .iter()
+                .map(crate::pd_haplotypes::haplotype_string)
+                .collect();
+            names.sort();
+            let mut text = format!(
+                "\nThere were {} haplotypes found. Here they are:",
+                names.len()
+            );
+            if !ramped {
+                text.push('\n');
+            }
+            for name in names {
+                text.push_str(&name);
+                if !ramped {
+                    text.push('\n');
+                }
+            }
+            state.borrow_mut().push_str(&text);
         }
         let mut events = untrimmed
             .variation_events(context.genotyping.max_mnp_distance)
@@ -499,10 +611,13 @@ pub fn call_region(
     }
     let mut filtered: Vec<Vec<BamRecord>> = vec![Vec::new(); context.samples.len()];
     for read in genotyping_region.reads() {
-        let failing = unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
-            || read.mapping_quality < context.mapping_quality_threshold
-            || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read);
+        let failing =
+            fails_genotyping_filters(read, context.mapping_quality_threshold, context.keep_rg);
         if failing {
+            debugger::println(&format!(
+                "Filtered before assembly the read: {}",
+                gatk_engine::assembly_region::render_read(read, context.header)
+            ));
             let sample = sample_name(read, context.header);
             let index = context
                 .samples
@@ -516,14 +631,15 @@ pub fn call_region(
     // `genotype()`, so they are scored and realigned, then added again for the annotations.
     let threshold = context.mapping_quality_threshold;
     if !ramped {
-        genotyping_region.retain_reads(|read| {
-            !(unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
-                || read.mapping_quality < threshold
-                || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read))
-        });
+        let keep_rg = context.keep_rg;
+        genotyping_region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     }
     if !assembly.is_variation_present() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
+    }
+    // `--dont-genotype`: the user asked to stop here.
+    if context.dont_genotype {
+        return Ok(Vec::new());
     }
     let genotyping_region = assembly
         .region_for_genotyping()
@@ -531,6 +647,46 @@ pub fn call_region(
         .clone();
     if genotyping_region.reads().is_empty() && !context.disable_optimizations {
         return reference_model_for_no_variation(region, false, context);
+    }
+    if debugger::is_enabled() && !ramped {
+        let span = region.span();
+        debugger::println("\n=================================================");
+        debugger::println(&format!(
+            "assemblyRegion: {}:{}-{}",
+            span.contig, span.start, span.end
+        ));
+        debugger::println("=================================================");
+        // "Unclipped" counts the trimmed haplotypes and lists the untrimmed ones.
+        let describe = |h: &Haplotype| {
+            let (start, end) = h.genome_location().map_or((0, 0), |l| (l.start, l.end));
+            format!(
+                "[{}-{}] k={} len: {} {}{}",
+                start,
+                end,
+                h.kmer_size(),
+                h.bases().len(),
+                h.cigar().map_or(String::new(), |c| c.to_text()),
+                if h.is_reference() { "ref" } else { "" }
+            )
+        };
+        let trimmed_haplotypes = assembly.haplotype_list();
+        debugger::println(&format!(
+            "\nUnclipped Haplotypes({}):",
+            trimmed_haplotypes.len()
+        ));
+        for h in &untrimmed_haplotypes {
+            debugger::println(&describe(h));
+            debugger::println(&crate::pd_haplotypes::haplotype_string(h));
+        }
+        debugger::println(&format!(
+            "\nClipped Haplotyes({}):",
+            trimmed_haplotypes.len()
+        ));
+        for h in trimmed_haplotypes {
+            debugger::println(&describe(h));
+            debugger::println(&crate::pd_haplotypes::haplotype_string(h));
+        }
+        debugger::println("");
     }
 
     // `splitReadsBySample`, then the likelihoods against the trimmed haplotypes.
@@ -665,52 +821,71 @@ pub fn call_region(
     if let (false, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
     }
+    // `alleleLikelihoodWriter.writeAlleleLikelihoods`: HaplotypeCaller's after its uncollapsing,
+    // the ramped engine's before.
+    if let Some(alm) = context.alm {
+        alm.borrow_mut().write(&likelihoods);
+    }
     // `filterAlleles`: HaplotypeCaller's engine before realigning, the ramped one after its
     // pre-filter off ramp.
     let mut suspicious = std::collections::BTreeSet::new();
     // `preFilteringAlleleLikelihoods`: what the jumbo annotations see, its haplotypes given their
     // event maps and its count of filtered haplotypes set.
     let mut pre_filtering: Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)> = None;
-    let filter =
-        |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
-         haplotypes: &mut Vec<Haplotype>,
-         suspicious: &mut std::collections::BTreeSet<i32>,
-         pre_filtering: &mut Option<(AlleleLikelihoods<BamRecord, Haplotype>, Vec<Haplotype>)>|
-         -> Result<(), RegionAssemblyError> {
-            if let Some(arguments) = &context.genotyping.filter_alleles {
-                let filtered = crate::allele_filtering::filter_alleles(
-                    likelihoods,
-                    assembly.full_reference_with_padding(),
-                    &ref_loc,
-                    context.genotyping.max_mnp_distance,
-                    arguments,
-                    crate::allele_filtering::FilterModel::Germline {
-                        ploidy: context.genotyping.sample_ploidy,
-                    },
-                )
-                .map_err(calling)?;
-                let mut before = likelihoods.clone();
-                before.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
-                let mut before_haplotypes: Vec<Haplotype> = (0..before.number_of_alleles())
-                    .filter_map(|index| before.get_allele(index).cloned())
-                    .collect();
-                gatk_engine::event_map::build_event_maps_for_haplotypes(
-                    &mut before_haplotypes,
-                    assembly.full_reference_with_padding(),
-                    &ref_loc,
-                    context.genotyping.max_mnp_distance,
-                )
-                .map_err(|e| calling(e.message()))?;
-                *pre_filtering = Some((before, before_haplotypes));
-                let kept = filtered.likelihoods;
-                *haplotypes = (0..kept.number_of_alleles())
-                    .filter_map(|index| kept.get_allele(index).cloned())
-                    .collect();
-                *likelihoods = kept;
-                *suspicious = filtered.suspicious_locations;
+    let filter = |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+                  haplotypes: &mut Vec<Haplotype>,
+                  suspicious: &mut std::collections::BTreeSet<i32>,
+                  pre_filtering: &mut Option<(
+        AlleleLikelihoods<BamRecord, Haplotype>,
+        Vec<Haplotype>,
+    )>|
+     -> Result<(), RegionAssemblyError> {
+        if let Some(arguments) = &context.genotyping.filter_alleles {
+            let filtered = crate::allele_filtering::filter_alleles(
+                likelihoods,
+                assembly.full_reference_with_padding(),
+                &ref_loc,
+                context.genotyping.max_mnp_distance,
+                arguments,
+                crate::allele_filtering::FilterModel::Germline {
+                    ploidy: context.genotyping.sample_ploidy,
+                },
+            )
+            .map_err(calling)?;
+            let mut before = likelihoods.clone();
+            before.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
+            let mut before_haplotypes: Vec<Haplotype> = (0..before.number_of_alleles())
+                .filter_map(|index| before.get_allele(index).cloned())
+                .collect();
+            gatk_engine::event_map::build_event_maps_for_haplotypes(
+                &mut before_haplotypes,
+                assembly.full_reference_with_padding(),
+                &ref_loc,
+                context.genotyping.max_mnp_distance,
+            )
+            .map_err(|e| calling(e.message()))?;
+            *pre_filtering = Some((before, before_haplotypes));
+            let kept = filtered.likelihoods;
+            *haplotypes = (0..kept.number_of_alleles())
+                .filter_map(|index| kept.get_allele(index).cloned())
+                .collect();
+            // `--debug-assembly-region-state`: what the filter kept.
+            if let Some(state) = context.assembly_state {
+                let mut text = format!(
+                        "\nThere were {} haplotypes found after subsetting by alleles. Here they are:\n",
+                        haplotypes.len()
+                    );
+                for h in haplotypes.iter() {
+                    text.push_str(&crate::pd_haplotypes::haplotype_string(h));
+                    text.push('\n');
+                }
+                state.borrow_mut().push_str(&text);
             }
-            Ok(())
-        };
+            *likelihoods = kept;
+            *suspicious = filtered.suspicious_locations;
+        }
+        Ok(())
+    };
     if !ramped {
         filter(
             &mut likelihoods,
@@ -740,6 +915,38 @@ pub fn call_region(
             },
         )
         .map_err(|e| calling(format!("{e:?}")))?;
+    }
+    // Each read of the first sample after realignment, with its likelihoods.
+    if debugger::is_enabled() && !ramped {
+        for (counter, read) in likelihoods
+            .sample_evidence(0)
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            debugger::println(&format!(
+                "read {counter}: {} cigar: {} mapQ: {} loc: [{}-{}] unclippedloc: [{}-{}] length:{}",
+                read.read_name,
+                if read.cigar.elements.is_empty() { "*".to_string() } else { read.cigar.to_text() },
+                read.mapping_quality,
+                gatk_engine::read_utils::start(read),
+                gatk_engine::read_utils::end(read),
+                gatk_engine::read_utils::unclipped_start(read),
+                gatk_engine::read_utils::unclipped_end(read),
+                read.read_bases.len()
+            ));
+            let scores: String = (0..likelihoods.number_of_alleles())
+                .map(|h| {
+                    format!(
+                        ",{}",
+                        gatk_engine::tsv_table::java_double_to_string(
+                            likelihoods.value(0, h, counter)
+                        )
+                    )
+                })
+                .collect();
+            debugger::println(&scores);
+        }
     }
     if let (true, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
@@ -846,6 +1053,9 @@ fn finish_region(
 ) -> Result<Vec<VariantContext>, RegionAssemblyError> {
     let calling = |e: String| RegionAssemblyError::Calling(e);
     let contig_length = context.contig_bases.len() as i32;
+    let mut bamout_tags = context
+        .bamout
+        .map(|_| crate::hc_genotyping::BamoutTags::default());
     let calls = assign_genotype_likelihoods_full(
         engine,
         context.genotyping,
@@ -861,8 +1071,31 @@ fn finish_region(
         suspicious,
         pre_filtering,
         given,
+        bamout_tags.as_mut(),
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // `writeReadsAlignedToHaplotypes`, with the called haplotypes and the read tags genotyping
+    // left.
+    if let (Some(writer), Some(tags)) = (context.bamout, &bamout_tags) {
+        let called: Vec<Haplotype> = tags.called.iter().map(|&h| haplotypes[h].clone()).collect();
+        let reference = if context.disable_optimizations {
+            assembly.reference_haplotype()
+        } else {
+            None
+        };
+        writer
+            .borrow_mut()
+            .write_region(
+                haplotypes,
+                ref_loc,
+                &called,
+                reference,
+                likelihoods,
+                genotyping_region.span(),
+                &|read| tags.supported_for(read).map(str::to_string),
+            )
+            .map_err(calling)?;
+    }
     if !context.genotyping.emit_reference_confidence {
         return Ok(calls);
     }
@@ -942,7 +1175,8 @@ fn reference_model_for_no_variation(
             .map_err(RegionAssemblyError::Finalize)?;
     }
     let threshold = context.mapping_quality_threshold;
-    region.retain_reads(|read| !fails_genotyping_filters(read, threshold));
+    let keep_rg = context.keep_rg;
+    region.retain_reads(|read| !fails_genotyping_filters(read, threshold, keep_rg));
     let padded = region.padded_span().clone();
     let ref_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let sample = &context.samples[0];
@@ -989,16 +1223,29 @@ pub(crate) fn qualified_class(class: &str) -> String {
 
 /// `filterNonPassingReads`' test: too short, mapped below the genotyping threshold, or with a
 /// mate on another contig.
-fn fails_genotyping_filters(read: &BamRecord, mapping_quality_threshold: u8) -> bool {
+fn fails_genotyping_filters(
+    read: &BamRecord,
+    mapping_quality_threshold: u8,
+    keep_rg: Option<&str>,
+) -> bool {
     unclipped_read_length(read) < READ_LENGTH_FILTER_THRESHOLD
         || read.mapping_quality < mapping_quality_threshold
         || !gatk_readfilter::mate_on_same_contig_or_no_mapped_mate(read)
+        || keep_rg.is_some_and(|keep| read_group(read) != Some(keep))
+}
+
+/// The read's `RG`.
+fn read_group(read: &BamRecord) -> Option<&str> {
+    match read.tags.get(htsjdk_bam::tag::Tag::new(b"RG")) {
+        Some(htsjdk_bam::tag::TagValue::Str(group)) => Some(group.as_str()),
+        _ => None,
+    }
 }
 
 /// The `finalizeRegion` switches HaplotypeCaller passes.
 fn finalize_arguments(arguments: &RegionAssemblyArguments) -> FinalizeArguments {
     FinalizeArguments {
-        error_correct_reads: false,
+        error_correct_reads: arguments.error_correct_reads,
         dont_use_soft_clipped_bases: arguments.dont_use_soft_clipped_bases,
         min_tail_quality: arguments.min_base_quality_score.wrapping_sub(1),
         correct_overlapping_base_qualities: !arguments.do_not_correct_overlapping_base_qualities,
@@ -1021,6 +1268,13 @@ pub struct RegionAssemblyArguments {
     pub dangling_end_sw: SwParameters,
     pub haplotype_to_reference_sw: SwParameters,
     pub read_to_haplotype_sw: SwParameters,
+    /// `--capture-assembly-failure-bam`, with the BGZF settings its writer inherits.
+    pub capture_assembly_failure_bam: Option<(u32, htsjdk_bgzf::Deflater)>,
+    /// `--error-correct-reads`: the region is finalized with a minimum tail quality of 6, and the
+    /// k-mer corrector built (and its k-mer length checked), which then corrects nothing.
+    pub error_correct_reads: bool,
+    /// `--kmer-length-for-read-error-correction`.
+    pub kmer_length_for_read_error_correction: i32,
 }
 
 impl Default for RegionAssemblyArguments {
@@ -1034,6 +1288,9 @@ impl Default for RegionAssemblyArguments {
             dangling_end_sw: STANDARD_NGS,
             haplotype_to_reference_sw: NEW_SW_PARAMETERS,
             read_to_haplotype_sw: ALIGNMENT_TO_BEST_HAPLOTYPE_SW_PARAMETERS,
+            capture_assembly_failure_bam: None,
+            error_correct_reads: false,
+            kmer_length_for_read_error_correction: 25,
         }
     }
 }
@@ -1050,6 +1307,12 @@ pub struct AssemblerArguments {
     pub min_dangling_branch_length: i32,
     /// `--disable-artificial-haplotype-recovery`.
     pub disable_artificial_haplotype_recovery: bool,
+    /// `--error-correction-log-odds`.
+    pub pileup_error_correction_log_odds: f64,
+    /// `--graph-output`.
+    pub graph_output: Option<std::path::PathBuf>,
+    /// `--debug-graph-transformations`.
+    pub debug_graph_transformations: bool,
 }
 
 impl Default for AssemblerArguments {
@@ -1077,6 +1340,9 @@ impl Default for AssemblerArguments {
             recover_all_dangling_branches: false,
             min_dangling_branch_length: 4,
             disable_artificial_haplotype_recovery: false,
+            pileup_error_correction_log_odds: f64::NEG_INFINITY,
+            graph_output: None,
+            debug_graph_transformations: false,
         }
     }
 }
@@ -1098,6 +1364,11 @@ pub fn assembler_from(
     assembler
         .set_artificial_haplotype_recovery_mode(arguments.disable_artificial_haplotype_recovery)?;
     assembler.set_min_base_quality_to_use_in_assembly(min_base_quality_score);
+    assembler.set_debug_graph_transformations(arguments.debug_graph_transformations);
+    assembler.set_pileup_error_correction_log_odds(arguments.pileup_error_correction_log_odds);
+    if let Some(path) = &arguments.graph_output {
+        assembler.set_graph_output(path.clone());
+    }
     Ok(assembler)
 }
 
@@ -1155,6 +1426,17 @@ pub fn assemble_reads(
 ) -> Result<AssemblyResultSet, RegionAssemblyError> {
     finalize_region(region, &finalize_arguments(arguments), header, samples)
         .map_err(RegionAssemblyError::Finalize)?;
+    // `new NearbyKmerErrorCorrector(kmerLength, ...)`, built for each region when the pileup
+    // corrector is off.
+    if arguments.error_correct_reads
+        && !assembler.pileup_error_correction_enabled()
+        && arguments.kmer_length_for_read_error_correction <= 0
+    {
+        return Err(RegionAssemblyError::Calling(format!(
+            "java.lang.IllegalArgumentException: kmerLength must be > 0 but got {}",
+            arguments.kmer_length_for_read_error_correction
+        )));
+    }
     let contig_length = contig_bases.len() as i32;
     let ref_loc = padded_reference_loc(region, REFERENCE_PADDING_FOR_ASSEMBLY, contig_length);
     let full_reference = contig_bases[ref_loc.start as usize - 1..ref_loc.end as usize].to_vec();
@@ -1170,7 +1452,26 @@ pub fn assemble_reads(
             &arguments.dangling_end_sw,
             &arguments.haplotype_to_reference_sw,
         )
-        .map_err(RegionAssemblyError::Assembler)
+        .map_err(|error| {
+            // `--capture-assembly-failure-bam`: the region's reads, as the assembly saw them, in
+            // `assemblyFailure.bam` in the working directory, then the exception again.
+            if let Some((level, deflater)) = arguments.capture_assembly_failure_bam {
+                let mut reads = region.reads().to_vec();
+                if header.attributes.get("SO") == Some("coordinate") {
+                    reads.sort_by(htsjdk_bam::coordinate::compare);
+                }
+                if let Ok((bam, _)) =
+                    crate::sam_output::write_records_with(header, &reads, false, level, deflater)
+                {
+                    let _ = std::fs::write("assemblyFailure.bam", bam);
+                }
+            }
+            match error {
+                // A dot file the reference cannot write, its exception as thrown.
+                AssemblerError::Thrown(message) => RegionAssemblyError::Calling(message),
+                error => RegionAssemblyError::Assembler(error),
+            }
+        })
 }
 
 /// `assembleReads` with `bypassAssembly`, as the post-filter on ramp runs it: the region finalized

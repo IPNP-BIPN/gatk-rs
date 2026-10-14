@@ -170,8 +170,29 @@ const HONOURED: &[&str] = &[
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
-    // Without a bamout or a native PairHMM these change nothing.
+    // The bamout.
+    "bam-output",
     "bam-writer-type",
+    "assembly-region-out",
+    "capture-assembly-failure-bam",
+    "keep-rg",
+    "just-determine-active-regions",
+    "dont-genotype",
+    "haplotype-debug-histogram-output",
+    "debug-assembly-variants-out",
+    "alm-path",
+    "alm-interval",
+    "pair-hmm-results-file",
+    "debug-assembly-region-state",
+    "debug-genotyper-output",
+    "graph-output",
+    "debug-graph-transformations",
+    "error-correct-reads",
+    "kmer-length-for-read-error-correction",
+    // Read only by the k-mer corrector, which is never given any k-mers.
+    "min-observations-for-kmer-to-be-solid",
+    "error-correction-log-odds",
+    // Without a native PairHMM or a DRAGstr model these change nothing.
     "native-pair-hmm-use-double-precision",
     "dont-use-dragstr-priors",
     "dont-use-dragstr-pair-hmm-scores",
@@ -486,6 +507,11 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     }
     let emit_mode = scalar(parser, "emit-ref-confidence").unwrap_or_else(|| "NONE".to_string());
     let emit_reference_confidence = emit_mode != "NONE";
+    if flag(parser, "dont-genotype") && emit_reference_confidence {
+        return Err(Thrown::user(
+            "You cannot request gVCF output and 'do not genotype' at the same time",
+        ));
+    }
     // `filterReferenceConfidenceAnnotations`: StrandBiasBySample added, the four site
     // annotations a GVCF cannot carry removed.
     if emit_reference_confidence {
@@ -686,6 +712,35 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
         given_alleles: super::given_alleles(parser)?,
+        assembly_region_out: argument(parser, "assembly-region-out").map(std::path::PathBuf::from),
+        keep_rg: scalar(parser, "keep-rg"),
+        just_determine_active_regions: flag(parser, "just-determine-active-regions"),
+        dont_genotype: flag(parser, "dont-genotype"),
+        haplotype_histogram_output: argument(parser, "haplotype-debug-histogram-output")
+            .map(std::path::PathBuf::from),
+        assembly_state_output: argument(parser, "debug-assembly-region-state")
+            .map(std::path::PathBuf::from),
+        genotyper_debug_output: argument(parser, "debug-genotyper-output")
+            .map(std::path::PathBuf::from),
+        alm: argument(parser, "alm-path").map(|path| {
+            (
+                std::path::PathBuf::from(path),
+                scalar(parser, "alm-interval"),
+            )
+        }),
+        bamout: argument(parser, "bam-output").map(|path| {
+            let (level, deflater) = super::output_compression(parser);
+            gatk_tools::haplotype_caller::BamoutArguments {
+                kind: scalar(parser, "bam-writer-type")
+                    .and_then(|name| gatk_tools::haplotype_bam_writer::WriterType::parse(&name))
+                    .unwrap_or(gatk_tools::haplotype_bam_writer::WriterType::CalledHaplotypes),
+                path: std::path::PathBuf::from(path),
+                create_index: flag(parser, "create-output-bam-index"),
+                create_md5: flag(parser, "create-output-bam-md5"),
+                level,
+                deflater,
+            }
+        }),
         pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
             use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
             gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")
@@ -717,6 +772,14 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             dangling_end_sw: sw.0,
             haplotype_to_reference_sw: sw.1,
             read_to_haplotype_sw: sw.2,
+            capture_assembly_failure_bam: flag(parser, "capture-assembly-failure-bam")
+                .then(|| super::output_compression(parser)),
+            error_correct_reads: flag(parser, "error-correct-reads"),
+            kmer_length_for_read_error_correction: number_or(
+                parser,
+                "kmer-length-for-read-error-correction",
+                25,
+            ),
         },
         flow_engine: flow_engine_arguments(parser),
         stepwise_flow: flag(parser, "use-flow-aligner-for-stepwise-hc-filtering").then(|| {
@@ -777,6 +840,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             } else {
                 dragstr_params.clone()
             },
+            results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
             sample_ploidy: ploidy,
@@ -895,6 +959,15 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             .map_err(|error| format!("{error:?}"))
     };
     let mut random = gatk_random();
+    // `--debug-assembly-variants-out`'s queue, ordered by the reads' dictionary.
+    let assembly_variants = argument(parser, "debug-assembly-variants-out").map(|path| {
+        (
+            path,
+            std::cell::RefCell::new(gatk_tools::assembly_variants_out::AssemblyVariantsOut::new(
+                header.sequences.iter().map(|s| s.name.clone()).collect(),
+            )),
+        )
+    });
     let called = hc::call_variants(
         &reads,
         &header,
@@ -903,6 +976,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         &annotator,
         &mut contig_bases,
         &mut random,
+        assembly_variants.as_ref().map(|(_, queue)| queue),
     );
     drop(random);
     // A failure mid-traversal still writes what came before it, and the writer's own refusal of
@@ -911,10 +985,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         Ok(calls) => (calls, None),
         Err(error) => (
             error.calls_before,
-            Some(Thrown::non_user(
-                java_class_name(&error.class),
-                error.message,
-            )),
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
         ),
     };
 
@@ -1047,6 +1123,35 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             None => hc::samples_from_header(&header),
         },
     };
+    // `--debug-assembly-variants-out`: `makeVCFHeader` without the tool's default lines and without
+    // genotypes, then the queue, indexed on the fly, written as the engine shuts down.
+    if let Some((path, queue)) = &assembly_variants {
+        let debug_header = VcfHeader {
+            lines: vcf_header
+                .lines
+                .iter()
+                .filter(|line| !matches!(line.key(), "GATKCommandLine" | "source"))
+                .cloned()
+                .collect(),
+            samples: Vec::new(),
+        };
+        let records = queue.borrow().records();
+        let text = write_vcf_strict_or_lenient(false, &debug_header, &records)?;
+        super::write_variant_file(
+            parser,
+            path,
+            &text,
+            true,
+            false,
+            Some(
+                header
+                    .sequences
+                    .iter()
+                    .map(|s| (s.name.clone(), s.length))
+                    .collect(),
+            ),
+        )?;
+    }
     // `GVCFWriter`: the reference records combined into GQ-band blocks.
     if emit_mode == "GVCF" {
         let bands: Vec<i32> = arguments_or_default_bands(parser);
@@ -1199,6 +1304,13 @@ pub(super) fn assembler_arguments(parser: &Parser, adaptive: bool) -> AssemblerA
             parser,
             "disable-artificial-haplotype-recovery",
         ),
+        pileup_error_correction_log_odds: double_or(
+            parser,
+            "error-correction-log-odds",
+            f64::NEG_INFINITY,
+        ),
+        graph_output: argument(parser, "graph-output").map(std::path::PathBuf::from),
+        debug_graph_transformations: flag(parser, "debug-graph-transformations"),
     }
 }
 

@@ -36,6 +36,7 @@ use crate::dragstr::{dragstr_impute, DragstrError, DragstrParams};
 use crate::haplotype::Haplotype;
 use crate::pair_hmm::{fast_round, read_likelihood_given_haplotype_log10};
 use crate::read_utils::{base_deletion_qualities, base_insertion_qualities};
+use crate::tsv_table::java_double_to_string;
 
 /// `ReadLikelihoodCalculationEngine.MAX_STR_UNIT_LENGTH`.
 pub const MAX_STR_UNIT_LENGTH: usize = 8;
@@ -120,6 +121,8 @@ pub struct LikelihoodEngineArguments {
     pub modify_soft_clipped_bases: bool,
     /// `dragstrParams`: with them, `DragstrPairHMMInputScoreImputator` replaces the standard one.
     pub dragstr_params: Option<DragstrParams>,
+    /// `--pair-hmm-results-file`: every read-haplotype pair scored, appended as it is.
+    pub results_file: Option<std::path::PathBuf>,
 }
 
 impl Default for LikelihoodEngineArguments {
@@ -136,6 +139,7 @@ impl Default for LikelihoodEngineArguments {
             disable_cap_read_qualities_to_map_q: false,
             modify_soft_clipped_bases: false,
             dragstr_params: None,
+            results_file: None,
         }
     }
 }
@@ -175,6 +179,13 @@ impl PairHmmLikelihoodEngine {
         }
         if arguments.base_quality_score_threshold < MIN_USABLE_Q_SCORE as i8 {
             return Err(LikelihoodEngineError::BaseQualityThresholdTooLow);
+        }
+        // `setAndInitializeDebugOutputStream`: the file opened with its header line.
+        if let Some(path) = &arguments.results_file {
+            let _ = std::fs::write(
+                path,
+                "# hap-bases read-bases read-qual read-ins-qual read-del-qual gcp expected-result",
+            );
         }
         Ok(PairHmmLikelihoodEngine {
             arguments,
@@ -283,6 +294,7 @@ impl PairHmmLikelihoodEngine {
         let mut hmm_qualities: Vec<Vec<Vec<u8>>> = Vec::with_capacity(samples.len());
         for sample_reads in reads {
             let processed = self.modify_read_qualities(sample_reads)?;
+            Self::print_processed(&processed, sample_reads, None);
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
             for (r, read) in processed.iter().enumerate() {
                 // `inputScoreImputator.impute(read)`: the read's own indel qualities and a constant
@@ -312,6 +324,25 @@ impl PairHmmLikelihoodEngine {
                         return Err(LikelihoodEngineError::InvalidLikelihood(likelihood));
                     }
                     sample_values[a][r] = likelihood;
+                    // `writeToResultsFileIfApplicable`.
+                    if let Some(path) = &self.arguments.results_file {
+                        let fastq = |q: &[u8]| -> String {
+                            q.iter().map(|&b| b.saturating_add(33) as char).collect()
+                        };
+                        let line = format!(
+                            "\n{} {} {} {} {} {} {}",
+                            String::from_utf8_lossy(haplotype),
+                            String::from_utf8_lossy(&read.bases),
+                            fastq(&read.qualities),
+                            fastq(&insertion),
+                            fastq(&deletion),
+                            fastq(&gap_continuation),
+                            java_scientific(likelihood),
+                        );
+                        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
+                            let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+                        }
+                    }
                 }
             }
             hmm_qualities.push(processed.into_iter().map(|p| p.qualities).collect());
@@ -332,30 +363,76 @@ impl PairHmmLikelihoodEngine {
             )
             .map_err(LikelihoodEngineError::Likelihoods)?;
 
+        self.filter_poorly_modeled(&mut result, &hmm_qualities)?;
+        // `filterPoorlyModeledEvidence` removed entries; the HMM qualities it read are dropped
+        // with them by the reference too, being transient attributes of the removed reads.
+        Ok(result)
+    }
+}
+
+impl PairHmmLikelihoodEngine {
+    /// `filterPoorlyModeledEvidence(result, dynamicDisqualification, ...)`: the fixed threshold
+    /// from each read's HMM qualities, or the dynamic one where it is lower.
+    fn filter_poorly_modeled(
+        &self,
+        result: &mut AlleleLikelihoods<BamRecord, Haplotype>,
+        hmm_qualities: &[Vec<Vec<u8>>],
+    ) -> Result<(), LikelihoodEngineError> {
         let fixed = |length: usize, cap: bool| {
             log10_min_true_likelihood(length, self.arguments.expected_error_rate_per_base, cap)
         };
         let dynamic = self.arguments.dynamic_disqualification;
         let scale = self.arguments.read_disqualification_scale;
+        let name = |read: &BamRecord| read.read_name.clone();
         result
-            .filter_poorly_modeled_evidence(|sample, evidence, _| {
-                let qualities = &hmm_qualities[sample][evidence];
-                if dynamic {
+            .filter_poorly_modeled_evidence_named(
+                |sample, evidence, read: &BamRecord| {
+                    let qualities = &hmm_qualities[sample][evidence];
+                    if !dynamic {
+                        return fixed(qualities.len(), true);
+                    }
                     let threshold = log10_dynamic_read_qual_threshold(qualities, scale);
                     let maximum = fixed(qualities.len(), false);
                     if threshold < maximum {
+                        crate::genotyper_debug::println(&format!(
+                            "For read {} replacing old threshold ({}) with new threshold: {}",
+                            read.read_name,
+                            java_double_to_string(maximum),
+                            java_double_to_string(threshold)
+                        ));
                         threshold
                     } else {
                         maximum
                     }
-                } else {
-                    fixed(qualities.len(), true)
-                }
-            })
-            .map_err(LikelihoodEngineError::Likelihoods)?;
-        // `filterPoorlyModeledEvidence` removed entries; the HMM qualities it read are dropped
-        // with them by the reference too, being transient attributes of the removed reads.
-        Ok(result)
+                },
+                Some(&name),
+            )
+            .map_err(LikelihoodEngineError::Likelihoods)
+    }
+
+    /// The `--debug-genotyper-output` lines for each processed read: as the reference prints a
+    /// read it rebuilt from bases and qualities, unplaced and without a CIGAR.
+    fn print_processed(processed: &[ProcessedRead], names: &[BamRecord], pd_range: Option<i32>) {
+        if !crate::genotyper_debug::is_enabled() {
+            return;
+        }
+        for (counter, (read, original)) in processed.iter().zip(names).enumerate() {
+            if let Some(range) = pd_range {
+                crate::genotyper_debug::println(&format!(
+                    "Range for Overlaps to Variants for consideration: {range}"
+                ));
+            }
+            crate::genotyper_debug::println(&format!(
+                "read {counter}: {} cigar: * mapQ: 0 loc: [0-0] unclippedloc: [0-0]",
+                original.read_name
+            ));
+            let qualities: Vec<String> = read
+                .qualities
+                .iter()
+                .map(|q| (*q as i8).to_string())
+                .collect();
+            crate::genotyper_debug::println(&format!("[{}]", qualities.join(", ")));
+        }
     }
 }
 
@@ -420,6 +497,7 @@ impl PairHmmLikelihoodEngine {
         let mut hmm_qualities: Vec<Vec<Vec<u8>>> = Vec::with_capacity(samples.len());
         for sample_reads in reads {
             let processed = self.modify_read_qualities(sample_reads)?;
+            Self::print_processed(&processed, sample_reads, Some(overlap_range));
             let mut sample_values = vec![vec![0.0; processed.len()]; haplotypes.len()];
             for (r, read) in processed.iter().enumerate() {
                 let (insertion, deletion, gap_continuation) = self.impute(read)?;
@@ -488,27 +566,7 @@ impl PairHmmLikelihoodEngine {
                 self.arguments.symmetrically_normalize_alleles_to_reference,
             )
             .map_err(LikelihoodEngineError::Likelihoods)?;
-        let fixed = |length: usize, cap: bool| {
-            log10_min_true_likelihood(length, self.arguments.expected_error_rate_per_base, cap)
-        };
-        let dynamic = self.arguments.dynamic_disqualification;
-        let scale = self.arguments.read_disqualification_scale;
-        result
-            .filter_poorly_modeled_evidence(|sample, evidence, _| {
-                let qualities = &hmm_qualities[sample][evidence];
-                if dynamic {
-                    let threshold = log10_dynamic_read_qual_threshold(qualities, scale);
-                    let maximum = fixed(qualities.len(), false);
-                    if threshold < maximum {
-                        threshold
-                    } else {
-                        maximum
-                    }
-                } else {
-                    fixed(qualities.len(), true)
-                }
-            })
-            .map_err(LikelihoodEngineError::Likelihoods)?;
+        self.filter_poorly_modeled(&mut result, &hmm_qualities)?;
         Ok(result)
     }
 }

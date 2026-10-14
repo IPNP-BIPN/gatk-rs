@@ -53,6 +53,24 @@ pub struct HaplotypeCallerArguments {
     pub pdhmm: Option<PdhmmArguments>,
     /// `--alleles`' records, and `--force-call-filtered-alleles`.
     pub given_alleles: Option<(Vec<htsjdk_vcf::variant::VariantContext>, bool)>,
+    /// `--bam-output` and how it is written.
+    pub bamout: Option<BamoutArguments>,
+    /// `--assembly-region-out`.
+    pub assembly_region_out: Option<std::path::PathBuf>,
+    /// `--keep-rg`.
+    pub keep_rg: Option<String>,
+    /// `--just-determine-active-regions`.
+    pub just_determine_active_regions: bool,
+    /// `--dont-genotype`.
+    pub dont_genotype: bool,
+    /// `--haplotype-debug-histogram-output`.
+    pub haplotype_histogram_output: Option<std::path::PathBuf>,
+    /// `--alm-path` and `--alm-interval`.
+    pub alm: Option<(std::path::PathBuf, Option<String>)>,
+    /// `--debug-assembly-region-state`.
+    pub assembly_state_output: Option<std::path::PathBuf>,
+    /// `--debug-genotyper-output`.
+    pub genotyper_debug_output: Option<std::path::PathBuf>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -128,6 +146,38 @@ pub fn samples_from_header(header: &SamHeader) -> Vec<String> {
     samples
 }
 
+/// `--bam-output`, `--bam-writer-type`, `--create-output-bam-index`, `--create-output-bam-md5` and
+/// the BGZF settings the writer inherits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BamoutArguments {
+    pub kind: crate::haplotype_bam_writer::WriterType,
+    pub path: std::path::PathBuf,
+    pub create_index: bool,
+    pub create_md5: bool,
+    pub level: u32,
+    pub deflater: htsjdk_bgzf::Deflater,
+}
+
+/// `HaplotypeBAMWriter.close()`: the BAM, its index (the output's extension replaced by `.bai`)
+/// and its MD5.
+pub fn close_bamout(
+    writer: crate::haplotype_bam_writer::HaplotypeBamWriter,
+    arguments: &BamoutArguments,
+) -> Result<(), String> {
+    let (bam, bai) = writer.finish(arguments.create_index, arguments.level, arguments.deflater)?;
+    std::fs::write(&arguments.path, &bam).map_err(|e| e.to_string())?;
+    if let Some(bai) = bai {
+        std::fs::write(arguments.path.with_extension("bai"), bai).map_err(|e| e.to_string())?;
+    }
+    if arguments.create_md5 {
+        let mut digest = arguments.path.clone().into_os_string();
+        digest.push(".md5");
+        std::fs::write(digest, crate::gather_bam_files::md5_file(&bam))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// `--use-pdhmm`'s arguments.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdhmmArguments {
@@ -150,6 +200,7 @@ fn thrown_class(message: &str) -> Option<&str> {
 
 /// The run: `reads` already filtered and in coordinate order, `intervals` the traversal
 /// intervals, and `contig_bases` a contig's whole sequence by name.
+#[allow(clippy::too_many_arguments)]
 pub fn call_variants(
     reads: &[BamRecord],
     header: &SamHeader,
@@ -158,7 +209,16 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
+    // `HaplotypeCallerGenotypingDebugger.initialize`, as the engine starts: its stream is never
+    // closed, but writes through, so the file holds what was printed before any failure.
+    let _genotyper_debug = arguments
+        .genotyper_debug_output
+        .clone()
+        .map(GenotyperDebugFile::open);
     let mut calls = Vec::new();
     // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
     // then with its header line and closed as the engine shuts down, after a failure too.
@@ -166,8 +226,12 @@ pub fn call_variants(
         .pdhmm
         .as_ref()
         .map(|_| {
+            // Its own results file is `--pdhmm-results-file`, not the PairHMM's.
             gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine::new(
-                arguments.likelihoods.clone(),
+                gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments {
+                    results_file: None,
+                    ..arguments.likelihoods.clone()
+                },
             )
         })
         .transpose()
@@ -182,6 +246,33 @@ pub fn call_variants(
                 .to_string(),
         )
     });
+    let bamout = arguments.bamout.as_ref().map(|b| {
+        std::cell::RefCell::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
+            b.kind, header,
+        ))
+    });
+    // `createAlleleLikelihoodWriter`: the interval is parsed as the engine starts, and the file
+    // created then, written as regions go.
+    let alm = match &arguments.alm {
+        Some((_, interval)) => Some(std::cell::RefCell::new(
+            crate::allele_likelihood_writer::AlleleLikelihoodWriter::new(
+                crate::allele_likelihood_writer::parse_simple_interval(interval.as_deref())
+                    .map_err(|message| {
+                        let (class, rest) = message.split_once(": ").expect("class: message");
+                        HaplotypeCallerError::new(class, rest.to_string())
+                    })?,
+            ),
+        )),
+        None => None,
+    };
+    let assembly_state = arguments
+        .assembly_state_output
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(String::new()));
+    let region_out = arguments
+        .assembly_region_out
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
     let outcome = call_variants_into(
         reads,
         header,
@@ -192,8 +283,33 @@ pub fn call_variants(
         random,
         pd_engine.as_ref(),
         results.as_ref(),
+        bamout.as_ref(),
+        region_out.as_ref(),
+        assembly_variants,
+        alm.as_ref(),
+        assembly_state.as_ref(),
         &mut calls,
     );
+    if let (Some(path), Some(state)) = (&arguments.assembly_state_output, assembly_state) {
+        std::fs::write(path, state.into_inner()).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
+    if let (Some((path, _)), Some(alm)) = (&arguments.alm, alm) {
+        std::fs::write(path, alm.into_inner().text).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
+    if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
+        std::fs::write(path, text.into_inner()).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
+    // The writer closes with the engine, after a failure too.
+    if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
+        close_bamout(writer.into_inner(), settings)
+            .map_err(|e| HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e))?;
+    }
     if let (Some(path), Some(text)) = (&results_file, &results) {
         std::fs::write(path, text.borrow().as_bytes()).map_err(|e| {
             HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
@@ -220,6 +336,13 @@ fn call_variants_into(
     random: &mut JavaRandom,
     pd_engine: Option<&gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine>,
     pd_results: Option<&std::cell::RefCell<String>>,
+    bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::cell::RefCell<String>>,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
+    alm: Option<&std::cell::RefCell<crate::allele_likelihood_writer::AlleleLikelihoodWriter>>,
+    assembly_state: Option<&std::cell::RefCell<String>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -247,11 +370,32 @@ fn call_variants_into(
         jmath::math::log10(arguments.priors.indel_heterozygosity),
     ));
     engine.set_use_posteriors_to_calculate_qual(arguments.use_posteriors_to_calculate_qual);
-    let assembler = assembler_from(
+    let mut assembler = assembler_from(
         &arguments.assembler,
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
+    // `--haplotype-debug-histogram-output`: kept as the assembler runs, printed as the engine shuts
+    // down, after a failure too.
+    if arguments.haplotype_histogram_output.is_some() {
+        assembler.keep_debug_histograms();
+    }
+    let assembler = assembler;
+    struct HistogramsOnShutdown<'a> {
+        assembler: &'a gatk_engine::read_threading_assembler::ReadThreadingAssembler,
+        path: Option<&'a std::path::Path>,
+    }
+    impl Drop for HistogramsOnShutdown<'_> {
+        fn drop(&mut self) {
+            if let (Some(path), Some(histograms)) = (self.path, self.assembler.debug_histograms()) {
+                let _ = std::fs::write(path, histograms.report());
+            }
+        }
+    }
+    let _histograms = HistogramsOnShutdown {
+        assembler: &assembler,
+        path: arguments.haplotype_histogram_output.as_deref(),
+    };
     // `filterStepLikelihoodCalculationEngine`.
     let stepwise_engine = arguments.stepwise_flow.as_ref().map(|flow| {
         crate::flow_likelihood_engine::ReadLikelihoodEngine::FlowBased(
@@ -429,6 +573,13 @@ fn call_variants_into(
             pileup: (detection.use_pileup_detection && !genotyping.ramped_engine)
                 .then_some((detection, loci.as_slice())),
             // RampedHaplotypeCallerEngine makes no PD haplotypes.
+            bamout,
+            keep_rg: arguments.keep_rg.as_deref(),
+            just_determine_active_regions: arguments.just_determine_active_regions,
+            dont_genotype: arguments.dont_genotype,
+            assembly_variants,
+            alm,
+            assembly_state,
             given_alleles: arguments
                 .given_alleles
                 .as_ref()
@@ -456,6 +607,10 @@ fn call_variants_into(
             },
         };
         for mut traversed in regions {
+            if let Some(out) = region_out {
+                out.borrow_mut()
+                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
+            }
             // `removeReadsFromAllSamplesExcept`.
             if let Some(name) = &arguments.sample_name {
                 traversed.region.retain_reads(|read| {
@@ -515,4 +670,22 @@ pub fn iupac_to_n(read: &mut BamRecord) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The `--debug-genotyper-output` file, written with what was printed when the run ends.
+struct GenotyperDebugFile(std::path::PathBuf);
+
+impl GenotyperDebugFile {
+    fn open(path: std::path::PathBuf) -> GenotyperDebugFile {
+        gatk_engine::genotyper_debug::initialize();
+        GenotyperDebugFile(path)
+    }
+}
+
+impl Drop for GenotyperDebugFile {
+    fn drop(&mut self) {
+        let text = gatk_engine::genotyper_debug::take().unwrap_or_default();
+        // The reference opens the file as the engine starts and reports nothing after.
+        let _ = std::fs::write(&self.0, text);
+    }
 }

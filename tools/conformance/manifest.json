@@ -2066,7 +2066,7 @@
       "title": "Double.toString over a corpus wide enough to say which values the port disagrees on",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "Double.toString, over 1059 values. gatk_engine::tsv_table::java_double_to_string defers to Rust's shortest-round-trip formatter, and the pre-JDK19 FloatingDecimal does not always emit the shortest digits; the module note has said so since it was written, and the string-format golden caught one value. This establishes WHICH values differ rather than assuming there are none. The corpus is deterministic on both sides: twenty-seven named values, the powers of two across the whole exponent range, and a thousand bit patterns from splitmix64 seeded at one with the non-finite ones skipped. Nothing here is random. WHAT THE RUN ADDED: fifteen of the 1059 differ, which is 1.4 per cent, and in every one of them JAVA EMITS MORE DIGITS THAN THE SHORTEST. Three shapes. The smallest subnormal is 4.9E-324 upstream and 5.0E-324 here. 1e23 is 9.999999999999999E22 upstream, sixteen digits where two round-trip. And eleven values needing sixteen digits get a seventeenth: 7.2911220195563975E-304 against 7.291122019556398E-304. Every one of the fifteen parses back to the same double, so this is a rendering difference and not a value difference -- which is exactly why nothing had caught it until a golden printed the renderings themselves.",
+      "why": "Double.toString, over 1059 values. gatk_engine::tsv_table::java_double_to_string defers to Rust's shortest-round-trip formatter, and the pre-JDK19 FloatingDecimal does not always emit the shortest digits; the module note has said so since it was written, and the string-format golden caught one value. This establishes WHICH values differ rather than assuming there are none. The corpus is deterministic on both sides: twenty-seven named values, the powers of two across the whole exponent range, and a thousand bit patterns from splitmix64 seeded at one with the non-finite ones skipped. Nothing here is random. WHAT THE RUN ADDED: fifteen of the 1059 differ, which is 1.4 per cent, and in every one of them JAVA EMITS MORE DIGITS THAN THE SHORTEST. Three shapes. The smallest subnormal is 4.9E-324 upstream and 5.0E-324 here. 1e23 is 9.999999999999999E22 upstream, sixteen digits where two round-trip. And eleven values needing sixteen digits get a seventeenth: 7.2911220195563975E-304 against 7.291122019556398E-304. Every one of the fifteen parses back to the same double, so this is a rendering difference and not a value difference -- which is exactly why nothing had caught it until a golden printed the renderings themselves. SINCE: java_double_to_string is jmath::to_string's reconstruction of Java 17's Double.toString, and all 1059 match.",
       "compare": {
         "mode": "lines"
       },
@@ -7788,6 +7788,109 @@
           "dump": "HcAllelesDump",
           "golden": "crates/gatk-tools/tests/data/hc_alleles.txt.gz",
           "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38501966129, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-bamout",
+      "status": "oracle-backed",
+      "title": "The callers' --bam-output, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--bam-output (G3.2m, #1347). The writer's header is the reads' dictionary in coordinate order, their read groups and an ArtificialHaplotypeRG (sample HC, centre BI) unless NO_HAPLOTYPES, their programs and a bare HaplotypeBAMWriter. Each called region adds its haplotypes as reads, HC_<n>_<index> with n counting across the run, qualities of 33, mapping quality 60, the reverse-strand flag alone, HC holding the haplotype's hashCode and CR the callable region; with CALLED_HAPLOTYPES they come in the order of a HashSet copied from the genotyping engine's, under --disable-optimizations with the reference added, and a region with no called haplotype writes nothing at all. Then the region's reads as they were scored: realigned (except with the PDHMM), OS and OE dropped, AR the location of the best haplotype with the reference and the fewest CIGAR elements winning ties, CR the callable region, and XA the alleles each was informative for, one comma-separated entry per call; Mutect2 reads them off fragments, so both mates of an informative fragment gain it, and writes its haplotypes before allele filtering. Nothing is presorted: htsjdk sorts by coordinate as it closes. Each writer type, the index switch, GVCF mode, --disable-optimizations, the PDHMM, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal, compared as SAM text.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 33,
+      "expect_contains": [
+        "bai\thc-bamout-no-haplotypes=false",
+        "ArtificialHaplotypeRG",
+        "XA:Z:"
+      ],
+      "cases": [
+        {
+          "dump": "HcBamoutDump",
+          "golden": "crates/gatk-tools/tests/data/hc_bamout.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-debug-outputs",
+      "status": "oracle-backed",
+      "title": "The callers' debug outputs and switches, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The debug outputs and switches of G3.2m (#1347). --assembly-region-out writes each region the walker hands over in IGV's TAB format; --haplotype-debug-histogram-output the two histograms at shutdown (HaplotypeCaller only); --debug-assembly-variants-out every assembled event through a PriorityQueue written in its array order, 200 at a time once 300 wait; --alm-path the read-by-haplotype matrix of each region whose first haplotype lies in --alm-interval; --pair-hmm-results-file every PairHMM call; --debug-assembly-region-state the region's reads, haplotypes and filtering; --debug-genotyper-output the trimmer's spans, the region banner and haplotypes, every processed read's qualities, disqualifications (the threshold asked twice), each event's matrix and the DRAGEN models' BQD and FRD workings; --graph-output each assembled region's final graphs replacing the file, and --debug-graph-transformations each step's graph in the working directory, named by region, k-mer size, section and step, a linked graph's junction-tree files named by the reference's bases, which a padded region of default size makes too long for the file system (the reference's CouldNotReadInputFile). --keep-rg, --just-determine-active-regions and --dont-genotype end to end. Vertex numbers, junction-tree node names and FRD's printed arrays are System.identityHashCode, masked on both sides, and a file holding junction trees comes out of identity-keyed HashMaps and is compared as a set of lines.",
+      "compare": {
+        "mode": "lines",
+        "rules": [
+          {
+            "rule": "mask_identity_hashes",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "Vertex ids and labels, junction-tree node names and FRD's double[] renderings are System.identityHashCode, different in every JVM run."
+          },
+          {
+            "rule": "sort_segments_with",
+            "marker": "TreadingNode_",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "A linked graph's junction trees are printed from HashMaps keyed by identity, in the JVM's order."
+          }
+        ]
+      },
+      "expect_rows": 214,
+      "expect_contains": [
+        "file\thc-genotyper=calling for region",
+        "dot\thc-graph-debug\tchr1:",
+        "TreadingNode_",
+        "File name too long"
+      ],
+      "cases": [
+        {
+          "dump": "HcDebugOutputsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_debug_outputs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, the local dump line for line once the declared rules have masked the identity hashes."
+        }
+      ]
+    },
+    {
+      "id": "hc-error-correction",
+      "status": "oracle-backed",
+      "title": "Read error correction in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--error-correction-log-odds and --error-correct-reads (G3.2n, #1348). The pileup corrector piles up a copy of each region's reads with the samples in getSamplesFromHeader's sorted order, takes the first plurality of A, C, G and T as the reference, and where Mutect2's log likelihood ratio of the other bases' qualities is below the threshold corrects them to it at quality 30, except beside an indel or a soft clip and at a read end with three edits in fifteen bases; only the assembly sees them. The k-mer corrector is never given a k-mer and corrects nothing: --error-correct-reads finalizes regions with a minimum tail quality of 6 and refuses a k-mer length of zero unless the pileup corrector replaces it. Over HcEndToEndDump's reads and the same reads with three per cent of their bases miscalled from a fixed seed, at five thresholds, in GVCF mode, with the linked graph, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 24,
+      "expect_contains": [
+        "out\thc-pileup-corrector-1000.0=",
+        "error\thc-kmer-corrector-zero\tjava.lang.IllegalArgumentException:kmerLength must be > 0 but got 0"
+      ],
+      "cases": [
+        {
+          "dump": "HcErrorCorrectionDump",
+          "golden": "crates/gatk-tools/tests/data/hc_error_correction.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38511284564, byte for byte the local dump."
         }
       ]
     }
