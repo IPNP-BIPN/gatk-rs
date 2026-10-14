@@ -244,6 +244,12 @@ def read_output(out_dir, row_args=()):
         if unordered_traversals(name, row_args):
             parts.append(f"{name}: {traversals_unordered(raw)}")
             continue
+        if name.endswith(".idx"):
+            masked = tribble_index_masked(raw)
+            if masked is not None:
+                digest = hashlib.sha256(masked).hexdigest()
+                parts.append(f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)")
+                continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
@@ -257,6 +263,23 @@ def read_output(out_dir, row_args=()):
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def tribble_index_masked(raw):
+    """A Tribble index with the indexed file's last-modified time zeroed.
+
+    The header is `TIDX`, the type and the version (two ints), the indexed path as a C string,
+    then the file's size and its last-modified time (two longs), so two runs differ in those eight
+    bytes alone. `--create-output-variant-index` is held false for that reason, but the writer of
+    `--debug-assembly-variants-out` indexes its file whatever it says.
+    """
+    if raw[:4] != b"TIDX":
+        return None
+    end = raw.find(b"\0", 12)
+    if end < 0 or end + 17 > len(raw):
+        return None
+    start = end + 1 + 8
+    return raw[:start] + bytes(8) + raw[start + 8:]
 
 
 def identity_hashes_masked(name, text):

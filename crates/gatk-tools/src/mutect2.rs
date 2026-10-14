@@ -672,7 +672,18 @@ fn call_region(
         context.assembler,
         &SmithWatermanJavaAligner,
     )
-    .map_err(|e| calling(format!("{e:?}")))?;
+    .map_err(|e| match e {
+        // An exception the reference throws as it is, `class: message`.
+        crate::hc_region::RegionAssemblyError::Calling(message)
+            if message.split_once(": ").is_some_and(|(class, _)| {
+                class.starts_with("org.broadinstitute.") && !class.contains(' ')
+            }) =>
+        {
+            let (class, rest) = message.split_once(": ").expect("just checked");
+            failure(class, rest)
+        }
+        e => calling(format!("{e:?}")),
+    })?;
     // `addAssembledVariantsToEventMapOutput`.
     if let Some(queue) = context.assembly_variants {
         for event in untrimmed
