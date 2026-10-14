@@ -483,12 +483,12 @@ jobs:
             suites: "hc-dragen-end-to-end hc-disable-optimizations hc-pedigree hc-linked-graph hc-flow"
           - group: oracle-backed
             index: "67/67"
-            slug: "hc-allele-filtering-mutect2-end-to-end-ramps-end-to-end"
-            suites: "hc-allele-filtering mutect2-end-to-end ramps-end-to-end"
+            slug: "hc-allele-filtering-mutect2-end-to-end-ramps-end-to-end-hc-pileup-hc-pdhmm"
+            suites: "hc-allele-filtering mutect2-end-to-end ramps-end-to-end hc-pileup hc-pdhmm"
           - group: golden-pending
             index: "1/1"
-            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-pileup-hc-pdhmm"
-            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-pileup hc-pdhmm"
+            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria"
+            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria"
     steps:
       - uses: actions/checkout@v7
 

@@ -7709,7 +7709,7 @@
     },
     {
       "id": "hc-pileup",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers with pileup detection, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7730,13 +7730,14 @@
       "cases": [
         {
           "dump": "HcPileupDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_pileup.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38499298231, byte for byte the local dump."
         }
       ]
     },
     {
       "id": "hc-pdhmm",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "The callers with the partially determined PairHMM, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7757,7 +7758,8 @@
       "cases": [
         {
           "dump": "HcPdhmmDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_pdhmm.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38499298231, byte for byte the local dump."
         }
       ]
     }
