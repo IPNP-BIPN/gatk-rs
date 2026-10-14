@@ -7869,7 +7869,7 @@
     },
     {
       "id": "hc-error-correction",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Read error correction in the callers, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7889,7 +7889,8 @@
       "cases": [
         {
           "dump": "HcErrorCorrectionDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_error_correction.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38511284564, byte for byte the local dump."
         }
       ]
     }
