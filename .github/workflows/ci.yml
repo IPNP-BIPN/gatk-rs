@@ -491,12 +491,12 @@ jobs:
             suites: "ramps-end-to-end hc-pileup hc-pdhmm hc-alleles hc-bamout"
           - group: oracle-backed
             index: "69/69"
-            slug: "hc-debug-outputs-hc-error-correction"
-            suites: "hc-debug-outputs hc-error-correction"
+            slug: "hc-debug-outputs-hc-error-correction-hc-resources-hc-ploidy"
+            suites: "hc-debug-outputs hc-error-correction hc-resources hc-ploidy"
           - group: golden-pending
             index: "1/1"
-            slug: "hc-resources-hc-ploidy-hc-contamination"
-            suites: "hc-resources hc-ploidy hc-contamination"
+            slug: "hc-contamination"
+            suites: "hc-contamination"
     steps:
       - uses: actions/checkout@v7
 
