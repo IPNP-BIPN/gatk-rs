@@ -7899,7 +7899,7 @@
     },
     {
       "id": "hc-resources",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "HaplotypeCaller's variant resources, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7918,7 +7918,8 @@
       "cases": [
         {
           "dump": "HcResourcesDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/hc_resources.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38542209638, byte for byte the local dump."
         }
       ]
     },
