@@ -484,15 +484,15 @@ arrays, and G3 is done only when no argument of the three callers is held out as
       - [~] G3.2d Mutect2's somatic reference-confidence mode (#1333);
       - [~] G3.2e Mutect2's mitochondria mode (#1334);
       - [~] G3.2f the flow-based paths (#1335);
-      - [~] G3.2g pileup detection and the partially determined PairHMM, with
+      - [x] G3.2g pileup detection and the partially determined PairHMM, with
             `--dragen-378-concordance-mode` (#1336);
       - [~] G3.2h the linked de Bruijn graph (#1337);
       - [~] G3.2i the ramp arguments in a covering array (#1340);
       - [ ] G3.2j the callers' cost (#1341).
       - [~] G3.2k `--pedigree` and `--founder-id`, with the de novo thresholds (#1343);
-      - [ ] G3.2l `--alleles` in the callers (#1346);
-      - [ ] G3.2m the callers' debug outputs, `--bam-output` among them (#1347);
-      - [ ] G3.2n read error correction in the assembler (#1348);
+      - [x] G3.2l `--alleles` in the callers (#1346);
+      - [x] G3.2m the callers' debug outputs, `--bam-output` among them (#1347);
+      - [x] G3.2n read error correction in the assembler (#1348);
       - [ ] G3.2o HaplotypeCaller's variant resources, `--dbsnp` among them (#1349);
       - [ ] G3.2p `--ploidy-regions` (#1350);
       - [ ] G3.2q contamination downsampling (#1351);
