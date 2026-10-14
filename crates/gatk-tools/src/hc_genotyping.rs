@@ -90,6 +90,32 @@ pub struct HcGenotypingArguments {
     pub population: Option<crate::population_priors::PopulationPriors>,
     /// `--comparison` (in the annotator's overlap order) and `--dbsnp`, read whole.
     pub resources: VariantResources,
+    /// `--contamination-fraction-to-filter` and `--contamination-fraction-per-sample-file`, when
+    /// `isSampleContaminationPresent()`.
+    pub contamination: Option<ContaminationDownsampling>,
+}
+
+/// The contamination the callers downsample each event's reads by.
+#[derive(Debug, Clone)]
+pub struct ContaminationDownsampling {
+    /// The file's fractions, for the samples the reads hold.
+    pub per_sample: Vec<(String, f64)>,
+    /// `--contamination-fraction-to-filter`, for every other sample.
+    pub default_fraction: f64,
+    /// `--use-filtered-reads-for-annotations`: the annotations read the downsampled matrix.
+    pub use_filtered_reads_for_annotations: bool,
+    /// `Utils.getRandomDataGenerator()`, ONE for the run: every ploidy's engine draws from it.
+    pub random: std::sync::Arc<std::sync::Mutex<gatk_engine::well19937c::Well19937c>>,
+}
+
+impl ContaminationDownsampling {
+    /// The `DefaultedMap`'s answer for a sample.
+    pub fn fraction(&self, sample: &str) -> f64 {
+        self.per_sample
+            .iter()
+            .find(|(name, _)| name == sample)
+            .map_or(self.default_fraction, |(_, f)| *f)
+    }
 }
 
 /// The feature inputs the annotator's overlap annotator queries at each call.
@@ -148,6 +174,7 @@ impl Default for HcGenotypingArguments {
             filter_alleles: None,
             population: None,
             resources: VariantResources::default(),
+            contamination: None,
         }
     }
 }
@@ -367,6 +394,12 @@ pub fn assign_genotype_likelihoods_full(
         for reads in shared_filtered.iter_mut() {
             reads.retain(qualifies);
         }
+        if let Some(contamination) = &arguments.contamination {
+            let mut random = contamination.random.lock().expect("the random data generator");
+            marginal
+                .contamination_downsampling(|sample| contamination.fraction(sample), &mut random)
+                .map_err(|e| refused(format!("{e:?}")))?;
+        }
         if gatk_engine::genotyper_debug::is_enabled() {
             print_event(
                 &merged,
@@ -467,10 +500,33 @@ pub fn assign_genotype_likelihoods_full(
                     }
                 }
             }
+            // `prepareReadAlleleLikelihoodsForAnnotation`: the genotyping matrix, unless
+            // contamination downsampled it and the annotations are not to read that; then the reads
+            // overlapping the event marginalized afresh, with `<NON_REF>` in reference-confidence
+            // mode. The bamout's tags read the same matrix.
+            let annotation_base = match &arguments.contamination {
+                Some(contamination) if !contamination.use_filtered_reads_for_annotations => {
+                    let mut fresh = read_likelihoods
+                        .marginalize(&new_to_old)
+                        .map_err(|e| refused(format!("{e:?}")))?;
+                    fresh.retain_evidence(|read| {
+                        overlap.overlaps(
+                            &overlap.contig,
+                            read_utils::start(read),
+                            read_utils::end(read),
+                        )
+                    });
+                    if arguments.emit_reference_confidence {
+                        fresh.add_non_reference_allele();
+                    }
+                    fresh
+                }
+                _ => marginal.clone(),
+            };
             // `annotateReadLikelihoodsWithSupportedAlleles(call, readAlleleLikelihoods)`, for the
             // bamout: the matrix the annotations read, marginalized to the call's alleles.
             if let Some(tags) = bamout.as_deref_mut() {
-                let mut for_tags = marginal.clone();
+                let mut for_tags = annotation_base.clone();
                 if call.alleles.len() != for_tags.number_of_alleles() {
                     for_tags.update_non_ref_allele_likelihoods(&call.alleles);
                 }
@@ -483,7 +539,7 @@ pub fn assign_genotype_likelihoods_full(
                 Some(annotator) => {
                     // `prepareReadAlleleLikelihoodsForAnnotation`: the genotyping matrix, with the
                     // filtered reads overlapping the call added at no likelihood.
-                    let mut for_annotation = marginal.clone();
+                    let mut for_annotation = annotation_base.clone();
                     if call.alleles.len() != for_annotation.number_of_alleles() {
                         for_annotation.update_non_ref_allele_likelihoods(&call.alleles);
                     }

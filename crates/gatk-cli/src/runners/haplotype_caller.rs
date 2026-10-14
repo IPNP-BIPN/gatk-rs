@@ -173,6 +173,8 @@ const HONOURED: &[&str] = &[
     "use-posteriors-to-calculate-qual",
     // Without contamination the filtered read map is the genotyping one either way.
     "use-filtered-reads-for-annotations",
+    "contamination-fraction-to-filter",
+    "contamination-fraction-per-sample-file",
     // Force-calling.
     "alleles",
     "force-call-filtered-alleles",
@@ -352,6 +354,97 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     Ok(())
+}
+
+/// `--contamination-fraction-to-filter` and `--contamination-fraction-per-sample-file`, as
+/// `StandardCallerArgumentCollection` holds them: `None` unless `isSampleContaminationPresent()`.
+/// The file is read by `AlleleBiasedDownsamplingUtils.loadContaminationFile`: lines trimmed, blank
+/// ones skipped, two tab-separated fields of which the second is a fraction in [0, 1]; a sample
+/// the reads do not hold is ignored, so only a duplicate among the reads' samples is refused.
+fn contamination_downsampling(
+    parser: &Parser,
+    samples: &[String],
+) -> Result<Option<gatk_tools::hc_genotyping::ContaminationDownsampling>, Thrown> {
+    let default_fraction = scalar(parser, "contamination-fraction-to-filter")
+        .and_then(|text| gatk_tools::variant_recalibrator_model::java_parse_double(&text))
+        .unwrap_or(0.0);
+    let is_set = |f: f64| !f.is_nan() && f > 0.0;
+    let mut per_sample: Vec<(String, f64)> = Vec::new();
+    if let Some(path) = argument(parser, "contamination-fraction-per-sample-file") {
+        let malformed =
+            |message: String| Thrown::user(format!("Unknown file is malformed: {message}"));
+        // `XReadLines` fails with a `NoSuchFileException`, whose message is the path as given.
+        let bytes = std::fs::read(&path).map_err(|_| {
+            let absolute = std::path::absolute(&path).unwrap_or_else(|_| path.clone().into());
+            Thrown::user(format!(
+                "I/O Error while reading sample-contamination file {}: {path}",
+                absolute.display()
+            ))
+        })?;
+        let text = if path.ends_with(".gz") {
+            let mut out = String::new();
+            std::io::Read::read_to_string(
+                &mut flate2::read::MultiGzDecoder::new(bytes.as_slice()),
+                &mut out,
+            )
+            .map_err(|e| Thrown::user(format!("Couldn't read file. Error was: {e}")))?;
+            out
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        for raw in text.lines() {
+            let line = raw.trim_matches(|c: char| c <= ' ');
+            if line.is_empty() {
+                continue;
+            }
+            // `String.split`, which drops trailing empty fields.
+            let mut fields: Vec<&str> = line.split('\t').collect();
+            while fields.last() == Some(&"") {
+                fields.pop();
+            }
+            if fields.len() != 2 {
+                return Err(malformed(format!(
+                    "Contamination file must have exactly two, tab-delimited columns. Offending line:\n{line}"
+                )));
+            }
+            if fields[0].is_empty() || fields[1].is_empty() {
+                return Err(malformed(format!(
+                    "Contamination file can not have empty strings in either column. Offending line:\n{line}"
+                )));
+            }
+            let Some(fraction) = gatk_tools::variant_recalibrator_model::java_parse_double(fields[1])
+            else {
+                return Err(malformed(format!(
+                    "Contamination file contains unparsable double in the second field. Offending line: {line}"
+                )));
+            };
+            let sample = fields[0];
+            if per_sample.iter().any(|(name, _)| name == sample) {
+                return Err(malformed(format!(
+                    "Contamination file contains duplicate entries for input name {sample}"
+                )));
+            }
+            if fraction < 0.0 || fraction > 1.0 {
+                return Err(malformed(format!(
+                    "Contamination file contains unacceptable contamination value (must be 0<=x<=1): {line}"
+                )));
+            }
+            if samples.iter().any(|name| name == sample) {
+                per_sample.push((sample.to_string(), fraction));
+            }
+        }
+    }
+    if !is_set(default_fraction) && !per_sample.iter().any(|(_, f)| is_set(*f)) {
+        return Ok(None);
+    }
+    Ok(Some(gatk_tools::hc_genotyping::ContaminationDownsampling {
+        per_sample,
+        default_fraction,
+        use_filtered_reads_for_annotations: flag(parser, "use-filtered-reads-for-annotations"),
+        random: std::sync::Arc::new(std::sync::Mutex::new(
+            gatk_engine::well19937c::Well19937c::gatk(),
+        )),
+    }))
 }
 
 /// `--ploidy-regions`, read as `HaplotypeCallerEngine` reads it: each BED feature a `SimpleCount`
@@ -677,6 +770,12 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     } else {
         header_samples.len()
     };
+    // `validateAndInitializeArgs`: the contamination file, read for `initializeSamples`' set.
+    let sample_set: Vec<String> = match &sample_name {
+        Some(name) => vec![name.clone()],
+        None => header_samples.clone(),
+    };
+    let contamination = contamination_downsampling(parser, &sample_set)?;
     if emit_reference_confidence && sample_count != 1 {
         return Err(Thrown::command_line(
             "Argument emit-ref-confidence has a bad value: Can only be used in single sample \
@@ -978,6 +1077,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             results_file: argument(parser, "pair-hmm-results-file").map(std::path::PathBuf::from),
         },
         genotyping: HcGenotypingArguments {
+            contamination: contamination.clone(),
             population: population.clone(),
             resources,
             sample_ploidy: ploidy,

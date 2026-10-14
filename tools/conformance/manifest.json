@@ -7946,6 +7946,31 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-contamination",
+      "status": "golden-pending",
+      "title": "Contamination downsampling in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--contamination-fraction-to-filter and --contamination-fraction-per-sample-file (G3.2q, #1351). At each event, once the reads are narrowed to those overlapping it, AlleleLikelihoods.contaminationDownsampling removes (int) (informative reads * fraction) of each sample's reads, all of them at a fraction of one or more, the counts left chosen by AlleleBiasedDownsamplingUtils to look most like a het or a hom and each allele's reads drawn from Utils.getRandomDataGenerator(), which nothing resets between runs in a JVM (the dump resets it before each). The annotations and the bamout tags read a fresh marginalization of the event's reads unless --use-filtered-reads-for-annotations. loadContaminationFile trims lines, skips blank ones, ignores samples the reads do not hold (so a duplicate among them is not refused) and refuses three columns, an empty field, an unparsable or out-of-range fraction, a duplicate sample and a missing file. Over HcEndToEndDump's two samples: five fractions, the filtered annotations, GVCF mode, per-sample files with and without a default, and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 31,
+      "expect_contains": [
+        "out\thc-0.1=",
+        "error\thc-duplicate\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:"
+      ],
+      "cases": [
+        {
+          "dump": "HcContaminationDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

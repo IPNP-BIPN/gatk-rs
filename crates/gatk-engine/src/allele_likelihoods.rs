@@ -405,6 +405,46 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
         Ok(())
     }
 
+    /// `contaminationDownsampling(perSampleDownsamplingFraction)`: for each sample whose fraction is
+    /// above zero (and not NaN), all its evidence at one or more, otherwise what
+    /// `selectAlleleBiasedEvidence` picks from its informative evidence grouped by best allele
+    /// (reference allowed), in allele order.
+    pub fn contamination_downsampling(
+        &mut self,
+        fraction: impl Fn(&str) -> f64,
+        random: &mut crate::well19937c::Well19937c,
+    ) -> Result<(), crate::permutation::PermutationError> {
+        for sample in 0..self.number_of_samples() {
+            let f = fraction(self.get_sample(sample).map_or("", String::as_str));
+            if f.is_nan() || f <= 0.0 {
+                continue;
+            }
+            let count = self.evidence_by_sample[sample].len();
+            let mut remove: Vec<usize> = if f >= 1.0 {
+                (0..count).collect()
+            } else {
+                // `evidenceByBestAlleleMap(s)`: evidence indices by best allele.
+                let mut by_allele: Vec<Vec<usize>> = vec![Vec::new(); self.number_of_alleles()];
+                for r in 0..count {
+                    let best = self.search_best_allele(sample, r, true, None);
+                    if !best.is_informative() {
+                        continue;
+                    }
+                    if let Some(index) = best.allele.as_ref().and_then(|a| self.index_of_allele(a)) {
+                        by_allele[index].push(r);
+                    }
+                }
+                crate::allele_biased_downsampling::select_allele_biased_evidence(
+                    &by_allele, f, random,
+                )?
+            };
+            remove.sort_unstable();
+            remove.dedup();
+            self.remove_evidence_by_index(sample, &remove);
+        }
+        Ok(())
+    }
+
     /// `removeEvidenceByIndex`, for sorted distinct indices. The reference leaves the freed tail of
     /// each likelihood row as NaN; here the rows are shortened, which no reader can tell apart.
     fn remove_evidence_by_index(&mut self, sample_index: usize, remove: &[usize]) {

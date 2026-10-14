@@ -1096,6 +1096,15 @@ public class MakeFixtures {
                 "chr1\t0\t1150\t3\nchr1\t1350\t1700\t1\nchr1\t1500\t1900\t4\n", StandardCharsets.UTF_8);
     }
 
+    /**
+     * The callers' `--contamination-fraction-per-sample-file`: the tumour and the normal of the
+     * mutect reads at their own fractions, and a sample the reads do not hold, which is ignored.
+     */
+    static void contaminationFixtures(final Path dir) throws Exception {
+        Files.writeString(dir.resolve("contamination.txt"), "tumor\t0.15\nnormal\t0.3\nabsent\t0.5\n",
+                StandardCharsets.UTF_8);
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -3037,6 +3046,7 @@ public class MakeFixtures {
         givenAllelesFixtures(dir);
         resourceFixtures(dir);
         ploidyRegionFixtures(dir);
+        contaminationFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
