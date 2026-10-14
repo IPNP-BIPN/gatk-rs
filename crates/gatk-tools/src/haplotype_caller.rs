@@ -703,7 +703,12 @@ fn call_variants_into(
             // `getLocalGenotypingEngine(region)`: the engine, and the arguments, of the span's
             // ploidy.
             let span = traversed.region.span().clone();
-            let local = ploidy_at(&arguments.ploidy_regions, &span.contig, span.start, span.end);
+            let local = ploidy_at(
+                &arguments.ploidy_regions,
+                &span.contig,
+                span.start,
+                span.end,
+            );
             context.genotyping = match local {
                 Some(ploidy) => &custom_genotyping[&ploidy],
                 None => &genotyping,

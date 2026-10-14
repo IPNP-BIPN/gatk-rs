@@ -388,8 +388,15 @@ fn ploidy_regions(
         }
         let fields: Vec<&str> = line.split('\t').collect();
         let contig = fields[0].to_string();
-        let start = fields.get(1).and_then(|f| f.trim().parse::<i32>().ok()).unwrap_or(0) + 1;
-        let end = fields.get(2).and_then(|f| f.trim().parse::<i32>().ok()).unwrap_or(0);
+        let start = fields
+            .get(1)
+            .and_then(|f| f.trim().parse::<i32>().ok())
+            .unwrap_or(0)
+            + 1;
+        let end = fields
+            .get(2)
+            .and_then(|f| f.trim().parse::<i32>().ok())
+            .unwrap_or(0);
         let place = format!("{contig}:{start}-{end}");
         let count = match fields.get(3).and_then(|f| f.trim().parse::<i64>().ok()) {
             Some(count) if count <= i64::from(i32::MAX) && count >= i64::from(i32::MIN) => count,
@@ -414,10 +421,11 @@ fn ploidy_regions(
         });
     }
     for region in &regions {
-        let on_dictionary = header
-            .sequences
-            .iter()
-            .any(|s| s.name == region.contig && region.start >= 1 && i64::from(region.end) <= i64::from(s.length));
+        let on_dictionary = header.sequences.iter().any(|s| {
+            s.name == region.contig
+                && region.start >= 1
+                && i64::from(region.end) <= i64::from(s.length)
+        });
         if !on_dictionary {
             return Err(refuse(Thrown::user(format!(
                 "Invalid region provided for --ploidy-regions at {}:{}-{}. Contig name or endpoint \
