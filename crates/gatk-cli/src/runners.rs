@@ -11233,6 +11233,7 @@ pub(crate) fn pileup_detection_arguments(
             "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
             defaults.assembly_bad_read_edit_distance,
         ),
+        debug_stdout: boolean("print-pileupcalling-status", false),
     }
 }
 

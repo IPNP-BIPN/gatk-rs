@@ -134,6 +134,39 @@ public class HcPdhmmDump {
                 List.of(dragen));
         HcAllAnnotationsDump.run(dir, "paired-hc-dragen-378-no-assembly", HaplotypeCaller::new, pairedBam, pairedFasta,
                 HcPileupDump.concat(List.of(dragen), noAssembly));
+        final String status = "--print-pileupcalling-status";
+        withStdout(dir, "hc-pdhmm-status", e2eBam, e2eFasta, List.of(pdhmm, on, indels, status));
+        withStdout(dir, "hc-pdhmm-determined-status", e2eBam, e2eFasta,
+                List.of(pdhmm, on, indels, "--make-determined-haps-from-pd-code", status));
+        withStdout(dir, "hc-pileup-status", e2eBam, e2eFasta,
+                HcPileupDump.concat(List.of(on, indels, status), noAssembly));
+        withStdout(dir, "str-hc-pdhmm-status", strBam, strFasta, List.of(pdhmm, on, indels, status));
+        withStdout(dir, "paired-hc-dragen-378-status", pairedBam, pairedFasta, List.of(dragen, status));
+    }
+
+    /** A HaplotypeCaller run, then what it printed to standard output. */
+    static void withStdout(final Path dir, final String label, final Path bam, final Path fasta,
+                           final List<String> extra) throws Exception {
+        final java.io.PrintStream original = System.out;
+        final java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(captured, true, "UTF-8"));
+        try {
+            HcAllAnnotationsDump.run(dir, label, HaplotypeCaller::new, bam, fasta, extra);
+        } finally {
+            System.setOut(original);
+        }
+        final String text = captured.toString("UTF-8");
+        final StringBuilder kept = new StringBuilder();
+        for (final String line : text.split("\n", -1)) {
+            if (line.startsWith("out\t" + label + "=") || line.startsWith("error\t" + label + "\t")) {
+                original.println(line);
+            } else {
+                kept.append(line).append("\n");
+            }
+        }
+        // The split leaves one empty piece after the last newline.
+        kept.setLength(kept.length() - 1);
+        System.out.printf("stdout\t%s=%s%n", label, ReferenceQueryDump.escape(kept.toString()));
     }
 
     /** A HaplotypeCaller run, then its PDHMM results file. */
