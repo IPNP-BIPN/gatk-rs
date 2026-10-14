@@ -425,6 +425,8 @@ fn contamination_downsampling(
                     "Contamination file contains duplicate entries for input name {sample}"
                 )));
             }
+            // Two comparisons, as the reference writes them: a NaN passes both.
+            #[allow(clippy::manual_range_contains)]
             if fraction < 0.0 || fraction > 1.0 {
                 return Err(malformed(format!(
                     "Contamination file contains unacceptable contamination value (must be 0<=x<=1): {line}"
