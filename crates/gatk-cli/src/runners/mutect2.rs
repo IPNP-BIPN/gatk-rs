@@ -642,15 +642,21 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         )?;
     }
     drop(random);
-    let called = called.map_err(|error| {
-        if error.class == "PortLimitation" {
-            limitation(&error.message)
-        } else if error.class.contains("UserException") {
-            Thrown::user(error.message)
-        } else {
-            Thrown::non_user(java_class_name(&error.class), error.message)
-        }
-    })?;
+    // A failure mid-traversal still writes the calls before it, as the writer closes.
+    let (called_calls, callable_sites, failure) = match called {
+        Ok(output) => (output.calls, output.callable_sites, None),
+        Err(error) if error.class == "PortLimitation" => return Err(limitation(&error.message)),
+        Err(error) => (
+            error.calls_before,
+            0,
+            // A `UserException` is reported as a user error, by its message alone.
+            Some(if error.class.contains("UserException") {
+                Thrown::user(error.message)
+            } else {
+                Thrown::non_user(java_class_name(&error.class), error.message)
+            }),
+        ),
+    };
 
     // `Mutect2Engine.writeHeader`.
     let compound = |key: &str, id: &str, number: Cardinality, line_type: LineType, text: &str| {
@@ -755,7 +761,7 @@ pub fn mutect2(parser: &Parser) -> Outcome {
         });
     }
     let mut vcf_header = VcfHeader { lines, samples };
-    let mut written = called.calls;
+    let mut written = called_calls;
     // `SomaticGVCFWriter`: the reference records combined into blocks by TLOD band.
     if emit_mode == "GVCF" {
         let bands: Vec<f64> = {
@@ -795,10 +801,13 @@ pub fn mutect2(parser: &Parser) -> Outcome {
     apply_sites_only(parser, &mut vcf_header, &mut written);
     let text = write_vcf_honouring_lenient(parser, &vcf_header, &written)?;
     write_variant_output(parser, &output, &text)?;
+    if let Some(failure) = failure {
+        return Err(failure);
+    }
     // `MutectStats.writeToFile`, beside the output.
     let stats = format!(
         "statistic\tvalue\ncallable\t{}\n",
-        gatk_engine::tsv_table::java_double_to_string(called.callable_sites as f64)
+        gatk_engine::tsv_table::java_double_to_string(callable_sites as f64)
     );
     std::fs::write(format!("{output}.stats"), stats)
         .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}.stats: {error}")))?;

@@ -159,12 +159,15 @@ pub struct Mutect2Output {
 pub struct Mutect2Error {
     pub class: String,
     pub message: String,
+    /// The calls made before the failure, which the reference's writer still writes as it closes.
+    pub calls_before: Vec<VariantContext>,
 }
 
 fn failure(class: &str, message: impl Into<String>) -> Mutect2Error {
     Mutect2Error {
         class: class.to_string(),
         message: message.into(),
+        calls_before: Vec::new(),
     }
 }
 
@@ -342,7 +345,13 @@ fn call_variants_with(
                 out.borrow_mut()
                     .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
             }
-            calls.extend(call_region(traversed.region, &context, random)?);
+            match call_region(traversed.region, &context, random) {
+                Ok(region_calls) => calls.extend(region_calls),
+                Err(mut error) => {
+                    error.calls_before = calls;
+                    return Err(error);
+                }
+            }
         }
     }
     Ok(Mutect2Output {
@@ -541,7 +550,15 @@ struct RegionContext<'a> {
         Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
 }
 
+/// A failure while calling: a message naming its own class as `class: message` keeps it.
 fn calling(message: impl Into<String>) -> Mutect2Error {
+    let message = message.into();
+    if let Some((class, rest)) = message.split_once(": ") {
+        let qualified = class.starts_with("java.lang.") || class.starts_with("org.broadinstitute.");
+        if qualified && !class.contains(' ') {
+            return failure(class, rest);
+        }
+    }
     failure("GATKException", message)
 }
 
