@@ -59,6 +59,19 @@ pub struct Outcome {
 /// between the two is Milestone C's, and it is visible rather than papered over.
 pub type Runner = fn(&[String]) -> Result<Option<String>, Thrown>;
 
+/// The runner, with what the tool printed while it ran put on standard output first, failure
+/// or not.
+fn run_capturing(
+    runner: Runner,
+    args: &[String],
+    stdout: &mut String,
+) -> Result<Option<String>, Thrown> {
+    let _ = gatk_tools::tool_stdout::take();
+    let result = runner(main_entry::tool_arguments(args));
+    stdout.push_str(&gatk_tools::tool_stdout::take());
+    result
+}
+
 /// `Main.instanceMain`, with the two streams returned rather than written.
 pub fn run(args: &[String]) -> Outcome {
     let mut stdout = String::new();
@@ -150,7 +163,7 @@ pub fn run(args: &[String]) -> Outcome {
                         status: main_entry::exit_status(Failure::User),
                     }
                 }
-                Some(runner) => match runner(main_entry::tool_arguments(args)) {
+                Some(runner) => match run_capturing(runner, args, &mut stdout) {
                     Ok(result) => {
                         if let Some(printed) = main_entry::tool_returned(result.as_deref()) {
                             stdout.push_str(&printed);

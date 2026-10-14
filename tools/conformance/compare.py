@@ -22,6 +22,7 @@ is how a bit-identity claim quietly weakens.
 
 import gzip
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -78,7 +79,33 @@ def _strip_banner(payload, spec):
     )
 
 
+def _mask_identity_hashes(payload, spec):
+    """Replace `System.identityHashCode` renderings with `N`.
+
+    HaplotypeCaller's dot files name vertices `..._id_<hash>_seq_...` and label them `(<hash>)`,
+    name junction-tree nodes `TreadingNode_<hex>`, and its genotyper debug prints `double[]` as
+    `[D@<hex>`: numbers no two JVM runs share. Only those exact shapes are masked.
+    """
+    payload = re.sub(r"_id_-?\d+_", "_id_N_", payload)
+    payload = re.sub(r"\((-?\d+)\)", "(N)", payload)
+    payload = re.sub(r"TreadingNode_[0-9a-f]+", "TreadingNode_N", payload)
+    return re.sub(r"\[D@[0-9a-f]+", "[D@N", payload)
+
+
+def _sort_segments_with(payload, spec):
+    """Sort the segments of a payload holding the declared marker.
+
+    A linked graph's junction trees are printed from identity-keyed `HashMap`s, so their lines
+    come in the JVM's order; such a file is compared as a multiset of lines.
+    """
+    if spec["marker"] not in payload:
+        return payload
+    return SEGMENT_SEP.join(sorted(payload.split(SEGMENT_SEP)))
+
+
 RULES = {
+    "mask_identity_hashes": _mask_identity_hashes,
+    "sort_segments_with": _sort_segments_with,
     "strip_line_prefixes": _strip_line_prefixes,
     "strip_pg": _strip_pg,
     "strip_ur": _strip_ur,
@@ -137,9 +164,10 @@ def parse_lines(path, compare_spec):
     only the last one.
     """
     skip_comments = compare_spec.get("skip_comment_lines", True)
+    rules = compare_spec.get("rules", [])
     with _open(path) as fh:
         return [
-            line.rstrip("\n")
+            canonicalize(line.split("\t", 1)[0], line.rstrip("\n"), rules)
             for line in fh
             if line.strip() and not (skip_comments and line.startswith("#"))
         ]

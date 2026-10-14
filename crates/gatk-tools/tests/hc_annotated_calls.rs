@@ -118,6 +118,7 @@ fn run(case: &Case) -> Vec<String> {
         AlleleFrequencyCalculator::make_calculator(&priors),
     );
     let annotator = Engine {
+        flow_order_for_annotations: None,
         resolved: ANNOTATIONS
             .iter()
             .map(|name| catalogue::entry(name).unwrap())
@@ -127,6 +128,7 @@ fn run(case: &Case) -> Vec<String> {
         allele_concordance: false,
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
+        pedigree: Default::default(),
     };
     // `Utils.resetRandomGenerator()`.
     let mut random = JavaRandom::new(47382911);

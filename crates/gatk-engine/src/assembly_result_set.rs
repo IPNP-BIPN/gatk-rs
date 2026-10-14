@@ -73,6 +73,10 @@ pub struct AssemblyResultSet {
     region_for_genotyping: Option<AssemblyRegion>,
     full_reference_with_padding: Vec<u8>,
     padded_reference_loc: Option<SimpleInterval>,
+    /// `isPartiallyDeterminedList`.
+    partially_determined: bool,
+    /// `!originalAssemblyHaps.isEmpty()`: the PD engine replaced the assembled haplotypes.
+    overwritten: bool,
 }
 
 impl AssemblyResultSet {
@@ -118,6 +122,38 @@ impl AssemblyResultSet {
             }
         }
         Ok(())
+    }
+
+    /// `setPartiallyDeterminedMode`.
+    pub fn set_partially_determined_mode(&mut self, value: bool) {
+        self.partially_determined = value;
+    }
+
+    /// `isPartiallyDeterminedList()`.
+    pub fn is_partially_determined_list(&self) -> bool {
+        self.partially_determined
+    }
+
+    /// `storeAssemblyHaplotypes()`, as far as anything reads it: whether there were any.
+    pub fn store_assembly_haplotypes(&mut self) {
+        self.overwritten = !self.haplotypes.is_empty();
+    }
+
+    /// `hasOverwrittenHaps()`.
+    pub fn has_overwritten_haps(&self) -> bool {
+        self.overwritten
+    }
+
+    /// `removeHaplotype`: out of the list, the reference's place kept in step.
+    pub fn remove_haplotype(&mut self, haplotype: &Haplotype) {
+        if let Some(index) = self.haplotypes.iter().position(|h| h == haplotype) {
+            self.haplotypes.remove(index);
+            self.reference = match self.reference {
+                Some(r) if r == index => None,
+                Some(r) if r > index => Some(r - 1),
+                other => other,
+            };
+        }
     }
 
     /// `getHaplotypeList()`.

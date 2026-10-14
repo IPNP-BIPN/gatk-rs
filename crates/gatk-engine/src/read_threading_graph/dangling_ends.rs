@@ -681,6 +681,9 @@ impl ReadThreadingGraph {
     /// `getReferencePath(start, downwards, blacklistedEdge)`: `getNextReferenceVertex(v, true,
     /// blacklistedEdge)` until there is none.
     fn reference_path_downwards(&self, start: usize, blacklisted: Option<usize>) -> Vec<usize> {
+        if self.linked {
+            return self.linked_reference_path_forward(start, blacklisted);
+        }
         let mut path = Vec::new();
         let mut v = Some(start);
         while let Some(vertex) = v {
@@ -692,6 +695,15 @@ impl ReadThreadingGraph {
 
     /// `getReferencePath(start, upwards, empty)`: `getPrevReferenceVertex` until there is none.
     fn reference_path_upwards(&self, start: usize) -> Vec<usize> {
+        if self.linked {
+            // `getReferencePathBackwardsForKmer`: the stored reference path up to the first
+            // occurrence of the vertex, reversed, or the vertex alone.
+            let path = self.reference_path.as_deref().unwrap_or(&[]);
+            return match path.iter().position(|&v| v == start) {
+                Some(first) => path[..=first].iter().rev().copied().collect(),
+                None => vec![start],
+            };
+        }
         let mut path = Vec::new();
         let mut v = Some(start);
         while let Some(vertex) = v {
@@ -702,6 +714,40 @@ impl ReadThreadingGraph {
                 .find(|&source| self.is_reference_node(source));
         }
         path
+    }
+
+    /// `getReferencePathForwardFromKmer`: the vertices walked while the way forward is
+    /// unambiguous and not yet on the reference path, then the stored reference path from the last
+    /// occurrence of the vertex reached. A walk that meets itself stops with no reference part.
+    fn linked_reference_path_forward(
+        &self,
+        start: usize,
+        blacklisted: Option<usize>,
+    ) -> Vec<usize> {
+        let path = self.reference_path.as_deref().unwrap_or(&[]);
+        let last_index = |v: usize| path.iter().rposition(|&p| p == v);
+        let mut extra = Vec::new();
+        let mut vertex = Some(start);
+        let mut final_index = last_index(start);
+        while final_index.is_none() {
+            let Some(v) = vertex else { break };
+            extra.push(v);
+            let mut allowed = self.outgoing[v].iter().filter(|&&e| Some(e) != blacklisted);
+            vertex = match (allowed.next(), allowed.next()) {
+                (Some(&edge), None) => Some(self.edges[edge].target),
+                _ => None,
+            };
+            if let Some(next) = vertex {
+                if extra.contains(&next) {
+                    vertex = None;
+                }
+            }
+            final_index = vertex.and_then(last_index);
+        }
+        if let Some(index) = final_index {
+            extra.extend_from_slice(&path[index..]);
+        }
+        extra
     }
 
     /// `getNextReferenceVertex(v, true, blacklistedEdge)`: the target of the first reference edge

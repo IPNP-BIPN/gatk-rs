@@ -94,12 +94,27 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         assembler: &assembler,
         aligner: &SmithWatermanJavaAligner,
         trimmer: &trimmer,
-        likelihood_engine: &likelihood_engine,
+        likelihood_engine: &gatk_tools::flow_likelihood_engine::ReadLikelihoodEngine::PairHmm(
+            likelihood_engine,
+        ),
+        stepwise_engine: None,
         genotyping: &genotyping,
         mapping_quality_threshold: 20,
         off_ramp: None,
         on_ramp: None,
         disable_optimizations: false,
+        ramps_debug_post_assembler_on: false,
+        pileup: None,
+        pd: None,
+        given_alleles: None,
+        bamout: None,
+        keep_rg: None,
+        just_determine_active_regions: false,
+        dont_genotype: false,
+        assembly_variants: None,
+        alm: None,
+        assembly_state: None,
+        collapse: Default::default(),
     };
     let mut engine = GenotypingEngine::new(
         Configuration {
@@ -117,6 +132,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         AlleleFrequencyCalculator::make_calculator(&Priors::default()),
     );
     let annotator = Engine {
+        flow_order_for_annotations: None,
         resolved: ANNOTATIONS
             .iter()
             .map(|n| catalogue::entry(n).unwrap())
@@ -126,6 +142,7 @@ fn run(reference: &[u8], case: &[&str], reads: &[Vec<&str>]) -> Vec<String> {
         allele_concordance: false,
         pseudo_depth: Default::default(),
         assembly_complexity_reference_mode: false,
+        pedigree: Default::default(),
     };
     let mut random = JavaRandom::new(47382911);
     let calls = call_region(

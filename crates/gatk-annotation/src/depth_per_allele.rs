@@ -187,6 +187,7 @@ pub fn allele_fractions(
 /// other is not counted, so `DP` here can be lower than the `DP` an INFO-level `Coverage` reports
 /// over the same site.
 pub fn informative_depth(
+    vc: &VariantContext,
     likelihoods: Option<&AlleleLikelihoods<BamRecord>>,
     sample: &str,
     called: bool,
@@ -196,8 +197,27 @@ pub fn informative_depth(
         return None;
     }
     let sample_index = likelihoods.index_of_sample(sample)?;
+    if likelihoods.sample_evidence_count(sample_index) == 0 {
+        return Some(0);
+    }
+    // The variant's alleles must all be in the matrix, which is then marginalized to them: a read
+    // tied between an allele the site dropped and one it kept is informative once the dropped one
+    // is gone.
+    if !vc
+        .alleles
+        .iter()
+        .all(|allele| likelihoods.index_of_allele(allele).is_some())
+    {
+        return None;
+    }
+    let new_to_old: Vec<(Allele, Vec<Allele>)> = marginalisation_order(&vc.alleles)
+        .iter()
+        .map(|allele| (allele.clone(), vec![allele.clone()]))
+        .collect();
+    let marginalised = likelihoods.marginalize(&new_to_old).ok()?;
+    let sample_index = marginalised.index_of_sample(sample)?;
     Some(
-        likelihoods
+        marginalised
             .best_alleles_breaking_ties_for_sample(sample_index, None)
             .iter()
             .filter(|best| best.is_informative())

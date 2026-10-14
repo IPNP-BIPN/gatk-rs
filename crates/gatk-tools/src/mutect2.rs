@@ -51,7 +51,7 @@ use gatk_engine::java_random::JavaRandom;
 use gatk_engine::locus_iterator::AlignmentContext;
 use gatk_engine::mutect_engine::log_likelihood_ratio;
 use gatk_engine::natural_log_utils::{log_sum_exp, normalize_from_log_to_linear_space, posteriors};
-use gatk_engine::pair_hmm_likelihood_engine::{LikelihoodEngineArguments, PairHmmLikelihoodEngine};
+use gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineArguments;
 use gatk_engine::read_pileup::sample_name;
 use gatk_engine::read_realignment::realign_reads_to_their_best_haplotype;
 use gatk_engine::read_threading_assembler::ReadThreadingAssembler;
@@ -94,9 +94,21 @@ const MAX_QUAL: f64 = 93.0;
 #[derive(Debug, Clone)]
 pub struct Mutect2Arguments {
     pub region: AssemblyRegionArgs,
+    /// `PileupDetectionArgumentCollection`.
+    pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
+    /// `--alleles`' records, and `--force-call-filtered-alleles`.
+    pub given_alleles: Option<(Vec<VariantContext>, bool)>,
+    /// `--bam-output` and how it is written.
+    pub bamout: Option<crate::haplotype_caller::BamoutArguments>,
+    /// `--assembly-region-out`.
+    pub assembly_region_out: Option<std::path::PathBuf>,
     pub trimmer: TrimmerArguments,
     pub assembly: RegionAssemblyArguments,
     pub likelihoods: LikelihoodEngineArguments,
+    /// `--likelihood-calculation-engine FlowBased`: the flow engine's own arguments.
+    pub flow_engine: Option<crate::flow_likelihood_engine::FlowEngineArguments>,
+    /// `--likelihood-calculation-engine FlowBasedHMM`: its arguments.
+    pub flow_hmm: Option<crate::flow_likelihood_engine::FlowHmmArguments>,
     pub normal_samples: Vec<String>,
     /// `getInitialLogOdds()`, `getEmissionLogOdds()` and `--normal-lod`, natural log.
     pub initial_log_odds: f64,
@@ -111,6 +123,12 @@ pub struct Mutect2Arguments {
     /// fraction of one or more makes deterministic: the generator is unseeded.
     pub consider_germline_active: bool,
     pub min_af: f64,
+    /// `--flow-assembly-collapse-hmer-size`, -1 resolved from the read groups, and
+    /// `--flow-assembly-collapse-partial-mode`.
+    pub flow_collapse_hmer_size: i32,
+    pub flow_collapse_partial_mode: bool,
+    /// `--flow-filter-alleles`, with its thresholds.
+    pub filter_alleles: Option<crate::allele_filtering::AlleleFilterArguments>,
     /// `getDefaultAlleleFrequency()`.
     pub default_af: f64,
     pub informative_read_overlap_margin: i32,
@@ -141,12 +159,15 @@ pub struct Mutect2Output {
 pub struct Mutect2Error {
     pub class: String,
     pub message: String,
+    /// The calls made before the failure, which the reference's writer still writes as it closes.
+    pub calls_before: Vec<VariantContext>,
 }
 
 fn failure(class: &str, message: impl Into<String>) -> Mutect2Error {
     Mutect2Error {
         class: class.to_string(),
         message: message.into(),
+        calls_before: Vec::new(),
     }
 }
 
@@ -165,6 +186,58 @@ pub fn call_variants(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
+) -> Result<Mutect2Output, Mutect2Error> {
+    // `createBamWriter`, closed with the engine, after a failure too.
+    let bamout = arguments.bamout.as_ref().map(|b| {
+        std::cell::RefCell::new(crate::haplotype_bam_writer::HaplotypeBamWriter::new(
+            b.kind, header,
+        ))
+    });
+    let region_out = arguments
+        .assembly_region_out
+        .as_ref()
+        .map(|_| std::cell::RefCell::new(crate::hc_region::ASSEMBLY_REGION_OUT_HEADER.to_string()));
+    let outcome = call_variants_with(
+        reads,
+        header,
+        intervals,
+        arguments,
+        annotator,
+        contig_bases,
+        random,
+        bamout.as_ref(),
+        region_out.as_ref(),
+        assembly_variants,
+    );
+    if let (Some(path), Some(text)) = (&arguments.assembly_region_out, region_out) {
+        std::fs::write(path, text.into_inner())
+            .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e.to_string()))?;
+    }
+    if let (Some(writer), Some(settings)) = (bamout, &arguments.bamout) {
+        crate::haplotype_caller::close_bamout(writer.into_inner(), settings)
+            .map_err(|e| failure("UserException.CouldNotCreateOutputFile", e))?;
+    }
+    outcome
+}
+
+/// [`call_variants`], with the bamout writer.
+#[allow(clippy::too_many_arguments)]
+fn call_variants_with(
+    reads: &[BamRecord],
+    header: &SamHeader,
+    intervals: &[SimpleInterval],
+    arguments: &Mutect2Arguments,
+    annotator: &AnnotatorEngine,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+    random: &mut JavaRandom,
+    bamout: Option<&std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    region_out: Option<&std::cell::RefCell<String>>,
+    assembly_variants: Option<
+        &std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>,
+    >,
 ) -> Result<Mutect2Output, Mutect2Error> {
     let samples = samples_of(header);
     let partition: Vec<Option<String>> = samples.iter().cloned().map(Some).collect();
@@ -175,8 +248,13 @@ pub fn call_variants(
         arguments.assembly.min_base_quality_score,
     )
     .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
-    let likelihood_engine = PairHmmLikelihoodEngine::new(arguments.likelihoods.clone())
-        .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
+    // `createLikelihoodCalculationEngine`.
+    let likelihood_engine = crate::flow_likelihood_engine::ReadLikelihoodEngine::create(
+        &arguments.likelihoods,
+        &arguments.flow_engine,
+        &arguments.flow_hmm,
+    )
+    .map_err(|(class, message)| failure(&class, message))?;
     let mut tumor_buffer = PileupQualBuffer::default();
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;
@@ -184,6 +262,10 @@ pub fn call_variants(
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
         let bases = contig_bases(&contig).map_err(|message| failure("UserException", message))?;
+        // `region.getAlignmentData()`, kept only with pileup detection. Mutect2's `isActive` never
+        // sets an original active probability, so every locus scores zero.
+        let detection = &arguments.pileup_detection;
+        let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -200,6 +282,35 @@ pub fn call_variants(
                 )
             },
             &mut |locus, context| {
+                // A locus a usable given record overlaps is active, and nothing else is counted.
+                let forced = arguments
+                    .given_alleles
+                    .as_ref()
+                    .is_some_and(|(records, force)| {
+                        crate::given_alleles::forced_at(records, &locus.contig, locus.start, *force)
+                    });
+                if detection.use_pileup_detection {
+                    let ref_base = bases[locus.start as usize - 1];
+                    loci.push(match context {
+                        Some(context) => crate::pileup_based_alleles::LocusSummary::new(
+                            context,
+                            0.0,
+                            ref_base,
+                            &bases,
+                            i32::from(arguments.assembly.min_base_quality_score),
+                            detection,
+                        ),
+                        None => crate::pileup_based_alleles::LocusSummary::empty(
+                            &locus.contig,
+                            locus.start,
+                            0.0,
+                            ref_base,
+                        ),
+                    });
+                }
+                if forced {
+                    return (1.0, None);
+                }
                 let prob = is_active(
                     context,
                     bases[locus.start as usize - 1],
@@ -225,9 +336,22 @@ pub fn call_variants(
             trimmer: &trimmer,
             likelihood_engine: &likelihood_engine,
             annotator,
+            pileup_loci: &loci,
+            bamout,
+            assembly_variants,
         };
         for traversed in regions {
-            calls.extend(call_region(traversed.region, &context, random)?);
+            if let Some(out) = region_out {
+                out.borrow_mut()
+                    .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));
+            }
+            match call_region(traversed.region, &context, random) {
+                Ok(region_calls) => calls.extend(region_calls),
+                Err(mut error) => {
+                    error.calls_before = calls;
+                    return Err(error);
+                }
+            }
         }
     }
     Ok(Mutect2Output {
@@ -415,11 +539,26 @@ struct RegionContext<'a> {
     arguments: &'a Mutect2Arguments,
     assembler: &'a ReadThreadingAssembler,
     trimmer: &'a AssemblyRegionTrimmer,
-    likelihood_engine: &'a PairHmmLikelihoodEngine,
+    likelihood_engine: &'a crate::flow_likelihood_engine::ReadLikelihoodEngine,
     annotator: &'a AnnotatorEngine,
+    /// The loci walked, with pileup detection.
+    pileup_loci: &'a [crate::pileup_based_alleles::LocusSummary],
+    /// `--bam-output`.
+    bamout: Option<&'a std::cell::RefCell<crate::haplotype_bam_writer::HaplotypeBamWriter>>,
+    /// `--debug-assembly-variants-out`'s queue.
+    assembly_variants:
+        Option<&'a std::cell::RefCell<crate::assembly_variants_out::AssemblyVariantsOut>>,
 }
 
+/// A failure while calling: a message naming its own class as `class: message` keeps it.
 fn calling(message: impl Into<String>) -> Mutect2Error {
+    let message = message.into();
+    if let Some((class, rest)) = message.split_once(": ") {
+        let qualified = class.starts_with("java.lang.") || class.starts_with("org.broadinstitute.");
+        if qualified && !class.contains(' ') {
+            return failure(class, rest);
+        }
+    }
     failure("GATKException", message)
 }
 
@@ -490,7 +629,10 @@ fn somatic_ref_confidence(
         2,
         calls,
         context.header,
-        &RefConfidenceArguments::default(),
+        &RefConfidenceArguments {
+            flow_based_model: context.likelihood_engine.is_flow_based(),
+            ..RefConfidenceArguments::default()
+        },
         Some(&context.arguments.somatic_ref_confidence),
     )
     .map_err(|e| match e {
@@ -525,6 +667,18 @@ fn call_region(
         return reference_model_for_no_variation(region, context);
     }
     remove_unmarked_duplicates(&mut region, context.header)?;
+    // The given events: the usable records over the padded span, split, wherever they start.
+    let given = match &arguments.given_alleles {
+        Some((records, force_call_filtered)) => crate::given_alleles::given_events(
+            records,
+            &region.span().contig,
+            region.padded_span(),
+            i32::MIN,
+            *force_call_filtered,
+        )
+        .map_err(calling)?,
+        None => Vec::new(),
+    };
 
     let mut untrimmed = assemble_reads(
         &mut region,
@@ -535,10 +689,46 @@ fn call_region(
         context.assembler,
         &SmithWatermanJavaAligner,
     )
-    .map_err(|e| calling(format!("{e:?}")))?;
-    let events = untrimmed
+    .map_err(|e| match e {
+        // An exception the reference throws as it is, `class: message`.
+        crate::hc_region::RegionAssemblyError::Calling(message)
+            if message.split_once(": ").is_some_and(|(class, _)| {
+                (class.starts_with("org.broadinstitute.") || class.starts_with("java.lang."))
+                    && !class.contains(' ')
+            }) =>
+        {
+            let (class, rest) = message.split_once(": ").expect("just checked");
+            failure(class, rest)
+        }
+        e => calling(format!("{e:?}")),
+    })?;
+    // `addAssembledVariantsToEventMapOutput`.
+    if let Some(queue) = context.assembly_variants {
+        for event in untrimmed
+            .variation_events(arguments.max_mnp_distance)
+            .map_err(|e| calling(format!("{e:?}")))?
+        {
+            queue.borrow_mut().add_event(&event);
+        }
+    }
+    let mut events = untrimmed
         .variation_events(arguments.max_mnp_distance)
         .map_err(|e| calling(format!("{e:?}")))?;
+    // `goodAndBadPileupEvents`: the good events join the trimmer's, the bad ones are not taken
+    // out of them.
+    let (good_pileup_events, _) = crate::pileup_based_alleles::good_and_bad_pileup_events(
+        crate::pileup_based_alleles::region_loci(context.pileup_loci, &region),
+        &arguments.pileup_detection,
+        context.contig_bases,
+    )
+    .map_err(calling)?;
+    if !good_pileup_events.is_empty() {
+        events =
+            crate::pileup_based_alleles::events_for_trimming(&events, &good_pileup_events, &[]);
+    }
+    if !given.is_empty() {
+        events = crate::pileup_based_alleles::events_for_trimming(&events, &given, &[]);
+    }
     let padded = region.padded_span().clone();
     let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
     let trimmed = context
@@ -555,6 +745,26 @@ fn call_region(
     let mut assembly = untrimmed
         .trim_to(variant_region)
         .map_err(|e| calling(format!("{e:?}")))?;
+    // `addGivenAlleles`, then `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles`
+    // that the trimmed set's missing event maps leave without effect.
+    crate::given_alleles::add_given_alleles(
+        &mut assembly,
+        &given,
+        arguments.max_mnp_distance,
+        &SmithWatermanJavaAligner,
+        &arguments.assembly.haplotype_to_reference_sw,
+    )
+    .map_err(calling)?;
+    crate::pileup_based_alleles::inject_pileup_events(
+        &mut assembly,
+        &region,
+        &arguments.pileup_detection,
+        &SmithWatermanJavaAligner,
+        &arguments.assembly.haplotype_to_reference_sw,
+        &good_pileup_events,
+        arguments.max_mnp_distance,
+    )
+    .map_err(calling)?;
     if !assembly.is_variation_present() {
         return reference_model_for_no_variation(region, context);
     }
@@ -578,8 +788,8 @@ fn call_region(
     let mut haplotypes: Vec<Haplotype> = assembly.haplotype_list().to_vec();
     let mut likelihoods = context
         .likelihood_engine
-        .compute_read_likelihoods(&haplotypes, context.samples, &by_sample)
-        .map_err(|e| calling(format!("{e:?}")))?;
+        .compute_read_likelihoods(&haplotypes, context.header, context.samples, &by_sample)
+        .map_err(calling)?;
     likelihoods
         .switch_to_natural_log()
         .map_err(|e| calling(format!("{e:?}")))?;
@@ -599,11 +809,69 @@ fn call_region(
         &arguments.assembly.read_to_haplotype_sw,
     )
     .map_err(|e| calling(format!("{e:?}")))?;
+    // The collapsing engine `assembleReads` built: a threshold above zero and a run longer than it
+    // under the padded span.
+    let threshold = arguments.flow_collapse_hmer_size;
+    if threshold > 0
+        && crate::haplotype_collapsing::needs_collapsing(
+            &context.contig_bases[padded.start as usize - 1..padded.end as usize],
+            threshold,
+        )
+    {
+        let engine = crate::haplotype_collapsing::HaplotypeCollapsing {
+            hmer_size_threshold: threshold,
+            partial_mode: arguments.flow_collapse_partial_mode,
+            full_ref: assembly.full_reference_with_padding().to_vec(),
+            ref_loc: ref_loc.clone(),
+            parameters: arguments.assembly.haplotype_to_reference_sw,
+        };
+        crate::hc_region::uncollapse(
+            &engine,
+            &mut likelihoods,
+            &mut haplotypes,
+            &SmithWatermanJavaAligner,
+        )
+        .map_err(calling)?;
+    }
+    // `uncollapsedReadLikelihoods.alleles()`, which the bamout writes.
+    let initial_haplotypes = haplotypes.clone();
+    // `AlleleFilteringMutect`, on the natural-log matrix.
+    if let Some(filter) = &arguments.filter_alleles {
+        let alt_pseudocount = if arguments.min_af == 0.0 {
+            1.0
+        } else {
+            1.0 - std::f64::consts::LN_2 / jmath::math::log(arguments.min_af)
+        };
+        let filtered = crate::allele_filtering::filter_alleles(
+            &likelihoods,
+            assembly.full_reference_with_padding(),
+            &ref_loc,
+            arguments.max_mnp_distance,
+            filter,
+            crate::allele_filtering::FilterModel::Somatic {
+                ref_pseudocount: 1.0,
+                alt_pseudocount,
+            },
+        )
+        .map_err(calling)?;
+        likelihoods = filtered.likelihoods;
+        likelihoods.set_filtered_haplotype_count(filtered.filtered_haplotype_count);
+        haplotypes = (0..likelihoods.number_of_alleles())
+            .filter_map(|index| likelihoods.get_allele(index).cloned())
+            .collect();
+    }
     let window = (
         i64::from(padded.start),
         &context.contig_bases[padded.start as usize - 1..padded.end as usize],
     );
     let realigned: Vec<BamRecord> = likelihoods.sample_evidence(0).unwrap_or(&[]).to_vec();
+    // The bamout reads the matrix as genotyping receives it, before any normalization.
+    let mut bamout_tags = context.bamout.map(|_| {
+        (
+            crate::hc_genotyping::BamoutTags::default(),
+            likelihoods.clone(),
+        )
+    });
     let calls = call_mutations(
         likelihoods,
         &mut haplotypes,
@@ -613,7 +881,26 @@ fn call_region(
         window,
         context,
         random,
+        &given,
+        bamout_tags.as_mut().map(|(tags, _)| tags),
     )?;
+    // `writeBamOutput(uncollapsedReadLikelihoods.alleles(), paddedReferenceLoc,
+    // subsettedReadLikelihoodsFinal, calledHaplotypes, regionForGenotyping.getSpan())`.
+    if let (Some(writer), Some((tags, scored))) = (context.bamout, &bamout_tags) {
+        let called: Vec<Haplotype> = tags.called.iter().map(|&h| haplotypes[h].clone()).collect();
+        writer
+            .borrow_mut()
+            .write_region(
+                &initial_haplotypes,
+                &ref_loc,
+                &called,
+                None,
+                scored,
+                genotyping_region.span(),
+                &|read| tags.supported_for(read).map(str::to_string),
+            )
+            .map_err(calling)?;
+    }
     if !arguments.emit_reference_confidence {
         return Ok(calls);
     }
@@ -716,7 +1003,7 @@ fn remove_unmarked_duplicates(
 type DuplicateKey = (Option<String>, i32);
 
 /// A likelihood matrix as `[allele][evidence]`.
-type Matrix = Vec<Vec<f64>>;
+pub(crate) type Matrix = Vec<Vec<f64>>;
 
 /// `SomaticGenotypingEngine.callMutations`, with no given
 /// alleles, germline resource or panel of normals.
@@ -730,6 +1017,8 @@ fn call_mutations(
     reference_window: (i64, &[u8]),
     context: &RegionContext<'_>,
     random: &mut JavaRandom,
+    given: &[Event],
+    mut bamout: Option<&mut crate::hc_genotyping::BamoutTags>,
 ) -> Result<Vec<VariantContext>, Mutect2Error> {
     let arguments = context.arguments;
     let illegal = |e: String| failure("IllegalArgumentException", e);
@@ -832,15 +1121,23 @@ fn call_mutations(
             somatic_log_odds(&normal_matrix, ref_index, alt_pseudocount)?;
 
         let normal_threshold = arguments.normal_log_odds;
+        // `allelesConsistentWithGivenAlleles(givenAlleles, mergedVC)`: kept whatever their odds.
+        let forced = crate::given_alleles::alleles_consistent_with_given_alleles(
+            given,
+            &merged.alleles[0],
+            &merged.alleles[1..],
+        );
+        let is_forced = |a: usize| forced.contains(&alleles[a]);
         let tumor_alts: Vec<usize> = merged_alternates(&merged.alleles, &alleles)
             .into_iter()
-            .filter(|&a| tumor_log_odds[&a] > arguments.emission_log_odds)
+            .filter(|&a| is_forced(a) || tumor_log_odds[&a] > arguments.emission_log_odds)
             .collect();
         let to_genotype: Vec<usize> = tumor_alts
             .iter()
             .copied()
             .filter(|&a| {
-                !has_normal
+                is_forced(a)
+                    || !has_normal
                     || arguments.consider_germline_active
                     || normal_log_odds[&a] > normal_threshold
             })
@@ -968,6 +1265,12 @@ fn call_mutations(
                 EngineError::Limitation(what) => failure("PortLimitation", what),
                 EngineError::Runtime { class, message } => failure(&class, message),
             })?;
+        // `annotateReadLikelihoodsWithSupportedAlleles(trimmedCall, trimmedLikelihoods,
+        // Fragment::getReads)`, for the bamout.
+        if let Some(tags) = bamout.as_deref_mut() {
+            tags.add_supported_alleles_fragments(&trimmed_call, &trimmed_fragments)
+                .map_err(|e| illegal(format!("{e:?}")))?;
+        }
         for allele in &vc.alleles {
             if let Some((_, indices)) = mapper.iter().find(|(a, _)| a == allele) {
                 for &h in indices {
@@ -980,6 +1283,9 @@ fn call_mutations(
         calls.push(annotated);
     }
 
+    if let Some(tags) = bamout {
+        tags.called = called.clone();
+    }
     let called_haplotypes: Vec<&Haplotype> = called.iter().map(|&h| &haplotypes[h]).collect();
     let output = phase_calls(calls, &called_haplotypes).map_err(|e| match e {
         EngineError::Limitation(what) => failure("PortLimitation", what),
@@ -1083,7 +1389,7 @@ fn numerical(e: impl std::fmt::Debug) -> Mutect2Error {
 }
 
 /// `SomaticLikelihoodsEngine.logEvidence`.
-fn log_evidence(matrix: &Matrix, prior: &[f64]) -> Result<f64, Mutect2Error> {
+pub(crate) fn log_evidence(matrix: &Matrix, prior: &[f64]) -> Result<f64, Mutect2Error> {
     let posterior = allele_fractions_posterior(matrix, prior, None)
         .map_err(numerical)?
         .values;

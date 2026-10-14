@@ -1105,3 +1105,112 @@ impl OnRamp {
         .map_err(|e| format!("{e:?}"))
     }
 }
+
+/// `RampUtils.compareHaplotypes`: the same count, and pairwise equal once both are sorted by
+/// `HaplotypeComparator` (reference flag, contig, start, end, score, bases).
+pub fn compare_haplotypes(
+    first: &[gatk_engine::haplotype::Haplotype],
+    second: &[gatk_engine::haplotype::Haplotype],
+) -> Result<(), String> {
+    if first.len() != second.len() {
+        return Err(format!(
+            "java.lang.RuntimeException: haplotype size verification failed: {} vs {}",
+            first.len(),
+            second.len()
+        ));
+    }
+    let compare = |a: &gatk_engine::haplotype::Haplotype, b: &gatk_engine::haplotype::Haplotype| {
+        let location = |h: &gatk_engine::haplotype::Haplotype| {
+            h.genome_location()
+                .map(|l| (l.contig.clone(), l.start, l.end))
+                .unwrap_or_default()
+        };
+        let (ca, sa, ea) = location(a);
+        let (cb, sb, eb) = location(b);
+        (a.is_reference() as i32 - b.is_reference() as i32)
+            .cmp(&0)
+            .then_with(|| gatk_engine::java_hash::compare_strings(&ca, &cb))
+            .then_with(|| sa.cmp(&sb))
+            .then_with(|| ea.cmp(&eb))
+            .then_with(|| {
+                let delta = a.score() - b.score();
+                if delta < 0.0 {
+                    std::cmp::Ordering::Less
+                } else if delta > 0.0 {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .then_with(|| a.bases().cmp(&b.bases()))
+    };
+    let mut l1: Vec<_> = first.iter().collect();
+    let mut l2: Vec<_> = second.iter().collect();
+    l1.sort_by(|a, b| compare(a, b));
+    l2.sort_by(|a, b| compare(a, b));
+    for (i, (a, b)) in l1.iter().zip(&l2).enumerate() {
+        if compare(a, b) != std::cmp::Ordering::Equal {
+            return Err(format!(
+                "java.lang.RuntimeException: haplotype failed verification on index {i}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `RampUtils.compareReads`: the same count, and pairwise equal once both are sorted by
+/// `GATKReadComparator` (strand, name and span, bases, qualities, soft, aligned and unclipped
+/// ends).
+pub fn compare_reads(
+    first: &[htsjdk_bam::record::BamRecord],
+    second: &[htsjdk_bam::record::BamRecord],
+    header: &htsjdk_bam::header::SamHeader,
+) -> Result<(), String> {
+    use gatk_engine::read_utils as ru;
+    if first.len() != second.len() {
+        return Err(format!(
+            "java.lang.RuntimeException: reads size verification failed: {} vs {}",
+            first.len(),
+            second.len()
+        ));
+    }
+    let common = |r: &htsjdk_bam::record::BamRecord| {
+        let name = r.read_name.clone();
+        if r.flags & 0x4 != 0 || r.cigar.elements.is_empty() {
+            format!("{name} UNMAPPED")
+        } else {
+            let contig = header
+                .sequences
+                .get(r.reference_index.max(0) as usize)
+                .map(|s| s.name.clone())
+                .unwrap_or_default();
+            format!("{name} {contig}:{}-{}", ru::start(r), ru::end(r))
+        }
+    };
+    let compare = |a: &htsjdk_bam::record::BamRecord, b: &htsjdk_bam::record::BamRecord| {
+        let reverse = |r: &htsjdk_bam::record::BamRecord| (r.flags & 0x10 != 0) as i32;
+        (reverse(a) - reverse(b))
+            .cmp(&0)
+            .then_with(|| gatk_engine::java_hash::compare_strings(&common(a), &common(b)))
+            .then_with(|| a.read_bases.cmp(&b.read_bases))
+            .then_with(|| a.base_qualities.cmp(&b.base_qualities))
+            .then_with(|| ru::soft_start(a).cmp(&ru::soft_start(b)))
+            .then_with(|| ru::soft_end(a).cmp(&ru::soft_end(b)))
+            .then_with(|| ru::start(a).cmp(&ru::start(b)))
+            .then_with(|| ru::end(a).cmp(&ru::end(b)))
+            .then_with(|| ru::unclipped_start(a).cmp(&ru::unclipped_start(b)))
+            .then_with(|| ru::unclipped_end(a).cmp(&ru::unclipped_end(b)))
+    };
+    let mut l1: Vec<_> = first.iter().collect();
+    let mut l2: Vec<_> = second.iter().collect();
+    l1.sort_by(|a, b| compare(a, b));
+    l2.sort_by(|a, b| compare(a, b));
+    for (i, (a, b)) in l1.iter().zip(&l2).enumerate() {
+        if compare(a, b) != std::cmp::Ordering::Equal {
+            return Err(format!(
+                "java.lang.RuntimeException: reads failed verification on index {i}"
+            ));
+        }
+    }
+    Ok(())
+}

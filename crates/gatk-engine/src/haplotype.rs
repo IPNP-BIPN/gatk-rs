@@ -72,7 +72,12 @@ pub struct Haplotype {
     /// reference, its path score and the k-mer size of its graph. None of it takes part in
     /// equality; the accessors are in [`crate::haplotype_alignment`].
     pub(crate) alignment: HaplotypeAlignment,
+    /// `PartiallyDeterminedHaplotype`'s own state, for a haplotype that is one; its accessors are
+    /// in [`crate::partially_determined`].
+    pub(crate) pd: Option<Box<PartiallyDetermined>>,
 }
+
+pub use crate::partially_determined::{pd_bytes, PartiallyDetermined};
 
 impl Haplotype {
     /// `new Haplotype(bases, isRef)`.
@@ -89,6 +94,7 @@ impl Haplotype {
             // of `Double.NaN` (which is what a reference haplotype keeps, since the sequence-graph
             // finder never marks a path as the reference) and a k-mer size of 0.
             alignment: HaplotypeAlignment::default(),
+            pd: None,
         })
     }
 
@@ -130,24 +136,29 @@ impl Haplotype {
     ///
     /// `Arrays.hashCode` is `31 * result + element` from a seed of 1, over the signed byte values,
     /// wrapping like Java's `int`.
+    ///
+    /// A partially determined haplotype hashes its alternate bytes as well, which
+    /// [`crate::partially_determined::hash_code`] adds.
     pub fn java_hash_code(&self) -> i32 {
         let mut result: i32 = 1;
         for base in self.bases() {
             result = result.wrapping_mul(31).wrapping_add(i32::from(base as i8));
         }
-        result
+        crate::partially_determined::hash_code(result, self.pd.as_deref())
     }
 }
 
 /// `Haplotype.equals`: the uniqueness value, the reference flag, and the bases. Not the allele's
-/// own equality, which stops at the last two.
+/// own equality, which stops at the last two. A partially determined haplotype compares its own
+/// fields as well, which [`crate::partially_determined::equals`] decides.
 ///
 /// The last two are asked of the allele in one comparison: `Allele`'s own equality is the bases,
 /// the reference flag, and the two flags derived from the bases, so it answers the same question
 /// the two clauses do.
 impl PartialEq for Haplotype {
     fn eq(&self, other: &Self) -> bool {
-        self.uniqueness_value == other.uniqueness_value && self.allele == other.allele
+        let same = self.uniqueness_value == other.uniqueness_value && self.allele == other.allele;
+        crate::partially_determined::equals(same, self.pd.as_deref(), other.pd.as_deref())
     }
 }
 

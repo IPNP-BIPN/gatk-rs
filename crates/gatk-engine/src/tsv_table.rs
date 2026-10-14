@@ -235,37 +235,10 @@ pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &s
 /// written `1.0` and never `1`. A port that read the intent rather than the code would differ on
 /// every integral frequency, which is why this function is only `Double.toString`.
 ///
-/// Java prints the shortest decimal that round-trips, with `E` notation outside `[1e-3, 1e7)` and
-/// always a digit after the point. Rust's `{}` and `{:e}` have the same shortest-round-trip
-/// property, so the two agree on everything the contamination tables carry; the pre-JDK19
-/// `FloatingDecimal` can emit one digit more than needed for a few values needing 16 or 17
-/// significant digits, and the golden is what pins the ones this port writes.
+/// Java 17's `Double.toString`, which is not always the shortest decimal that round-trips: it
+/// can print a digit more, as at most powers of two, and `jmath` reproduces where.
 pub fn java_double_to_string(value: f64) -> String {
-    if value.is_nan() {
-        return "NaN".to_string();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
-    }
-    let magnitude = value.abs();
-    if magnitude != 0.0 && !(1e-3..1e7).contains(&magnitude) {
-        let rendered = format!("{value:e}");
-        let (mantissa, exponent) = rendered
-            .split_once('e')
-            .expect("an exponent form has its `e`");
-        let mantissa = if mantissa.contains('.') {
-            mantissa.to_string()
-        } else {
-            format!("{mantissa}.0")
-        };
-        return format!("{mantissa}E{exponent}");
-    }
-    let rendered = format!("{value}");
-    if rendered.contains('.') {
-        rendered
-    } else {
-        format!("{rendered}.0")
-    }
+    jmath::to_string::double_to_string(value)
 }
 
 /// opencsv's `processLine` with `applyQuotesToAll = false`.

@@ -192,6 +192,22 @@ def for_tool(values, per_tool, name):
     return merged
 
 
+def with_hidden(tool, per_tool):
+    """The tool with the arguments its fixtures declare under `$hidden`, which gatkdoc omits.
+
+    gatkdoc documents no `@Hidden` argument, so an argument collection that hides all of its own
+    (`RampedHaplotypeCallerArgumentCollection`) never reaches the inventory, and the array could
+    not vary it. Declaring one beside its values, in the inventory's shape, is what lets it vary
+    pairwise with the rest; the inventory itself stays what gatkdoc says.
+    """
+    hidden = (per_tool.get(tool["name"]) or {}).get("$hidden") or []
+    known = {arg["name"] for arg in tool["arguments"]}
+    extra = [arg for arg in hidden if arg["name"] not in known]
+    if not extra:
+        return tool
+    return {**tool, "arguments": tool["arguments"] + extra}
+
+
 def build(tool, fixtures, numeric_policy="strict", excluded_by_hand=None):
     """Split a tool's arguments into a covering-array domain and a list of exclusions."""
     domain, excluded = {}, []
