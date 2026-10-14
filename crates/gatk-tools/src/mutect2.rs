@@ -266,6 +266,9 @@ fn call_variants_with(
         // sets an original active probability, so every locus scores zero.
         let detection = &arguments.pileup_detection;
         let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
+        // The reads `isActive` gives `MZ`: every read of a non-empty pileup it examines.
+        let mut seen: std::collections::HashSet<crate::pileup_based_alleles::ReadKey> =
+            std::collections::HashSet::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -311,6 +314,11 @@ fn call_variants_with(
                 if forced {
                     return (1.0, None);
                 }
+                if let Some(context) = context.filter(|_| detection.use_pileup_detection) {
+                    for element in &context.pileup.elements {
+                        seen.insert(crate::pileup_based_alleles::read_key(element.read));
+                    }
+                }
                 let prob = is_active(
                     context,
                     bases[locus.start as usize - 1],
@@ -340,7 +348,14 @@ fn call_variants_with(
             bamout,
             assembly_variants,
         };
-        for traversed in regions {
+        for mut traversed in regions {
+            if detection.use_pileup_detection {
+                crate::pileup_based_alleles::tag_mismatch_percentage(
+                    &mut traversed.region,
+                    &seen,
+                    &bases,
+                );
+            }
             if let Some(out) = region_out {
                 out.borrow_mut()
                     .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));

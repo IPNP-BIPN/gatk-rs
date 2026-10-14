@@ -122,6 +122,8 @@ pub struct HaplotypeCallerError {
     /// its writer, and closes it in a `finally`, so an error the writer raises over them is the
     /// one the run reports.
     pub calls_before: Vec<VariantContext>,
+    /// Raised as the engine is built, before the VCF writer exists: nothing is written.
+    pub at_startup: bool,
 }
 
 impl HaplotypeCallerError {
@@ -130,6 +132,25 @@ impl HaplotypeCallerError {
             class: class.to_string(),
             message: message.into(),
             calls_before: Vec::new(),
+            at_startup: false,
+        }
+    }
+}
+
+/// What the engine leaves when it fails as it is built, after the outputs it opens before the
+/// allele-likelihood writer: `--assembly-region-out`'s header (the walker opens it first), an empty
+/// `--debug-assembly-region-state`, and the bamout and its index, created and never flushed.
+fn leave_startup_files(arguments: &HaplotypeCallerArguments) {
+    if let Some(path) = &arguments.assembly_region_out {
+        let _ = std::fs::write(path, crate::hc_region::ASSEMBLY_REGION_OUT_HEADER);
+    }
+    if let Some(path) = &arguments.assembly_state_output {
+        let _ = std::fs::write(path, "");
+    }
+    if let Some(bamout) = &arguments.bamout {
+        let _ = std::fs::write(&bamout.path, "");
+        if bamout.create_index {
+            let _ = std::fs::write(bamout.path.with_extension("bai"), "");
         }
     }
 }
@@ -259,7 +280,11 @@ pub fn call_variants(
                 crate::allele_likelihood_writer::parse_simple_interval(interval.as_deref())
                     .map_err(|message| {
                         let (class, rest) = message.split_once(": ").expect("class: message");
-                        HaplotypeCallerError::new(class, rest.to_string())
+                        leave_startup_files(arguments);
+                        HaplotypeCallerError {
+                            at_startup: true,
+                            ..HaplotypeCallerError::new(class, rest.to_string())
+                        }
                     })?,
             ),
         )),
@@ -441,6 +466,9 @@ fn call_variants_into(
         // `region.getAlignmentData()`: every locus walked, kept only with pileup detection.
         let detection = &arguments.pileup_detection;
         let mut loci: Vec<crate::pileup_based_alleles::LocusSummary> = Vec::new();
+        // The reads `isActive` gives `MZ`: every read of a non-empty pileup it examines.
+        let mut seen: std::collections::HashSet<crate::pileup_based_alleles::ReadKey> =
+            std::collections::HashSet::new();
         let regions = traverse_with_pileups(
             reads,
             &group,
@@ -505,6 +533,9 @@ fn call_variants_into(
                 };
                 let state = evaluator.is_active(context, ref_base, header);
                 if detection.use_pileup_detection {
+                    for element in &context.pileup.elements {
+                        seen.insert(crate::pileup_based_alleles::read_key(element.read));
+                    }
                     let score = state.as_ref().map_or(0.0, |s| s.original_active_prob);
                     loci.push(crate::pileup_based_alleles::LocusSummary::new(
                         context,
@@ -607,6 +638,13 @@ fn call_variants_into(
             },
         };
         for mut traversed in regions {
+            if detection.use_pileup_detection {
+                crate::pileup_based_alleles::tag_mismatch_percentage(
+                    &mut traversed.region,
+                    &seen,
+                    &bases,
+                );
+            }
             if let Some(out) = region_out {
                 out.borrow_mut()
                     .push_str(&crate::hc_region::assembly_region_rows(&traversed.region));

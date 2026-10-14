@@ -991,6 +991,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
     // those records, raised as it closes, is what the run reports.
     let (mut written, failure) = match called {
         Ok(calls) => (calls, None),
+        // Before the VCF writer exists: the run ends with nothing more written.
+        Err(error) if error.at_startup => {
+            return Err(Thrown::non_user(
+                java_class_name(&error.class),
+                error.message,
+            ));
+        }
         Err(error) => (
             error.calls_before,
             // A `UserException` is reported as a user error, by its message alone.

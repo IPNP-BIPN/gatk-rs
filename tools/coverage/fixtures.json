@@ -12224,6 +12224,28 @@
         "--normal-sample": "normal"
       },
       "why": "flow_calls.bam has no normal sample, so naming one is the same refusal on every row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dont-genotype": "true",
+        "--emit-ref-confidence": "GVCF"
+      },
+      "why": "Reference-confidence mode refuses --dont-genotype before anything runs, so the pair would only measure that refusal, which the hc-debug-outputs suite does, and the rows it fills would hide the reference-confidence tuples."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dont-genotype": "true",
+        "--emit-ref-confidence": "BP_RESOLUTION"
+      },
+      "why": "Reference-confidence mode refuses --dont-genotype before anything runs, so the pair would only measure that refusal, which the hc-debug-outputs suite does, and the rows it fills would hide the reference-confidence tuples."
     }
   ],
   "exclude": {
