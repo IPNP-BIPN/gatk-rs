@@ -270,6 +270,13 @@ pub fn create_allele_mapper(
         result.iter().position(|(a, _)| a == allele)
     };
     for (h, haplotype) in haplotypes.iter().enumerate() {
+        // A partially determined haplotype supports nothing away from its determined position.
+        if haplotype
+            .partially_determined()
+            .is_some_and(|pd| pd.determined_position != loc)
+        {
+            continue;
+        }
         let map = haplotype.event_map().ok_or(MappingError::NoEventMap)?;
         let overlapping = map.overlapping_events(loc);
         if overlapping.is_empty() {

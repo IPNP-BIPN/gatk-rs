@@ -177,6 +177,7 @@ const HONOURED: &[&str] = &[
     "disable-optimizations",
     // DRAGEN mode and DRAGstr.
     "dragen-mode",
+    "dragen-378-concordance-mode",
     "apply-bqd",
     "apply-frd",
     "transform-dragen-mapping-quality",
@@ -235,13 +236,47 @@ const DRAGEN_3412_MODE: &[(&str, &str)] = &[
     ("use-posteriors-to-calculate-qual", "true"),
 ];
 
+/// `getDragenVersion378NameValuePairs`: what `--dragen-378-concordance-mode` sets, 3.4.12's
+/// arguments with a calling threshold of 1.0, and pileup detection with its heuristics and the
+/// PDHMM.
+const DRAGEN_378_MODE: &[(&str, &str)] = &[
+    ("apply-bqd", "true"),
+    ("apply-frd", "true"),
+    ("transform-dragen-mapping-quality", "true"),
+    ("soft-clip-low-quality-ends", "true"),
+    ("mapping-quality-threshold-for-genotyping", "1"),
+    ("minimum-mapping-quality", "1"),
+    ("allele-informative-reads-overlap-margin", "1"),
+    ("disable-cap-base-qualities-to-map-quality", "true"),
+    (
+        "enable-dynamic-read-disqualification-for-genotyping",
+        "true",
+    ),
+    ("expected-mismatch-rate-for-read-disqualification", "0.03"),
+    ("genotype-assignment-method", "USE_POSTERIOR_PROBABILITIES"),
+    ("padding-around-indels", "150"),
+    ("standard-min-confidence-threshold-for-calling", "1.0"),
+    ("use-posteriors-to-calculate-qual", "true"),
+    ("pileup-detection", "true"),
+    ("pileup-detection-absolute-alt-depth", "0"),
+    ("pileup-detection-bad-read-tolerance", "0.40"),
+    ("pileup-detection-enable-indel-pileup-calling", "true"),
+    ("pileup-detection-active-region-phred-threshold", "3.0"),
+    ("use-pdhmm", "true"),
+    (
+        "pileup-detection-filter-assembly-alt-bad-read-tolerance",
+        "0.4",
+    ),
+];
+
 /// `HaplotypeCaller.customCommandLineValidation`, which runs as the last step of parsing: DRAGEN
 /// mode beside flow mode is refused; otherwise DRAGEN mode lowers the resolved mapping-quality
 /// filter to 1 **whatever the command line said**, and then sets its arguments where the command
-/// line did not. `--dragen-378-concordance-mode` is refused before this, as an argument the port
-/// does not carry.
+/// line did not, 3.7.8's pairs for `--dragen-378-concordance-mode`.
 pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thrown> {
-    let dragen = flag(parser, "dragen-mode");
+    // `isDragenGATKMode()`: either DRAGEN version.
+    let dragen_378 = flag(parser, "dragen-378-concordance-mode");
+    let dragen = flag(parser, "dragen-mode") || dragen_378;
     let flow = scalar(parser, "flow-mode").is_some_and(|mode| mode != "NONE");
     if dragen && flow {
         return Err(Thrown::user(
@@ -258,7 +293,11 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
                 .map_err(|error| Thrown::command_line(error.message))?;
         }
         parser
-            .set_mode_values(DRAGEN_3412_MODE)
+            .set_mode_values(if dragen_378 {
+                DRAGEN_378_MODE
+            } else {
+                DRAGEN_3412_MODE
+            })
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     // `FlowMode`: STANDARD, or ADVANCED's pairs before STANDARD's.
@@ -646,6 +685,13 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
         region,
         assembler: assembler_arguments(parser, flag(parser, "adaptive-pruning")),
         pileup_detection: super::pileup_detection_arguments(parser),
+        pdhmm: flag(parser, "use-pdhmm").then(|| gatk_tools::haplotype_caller::PdhmmArguments {
+            use_determined_haplotypes: flag(parser, "make-determined-haps-from-pd-code"),
+            gga_fallback: scalar(parser, "fallback-gga-if-pdhmm-fails")
+                .is_none_or(|text| text.eq_ignore_ascii_case("true")),
+            overlap_optimization: flag(parser, "use-pdhmm-overlap-optimization"),
+            results_file: argument(parser, "pdhmm-results-file").map(std::path::PathBuf::from),
+        }),
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,

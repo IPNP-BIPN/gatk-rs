@@ -11247,6 +11247,12 @@ pub(crate) const PILEUP_DETECTION_ARGUMENTS: &[&str] = &[
     "pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
     // `debugPileupStdout` only prints to standard output.
     "print-pileupcalling-status",
+    // The PDHMM's, which HaplotypeCaller reads and Mutect2 declares without reading.
+    "use-pdhmm",
+    "use-pdhmm-overlap-optimization",
+    "pdhmm-results-file",
+    "make-determined-haps-from-pd-code",
+    "fallback-gga-if-pdhmm-fails",
 ];
 
 /// `FlowBasedArgumentCollection`, as a command line sets it.

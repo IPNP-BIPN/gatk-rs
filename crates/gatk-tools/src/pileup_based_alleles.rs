@@ -20,12 +20,12 @@
 //! `HashMap<Event, ..>`) decide the insertion order into it, which matters for events sharing a
 //! bucket. All of them are modelled with [`JavaHashMap`].
 //!
-//! # A removal that removes nothing
+//! # A removal that usually removes nothing
 //!
 //! `removeHaplotypesWithBadAlleles` matches events against each haplotype's event map, and both
 //! callers run it on a freshly trimmed set, whose haplotypes have none: `Haplotype.trim` does not
-//! carry the map over. The bad events still reach HaplotypeCaller's trimmer, which is the only
-//! place they act.
+//! carry the map over. The bad events then act only in HaplotypeCaller's trimmer. The exception is
+//! the fallback after the PD engine gave up, which built the maps on its way.
 
 use gatk_engine::assembly_region::AssemblyRegion;
 use gatk_engine::assembly_result_set::{AssemblyResultSet, ResultSetError};
@@ -494,6 +494,26 @@ fn tree_set_add(set: &mut Vec<Haplotype>, haplotype: Haplotype) {
     match set.binary_search_by(|probe| compare_haplotypes(probe, &haplotype)) {
         Ok(_) => {}
         Err(at) => set.insert(at, haplotype),
+    }
+}
+
+/// `removeHaplotypesWithBadAlleles`: every haplotype whose event map holds a bad event. A
+/// haplotype with no map is kept, which is every haplotype of a freshly trimmed set.
+pub fn remove_haplotypes_with_bad_alleles(assembly: &mut AssemblyResultSet, bad: &[Event]) {
+    if bad.is_empty() {
+        return;
+    }
+    let flagged: Vec<Haplotype> = assembly
+        .haplotype_list()
+        .iter()
+        .filter(|h| {
+            h.event_map()
+                .is_some_and(|map| map.events().any(|e| bad.contains(e)))
+        })
+        .cloned()
+        .collect();
+    for haplotype in &flagged {
+        assembly.remove_haplotype(haplotype);
     }
 }
 

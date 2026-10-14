@@ -97,6 +97,21 @@ pub struct CallRegionContext<'a> {
         &'a crate::pileup_based_alleles::PileupDetectionArguments,
         &'a [crate::pileup_based_alleles::LocusSummary],
     )>,
+    /// `--use-pdhmm`: partially determined haplotypes and the engine that scores them.
+    pub pd: Option<PdContext<'a>>,
+}
+
+/// What `--use-pdhmm` runs with.
+pub struct PdContext<'a> {
+    pub arguments: crate::pd_haplotypes::PdArguments,
+    /// `--fallback-gga-if-pdhmm-fails`.
+    pub gga_fallback: bool,
+    /// `informativeReadOverlapMargin` with `--use-pdhmm-overlap-optimization`, else -1.
+    pub overlap_range: i32,
+    /// `PDPairHMMLikelihoodCalculationEngine`, built from the likelihood arguments.
+    pub engine: &'a gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine,
+    /// `--pdhmm-results-file`'s text.
+    pub results: Option<&'a std::cell::RefCell<String>>,
 }
 
 /// `AlignmentUtils.unclippedReadLength`: the bases that are not soft-clipped.
@@ -230,6 +245,7 @@ pub fn call_region(
     };
     // The good pileup events, injected once the set is trimmed.
     let mut good_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
+    let mut bad_pileup_events: Vec<gatk_engine::event_map::Event> = Vec::new();
     let (mut assembly, trimmed) = if let Some(assembled) = from_ramp {
         assembled
     } else {
@@ -276,6 +292,7 @@ pub fn call_region(
             .map_err(calling)?;
             events = crate::pileup_based_alleles::events_for_trimming(&events, &good, &bad);
             good_pileup_events = good;
+            bad_pileup_events = bad;
         }
         let padded = region.padded_span().clone();
         let padded_bases = &context.contig_bases[padded.start as usize - 1..padded.end as usize];
@@ -314,9 +331,32 @@ pub fn call_region(
             .map_err(|e| calling(format!("{e:?}")))?;
         (assembly, trimmed)
     };
-    // `injectPileupEvents`, after a `removeHaplotypesWithBadAlleles` that the trimmed set's
-    // missing event maps leave without effect.
-    if let Some((detection, _)) = context.pileup {
+    // `generatePDHaplotypes`: the assembled haplotypes replaced by partially determined ones,
+    // unless the construction gave up. The reference is kept aside: the set no longer has one.
+    let assembled_reference = assembly.reference_haplotype().cloned();
+    if let Some(pd) = &context.pd {
+        crate::pd_haplotypes::generate_pd_haplotypes(
+            &mut assembly,
+            &bad_pileup_events,
+            &good_pileup_events,
+            context.aligner,
+            &context.assembly.haplotype_to_reference_sw,
+            &pd.arguments,
+        )
+        .map_err(calling)?;
+    }
+    // The pileup events go in the GGA way without PD haplotypes, or when they gave up and the
+    // fallback is on: the haplotypes carrying a bad event out (only a set the PD engine built
+    // event maps for has any to match), then the good events in.
+    let fallback = context
+        .pd
+        .as_ref()
+        .is_none_or(|pd| pd.gga_fallback && !assembly.has_overwritten_haps());
+    if let (true, Some((detection, _))) = (fallback, context.pileup) {
+        crate::pileup_based_alleles::remove_haplotypes_with_bad_alleles(
+            &mut assembly,
+            &bad_pileup_events,
+        );
         crate::pileup_based_alleles::inject_pileup_events(
             &mut assembly,
             &region,
@@ -440,6 +480,7 @@ pub fn call_region(
         .clone();
     let reference_haplotype = assembly
         .reference_haplotype()
+        .or(assembled_reference.as_ref())
         .expect("a trimmed set has its reference")
         .clone();
     // The post-filter on ramp: the likelihoods are the file's, over the file's haplotypes and the
@@ -486,11 +527,31 @@ pub fn call_region(
             None,
         );
     }
-    let mut likelihoods = context
-        .stepwise_engine
-        .unwrap_or(context.likelihood_engine)
-        .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
-        .map_err(calling)?;
+    let mut likelihoods = match (&context.pd, context.stepwise_engine) {
+        // The PDHMM, over a set of partially determined haplotypes and without stepwise filtering.
+        (Some(pd), None) if assembly.is_partially_determined_list() => {
+            let mut results = pd.results.map(|cell| cell.borrow_mut());
+            pd.engine
+                .compute_read_likelihoods_partially_determined(
+                    &haplotypes,
+                    context.samples,
+                    &reads,
+                    pd.overlap_range,
+                    results.as_deref_mut(),
+                )
+                .map_err(|e| match e {
+                    gatk_engine::pair_hmm_likelihood_engine::LikelihoodEngineError::Thrown(m) => {
+                        calling(m)
+                    }
+                    other => calling(format!("{other:?}")),
+                })?
+        }
+        _ => context
+            .stepwise_engine
+            .unwrap_or(context.likelihood_engine)
+            .compute_read_likelihoods(&haplotypes, context.header, context.samples, &reads)
+            .map_err(calling)?,
+    };
     // Stepwise filtering: the main engine scores the reads again over the haplotypes the
     // filter kept, in their order.
     let rescore = |likelihoods: &mut AlleleLikelihoods<BamRecord, Haplotype>,
@@ -583,19 +644,27 @@ pub fn call_region(
         )?;
         rescore(&mut likelihoods, &haplotypes)?;
     }
-    realign_reads_to_their_best_haplotype(
-        &mut likelihoods,
-        &reference_haplotype,
-        ref_loc.start,
-        context.aligner,
-        // The ramped engine realigns with the haplotype-to-reference weights.
-        if ramped {
-            &context.assembly.haplotype_to_reference_sw
-        } else {
-            &context.assembly.read_to_haplotype_sw
-        },
-    )
-    .map_err(|e| calling(format!("{e:?}")))?;
+    // No realignment with PD haplotypes, whose bases no longer say what they carry, whether or
+    // not the construction gave up.
+    let realign = context
+        .pd
+        .as_ref()
+        .is_none_or(|pd| pd.arguments.use_determined_haplotypes);
+    if realign {
+        realign_reads_to_their_best_haplotype(
+            &mut likelihoods,
+            &reference_haplotype,
+            ref_loc.start,
+            context.aligner,
+            // The ramped engine realigns with the haplotype-to-reference weights.
+            if ramped {
+                &context.assembly.haplotype_to_reference_sw
+            } else {
+                &context.assembly.read_to_haplotype_sw
+            },
+        )
+        .map_err(|e| calling(format!("{e:?}")))?;
+    }
     if let (true, Some(engine)) = (ramped, &collapsing) {
         uncollapse(engine, &mut likelihoods, &mut haplotypes, context.aligner).map_err(calling)?;
     }
@@ -747,6 +816,13 @@ fn finish_region(
         result.extend(reference_model_for_no_variation(flank, false, context)?);
     }
     let sample = &context.samples[0];
+    // `Utils.nonNull(refHaplotype, message)`, an `IllegalArgumentException`: a set of partially
+    // determined haplotypes has none.
+    if assembly.reference_haplotype().is_none() {
+        return Err(calling(
+            "java.lang.IllegalArgumentException: refHaplotype cannot be null".to_string(),
+        ));
+    }
     result.extend(
         calculate_ref_confidence(
             &reference_haplotype.bases(),

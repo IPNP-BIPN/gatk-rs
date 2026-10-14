@@ -87,6 +87,7 @@ pub mod normal_artifact_filter;
 pub mod overhang_fixing_manager;
 pub mod pair_hmm;
 pub mod pair_hmm_likelihood_engine;
+pub mod pd_pair_hmm;
 pub mod permutation;
 pub mod persistence_optimizer;
 pub mod pileup;

@@ -8094,9 +8094,8 @@
         "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
-        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: pileup detection and the partially determined PairHMM.",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
+        "beside --dragen-mode, which every row sets.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
@@ -8116,7 +8115,10 @@
         "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
         "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
-        "size) take their default first and one value that moves the outcome."
+        "size) take their default first and one value that moves the outcome.",
+        "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -8263,8 +8265,14 @@
         "false",
         "true"
       ],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
       "--linked-de-bruijn-graph": [
         "false",
         "true"
@@ -8651,6 +8659,42 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -8793,6 +8837,18 @@
       "--print-pileupcalling-status": [
         "false",
         "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
       ]
     },
     "Mutect2": {
@@ -8826,7 +8882,8 @@
         "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
         "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
-        "size) take their default first and one value that moves the outcome."
+        "size) take their default first and one value that moves the outcome.",
+        "Mutect2 declares the PDHMM's arguments and reads none of them; they vary all the same."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -8979,8 +9036,14 @@
         "false",
         "true"
       ],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
       "--linked-de-bruijn-graph": [
         "false",
         "true"
@@ -9352,6 +9415,42 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--flow-fill-empty-bins-value": [
@@ -9490,6 +9589,18 @@
       "--print-pileupcalling-status": [
         "false",
         "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -9506,9 +9617,8 @@
         "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
-        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: pileup detection and the partially determined PairHMM.",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
+        "beside --dragen-mode, which every row sets.",
         "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
         "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
@@ -9532,7 +9642,10 @@
         "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
         "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
         "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
-        "size) take their default first and one value that moves the outcome."
+        "size) take their default first and one value that moves the outcome.",
+        "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -9679,8 +9792,14 @@
         "false",
         "true"
       ],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
       "--linked-de-bruijn-graph": [
         "false",
         "true"
@@ -10171,6 +10290,42 @@
           "min": null,
           "max": null,
           "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
         }
       ],
       "--disable-artificial-haplotype-recovery": [
@@ -10317,6 +10472,18 @@
       "--print-pileupcalling-status": [
         "false",
         "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
       ]
     }
   },

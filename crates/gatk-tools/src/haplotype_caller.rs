@@ -49,6 +49,8 @@ pub struct HaplotypeCallerArguments {
     pub is_active: IsActiveArguments,
     /// `PileupDetectionArgumentCollection`.
     pub pileup_detection: crate::pileup_based_alleles::PileupDetectionArguments,
+    /// `--use-pdhmm` and its switches.
+    pub pdhmm: Option<PdhmmArguments>,
     /// The padding the trimmer reads, which is `--assembly-region-padding` and the
     /// genotyping paddings.
     pub trimmer: TrimmerArguments,
@@ -124,6 +126,19 @@ pub fn samples_from_header(header: &SamHeader) -> Vec<String> {
     samples
 }
 
+/// `--use-pdhmm`'s arguments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdhmmArguments {
+    /// `--make-determined-haps-from-pd-code`.
+    pub use_determined_haplotypes: bool,
+    /// `--fallback-gga-if-pdhmm-fails`.
+    pub gga_fallback: bool,
+    /// `--use-pdhmm-overlap-optimization`.
+    pub overlap_optimization: bool,
+    /// `--pdhmm-results-file`.
+    pub results_file: Option<std::path::PathBuf>,
+}
+
 /// The run: `reads` already filtered and in coordinate order, `intervals` the traversal
 /// intervals, and `contig_bases` a contig's whole sequence by name.
 pub fn call_variants(
@@ -136,7 +151,29 @@ pub fn call_variants(
     random: &mut JavaRandom,
 ) -> Result<Vec<VariantContext>, HaplotypeCallerError> {
     let mut calls = Vec::new();
-    match call_variants_into(
+    // `PDPairHMMLikelihoodCalculationEngine`, built with the engine, and its results file, opened
+    // then with its header line and closed as the engine shuts down, after a failure too.
+    let pd_engine = arguments
+        .pdhmm
+        .as_ref()
+        .map(|_| {
+            gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine::new(
+                arguments.likelihoods.clone(),
+            )
+        })
+        .transpose()
+        .map_err(|e| HaplotypeCallerError::new("IllegalArgumentException", format!("{e:?}")))?;
+    let results_file = arguments
+        .pdhmm
+        .as_ref()
+        .and_then(|pdhmm| pdhmm.results_file.clone());
+    let results = results_file.as_ref().map(|_| {
+        std::cell::RefCell::new(
+            "# hap-bases\thap-pd-bases\tread-bases\tread-qual\tread-ins-qual\tread-del-qual\tgcp\texpected-result"
+                .to_string(),
+        )
+    });
+    let outcome = call_variants_into(
         reads,
         header,
         intervals,
@@ -144,8 +181,16 @@ pub fn call_variants(
         annotator,
         contig_bases,
         random,
+        pd_engine.as_ref(),
+        results.as_ref(),
         &mut calls,
-    ) {
+    );
+    if let (Some(path), Some(text)) = (&results_file, &results) {
+        std::fs::write(path, text.borrow().as_bytes()).map_err(|e| {
+            HaplotypeCallerError::new("UserException.CouldNotCreateOutputFile", e.to_string())
+        })?;
+    }
+    match outcome {
         Ok(()) => Ok(calls),
         Err(mut error) => {
             error.calls_before = calls;
@@ -164,6 +209,8 @@ fn call_variants_into(
     annotator: &AnnotatorEngine,
     contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
     random: &mut JavaRandom,
+    pd_engine: Option<&gatk_engine::pair_hmm_likelihood_engine::PairHmmLikelihoodEngine>,
+    pd_results: Option<&std::cell::RefCell<String>>,
     calls: &mut Vec<VariantContext>,
 ) -> Result<(), HaplotypeCallerError> {
     let header_samples = samples_from_header(header);
@@ -342,6 +389,27 @@ fn call_variants_into(
             // RampedHaplotypeCallerEngine reads no pileup events.
             pileup: (detection.use_pileup_detection && !genotyping.ramped_engine)
                 .then_some((detection, loci.as_slice())),
+            // RampedHaplotypeCallerEngine makes no PD haplotypes.
+            pd: match (&arguments.pdhmm, pd_engine) {
+                (Some(pdhmm), Some(engine)) if !genotyping.ramped_engine => {
+                    Some(crate::hc_region::PdContext {
+                        arguments: crate::pd_haplotypes::PdArguments {
+                            use_determined_haplotypes: pdhmm.use_determined_haplotypes,
+                            snp_adjacent_to_assembly_indel: detection
+                                .snp_adjacent_to_assembly_indel,
+                        },
+                        gga_fallback: pdhmm.gga_fallback,
+                        overlap_range: if pdhmm.overlap_optimization {
+                            genotyping.informative_read_overlap_margin
+                        } else {
+                            -1
+                        },
+                        engine,
+                        results: pd_results,
+                    })
+                }
+                _ => None,
+            },
         };
         for mut traversed in regions {
             // `removeReadsFromAllSamplesExcept`.

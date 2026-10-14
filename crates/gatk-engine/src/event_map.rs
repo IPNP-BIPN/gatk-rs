@@ -476,7 +476,11 @@ pub fn build_event_maps_for_haplotypes(
         ));
     }
     for haplotype in haplotypes.iter_mut() {
-        let map = EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?;
+        // A partially determined haplotype knows its variants: its determined events.
+        let map = match haplotype.partially_determined() {
+            Some(pd) => EventMap::new(pd.determined_events.clone())?,
+            None => EventMap::from_haplotype(haplotype, reference, ref_loc, max_mnp_distance)?,
+        };
         haplotype.set_event_map(map);
     }
     Ok(())
