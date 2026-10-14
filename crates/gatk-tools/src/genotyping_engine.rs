@@ -80,6 +80,9 @@ pub struct Configuration {
     pub annotate_all_sites_with_pls: bool,
     /// `HaplotypeCallerGenotypingEngine.forceKeepAllele` in GVCF mode: every alternate is output.
     pub force_keep_all_alleles: bool,
+    /// `HaplotypeCallerGenotypingEngine.forceKeepAllele`'s other half: `<NON_REF>` is output
+    /// whatever the mode, which `MinimalGenotypingEngine` does not do.
+    pub force_keep_non_ref: bool,
     /// `genotypeArgs.genotypeAssignmentMethod`, which assigns the emitted genotypes.
     pub assignment_method: SubsetMethod,
 }
@@ -922,6 +925,7 @@ impl GenotypingEngine {
             let spurious_span_del = is_span_del(allele) && !self.is_covered_by_deletion(vc);
             let to_output = (plausible
                 || self.configuration.force_keep_all_alleles
+                || (self.configuration.force_keep_non_ref && *allele == non_ref())
                 || lone_non_ref
                 || forced.contains(allele))
                 && !spurious_span_del;

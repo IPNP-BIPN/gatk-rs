@@ -164,6 +164,7 @@ const HONOURED: &[&str] = &[
     "dbsnp",
     "comparison",
     "population-callset",
+    "ploidy-regions",
     "num-reference-samples-if-no-call",
     // Genotyping options.
     "all-site-pls",
@@ -351,6 +352,89 @@ pub fn haplotype_caller_modes(parser: &mut Parser, tool: &str) -> Result<(), Thr
             .map_err(|error| Thrown::non_user(error.class, error.message))?;
     }
     Ok(())
+}
+
+/// `--ploidy-regions`, read as `HaplotypeCallerEngine` reads it: each BED feature a `SimpleCount`
+/// whose name is the ploidy, then every interval checked against the reads' dictionary. Each
+/// refusal comes once the engine has opened `--debug-assembly-region-state` and
+/// `--debug-genotyper-output` (empty) and the walker `--assembly-region-out` (its header).
+fn ploidy_regions(
+    parser: &Parser,
+    header: &htsjdk_bam::header::SamHeader,
+) -> Result<Vec<gatk_tools::haplotype_caller::PloidyRegion>, Thrown> {
+    let Some(path) = argument(parser, "ploidy-regions") else {
+        return Ok(Vec::new());
+    };
+    let refuse = |thrown: Thrown| {
+        if let Some(out) = argument(parser, "assembly-region-out") {
+            let _ = std::fs::write(out, gatk_tools::hc_region::ASSEMBLY_REGION_OUT_HEADER);
+        }
+        for name in ["debug-assembly-region-state", "debug-genotyper-output"] {
+            if let Some(out) = argument(parser, name) {
+                let _ = std::fs::write(out, "");
+            }
+        }
+        thrown
+    };
+    let (_, text) = open_feature_input(&path)?;
+    let mut regions = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty()
+            || line.starts_with('#')
+            || line.starts_with("track")
+            || line.starts_with("browser")
+        {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let contig = fields[0].to_string();
+        let start = fields.get(1).and_then(|f| f.trim().parse::<i32>().ok()).unwrap_or(0) + 1;
+        let end = fields.get(2).and_then(|f| f.trim().parse::<i32>().ok()).unwrap_or(0);
+        let place = format!("{contig}:{start}-{end}");
+        let count = match fields.get(3).and_then(|f| f.trim().parse::<i64>().ok()) {
+            Some(count) if count <= i64::from(i32::MAX) && count >= i64::from(i32::MIN) => count,
+            _ => {
+                return Err(refuse(Thrown::non_user(
+                    "java.lang.IllegalArgumentException",
+                    format!("Error parsing name into integer for feature at {place}."),
+                )))
+            }
+        };
+        if count < 0 {
+            return Err(refuse(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("Can't construct SimpleCount with negative count at {place}."),
+            )));
+        }
+        regions.push(gatk_tools::haplotype_caller::PloidyRegion {
+            contig,
+            start,
+            end,
+            ploidy: count as usize,
+        });
+    }
+    for region in &regions {
+        let on_dictionary = header
+            .sequences
+            .iter()
+            .any(|s| s.name == region.contig && region.start >= 1 && i64::from(region.end) <= i64::from(s.length));
+        if !on_dictionary {
+            return Err(refuse(Thrown::user(format!(
+                "Invalid region provided for --ploidy-regions at {}:{}-{}. Contig name or endpoint \
+                 doesn't match read sequence dictionary.",
+                region.contig, region.start, region.end
+            ))));
+        }
+    }
+    // `SimpleCount` takes a zero, and the engine then builds a genotyper for it, whose
+    // `HomogeneousPloidyModel` refuses any ploidy that is not positive.
+    if regions.iter().any(|r| r.ploidy == 0) {
+        return Err(refuse(Thrown::non_user(
+            "java.lang.IllegalArgumentException",
+            "does not support negative ploidy",
+        )));
+    }
+    Ok(regions)
 }
 
 /// What `buildRamps` leaves when it refuses: it runs once `HaplotypeCallerEngine` is built, so
@@ -790,6 +874,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             overlap_optimization: flag(parser, "use-pdhmm-overlap-optimization"),
             results_file: argument(parser, "pdhmm-results-file").map(std::path::PathBuf::from),
         }),
+        ploidy_regions: ploidy_regions(parser, &header)?,
         is_active: IsActiveArguments {
             sample_ploidy: ploidy,
             snp_heterozygosity: priors.snp_heterozygosity,
@@ -953,6 +1038,7 @@ fn run(parser: &Parser, tool: &str) -> Outcome {
             annotate_all_sites_with_pls: emit_reference_confidence || flag(parser, "all-site-pls"),
             // `forceKeepAllele` is true for every allele with reference confidence.
             force_keep_all_alleles: emit_reference_confidence,
+            force_keep_non_ref: true,
             assignment_method,
         },
         priors,

@@ -8123,7 +8123,8 @@
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
-        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent."
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -9142,6 +9143,11 @@
       "--num-reference-samples-if-no-call": [
         "0",
         "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
       ]
     },
     "Mutect2": {
@@ -10138,7 +10144,8 @@
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
-        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent."
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -11265,6 +11272,11 @@
       "--num-reference-samples-if-no-call": [
         "0",
         "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
       ]
     }
   },

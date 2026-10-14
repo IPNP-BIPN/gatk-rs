@@ -7918,6 +7918,31 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "hc-ploidy",
+      "status": "golden-pending",
+      "title": "--ploidy-regions in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--ploidy-regions (G3.2p, #1350). Each BED feature is a SimpleCount whose name is the ploidy, checked against the reads' dictionary; the engine builds one genotyper and one active-region evaluator per distinct ploidy, and an assembly region overlapping a ploidy region is genotyped at the ploidy of the last overlapping feature, its reference-confidence blocks too. A name that is no integer, a negative count, a contig or an end off the dictionary and a zero ploidy are refused. Over HcEndToEndDump's reads: haploid, triploid and overlapping regions, a region narrower than the call interval, GVCF and base-pair-resolution mode, --sample-ploidy beside the regions, and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 27,
+      "expect_contains": [
+        "out\thc-haploid-bp=",
+        "error\thc-zero\tjava.lang.IllegalArgumentException:does not support negative ploidy"
+      ],
+      "cases": [
+        {
+          "dump": "HcPloidyDump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

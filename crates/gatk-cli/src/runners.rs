@@ -14637,6 +14637,7 @@ pub fn reblock_gvcf(parser: &Parser) -> Outcome {
         emit_all_confident_sites: true,
         annotate_all_sites_with_pls: true,
         force_keep_all_alleles: true,
+        force_keep_non_ref: false,
         assignment_method: genotyping::SubsetMethod::from_name(&assignment)
             .unwrap_or(genotyping::SubsetMethod::UsePlsToAssign),
     };
@@ -16448,6 +16449,7 @@ pub fn genotype_gvcfs(parser: &Parser) -> Outcome {
         emit_all_confident_sites: false,
         annotate_all_sites_with_pls: false,
         force_keep_all_alleles: false,
+        force_keep_non_ref: false,
         // `createMinimalArgs` sets PREFER_PLS whatever `--genotype-assignment-method` says.
         assignment_method: genotyping::SubsetMethod::PreferPls,
     };

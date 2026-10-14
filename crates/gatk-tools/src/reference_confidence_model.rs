@@ -139,7 +139,7 @@ pub fn calculate_ref_confidence(
         let overlapping = overlapping_variant_context(&span.contig, position, variant_calls);
         if let Some(site) = overlapping.filter(|site| site.start == i64::from(position)) {
             results.push(match population {
-                Some(priors) => priors.apply(site),
+                Some(priors) => priors.apply(site).map_err(runtime)?,
                 None => site.clone(),
             });
             continue;
@@ -174,7 +174,7 @@ pub fn calculate_ref_confidence(
             &mut cache,
         )?;
         results.push(match population {
-            Some(priors) => priors.apply(&block),
+            Some(priors) => priors.apply(&block).map_err(runtime)?,
             None => block,
         });
     }

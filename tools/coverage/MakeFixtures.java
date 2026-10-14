@@ -1085,6 +1085,17 @@ public class MakeFixtures {
                 .write(Paths.get(path + ".idx"));
     }
 
+    /**
+     * The callers' `--ploidy-regions` over `mutect_ref.fasta`: one haploid interval over the sites
+     * at 1000, 1100 and 1200, and a mixed file whose triploid, haploid and tetraploid intervals
+     * cover the other sites, the last two overlapping so the larger ploidy wins there.
+     */
+    static void ploidyRegionFixtures(final Path dir) throws Exception {
+        Files.writeString(dir.resolve("ploidy_haploid.bed"), "chr1\t900\t1250\t1\n", StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("ploidy_mixed.bed"),
+                "chr1\t0\t1150\t3\nchr1\t1350\t1700\t1\nchr1\t1500\t1900\t4\n", StandardCharsets.UTF_8);
+    }
+
     static void flowFixtures(final Path dir) throws Exception {
         final String bases;
         try (final htsjdk.samtools.reference.ReferenceSequenceFile file =
@@ -3025,6 +3036,7 @@ public class MakeFixtures {
         mutectFixtures(dir);
         givenAllelesFixtures(dir);
         resourceFixtures(dir);
+        ploidyRegionFixtures(dir);
         calibrationFixtures(dir);
         geneExpressionFixtures(dir);
         flowFixtures(dir);
