@@ -495,8 +495,8 @@ jobs:
             suites: "hc-debug-outputs hc-error-correction hc-resources hc-ploidy hc-contamination"
           - group: golden-pending
             index: "1/1"
-            slug: "mutect2-resources"
-            suites: "mutect2-resources"
+            slug: "mutect2-resources-mutect2-f1r2"
+            suites: "mutect2-resources mutect2-f1r2"
     steps:
       - uses: actions/checkout@v7
 

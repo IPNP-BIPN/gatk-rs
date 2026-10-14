@@ -141,6 +141,9 @@ pub struct Mutect2Arguments {
     pub panel_of_normals: Vec<VariantContext>,
     /// `--genotype-pon-sites`: the panel's loci are not left inactive.
     pub genotype_pon_sites: bool,
+    /// `--f1r2-tar-gz`'s collector arguments: the tumour pileup of every locus `isActive` examines
+    /// is counted.
+    pub f1r2: Option<crate::collect_f1r2_counts::Args>,
     pub informative_read_overlap_margin: i32,
     pub max_mnp_distance: i32,
     pub phred_scaled_global_read_mismapping_rate: f64,
@@ -162,6 +165,8 @@ pub struct Mutect2Arguments {
 pub struct Mutect2Output {
     pub calls: Vec<VariantContext>,
     pub callable_sites: u64,
+    /// `--f1r2-tar-gz`'s members, with their histograms, by name.
+    pub f1r2_files: Option<Vec<(String, String)>>,
 }
 
 /// What a run refuses, with the Java class it would be thrown as.
@@ -269,6 +274,15 @@ fn call_variants_with(
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;
     let mut active_error: Option<Mutect2Error> = None;
+    // `new F1R2CountsCollector(f1r2Args, header, f1r2TarGz, tumorSamples)`.
+    let mut f1r2 = arguments.f1r2.clone().map(|args| {
+        let tumor: Vec<String> = samples
+            .iter()
+            .filter(|s| !arguments.normal_samples.contains(s))
+            .cloned()
+            .collect();
+        crate::collect_f1r2_counts::Collector::new(args, &tumor)
+    });
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -341,6 +355,7 @@ fn call_variants_with(
                     &mut tumor_buffer,
                     &mut normal_buffer,
                     &mut callable_sites,
+                    f1r2.as_mut().map(|collector| (collector, &bases[..])),
                 ) {
                     Ok(prob) => prob,
                     Err(error) => {
@@ -396,6 +411,7 @@ fn call_variants_with(
     Ok(Mutect2Output {
         calls,
         callable_sites,
+        f1r2_files: f1r2.map(|collector| collector.files(true)),
     })
 }
 
@@ -516,6 +532,7 @@ fn is_active(
     tumor: &mut PileupQualBuffer,
     normal: &mut PileupQualBuffer,
     callable_sites: &mut u64,
+    f1r2: Option<(&mut crate::collect_f1r2_counts::Collector, &[u8])>,
 ) -> Result<f64, Mutect2Error> {
     let Some(context) = context.filter(|c| !c.pileup.elements.is_empty()) else {
         return Ok(0.0);
@@ -529,6 +546,18 @@ fn is_active(
     };
     let tumor_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
         pileup.iter().filter(|pe| !is_normal(pe)).collect();
+    // `f1R2CountsCollector.process(tumorPileup, ref)`, with `getKmerAround(position, 1)`: no k-mer
+    // where the contig's end cuts the window short.
+    if let Some((collector, bases)) = f1r2 {
+        let position = context.position as usize;
+        let kmer = (position >= 2 && position < bases.len())
+            .then(|| String::from_utf8_lossy(&bases[position - 2..=position]).to_ascii_uppercase());
+        let elements: Vec<crate::collect_f1r2_counts::Element> = tumor_pileup
+            .iter()
+            .map(|pe| crate::collect_f1r2_counts::Element::from_pileup(pe, sample_name(pe.read, header)))
+            .collect();
+        collector.process(&elements, kmer.as_deref());
+    }
     tumor.accumulate(
         &tumor_pileup,
         context.position,

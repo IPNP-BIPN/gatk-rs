@@ -7998,6 +7998,30 @@
           "golden": null
         }
       ]
+    },
+    {
+      "id": "mutect2-f1r2",
+      "status": "golden-pending",
+      "title": "Mutect2's F1R2 counts, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--f1r2-tar-gz with --f1r2-median-mq, --f1r2-min-bq and --f1r2-max-depth (G3.2s, #1353). An F1R2CountsCollector over the tumour samples counts the tumour pileup of every locus isActive examines once the callable sites are counted (a forced locus and an empty pileup are not), with the three-base k-mer getKmerAround gives; onTraversalSuccess writes each sample's alt table, reference histograms and depth-one alt histograms into the archive, whose name onTraversalStart requires to end in .tar.gz. The members are compared by name, the reference listing them in the file system's order. Over HcDragenEndToEndDump's reads: defaults, the thresholds, a median MQ no read reaches, a normal, two tumours, GVCF mode, an interval at the contig's start, and a refused name.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 35,
+      "expect_contains": [
+        "member\tf1r2\t./s1.alt_table=",
+        "error\tf1r2-bad-name\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2F1r2Dump",
+          "golden": null
+        }
+      ]
     }
   ],
   "probes": []

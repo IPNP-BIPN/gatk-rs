@@ -9201,7 +9201,8 @@
         "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
         "The debug outputs Mutect2 declares (G3.2m) are varied, unset first, each under /work/out: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations, --debug-assembly-variants-out, --haplotype-debug-histogram-output (never written: only HaplotypeCaller's engine prints it), --capture-assembly-failure-bam, --pair-hmm-results-file and --alm-path (read by HaplotypeCaller's engine only), its --alm-interval listing an interval first. Vertex numbers are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
-        "The germline resource and the panel of normals (G3.2r) are varied, unset first: m2_germline.vcf gives every alternate base at the mutect sites an AF from 0.5 to 1e-5 or none, so POPAF and, in tumour-only calling with --max-population-af 0.01 or 0.6, the common indels' loci move; m2_pon.vcf covers every other site, inactive unless --genotype-pon-sites and flagged PON when called."
+        "The germline resource and the panel of normals (G3.2r) are varied, unset first: m2_germline.vcf gives every alternate base at the mutect sites an AF from 0.5 to 1e-5 or none, so POPAF and, in tumour-only calling with --max-population-af 0.01 or 0.6, the common indels' loci move; m2_pon.vcf covers every other site, inactive unless --genotype-pon-sites and flagged PON when called.",
+        "The F1R2 counts (G3.2s) are varied, unset first: --f1r2-tar-gz under /work/out, compared member by member with the alt histograms' columns sorted, with --f1r2-median-mq 50 or 20, --f1r2-min-bq 20 or 10 and --f1r2-max-depth 200 or 30."
       ],
       "$lists": [
         "--gvcf-lod-band"
@@ -10122,6 +10123,22 @@
       "--max-population-af": [
         "0.01",
         "0.6"
+      ],
+      "--f1r2-tar-gz": [
+        "null",
+        "/work/out/f1r2.tar.gz"
+      ],
+      "--f1r2-median-mq": [
+        "50",
+        "20"
+      ],
+      "--f1r2-min-bq": [
+        "20",
+        "10"
+      ],
+      "--f1r2-max-depth": [
+        "200",
+        "30"
       ]
     },
     "RampedHaplotypeCaller": {
