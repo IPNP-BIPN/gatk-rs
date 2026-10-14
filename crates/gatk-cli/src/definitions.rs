@@ -184,11 +184,24 @@ pub fn definition(declaration: &Declaration) -> Option<Definition> {
     // and the declarations do not have: they record the descriptor. The table comes from the
     // `plugin-argument-ownership` golden, and an argument the golden does not name is left as the
     // tool's own rather than guessed at.
-    if declaration.controlled_by.is_some() {
+    if declaration.controlled_by == Some("GATKAnnotationPluginDescriptor") {
+        // An annotation's own argument belongs to that annotation; the descriptor's shared ones
+        // (`--founder-id`, `--pedigree`) have no predecessor and stay the tool's.
+        if let Some(owner) = plugin_ownership::annotation_owner(declaration.long_name) {
+            built.controlled_by = Some(PluginControl {
+                predecessor: owner,
+                selector: plugin_ownership::ANNOTATION_SELECTOR,
+                groups: gatk_annotation::catalogue::entry(owner).map_or(&[], |entry| entry.groups),
+                group_selector: Some(plugin_ownership::ANNOTATION_GROUP_SELECTOR),
+            });
+        }
+    } else if declaration.controlled_by.is_some() {
         if let Some(owner) = plugin_ownership::owner(declaration.long_name) {
             built.controlled_by = Some(PluginControl {
                 predecessor: owner,
                 selector: plugin_ownership::SELECTOR,
+                groups: &[],
+                group_selector: None,
             });
         }
     }

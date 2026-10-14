@@ -131,6 +131,22 @@ pub struct Mutect2Arguments {
     pub filter_alleles: Option<crate::allele_filtering::AlleleFilterArguments>,
     /// `getDefaultAlleleFrequency()`.
     pub default_af: f64,
+    /// `--germline-resource`, read whole: `POPAF` from its `AF`, and in tumour-only calling the
+    /// loci of its common alleles left inactive.
+    pub germline_resource: Vec<VariantContext>,
+    /// `--max-population-af`: the `AF` from which a germline allele makes its locus inactive.
+    pub max_population_af: f64,
+    /// `--panel-of-normals`, read whole: its loci left inactive, a call starting on one flagged
+    /// `PON`.
+    pub panel_of_normals: Vec<VariantContext>,
+    /// `--genotype-pon-sites`: the panel's loci are not left inactive.
+    pub genotype_pon_sites: bool,
+    /// `--f1r2-tar-gz`'s collector arguments: the tumour pileup of every locus `isActive` examines
+    /// is counted.
+    pub f1r2: Option<crate::collect_f1r2_counts::Args>,
+    /// `--permutect-training-dataset` and `--permutect-test-dataset`: the engines each annotated
+    /// call feeds, whose text the caller writes once the run ends, a failed one too.
+    pub permutect: Option<std::cell::RefCell<crate::permutect_dataset::Datasets>>,
     pub informative_read_overlap_margin: i32,
     pub max_mnp_distance: i32,
     pub phred_scaled_global_read_mismapping_rate: f64,
@@ -152,6 +168,8 @@ pub struct Mutect2Arguments {
 pub struct Mutect2Output {
     pub calls: Vec<VariantContext>,
     pub callable_sites: u64,
+    /// `--f1r2-tar-gz`'s members, with their histograms, by name.
+    pub f1r2_files: Option<Vec<(String, String)>>,
 }
 
 /// What a run refuses, with the Java class it would be thrown as.
@@ -258,6 +276,16 @@ fn call_variants_with(
     let mut tumor_buffer = PileupQualBuffer::default();
     let mut normal_buffer = PileupQualBuffer::default();
     let mut callable_sites = 0u64;
+    let mut active_error: Option<Mutect2Error> = None;
+    // `new F1R2CountsCollector(f1r2Args, header, f1r2TarGz, tumorSamples)`.
+    let mut f1r2 = arguments.f1r2.map(|args| {
+        let tumor: Vec<String> = samples
+            .iter()
+            .filter(|s| !arguments.normal_samples.contains(s))
+            .cloned()
+            .collect();
+        crate::collect_f1r2_counts::Collector::new(args, &tumor)
+    });
     let mut calls = Vec::new();
     for group in group_intervals_by_contig(intervals) {
         let contig = group[0].contig.clone();
@@ -319,7 +347,10 @@ fn call_variants_with(
                         seen.insert(crate::pileup_based_alleles::read_key(element.read));
                     }
                 }
-                let prob = is_active(
+                if active_error.is_some() {
+                    return (0.0, None);
+                }
+                let prob = match is_active(
                     context,
                     bases[locus.start as usize - 1],
                     header,
@@ -327,11 +358,22 @@ fn call_variants_with(
                     &mut tumor_buffer,
                     &mut normal_buffer,
                     &mut callable_sites,
-                );
+                    f1r2.as_mut().map(|collector| (collector, &bases[..])),
+                ) {
+                    Ok(prob) => prob,
+                    Err(error) => {
+                        active_error = Some(error);
+                        0.0
+                    }
+                };
                 (prob, None)
             },
         )
         .map_err(|error| failure(error.class(), error.message()))?;
+        // `isActive`'s throw ends the traversal there.
+        if let Some(error) = active_error {
+            return Err(error);
+        }
 
         let trimmer = AssemblyRegionTrimmer::new(arguments.trimmer.clone(), bases.len() as i32)
             .map_err(|e| failure("IllegalArgumentException", format!("{e:?}")))?;
@@ -372,6 +414,7 @@ fn call_variants_with(
     Ok(Mutect2Output {
         calls,
         callable_sites,
+        f1r2_files: f1r2.map(|collector| collector.files(true)),
     })
 }
 
@@ -484,6 +527,7 @@ fn is_next_to_useful_soft_clip(pe: &gatk_engine::pileup::PileupElement<'_>) -> b
 }
 
 /// `Mutect2Engine.isActive` for a locus, counting the callable sites as it goes.
+#[allow(clippy::too_many_arguments)]
 fn is_active(
     context: Option<&AlignmentContext<'_>>,
     ref_base: u8,
@@ -492,9 +536,10 @@ fn is_active(
     tumor: &mut PileupQualBuffer,
     normal: &mut PileupQualBuffer,
     callable_sites: &mut u64,
-) -> f64 {
+    f1r2: Option<(&mut crate::collect_f1r2_counts::Collector, &[u8])>,
+) -> Result<f64, Mutect2Error> {
     let Some(context) = context.filter(|c| !c.pileup.elements.is_empty()) else {
-        return 0.0;
+        return Ok(0.0);
     };
     let pileup = &context.pileup.elements;
     if pileup.len() >= arguments.callable_depth {
@@ -505,6 +550,20 @@ fn is_active(
     };
     let tumor_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
         pileup.iter().filter(|pe| !is_normal(pe)).collect();
+    // `f1R2CountsCollector.process(tumorPileup, ref)`, with `getKmerAround(position, 1)`: no k-mer
+    // where the contig's end cuts the window short.
+    if let Some((collector, bases)) = f1r2 {
+        let position = context.position as usize;
+        let kmer = (position >= 2 && position < bases.len())
+            .then(|| String::from_utf8_lossy(&bases[position - 2..=position]).to_ascii_uppercase());
+        let elements: Vec<crate::collect_f1r2_counts::Element> = tumor_pileup
+            .iter()
+            .map(|pe| {
+                crate::collect_f1r2_counts::Element::from_pileup(pe, sample_name(pe.read, header))
+            })
+            .collect();
+        collector.process(&elements, kmer.as_deref());
+    }
     tumor.accumulate(
         &tumor_pileup,
         context.position,
@@ -517,7 +576,15 @@ fn is_active(
     let tumor_log_odds =
         log_likelihood_ratio((tumor_pileup.len() - alt_quals.len()) as i32, &alt_quals, 1);
     if tumor_log_odds < arguments.initial_log_odds {
-        return 0.0;
+        return Ok(0.0);
+    }
+    // A training dataset wants every candidate, germline and panel sites included.
+    if arguments
+        .permutect
+        .as_ref()
+        .is_some_and(|p| p.borrow().engines.iter().any(|e| e.training))
+    {
+        return Ok(1.0);
     }
     if !arguments.normal_samples.is_empty() && !arguments.genotype_germline_sites {
         let normal_pileup: Vec<&gatk_engine::pileup::PileupElement<'_>> =
@@ -536,14 +603,212 @@ fn is_active(
             if normal_alt_count as f64 > normal_pileup.len() as f64 * MAX_ALT_FRACTION_IN_NORMAL
                 && normal_qual_sum > MAX_NORMAL_QUAL_SUM
             {
-                return 0.0;
+                return Ok(0.0);
             }
         }
+    } else if !arguments.genotype_germline_sites {
+        // Tumour-only: a germline allele at least `--max-population-af` common leaves the locus
+        // inactive if it is an indel and the likeliest tumour allele is one, or if it is a
+        // substitution and the likeliest tumour base is the germline REFERENCE's first base, which
+        // is what the reference compares.
+        for germline in overlapping(
+            &arguments.germline_resource,
+            &context.contig,
+            context.position,
+            context.position,
+        ) {
+            let frequencies = attribute_as_double_list(germline, "AF", 0.0)
+                .map_err(|message| failure("java.lang.NumberFormatException", message))?;
+            let germline_ref = &germline.alleles[0];
+            for (index, frequency) in frequencies.iter().enumerate() {
+                if *frequency < arguments.max_population_af {
+                    continue;
+                }
+                // `getAlternateAllele(index)`, past the alternates when the AF has more values.
+                let Some(germline_alt) = germline.alleles.get(index + 1) else {
+                    return Err(failure(
+                        "java.lang.IndexOutOfBoundsException",
+                        format!(
+                            "Index {} out of bounds for length {}",
+                            index + 1,
+                            germline.alleles.len()
+                        ),
+                    ));
+                };
+                let indel = best_tumor == INDEL && germline_alt.len() != germline_ref.len();
+                let substitution = best_tumor < OTHER_SUBSTITUTION
+                    && germline_alt.len() == germline_ref.len()
+                    && Some(&b"ACGT"[best_tumor])
+                        == germline_ref.display_string().as_bytes().first();
+                if indel || substitution {
+                    return Ok(0.0);
+                }
+            }
+        }
+    }
+    if !arguments.genotype_pon_sites
+        && overlapping(
+            &arguments.panel_of_normals,
+            &context.contig,
+            context.position,
+            context.position,
+        )
+        .next()
+        .is_some()
+    {
+        return Ok(0.0);
     }
     if pileup.len() < arguments.callable_depth {
         *callable_sites += 1;
     }
-    1.0
+    Ok(1.0)
+}
+
+/// `FeatureContext.getValues(input, interval)`: the records overlapping `start..=end`.
+fn overlapping<'r>(
+    records: &'r [VariantContext],
+    contig: &'r str,
+    start: i32,
+    end: i32,
+) -> impl Iterator<Item = &'r VariantContext> {
+    records.iter().filter(move |vc| {
+        vc.contig == contig && vc.start <= i64::from(end) && vc.stop >= i64::from(start)
+    })
+}
+
+/// `Mutect2Engine.getAttributeAsDoubleList(vc, key, default)`: each value of the attribute, `.`
+/// as the default; nothing when the attribute is absent.
+fn attribute_as_double_list(
+    vc: &VariantContext,
+    key: &str,
+    default: f64,
+) -> Result<Vec<f64>, String> {
+    let Some(text) = vc
+        .attributes
+        .iter()
+        .find(|(name, _)| name == key)
+        .and_then(|(_, value)| value.format())
+    else {
+        return Ok(Vec::new());
+    };
+    text.split(',')
+        .map(|value| {
+            if value == "." {
+                Ok(default)
+            } else {
+                crate::variant_recalibrator_model::java_parse_double(value)
+                    .ok_or_else(|| format!("For input string: \"{value}\""))
+            }
+        })
+        .collect()
+}
+
+/// `Allele.toString()`: the display string, starred for the reference.
+fn allele_to_string(allele: &Allele) -> String {
+    format!(
+        "{}{}",
+        allele.display_string(),
+        if allele.is_reference() { "*" } else { "" }
+    )
+}
+
+/// `GATKVariantContextUtils.alleleIndices(alleles1, alleles2)`: for each of `alleles1`, the index
+/// in `alleles2` of the allele it is once both are against the longer reference. The reference
+/// maps through the `null` both mappings give it, which is index 0 (and so does an allele the
+/// mapping drops, such as a symbolic one against a longer reference); two of `alleles2` that land
+/// on one key are `Collectors.toMap`'s duplicate key.
+fn allele_indices(
+    alleles1: &[Allele],
+    alleles2: &[Allele],
+) -> Result<Vec<Option<usize>>, Mutect2Error> {
+    let (ref1, ref2) = (&alleles1[0], &alleles2[0]);
+    let common = if ref1.len() < ref2.len() {
+        ref2
+    } else if ref2.len() < ref1.len() {
+        ref1
+    } else if ref1 != ref2 {
+        return Err(failure(
+            "java.lang.IllegalStateException",
+            format!(
+                "The provided reference alleles do not appear to represent the same position, {} vs. {}",
+                allele_to_string(ref1),
+                allele_to_string(ref2)
+            ),
+        ));
+    } else {
+        ref1
+    };
+    let mapping = |reference: &Allele, alts: &[Allele]| {
+        gatk_engine::allele_mapping::create_allele_mapping(common, reference, alts)
+            .map_err(|e| failure("java.lang.IllegalStateException", format!("{e:?}")))
+    };
+    let to_common1 = mapping(ref1, &alleles1[1..])?;
+    let to_common2 = mapping(ref2, &alleles2[1..])?;
+    let key = |map: &[(Allele, Allele)], allele: &Allele| {
+        map.iter()
+            .find(|(from, _)| from == allele)
+            .map(|(_, to)| to.clone())
+    };
+    let mut common_to_index2: Vec<(Option<Allele>, usize)> = Vec::new();
+    for (n, allele) in alleles2.iter().enumerate() {
+        let k = key(&to_common2, allele);
+        if let Some((_, first)) = common_to_index2.iter().find(|(existing, _)| *existing == k) {
+            return Err(failure(
+                "java.lang.IllegalStateException",
+                format!(
+                    "Duplicate key {} (attempted merging values {first} and {n})",
+                    k.as_ref().map_or("null".to_string(), allele_to_string)
+                ),
+            ));
+        }
+        common_to_index2.push((k, n));
+    }
+    Ok(alleles1
+        .iter()
+        .map(|allele| {
+            let k = key(&to_common1, allele);
+            common_to_index2
+                .iter()
+                .find(|(existing, _)| *existing == k)
+                .map(|(_, n)| *n)
+        })
+        .collect())
+}
+
+/// `SomaticGenotypingEngine.getGermlineAltAlleleFrequencies(allAlleles, germlineVCs, default)`:
+/// each alternate's frequency, the last germline record matching it winning; a record whose `AF`
+/// is not one value per alternate is skipped.
+fn germline_alt_allele_frequencies(
+    all_alleles: &[Allele],
+    germline: &[&VariantContext],
+    default: f64,
+) -> Result<Vec<f64>, Mutect2Error> {
+    let mut frequencies = vec![default; all_alleles.len()];
+    for vc in germline {
+        let indices = allele_indices(all_alleles, &vc.alleles)?;
+        let alt_frequencies = attribute_as_double_list(vc, "AF", default)
+            .map_err(|message| failure("java.lang.NumberFormatException", message))?;
+        if alt_frequencies.len() != vc.alleles.len() - 1 {
+            continue;
+        }
+        for allele_index in 1..all_alleles.len() {
+            if let Some(germline_index) = indices[allele_index] {
+                frequencies[allele_index] = match germline_index.checked_sub(1) {
+                    Some(i) => alt_frequencies[i],
+                    None => {
+                        return Err(failure(
+                            "java.lang.IndexOutOfBoundsException",
+                            format!(
+                                "Index -1 out of bounds for length {}",
+                                alt_frequencies.len()
+                            ),
+                        ))
+                    }
+                };
+            }
+        }
+    }
+    Ok(frequencies.split_off(1))
 }
 
 /// What every region of a contig is called with.
@@ -1192,12 +1457,24 @@ fn call_mutations(
         let log10 = |x: f64| x * jmath::math::log10(std::f64::consts::E);
         let doubles =
             |values: Vec<f64>| Value::List(values.into_iter().map(Value::Double).collect());
+        // `getNegativeLogPopulationAFAnnotation`, from the germline records overlapping the start.
+        let germline: Vec<&VariantContext> = overlapping(
+            &arguments.germline_resource,
+            &merged.contig,
+            merged.start,
+            merged.start,
+        )
+        .collect();
+        let frequencies =
+            germline_alt_allele_frequencies(&emitted_alleles, &germline, arguments.default_af)?;
         vc.attributes.push((
             "POPAF".to_string(),
-            doubles(vec![
-                -jmath::math::log10(arguments.default_af);
-                tumor_alts.len()
-            ]),
+            doubles(
+                frequencies
+                    .into_iter()
+                    .map(|f| -jmath::math::log10(f))
+                    .collect(),
+            ),
         ));
         vc.attributes.push((
             "TLOD".to_string(),
@@ -1227,6 +1504,17 @@ fn call_mutations(
                         .collect(),
                 ),
             ));
+        }
+        if overlapping(
+            &arguments.panel_of_normals,
+            &merged.contig,
+            merged.start,
+            merged.start,
+        )
+        .next()
+        .is_some()
+        {
+            vc.attributes.push(("PON".to_string(), Value::Bool(true)));
         }
         vc.genotypes = GenotypesContext::new(genotypes(
             &log_likelihoods,
@@ -1281,6 +1569,35 @@ fn call_mutations(
                 EngineError::Limitation(what) => failure("PortLimitation", what),
                 EngineError::Runtime { class, message } => failure(&class, message),
             })?;
+        // `permutectTrainingDatasetEngines` then `permutectTestDatasetEngines`, `addData`.
+        if let Some(permutect) = &arguments.permutect {
+            let contig_index = context
+                .header
+                .sequences
+                .iter()
+                .position(|s| s.name == annotated.contig)
+                .unwrap_or(0);
+            let haplotype_refs: Vec<&Haplotype> = haplotypes.iter().collect();
+            permutect
+                .borrow_mut()
+                .add_data(
+                    reference_window,
+                    &annotated,
+                    &trimmed_call,
+                    &trimmed_reads,
+                    &fragments,
+                    &haplotype_refs,
+                    contig_index,
+                )
+                .map_err(|e| match e {
+                    crate::permutect_dataset::DatasetError::Limitation(what) => {
+                        failure("PortLimitation", what)
+                    }
+                    crate::permutect_dataset::DatasetError::Runtime { class, message } => {
+                        failure(&class, message)
+                    }
+                })?;
+        }
         // `annotateReadLikelihoodsWithSupportedAlleles(trimmedCall, trimmedLikelihoods,
         // Fragment::getReads)`, for the bamout.
         if let Some(tags) = bamout.as_deref_mut() {

@@ -9,6 +9,7 @@ pub mod accumulate_data;
 pub mod activity_profile;
 pub mod alignment_state;
 pub mod alignment_utils;
+pub mod allele_biased_downsampling;
 pub mod allele_filter;
 pub mod allele_fraction_cluster;
 pub mod allele_frequency_calculator;
