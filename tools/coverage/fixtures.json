@@ -8124,7 +8124,8 @@
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
-        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call."
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -9148,6 +9149,19 @@
         "null",
         "/work/fixtures/ploidy_haploid.bed",
         "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
       ]
     },
     "Mutect2": {
@@ -10145,7 +10159,8 @@
         "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
         "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
         "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
-        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call."
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
@@ -11277,6 +11292,19 @@
         "null",
         "/work/fixtures/ploidy_haploid.bed",
         "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
       ]
     }
   },
@@ -12258,6 +12286,28 @@
         "--emit-ref-confidence": "BP_RESOLUTION"
       },
       "why": "Reference-confidence mode refuses --dont-genotype before anything runs, so the pair would only measure that refusal, which the hc-debug-outputs suite does, and the rows it fills would hide the reference-confidence tuples."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--population-callset": "/work/fixtures/resources.vcf",
+        "--ploidy-regions": "/work/fixtures/ploidy_haploid.bed"
+      },
+      "why": "PosteriorProbabilitiesUtils refuses a ploidy other than two, at the first reference-confidence record a non-diploid region emits; the pair would measure that refusal in every row of that mode, which hc-ploidy measures."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--population-callset": "/work/fixtures/resources.vcf",
+        "--ploidy-regions": "/work/fixtures/ploidy_mixed.bed"
+      },
+      "why": "PosteriorProbabilitiesUtils refuses a ploidy other than two, at the first reference-confidence record a non-diploid region emits; the pair would measure that refusal in every row of that mode, which hc-ploidy measures."
     }
   ],
   "exclude": {
