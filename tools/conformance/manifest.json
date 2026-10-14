@@ -7977,7 +7977,7 @@
     },
     {
       "id": "mutect2-resources",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Mutect2's germline resource and panel of normals, end to end",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -7995,7 +7995,8 @@
       "cases": [
         {
           "dump": "Mutect2ResourcesDump",
-          "golden": null
+          "golden": "crates/gatk-tools/tests/data/mutect2_resources.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38563323883, byte for byte the local dump."
         }
       ]
     }
