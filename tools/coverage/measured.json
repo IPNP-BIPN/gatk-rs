@@ -1271,11 +1271,11 @@
       "share": 1.0
     },
     "Mutect2": {
-      "rows": 37,
+      "rows": 38,
       "accepted": 25,
-      "rejected": 12,
-      "distinct_outputs": 23,
-      "matched": 37,
+      "rejected": 13,
+      "distinct_outputs": 24,
+      "matched": 38,
       "t": 2,
       "share": 1.0
     }

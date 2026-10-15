@@ -250,7 +250,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `MergeMutectStats` | unclassified | oracle-backed | mutect-gathers | 1 | t=2, 7/7 rows (100%) | 0.002 / 0.049 |
 | `MethylationTypeCaller` | record-transform | oracle-backed | methylation-type-caller | 1 | t=2, 21/21 rows (100%) | 0.003 / 0.072 |
 | `ModelSegments` | cnv-segmentation | oracle-backed | model-segments | 1 | t=2, 19/19 rows (100%) | 0.383 / 1.512 |
-| `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-debug-outputs, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, mutect2-dragstr, mutect2-end-to-end, mutect2-f1r2, mutect2-gvcf, mutect2-mitochondria, mutect2-permutect, mutect2-resources | 19 | t=2, 37/37 rows (100%) | 0.032 / 0.445 |
+| `Mutect2` | assembly-caller | oracle-backed | callers-all-annotations, hc-allele-filtering, hc-allele-graphs, hc-alleles, hc-bamout, hc-debug-outputs, hc-error-correction, hc-flow, hc-linked-graph, hc-pdhmm, hc-pedigree, hc-pileup, mutect2-dragstr, mutect2-end-to-end, mutect2-f1r2, mutect2-gvcf, mutect2-mitochondria, mutect2-permutect, mutect2-resources | 19 | t=2, 38/38 rows (100%) | 0.032 / 0.445 |
 | `NuMTFilterTool` | unclassified | oracle-backed | numt-filter | 1 | t=2, 15/15 rows (100%) | 0.002 / 0.060 |
 | `PathSeqBuildKmers` | metagenomics | oracle-backed | pathseq-build-kmers | 1 | t=2, 8/8 rows (100%) | 0.002 / 0.068 |
 | `PathSeqBuildReferenceTaxonomy` | metagenomics | oracle-backed | pathseq-build-reference-taxonomy, pathseq-taxonomy-kryo | 2 | t=2, 9/9 rows (100%) | 0.002 / 0.068 |
