@@ -545,6 +545,15 @@ public class ToolArgumentDeclarationDump {
         // Spark SV pipeline but is a plain `ReadWalker`, and its parser is the engine's own.
         declarations("StructuralVariantDiscoverer",
                 new org.broadinstitute.hellbender.tools.StructuralVariantDiscoverer());
+        // The first Spark tools (X.1): the three counts whose non-Spark twins already run. A
+        // `GATKSparkTool` builds its parser like any other program, with the Spark arguments
+        // (`--spark-master`, `--conf`, ...) in it, so the dump needs nothing new.
+        declarations("CountReadsSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.CountReadsSpark());
+        declarations("CountBasesSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.CountBasesSpark());
+        declarations("FlagStatSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.FlagStatSpark());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
