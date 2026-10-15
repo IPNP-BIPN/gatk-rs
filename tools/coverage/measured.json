@@ -100,6 +100,33 @@
       "t": 2,
       "share": 1.0
     },
+    "CountReadsSpark": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "CountBasesSpark": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "FlagStatSpark": {
+      "rows": 19,
+      "accepted": 11,
+      "rejected": 8,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
     "CountBasesInReference": {
       "rows": 19,
       "accepted": 8,
