@@ -208,23 +208,15 @@ fn parse_java_double(text: &str) -> Option<f64> {
     text.parse::<f64>().ok()
 }
 
-/// `Float.toString`. Java prints the shortest decimal that round-trips, which is what Rust's
-/// `{}` does for `f32` as well.
+/// `Float.toString`, as the pinned Java 17 prints it (htsjdk-rs decision 0046). Rust's `{}`
+/// is not it: it never switches to `E` notation and does not always pick Java's digits.
 fn format_float(value: f32) -> String {
-    if value == value.trunc() && value.is_finite() && value.abs() < 1e7 {
-        format!("{value:.1}")
-    } else {
-        format!("{value}")
-    }
+    jmath::to_string::float_to_string(value)
 }
 
-/// `Double.toString`, same rule.
+/// `Double.toString`, as for [`format_float`].
 fn format_double(value: f64) -> String {
-    if value == value.trunc() && value.is_finite() && value.abs() < 1e7 {
-        format!("{value:.1}")
-    } else {
-        format!("{value}")
-    }
+    jmath::to_string::double_to_string(value)
 }
 
 /// `JexlArithmetic.compare(left, right, operator)`: the branch order is the behaviour.

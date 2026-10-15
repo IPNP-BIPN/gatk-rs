@@ -11,6 +11,7 @@ repository.workspace = true
 # licence header of its sources jar. Both are recorded in tools/audit/provenance.py.
 
 [dependencies]
+jmath.workspace = true
 
 [dev-dependencies]
 gatk-corpus = { path = "../gatk-corpus" }
