@@ -221,10 +221,11 @@
     "`UnmarkDuplicates` takes the read walkers' corpus unchanged: it writes a BAM like `PrintReads`",
     "and differs from it only in the flag bit it clears.",
     "",
-    "`CollectReadCounts` HOLDS `--format` at TSV, and that is the second hold naming a gap in the",
-    "port rather than a refusal in the tool: the tool's own default is HDF5, which is a file format",
-    "this port does not write at all (gatk-rs#1107). It holds the same four interval arguments",
-    "`PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
+    "`CollectReadCounts` varies `--format`, HDF5 (the tool's default) first, with an `--output` named",
+    "for it: the harness reads a `.hdf5` file as an HDF5 tree and anything else as bytes, and the",
+    "reference stamps its HDF5 object headers with a time, so an HDF5 file under `counts.tsv` is",
+    "forbidden, and a TSV under `counts.hdf5` with it (gatk-rs#1107). It holds the same four interval",
+    "arguments `PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
     "`validateIntervalArgumentCollection`."
   ],
   "values": {
@@ -1814,10 +1815,11 @@
         "chr1:50000-60000"
       ],
       "--output": [
-        "/work/out/counts.tsv",
-        "/work/out/counts2.tsv"
+        "/work/out/counts.hdf5",
+        "/work/out/counts.tsv"
       ],
       "--format": [
+        "HDF5",
         "TSV"
       ],
       "--interval-set-rule": [
@@ -12815,6 +12817,46 @@
         "--annotation": "<unset>"
       },
       "why": "RMSMappingQuality is no default of Mutect2's, so its argument is refused unless the annotation is named."
+    },
+    {
+      "tools": [
+        "CollectReadCounts"
+      ],
+      "forbid": {
+        "--format": "HDF5",
+        "--output": "/work/out/counts.tsv"
+      },
+      "why": "The harness compares a file not named .hdf5 byte for byte, and the reference stamps its HDF5 object headers with a time."
+    },
+    {
+      "tools": [
+        "CollectReadCounts"
+      ],
+      "forbid": {
+        "--format": "TSV",
+        "--output": "/work/out/counts.hdf5"
+      },
+      "why": "The harness reads a file named .hdf5 as an HDF5 tree, which a TSV is not."
+    },
+    {
+      "tools": [
+        "CollectReadCounts"
+      ],
+      "forbid": {
+        "--format": "TSV",
+        "--max-variants-per-shard": "-1"
+      },
+      "why": "A row refused whatever the format measures nothing of TSV; IPOG gave TSV only such rows, so the format the port wrote before HDF5 would have gone unmeasured."
+    },
+    {
+      "tools": [
+        "CollectReadCounts"
+      ],
+      "forbid": {
+        "--format": "TSV",
+        "--reference": "/work/fixtures/other.fasta"
+      },
+      "why": "A row refused whatever the format measures nothing of TSV; IPOG gave TSV only such rows, so the format the port wrote before HDF5 would have gone unmeasured."
     }
   ],
   "exclude": {
