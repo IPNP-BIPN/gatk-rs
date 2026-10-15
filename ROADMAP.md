@@ -475,7 +475,7 @@ G3 is not finished. G3.1 below landed the three callers over covering arrays tha
 feature the port refused; G3.2 (#1329) ports those features and puts their arguments back in the
 arrays, and G3 is done only when no argument of the three callers is held out as not carried.
 
-- [~] **G3.2, every argument of the callers** (#1329):
+- [x] **G3.2, every argument of the callers** (#1329):
       - [x] G3.2a DRAGEN mode in HaplotypeCaller (#1330): the BQD and FRD genotype models,
             DRAGstr, the XQ mapping-quality swap, `--sample-name` and the mode's presets
             (`dragen-genotypes`, `hc-dragen-end-to-end`);
@@ -488,7 +488,9 @@ arrays, and G3 is done only when no argument of the three callers is held out as
             `--dragen-378-concordance-mode` (#1336);
       - [x] G3.2h the linked de Bruijn graph (#1337);
       - [x] G3.2i the ramp arguments in a covering array (#1340);
-      - [ ] G3.2j the callers' cost (#1341).
+      - [x] G3.2j the callers' cost (#1341): Speed run 38649906787 on main, cold / steady
+            0.025 / 0.315 (HaplotypeCaller), 0.024 / 0.325 (RampedHaplotypeCaller),
+            0.032 / 0.445 (Mutect2).
       - [x] G3.2k `--pedigree` and `--founder-id`, with the de novo thresholds (#1343);
       - [x] G3.2l `--alleles` in the callers (#1346);
       - [x] G3.2m the callers' debug outputs, `--bam-output` among them (#1347);

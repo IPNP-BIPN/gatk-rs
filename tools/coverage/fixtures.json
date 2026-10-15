@@ -12169,6 +12169,16 @@
         "Mutect2"
       ],
       "forbid": {
+        "--input": "/work/fixtures/mutect_paired.bam",
+        "--normal-sample": "normal"
+      },
+      "why": "mutect_paired.bam is mutect_t.bam's tumour reads as mate pairs, with no normal sample, so naming one is the same refusal on every row and the paired reads never reach an accepted row."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
         "--pedigree": "/work/fixtures/callers.ped",
         "--enable-all-annotations": "false"
       },

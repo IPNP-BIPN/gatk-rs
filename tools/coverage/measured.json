@@ -1253,29 +1253,29 @@
       "share": 1.0
     },
     "HaplotypeCaller": {
-      "rows": 42,
-      "accepted": 41,
-      "rejected": 1,
-      "distinct_outputs": 31,
-      "matched": 42,
+      "rows": 54,
+      "accepted": 26,
+      "rejected": 28,
+      "distinct_outputs": 20,
+      "matched": 54,
       "t": 2,
       "share": 1.0
     },
     "RampedHaplotypeCaller": {
-      "rows": 42,
-      "accepted": 41,
-      "rejected": 1,
-      "distinct_outputs": 31,
-      "matched": 42,
+      "rows": 56,
+      "accepted": 37,
+      "rejected": 19,
+      "distinct_outputs": 36,
+      "matched": 56,
       "t": 2,
       "share": 1.0
     },
     "Mutect2": {
-      "rows": 25,
-      "accepted": 21,
-      "rejected": 4,
-      "distinct_outputs": 16,
-      "matched": 25,
+      "rows": 38,
+      "accepted": 25,
+      "rejected": 13,
+      "distinct_outputs": 24,
+      "matched": 38,
       "t": 2,
       "share": 1.0
     }
