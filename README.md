@@ -18,13 +18,15 @@ Ported from GATK `4.6.2.0`, commit `76edc75c26504da94bbaee66584e107e76ee15de`, w
 | Barclay | 5.0.0 |
 | Intel GKL | 0.8.11 |
 
-All three ports in this program use those exact pins, so they are mutually coherent by
-construction.
+gatk-rs and htsjdk-rs use those exact pins. picard-rs does not: it moved ahead to Picard `3.5.0`
+(htsjdk `5.0.0`) on its own, once the cost of the move had been measured, so the three
+repositories no longer name one set of pins. What picard-rs needs from htsjdk 5.0.0 is three
+behaviours, and it ports them beside the Picard code that reaches them; see picard-rs
+[decision 0013](https://github.com/IPNP-BIPN/picard-rs/blob/main/docs/decisions/0013-picard-rs-moves-to-3.5.0-on-its-own.md).
 
-GATK 4.7.0.0 (htsjdk 5.0.0, Picard 3.5.0) was released on 2026-08-18, and the target deliberately
-stays at 4.6.2.0: 414 conformance suites are oracle-backed against it across the three
-repositories (278 here, 66 in picard-rs, 70 in htsjdk-rs), and the three ports move together or
-not at all. The delta, and the order the move has to happen in, are recorded in ROADMAP.md.
+GATK 4.7.0.0 (htsjdk 5.0.0, Picard 3.5.0) was released on 2026-08-18, and the target here
+deliberately stays at 4.6.2.0: 278 conformance suites in this repository are oracle-backed against
+it. The delta, and the order the rest of the move has to happen in, are recorded in ROADMAP.md.
 
 ## Origin
 
@@ -110,7 +112,7 @@ matched exactly are quarantined with their measured divergence rate and reported
 | Repo | Ports | Depends on |
 |---|---|---|
 | `htsjdk-rs` | htsjdk 4.2.0 | (none) |
-| `picard-rs` | Picard 3.4.0 | `htsjdk-rs` |
+| `picard-rs` | Picard 3.5.0 | `htsjdk-rs` |
 | `gatk-rs` | GATK 4.6.2.0 | `picard-rs`, `htsjdk-rs` |
 
 The topology mirrors upstream. GATK's `Main.getPackageList()` returns

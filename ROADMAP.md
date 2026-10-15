@@ -1467,6 +1467,12 @@ explained. The three ports are also coherent only because they name one set of p
 4.2.0 to 5.0.0 is a major bump, so htsjdk-rs would have to land first. Finishing against a frozen
 target and moving once is cheaper than chasing a moving one.
 
+**picard-rs has moved without waiting.** Once P was closed it measured the bill first (picard-rs
+decision 0012), found that nothing in it needed htsjdk-rs to move, and moved to Picard 3.5.0 on
+its own (picard-rs decision 0013), porting the three htsjdk 5.0.0 behaviours it reaches beside the
+Picard code that reaches them. So the ports no longer name one set of pins: gatk-rs and htsjdk-rs
+stay at 4.6.2.0 and 4.2.0, picard-rs is at 3.5.0.
+
 What will be waiting, in short. The full delta, per pull request, is in the tracking issue.
 
 | Where | What changes |
