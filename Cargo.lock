@@ -144,6 +144,7 @@ name = "gatk-barclay"
 version = "0.1.0"
 dependencies = [
  "gatk-corpus",
+ "jmath",
 ]
 
 [[package]]
@@ -162,6 +163,7 @@ dependencies = [
  "htsjdk-cram",
  "htsjdk-tribble",
  "htsjdk-vcf",
+ "jmath",
  "sha2",
  "zip",
 ]

@@ -148,39 +148,11 @@ impl Value {
 /// that range is refused rather than guessed: the general `Double.toString` is `FloatingDecimal`,
 /// which is JDK source, and htsjdk-rs decision 0013 refused to transcribe it.
 pub fn java_double_to_string(value: f64) -> String {
-    // The three non-finite values are constants in `Double.toString`'s own source rather than a
-    // product of the digit algorithm: `FilterMutectCalls` declares `--max-n-ratio` with a default of
-    // positive infinity, and its parser renders that default.
-    if value.is_nan() {
-        return "NaN".to_string();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string();
-    }
-    // Outside `[1e-3, 1e7)` Java switches to `E` notation, and the DIGITS are chosen by the same
-    // rule as inside it: the shortest that distinguishes the value from its neighbours. Rust's
-    // `{:e}` picks those same digits, so the conversion is a reformatting rather than a second
-    // algorithm: give the mantissa a decimal point where it has none, upper-case the `E`, and keep
-    // the exponent's sign only when it is negative, which is what `Double.toString` prints.
-    // `CalculateGenotypePosteriors` declares `--de-novo-prior` with a default of `1.0E-6`, and a
-    // port that refused to render it could not build that tool's parser at all.
-    if value != 0.0 && !(1e-3..1e7).contains(&value.abs()) {
-        let rendered = format!("{value:e}");
-        let (mantissa, exponent) = rendered.split_once('e').expect("an exponent from {:e}");
-        let mantissa = if mantissa.contains('.') {
-            mantissa.to_string()
-        } else {
-            format!("{mantissa}.0")
-        };
-        return format!("{mantissa}E{exponent}");
-    }
-    let rendered = format!("{value}");
-    if rendered.contains('.') {
-        rendered
-    } else {
-        // Java always prints "at least one digit ... after the decimal point".
-        format!("{rendered}.0")
-    }
+    // `Double.toString` as the pinned Java 17 prints it, which is not always the shortest decimal
+    // (htsjdk-rs decision 0046). `FilterMutectCalls` declares `--max-n-ratio` with a default of
+    // positive infinity and `CalculateGenotypePosteriors` `--de-novo-prior` with `1.0E-6`; both
+    // defaults are rendered through here.
+    jmath::to_string::double_to_string(value)
 }
 
 /// What kind of value a field's *boxed* class accepts.
