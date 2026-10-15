@@ -10,12 +10,9 @@
 //!  * **the rounding is HALF_UP on those digits**, not half-even;
 //!  * **and the three non-finite spellings carry no sign on `NaN`.**
 //!
-//! Every row is compared and every row matches. `Double.toString(4.9E-324)` used to be a named
-//! divergence (#399): the reference prints `4.9E-324` and Rust's shortest form is `5.0E-324`, and at
-//! 330 places the formatting differed by exactly those digits. `java_double_to_string` now takes
-//! Java 17's digits from `jmath::to_string` (htsjdk-rs decision 0046), and both rows match. That
-//! the formatting followed the digits is the evidence that the conversion passes `Double.toString`'s
-//! digits through rather than looking at the value.
+//! Every row is compared. `Double.toString(4.9E-324)` is `4.9E-324`, longer than the shortest
+//! `5.0E-324`, and at 330 places the formatting ends `...4900000`: the conversion passes
+//! `Double.toString`'s digits through rather than looking at the value (#399).
 
 use gatk_corpus as corpus;
 use gatk_engine::java_format::format_decimals;

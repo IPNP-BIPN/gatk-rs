@@ -2066,7 +2066,7 @@
       "title": "Double.toString over a corpus wide enough to say which values the port disagrees on",
       "harness": "tools/readfilter-conformance",
       "tools": [],
-      "why": "Double.toString, over 1059 values. gatk_engine::tsv_table::java_double_to_string defers to Rust's shortest-round-trip formatter, and the pre-JDK19 FloatingDecimal does not always emit the shortest digits; the module note has said so since it was written, and the string-format golden caught one value. This establishes WHICH values differ rather than assuming there are none. The corpus is deterministic on both sides: twenty-seven named values, the powers of two across the whole exponent range, and a thousand bit patterns from splitmix64 seeded at one with the non-finite ones skipped. Nothing here is random. WHAT THE RUN ADDED: fifteen of the 1059 differ, which is 1.4 per cent, and in every one of them JAVA EMITS MORE DIGITS THAN THE SHORTEST. Three shapes. The smallest subnormal is 4.9E-324 upstream and 5.0E-324 here. 1e23 is 9.999999999999999E22 upstream, sixteen digits where two round-trip. And eleven values needing sixteen digits get a seventeenth: 7.2911220195563975E-304 against 7.291122019556398E-304. Every one of the fifteen parses back to the same double, so this is a rendering difference and not a value difference -- which is exactly why nothing had caught it until a golden printed the renderings themselves.",
+      "why": "Double.toString, over 1059 values. gatk_engine::tsv_table::java_double_to_string defers to Rust's shortest-round-trip formatter, and the pre-JDK19 FloatingDecimal does not always emit the shortest digits; the module note has said so since it was written, and the string-format golden caught one value. This establishes WHICH values differ rather than assuming there are none. The corpus is deterministic on both sides: twenty-seven named values, the powers of two across the whole exponent range, and a thousand bit patterns from splitmix64 seeded at one with the non-finite ones skipped. Nothing here is random. WHAT THE RUN ADDED: fifteen of the 1059 differ, which is 1.4 per cent, and in every one of them JAVA EMITS MORE DIGITS THAN THE SHORTEST. Three shapes. The smallest subnormal is 4.9E-324 upstream and 5.0E-324 here. 1e23 is 9.999999999999999E22 upstream, sixteen digits where two round-trip. And eleven values needing sixteen digits get a seventeenth: 7.2911220195563975E-304 against 7.291122019556398E-304. Every one of the fifteen parses back to the same double, so this is a rendering difference and not a value difference -- which is exactly why nothing had caught it until a golden printed the renderings themselves. SINCE: java_double_to_string is jmath::to_string's reconstruction of Java 17's Double.toString, and all 1059 match.",
       "compare": {
         "mode": "lines"
       },
@@ -7476,6 +7476,191 @@
       ]
     },
     {
+      "id": "callers-all-annotations",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller, RampedHaplotypeCaller and Mutect2 with --enable-all-annotations, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--enable-all-annotations (G3.2c, #1332): every annotation GATK discovers, computed in the context each caller gives it. The allele-specific raw data reference-confidence mode writes; AllelePseudoDepth's DD and DF, with the memo its one instance keeps across sites; the flow annotations under the default flow order, CycleSkipStatus writing nothing without an actual one; the pedigree annotations with no pedigree, which answer nothing; OriginalAlignment's OCM where Mutect2's TLOD lets it run; and the jumbo INFO annotations, AssemblyComplexity and HaplotypeFilteringAnnotation, over the caller's read- or fragment-by-haplotype matrix. What a reader would not guess: HaplotypeCaller refuses allele-specific annotations in VCF mode; Mutect2 writes DD, DF and BQHIST in the Allele.hashCode order its HashMap marginalises into; and GQ_MEAN reads the genotype's real GQ, which only the VCF encoder caps at 99 (htsjdk-rs #245). Seven runs over HcDragenEndToEndDump's reads: HaplotypeCaller in VCF (refused), GVCF, BP_RESOLUTION and GVCF in DRAGEN mode, RampedHaplotypeCaller in GVCF, Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\thc-vcf\torg.broadinstitute.hellbender.exceptions.UserException:Allele-specific annotations are not yet supported in the VCF mode",
+        "HAPDOM=1.00"
+      ],
+      "cases": [
+        {
+          "dump": "HcAllAnnotationsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_all_annotations.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-gvcf",
+      "status": "oracle-backed",
+      "title": "Mutect2 in somatic reference-confidence mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--emit-ref-confidence in Mutect2 (G3.2d, #1333). The activity and emission thresholds drop to minus infinity, so every region is active and every alternate is emitted, <NON_REF> among them with the median likelihood addNonReferenceAllele gives it. A base without a call is a record whose likelihood is the somatic log odds of its alternate reads under a Beta prior from --minimum-allele-fraction, written as a FORMAT TLOD, with no indel model and so no GQ or PL. SomaticGVCFWriter merges those records into blocks by TLOD band: the bands are decimal LODs binned to the precision their smallest gap needs, from Integer.MIN_VALUE to Integer.MAX_VALUE, and a block carries the smallest TLOD it saw and a diploid hom-ref genotype whatever the sample. Over the first sample of HcDragenEndToEndDump's reads: GVCF over the contig and over a window, BP_RESOLUTION, GVCF with three bands a quarter apart, GVCF with every annotation, and the two-sample BAM, refused. Found on the way and fixed: bestAllelesBreakingTies() gives a tie to the reference allele, and the port took the first maximum, which agrees only while the reference is the first allele of the matrix; AssemblyComplexity over four haplotypes is where they parted.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 9,
+      "expect_contains": [
+        "error\ttwo-samples\tjava.lang.IllegalArgumentException:readLikelihoods must contain exactly one sample but it contained 2",
+        "GVCFBlock-2147483648--25"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2GvcfDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_gvcf.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-mitochondria",
+      "status": "oracle-backed",
+      "title": "Mutect2 in mitochondria mode, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--mitochondria-mode (G3.2e, #1334) is argument presets, set where the command line did not set them, as customCommandLineValidation sets them: a default allele frequency of 4e-3, emission and initial LODs of 0, every dangling branch recovered, a pruning LOD threshold of log(10^-4), and the OriginalAlignment annotation. Over HcDragenEndToEndDump's reads: the mode on the first sample, with an explicit --tumor-lod-to-emit it must not override, in GVCF over a window, and over both samples with the second as the normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 7,
+      "expect_contains": [
+        "out\tmitochondria=",
+        "out\tmitochondria-tumor-normal="
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2MitochondriaDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_mitochondria.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38459207626, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-pedigree",
+      "status": "oracle-backed",
+      "title": "The callers' pedigree arguments, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--pedigree and --founder-id (G3.2k, #1343), the annotation plugin's pedigree arguments. ExcessHet and InbreedingCoeff count only the founders' genotypes, --founder-id's then the PED file's; PossibleDeNovo and TransmittedSingleton walk the PED file's trios, family by family, with --denovo-parent-gq-threshold and --denovo-depth-threshold moving a call between high and low confidence. Either argument with no pedigree annotation resolved is refused, the annotations named in the plugin's HashMap order, which is Mutect2's default. Over HcDragenEndToEndDump's reads with a third sample, a copy of the second under other names: a trio whose child carries what its parents do not, the thresholds, the founders alone, both together, two families with a comment and a missing parent, GVCF mode, an unknown sex code, a malformed PED line (its source named by an identity hash, masked), and the refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 20,
+      "expect_contains": [
+        "hiConfDeNovo=s1",
+        "error\tmutect2-pedigree\torg.broadinstitute.barclay.argparser.CommandLineException:Pedigree argument \"pedigree\" or \"founder-id\" was specified without a pedigree annotation being requested, (eg: InbreedingCoeff, ExcessHet, PossibleDeNovo, TransmittedSingleton))"
+      ],
+      "cases": [
+        {
+          "dump": "HcPedigreeDump",
+          "golden": "crates/gatk-tools/tests/data/hc_pedigree.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-linked-graph",
+      "status": "oracle-backed",
+      "title": "The callers with the linked de Bruijn graph, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--linked-de-bruijn-graph (G3.2h, #1337): JunctionTreeLinkedDeBruijnGraph and JunctionTreeKBestHaplotypeFinder. Each k-mer size in turn, the configured ones then six larger, is a read threading graph with no non-unique k-mers and cycles allowed, its dangling ends recovered along the stored reference path; each read is threaded through it again to record, at every vertex leading into a merge, which way it went at each later fork, and the finder walks from the reference source following those junction trees where three threads vouch for them and the edge weights where not, grafting a fork edge no path took onto the best path through its vertex. The first size that yields haplotypes is kept, in the order found, after the reference. What a reader would not guess: --disable-artificial-haplotype-recovery is refused in this mode, the only one that reads it, because the test in setArtificialHaplotypeRecoveryMode is the wrong way round, and the refusal names --experimental-dangling-branch-recover, which does not exist; and paths of exactly equal score leave the finder's queue in an order the reference takes from identity hashes, which no call here depends on. Over HcEndToEndDump's reads (two SNPs thirty bases apart in cis for one sample and in trans for the other) and HcDragenEndToEndDump's (short tandem repeats, which give the graph cycles): HaplotypeCaller with the graph, without the recovery (refused), the recovery switch alone, a fixed k-mer size of 15, every dangling branch recovered, GVCF mode, RampedHaplotypeCaller, Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "error\thc-linked-no-recovery\torg.broadinstitute.hellbender.exceptions.UserException:Argument '--experimental-dangling-branch-recover' requires '--linked-de-bruijn-graph' to be set",
+        "1946.50"
+      ],
+      "cases": [
+        {
+          "dump": "HcLinkedGraphDump",
+          "golden": "crates/gatk-tools/tests/data/hc_linked_graph.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38479153521, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-flow",
+      "status": "oracle-backed",
+      "title": "The callers' flow-based paths, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The flow-based paths of the callers (G3.2f, #1335), over Ultima reads (tp and t0 tags, a read group under TGCA) on a contig with a SNP, a deletion in an A homopolymer with a SNP twenty bases on, and an insertion in a C homopolymer. The FlowBased engine: each sample's reads as flow reads under the first read's group, trimmed in bases to the first haplotype (invalid below ten), the haplotype clipped to the flows the read covers widened by four, the read's matrix read along it stepping four flows; optimised, exact, untrimmed, with the matrix switches and dynamic disqualification. FlowBasedHMM: a PairHMM over flows with flat imputed indel penalties, the PCR model and its own floor, refusing a cycle other than four. Long hmer collapsing: haplotypes put back to the reference's hmer lengths where the alignment deleted bases beside an hmer as long as the threshold, merged when identical, a substitution on such a haplotype tagged XC; -1 reads the threshold from the read groups. --flow-mode's presets, set where the command line did not. Stepwise filtering: FlowBased scores for the allele filter, the main engine's over what it kept, with the reference's two refusals. --flow-order-for-annotations: what the flow annotations read is the first entry naming no read group (a read's group is looked up and the answer dropped), CycleSkipStatus writes only with one, and the argument without a flow annotation is refused in the plugin's HashMap order. Found on the way: low-quality tails are clipped comparing signed bytes, so --min-base-quality-score 0 (the flow mode's) clips nothing.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 38,
+      "expect_contains": [
+        "XC=1",
+        "X_CSS=cycle-skip",
+        "error\thc-flow-hmm-cycle-8\torg.broadinstitute.hellbender.exceptions.GATKException:FlowBasedHMMEngine requires flow order of 4 elements but cycle length is specified as 8"
+      ],
+      "cases": [
+        {
+          "dump": "HcFlowDump",
+          "golden": "crates/gatk-tools/tests/data/hc_flow.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38495970490, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-allele-filtering",
+      "status": "oracle-backed",
+      "title": "--flow-filter-alleles in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "AlleleFiltering (G3.2f, #1335): alleles no haplotype carries together are linked three bases apart or less, or twenty and equal up to one hmer once inserted in the reference; within each group the weakest by quality against its inverse (germline PLs, or for Mutect2 ten times the somatic log odds) or the most strand-biased has its haplotypes disabled until none qualifies, a lone allele only on the stringent quality of one unless --flow-filter-lone-alleles. What a reader would not guess: the haplotypes kept come out in the order of a HashSet over their bases, whether or not any went; every allele weighed where a candidate was found marks its start SUSP_NOISY_ADJACENT_TP_VARIANT; and HaplotypeCaller adds HaplotypeFilteringAnnotation, fed the matrix before filtering. Over HcEndToEndDump's reads: the defaults, quality thresholds of 300 and 2000, a strand odds ratio of 0.5, lone alleles, RampedHaplotypeCaller, GVCF mode, and Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 12,
+      "expect_contains": [
+        "SUSP_NOISY_ADJACENT_TP_VARIANT",
+        "FILTERED_HAPS="
+      ],
+      "cases": [
+        {
+          "dump": "HcAlleleFilteringDump",
+          "golden": "crates/gatk-tools/tests/data/hc_allele_filtering.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38495970490, byte for byte the local dump."
+        }
+      ]
+    },
+    {
       "id": "mutect2-end-to-end",
       "status": "oracle-backed",
       "title": "Mutect2 end to end",
@@ -7522,6 +7707,398 @@
           "dump": "RampsEndToEndDump",
           "golden": "crates/gatk-tools/tests/data/ramps_end_to_end.txt.gz",
           "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38368192193, byte for byte the local dump. Twenty-five rows: the two contigs, the SAM text, the three off ramps' VCFs and zips (entry names, text entries, the haplotype BAM and BAI as hex), the on ramps' VCFs and the three refusals."
+        }
+      ]
+    },
+    {
+      "id": "hc-pileup",
+      "status": "oracle-backed",
+      "title": "The callers with pileup detection, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "Pileup detection (G3.2g, #1336): at every locus of a region's active span, the substitutions above a base quality of twelve and, with indels on, the insertions and deletions that follow an element are counted with the reads that are bad for the pileup (an improper pair, a secondary or SA-tagged alignment, a share of mismatches over a threshold read as MZ from NM or the reference, a template length outside a band) or for the assembly. An event above its share of the depth is good, and one mostly from reads bad for the assembly is bad. HaplotypeCaller's trimmer sees the good events and not the bad; then the good ones, by start, are inserted into the five best haplotypes (reference first, then by score) unless assembled or a SNP near an assembled indel, the new haplotypes ranked by how many of their k-mers a hard-clipped read holds. What a reader would not guess: the removal of haplotypes carrying bad events runs on a freshly trimmed set whose haplotypes have no event maps, so it removes nothing; Mutect2 never sets the activity score, so a phred threshold drops every locus; RampedHaplotypeCaller reads no pileup event at all; and DepthPerSampleHC marginalizes to the site's alleles, so a read tied between a dropped allele and a kept one counts. Over HcEndToEndDump's reads, HcDragenEndToEndDump's, and a paired set with a SNP, an insertion, noisy reads, improper pairs, SA tags and NM tags, with and without an assembler able to find the variants.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 28,
+      "expect_contains": [
+        "out\tpaired-hc-pileup-no-assembly=",
+        "600\\t.\\tC\\tCTG",
+        "400\\t.\\tC\\tA\\t"
+      ],
+      "cases": [
+        {
+          "dump": "HcPileupDump",
+          "golden": "crates/gatk-tools/tests/data/hc_pileup.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38499298231, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-pdhmm",
+      "status": "oracle-backed",
+      "title": "The callers with the partially determined PairHMM, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The PDHMM (G3.2g, #1336). Once trimmed, the assembled haplotypes give way to partially determined ones: the assembled events less the bad pileup events, with the good ones (a SNP near an assembled indel left out), sorted SNP first; pairs and trios that Smith-Waterman realigns into another listed event, or into the reference, become mutexes beside the overlapping pairs; the connected groups (seventeen events at most) give, for each locus inside the calling span and each of its alleles including the reference, the maximal compatible subsets of every other group, and each branch a haplotype whose undetermined events sit in its alternate bytes (a SNP's other bases, a deletion's start and end, an insertion made deletable). LoglessPDPairHMM scores a flagged base as matching either base and a flagged deletion as skipped or walked, through a second set of matrices and a state that is not reset between rows; reads are not realigned; a haplotype supports alleles only at its determined position. What a reader would not guess: GVCF mode is refused (IllegalArgumentException: refHaplotype cannot be null) because the set no longer has a reference haplotype; when the construction gives up the GGA path runs on a set the PD engine gave event maps, so the removal of haplotypes with bad events finally removes some; RampedHaplotypeCaller and Mutect2 make no PD haplotypes; and --dragen-378-concordance-mode is 3.4.12's arguments with a calling threshold of 1.0, pileup detection with its heuristics and the PDHMM. Also the overlap optimisation (a read outside the determined extent plus the margin and one scores negative infinity), determined haplotypes in place of PD ones, the fallback off, the results file, compared whole, and what --print-pileupcalling-status prints to standard output, whose sets of events come out in HashSet order.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 39,
+      "expect_contains": [
+        "error\thc-pdhmm-gvcf\tjava.lang.IllegalArgumentException:refHaplotype cannot be null",
+        "file\thc-pdhmm-overlap-results=",
+        "33, 0"
+      ],
+      "cases": [
+        {
+          "dump": "HcPdhmmDump",
+          "golden": "crates/gatk-tools/tests/data/hc_pdhmm.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38499298231, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-alleles",
+      "status": "oracle-backed",
+      "title": "The callers force-calling, --alleles, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "Force-calling (G3.2l, #1346). A locus a usable given record overlaps is active before its pileup is looked at, and Mutect2 then counts no callable site there. A region's given events are the records over its padded span, filtered ones dropped unless --force-call-filtered-alleles, split one per alternate and right trimmed only when split, so an MNP sharing its last base with the reference becomes a SNP; HaplotypeCaller keeps those starting at or after the region's start, so one in the right padding stays, while Mutect2 and the ramped engine keep every one. A region with given events and no reads is still called by HaplotypeCaller. The trimmer sees the given events beside the assembled ones, and each one the assembly lacks is inserted into the five best haplotypes, the reference first then by score, a list rather than a set, so nothing inserted is inserted into again. An alternate consistent with a given event (the same length change, one allele a prefix of the other) is output whatever its confidence and its site emitted whatever its quality; Mutect2 keeps it past its tumour and normal odds. RampedHaplotypeCaller only genotypes with them. Found on the way: MLEAF at a site with no called chromosome is Math.min(1.0, NaN), so NaN; and DepthPerSampleHC's marginalization. Over HcEndToEndDump's reads and HcPileupDump's paired set, with given VCFs made from the reference: alleles the reads carry and do not, a deletion, an insertion, a multiallelic record, a filtered record and one with no reads; GVCF mode, no assembly, beside pileup detection and the PDHMM, under intervals, RampedHaplotypeCaller, and Mutect2 tumour-only, tumour-normal and in GVCF mode, which the reference refuses for two samples.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 19,
+      "expect_contains": [
+        "error\tmutect2-alleles-gvcf\tjava.lang.IllegalArgumentException:readLikelihoods must contain exactly one sample but it contained 2",
+        "MLEAF=NaN",
+        "out\tpaired-mutect2-alleles="
+      ],
+      "cases": [
+        {
+          "dump": "HcAllelesDump",
+          "golden": "crates/gatk-tools/tests/data/hc_alleles.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38501966129, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-bamout",
+      "status": "oracle-backed",
+      "title": "The callers' --bam-output, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--bam-output (G3.2m, #1347). The writer's header is the reads' dictionary in coordinate order, their read groups and an ArtificialHaplotypeRG (sample HC, centre BI) unless NO_HAPLOTYPES, their programs and a bare HaplotypeBAMWriter. Each called region adds its haplotypes as reads, HC_<n>_<index> with n counting across the run, qualities of 33, mapping quality 60, the reverse-strand flag alone, HC holding the haplotype's hashCode and CR the callable region; with CALLED_HAPLOTYPES they come in the order of a HashSet copied from the genotyping engine's, under --disable-optimizations with the reference added, and a region with no called haplotype writes nothing at all. Then the region's reads as they were scored: realigned (except with the PDHMM), OS and OE dropped, AR the location of the best haplotype with the reference and the fewest CIGAR elements winning ties, CR the callable region, and XA the alleles each was informative for, one comma-separated entry per call; Mutect2 reads them off fragments, so both mates of an informative fragment gain it, and writes its haplotypes before allele filtering. Nothing is presorted: htsjdk sorts by coordinate as it closes. Each writer type, the index switch, GVCF mode, --disable-optimizations, the PDHMM, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal, compared as SAM text.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 33,
+      "expect_contains": [
+        "bai\thc-bamout-no-haplotypes=false",
+        "ArtificialHaplotypeRG",
+        "XA:Z:"
+      ],
+      "cases": [
+        {
+          "dump": "HcBamoutDump",
+          "golden": "crates/gatk-tools/tests/data/hc_bamout.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-debug-outputs",
+      "status": "oracle-backed",
+      "title": "The callers' debug outputs and switches, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "The debug outputs and switches of G3.2m (#1347). --assembly-region-out writes each region the walker hands over in IGV's TAB format; --haplotype-debug-histogram-output the two histograms at shutdown (HaplotypeCaller only); --debug-assembly-variants-out every assembled event through a PriorityQueue written in its array order, 200 at a time once 300 wait; --alm-path the read-by-haplotype matrix of each region whose first haplotype lies in --alm-interval; --pair-hmm-results-file every PairHMM call; --debug-assembly-region-state the region's reads, haplotypes and filtering; --debug-genotyper-output the trimmer's spans, the region banner and haplotypes, every processed read's qualities, disqualifications (the threshold asked twice), each event's matrix and the DRAGEN models' BQD and FRD workings; --graph-output each assembled region's final graphs replacing the file, and --debug-graph-transformations each step's graph in the working directory, named by region, k-mer size, section and step, a linked graph's junction-tree files named by the reference's bases, which a padded region of default size makes too long for the file system (the reference's CouldNotReadInputFile). --keep-rg, --just-determine-active-regions and --dont-genotype end to end. Vertex numbers, junction-tree node names and FRD's printed arrays are System.identityHashCode, masked on both sides, and a file holding junction trees comes out of identity-keyed HashMaps and is compared as a set of lines.",
+      "compare": {
+        "mode": "lines",
+        "rules": [
+          {
+            "rule": "mask_identity_hashes",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "Vertex ids and labels, junction-tree node names and FRD's double[] renderings are System.identityHashCode, different in every JVM run."
+          },
+          {
+            "rule": "sort_segments_with",
+            "marker": "TreadingNode_",
+            "kinds": [
+              "file",
+              "dot"
+            ],
+            "why": "A linked graph's junction trees are printed from HashMaps keyed by identity, in the JVM's order."
+          }
+        ]
+      },
+      "expect_rows": 214,
+      "expect_contains": [
+        "file\thc-genotyper=calling for region",
+        "dot\thc-graph-debug\tchr1:",
+        "TreadingNode_",
+        "File name too long"
+      ],
+      "cases": [
+        {
+          "dump": "HcDebugOutputsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_debug_outputs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38505050804, the local dump line for line once the declared rules have masked the identity hashes."
+        }
+      ]
+    },
+    {
+      "id": "hc-error-correction",
+      "status": "oracle-backed",
+      "title": "Read error correction in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--error-correction-log-odds and --error-correct-reads (G3.2n, #1348). The pileup corrector piles up a copy of each region's reads with the samples in getSamplesFromHeader's sorted order, takes the first plurality of A, C, G and T as the reference, and where Mutect2's log likelihood ratio of the other bases' qualities is below the threshold corrects them to it at quality 30, except beside an indel or a soft clip and at a read end with three edits in fifteen bases; only the assembly sees them. The k-mer corrector is never given a k-mer and corrects nothing: --error-correct-reads finalizes regions with a minimum tail quality of 6 and refuses a k-mer length of zero unless the pileup corrector replaces it. Over HcEndToEndDump's reads and the same reads with three per cent of their bases miscalled from a fixed seed, at five thresholds, in GVCF mode, with the linked graph, RampedHaplotypeCaller and Mutect2 tumour-only and tumour-normal.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 24,
+      "expect_contains": [
+        "out\thc-pileup-corrector-1000.0=",
+        "error\thc-kmer-corrector-zero\tjava.lang.IllegalArgumentException:kmerLength must be > 0 but got 0"
+      ],
+      "cases": [
+        {
+          "dump": "HcErrorCorrectionDump",
+          "golden": "crates/gatk-tools/tests/data/hc_error_correction.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38511284564, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-resources",
+      "status": "oracle-backed",
+      "title": "HaplotypeCaller's variant resources, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--dbsnp, --comparison and --population-callset (G3.2o, #1349). The overlap annotator is the comparisons under their tags (an untagged one under its absolute path), then dbSNP under DB, a comparison naming the dbSNP file itself being renamed DB and one tagged DB refused; at each call the records starting where it does give the rsID (the ID column) and the flags, with a standard header line for DB and a membership flag otherwise. --population-callset turns the reference-confidence model's posteriors on for every block and every call it emits, the priors from the callset's records that start there or from --num-reference-samples-if-no-call, with the model's fixed options: a call gains PP, PG and recomputed AC, AF and AN, its genotype and GQ from the posteriors, and a hom-ref block gains PP, which the GVCF block combiner keeps as an element-wise minimum and from which it takes GQ. VCF mode only gains the header lines. Resources written from a first plain run's calls over HcEndToEndDump's reads; HaplotypeCaller in VCF, GVCF and base-pair-resolution mode and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 17,
+      "expect_contains": [
+        "error\thc-comp-tagged-db\torg.broadinstitute.hellbender.exceptions.GATKException:The map of overlaps must not contain DB",
+        "GT:DP:GQ:MIN_DP:PL:PP"
+      ],
+      "cases": [
+        {
+          "dump": "HcResourcesDump",
+          "golden": "crates/gatk-tools/tests/data/hc_resources.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38542209638, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-ploidy",
+      "status": "oracle-backed",
+      "title": "--ploidy-regions in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--ploidy-regions (G3.2p, #1350). Each BED feature is a SimpleCount whose name is the ploidy, checked against the reads' dictionary; the engine builds one genotyper and one active-region evaluator per distinct ploidy, and an assembly region overlapping a ploidy region is genotyped at the ploidy of the last overlapping feature, its reference-confidence blocks too. A name that is no integer, a negative count, a contig or an end off the dictionary and a zero ploidy are refused. Over HcEndToEndDump's reads: haploid, triploid and overlapping regions, a region narrower than the call interval, GVCF and base-pair-resolution mode, --sample-ploidy beside the regions, and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 27,
+      "expect_contains": [
+        "out\thc-haploid-bp=",
+        "error\thc-zero\tjava.lang.IllegalArgumentException:does not support negative ploidy"
+      ],
+      "cases": [
+        {
+          "dump": "HcPloidyDump",
+          "golden": "crates/gatk-tools/tests/data/hc_ploidy.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38549036872, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-contamination",
+      "status": "oracle-backed",
+      "title": "Contamination downsampling in the callers, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "why": "--contamination-fraction-to-filter and --contamination-fraction-per-sample-file (G3.2q, #1351). At each event, once the reads are narrowed to those overlapping it, AlleleLikelihoods.contaminationDownsampling removes (int) (informative reads * fraction) of each sample's reads, all of them at a fraction of one or more, the counts left chosen by AlleleBiasedDownsamplingUtils to look most like a het or a hom and each allele's reads drawn from Utils.getRandomDataGenerator(), which nothing resets between runs in a JVM (the dump resets it before each). The annotations and the bamout tags read a fresh marginalization of the event's reads unless --use-filtered-reads-for-annotations. loadContaminationFile trims lines, skips blank ones, ignores samples the reads do not hold (so a duplicate among them is not refused) and refuses three columns, an empty field, an unparsable or out-of-range fraction, a duplicate sample and a missing file. Over HcEndToEndDump's two samples: five fractions, the filtered annotations, GVCF mode, per-sample files with and without a default, and RampedHaplotypeCaller.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 31,
+      "expect_contains": [
+        "out\thc-0.1=",
+        "error\thc-duplicate\torg.broadinstitute.hellbender.exceptions.UserException$MalformedFile:"
+      ],
+      "cases": [
+        {
+          "dump": "HcContaminationDump",
+          "golden": "crates/gatk-tools/tests/data/hc_contamination.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38557839761, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-resources",
+      "status": "oracle-backed",
+      "title": "Mutect2's germline resource and panel of normals, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--germline-resource, --max-population-af, --panel-of-normals and --genotype-pon-sites (G3.2r, #1352). POPAF is minus log10 of the AF of the resource record whose alleles match the call's once both are against the longer reference (alleleIndices), the default allele frequency otherwise, a record whose AF is not one value per alternate skipped and a same-length reference with other bases refused. In tumour-only calling a locus with a resource allele of AF at least --max-population-af is inactive when that allele is an indel and the likeliest tumour allele is one, or a substitution and the likeliest tumour base is the resource reference's first base, unless --genotype-germline-sites; the panel's loci are inactive unless --genotype-pon-sites, and a call starting on one is flagged PON. Resources written from a first plain run's calls over HcDragenEndToEndDump's reads: common, rare and missing AFs, a multiallelic record, a longer representation, a wrong-length AF, tumour-normal, GVCF mode, and the refusals.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 21,
+      "expect_contains": [
+        "out\tgermline=",
+        "out\tpon-genotyped="
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2ResourcesDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_resources.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38563323883, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-f1r2",
+      "status": "oracle-backed",
+      "title": "Mutect2's F1R2 counts, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--f1r2-tar-gz with --f1r2-median-mq, --f1r2-min-bq and --f1r2-max-depth (G3.2s, #1353). An F1R2CountsCollector over the tumour samples counts the tumour pileup of every locus isActive examines once the callable sites are counted (a forced locus and an empty pileup are not), with the three-base k-mer getKmerAround gives; onTraversalSuccess writes each sample's alt table, reference histograms and depth-one alt histograms into the archive, whose name onTraversalStart requires to end in .tar.gz. The members are compared by name, the reference listing them in the file system's order. Over HcDragenEndToEndDump's reads: defaults, the thresholds, a median MQ no read reaches, a normal, two tumours, GVCF mode, an interval at the contig's start, and a refused name.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 35,
+      "expect_contains": [
+        "member\tf1r2\t./s1.alt_table=",
+        "error\tf1r2-bad-name\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2F1r2Dump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_f1r2.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38572721634, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-permutect",
+      "status": "oracle-backed",
+      "title": "Mutect2's Permutect datasets, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--permutect-training-dataset, --permutect-test-dataset, their truths, --permutect-ref-downsample, --permutect-alt-downsample, --permutect-non-artifact-ratio and --permutect-dataset-mode (G3.2t, #1354). Every annotated call adds one datum per alternate its engine labels (the training engine from POPAF, TLOD, the AD fractions, PON and a queue per variant type, the test engine from its truth), with the reference bases, five variant features written %.2f from floats, the tumour's featurized reads (FeaturizedReadSets: read group, MQ, BQ, orientation, positions, fragment ends in ILLUMINA mode or si and rq in ULTIMA mode, and the mismatches, indels and bad qualities against the best haplotype, by distance from the variant), the pre-downsampling counts and the two error log likelihoods; closing writes contigs.table and read-groups.table (a HashMap's order). A training dataset makes every candidate active. Downsampling past a read set's size shuffles without a generator, which the reference cannot reproduce, so the runs downsample to counts no read set reaches; ILLUMINA mode refuses an unpaired read. Over HcDragenEndToEndDump's reads paired, with Ultima tags, with a normal, two tumours and unpaired.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 53,
+      "expect_contains": [
+        "file\ttest\ttest.dataset=",
+        "error\tunpaired\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2PermutectDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_permutect.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38607376351, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "hc-allele-graphs",
+      "status": "oracle-backed",
+      "title": "The callers' allele-filtering interaction graphs, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "why": "--flow-filter-alleles-debug-graphs (G3.2u, #1355). With --flow-filter-alleles, AlleleFiltering writes each linked group of two or more alleles no haplotype carries together to allele.interaction.<contig>.<first>-<last>.dot in the working directory: a vertex per allele labelled with its quality against its inverse, an edge to each allele whose quality drops when the first one's haplotypes are disabled, weighted by the drop, in jgrapht's DOTExporter format. Over a contig whose reads tile four haplotypes (a group of two SNVs and a group of three): HaplotypeCaller at the default and a 300 threshold, the switch without the filter, RampedHaplotypeCaller and Mutect2.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 15,
+      "expect_contains": [
+        "out\thc-graphs=",
+        "graph\thc-graphs\tallele.interaction."
+      ],
+      "cases": [
+        {
+          "dump": "HcAlleleGraphsDump",
+          "golden": "crates/gatk-tools/tests/data/hc_allele_graphs.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
+        }
+      ]
+    },
+    {
+      "id": "mutect2-dragstr",
+      "status": "oracle-backed",
+      "title": "Mutect2 with DRAGstr's PairHMM gap penalties, end to end",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "Mutect2"
+      ],
+      "why": "--dragstr-params-path and --dragstr-het-hom-ratio in Mutect2 (G3.2u, #1355). The table reaches Mutect2 through createLikelihoodCalculationEngine alone: the PairHMM's gap penalties at each read's short tandem repeats, unless --dont-use-dragstr-pair-hmm-scores, when the table is not even read; the het-hom ratio feeds HaplotypeCaller's genotype priors and changes nothing here. Over HcDragenEndToEndDump's reads, with an A homopolymer and a CA repeat: the default table, a ratio, the scores off (with a path that is not there), a normal, and a missing table.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 11,
+      "expect_contains": [
+        "out\tdragstr=",
+        "error\tdragstr-missing\t"
+      ],
+      "cases": [
+        {
+          "dump": "Mutect2DragstrDump",
+          "golden": "crates/gatk-tools/tests/data/mutect2_dragstr.txt.gz",
+          "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
         }
       ]
     }

@@ -224,9 +224,10 @@ fn within_one_ulp(x: f64, y: f64) -> bool {
     (order(x) - order(y)).abs() <= 1
 }
 
-/// `Math.log10`, at run time.
+/// `Math.log10`, correctly rounded as the JVM's is: the platform's can be an ulp away, which a
+/// sum of a read's flows carries into its likelihood.
 fn log10(value: f64) -> f64 {
-    std::hint::black_box(value).log10()
+    jmath::math::log10(value)
 }
 
 /// `FlowBasedHaplotype`: the haplotype's key and the base each of its flows reads.
@@ -255,10 +256,23 @@ pub fn exact_length_score(
     read: &crate::flow_based_read::FlowRead,
     optimized: bool,
 ) -> f64 {
-    let key_length = haplotype.key.len();
+    clipped_score(haplotype, read, 0, haplotype.key.len(), optimized)
+}
+
+/// `flowLikelihoodScore` and `optimizedFlowLikelihoodScore` over the haplotype's flows
+/// `clip_left .. clip_right`: from the first of them reading the read's first base, stepping by
+/// four flows, the best sum of the read's log probabilities.
+pub fn clipped_score(
+    haplotype: &FlowHaplotype,
+    read: &crate::flow_based_read::FlowRead,
+    clip_left: usize,
+    clip_right: usize,
+    optimized: bool,
+) -> f64 {
+    let key = &haplotype.key[clip_left..clip_right];
+    let key_length = key.len();
     let read_first = read.flow_order.first().copied().unwrap_or(0);
-    let starting_point = haplotype
-        .flow_order
+    let starting_point = haplotype.flow_order[clip_left..clip_right]
         .iter()
         .position(|base| *base == read_first)
         .unwrap_or(0);
@@ -269,7 +283,7 @@ pub fn exact_length_score(
     let mut locations = vec![0i32; read_key_length];
     while s + read_key_length <= key_length {
         for i in s..s + read_key_length {
-            locations[i - s] = (haplotype.key[i] & 0xff).min(cap);
+            locations[i - s] = (key[i] & 0xff).min(cap);
         }
         let mut result = 0.0;
         for (i, location) in locations.iter().enumerate() {

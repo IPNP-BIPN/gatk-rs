@@ -363,7 +363,17 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     /// qualities) is a transient attribute in the reference.
     pub fn filter_poorly_modeled_evidence(
         &mut self,
+        log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
+    ) -> Result<(), LikelihoodsError> {
+        self.filter_poorly_modeled_evidence_named(log10_min_true_likelihood, None)
+    }
+
+    /// `filterPoorlyModeledEvidence` with `--debug-genotyper-output`, which prints each removed
+    /// read by `name` and asks the threshold for it a second time.
+    pub fn filter_poorly_modeled_evidence_named(
+        &mut self,
         mut log10_min_true_likelihood: impl FnMut(usize, usize, &E) -> f64,
+        name: Option<&dyn Fn(&E) -> String>,
     ) -> Result<(), LikelihoodsError> {
         if self.alleles.number_of_alleles() == 0 {
             return Err(LikelihoodsError::NoAlleles);
@@ -376,9 +386,61 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
                 })
                 .collect();
             for &i in &remove {
+                if let Some(name) = name.filter(|_| crate::genotyper_debug::is_enabled()) {
+                    let evidence = &self.evidence_by_sample[sample][i];
+                    let maximum = self.maximum_likelihood_over_all_alleles(sample, i);
+                    let threshold = log10_min_true_likelihood(sample, i, evidence);
+                    crate::genotyper_debug::println(&format!(
+                        "disqualified read: {i} {} with max likelihood {} and threshold {}",
+                        name(evidence),
+                        crate::tsv_table::java_double_to_string(maximum),
+                        crate::tsv_table::java_double_to_string(threshold)
+                    ));
+                }
                 let evidence = self.evidence_by_sample[sample][i].clone();
                 self.filtered_evidence[sample].push(evidence);
             }
+            self.remove_evidence_by_index(sample, &remove);
+        }
+        Ok(())
+    }
+
+    /// `contaminationDownsampling(perSampleDownsamplingFraction)`: for each sample whose fraction is
+    /// above zero (and not NaN), all its evidence at one or more, otherwise what
+    /// `selectAlleleBiasedEvidence` picks from its informative evidence grouped by best allele
+    /// (reference allowed), in allele order.
+    pub fn contamination_downsampling(
+        &mut self,
+        fraction: impl Fn(&str) -> f64,
+        random: &mut crate::well19937c::Well19937c,
+    ) -> Result<(), crate::permutation::PermutationError> {
+        for sample in 0..self.number_of_samples() {
+            let f = fraction(self.get_sample(sample).map_or("", String::as_str));
+            if f.is_nan() || f <= 0.0 {
+                continue;
+            }
+            let count = self.evidence_by_sample[sample].len();
+            let mut remove: Vec<usize> = if f >= 1.0 {
+                (0..count).collect()
+            } else {
+                // `evidenceByBestAlleleMap(s)`: evidence indices by best allele.
+                let mut by_allele: Vec<Vec<usize>> = vec![Vec::new(); self.number_of_alleles()];
+                for r in 0..count {
+                    let best = self.search_best_allele(sample, r, true, None);
+                    if !best.is_informative() {
+                        continue;
+                    }
+                    if let Some(index) = best.allele.as_ref().and_then(|a| self.index_of_allele(a))
+                    {
+                        by_allele[index].push(r);
+                    }
+                }
+                crate::allele_biased_downsampling::select_allele_biased_evidence(
+                    &by_allele, f, random,
+                )?
+            };
+            remove.sort_unstable();
+            remove.dedup();
             self.remove_evidence_by_index(sample, &remove);
         }
         Ok(())
@@ -631,13 +693,31 @@ impl<E: Clone + PartialEq, A: AlleleType> AlleleLikelihoods<E, A> {
     }
 
     /// `bestAllelesBreakingTies(sample, tieBreakingPriority)`.
+    ///
+    /// `None` is the no-argument form, `tieBreakingPriority = a -> a.isReference() ? 1 : 0`: a tie
+    /// goes to the reference allele wherever it sits in the matrix. The reference never searches
+    /// with null priorities here, and taking the first maximum instead agrees only while the
+    /// reference is the first allele, which a haplotype matrix or a hash-ordered one need not be.
     pub fn best_alleles_breaking_ties_for_sample(
         &self,
         sample_index: usize,
         priorities: Option<&[f64]>,
     ) -> Vec<BestAllele<A>> {
+        let reference_first: Vec<f64>;
+        let priorities = match priorities {
+            Some(given) => given,
+            None => {
+                reference_first = self
+                    .alleles
+                    .as_slice()
+                    .iter()
+                    .map(|a| if a.is_reference() { 1.0 } else { 0.0 })
+                    .collect();
+                &reference_first
+            }
+        };
         (0..self.sample_evidence_count(sample_index))
-            .map(|evidence| self.search_best_allele(sample_index, evidence, true, priorities))
+            .map(|evidence| self.search_best_allele(sample_index, evidence, true, Some(priorities)))
             .collect()
     }
 }

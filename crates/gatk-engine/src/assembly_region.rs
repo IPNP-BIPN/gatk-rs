@@ -291,6 +291,12 @@ impl AssemblyRegion {
         &self.reads
     }
 
+    /// The reads, to set an attribute on them: GATK's reads are shared objects, so an attribute set
+    /// while the walker examined a locus is on the region's read too.
+    pub fn reads_mut(&mut self) -> &mut [BamRecord] {
+        &mut self.reads
+    }
+
     pub fn hard_clipped_pileup_reads(&self) -> &[BamRecord] {
         &self.hard_clipped_pileup_reads
     }

@@ -267,6 +267,28 @@ pub fn hard_clip_bases(
     }
     clipped.read_bases = record.read_bases[copy_start..end].to_vec();
     clipped.base_qualities = record.base_qualities[copy_start..end].to_vec();
+    // `hasBaseIndelQualities`: either tag present, and then BOTH are written back clipped, the
+    // absent one from its Q45 default. Mutect2's overlapping-mate correction is what usually
+    // writes them, and a region's clip then has to keep them aligned with the bases.
+    let insertion = htsjdk_bam::Tag::new(&read_utils::BQSR_BASE_INSERTION_QUALITIES);
+    let deletion = htsjdk_bam::Tag::new(&read_utils::BQSR_BASE_DELETION_QUALITIES);
+    if record.tags.get(insertion).is_some() || record.tags.get(deletion).is_some() {
+        for (tag, quals) in [
+            (insertion, read_utils::base_insertion_qualities(record)),
+            (deletion, read_utils::base_deletion_qualities(record)),
+        ] {
+            if quals.len() < end {
+                return Err(ClipError::IndexOutOfBounds);
+            }
+            let text: String = quals[copy_start..end]
+                .iter()
+                .map(|&q| (q + 33) as char)
+                .collect();
+            clipped
+                .tags
+                .insert(tag, htsjdk_bam::tag::TagValue::Str(text));
+        }
+    }
     clipped.cigar = new_cigar;
     if start == 0 && !read::is_unmapped(record) {
         clipped.alignment_start =
@@ -514,7 +536,10 @@ pub fn clip_low_qual_ends(
     // The length is the read's, and the qualities are indexed with it: a read whose qualities are
     // absent has an empty array, and `getBaseQuality` runs past its end rather than answering.
     let read_length = read.read_bases.len() as i32;
-    let quality = |index: i32| -> Option<u8> { read.base_qualities.get(index as usize).copied() };
+    // Java compares `byte`s, signed: a threshold of -1 (`(byte) (0 - 1)`) clips nothing.
+    let low_qual = low_qual as i8;
+    let quality =
+        |index: i32| -> Option<i8> { read.base_qualities.get(index as usize).map(|&q| q as i8) };
     let mut right = read_length - 1;
     while right >= 0 {
         match quality(right) {

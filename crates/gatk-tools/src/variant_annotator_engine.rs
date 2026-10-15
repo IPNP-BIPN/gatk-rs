@@ -29,11 +29,13 @@
 //! with its FORMAT keys recomputed and sorted, even when nothing was asked for; only a record the
 //! walker skips, over an ambiguous reference base, keeps the file's own genotype text.
 
+use gatk_annotation::allele_pseudo_depth as a_pd;
 use gatk_annotation::catalogue::{Entry, Kind};
 use gatk_annotation::info_annotation::{AnnotationValue, InfoFieldAnnotation};
 use gatk_engine::allele_likelihoods::AlleleLikelihoods;
 use gatk_engine::allele_list::{AlleleList, SampleList};
 use gatk_engine::fragment::Fragment;
+use gatk_engine::haplotype::Haplotype;
 use gatk_engine::java_random::JavaRandom;
 use htsjdk_bam::header::SamHeader;
 use htsjdk_bam::record::BamRecord;
@@ -108,6 +110,18 @@ pub struct Site<'a> {
     pub dbsnp: Option<Vec<&'a VariantContext>>,
     /// Per `--resource`, the records starting here.
     pub resources: Vec<Vec<&'a VariantContext>>,
+    /// `readHaplotypeAlleleLikelihoods`: the read-by-haplotype matrix HaplotypeCaller hands over,
+    /// with the haplotypes carrying the event maps the genotyping built, in the matrix's order.
+    /// Present, it runs the jumbo INFO annotations.
+    pub haplotypes: Option<HaplotypeMatrix<'a>>,
+}
+
+/// The matrix a jumbo INFO annotation reads its haplotypes from: HaplotypeCaller's reads, or
+/// Mutect2's fragments, with the haplotypes carrying the event maps, in the matrix's order.
+#[derive(Clone, Copy)]
+pub enum HaplotypeMatrix<'a> {
+    Reads(&'a AlleleLikelihoods<BamRecord, Haplotype>, &'a [Haplotype]),
+    Fragments(&'a AlleleLikelihoods<Fragment, Haplotype>, &'a [Haplotype]),
 }
 
 /// `VariantAnnotatorEngine` as `VariantAnnotator` builds it.
@@ -119,6 +133,29 @@ pub struct Engine {
     pub expressions: Vec<Expression>,
     /// `--resource-allele-concordance`.
     pub allele_concordance: bool,
+    /// The one `AllelePseudoDepth` the plugin descriptor instantiates: its memo of prior pseudo
+    /// counts lives as long as the tool and is written through by one branch, so it is state the
+    /// sites share, not a cache.
+    pub pseudo_depth: std::cell::RefCell<gatk_annotation::allele_pseudo_depth::AllelePseudoDepth>,
+    /// `--assembly-complexity-reference-mode`, `AssemblyComplexity`'s one argument.
+    pub assembly_complexity_reference_mode: bool,
+    /// What `--pedigree` and `--founder-id` hand the pedigree annotations.
+    pub pedigree: PedigreeArguments,
+    /// `--flow-order-for-annotations`, as the flow annotations end up reading it: the first entry
+    /// with no read group (a read's group is looked up and the answer dropped).
+    pub flow_order_for_annotations: Option<String>,
+}
+
+/// The pedigree annotations' inputs: the trios `--pedigree` gives `PossibleDeNovo` and
+/// `TransmittedSingleton`, and the founders `ExcessHet` and `InbreedingCoeff` restrict their
+/// genotypes to, `--founder-id`'s or, without them, the pedigree's.
+#[derive(Debug, Clone, Default)]
+pub struct PedigreeArguments {
+    pub trios: Vec<gatk_annotation::pedigree::Trio>,
+    pub founder_ids: Vec<String>,
+    /// `--denovo-parent-gq-threshold` and `--denovo-depth-threshold`.
+    pub parent_gq_threshold: i32,
+    pub depth_threshold: i32,
 }
 
 impl Engine {
@@ -202,6 +239,7 @@ impl Engine {
                         called,
                         site.likelihoods,
                         fragments,
+                        &self.pseudo_depth,
                     )?;
                 }
                 // The jumbo ones, which read the fragment matrix, run after the others and only
@@ -220,6 +258,7 @@ impl Engine {
                             called,
                             site.likelihoods,
                             fragments,
+                            &self.pseudo_depth,
                         )?;
                     }
                 }
@@ -233,12 +272,48 @@ impl Engine {
         self.annotate_expressions(vc, site, &mut attributes)?;
         for entry in self.info() {
             let values = if use_raw && entry.is_reducible() {
-                annotate_raw(entry, site)?
+                annotate_raw(entry, &genotype_annotated, site)?
             } else {
-                annotate_info(entry, &genotype_annotated, site, random)?
+                annotate_info(
+                    entry,
+                    &genotype_annotated,
+                    site,
+                    random,
+                    &self.pedigree,
+                    self.flow_order_for_annotations.as_deref(),
+                )?
             };
             for (key, value) in values {
                 put(&mut attributes, &key, value);
+            }
+        }
+        // The jumbo INFO annotations, over the call as it came in, when the caller handed over a
+        // read-by-haplotype matrix.
+        if let Some(matrix) = site.haplotypes {
+            for entry in self
+                .resolved
+                .iter()
+                .filter(|entry| entry.kind == Kind::JumboInfo)
+            {
+                let values = match matrix {
+                    HaplotypeMatrix::Reads(likelihoods, haplotypes) => annotate_jumbo_info(
+                        entry,
+                        vc,
+                        likelihoods,
+                        haplotypes,
+                        self.assembly_complexity_reference_mode,
+                    )?,
+                    HaplotypeMatrix::Fragments(likelihoods, haplotypes) => annotate_jumbo_info(
+                        entry,
+                        vc,
+                        likelihoods,
+                        haplotypes,
+                        self.assembly_complexity_reference_mode,
+                    )?,
+                };
+                for (key, value) in values {
+                    put(&mut attributes, &key, value);
+                }
             }
         }
         let mut annotated = genotype_annotated;
@@ -435,8 +510,44 @@ fn to_values(pairs: Vec<(String, AnnotationValue)>) -> Vec<(String, Value)> {
 /// `ReducibleAnnotation.annotateRawData`, for the one reducible annotation HaplotypeCaller's
 /// defaults carry: `RMSMappingQuality`'s `RAW_MQandDP`, the summed squared mapping qualities and
 /// the count of the reads that have one, over every sample's evidence.
-fn annotate_raw(entry: &Entry, site: &Site<'_>) -> Result<Vec<(String, Value)>, EngineError> {
+fn annotate_raw(
+    entry: &Entry,
+    vc: &VariantContext,
+    site: &Site<'_>,
+) -> Result<Vec<(String, Value)>, EngineError> {
+    use gatk_annotation::allele_specific_rank_sum::{self as as_rank, AsRankSum};
+    use gatk_annotation::allele_specific_site_statistics as as_site;
+    use gatk_annotation::allele_specific_strand_bias::{self as as_sb, AsStrandBias};
+    let rank_sum = |kind: AsRankSum| -> Result<Vec<(String, Value)>, EngineError> {
+        Ok(as_rank::annotate_raw_data(kind, vc, Some(site.likelihoods))
+            .map_err(|error| EngineError::Runtime {
+                class: "java.lang.IllegalStateException".to_string(),
+                message: format!("{error:?}"),
+            })?
+            .map(|(key, text)| vec![(key, Value::Str(text))])
+            .unwrap_or_default())
+    };
+    let strand_bias = |kind: AsStrandBias| -> Vec<(String, Value)> {
+        as_sb::annotate_raw_data(kind, vc, Some(site.likelihoods))
+            .map(|(key, text)| vec![(key, Value::Str(text))])
+            .unwrap_or_default()
+    };
     match entry.name {
+        "AS_BaseQualityRankSumTest" => rank_sum(AsRankSum::BaseQuality),
+        "AS_MappingQualityRankSumTest" => rank_sum(AsRankSum::MappingQuality),
+        "AS_ReadPosRankSumTest" => rank_sum(AsRankSum::ReadPosition),
+        "AS_FisherStrand" => Ok(strand_bias(AsStrandBias::Fisher)),
+        "AS_StrandOddsRatio" => Ok(strand_bias(AsStrandBias::OddsRatio)),
+        // `AS_RMSMappingQuality.annotateRawData`: `%.2f` of each allele's summed squares.
+        "AS_RMSMappingQuality" => Ok(vec![(
+            "AS_RAW_MQ".to_string(),
+            Value::Str(as_site::as_rms_raw_string(
+                &vc.alleles,
+                &as_site::as_rms_data(site.likelihoods),
+            )),
+        )]),
+        // Both answer nothing raw: `AS_QualByDepth` an empty map, `RawGtCount` null.
+        "AS_QualByDepth" | "RawGtCount" => Ok(Vec::new()),
         "RMSMappingQuality" => {
             let likelihoods = site.likelihoods;
             if likelihoods.evidence_count() == 0 {
@@ -469,7 +580,24 @@ fn annotate_info(
     vc: &VariantContext,
     site: &Site<'_>,
     random: &mut JavaRandom,
+    pedigree: &PedigreeArguments,
+    flow_order: Option<&str>,
 ) -> Result<Vec<(String, Value)>, EngineError> {
+    // `getFounderGenotypes`: every genotype, or only the founders' when there are founders.
+    let founders_only = |vc: &VariantContext| -> VariantContext {
+        if pedigree.founder_ids.is_empty() {
+            return vc.clone();
+        }
+        let mut subset = vc.clone();
+        subset.genotypes = GenotypesContext::new(
+            vc.genotypes
+                .iter()
+                .filter(|g| pedigree.founder_ids.contains(&g.sample_name))
+                .cloned()
+                .collect(),
+        );
+        subset
+    };
     use gatk_annotation as a;
     let likelihoods = Some(site.likelihoods);
     let from_trait = |annotation: &dyn InfoFieldAnnotation| {
@@ -491,24 +619,50 @@ fn annotate_info(
         )],
         "BaseQualityHistogram" => from_trait(&a::read_grouping::BaseQualityHistogram),
         "BaseQualityRankSumTest" => from_trait(&a::rank_sum::BaseQualityRankSumTest),
+        // `AS_RankSumTest.annotate`: the parent's pooled Z under the allele-specific key.
+        "AS_BaseQualityRankSumTest" => to_values(a::rank_sum::annotate(
+            &a::allele_specific_rank_sum::AsRankSum::BaseQuality,
+            None,
+            vc,
+            likelihoods,
+        )),
+        "AS_MappingQualityRankSumTest" => to_values(a::rank_sum::annotate(
+            &a::allele_specific_rank_sum::AsRankSum::MappingQuality,
+            None,
+            vc,
+            likelihoods,
+        )),
+        "AS_ReadPosRankSumTest" => to_values(a::rank_sum::annotate(
+            &a::allele_specific_rank_sum::AsRankSum::ReadPosition,
+            None,
+            vc,
+            likelihoods,
+        )),
         "ChromosomeCounts" => from_trait(&a::chromosome_counts::ChromosomeCounts),
         "ClippingRankSumTest" => from_trait(&a::rank_sum::ClippingRankSumTest),
         "CountNs" => from_trait(&a::coverage::CountNs),
         "Coverage" => from_trait(&a::coverage::Coverage),
         "ExcessHet" => {
-            if !vc.genotypes.is_empty() && vc.is_variant() {
-                no_likelihoods(vc)?;
+            let founders = founders_only(vc);
+            if !founders.genotypes.is_empty() && founders.is_variant() {
+                no_likelihoods(&founders)?;
             }
-            string("ExcessHet", a::heterozygosity::excess_het(vc))
+            string("ExcessHet", a::heterozygosity::excess_het(&founders))
         }
         "FisherStrand" => from_trait(&a::strand_bias::FisherStrand),
         "FragmentLength" => per_allele(&a::per_allele::FragmentLength, vc, site)?,
         "GenotypeSummaries" => from_trait(&a::site_statistics::GenotypeSummaries),
         "InbreedingCoeff" => {
-            if vc.genotypes.len() >= a::heterozygosity::INBREEDING_MIN_SAMPLES && vc.is_variant() {
-                no_likelihoods(vc)?;
+            let founders = founders_only(vc);
+            if founders.genotypes.len() >= a::heterozygosity::INBREEDING_MIN_SAMPLES
+                && founders.is_variant()
+            {
+                no_likelihoods(&founders)?;
             }
-            string("InbreedingCoeff", a::heterozygosity::inbreeding_coeff(vc))
+            string(
+                "InbreedingCoeff",
+                a::heterozygosity::inbreeding_coeff(&founders),
+            )
         }
         "LikelihoodRankSumTest" => to_values(a::rank_sum::annotate(
             &a::site_statistics::LikelihoodRankSumTest,
@@ -519,7 +673,29 @@ fn annotate_info(
         "MappingQuality" => per_allele(&a::per_allele::MappingQuality, vc, site)?,
         "MappingQualityRankSumTest" => from_trait(&a::rank_sum::MappingQualityRankSumTest),
         "MappingQualityZero" => from_trait(&a::coverage::MappingQualityZero),
-        "OriginalAlignment" => from_trait(&a::original_alignment::OriginalAlignment),
+        // `ref.getInterval().getContig()`: the context at the variant, when there is a reference.
+        // Without one the reference throws on the null interval and the port keeps answering
+        // nothing, as it always has for VariantAnnotator.
+        "OriginalAlignment" => {
+            let reference = if site.window.1.is_empty() {
+                None
+            } else {
+                gatk_engine::interval::SimpleInterval::new(
+                    &vc.contig,
+                    vc.start as i32,
+                    vc.stop as i32,
+                )
+                .and_then(|interval| {
+                    gatk_engine::context::ReferenceContext::without_source(Some(interval), 0, 0)
+                        .ok()
+                })
+            };
+            to_values(a::original_alignment::OriginalAlignment.annotate(
+                reference.as_ref(),
+                vc,
+                likelihoods,
+            ))
+        }
         "QualByDepth" => {
             let raw =
                 attribute(vc, "QUALapprox").map(|_| attribute_int(vc, "QUALapprox", 0) as i32);
@@ -580,12 +756,207 @@ fn annotate_info(
             "AS_InbreedingCoeff",
             a::allele_specific_site_statistics::as_inbreeding_coefficient(vc),
         ),
+        // `FlowAnnotatorBase`'s members. The flow order is the default `TGCA` here: the reads are
+        // not flow based and `--flow-order-for-annotations` is not carried, which is also why
+        // `CycleSkipStatus`, which requires an actual flow order, writes nothing.
+        // The trios come from `--pedigree`; without one the set is empty and so is the answer.
+        "PossibleDeNovo" => a::pedigree::possible_de_novo(
+            vc,
+            &pedigree.trios,
+            pedigree.parent_gq_threshold,
+            pedigree.depth_threshold,
+        )
+        .into_iter()
+        .map(|(key, ids)| (key, Value::List(ids.into_iter().map(Value::Str).collect())))
+        .collect(),
+        "TransmittedSingleton" => a::pedigree::transmitted_singleton(
+            vc,
+            &pedigree.trios,
+            attribute_int(vc, "AC", 0) as i32,
+        )
+        .into_iter()
+        .map(|(key, ids)| (key, Value::List(ids.into_iter().map(Value::Str).collect())))
+        .collect(),
+        "VariantType" | "GcContent" | "HmerIndelLength" | "HmerIndelNuc" | "HmerMotifs"
+        | "IndelClassify" | "IndelLength" | "CycleSkipStatus" => {
+            flow_values(entry.name, vc, site, flow_order)?
+        }
         name => {
             return Err(limitation(format!(
                 "the {name} annotation is not ported for VariantAnnotator yet."
             )))
         }
     })
+}
+
+/// One `JumboInfoAnnotation`'s `annotate(ref, features, vc, likelihoods, null, haplotypeLikelihoods)`.
+fn annotate_jumbo_info<E: Clone + PartialEq>(
+    entry: &Entry,
+    vc: &VariantContext,
+    likelihoods: &AlleleLikelihoods<E, Haplotype>,
+    haplotypes: &[Haplotype],
+    reference_mode: bool,
+) -> Result<Vec<(String, Value)>, EngineError> {
+    use gatk_annotation::assembly_complexity as ac;
+    let ints =
+        |values: &[i32]| Value::List(values.iter().map(|v| Value::Int(i64::from(*v))).collect());
+    match entry.name {
+        "HaplotypeFilteringAnnotation" => Ok(vec![
+            (
+                "ASSEMBLED_HAPS".to_string(),
+                Value::Int(likelihoods.number_of_alleles() as i64),
+            ),
+            (
+                "FILTERED_HAPS".to_string(),
+                Value::Int(i64::from(likelihoods.filtered_haplotype_count())),
+            ),
+        ]),
+        "AssemblyComplexity" => {
+            // Each row's haplotype, found by equality: the caller's list carries the event maps
+            // but need not be in the matrix's order.
+            let by_allele: Vec<&Haplotype> = (0..likelihoods.number_of_alleles())
+                .map(|a| {
+                    let allele = likelihoods.get_allele(a).expect("an allele index");
+                    haplotypes.iter().find(|h| *h == allele).unwrap_or(allele)
+                })
+                .collect();
+            let complexity =
+                ac::annotate_with_event_maps(vc, likelihoods, &by_allele, reference_mode).map_err(
+                    |error| EngineError::Runtime {
+                        class: match error {
+                            ac::ComplexityError::NoCarrier => "java.util.NoSuchElementException",
+                            ac::ComplexityError::NullPointer => "java.lang.NullPointerException",
+                            ac::ComplexityError::NoReference => {
+                                "java.lang.IndexOutOfBoundsException"
+                            }
+                        }
+                        .to_string(),
+                        message: format!("{error:?}"),
+                    },
+                )?;
+            Ok(vec![
+                (
+                    ac::HAPLOTYPE_EQUIVALENCE_COUNTS_KEY.to_string(),
+                    ints(&complexity.equivalence_counts),
+                ),
+                (
+                    ac::HAPLOTYPE_COMPLEXITY_KEY.to_string(),
+                    ints(&complexity.edit_distances),
+                ),
+                (
+                    ac::HAPLOTYPE_DOMINANCE_KEY.to_string(),
+                    Value::List(
+                        complexity
+                            .dominance
+                            .iter()
+                            .map(|v| Value::Double(*v))
+                            .collect(),
+                    ),
+                ),
+            ])
+        }
+        name => Err(limitation(format!(
+            "the {name} annotation is not ported for VariantAnnotator yet."
+        ))),
+    }
+}
+
+/// One flow annotation's keys, out of the eight `FlowAnnotatorBase` computes together.
+fn flow_values(
+    name: &str,
+    vc: &VariantContext,
+    site: &Site<'_>,
+    flow_order: Option<&str>,
+) -> Result<Vec<(String, Value)>, EngineError> {
+    use gatk_annotation::flow;
+    let window = flow::Window {
+        start: site.window.0,
+        bases: site.window.1,
+    };
+    let computed = flow::annotate(vc, &window, flow_order.unwrap_or(flow::DEFAULT_FLOW_ORDER));
+    if name == "CycleSkipStatus" {
+        // Computed whatever the flow order, so a motif list that ran off the window throws; written
+        // only with an actual flow order, which the annotation requires.
+        return match computed.cycle_skip {
+            Err(flow::CycleSkipError::MissingMotifList) => Err(EngineError::Runtime {
+                class: "java.lang.NullPointerException".to_string(),
+                message: "Cannot invoke \"java.util.List.get(int)\"".to_string(),
+            }),
+            Err(flow::CycleSkipError::KeyFromNullMotif) => Err(EngineError::Runtime {
+                class: "org.broadinstitute.hellbender.exceptions.GATKException".to_string(),
+                message: "baseArrayToKey periodGuard tripped".to_string(),
+            }),
+            Ok(css) if flow_order.is_some() => Ok(vec![(
+                "X_CSS".to_string(),
+                Value::List(css.into_iter().map(Value::Str).collect()),
+            )]),
+            Ok(_) => Ok(Vec::new()),
+        };
+    }
+    let strings = |values: &[String]| Value::List(values.iter().cloned().map(Value::Str).collect());
+    let optional_strings = |values: &[Option<String>]| {
+        Value::List(
+            values
+                .iter()
+                .map(|v| v.clone().map_or(Value::Missing, Value::Str))
+                .collect(),
+        )
+    };
+    let mut out = Vec::new();
+    match name {
+        "IndelClassify" => out.push(("X_IC".to_string(), strings(&computed.indel))),
+        "IndelLength" => out.push((
+            "X_IL".to_string(),
+            Value::List(
+                computed
+                    .indel_length
+                    .iter()
+                    .map(|v| v.map_or(Value::Missing, |n| Value::Int(i64::from(n))))
+                    .collect(),
+            ),
+        )),
+        "HmerIndelLength" => out.push((
+            "X_HIL".to_string(),
+            Value::List(
+                computed
+                    .hmer_indel_length
+                    .iter()
+                    .map(|n| Value::Int(i64::from(*n)))
+                    .collect(),
+            ),
+        )),
+        "HmerIndelNuc" => out.push((
+            "X_HIN".to_string(),
+            optional_strings(&computed.hmer_indel_nuc),
+        )),
+        "HmerMotifs" => {
+            if let Some(left) = &computed.left_motif {
+                out.push(("X_LM".to_string(), strings(left)));
+            }
+            if let Some(right) = &computed.right_motif {
+                out.push(("X_RM".to_string(), optional_strings(right)));
+            }
+        }
+        "GcContent" => {
+            if let Some(gc) = computed.gc_content {
+                out.push(("X_GCC".to_string(), Value::Str(java_float_string(gc))));
+            }
+        }
+        _ => {
+            if let Some(kind) = computed.variant_type {
+                out.push(("VARIANT_TYPE".to_string(), Value::Str(kind)));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// `Float.toString`, which the encoder reaches for a `Float` attribute.
+fn java_float_string(value: f32) -> String {
+    if value == value.trunc() && value.abs() < 1e7 {
+        return format!("{value:.1}");
+    }
+    format!("{value}")
 }
 
 /// `GenotypeUtils.computeDiploidGenotypeCounts`' refusal of a called genotype with a GQ and no
@@ -750,6 +1121,7 @@ fn per_allele<A: gatk_annotation::per_allele::PerAlleleAnnotation>(
 }
 
 /// One genotype annotation's `annotate(ref, vc, genotype, builder, likelihoods)`.
+#[allow(clippy::too_many_arguments)]
 fn annotate_genotype(
     entry: &Entry,
     vc: &VariantContext,
@@ -758,6 +1130,7 @@ fn annotate_genotype(
     called: bool,
     likelihoods: &AlleleLikelihoods<BamRecord>,
     fragments: Option<&AlleleLikelihoods<Fragment>>,
+    pseudo_depth: &std::cell::RefCell<a_pd::AllelePseudoDepth>,
 ) -> Result<(), EngineError> {
     use gatk_annotation as a;
     let sample = genotype.sample_name.as_str();
@@ -780,6 +1153,74 @@ fn annotate_genotype(
                     .map_err(fragment_error)?
             {
                 set_extended(built, "FAD", ints(depths));
+            }
+        }
+        "AllelePseudoDepth" => {
+            // `sampleMatrix`, subsetted to the emitted alleles by allele when the counts differ.
+            let Some(s) = likelihoods.index_of_sample(sample) else {
+                return Ok(());
+            };
+            let allele_indices: Vec<usize> = if vc.alleles.len() == likelihoods.number_of_alleles()
+            {
+                (0..vc.alleles.len()).collect()
+            } else {
+                vc.alleles
+                    .iter()
+                    .map(|allele| {
+                        likelihoods
+                            .index_of_allele(allele)
+                            .ok_or_else(|| EngineError::Runtime {
+                                class: "java.lang.IllegalArgumentException".to_string(),
+                                message: format!(
+                                    "allele {} not in the likelihoods",
+                                    allele.display_string()
+                                ),
+                            })
+                    })
+                    .collect::<Result<_, _>>()?
+            };
+            let evidence = likelihoods.sample_evidence(s).unwrap_or(&[]);
+            let matrix: Vec<Vec<f64>> = (0..likelihoods.number_of_alleles())
+                .map(|a| {
+                    (0..evidence.len())
+                        .map(|e| likelihoods.value(s, a, e))
+                        .collect()
+                })
+                .collect();
+            let mapping_qualities: Vec<i32> = evidence
+                .iter()
+                .map(|read| i32::from(read.mapping_quality))
+                .collect();
+            let sample_matrix = a_pd::SampleMatrix {
+                log_likelihoods: &matrix,
+                mapping_qualities: &mapping_qualities,
+                is_natural_log: likelihoods.is_natural_log(),
+            };
+            let depths = pseudo_depth
+                .borrow_mut()
+                .annotate(&allele_indices, Some(&sample_matrix))
+                .map_err(|error| match error {
+                    a_pd::PseudoDepthError::EvidenceIndexOutOfBounds {
+                        allele,
+                        evidence_count,
+                    } => EngineError::Runtime {
+                        class: "java.lang.IndexOutOfBoundsException".to_string(),
+                        message: format!(
+                            "Index {allele} out of bounds for length {evidence_count}"
+                        ),
+                    },
+                    a_pd::PseudoDepthError::NonFiniteSum => EngineError::Runtime {
+                        class: "java.lang.IllegalArgumentException".to_string(),
+                        message: "logSumExp of a non-finite value".to_string(),
+                    },
+                })?;
+            if let Some(depths) = depths {
+                set_extended(built, a_pd::PSEUDO_DEPTH_KEY, Value::Str(depths.depth));
+                set_extended(
+                    built,
+                    a_pd::PSEUDO_FRACTION_KEY,
+                    Value::Str(depths.fraction),
+                );
             }
         }
         "OrientationBiasReadCounts" => {
@@ -817,7 +1258,7 @@ fn annotate_genotype(
         }
         "DepthPerSampleHC" => {
             if let Some(depth) =
-                a::depth_per_allele::informative_depth(Some(likelihoods), sample, called)
+                a::depth_per_allele::informative_depth(vc, Some(likelihoods), sample, called)
             {
                 built.dp = Some(depth);
             }

@@ -81,6 +81,9 @@ pub struct IsActiveArguments {
     pub max_alternate_alleles: usize,
     pub min_base_quality_score: u8,
     pub ref_model_deletion_quality: u8,
+    /// `flowBasedModel`: a likelihood engine of the flow-based kind, under which a deletion below
+    /// the base quality threshold is skipped like a base.
+    pub flow_based_model: bool,
 }
 
 impl Default for IsActiveArguments {
@@ -94,6 +97,7 @@ impl Default for IsActiveArguments {
             max_alternate_alleles: 6,
             min_base_quality_score: 10,
             ref_model_deletion_quality: REF_MODEL_DELETION_QUAL,
+            flow_based_model: false,
         }
     }
 }
@@ -150,6 +154,7 @@ impl ActiveRegionEvaluator {
             emit_all_confident_sites: false,
             annotate_all_sites_with_pls: false,
             force_keep_all_alleles: false,
+            force_keep_non_ref: false,
             assignment_method: SubsetMethod::UsePlsToAssign,
         };
         let engine = GenotypingEngine::new(
@@ -288,7 +293,7 @@ impl ActiveRegionEvaluator {
                 element.qual()
             };
             if (qual as i8) <= (self.arguments.min_base_quality_score as i8)
-                && !element.is_deletion()
+                && (self.arguments.flow_based_model || !element.is_deletion())
             {
                 continue;
             }

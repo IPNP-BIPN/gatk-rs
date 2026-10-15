@@ -80,6 +80,9 @@ pub struct Configuration {
     pub annotate_all_sites_with_pls: bool,
     /// `HaplotypeCallerGenotypingEngine.forceKeepAllele` in GVCF mode: every alternate is output.
     pub force_keep_all_alleles: bool,
+    /// `HaplotypeCallerGenotypingEngine.forceKeepAllele`'s other half: `<NON_REF>` is output
+    /// whatever the mode, which `MinimalGenotypingEngine` does not do.
+    pub force_keep_non_ref: bool,
     /// `genotypeArgs.genotypeAssignmentMethod`, which assigns the emitted genotypes.
     pub assignment_method: SubsetMethod,
 }
@@ -145,17 +148,17 @@ fn scale_log_space(values: &[f64]) -> Vec<f64> {
     values.iter().map(|value| value - max).collect()
 }
 
-/// `GenotypeBuilder.log10PError(e)`: the GQ it implies, capped at `VCFConstants.MAX_GENOTYPE_QUAL`.
+/// `GenotypeBuilder.log10PError(e)` in htsjdk 4.2.0: the GQ it implies, NOT capped.
 ///
 /// ```java
-/// return GQ((int)Math.round(Math.min(pLog10Error * -10, VCFConstants.MAX_GENOTYPE_QUAL)));
+/// return GQ((int)Math.round(pLog10Error * -10));
 /// ```
+///
+/// The cap at `MAX_GENOTYPE_QUAL` is the VCF encoder's (`GQAccessor`), so a GQ over 99 is written
+/// as 99 while an annotation such as `GQ_MEAN` still reads the genotype's real value.
 pub(crate) fn gq_of_log10(log10: f64) -> i32 {
-    java_round((log10 * -10.0).min(MAX_GENOTYPE_QUAL)) as i32
+    java_round(log10 * -10.0) as i32
 }
-
-/// `VCFConstants.MAX_GENOTYPE_QUAL`.
-const MAX_GENOTYPE_QUAL: f64 = 99.0;
 
 /// `GenotypeAssignmentMethod`. GenotypeGVCFs reaches `PREFER_PLS` for the calls it emits and
 /// `BEST_MATCH_TO_ORIGINAL` for the reduction to `--max-alternate-alleles`; ReblockGVCF's
@@ -542,7 +545,7 @@ pub(crate) fn make_genotype_call_with_priors(
                 .push(("PG".to_string(), phred(&log10_priors)));
             let best = max_element_index(&posteriors);
             if !targets.is_empty() {
-                // `log10PError`, which htsjdk 4.2.0 caps at `MAX_GENOTYPE_QUAL`.
+                // `log10PError`; the encoder caps what it writes at 99.
                 genotype.gq = gq_log10_from_posteriors(best, &normalized).map(gq_of_log10);
             }
             genotype.alleles = genotypes_in_canonical_order(ploidy, targets.len())
@@ -908,6 +911,7 @@ impl GenotypingEngine {
         result: &AfCalculationResult,
         alleles: &[Allele],
         vc: &VariantContext,
+        forced: &[Allele],
     ) -> (Vec<Allele>, Vec<i32>, bool) {
         let mut output = Vec::new();
         let mut mle_counts = Vec::new();
@@ -919,9 +923,12 @@ impl GenotypingEngine {
             let plausible =
                 result.passes_threshold(alt, self.configuration.standard_confidence_for_calling);
             let spurious_span_del = is_span_del(allele) && !self.is_covered_by_deletion(vc);
-            let to_output =
-                (plausible || self.configuration.force_keep_all_alleles || lone_non_ref)
-                    && !spurious_span_del;
+            let to_output = (plausible
+                || self.configuration.force_keep_all_alleles
+                || (self.configuration.force_keep_non_ref && *allele == non_ref())
+                || lone_non_ref
+                || forced.contains(allele))
+                && !spurious_span_del;
             monomorphic &= !(plausible && !spurious_span_del);
             if to_output {
                 output.push(allele.clone());
@@ -935,6 +942,17 @@ impl GenotypingEngine {
     pub fn calculate_genotypes(
         &mut self,
         vc: &VariantContext,
+    ) -> Result<Option<VariantContext>, EngineError> {
+        self.calculate_genotypes_forcing(vc, &[])
+    }
+
+    /// `calculateGenotypes(vc, gpc, givenAlleles)`, `forced` being the alternates
+    /// `allelesConsistentWithGivenAlleles` found: each is output whatever its confidence, and a
+    /// site with one is emitted whatever its quality.
+    pub fn calculate_genotypes_forcing(
+        &mut self,
+        vc: &VariantContext,
+        forced: &[Allele],
     ) -> Result<Option<VariantContext>, EngineError> {
         if Self::cannot_be_genotyped(vc) || vc.genotypes.is_empty() {
             return Ok(None);
@@ -971,7 +989,7 @@ impl GenotypingEngine {
             default_ploidy,
         )?;
         let (alternatives, mle_counts, monomorphic) =
-            self.output_allele_subset(&result, &reduced_alleles, vc);
+            self.output_allele_subset(&result, &reduced_alleles, vc, forced);
 
         // `+ 0.0` turns a -0.0 into 0.0, twice, as the reference writes it.
         let log10_confidence = if !monomorphic || self.configuration.annotate_all_sites_with_pls {
@@ -987,7 +1005,11 @@ impl GenotypingEngine {
         let passes_emit =
             (self.configuration.emit_all_confident_sites || !monomorphic) && passes_call;
         let first_is_non_ref = alternatives.first().is_some_and(|a| *a == non_ref());
-        if !passes_emit && !self.configuration.emit_all_active_sites && !first_is_non_ref {
+        if !passes_emit
+            && !self.configuration.emit_all_active_sites
+            && !first_is_non_ref
+            && forced.is_empty()
+        {
             return Ok(None);
         }
         if !self.configuration.emit_all_active_sites
@@ -1078,7 +1100,15 @@ impl GenotypingEngine {
                 Value::List(
                     mle_counts
                         .iter()
-                        .map(|c| Value::Double((*c as f64 / an).min(1.0)))
+                        .map(|c| {
+                            // `Math.min(1.0, count / AN)`, which keeps the NaN of no chromosomes.
+                            let frequency = *c as f64 / an;
+                            Value::Double(if frequency.is_nan() {
+                                frequency
+                            } else {
+                                frequency.min(1.0)
+                            })
+                        })
                         .collect(),
                 ),
             ));

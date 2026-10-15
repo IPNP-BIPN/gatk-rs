@@ -19,8 +19,13 @@
 //!    alternative are removed and the reference haplotype added at the end, where it stays for
 //!    the graphs that follow, and the result set is replaced by that set.
 //!
-//! The linked de Bruijn graph mode, the read error corrector, the flow-based haplotype collapsing
-//! and the debugging graph output are not ported.
+//! In the linked de Bruijn graph mode (`assembleGraphsAndExpandKmersGivenHaplotypes`) each k-mer
+//! size is tried in turn, its read threading graph kept as it is rather than made a sequence
+//! graph, and its haplotypes found along the junction trees; the first size that yields any is
+//! kept, and the result set gets them in the order found, after the reference it starts with.
+//!
+//! The read error corrector, the flow-based haplotype collapsing and the debugging graph output
+//! are not ported.
 
 use htsjdk_bam::cigar::{Cigar, Op};
 use htsjdk_bam::header::SamHeader;
@@ -33,11 +38,13 @@ use crate::assembly_result_set::{
 };
 use crate::cigar_utils::calculate_cigar;
 use crate::clipping::{hard_clip_soft_clipped_bases, ClipError};
+use crate::graph_dot;
 use crate::haplotype::Haplotype;
 use crate::haplotype_alignment::HaplotypeCigarError;
 use crate::interval::SimpleInterval;
 use crate::kbest_haplotype::find_best_haplotypes;
 use crate::read_pileup::sample_name;
+use crate::read_threading_graph::junction_trees::{self, JunctionTreeError};
 use crate::read_threading_graph::{
     prune_adaptive, prune_low_weight_chains, AdaptivePruning, GraphError, ReadThreadingGraph,
 };
@@ -82,6 +89,12 @@ pub enum AssemblerError {
     Cigar(HaplotypeCigarError),
     Allele(AlleleError),
     ResultSet(ResultSetError),
+    /// `UserException`: disabling artificial haplotype recovery without the linked graph.
+    User(String),
+    /// The junction-tree search's refusals.
+    JunctionTree(JunctionTreeError),
+    /// An exception the reference throws as it is, `class: message`: a dot file it cannot write.
+    Thrown(String),
 }
 
 impl From<GraphError> for AssemblerError {
@@ -125,6 +138,50 @@ pub struct ReadThreadingAssembler {
     prune_factor: i32,
     chain_pruner: ChainPruner,
     min_matching_bases_to_dangling_end_recovery: i32,
+    /// `!generateSeqGraph`: the linked de Bruijn graph mode.
+    linked: bool,
+    /// `recoverHaplotypesFromEdgesNotCoveredInJunctionTrees`.
+    recover_uncovered_haplotypes: bool,
+    /// `setDebugHistogramOutput`: the two histograms, kept while the assembler runs.
+    histograms: Option<std::cell::RefCell<DebugHistograms>>,
+    /// `setGraphWriter`: the file each assembled region's graphs replace.
+    graph_output: Option<std::path::PathBuf>,
+    /// `setDebugGraphTransformations`: every step's graph in its own file in the working
+    /// directory, and only the first small graph in the graph output.
+    debug_graph_transformations: bool,
+    /// `--error-correction-log-odds`: the reads are corrected from their pileup before assembly
+    /// when it is not negative infinity.
+    pileup_error_correction_log_odds: f64,
+}
+
+/// `haplotypeHistogram` and `kmersUsedHistogram`, both `new Histogram(1.0)`: bins of one, counted.
+#[derive(Debug, Clone, Default)]
+pub struct DebugHistograms {
+    pub haplotypes: std::collections::BTreeMap<i64, u64>,
+    pub kmers: std::collections::BTreeMap<i64, u64>,
+}
+
+impl DebugHistograms {
+    /// `Histogram.toString()` for a bin size of one: `value,count` pairs in ascending order,
+    /// joined by commas, and `NaN` when empty.
+    pub fn render(bins: &std::collections::BTreeMap<i64, u64>) -> String {
+        if bins.is_empty() {
+            return "NaN".to_string();
+        }
+        bins.iter()
+            .map(|(value, count)| format!("{value},{count}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// `printDebugHistograms()`'s file.
+    pub fn report(&self) -> String {
+        format!(
+            "Histogram over the number of haplotypes recovered per active region:\n{}\n\nHistogram over the average kmer size used for assembly:\n{}\n",
+            Self::render(&self.haplotypes),
+            Self::render(&self.kmers)
+        )
+    }
 }
 
 /// The constructor's arguments, in its order, without `useLinkedDebruijnGraphs`.
@@ -143,6 +200,8 @@ pub struct AssemblerSettings {
     pub max_unpruned_variants: i32,
     pub enable_legacy_graph_cycle_detection: bool,
     pub min_matching_bases_to_dangling_end_recovery: i32,
+    /// `useLinkedDebruijnGraphs`.
+    pub use_linked_debruijn_graphs: bool,
 }
 
 impl ReadThreadingAssembler {
@@ -182,7 +241,33 @@ impl ReadThreadingAssembler {
             chain_pruner,
             min_matching_bases_to_dangling_end_recovery: settings
                 .min_matching_bases_to_dangling_end_recovery,
+            linked: settings.use_linked_debruijn_graphs,
+            recover_uncovered_haplotypes: true,
+            histograms: None,
+            graph_output: None,
+            debug_graph_transformations: false,
+            pileup_error_correction_log_odds: f64::NEG_INFINITY,
         })
+    }
+
+    /// `setArtificialHaplotypeRecoveryMode`: its test is the wrong way round, so disabling the
+    /// recovery is refused in the linked graph mode, the only one that reads it, and the refusal
+    /// names another argument.
+    pub fn set_artificial_haplotype_recovery_mode(
+        &mut self,
+        disable: bool,
+    ) -> Result<(), AssemblerError> {
+        if disable {
+            if self.linked {
+                return Err(AssemblerError::User(
+                    "Argument '--experimental-dangling-branch-recover' requires \
+                     '--linked-de-bruijn-graph' to be set"
+                        .to_string(),
+                ));
+            }
+            self.recover_uncovered_haplotypes = false;
+        }
+        Ok(())
     }
 
     /// `setRecoverDanglingBranches`.
@@ -209,6 +294,93 @@ impl ReadThreadingAssembler {
     /// `setRemovePathsNotConnectedToRef`.
     pub fn set_remove_paths_not_connected_to_ref(&mut self, value: bool) {
         self.remove_paths_not_connected_to_ref = value;
+    }
+
+    /// `setDebugHistogramOutput`: start keeping the histograms.
+    pub fn set_graph_output(&mut self, path: std::path::PathBuf) {
+        self.graph_output = Some(path);
+    }
+
+    /// Whether `PileupReadErrorCorrector` runs, which replaces the k-mer corrector.
+    pub fn pileup_error_correction_enabled(&self) -> bool {
+        self.pileup_error_correction_log_odds != f64::NEG_INFINITY
+    }
+
+    /// `PileupReadErrorCorrector`'s threshold.
+    pub fn set_pileup_error_correction_log_odds(&mut self, value: f64) {
+        self.pileup_error_correction_log_odds = value;
+    }
+
+    /// `setDebugGraphTransformations`.
+    pub fn set_debug_graph_transformations(&mut self, value: bool) {
+        self.debug_graph_transformations = value;
+    }
+
+    /// `printGraphs`: the region's graphs, each with its k-mer size, replacing the file. With
+    /// `--debug-graph-transformations` only the first graph below a k-mer of 50.
+    fn print_graphs(&self, graphs: &[(usize, String)]) -> Result<(), AssemblerError> {
+        let Some(path) = &self.graph_output else {
+            return Ok(());
+        };
+        let mut text = String::from("digraph assemblyGraphs {\n");
+        for (kmer_size, body) in graphs {
+            if self.debug_graph_transformations && *kmer_size >= 50 {
+                continue;
+            }
+            text.push_str(body);
+            if self.debug_graph_transformations {
+                break;
+            }
+        }
+        text.push_str("}\n");
+        std::fs::write(path, text).map_err(|e| {
+            AssemblerError::Thrown(format!(
+                "org.broadinstitute.hellbender.exceptions.UserException$CouldNotCreateOutputFile: \
+                 Couldn't write file {} because exception {}",
+                absolute(path),
+                java_io_message(&path.display().to_string(), &e)
+            ))
+        })
+    }
+
+    /// `new DotFilePrinter(refHaplotype.getGenomeLocation(), kmerSize)`.
+    fn dot_file_printer(&self, ref_haplotype: &Haplotype, kmer_size: usize) -> DotFilePrinter {
+        DotFilePrinter {
+            enabled: self.debug_graph_transformations,
+            location: ref_haplotype
+                .genome_location()
+                .map(|l| format!("{}:{}-{}", l.contig, l.start, l.end))
+                .unwrap_or_default(),
+            kmer_size,
+            prune_factor: self.prune_factor,
+            section: -1,
+            subsection: 1,
+            last: None,
+        }
+    }
+
+    pub fn keep_debug_histograms(&mut self) {
+        self.histograms = Some(std::cell::RefCell::new(DebugHistograms::default()));
+    }
+
+    /// The histograms kept, if any.
+    pub fn debug_histograms(&self) -> Option<DebugHistograms> {
+        self.histograms.as_ref().map(|h| h.borrow().clone())
+    }
+
+    fn count_kmer_size(&self, kmer_size: usize) {
+        if let Some(h) = &self.histograms {
+            *h.borrow_mut().kmers.entry(kmer_size as i64).or_insert(0) += 1;
+        }
+    }
+
+    fn count_haplotypes(&self, set: &AssemblyResultSet) {
+        if let Some(h) = &self.histograms {
+            *h.borrow_mut()
+                .haplotypes
+                .entry(set.haplotype_count() as i64)
+                .or_insert(0) += 1;
+        }
     }
 
     /// `runLocalAssembly`, without a read error corrector or a haplotype collapsing engine.
@@ -246,13 +418,30 @@ impl ReadThreadingAssembler {
         ref_haplotype.set_genome_location(active_region_extended_location.clone());
         result_set.add(ref_haplotype.clone())?;
 
+        if self.linked {
+            let rendered = self.assemble_graphs_and_expand_kmers_given_haplotypes(
+                &reads,
+                &ref_haplotype,
+                &active_region_extended_location,
+                &mut result_set,
+                aligner,
+                dangling_end_sw_parameters,
+                haplotype_to_reference_sw_parameters,
+            )?;
+            self.print_graphs(&rendered)?;
+            self.count_haplotypes(&result_set);
+            return Ok(result_set);
+        }
+
         // `assembleKmerGraphsAndHaplotypeCall`.
         let mut graphs = Vec::new();
         for result in self.assemble(&reads, &ref_haplotype, aligner, dangling_end_sw_parameters)? {
             if result.status == AssemblyStatus::AssembledSomeVariation {
                 let graph = result.seq_graph.expect("a graph that assembled variation");
                 sanity_check_reference_graph(&graph, &ref_haplotype)?;
-                graphs.push((graph, result.kmer_size.expect("a graph has a k-mer size")));
+                let kmer_size = result.kmer_size.expect("a graph has a k-mer size");
+                self.count_kmer_size(kmer_size);
+                graphs.push((graph, kmer_size));
             }
         }
         self.find_best_paths(
@@ -263,6 +452,14 @@ impl ReadThreadingAssembler {
             aligner,
             haplotype_to_reference_sw_parameters,
         )?;
+        if self.graph_output.is_some() {
+            let rendered: Vec<(usize, String)> = graphs
+                .iter()
+                .map(|(graph, k)| (*k, graph_dot::seq_graph(graph, false, self.prune_factor)))
+                .collect();
+            self.print_graphs(&rendered)?;
+        }
+        self.count_haplotypes(&result_set);
         Ok(result_set)
     }
 
@@ -273,8 +470,21 @@ impl ReadThreadingAssembler {
         region: &AssemblyRegion,
         header: &SamHeader,
     ) -> Result<Vec<SampleRead>, AssemblerError> {
-        region
-            .reads()
+        // `readErrorCorrector.correctReads(assemblyRegion.getReads())`. The k-mer corrector of
+        // `--error-correct-reads` is never given any k-mers, so it corrects nothing.
+        let corrected;
+        let reads = if self.pileup_error_correction_log_odds == f64::NEG_INFINITY {
+            region.reads()
+        } else {
+            corrected = crate::pileup_read_error_corrector::correct_reads(
+                region.reads(),
+                header,
+                self.pileup_error_correction_log_odds,
+            )
+            .map_err(AssemblerError::IllegalState)?;
+            &corrected[..]
+        };
+        reads
             .iter()
             .map(|read| {
                 let clipped = hard_clip_soft_clipped_bases(read, Some(header), 0)
@@ -329,53 +539,18 @@ impl ReadThreadingAssembler {
                 if return_haplotypes.contains(&h) {
                     continue;
                 }
-                let h_bases = h.bases();
-                let Some(cigar) = calculate_cigar(
+                let Some(h) = aligned_haplotype(
+                    h,
                     &ref_bases,
-                    &h_bases,
+                    ref_reference_length,
+                    active_region_start,
+                    active_region_window,
                     aligner,
                     haplotype_to_reference_sw_parameters,
-                    SwOverhangStrategy::SoftClip,
                 )?
                 else {
-                    // A failed cigar: the haplotype is ignored.
                     continue;
                 };
-                if cigar.is_empty() {
-                    return Err(AssemblerError::IllegalState(format!(
-                        "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
-                         expecting reference length of {}",
-                        cigar.to_text(),
-                        cigar.reference_length(),
-                        ref_reference_length
-                    )));
-                } else if path_is_too_divergent_from_reference(&cigar)
-                    || cigar.reference_length() < MIN_HAPLOTYPE_REFERENCE_LENGTH
-                {
-                    continue;
-                } else if cigar.reference_length() != ref_reference_length {
-                    let with_indel_strategy = calculate_cigar(
-                        &ref_bases,
-                        &h_bases,
-                        aligner,
-                        haplotype_to_reference_sw_parameters,
-                        SwOverhangStrategy::Indel,
-                    )?
-                    .ok_or(AssemblerError::NullPointer("cigarWithIndelStrategy"))?;
-                    if with_indel_strategy.reference_length() == ref_reference_length {
-                        continue;
-                    }
-                    return Err(AssemblerError::IllegalState(format!(
-                        "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
-                         expecting reference length of {}",
-                        cigar.to_text(),
-                        cigar.reference_length(),
-                        ref_reference_length
-                    )));
-                }
-                h.set_cigar(&cigar).map_err(AssemblerError::Cigar)?;
-                h.set_alignment_start_hap_wrt_ref(active_region_start);
-                h.set_genome_location(active_region_window.clone());
                 return_haplotypes.push(h.clone());
                 result_set.add(h)?;
             }
@@ -483,6 +658,8 @@ impl ReadThreadingAssembler {
             graph.add_read(&read.sample, &read.bases, &read.qualities)?;
         }
         graph.build_graph_if_necessary()?;
+        let mut dot = self.dot_file_printer(ref_haplotype, kmer_size);
+        dot.save_read_threading(&graph, "raw_readthreading_graph")?;
 
         if self.prune_before_cycle_counting {
             self.prune(&mut graph)?;
@@ -493,32 +670,164 @@ impl ReadThreadingAssembler {
         if !allow_low_complexity_graphs && graph.is_low_quality_graph() {
             return Ok(None);
         }
-        let result = self.get_assembly_result(&mut graph, aligner, dangling_end_sw_parameters)?;
+        let result =
+            self.get_assembly_result(&mut graph, aligner, dangling_end_sw_parameters, &mut dot)?;
         if self.recover_all_dangling_branches && graph.has_cycles() {
             return Ok(None);
         }
         Ok(Some(result))
     }
 
-    /// `chainPruner.pruneLowWeightChains(graph)`.
-    fn prune(&self, graph: &mut ReadThreadingGraph) -> Result<(), AssemblerError> {
-        match &self.chain_pruner {
-            ChainPruner::LowWeight(factor) => prune_low_weight_chains(graph, *factor),
-            ChainPruner::Adaptive(params) => prune_adaptive(graph, params)?,
+    /// `getExpandedKmerList`: the configured sizes, then six more ten apart unless the sizes may
+    /// not grow.
+    fn expanded_kmer_list(&self) -> Result<Vec<usize>, AssemblerError> {
+        let mut sizes = self.kmer_sizes.clone();
+        if !self.dont_increase_kmer_sizes_for_cycles {
+            let mut kmer_size = self.max_kmer_size()? + KMER_SIZE_ITERATION_INCREASE;
+            for _ in 0..MAX_KMER_ITERATIONS_TO_ATTEMPT {
+                sizes.push(kmer_size);
+                kmer_size += KMER_SIZE_ITERATION_INCREASE;
+            }
         }
-        Ok(())
+        Ok(sizes)
     }
 
-    /// `getAssemblyResult`.
-    fn get_assembly_result(
+    /// `assembleGraphsAndExpandKmersGivenHaplotypes`.
+    #[allow(clippy::too_many_arguments)]
+    fn assemble_graphs_and_expand_kmers_given_haplotypes(
         &self,
-        graph: &mut ReadThreadingGraph,
+        reads: &[SampleRead],
+        ref_haplotype: &Haplotype,
+        active_region_window: &SimpleInterval,
+        result_set: &mut AssemblyResultSet,
         aligner: &dyn SmithWatermanAligner,
         dangling_end_sw_parameters: &SwParameters,
-    ) -> Result<AssemblyResult, AssemblerError> {
-        if !self.prune_before_cycle_counting {
-            self.prune(graph)?;
+        haplotype_to_reference_sw_parameters: &SwParameters,
+    ) -> Result<Vec<(usize, String)>, AssemblerError> {
+        let sizes = self.expanded_kmer_list()?;
+        let mut rendered: Vec<(usize, String)> = Vec::new();
+        let mut saved: Vec<Vec<Haplotype>> = Vec::new();
+        let mut adequate = false;
+        for (i, &kmer_size) in sizes.iter().enumerate() {
+            if adequate {
+                continue;
+            }
+            let last_cycle = i == sizes.len() - 1;
+            let Some((status, graph)) = self.create_linked_graph(
+                reads,
+                ref_haplotype,
+                kmer_size,
+                last_cycle || self.allow_non_unique_kmers_in_ref,
+                aligner,
+                dangling_end_sw_parameters,
+            )?
+            else {
+                continue;
+            };
+            match status {
+                AssemblyStatus::AssembledSomeVariation => {
+                    let mut graph = graph.expect("an assembled graph");
+                    sanity_check_linked_graph(&graph, ref_haplotype)?;
+                    self.count_kmer_size(kmer_size);
+                    let trees = graph.post_process_for_haplotype_finding();
+                    if self.debug_graph_transformations {
+                        // `refHaplotype + "-sequenceGraph..."`: named by the reference's bases.
+                        let name = String::from_utf8_lossy(&ref_haplotype.bases()).into_owned();
+                        for (lines, step) in [
+                            (trees.dot_lines(&graph, false), "0.4.JT_unpruned"),
+                            (trees.dot_lines(&graph, true), "0.5.JT_pruned"),
+                        ] {
+                            write_dot(
+                                &format!("{name}-sequenceGraph.{kmer_size}.{step}.dot"),
+                                &graph_dot::read_threading_graph(&graph, true, 10000, &lines),
+                            )?;
+                        }
+                    }
+                    if self.graph_output.is_some() {
+                        rendered.push((
+                            kmer_size,
+                            graph_dot::read_threading_graph(
+                                &graph,
+                                false,
+                                self.prune_factor,
+                                &trees.dot_lines(&graph, true),
+                            ),
+                        ));
+                    }
+                    let discovered = self.find_best_linked_paths(
+                        &graph,
+                        &trees,
+                        ref_haplotype,
+                        active_region_window,
+                        aligner,
+                        haplotype_to_reference_sw_parameters,
+                    )?;
+                    if !discovered.is_empty() {
+                        for h in &discovered {
+                            result_set.add(h.clone())?;
+                        }
+                        adequate = true;
+                    }
+                    saved.push(discovered);
+                }
+                AssemblyStatus::JustAssembledReference => adequate = true,
+                _ => {}
+            }
         }
+        if !adequate {
+            // The last size that found anything beyond the reference.
+            if let Some(found) = saved.iter().rev().find(|found| found.len() > 1) {
+                for h in found {
+                    result_set.add(h.clone())?;
+                }
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// `createGraph` and `getAssemblyResult` for the linked graph: no cycle check and never of low
+    /// complexity, its status `ASSEMBLED_SOME_VARIATION` whenever it has its reference ends. `None`
+    /// where the reference returns null.
+    fn create_linked_graph(
+        &self,
+        reads: &[SampleRead],
+        ref_haplotype: &Haplotype,
+        kmer_size: usize,
+        allow_non_unique_kmers_in_ref: bool,
+        aligner: &dyn SmithWatermanAligner,
+        dangling_end_sw_parameters: &SwParameters,
+    ) -> Result<Option<(AssemblyStatus, Option<ReadThreadingGraph>)>, AssemblerError> {
+        let ref_bases = ref_haplotype.bases();
+        if ref_bases.len() < kmer_size {
+            return Ok(Some((AssemblyStatus::Failed, None)));
+        }
+        if !allow_non_unique_kmers_in_ref && has_non_unique_kmers(&ref_bases, kmer_size) {
+            return Ok(None);
+        }
+        let mut graph = ReadThreadingGraph::new_linked(
+            kmer_size,
+            self.min_base_quality_to_use_in_assembly,
+            self.num_pruning_samples,
+        );
+        graph.set_min_matching_bases_to_dangling_end_recovery(
+            self.min_matching_bases_to_dangling_end_recovery,
+        );
+        graph.set_threading_start_only_at_existing_vertex(!self.recover_dangling_branches);
+        graph.add_sequence(&ref_bases, true)?;
+        for read in reads {
+            graph.add_read(&read.sample, &read.bases, &read.qualities)?;
+        }
+        graph.build_graph_if_necessary()?;
+        let mut dot = self.dot_file_printer(ref_haplotype, kmer_size);
+        dot.save_read_threading(&graph, "raw_readthreading_graph")?;
+        if self.prune_before_cycle_counting {
+            self.prune(&mut graph)?;
+        }
+        // `getAssemblyResult`.
+        if !self.prune_before_cycle_counting {
+            self.prune(&mut graph)?;
+        }
+        dot.save_read_threading(&graph, "chain_pruned_readthreading_graph")?;
         if self.recover_dangling_branches {
             graph.recover_dangling_tails(
                 self.prune_factor,
@@ -538,9 +847,131 @@ impl ReadThreadingAssembler {
         if self.remove_paths_not_connected_to_ref {
             graph.remove_paths_not_connected_to_ref()?;
         }
+        dot.save_read_threading(&graph, "cleaned_readthreading_graph")?;
+        // `getResultSetForRTGraph`.
+        let status = if graph.reference_source_vertex().is_none()
+            || graph.reference_sink_vertex().is_none()
+        {
+            AssemblyStatus::JustAssembledReference
+        } else {
+            AssemblyStatus::AssembledSomeVariation
+        };
+        if self.recover_all_dangling_branches && graph.has_cycles() {
+            return Ok(None);
+        }
+        Ok(Some((status, Some(graph))))
+    }
+
+    /// `findBestPaths` over one linked graph, with no result set: the haplotypes found, the
+    /// reference bases found as an alternative replaced by the reference haplotype at the end.
+    fn find_best_linked_paths(
+        &self,
+        graph: &ReadThreadingGraph,
+        trees: &junction_trees::JunctionTrees,
+        ref_haplotype: &Haplotype,
+        active_region_window: &SimpleInterval,
+        aligner: &dyn SmithWatermanAligner,
+        haplotype_to_reference_sw_parameters: &SwParameters,
+    ) -> Result<Vec<Haplotype>, AssemblerError> {
+        let mut return_haplotypes: Vec<Haplotype> = Vec::new();
+        let active_region_start = ref_haplotype.alignment_start_hap_wrt_ref();
+        let ref_bases = ref_haplotype.bases();
+        let ref_reference_length = ref_haplotype
+            .cigar()
+            .ok_or(AssemblerError::NullPointer("refHaplotype.getCigar()"))?
+            .reference_length();
+        let (Some(source), Some(sink)) = (
+            graph.reference_source_vertex(),
+            graph.reference_sink_vertex(),
+        ) else {
+            return Err(AssemblerError::IllegalArgument(
+                "Both source and sink cannot be null".to_string(),
+            ));
+        };
+        let best = junction_trees::find_best_haplotypes(
+            graph,
+            trees,
+            source,
+            sink,
+            self.num_best_haplotypes_per_graph,
+            self.recover_uncovered_haplotypes,
+        )
+        .map_err(AssemblerError::JunctionTree)?;
+        for path in best {
+            let mut h =
+                Haplotype::new(&path.bases(graph), false).map_err(AssemblerError::Allele)?;
+            h.set_score(path.score);
+            h.set_kmer_size(graph.kmer_size() as i32);
+            if return_haplotypes.contains(&h) {
+                continue;
+            }
+            if let Some(h) = aligned_haplotype(
+                h,
+                &ref_bases,
+                ref_reference_length,
+                active_region_start,
+                active_region_window,
+                aligner,
+                haplotype_to_reference_sw_parameters,
+            )? {
+                return_haplotypes.push(h);
+            }
+        }
+        if !return_haplotypes.is_empty() {
+            let tmp_ref = Haplotype::new(&ref_bases, false).map_err(AssemblerError::Allele)?;
+            return_haplotypes.retain(|h| *h != tmp_ref);
+            if !return_haplotypes.contains(ref_haplotype) {
+                return_haplotypes.push(ref_haplotype.clone());
+            }
+        }
+        Ok(return_haplotypes)
+    }
+
+    /// `chainPruner.pruneLowWeightChains(graph)`.
+    fn prune(&self, graph: &mut ReadThreadingGraph) -> Result<(), AssemblerError> {
+        match &self.chain_pruner {
+            ChainPruner::LowWeight(factor) => prune_low_weight_chains(graph, *factor),
+            ChainPruner::Adaptive(params) => prune_adaptive(graph, params)?,
+        }
+        Ok(())
+    }
+
+    /// `getAssemblyResult`.
+    fn get_assembly_result(
+        &self,
+        graph: &mut ReadThreadingGraph,
+        aligner: &dyn SmithWatermanAligner,
+        dangling_end_sw_parameters: &SwParameters,
+        dot: &mut DotFilePrinter,
+    ) -> Result<AssemblyResult, AssemblerError> {
+        if !self.prune_before_cycle_counting {
+            self.prune(graph)?;
+        }
+        dot.save_read_threading(graph, "chain_pruned_readthreading_graph")?;
+        if self.recover_dangling_branches {
+            graph.recover_dangling_tails(
+                self.prune_factor,
+                self.min_dangling_branch_length,
+                self.recover_all_dangling_branches,
+                aligner,
+                dangling_end_sw_parameters,
+            )?;
+            graph.recover_dangling_heads(
+                self.prune_factor,
+                self.min_dangling_branch_length,
+                self.recover_all_dangling_branches,
+                aligner,
+                dangling_end_sw_parameters,
+            )?;
+        }
+        if self.remove_paths_not_connected_to_ref {
+            graph.remove_paths_not_connected_to_ref()?;
+        }
+        dot.save_read_threading(graph, "cleaned_readthreading_graph")?;
         let mut seq_graph = SeqGraph::from_read_threading_graph(graph);
+        dot.save_seq(&seq_graph, "initial_seqgraph")?;
         seq_graph.clean_non_ref_paths();
-        let status = cleanup_seq_graph(&mut seq_graph)?;
+        let status = cleanup_seq_graph(&mut seq_graph, dot)?;
         Ok(AssemblyResult {
             status,
             seq_graph: Some(seq_graph),
@@ -548,6 +979,68 @@ impl ReadThreadingAssembler {
             discovered_haplotypes: Vec::new(),
         })
     }
+}
+
+/// The per-path half of `findBestPaths`: the haplotype aligned to the reference haplotype, or
+/// `None` where the reference drops it.
+#[allow(clippy::too_many_arguments)]
+fn aligned_haplotype(
+    mut h: Haplotype,
+    ref_bases: &[u8],
+    ref_reference_length: u32,
+    active_region_start: i32,
+    active_region_window: &SimpleInterval,
+    aligner: &dyn SmithWatermanAligner,
+    haplotype_to_reference_sw_parameters: &SwParameters,
+) -> Result<Option<Haplotype>, AssemblerError> {
+    let h_bases = h.bases();
+    let Some(cigar) = calculate_cigar(
+        ref_bases,
+        &h_bases,
+        aligner,
+        haplotype_to_reference_sw_parameters,
+        SwOverhangStrategy::SoftClip,
+    )?
+    else {
+        // A failed cigar: the haplotype is ignored.
+        return Ok(None);
+    };
+    if cigar.is_empty() {
+        return Err(AssemblerError::IllegalState(format!(
+            "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
+             expecting reference length of {}",
+            cigar.to_text(),
+            cigar.reference_length(),
+            ref_reference_length
+        )));
+    } else if path_is_too_divergent_from_reference(&cigar)
+        || cigar.reference_length() < MIN_HAPLOTYPE_REFERENCE_LENGTH
+    {
+        return Ok(None);
+    } else if cigar.reference_length() != ref_reference_length {
+        let with_indel_strategy = calculate_cigar(
+            ref_bases,
+            &h_bases,
+            aligner,
+            haplotype_to_reference_sw_parameters,
+            SwOverhangStrategy::Indel,
+        )?
+        .ok_or(AssemblerError::NullPointer("cigarWithIndelStrategy"))?;
+        if with_indel_strategy.reference_length() == ref_reference_length {
+            return Ok(None);
+        }
+        return Err(AssemblerError::IllegalState(format!(
+            "Smith-Waterman alignment failure. Cigar = {} with reference length {} but \
+             expecting reference length of {}",
+            cigar.to_text(),
+            cigar.reference_length(),
+            ref_reference_length
+        )));
+    }
+    h.set_cigar(&cigar).map_err(AssemblerError::Cigar)?;
+    h.set_alignment_start_hap_wrt_ref(active_region_start);
+    h.set_genome_location(active_region_window.clone());
+    Ok(Some(h))
 }
 
 /// A read as the graph takes it: its sample, and its bases and qualities once soft clips are hard
@@ -560,11 +1053,18 @@ pub struct SampleRead {
 }
 
 /// `cleanupSeqGraph`.
-fn cleanup_seq_graph(graph: &mut SeqGraph) -> Result<AssemblyStatus, AssemblerError> {
+fn cleanup_seq_graph(
+    graph: &mut SeqGraph,
+    dot: &mut DotFilePrinter,
+) -> Result<AssemblyStatus, AssemblerError> {
+    dot.save_seq(graph, "non_ref_removed")?;
     graph.zip_linear_chains();
+    dot.save_seq(graph, "zipped")?;
     graph.remove_singleton_orphan_vertices();
     graph.remove_vertices_not_connected_to_ref_regardless_of_edge_direction();
+    dot.save_seq(graph, "pruned")?;
     graph.simplify_graph()?;
+    dot.save_seq(graph, "merged")?;
     if graph.reference_source_vertex().is_none() || graph.reference_sink_vertex().is_none() {
         return Ok(AssemblyStatus::JustAssembledReference);
     }
@@ -576,6 +1076,7 @@ fn cleanup_seq_graph(graph: &mut SeqGraph) -> Result<AssemblyStatus, AssemblerEr
         let dummy = graph.add_vertex(b"");
         graph.add_edge(complete, dummy, true, 0);
     }
+    dot.save_seq(graph, "final")?;
     Ok(AssemblyStatus::AssembledSomeVariation)
 }
 
@@ -615,6 +1116,31 @@ fn sanity_check_reference_graph(
     Ok(())
 }
 
+/// `sanityCheckReferenceGraph` on the linked graph, whose reference bytes follow the stored
+/// reference path.
+fn sanity_check_linked_graph(
+    graph: &ReadThreadingGraph,
+    ref_haplotype: &Haplotype,
+) -> Result<(), AssemblerError> {
+    let Some(source) = graph.reference_source_vertex() else {
+        return Err(AssemblerError::IllegalState(
+            "All reference graphs must have a reference source vertex.".to_string(),
+        ));
+    };
+    let Some(sink) = graph.reference_sink_vertex() else {
+        return Err(AssemblerError::IllegalState(
+            "All reference graphs must have a reference sink vertex.".to_string(),
+        ));
+    };
+    if graph.linked_reference_bytes(source, sink) != ref_haplotype.bases() {
+        return Err(AssemblerError::IllegalState(
+            "Mismatch between the reference haplotype and the reference assembly graph path."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// `getReferenceBytes(source, sink, true, true)`: each vertex's sequence along the first reference
 /// edge out of the last.
 fn reference_bytes(graph: &SeqGraph, source: usize, sink: usize) -> Vec<u8> {
@@ -639,4 +1165,88 @@ fn reference_bytes(graph: &SeqGraph, source: usize, sink: usize) -> Vec<u8> {
         bytes.extend_from_slice(graph.sequence(sink));
     }
     bytes
+}
+
+/// `DotFilePrinter`: with `--debug-graph-transformations`, each step's graph in the working
+/// directory, numbered by section (one per graph object: the read threading graph, then the
+/// sequence graph) and by step within it.
+struct DotFilePrinter {
+    enabled: bool,
+    location: String,
+    kmer_size: usize,
+    prune_factor: i32,
+    section: i32,
+    subsection: i32,
+    /// `lastGraphPrinted`: 0 for the read threading graph, 1 for the sequence graph.
+    last: Option<u8>,
+}
+
+impl DotFilePrinter {
+    /// `saveGraphIfDebugEnabled(graph, name)`.
+    fn save(
+        &mut self,
+        graph: u8,
+        name: &str,
+        text: impl FnOnce() -> String,
+    ) -> Result<(), AssemblerError> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.last != Some(graph) {
+            self.last = Some(graph);
+            self.section += 1;
+            self.subsection = 0;
+        }
+        let file = format!(
+            "{}-sequenceGraph.{}.{}.{}.{name}.dot",
+            self.location, self.kmer_size, self.section, self.subsection
+        );
+        self.subsection += 1;
+        write_dot(&file, &text())
+    }
+
+    fn save_read_threading(
+        &mut self,
+        graph: &ReadThreadingGraph,
+        name: &str,
+    ) -> Result<(), AssemblerError> {
+        let prune_factor = self.prune_factor;
+        self.save(0, name, || {
+            graph_dot::read_threading_graph(graph, true, prune_factor, &[])
+        })
+    }
+
+    fn save_seq(&mut self, graph: &SeqGraph, name: &str) -> Result<(), AssemblerError> {
+        let prune_factor = self.prune_factor;
+        self.save(1, name, || graph_dot::seq_graph(graph, true, prune_factor))
+    }
+}
+
+/// `printGraph(new File(name), pruneFactor)`, in the working directory. A name the file system
+/// refuses (a linked graph's files are named by the reference's bases) is the reference's
+/// `CouldNotReadInputFile`.
+fn write_dot(name: &str, text: &str) -> Result<(), AssemblerError> {
+    std::fs::write(name, text).map_err(|e| {
+        AssemblerError::Thrown(format!(
+            "org.broadinstitute.hellbender.exceptions.UserException$CouldNotReadInputFile: \
+             Couldn't read file. Error was: {} with exception: {}",
+            absolute(std::path::Path::new(name)),
+            java_io_message(name, &e)
+        ))
+    })
+}
+
+/// `File.getAbsolutePath()`.
+fn absolute(path: &std::path::Path) -> String {
+    std::path::absolute(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
+}
+
+/// `FileNotFoundException.getMessage()`: the path, then the system's reason in parentheses.
+fn java_io_message(path: &str, error: &std::io::Error) -> String {
+    let reason = error.to_string();
+    let reason = reason.split(" (os error").next().unwrap_or(&reason);
+    format!("{path} ({reason})")
 }

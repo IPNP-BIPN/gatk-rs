@@ -205,22 +205,28 @@ struct HomRefBlock {
     end: i64,
     ploidy: usize,
     min_pls: Option<Vec<i32>>,
+    /// The element-wise minimum of the `PP`s, which decides `GQ` where there is one.
+    min_pps: Option<Vec<i32>>,
     /// `-1` when no genotype has had a PL or a GQ.
     min_gq: i32,
 }
 
-fn refuse_posteriors(genotype: &Genotype) -> Result<(), EngineError> {
-    if genotype
+/// `PosteriorProbabilitiesUtils.parsePosteriorsIntoPhredSpace` for a genotype that carries `PP`:
+/// its values, or its `PL` when they start with a `.`.
+fn posteriors(genotype: &Genotype) -> Option<Vec<i32>> {
+    let (_, value) = genotype
         .extended
         .iter()
-        .any(|(key, _)| key == PHRED_SCALED_POSTERIORS_KEY)
-    {
-        return Err(EngineError::Limitation(
-            "a reference block whose genotype carries PP (phred-scaled posteriors) is not ported."
-                .to_string(),
-        ));
+        .find(|(key, _)| key == PHRED_SCALED_POSTERIORS_KEY)?;
+    let text = value.format().unwrap_or_default();
+    if text.starts_with('.') {
+        return genotype.pl.clone();
     }
-    Ok(())
+    Some(
+        text.split(',')
+            .map(|part| part.trim().parse().unwrap_or(0))
+            .collect(),
+    )
 }
 
 impl HomRefBlock {
@@ -231,7 +237,6 @@ impl HomRefBlock {
         default_ploidy: usize,
     ) -> Result<HomRefBlock, EngineError> {
         let g = &starting.genotypes[0];
-        refuse_posteriors(g)?;
         // `startingVC.getMaxPloidy(defaultPloidy)`.
         let max = starting
             .genotypes
@@ -241,10 +246,12 @@ impl HomRefBlock {
             .unwrap_or(0);
         let ploidy = if max == 0 { default_ploidy } else { max };
         let min_pls = g.pl.clone();
-        let min_gq = match (&min_pls, g.gq) {
-            (Some(pls), _) => calculate_gq_from_pls(pls)?,
-            (None, Some(gq)) => gq,
-            (None, None) => -1,
+        let min_pps = posteriors(g);
+        let min_gq = match (&min_pps, &min_pls, g.gq) {
+            (Some(pps), _, _) => calculate_gq_from_pls(pps)?,
+            (None, Some(pls), _) => calculate_gq_from_pls(pls)?,
+            (None, None, Some(gq)) => gq,
+            (None, None, None) => -1,
         };
         Ok(HomRefBlock {
             starting: starting.clone(),
@@ -255,6 +262,7 @@ impl HomRefBlock {
             end: end_attribute(starting).unwrap_or(starting.start),
             ploidy,
             min_pls,
+            min_pps,
             min_gq,
         })
     }
@@ -290,7 +298,6 @@ impl HomRefBlock {
                 self.min_gq_bound, self.max_gq_bound
             )));
         }
-        refuse_posteriors(genotype)?;
         match (&mut self.min_pls, &genotype.pl) {
             (None, pls) => self.min_pls = pls.clone(),
             (Some(min), Some(pls)) => {
@@ -307,10 +314,28 @@ impl HomRefBlock {
             }
             (Some(_), None) => {}
         }
-        self.min_gq = match &self.min_pls {
-            Some(pls) => calculate_gq_from_pls(pls)?,
-            None if self.min_gq == -1 => gq,
-            None => self.min_gq.min(gq),
+        if let Some(pps) = posteriors(genotype) {
+            match &mut self.min_pps {
+                None => self.min_pps = Some(pps),
+                Some(min) => {
+                    if pps.len() != min.len() {
+                        return Err(gatk_exception(format!(
+                            "trying to merge different PP array sizes: {} != {}",
+                            pps.len(),
+                            min.len()
+                        )));
+                    }
+                    for (slot, pp) in min.iter_mut().zip(&pps) {
+                        *slot = (*slot).min(*pp);
+                    }
+                }
+            }
+        }
+        self.min_gq = match (&self.min_pps, &self.min_pls) {
+            (Some(pps), _) => calculate_gq_from_pls(pps)?,
+            (None, Some(pls)) => calculate_gq_from_pls(pls)?,
+            (None, None) if self.min_gq == -1 => gq,
+            (None, None) => self.min_gq.min(gq),
         };
         self.end = new_end;
         if let Some(dp) = genotype.dp {
@@ -339,6 +364,13 @@ impl HomRefBlock {
         if !self.dps.is_empty() {
             genotype.dp =
                 Some(crate::reference_confidence_merger::java_round(median(&self.dps)) as i32);
+        }
+        if let Some(pps) = &self.min_pps {
+            let text: Vec<String> = pps.iter().map(i32::to_string).collect();
+            genotype.extended.push((
+                PHRED_SCALED_POSTERIORS_KEY.to_string(),
+                Value::Str(text.join(",")),
+            ));
         }
         vc.genotypes = GenotypesContext::new(vec![genotype]);
         vc
@@ -880,5 +912,314 @@ mod tests {
     fn an_even_count_takes_the_mean_of_its_middle_depths() {
         assert_eq!(median(&[20, 22]), 21.0);
         assert_eq!(median(&[20, 30, 22]), 22.0);
+    }
+}
+
+/// `SomaticGVCFBlockCombiner.calculatePartitionPrecision`: the decimal places the smallest gap
+/// between two bands needs, `ceil(-log10(gap))`, after refusing a repeated or out-of-order band.
+fn lod_partition_precision(bands: &[f64]) -> Result<i32, String> {
+    let mut smallest = f64::INFINITY;
+    let mut last = f64::NEG_INFINITY;
+    for &value in bands {
+        if value == last {
+            return Err(format!(
+                "The value {value:.6} appears more than once in the list of TLOD partitions."
+            ));
+        }
+        if value <= last {
+            return Err(format!(
+                "The list of TLOD partitions is out of order. Previous value is {last:.6} but the \
+                 next is {value:.6}."
+            ));
+        }
+        let delta = value - last;
+        if delta < smallest {
+            smallest = delta;
+        }
+        last = value;
+    }
+    Ok((-jmath::math::log10(smallest)).ceil() as i32)
+}
+
+/// `Math.pow(10, p)` for the small integral exponents a band precision takes: a product of tens,
+/// exact up to `10^22`, and for a negative exponent one correctly rounded division, which is the
+/// value `pow` returns there.
+fn ten_to(precision: i32) -> f64 {
+    let mut power = 1.0f64;
+    for _ in 0..precision.unsigned_abs() {
+        power *= 10.0;
+    }
+    if precision < 0 {
+        1.0 / power
+    } else {
+        power
+    }
+}
+
+/// `convertLODtoInt`: the LOD binned to the partitions' precision, `(int) floor(lod * 10^p)`.
+fn lod_to_int(lod: f64, precision: i32) -> i32 {
+    (lod * ten_to(precision)).floor() as i32
+}
+
+/// `SomaticGVCFBlockCombiner.parsePartitions`: the bands as binned integers, each closed below and
+/// open above, from `Integer.MIN_VALUE` up to the first and from the last up to `Integer.MAX_VALUE`,
+/// with the precision they were binned at.
+pub fn parse_lod_partitions(bands: &[f64]) -> Result<(Vec<(i32, i32)>, i32), String> {
+    let precision = lod_partition_precision(bands)?;
+    if bands.is_empty() {
+        return Err("The collection is empty: collection must not be null or empty.".to_string());
+    }
+    let mut result = Vec::new();
+    let mut last = i32::MIN;
+    for &value in bands {
+        let threshold = lod_to_int(value, precision);
+        result.push((last, threshold));
+        last = threshold;
+    }
+    result.push((last, i32::MAX));
+    Ok((result, precision))
+}
+
+/// The `TLOD` a reference-confidence genotype carries, `Double.parseDouble(attribute.toString())`.
+fn genotype_tlod(g: &Genotype) -> Result<f64, EngineError> {
+    match g.extended.iter().find(|(key, _)| key == "TLOD") {
+        Some((_, Value::Double(lod))) => Ok(*lod),
+        Some((_, Value::Str(text))) => text
+            .parse::<f64>()
+            .map_err(|_| illegal_argument(format!("For input string: \"{text}\""))),
+        _ => Err(EngineError::Runtime {
+            class: "java.lang.NullPointerException".to_string(),
+            message: "a genotype without TLOD in a somatic GVCF".to_string(),
+        }),
+    }
+}
+
+/// `TLODBlock`: a run of reference sites whose binned LOD falls in one band, written with the
+/// smallest LOD it saw and the median and minimum of its depths.
+#[derive(Debug, Clone)]
+struct TlodBlock {
+    starting: VariantContext,
+    lower: i32,
+    upper: i32,
+    precision: i32,
+    reference: Allele,
+    dps: Vec<i32>,
+    end: i64,
+    min_block_lod: f64,
+}
+
+impl TlodBlock {
+    fn new(
+        starting: &VariantContext,
+        lower: i32,
+        upper: i32,
+        precision: i32,
+    ) -> Result<TlodBlock, EngineError> {
+        let g = &starting.genotypes[0];
+        let mut block = TlodBlock {
+            starting: starting.clone(),
+            lower,
+            upper,
+            precision,
+            reference: starting.alleles[0].clone(),
+            dps: g.dp.map(|dp| dp.max(0)).into_iter().collect(),
+            end: end_attribute(starting).unwrap_or(starting.start),
+            min_block_lod: f64::INFINITY,
+        };
+        if g.extended.iter().any(|(key, _)| key == "TLOD") {
+            block.set_min_block_lod(g)?;
+        }
+        Ok(block)
+    }
+
+    fn within_bounds(&self, binned: i32) -> bool {
+        binned >= self.lower && binned < self.upper
+    }
+
+    fn set_min_block_lod(&mut self, g: &Genotype) -> Result<(), EngineError> {
+        let lod = genotype_tlod(g)?;
+        if !self.within_bounds(lod_to_int(lod, self.precision)) {
+            return Err(illegal_argument(format!(
+                "cannot add a genotype with LOD={lod} because it's not within bounds [{},{})",
+                f64::from(self.lower) / ten_to(self.precision),
+                f64::from(self.upper) / ten_to(self.precision),
+            )));
+        }
+        if self.min_block_lod == f64::INFINITY || lod < self.min_block_lod {
+            self.min_block_lod = lod;
+        }
+        Ok(())
+    }
+
+    fn add(&mut self, position: i64, new_end: i64, g: &Genotype) -> Result<(), EngineError> {
+        if position != self.end + 1 {
+            return Err(illegal_argument(format!(
+                "adding genotype at pos {position} isn't contiguous with previous end {}",
+                self.end
+            )));
+        }
+        self.set_min_block_lod(g)?;
+        self.end = new_end;
+        if let Some(dp) = g.dp {
+            self.dps.push(dp.max(0));
+        }
+        Ok(())
+    }
+
+    /// `toVariantContext` with `createHomRefGenotype`: diploid whatever the sample, its only
+    /// attribute the block's smallest TLOD, then `DP` and `MIN_DP` when any depth was seen.
+    fn to_variant_context(&self, sample_name: &str) -> VariantContext {
+        let mut vc = self.starting.clone();
+        vc.attributes = vec![("END".to_string(), Value::Int(self.end))];
+        vc.stop = self.end;
+        let mut genotype = Genotype::new(sample_name, vec![self.reference.clone(); 2]);
+        genotype
+            .extended
+            .push(("TLOD".to_string(), Value::Double(self.min_block_lod)));
+        if !self.dps.is_empty() {
+            genotype.dp =
+                Some(crate::reference_confidence_merger::java_round(median(&self.dps)) as i32);
+            let min = *self.dps.iter().min().expect("a depth");
+            genotype
+                .extended
+                .push((MIN_DP_FORMAT_KEY.to_string(), Value::Int(i64::from(min))));
+        }
+        vc.genotypes = GenotypesContext::new(vec![genotype]);
+        vc
+    }
+
+    fn is_contiguous(&self, vc: &VariantContext) -> bool {
+        vc.contig == self.starting.contig
+            && vc.start <= self.end + 1
+            && self.starting.start - 1 <= vc.stop
+    }
+}
+
+/// `SomaticGVCFBlockCombiner`: `GVCFBlockCombiner` with the blocks banded by `TLOD` instead of GQ.
+pub struct SomaticBlockCombiner {
+    partitions: Vec<(i32, i32)>,
+    precision: i32,
+    to_output: Vec<VariantContext>,
+    next_available_start: i64,
+    contig_of_next_available_start: Option<String>,
+    sample_name: Option<String>,
+    current_block: Option<TlodBlock>,
+}
+
+impl SomaticBlockCombiner {
+    pub fn new(partitions: Vec<(i32, i32)>, precision: i32) -> SomaticBlockCombiner {
+        SomaticBlockCombiner {
+            partitions,
+            precision,
+            to_output: Vec::new(),
+            next_available_start: -1,
+            contig_of_next_available_start: None,
+            sample_name: None,
+            current_block: None,
+        }
+    }
+
+    fn emit_current_block(&mut self) {
+        if let Some(block) = self.current_block.take() {
+            let sample = self.sample_name.clone().unwrap_or_default();
+            self.to_output.push(block.to_variant_context(&sample));
+        }
+    }
+
+    /// `addHomRefSite`, with `genotypeCanBeMergedInCurrentBlock` and `createNewBlock` reading the
+    /// genotype's `TLOD`.
+    fn add_hom_ref_site(
+        &mut self,
+        vc: &VariantContext,
+        g: &Genotype,
+    ) -> Result<Option<VariantContext>, EngineError> {
+        if self.next_available_start != -1 {
+            if vc.start <= self.next_available_start
+                && self.contig_of_next_available_start.as_deref() == Some(vc.contig.as_str())
+                && vc.stop <= self.next_available_start
+            {
+                return Ok(None);
+            }
+            self.next_available_start = -1;
+            self.contig_of_next_available_start = None;
+        }
+        let binned = lod_to_int(genotype_tlod(g)?, self.precision);
+        if self
+            .current_block
+            .as_ref()
+            .is_some_and(|block| block.within_bounds(binned))
+        {
+            let end = end_attribute(vc).unwrap_or(vc.start);
+            self.current_block
+                .as_mut()
+                .expect("a block to merge into")
+                .add(vc.start, end, g)?;
+            return Ok(None);
+        }
+        let sample = self.sample_name.clone().unwrap_or_default();
+        let result = self
+            .current_block
+            .as_ref()
+            .map(|block| block.to_variant_context(&sample));
+        let Some((lower, upper)) = self
+            .partitions
+            .iter()
+            .copied()
+            .find(|(lower, upper)| *lower <= binned && binned < *upper)
+        else {
+            return Err(gatk_exception(format!(
+                "LOD for genotype {} from {}:{} didn't fit into any partition",
+                g.sample_name, vc.contig, vc.start
+            )));
+        };
+        self.current_block = Some(TlodBlock::new(vc, lower, upper, self.precision)?);
+        Ok(result)
+    }
+
+    /// `GVCFBlockCombiner.submit`.
+    pub fn submit(&mut self, vc: VariantContext) -> Result<(), EngineError> {
+        if vc.genotypes.is_empty() {
+            return Err(illegal_argument(
+                "GVCF assumes that the VariantContext has genotypes".to_string(),
+            ));
+        }
+        if vc.genotypes.len() != 1 {
+            return Err(illegal_argument(format!(
+                "GVCF assumes that the VariantContext has exactly one genotype but saw {}",
+                vc.genotypes.len()
+            )));
+        }
+        if self.sample_name.is_none() {
+            self.sample_name = Some(vc.genotypes[0].sample_name.clone());
+        }
+        if self
+            .current_block
+            .as_ref()
+            .is_some_and(|block| !block.is_contiguous(&vc))
+        {
+            self.emit_current_block();
+        }
+        let g = vc.genotypes[0].clone();
+        let hom_ref_like = g.is_hom_ref()
+            || (g.is_no_call() && g.pl.as_ref().is_some_and(|pl| pl.first() == Some(&0)));
+        if hom_ref_like && vc.alleles.len() == 2 && vc.alleles.iter().any(is_non_ref) {
+            if let Some(band) = self.add_hom_ref_site(&vc, &g)? {
+                self.to_output.push(band);
+            }
+        } else {
+            self.emit_current_block();
+            self.next_available_start = vc.stop;
+            self.contig_of_next_available_start = Some(vc.contig.clone());
+            self.to_output.push(vc);
+        }
+        Ok(())
+    }
+
+    pub fn drain(&mut self) -> Vec<VariantContext> {
+        std::mem::take(&mut self.to_output)
+    }
+
+    pub fn end_of_input(&mut self) {
+        self.emit_current_block();
     }
 }

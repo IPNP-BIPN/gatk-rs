@@ -1234,6 +1234,12 @@ pub struct PluginControl {
     pub predecessor: &'static str,
     /// The long name of the argument that names plugins for this descriptor.
     pub selector: &'static str,
+    /// The groups the plugin belongs to, which `GATKAnnotationPluginDescriptor` also accepts it
+    /// through: a group the tool enables by default (among the default plugins) or one the
+    /// command line names with `group_selector`. Empty for a read filter.
+    pub groups: &'static [&'static str],
+    /// The long name of the argument that names groups, `None` for a descriptor without them.
+    pub group_selector: Option<&'static str>,
 }
 
 /// `validateAndResolvePlugins`, as GATK's read-filter descriptor implements it.
@@ -1806,12 +1812,20 @@ impl Parser {
         {
             return true;
         }
-        match self.value_of(control.selector) {
-            Some(Value::List(values)) => values
-                .iter()
-                .any(|value| value.to_java_string() == control.predecessor),
+        let named = |selector: &str, wanted: &dyn Fn(&str) -> bool| match self.value_of(selector) {
+            Some(Value::List(values)) => values.iter().any(|value| wanted(&value.to_java_string())),
             _ => false,
+        };
+        if named(control.selector, &|name| name == control.predecessor) {
+            return true;
         }
+        // `GATKAnnotationPluginDescriptor`: or through a group, the tool's default groups or the
+        // ones the command line enables.
+        let in_groups = |name: &str| control.groups.contains(&name);
+        self.default_plugins.iter().any(|name| in_groups(name))
+            || control
+                .group_selector
+                .is_some_and(|selector| named(selector, &in_groups))
     }
 
     /// `validatePluginArgumentValues()`, which runs **before** the required check and rewrites the

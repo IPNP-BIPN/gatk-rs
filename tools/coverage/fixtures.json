@@ -8091,21 +8091,48 @@
         "date, the second the output's last-modified time.",
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
-        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
-        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
-        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
+        "beside --dragen-mode, which every row sets.",
+        "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome.",
+        "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
+        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite.",
+        "--annotation, --annotation-group and --annotations-to-exclude are varied, <unset> first (run_array leaves such an argument off the command line): AssemblyComplexity and AllelePseudoDepth named, the StandardAnnotation group, and QualByDepth excluded. An annotation's own argument is refused when given without its annotation enabled, so its values other than <unset> are forbidden beside an <unset> --annotation."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/flow_calls.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8134,7 +8161,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8188,27 +8217,80 @@
         "-6"
       ],
       "--dragen-378-concordance-mode": [],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
-      "--pileup-detection": [],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--dragstr-params-path": [
         "null",
@@ -8229,23 +8311,1036 @@
       "--disable-optimizations": [
         "false",
         "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--keep-rg",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--just-determine-active-regions",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-region-state",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-genotyper-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dont-genotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-graph-transformations",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-variants-out",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--haplotype-debug-histogram-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--capture-assembly-failure-bam",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-path",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-interval",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
+      ],
+      "--bam-output": [
+        "null",
+        "/work/out/bamout.bam"
+      ],
+      "--bam-writer-type": [
+        "CALLED_HAPLOTYPES",
+        "ALL_POSSIBLE_HAPLOTYPES",
+        "NO_HAPLOTYPES",
+        "CALLED_HAPLOTYPES_NO_READS"
+      ],
+      "--assembly-region-out": [
+        "null",
+        "/work/out/regions.igv"
+      ],
+      "--graph-output": [
+        "null",
+        "/work/out/graph.dot"
+      ],
+      "--debug-graph-transformations": [
+        "false",
+        "true"
+      ],
+      "--debug-assembly-variants-out": [
+        "null",
+        "/work/out/assembly_variants.vcf"
+      ],
+      "--haplotype-debug-histogram-output": [
+        "null",
+        "/work/out/histogram.txt"
+      ],
+      "--capture-assembly-failure-bam": [
+        "false",
+        "true"
+      ],
+      "--pair-hmm-results-file": [
+        "null",
+        "/work/out/pairhmm.txt"
+      ],
+      "--alm-path": [
+        "null",
+        "/work/out/alm.txt"
+      ],
+      "--alm-interval": [
+        "chr1:900-1300",
+        "null"
+      ],
+      "--debug-assembly-region-state": [
+        "null",
+        "/work/out/region_state.txt"
+      ],
+      "--debug-genotyper-output": [
+        "null",
+        "/work/out/genotyper.txt"
+      ],
+      "--keep-rg": [
+        "null",
+        "rgT",
+        "rgN"
+      ],
+      "--just-determine-active-regions": [
+        "false",
+        "true"
+      ],
+      "--dont-genotype": [
+        "false",
+        "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "<unset>",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "<unset>",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--annotation": [
+        "<unset>",
+        "AssemblyComplexity AllelePseudoDepth"
+      ],
+      "--annotation-group": [
+        "<unset>",
+        "StandardAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "<unset>",
+        "QualByDepth"
+      ],
+      "$lists": [
+        "--annotation",
+        "--annotation-group",
+        "--annotations-to-exclude"
       ]
     },
     "Mutect2": {
       "$why": [
         "mutect_tn.bam holds a tumour and a normal sample over mutect_ref.fasta, about twenty reads deep each, with a",
         "somatic SNV, a germline het, a two-read site, a forward-only alternate, a low-quality one and one near the",
-        "reads' starts. --normal-sample names the normal or nothing, which makes both samples tumours.",
+        "reads' starts; mutect_t.bam is its tumour alone, which somatic reference-confidence mode needs, since it takes",
+        "one sample. --normal-sample names the normal or nothing, which makes both samples tumours; naming it over",
+        "mutect_t.bam is the reference's refusal.",
         "--add-output-vcf-command-line and --create-output-variant-index are held at false, as for HaplotypeCaller;",
         "--pair-hmm-implementation at LOGLESS_CACHING, --smith-waterman at JAVA and --likelihood-calculation-engine at",
         "PairHMM for the same reasons.",
-        "Held out, as features this port does not carry: somatic reference-confidence mode (--emit-ref-confidence),",
-        "mitochondria mode, the flow-based arguments, pileup detection and the partially determined PairHMM, and the",
-        "linked de Bruijn graph. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false, as for HaplotypeCaller: most of what it switches on is not computed in Mutect2's context by this port."
+        "--emit-ref-confidence is listed NONE first, then GVCF and BP_RESOLUTION, with two lists of TLOD bands and a",
+        "--minimum-allele-fraction of zero or 0.05, which the somatic reference model's prior reads. --mitochondria-mode is",
+        "varied, false first: its presets apply where the row did not set them. Held out, as features this port",
+        "does not carry: pileup detection and the partially determined PairHMM.",
+        "--read-index and --sequence-dictionary are held out as for the other read walkers.",
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome.",
+        "Mutect2 declares the PDHMM's arguments and reads none of them; they vary all the same.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
+        "The debug outputs Mutect2 declares (G3.2m) are varied, unset first, each under /work/out: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations, --debug-assembly-variants-out, --haplotype-debug-histogram-output (never written: only HaplotypeCaller's engine prints it), --capture-assembly-failure-bam, --pair-hmm-results-file and --alm-path (read by HaplotypeCaller's engine only), its --alm-interval listing an interval first. Vertex numbers are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
+        "The germline resource and the panel of normals (G3.2r) are varied, unset first: m2_germline.vcf gives every alternate base at the mutect sites an AF from 0.5 to 1e-5 or none, so POPAF and, in tumour-only calling with --max-population-af 0.01 or 0.6, the common indels' loci move; m2_pon.vcf covers every other site, inactive unless --genotype-pon-sites and flagged PON when called.",
+        "The F1R2 counts (G3.2s) are varied, unset first: --f1r2-tar-gz under /work/out, compared member by member with the alt histograms' columns sorted, with --f1r2-median-mq 50 or 20, --f1r2-min-bq 20 or 10 and --f1r2-max-depth 200 or 30.",
+        "The Permutect datasets (G3.2t) are varied, unset first: a training and a test dataset under /work/out (their contigs.table and read-groups.table beside them), m2_pon.vcf as either truth, both downsampling counts at 1000 or 500 so no read set is shuffled, a non-artifact ratio of 1 or 3, and ILLUMINA or ULTIMA mode; mutect_paired.bam is mutect_t.bam's reads as mate pairs with Ultima's si and rq, which ILLUMINA mode needs (an unpaired read is refused) and ULTIMA mode reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite. Mutect2's --dragstr-params-path is dragstr.txt, its PairHMM gap penalties; --dragstr-het-hom-ratio 2 or 4 changes nothing there.",
+        "--annotation, --annotation-group and --annotations-to-exclude are varied, <unset> first (run_array leaves such an argument off the command line): AssemblyComplexity and AllelePseudoDepth named with RMSMappingQuality, the StandardAnnotation group, and QualByDepth excluded. An annotation's own argument is refused when given without its annotation enabled, so its values other than <unset> are forbidden beside an <unset> --annotation."
+      ],
+      "$lists": [
+        "--gvcf-lod-band",
+        "--annotation",
+        "--annotation-group",
+        "--annotations-to-exclude"
       ],
       "--input": [
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/mutect_t.bam",
+        "/work/fixtures/flow_calls.bam",
+        "/work/fixtures/mutect_paired.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8278,7 +9373,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8331,29 +9428,1003 @@
         "-5",
         "-6"
       ],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
-      "--pileup-detection": [],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
-      "--emit-ref-confidence": [],
-      "--mitochondria-mode": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
+      "--emit-ref-confidence": [
+        "NONE",
+        "GVCF",
+        "BP_RESOLUTION"
+      ],
+      "--mitochondria-mode": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
+        "false",
+        "true"
+      ],
+      "--gvcf-lod-band": [
+        "-1.5 -1.0 -0.5",
+        "-2.0 -1.75 0.0"
+      ],
+      "--minimum-allele-fraction": [
+        "0.0",
+        "0.05"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "$hidden": [
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-graph-transformations",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-variants-out",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--haplotype-debug-histogram-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--capture-assembly-failure-bam",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-path",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-interval",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
         "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
+      ],
+      "--bam-output": [
+        "null",
+        "/work/out/bamout.bam"
+      ],
+      "--bam-writer-type": [
+        "CALLED_HAPLOTYPES",
+        "ALL_POSSIBLE_HAPLOTYPES",
+        "NO_HAPLOTYPES",
+        "CALLED_HAPLOTYPES_NO_READS"
+      ],
+      "--assembly-region-out": [
+        "null",
+        "/work/out/regions.igv"
+      ],
+      "--graph-output": [
+        "null",
+        "/work/out/graph.dot"
+      ],
+      "--debug-graph-transformations": [
+        "false",
+        "true"
+      ],
+      "--debug-assembly-variants-out": [
+        "null",
+        "/work/out/assembly_variants.vcf"
+      ],
+      "--haplotype-debug-histogram-output": [
+        "null",
+        "/work/out/histogram.txt"
+      ],
+      "--capture-assembly-failure-bam": [
+        "false",
+        "true"
+      ],
+      "--pair-hmm-results-file": [
+        "null",
+        "/work/out/pairhmm.txt"
+      ],
+      "--alm-path": [
+        "null",
+        "/work/out/alm.txt"
+      ],
+      "--alm-interval": [
+        "chr1:900-1300",
+        "null"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
+      ],
+      "--germline-resource": [
+        "null",
+        "/work/fixtures/m2_germline.vcf"
+      ],
+      "--panel-of-normals": [
+        "null",
+        "/work/fixtures/m2_pon.vcf"
+      ],
+      "--max-population-af": [
+        "0.01",
+        "0.6"
+      ],
+      "--f1r2-tar-gz": [
+        "null",
+        "/work/out/f1r2.tar.gz"
+      ],
+      "--f1r2-median-mq": [
+        "50",
+        "20"
+      ],
+      "--f1r2-min-bq": [
+        "20",
+        "10"
+      ],
+      "--f1r2-max-depth": [
+        "200",
+        "30"
+      ],
+      "--permutect-training-dataset": [
+        "null",
+        "/work/out/training.dataset"
+      ],
+      "--permutect-test-dataset": [
+        "null",
+        "/work/out/test.dataset"
+      ],
+      "--permutect-training-truth": [
+        "null",
+        "/work/fixtures/m2_pon.vcf"
+      ],
+      "--permutect-test-truth": [
+        "null",
+        "/work/fixtures/m2_pon.vcf"
+      ],
+      "--permutect-ref-downsample": [
+        "1000",
+        "500"
+      ],
+      "--permutect-alt-downsample": [
+        "1000",
+        "500"
+      ],
+      "--permutect-non-artifact-ratio": [
+        "1",
+        "3"
+      ],
+      "--permutect-dataset-mode": [
+        "ILLUMINA",
+        "ULTIMA"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "<unset>",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "<unset>",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "<unset>",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--dragstr-params-path": [
+        "null",
+        "/work/fixtures/dragstr.txt"
+      ],
+      "--dragstr-het-hom-ratio": [
+        "2",
+        "4"
+      ],
+      "--annotation": [
+        "<unset>",
+        "AssemblyComplexity AllelePseudoDepth RMSMappingQuality"
+      ],
+      "--annotation-group": [
+        "<unset>",
+        "StandardAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "<unset>",
+        "QualByDepth"
       ]
     },
     "RampedHaplotypeCaller": {
@@ -8367,23 +10438,52 @@
         "date, the second the output's last-modified time.",
         "--pair-hmm-implementation is held at LOGLESS_CACHING and --smith-waterman at JAVA, for HaplotypeBasedVariantRecaller's",
         "reason: the native kernels resolve to GKL when the CPU has AVX, which the emulated container does not.",
-        "--likelihood-calculation-engine is held at PairHMM: the flow-based engines are not ported for this tool.",
+        "--likelihood-calculation-engine is varied over PairHMM, FlowBased and FlowBasedHMM, the flow-based two on flow_calls.bam only.",
         "DRAGEN mode is varied (--dragen-mode, --apply-bqd, --apply-frd, --transform-dragen-mapping-quality), with",
         "DRAGstr's default table or none, a het:hom ratio of 2 or 4, the FRD depth cap off or at 4, and --sample-name",
-        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: it switches on",
-        "pileup detection and the partially determined PairHMM, not yet ported (#1336), and Barclay refuses it beside",
-        "--dragen-mode. Held out, as features this port does not carry: the flow-based arguments, pileup detection and the partially determined PairHMM, and the linked de Bruijn",
-        "graph. --disable-optimizations is listed false first: true fails every run that meets a region with no",
+        "unset or naming the tumour, which both BAMs hold. --dragen-378-concordance-mode is held out: Barclay refuses it",
+        "beside --dragen-mode, which every row sets.",
+        "--disable-optimizations is listed false first: true fails every run that meets a region with no",
         "variation, as the reference does, so as the array's filler it would turn most rows into that one refusal. --read-index and --sequence-dictionary are held out as for the other read walkers.",
-        "--enable-all-annotations is held at false: it switches on every annotation GATK has, most of which",
-        "this port does not compute in HaplotypeCaller's context, and in VCF mode the reference refuses it outright",
-        "for the allele-specific ones.",
-        "--off-ramp-type and --on-ramp-type are held at NONE, and their files and debug switches out: the ramps",
-        "(the off ramps' zip of intermediate state and the on ramps that restart from one) are not ported yet."
+        "--enable-all-annotations is listed false first. True switches on every annotation GATK discovers,",
+        "each computed in the caller's context, and with it the annotations' own arguments (the Dirichlet",
+        "prior of AllelePseudoDepth, --assembly-complexity-reference-mode, the de novo thresholds) start to",
+        "matter. HaplotypeCaller refuses it in VCF mode, as the reference does, for the allele-specific",
+        "ones.",
+        "The ramp arguments are hidden, so gatkdoc and the inventory omit them; they are declared under $hidden",
+        "and varied: each off ramp into /work/out, where its zip is compared member by member, and each on ramp",
+        "over a zip RampedHaplotypeCaller's own off ramp wrote from mutect_tn.bam (MakeFixtures). The two debug",
+        "switches only log.",
+        "--pedigree and --founder-id are varied, unset first: callers.ped makes the normal the tumour's",
+        "mother and the only founder, so ExcessHet and InbreedingCoeff count the normal alone; the de novo",
+        "thresholds matter only where PossibleDeNovo runs.",
+        "--linked-de-bruijn-graph is varied, false first, and --disable-artificial-haplotype-recovery with it:",
+        "the reference refuses the second WITH the first (its test is the wrong way round), and without it the",
+        "switch reads nothing; that pair is forbidden, the hc-linked-graph suite measuring the refusal.",
+        "flow_calls.bam is mutect_t.bam's reads as Ultima flow reads (tp and t0 tags, one read group under TGCA). The",
+        "flow arguments vary: the two flow engines, --flow-mode's presets, the flow matrix switches, allele filtering,",
+        "long hmer collapsing and the annotations' flow order; the hidden ones are declared under $hidden. A flow",
+        "engine or a flow mode over a BAM with no flow tags, and the pairs the reference refuses outright, are forbidden.",
+        "Pileup detection is ported (G3.2g): --pileup-detection and the hidden arguments that tune it (its indels, its",
+        "activity threshold, the alt thresholds, the read badness rules and the artificial haplotypes' count and k-mer",
+        "size) take their default first and one value that moves the outcome.",
+        "The PDHMM is ported (G3.2g) and varies with its switches (the overlap optimisation, determined haplotypes, the",
+        "GGA fallback) and its results file. --dragen-378-concordance-mode is ported too and stays held for its mutex",
+        "with --dragen-mode, which every row sets; hc-pdhmm measures it.",
+        "Force-calling is ported (G3.2l): --alleles is unset or given_alleles.vcf, a SNP, a filtered SNP, a deletion, an",
+        "insertion and a multiallelic record over mutect_ref.fasta, with --force-call-filtered-alleles off or on.",
+        "The debug outputs (G3.2m) are varied, unset first, each written under /work/out so the row compares it: --bam-output with each --bam-writer-type, --assembly-region-out, --graph-output with --debug-graph-transformations (whose per-step files land in the working directory and are measured by the hc-debug-outputs suite), --debug-assembly-variants-out, --haplotype-debug-histogram-output, --capture-assembly-failure-bam, --debug-assembly-region-state, --debug-genotyper-output, --pair-hmm-results-file and --alm-path, whose --alm-interval lists an interval first because null is the reference's refusal. --keep-rg keeps the tumour's group, or the normal's which mutect_t.bam lacks; --just-determine-active-regions and --dont-genotype are listed false first. Vertex numbers and FRD's arrays are identity hashes, masked by run_array.",
+        "Read error correction (G3.2n) is varied: --error-correction-log-odds unset (negative infinity) first, then a threshold that corrects some bases and one that corrects every minority base; --error-correct-reads, whose k-mer corrector corrects nothing but trims tails at 6, with its k-mer length and solidity threshold. All four are hidden and declared under $hidden.",
+        "The variant resources (G3.2o) are varied, unset first: resources.vcf, a record for every alternate base at each mutect site and at chr1:1100 with an rsID and allele counts, as --dbsnp (ID and DB), as a --comparison (a flag named by its path) and as --population-callset, whose priors only reference-confidence mode reads; --num-reference-samples-if-no-call 0 or 5 sets the counts where the callset is silent.",
+        "The ploidy regions (G3.2p) are varied, unset first: ploidy_haploid.bed makes the sites at 1000 to 1200 haploid, ploidy_mixed.bed puts a triploid, a haploid and a tetraploid interval over the others, the last two overlapping; each region is genotyped at the largest ploidy it overlaps, and in reference-confidence mode its engine keeps only <NON_REF> of the alternates it cannot call.",
+        "Contamination downsampling (G3.2q) is varied, unset first: --contamination-fraction-to-filter 0.05 or 0.2, and contamination.txt, which gives the tumour 0.15 and the normal 0.3 and names a sample the reads do not hold; each event's reads are downsampled toward a clean het or hom from the run's random data generator, and the annotations read the full reads unless --use-filtered-reads-for-annotations; --use-filtered-reads-for-annotations is listed false first, so the rows that downsample mostly annotate the full reads.",
+        "The remaining switches (G3.2u) are varied: --native-pair-hmm-threads, which only sizes the native PairHMM's pool; --reference-model-deletion-quality; the annotation plugin's own arguments, declared under $hidden since gatkdoc lists them with the annotations (--dirichlet-prior-pseudo-count, --dirichlet-keep-prior-in-count, --pseudo-count-weight-decay-rate, --assembly-complexity-reference-mode, --allow-old-rms-mapping-quality-annotation-data); and --flow-filter-alleles-debug-graphs, hidden, whose DOT files land in the working directory and are measured by the hc-allele-graphs suite.",
+        "--annotation, --annotation-group and --annotations-to-exclude are varied, <unset> first (run_array leaves such an argument off the command line): AssemblyComplexity and AllelePseudoDepth named, the StandardAnnotation group, and QualByDepth excluded. An annotation's own argument is refused when given without its annotation enabled, so its values other than <unset> are forbidden beside an <unset> --annotation."
       ],
       "--input": [
         "/work/fixtures/mutect_t.bam",
-        "/work/fixtures/mutect_tn.bam"
+        "/work/fixtures/mutect_tn.bam",
+        "/work/fixtures/flow_calls.bam"
       ],
       "--reference": [
         "/work/fixtures/mutect_ref.fasta"
@@ -8412,7 +10512,9 @@
         "JAVA"
       ],
       "--likelihood-calculation-engine": [
-        "PairHMM"
+        "PairHMM",
+        "FlowBased",
+        "FlowBasedHMM"
       ],
       "--max-variants-per-shard": [
         "0"
@@ -8466,38 +10568,108 @@
         "-6"
       ],
       "--dragen-378-concordance-mode": [],
-      "--flow-mode": [],
-      "--flow-assembly-collapse-partial-mode": [],
-      "--flow-disallow-probs-larger-than-call": [],
-      "--flow-filter-alleles": [],
-      "--flow-filter-lone-alleles": [],
-      "--flow-lump-probs": [],
-      "--flow-remove-non-single-base-pair-indels": [],
-      "--flow-remove-one-zero-probs": [],
-      "--flow-report-insertion-or-deletion": [],
-      "--flow-retain-max-n-probs-base-format": [],
-      "--flow-symmetric-indel-probs": [],
-      "--flow-use-t0-tag": [],
-      "--keep-boundary-flows": [],
-      "--pileup-detection": [],
-      "--use-pdhmm": [],
-      "--use-pdhmm-overlap-optimization": [],
-      "--linked-de-bruijn-graph": [],
+      "--flow-mode": [
+        "NONE",
+        "STANDARD",
+        "ADVANCED"
+      ],
+      "--flow-assembly-collapse-partial-mode": [
+        "false",
+        "true"
+      ],
+      "--flow-disallow-probs-larger-than-call": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-lone-alleles": [
+        "false",
+        "true"
+      ],
+      "--flow-lump-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-non-single-base-pair-indels": [
+        "false",
+        "true"
+      ],
+      "--flow-remove-one-zero-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-report-insertion-or-deletion": [
+        "false",
+        "true"
+      ],
+      "--flow-retain-max-n-probs-base-format": [
+        "false",
+        "true"
+      ],
+      "--flow-symmetric-indel-probs": [
+        "false",
+        "true"
+      ],
+      "--flow-use-t0-tag": [
+        "false",
+        "true"
+      ],
+      "--keep-boundary-flows": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm": [
+        "false",
+        "true"
+      ],
+      "--use-pdhmm-overlap-optimization": [
+        "false",
+        "true"
+      ],
+      "--linked-de-bruijn-graph": [
+        "false",
+        "true"
+      ],
       "--read-index": [],
       "--sequence-dictionary": [],
       "--enable-all-annotations": [
-        "false"
+        "false",
+        "true"
       ],
       "--off-ramp-type": [
-        "NONE"
+        "NONE",
+        "PRE_FILTER_OFF",
+        "PRE_ASSEMBLER_OFF",
+        "POST_ASSEMBLER_OFF"
       ],
       "--on-ramp-type": [
-        "NONE"
+        "NONE",
+        "POST_FILTER_ON",
+        "POST_ASSEMBLER_ON"
       ],
-      "--off-ramp-file": [],
-      "--on-ramp-file": [],
-      "--ramps-debug-reads": [],
-      "--ramps-debug-post-assembler-on": [],
+      "--off-ramp-file": [
+        "/work/out/ramp.zip",
+        "/work/out/ramps/off.zip"
+      ],
+      "--on-ramp-file": [
+        "/work/fixtures/ramp_pre_filter.zip",
+        "/work/fixtures/ramp_post_assembler.zip"
+      ],
+      "--ramps-debug-reads": [
+        "null",
+        "rgT:1001f"
+      ],
+      "--ramps-debug-post-assembler-on": [
+        "false",
+        "true"
+      ],
       "--dragstr-params-path": [
         "null",
         "/work/fixtures/dragstr.txt"
@@ -8517,6 +10689,1061 @@
       "--disable-optimizations": [
         "false",
         "true"
+      ],
+      "--pedigree": [
+        "null",
+        "/work/fixtures/callers.ped"
+      ],
+      "--founder-id": [
+        "null",
+        "normal"
+      ],
+      "--denovo-parent-gq-threshold": [
+        "20",
+        "0"
+      ],
+      "--denovo-depth-threshold": [
+        "0",
+        "30"
+      ],
+      "$hidden": [
+        {
+          "name": "--off-ramp-type",
+          "short": null,
+          "type": "OffRampTypeEnum",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": [
+            "NONE",
+            "PRE_FILTER_OFF",
+            "PRE_ASSEMBLER_OFF",
+            "POST_ASSEMBLER_OFF"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--off-ramp-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--on-ramp-type",
+          "short": null,
+          "type": "OnRampTypeEnum",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": [
+            "NONE",
+            "POST_FILTER_ON",
+            "POST_ASSEMBLER_ON"
+          ],
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--on-ramp-file",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--ramps-debug-reads",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--ramps-debug-post-assembler-on",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-parallel-threads",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-likelihood-optimized-comp",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--trim-to-haplotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--exact-matching",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-order-cycle-length",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "4",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-min-indel-adjust",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "6",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-insertion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-hmm-engine-flat-deletion-penatly",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "45",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-assembly-collapse-hmer-size",
+          "short": null,
+          "type": "Integer",
+          "required": false,
+          "kind": "advanced",
+          "default": "0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--use-flow-aligner-for-stepwise-hc-filtering",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-enable-indel-pileup-calling",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-active-region-phred-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--num-artificial-haplotypes-to-add-per-allele",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--artifical-haplotype-filtering-kmer-size",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "10",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-indel-alt-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.1",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-absolute-alt-depth",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-adjacent-to-assembled-indel-range",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "5",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-snp-basequality-filter",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-proper-pair-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.08",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-chimeric-read-badness",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-mean-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-template-std-badness-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-filter-assembly-alt-bad-read-tolerance",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "0.12",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--print-pileupcalling-status",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pdhmm-results-file",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": "null",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--make-determined-haps-from-pd-code",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--fallback-gga-if-pdhmm-fails",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "true",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--keep-rg",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--just-determine-active-regions",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-region-state",
+          "short": null,
+          "type": "GATKPath",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-genotyper-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dont-genotype",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-graph-transformations",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--debug-assembly-variants-out",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--haplotype-debug-histogram-output",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "hidden",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--capture-assembly-failure-bam",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "hidden",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-path",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--alm-interval",
+          "short": null,
+          "type": "String",
+          "required": false,
+          "kind": "advanced",
+          "default": null,
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correct-reads",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--kmer-length-for-read-error-correction",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "25",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--min-observations-for-kmer-to-be-solid",
+          "short": null,
+          "type": "int",
+          "required": false,
+          "kind": "advanced",
+          "default": "20",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--error-correction-log-odds",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "-Infinity",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-prior-pseudo-count",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--dirichlet-keep-prior-in-count",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--pseudo-count-weight-decay-rate",
+          "short": null,
+          "type": "double",
+          "required": false,
+          "kind": "advanced",
+          "default": "1.0",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--assembly-complexity-reference-mode",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--allow-old-rms-mapping-quality-annotation-data",
+          "short": null,
+          "type": "boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        },
+        {
+          "name": "--flow-filter-alleles-debug-graphs",
+          "short": null,
+          "type": "Boolean",
+          "required": false,
+          "kind": "advanced",
+          "default": "false",
+          "enum_members": null,
+          "min": null,
+          "max": null,
+          "deprecated": false
+        }
+      ],
+      "--disable-artificial-haplotype-recovery": [
+        "false",
+        "true"
+      ],
+      "--flow-fill-empty-bins-value": [
+        "0.001",
+        "0.0001"
+      ],
+      "--flow-quantization-bins": [
+        "121",
+        "50"
+      ],
+      "--flow-probability-scaling-factor": [
+        "10",
+        "5"
+      ],
+      "--flow-matrix-mods": [
+        "null",
+        "10,12,11,12"
+      ],
+      "--flow-filter-alleles-qual-threshold": [
+        "30",
+        "300"
+      ],
+      "--flow-filter-alleles-sor-threshold": [
+        "3",
+        "1"
+      ],
+      "--flow-order-for-annotations": [
+        "null",
+        "ACGT"
+      ],
+      "--flow-likelihood-parallel-threads": [
+        "0",
+        "2"
+      ],
+      "--flow-likelihood-optimized-comp": [
+        "false",
+        "true"
+      ],
+      "--trim-to-haplotype": [
+        "true",
+        "false"
+      ],
+      "--exact-matching": [
+        "false",
+        "true"
+      ],
+      "--flow-order-cycle-length": [
+        "4",
+        "8"
+      ],
+      "--flow-hmm-engine-min-indel-adjust": [
+        "6",
+        "20"
+      ],
+      "--flow-hmm-engine-flat-insertion-penatly": [
+        "45",
+        "30"
+      ],
+      "--flow-hmm-engine-flat-deletion-penatly": [
+        "45",
+        "35"
+      ],
+      "--flow-assembly-collapse-hmer-size": [
+        "0",
+        "4",
+        "-1"
+      ],
+      "--use-flow-aligner-for-stepwise-hc-filtering": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-enable-indel-pileup-calling": [
+        "false",
+        "true"
+      ],
+      "--pileup-detection-active-region-phred-threshold": [
+        "0.0",
+        "3.0"
+      ],
+      "--num-artificial-haplotypes-to-add-per-allele": [
+        "5",
+        "1"
+      ],
+      "--artifical-haplotype-filtering-kmer-size": [
+        "10",
+        "25"
+      ],
+      "--pileup-detection-snp-alt-threshold": [
+        "0.1",
+        "0.4"
+      ],
+      "--pileup-detection-indel-alt-threshold": [
+        "0.1",
+        "0.3"
+      ],
+      "--pileup-detection-absolute-alt-depth": [
+        "0.0",
+        "30.0"
+      ],
+      "--pileup-detection-snp-adjacent-to-assembled-indel-range": [
+        "5",
+        "250"
+      ],
+      "--pileup-detection-snp-basequality-filter": [
+        "12",
+        "25"
+      ],
+      "--pileup-detection-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-proper-pair-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-edit-distance-read-badness-threshold": [
+        "0.08",
+        "0.03"
+      ],
+      "--pileup-detection-chimeric-read-badness": [
+        "true",
+        "false"
+      ],
+      "--pileup-detection-template-mean-badness-threshold": [
+        "0.0",
+        "300.0"
+      ],
+      "--pileup-detection-template-std-badness-threshold": [
+        "0.0",
+        "40.0"
+      ],
+      "--pileup-detection-filter-assembly-alt-bad-read-tolerance": [
+        "0.0",
+        "0.4"
+      ],
+      "--pileup-detection-edit-distance-read-badness-for-assembly-filtering-threshold": [
+        "0.12",
+        "0.05"
+      ],
+      "--print-pileupcalling-status": [
+        "false",
+        "true"
+      ],
+      "--pdhmm-results-file": [
+        "null",
+        "/work/out/pdhmm_results.txt"
+      ],
+      "--make-determined-haps-from-pd-code": [
+        "false",
+        "true"
+      ],
+      "--fallback-gga-if-pdhmm-fails": [
+        "true",
+        "false"
+      ],
+      "--alleles": [
+        "null",
+        "/work/fixtures/given_alleles.vcf"
+      ],
+      "--force-call-filtered-alleles": [
+        "false",
+        "true"
+      ],
+      "--bam-output": [
+        "null",
+        "/work/out/bamout.bam"
+      ],
+      "--bam-writer-type": [
+        "CALLED_HAPLOTYPES",
+        "ALL_POSSIBLE_HAPLOTYPES",
+        "NO_HAPLOTYPES",
+        "CALLED_HAPLOTYPES_NO_READS"
+      ],
+      "--assembly-region-out": [
+        "null",
+        "/work/out/regions.igv"
+      ],
+      "--graph-output": [
+        "null",
+        "/work/out/graph.dot"
+      ],
+      "--debug-graph-transformations": [
+        "false",
+        "true"
+      ],
+      "--debug-assembly-variants-out": [
+        "null",
+        "/work/out/assembly_variants.vcf"
+      ],
+      "--haplotype-debug-histogram-output": [
+        "null",
+        "/work/out/histogram.txt"
+      ],
+      "--capture-assembly-failure-bam": [
+        "false",
+        "true"
+      ],
+      "--pair-hmm-results-file": [
+        "null",
+        "/work/out/pairhmm.txt"
+      ],
+      "--alm-path": [
+        "null",
+        "/work/out/alm.txt"
+      ],
+      "--alm-interval": [
+        "chr1:900-1300",
+        "null"
+      ],
+      "--debug-assembly-region-state": [
+        "null",
+        "/work/out/region_state.txt"
+      ],
+      "--debug-genotyper-output": [
+        "null",
+        "/work/out/genotyper.txt"
+      ],
+      "--keep-rg": [
+        "null",
+        "rgT",
+        "rgN"
+      ],
+      "--just-determine-active-regions": [
+        "false",
+        "true"
+      ],
+      "--dont-genotype": [
+        "false",
+        "true"
+      ],
+      "--error-correct-reads": [
+        "false",
+        "true"
+      ],
+      "--kmer-length-for-read-error-correction": [
+        "25",
+        "10"
+      ],
+      "--min-observations-for-kmer-to-be-solid": [
+        "20",
+        "2"
+      ],
+      "--error-correction-log-odds": [
+        "-Infinity",
+        "10.0",
+        "1000.0"
+      ],
+      "--dbsnp": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--comparison": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--population-callset": [
+        "null",
+        "/work/fixtures/resources.vcf"
+      ],
+      "--num-reference-samples-if-no-call": [
+        "0",
+        "5"
+      ],
+      "--ploidy-regions": [
+        "null",
+        "/work/fixtures/ploidy_haploid.bed",
+        "/work/fixtures/ploidy_mixed.bed"
+      ],
+      "--contamination-fraction-to-filter": [
+        "0.0",
+        "0.2",
+        "0.05"
+      ],
+      "--contamination-fraction-per-sample-file": [
+        "null",
+        "/work/fixtures/contamination.txt"
+      ],
+      "--use-filtered-reads-for-annotations": [
+        "false",
+        "true"
+      ],
+      "--dirichlet-prior-pseudo-count": [
+        "<unset>",
+        "2.0"
+      ],
+      "--dirichlet-keep-prior-in-count": [
+        "<unset>",
+        "true"
+      ],
+      "--pseudo-count-weight-decay-rate": [
+        "<unset>",
+        "0.5"
+      ],
+      "--assembly-complexity-reference-mode": [
+        "<unset>",
+        "true"
+      ],
+      "--allow-old-rms-mapping-quality-annotation-data": [
+        "false",
+        "true"
+      ],
+      "--flow-filter-alleles-debug-graphs": [
+        "false",
+        "true"
+      ],
+      "--native-pair-hmm-threads": [
+        "4",
+        "1"
+      ],
+      "--reference-model-deletion-quality": [
+        "30",
+        "20"
+      ],
+      "--annotation": [
+        "<unset>",
+        "AssemblyComplexity AllelePseudoDepth"
+      ],
+      "--annotation-group": [
+        "<unset>",
+        "StandardAnnotation"
+      ],
+      "--annotations-to-exclude": [
+        "<unset>",
+        "QualByDepth"
+      ],
+      "$lists": [
+        "--annotation",
+        "--annotation-group",
+        "--annotations-to-exclude"
       ]
     }
   },
@@ -8906,6 +12133,678 @@
         "--disable-read-filter": "MappedReadFilter"
       },
       "why": "A filter both enabled and disabled is refused by the plugin descriptor while the command line is parsed."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "GVCF"
+      },
+      "why": "Somatic reference-confidence mode takes one sample, and mutect_tn.bam has two: every such row is the same refusal, which the mutect2-gvcf suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_tn.bam",
+        "--emit-ref-confidence": "BP_RESOLUTION"
+      },
+      "why": "Somatic reference-confidence mode takes one sample, and mutect_tn.bam has two: every such row is the same refusal, which the mutect2-gvcf suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/mutect_t.bam",
+        "--normal-sample": "normal"
+      },
+      "why": "mutect_t.bam has no normal sample, so naming one is the same refusal on every row."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--pedigree": "/work/fixtures/callers.ped",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Mutect2's default annotations hold no pedigree annotation, so either pedigree argument without --enable-all-annotations is the same refusal on every row, which the hc-pedigree suite measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--founder-id": "normal",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Mutect2's default annotations hold no pedigree annotation, so either pedigree argument without --enable-all-annotations is the same refusal on every row, which the hc-pedigree suite measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "PRE_FILTER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "PRE_ASSEMBLER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--off-ramp-type": "POST_ASSEMBLER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_FILTER_ON",
+        "--off-ramp-type": "PRE_FILTER_OFF"
+      },
+      "why": "buildRamps refuses an on ramp after an off ramp, the same refusal on every such row, which ramps-end-to-end measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_FILTER_ON",
+        "--on-ramp-file": "/work/fixtures/ramp_post_assembler.zip"
+      },
+      "why": "An on ramp over the other ramp's zip reads an entry the zip does not hold, the same IOException on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--on-ramp-type": "POST_ASSEMBLER_ON",
+        "--on-ramp-file": "/work/fixtures/ramp_pre_filter.zip"
+      },
+      "why": "An on ramp over the other ramp's zip reads an entry the zip does not hold, the same IOException on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--linked-de-bruijn-graph": "true",
+        "--disable-artificial-haplotype-recovery": "true"
+      },
+      "why": "setArtificialHaplotypeRecoveryMode refuses disabling the recovery in the linked graph mode, the same refusal on every such row, which hc-linked-graph measures."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "STANDARD"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "ADVANCED"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-filter-alleles": "false"
+      },
+      "why": "Stepwise filtering without allele filtering is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--likelihood-calculation-engine": "FlowBased"
+      },
+      "why": "Stepwise filtering with the FlowBased engine is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "STANDARD"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--dragen-mode": "true"
+      },
+      "why": "DRAGEN mode and flow mode are refused together, on every such row."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-mode": "ADVANCED"
+      },
+      "why": "A flow mode selects the FlowBased engine, which stepwise filtering refuses."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--flow-filter-alleles": "false"
+      },
+      "why": "Stepwise filtering without allele filtering is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--use-flow-aligner-for-stepwise-hc-filtering": "true",
+        "--likelihood-calculation-engine": "FlowBased"
+      },
+      "why": "Stepwise filtering with the FlowBased engine is refused on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_t.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBased",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow engine reads only flow reads; over a BAM with no flow tags every row is the same refusal."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "STANDARD",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-mode": "ADVANCED",
+        "--input": "/work/fixtures/mutect_tn.bam"
+      },
+      "why": "A flow mode selects the FlowBased engine, which reads only flow reads."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--likelihood-calculation-engine": "FlowBasedHMM",
+        "--flow-order-cycle-length": "8"
+      },
+      "why": "FlowBasedHMMEngine refuses a cycle length other than four, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--flow-order-for-annotations": "ACGT",
+        "--enable-all-annotations": "false"
+      },
+      "why": "Without a flow annotation the plugin refuses the argument, on every such row; hc-flow measures it."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--input": "/work/fixtures/flow_calls.bam",
+        "--normal-sample": "normal"
+      },
+      "why": "flow_calls.bam has no normal sample, so naming one is the same refusal on every row."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dont-genotype": "true",
+        "--emit-ref-confidence": "GVCF"
+      },
+      "why": "Reference-confidence mode refuses --dont-genotype before anything runs, so the pair would only measure that refusal, which the hc-debug-outputs suite does, and the rows it fills would hide the reference-confidence tuples."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--dont-genotype": "true",
+        "--emit-ref-confidence": "BP_RESOLUTION"
+      },
+      "why": "Reference-confidence mode refuses --dont-genotype before anything runs, so the pair would only measure that refusal, which the hc-debug-outputs suite does, and the rows it fills would hide the reference-confidence tuples."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--population-callset": "/work/fixtures/resources.vcf",
+        "--ploidy-regions": "/work/fixtures/ploidy_haploid.bed"
+      },
+      "why": "PosteriorProbabilitiesUtils refuses a ploidy other than two, at the first reference-confidence record a non-diploid region emits; the pair would measure that refusal in every row of that mode, which hc-ploidy measures."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller"
+      ],
+      "forbid": {
+        "--population-callset": "/work/fixtures/resources.vcf",
+        "--ploidy-regions": "/work/fixtures/ploidy_mixed.bed"
+      },
+      "why": "PosteriorProbabilitiesUtils refuses a ploidy other than two, at the first reference-confidence record a non-diploid region emits; the pair would measure that refusal in every row of that mode, which hc-ploidy measures."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "forbid": {
+        "--dirichlet-prior-pseudo-count": "2.0",
+        "--annotation": "<unset>"
+      },
+      "why": "GATKAnnotationPluginDescriptor refuses an annotation's own argument unless the annotation is enabled; the pair would measure that refusal in every row it fills."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "forbid": {
+        "--dirichlet-keep-prior-in-count": "true",
+        "--annotation": "<unset>"
+      },
+      "why": "GATKAnnotationPluginDescriptor refuses an annotation's own argument unless the annotation is enabled; the pair would measure that refusal in every row it fills."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "forbid": {
+        "--pseudo-count-weight-decay-rate": "0.5",
+        "--annotation": "<unset>"
+      },
+      "why": "GATKAnnotationPluginDescriptor refuses an annotation's own argument unless the annotation is enabled; the pair would measure that refusal in every row it fills."
+    },
+    {
+      "tools": [
+        "HaplotypeCaller",
+        "RampedHaplotypeCaller",
+        "Mutect2"
+      ],
+      "forbid": {
+        "--assembly-complexity-reference-mode": "true",
+        "--annotation": "<unset>"
+      },
+      "why": "GATKAnnotationPluginDescriptor refuses an annotation's own argument unless the annotation is enabled; the pair would measure that refusal in every row it fills."
+    },
+    {
+      "tools": [
+        "Mutect2"
+      ],
+      "forbid": {
+        "--allow-old-rms-mapping-quality-annotation-data": "true",
+        "--annotation": "<unset>"
+      },
+      "why": "RMSMappingQuality is no default of Mutect2's, so its argument is refused unless the annotation is named."
     }
   ],
   "exclude": {

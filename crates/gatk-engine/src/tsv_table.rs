@@ -235,8 +235,8 @@ pub fn write_table(columns: &[&str], rows: &[Vec<String>], metadata: &[(&str, &s
 /// written `1.0` and never `1`. A port that read the intent rather than the code would differ on
 /// every integral frequency, which is why this function is only `Double.toString`.
 ///
-/// `Double.toString` as the pinned Java 17 prints it, which is not always the shortest decimal:
-/// `jmath::to_string` reproduces it (htsjdk-rs decision 0046).
+/// Java 17's `Double.toString`, which is not always the shortest decimal that round-trips: it
+/// can print a digit more, as at most powers of two, and `jmath` reproduces where.
 pub fn java_double_to_string(value: f64) -> String {
     jmath::to_string::double_to_string(value)
 }

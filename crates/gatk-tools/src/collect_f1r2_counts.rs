@@ -161,6 +161,25 @@ pub struct Element {
 }
 
 impl Element {
+    /// What `process` reads of a pileup element, `sample` being its read's.
+    pub fn from_pileup(
+        element: &gatk_engine::pileup::PileupElement<'_>,
+        sample: Option<String>,
+    ) -> Self {
+        let flags = element.read.flags;
+        Element {
+            sample: sample.unwrap_or_default(),
+            base: element.base(),
+            qual: element.qual(),
+            reverse_strand: flags & 0x10 != 0,
+            first_of_pair: flags & 0x1 != 0 && flags & 0x40 != 0,
+            mapping_quality: element.mapping_qual() as i32,
+            deletion: element.is_deletion(),
+            after_insertion: element.is_after_insertion(),
+            before_deletion_start: element.is_before_deletion_start(),
+        }
+    }
+
     /// `ReadUtils.isF1R2`, which for an UNPAIRED read makes a forward read F2R1 and a reverse read
     /// F1R2, `isFirstOfPair` being false when the flag is not set.
     pub fn orientation(&self) -> ReadOrientation {

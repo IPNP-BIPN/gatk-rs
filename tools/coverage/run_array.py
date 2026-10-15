@@ -22,8 +22,8 @@ Two modes, and the difference is the whole point of Milestone C:
 
 import argparse
 import hashlib
-import re
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -69,6 +69,9 @@ JAVA_OPENS = " ".join(f"--add-opens={module}=ALL-UNNAMED" for module in ADD_OPEN
 
 # Values that mean "the argument is absent", so a held-at value carrying one must not be passed.
 ABSENT = {"None", "null", "[]", ""}
+
+# A fixture value for an argument the row does not give at all; see `as_cli`.
+UNSET = "<unset>"
 
 
 # A corpus built once and handed to every row, by `measure.py` when it runs many tools. The files are
@@ -138,6 +141,12 @@ def as_cli(args, positional=(), tagged=(), lists=()):
     out = []
     for pair in args:
         name, _, value = pair.partition("=")
+        # `<unset>`: the row leaves the argument off the command line altogether. A covering array
+        # gives every argument a value in every row, and an annotation's own argument is refused
+        # whenever it is SET without its annotation, so the value that means "not given" has to
+        # exist for the pairs that enable it to be the only ones that carry it.
+        if value == UNSET:
+            continue
         if name in tagged:
             # One value naming several tagged inputs: `tag:path` words, each written as
             # `--name:tag path`. `VCFComparator` tells its two `--variant`s apart by tag alone, so
@@ -244,6 +253,12 @@ def read_output(out_dir, row_args=()):
         if unordered_traversals(name, row_args):
             parts.append(f"{name}: {traversals_unordered(raw)}")
             continue
+        if name.endswith(".idx"):
+            masked = tribble_index_masked(raw)
+            if masked is not None:
+                digest = hashlib.sha256(masked).hexdigest()
+                parts.append(f"{name}: TRIBBLE INDEX sha256={digest} bytes={len(raw)} (mtime masked)")
+                continue
         if name.endswith(".img"):
             masked = bwa_image_masked(raw)
             if masked is not None:
@@ -251,11 +266,50 @@ def read_output(out_dir, row_args=()):
                 parts.append(f"{name}: BWA IMAGE sha256={digest} bytes={len(raw)} (addresses masked)")
                 continue
         try:
-            parts.append(f"{name}: {without_start_time(raw.decode('utf-8'))}")
+            text = without_start_time(raw.decode("utf-8"))
+            parts.append(f"{name}: {identity_hashes_masked(name, text)}")
         except UnicodeDecodeError:
             digest = hashlib.sha256(raw).hexdigest()
             parts.append(f"{name}: BINARY sha256={digest} bytes={len(raw)}")
     return "\n".join(parts)
+
+
+def tribble_index_masked(raw):
+    """A Tribble index with the indexed file's last-modified time zeroed.
+
+    The header is `TIDX`, the type and the version (two ints), the indexed path as a C string,
+    then the file's size and its last-modified time (two longs), so two runs differ in those eight
+    bytes alone. `--create-output-variant-index` is held false for that reason, but the writer of
+    `--debug-assembly-variants-out` indexes its file whatever it says.
+    """
+    if raw[:4] != b"TIDX":
+        return None
+    end = raw.find(b"\0", 12)
+    if end < 0 or end + 17 > len(raw):
+        return None
+    start = end + 1 + 8
+    return raw[:start] + bytes(8) + raw[start + 8:]
+
+
+def identity_hashes_masked(name, text):
+    """HaplotypeCaller's debug files with the JVM's identity hashes masked.
+
+    A dot file (`--graph-output`) names each vertex `..._id_<hash>_seq_...` and labels it
+    `(<hash>)`, and a linked graph's junction-tree nodes `TreadingNode_<hex>`, printed from
+    identity-keyed hash maps in the JVM's order, so a file holding them is compared as a sorted
+    set of lines. `--debug-genotyper-output` prints FRD's `double[]` as `[D@<hex>`. Nothing else
+    in either file is touched.
+    """
+    if name.endswith(".dot"):
+        text = re.sub(r"_id_-?\d+_", "_id_N_", text)
+        text = re.sub(r"\((-?\d+)\)", "(N)", text)
+        if "TreadingNode_" in text:
+            text = re.sub(r"TreadingNode_[0-9a-f]+", "TreadingNode_N", text)
+            text = "UNORDERED " + "\n".join(sorted(text.split("\n")))
+        return text
+    if name == "genotyper.txt":
+        return re.sub(r"\[D@[0-9a-f]+", "[D@N", text)
+    return text
 
 
 def unordered_traversals(name, row_args):
