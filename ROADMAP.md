@@ -471,9 +471,10 @@ copy, which is a worse position than reading the source rather than a better one
 
 ## Milestone G3: the variant callers (individually multi-month)
 
-G3 is not finished. G3.1 below landed the three callers over covering arrays that held out every
-feature the port refused; G3.2 (#1329) ports those features and puts their arguments back in the
-arrays, and G3 is done only when no argument of the three callers is held out as not carried.
+G3 is done. G3.1 landed the three callers over covering arrays that held out every feature the
+port refused (e13d5d4a, #1327); G3.2 (#1329) ported those features and put their arguments back in
+the arrays, and closed with #1370 (merge 9735c141, 2026-10-15), after which no argument of the
+three callers is held out as not carried. Issue #11 and the GitHub milestone G3 are closed.
 
 - [x] **G3.2, every argument of the callers** (#1329):
       - [x] G3.2a DRAGEN mode in HaplotypeCaller (#1330): the BQD and FRD genotype models,
