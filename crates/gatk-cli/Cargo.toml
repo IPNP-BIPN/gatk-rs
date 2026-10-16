@@ -5,11 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# `gatk-rs <Tool> <args>`: the name the bit-identity claim is defined against. The reference's own
-# wrapper is `gatk`, and the difference in the name is deliberate: a port that answers to `gatk`
-# on a PATH would be a trap for anyone comparing the two.
+# `gatk <Tool> <args>`: the reference's own command, letter for letter, so a GATK command line runs
+# unchanged. Comparing the two means naming each by its path, never by `gatk` on a PATH.
 [[bin]]
-name = "gatk-rs"
+name = "gatk"
 path = "src/main.rs"
 
 [dependencies]

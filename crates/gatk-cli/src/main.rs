@@ -1,4 +1,4 @@
-//! `gatk-rs <Tool> <args>`.
+//! `gatk <Tool> <args>`.
 //!
 //! `mainEntry` ends in `System.exit`, and so does this: the status is the whole of what a caller
 //! downstream of it can see.
