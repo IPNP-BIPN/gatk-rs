@@ -1,7 +1,7 @@
 //! Conformance for the file plumbing under `CountVariants` against GATK 4.6.2.0.
 //!
 //! `count-variants` compares the number, the bytes `-O` receives and the refusals. This suite is
-//! the layer between that number and a command line: `gatk-rs CountVariants` over the golden's own
+//! the layer between that number and a command line: `gatk CountVariants` over the golden's own
 //! inputs, with the golden's own arguments.
 //!
 //! The fixtures are rebuilt rather than read from disk. The golden carries each input as text, and

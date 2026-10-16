@@ -17,7 +17,7 @@ Two modes, and the difference is the whole point of Milestone C:
   argument-coverage column has said `not measured` for since the arrays were generated.
 
     python3 tools/coverage/run_array.py --tool IndexFeatureFile
-    python3 tools/coverage/run_array.py --tool IndexFeatureFile --port target/release/gatk-rs
+    python3 tools/coverage/run_array.py --tool IndexFeatureFile --port target/release/gatk
 """
 
 import argparse

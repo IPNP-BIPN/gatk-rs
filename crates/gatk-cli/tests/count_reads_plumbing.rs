@@ -1,7 +1,7 @@
 //! Conformance for the file plumbing under `CountReads` against GATK 4.6.2.0.
 //!
 //! `count-reads-and-bases` compares the number. This suite is the layer between that number and a
-//! command line: what `gatk-rs CountReads` returns, what `-O` receives, and what a missing input
+//! command line: what `gatk CountReads` returns, what `-O` receives, and what a missing input
 //! earns.
 //!
 //! The fixture is the shared corpus's BAM, rebuilt here rather than read from disk: the golden's
