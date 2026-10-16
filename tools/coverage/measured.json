@@ -200,11 +200,11 @@
       "share": 1.0
     },
     "CollectReadCounts": {
-      "rows": 17,
-      "accepted": 9,
+      "rows": 18,
+      "accepted": 10,
       "rejected": 8,
-      "distinct_outputs": 4,
-      "matched": 17,
+      "distinct_outputs": 6,
+      "matched": 18,
       "t": 2,
       "share": 1.0
     },

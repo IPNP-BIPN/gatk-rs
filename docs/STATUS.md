@@ -180,7 +180,7 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `ClipReads` | record-transform | oracle-backed | clip-reads | 1 | t=2, 24/24 rows (100%) | 0.003 / 0.043 |
 | `CollectAllelicCounts` | locus-walker | oracle-backed | collect-allelic-counts | 1 | t=2, 19/19 rows (100%) | 0.007 / 0.170 |
 | `CollectF1R2Counts` | unclassified | oracle-backed | collect-f1r2-counts | 1 | t=2, 17/17 rows (100%) | 0.027 / 0.518 |
-| `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 17/17 rows (100%) | 0.002 / 0.055 |
+| `CollectReadCounts` | locus-walker | oracle-backed | collect-read-counts | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.055 |
 | `CollectSVEvidence` | sv-caller | oracle-backed | collect-sv-evidence | 1 | t=2, 20/20 rows (100%) | 0.002 / 0.058 |
 | `CombineGVCFs` | assembly-caller | oracle-backed | combine-gvcfs | 1 | t=2, 26/26 rows (100%) | 0.004 / 0.079 |
 | `CombineSegmentBreakpoints` | unclassified | oracle-backed | combine-segment-breakpoints | 1 | t=2, 18/18 rows (100%) | 0.002 / 0.045 |
