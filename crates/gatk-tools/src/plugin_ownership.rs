@@ -293,6 +293,10 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // returns `ALLOW_ALL_READS` alone, so this is the one read walker here whose default chain
         // does not carry the wellformed filter at all.
         "UnmarkDuplicates" => Some(&["AllowAllReadsReadFilter"]),
+        // `CountReadsSpark.getDefaultReadFilters` is the same singleton, and its two siblings keep
+        // `GATKSparkTool`'s own default, the wellformed filter alone.
+        "CountReadsSpark" => Some(&["AllowAllReadsReadFilter"]),
+        "CountBasesSpark" | "FlagStatSpark" => Some(&["WellformedReadFilter"]),
         // `GetPileupSummaries.getDefaultReadFilters` does NOT call super, so the wellformed filter
         // is LAST rather than first, and the list is eleven long: the order is the tool's own and
         // it is what `--disable-read-filter` lists.

@@ -294,6 +294,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "PrintBGZFBlockInformation" => Some(run_print_bgzf_block_information),
         "CountBases" => Some(run_count_bases),
         "FlagStat" => Some(run_flag_stat),
+        "CountReadsSpark" => Some(run_count_reads_spark),
+        "CountBasesSpark" => Some(run_count_bases_spark),
+        "FlagStatSpark" => Some(run_flag_stat_spark),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
         "SplitIntervals" => Some(run_split_intervals),
         "PreprocessIntervals" => Some(run_preprocess_intervals),
@@ -996,6 +999,18 @@ fn run_count_bases(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_flag_stat(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::flag_stat(&parsed("FlagStat", args)?)
+}
+
+fn run_count_reads_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_reads_spark(&parsed("CountReadsSpark", args)?)
+}
+
+fn run_count_bases_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_bases_spark(&parsed("CountBasesSpark", args)?)
+}
+
+fn run_flag_stat_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::flag_stat_spark(&parsed("FlagStatSpark", args)?)
 }
 
 fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {

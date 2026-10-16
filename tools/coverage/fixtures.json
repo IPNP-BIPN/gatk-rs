@@ -226,7 +226,21 @@
     "reference stamps its HDF5 object headers with a time, so an HDF5 file under `counts.tsv` is",
     "forbidden, and a TSV under `counts.hdf5` with it (gatk-rs#1107). It holds the same four interval",
     "arguments `PreprocessIntervals` and `AnnotateIntervals` hold, for the same reason and by the same",
-    "`validateIntervalArgumentCollection`."
+    "`validateIntervalArgumentCollection`.",
+    "",
+    "`CountReadsSpark`, `CountBasesSpark` and `FlagStatSpark` take their walker twins' reads,",
+    "indexes, intervals and outputs, and name two values for each Spark argument the shared list",
+    "cannot supply: two local masters (one thread and two), two well-formed `--conf` properties,",
+    "two program names, two Spark log levels, and the reducer count, partition size and shard",
+    "directory a counting tool reads and ignores. Every value is one the reference accepts: the",
+    "refusals these arguments have (a `--conf` without `=`, a master Spark cannot parse, an unknown",
+    "level) are one-line pairs that would fill every row they enter, so they are measured by hand",
+    "instead (X.1, #72).",
+    "",
+    "They HOLD `--output-shard-tmp-dir` out, because Barclay refuses it beside `--sharded-output`",
+    "(a mutex), and every row sets both: the first array of nineteen rows measured that one",
+    "refusal sixteen times. The boolean keeps both its values; the directory is where a sharded BAM",
+    "write would put its parts, which no counting tool does."
   ],
   "values": {
     "--input": [
@@ -11747,6 +11761,138 @@
         "--annotation-group",
         "--annotations-to-exclude"
       ]
+    },
+    "CountReadsSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/countreads_spark.txt",
+        "/work/out/countreads_spark2.txt"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": []
+    },
+    "CountBasesSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/countbases_spark.txt",
+        "/work/out/countbases_spark2.txt"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": []
+    },
+    "FlagStatSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000"
+      ],
+      "--output": [
+        "/work/out/flagstat_spark.txt",
+        "/work/out/flagstat_spark2.txt"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": []
     }
   },
   "constraints": [

@@ -24067,6 +24067,11 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 }
 
 /// `VariantRecalibrator`, whose runner is long enough to live in a file of its own.
+/// The Spark tools (X.1), whose startup is `GATKSparkTool`'s rather than a walker's.
+#[path = "runners_spark.rs"]
+mod spark_runners;
+pub use spark_runners::{count_bases_spark, count_reads_spark, flag_stat_spark};
+
 /// `GroundTruthReadsBuilder`, in a file of its own.
 #[path = "runners_ground_truth_reads_builder.rs"]
 mod ground_truth_reads_builder_runner;
