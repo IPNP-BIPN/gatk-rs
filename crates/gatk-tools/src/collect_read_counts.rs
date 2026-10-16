@@ -106,3 +106,37 @@ pub fn write(
     }
     text
 }
+
+/// `HDF5SimpleCountCollection.write`: the sample name, the dictionary as
+/// `SAMTextHeaderCodec` encodes a header holding only it, the intervals as `HDF5Utils` writes
+/// them, and the counts as a one-row matrix of doubles.
+pub fn write_hdf5(
+    sequences: &[(String, i32)],
+    sample: &str,
+    intervals: &[SimpleInterval],
+    counts: &[i32],
+) -> crate::hdf5_writer::Hdf5File {
+    let mut file = crate::hdf5_writer::Hdf5File::new();
+    file.string_array("/sample_metadata/sample_name", &[sample.to_string()]);
+    let mut dictionary = String::from("@HD\tVN:1.6\n");
+    for (name, length) in sequences {
+        dictionary.push_str(&format!("@SQ\tSN:{name}\tLN:{length}\n"));
+    }
+    file.string_array("/locatable_metadata/sequence_dictionary", &[dictionary]);
+    let located: Vec<crate::create_read_count_panel_of_normals::Interval> = intervals
+        .iter()
+        .map(
+            |interval| crate::create_read_count_panel_of_normals::Interval {
+                contig: interval.contig.clone(),
+                start: interval.start,
+                end: interval.end,
+            },
+        )
+        .collect();
+    crate::create_read_count_panel_of_normals::write_intervals(&mut file, "/intervals", &located);
+    file.double_matrix(
+        "/counts/values",
+        &[counts.iter().map(|&count| f64::from(count)).collect()],
+    );
+    file
+}

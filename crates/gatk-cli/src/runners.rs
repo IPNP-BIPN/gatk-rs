@@ -10136,16 +10136,10 @@ fn compare_table_error(error: gatk_tools::compare_references::TableError) -> Thr
 ///     `AnnotateIntervals` make, which is why it lives in one place here;
 ///   - and the sample name is read off the header's read groups, one distinct `SM` or a refusal.
 ///
-/// `--format HDF5` is the default and is refused: the port writes the TSV and HDF5 is a file format
-/// rather than a spelling of it.
+/// `onTraversalSuccess` writes `--format`: HDF5, the default, through `HDF5SimpleCountCollection`,
+/// or the TSV.
 pub fn collect_read_counts(parser: &Parser) -> Outcome {
-    if scalar(parser, "format").as_deref() != Some("TSV") {
-        return Err(Thrown::non_user(
-            PORT_LIMITATION,
-            "CollectReadCounts writes HDF5 by default, which this port does not write; pass \
-             --format TSV. This message is the port's own and not GATK's.",
-        ));
-    }
+    let hdf5 = scalar(parser, "format").as_deref() != Some("TSV");
     let ReadWalkerStart {
         source,
         header,
@@ -10186,8 +10180,14 @@ pub fn collect_read_counts(parser: &Parser) -> Outcome {
         .iter()
         .map(|sequence| (sequence.name.clone(), sequence.length))
         .collect();
-    let text = gatk_tools::collect_read_counts::write(&sequences, &sample, &intervals, &counts);
-    write_file(&output, text.as_bytes())?;
+    if hdf5 {
+        let file =
+            gatk_tools::collect_read_counts::write_hdf5(&sequences, &sample, &intervals, &counts);
+        write_file(&output, &file.to_bytes())?;
+    } else {
+        let text = gatk_tools::collect_read_counts::write(&sequences, &sample, &intervals, &counts);
+        write_file(&output, text.as_bytes())?;
+    }
     Ok(None)
 }
 
