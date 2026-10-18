@@ -4,8 +4,8 @@ What the port costs against the reference, measured on the rows it is already pr
 byte-identical on. Milestone S (#107); this directory is S.1 (#108).
 
 ```sh
-python3 tools/speed/bench.py --port target/release/gatk-rs --out speed.json
-python3 tools/speed/bench.py --port target/release/gatk-rs --tool CountReads --tool FlagStat
+python3 tools/speed/bench.py --port target/release/gatk --out speed.json
+python3 tools/speed/bench.py --port target/release/gatk --tool CountReads --tool FlagStat
 python3 tools/speed/bench.py --merge shard-*.json --out speed.json
 python3 tools/speed/bench.py --compare first.json second.json
 ```

@@ -75,7 +75,7 @@ jobs:
       - name: Measure this shard
         # Tools run one at a time: two timings side by side on one runner measure each other.
         run: |
-          python3 tools/speed/bench.py --port target/release/gatk-rs \
+          python3 tools/speed/bench.py --port target/release/gatk \
             --shard ${{ matrix.shard }}/8 --out /tmp/speed-${{ matrix.shard }}.json
 
       - uses: actions/upload-artifact@v7

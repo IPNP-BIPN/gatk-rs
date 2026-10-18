@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Measure what the port costs against the reference, on rows it is already proven identical on.
 
-    python3 tools/speed/bench.py --port target/release/gatk-rs --out speed.json
-    python3 tools/speed/bench.py --port target/release/gatk-rs --tool CountReads --tool FlagStat
+    python3 tools/speed/bench.py --port target/release/gatk --out speed.json
+    python3 tools/speed/bench.py --port target/release/gatk --tool CountReads --tool FlagStat
     python3 tools/speed/bench.py --merge shard-*.json --out speed.json
     python3 tools/speed/bench.py --compare first.json second.json
 
