@@ -10066,7 +10066,8 @@ fn compare_references_read(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.clone());
 
-        let mut fasta: Option<htsjdk_bam::fasta_index::IndexedFasta<std::fs::File>> = None;
+        // Whatever reader `IndexedFasta::open` returns, which changed with htsjdk-rs#272.
+        let mut fasta = None;
         let mut sequences = Vec::new();
         for record in &header.sequences {
             let md5 = record.attributes.get("M5").map(str::to_string);
