@@ -11893,6 +11893,178 @@
         "1000000"
       ],
       "--output-shard-tmp-dir": []
+    },
+    "CountVariantsSpark": {
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/reads.vcf.gz"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/countvariants_spark.txt",
+        "/work/out/countvariants_spark2.txt"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
+        "that run without -L at all: Disq reads the whole file there, and the locus walker",
+        "shards the whole dictionary, which no row measured while every row set -L."
+      ]
+    },
+    "PrintReadsSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/printreads_spark.bam",
+        "/work/out/printreads_spark2.bam"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
+        "that run without -L at all: Disq reads the whole file there, and the locus walker",
+        "shards the whole dictionary, which no row measured while every row set -L."
+      ]
+    },
+    "PileupSpark": {
+      "--input": [
+        "/work/fixtures/deep.bam",
+        "/work/fixtures/reads.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/deep.bai",
+        "/work/fixtures/reads.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/pileup_spark",
+        "/work/out/pileup_spark2"
+      ],
+      "--metadata": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/regions.bed"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "--intervals and --exclude-intervals take <unset> as a value so the array has rows",
+        "that run without -L at all: Disq reads the whole file there, and the locus walker",
+        "shards the whole dictionary, which no row measured while every row set -L."
+      ]
     }
   },
   "constraints": [

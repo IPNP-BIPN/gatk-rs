@@ -504,6 +504,14 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.CountBasesSpark());
         declarations("FlagStatSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.FlagStatSpark());
+        // X.1, second brick: the three Spark tools whose non-Spark twins are measured next. A
+        // variant source, a reads writer and a locus walker, each through its Spark parser.
+        declarations("CountVariantsSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.CountVariantsSpark());
+        declarations("PrintReadsSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.PrintReadsSpark());
+        declarations("PileupSpark",
+                new org.broadinstitute.hellbender.tools.spark.PileupSpark());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);

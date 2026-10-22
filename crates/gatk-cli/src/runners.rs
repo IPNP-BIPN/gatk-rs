@@ -24070,7 +24070,10 @@ pub fn local_assembler(parser: &Parser) -> Outcome {
 /// The Spark tools (X.1), whose startup is `GATKSparkTool`'s rather than a walker's.
 #[path = "runners_spark.rs"]
 mod spark_runners;
-pub use spark_runners::{count_bases_spark, count_reads_spark, flag_stat_spark};
+pub use spark_runners::{
+    count_bases_spark, count_reads_spark, count_variants_spark, flag_stat_spark, pileup_spark,
+    print_reads_spark,
+};
 
 /// `GroundTruthReadsBuilder`, in a file of its own.
 #[path = "runners_ground_truth_reads_builder.rs"]

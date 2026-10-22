@@ -109,18 +109,36 @@ pub fn line(
 ) -> String {
     // The deletions go before anything is printed, and everything below sees the filtered pileup.
     let filtered = pileup.filtered(|element| !element.is_deletion());
+    line_unfiltered(
+        &filtered,
+        reference_base,
+        features,
+        output_insert_length,
+        show_verbose,
+    )
+}
+
+/// `PileupSpark`'s line: the same columns over the pileup as it comes, deletions included, because
+/// its `pileupFunction` never makes the filtered pileup `Pileup.apply` makes.
+pub fn line_unfiltered(
+    pileup: &ReadPileup,
+    reference_base: char,
+    features: &[String],
+    output_insert_length: bool,
+    show_verbose: bool,
+) -> String {
     let mut text = format!(
         "{} {}",
-        filtered.pileup_string(reference_base),
+        pileup.pileup_string(reference_base),
         features_string(features)
     );
     if output_insert_length {
         text.push(' ');
-        text.push_str(&insert_length_output(&filtered));
+        text.push_str(&insert_length_output(pileup));
     }
     if show_verbose {
         text.push(' ');
-        text.push_str(&create_verbose_output(&filtered));
+        text.push_str(&create_verbose_output(pileup));
     }
     text.push('\n');
     text

@@ -127,6 +127,33 @@
       "t": 2,
       "share": 1.0
     },
+    "CountVariantsSpark": {
+      "rows": 19,
+      "accepted": 10,
+      "rejected": 9,
+      "distinct_outputs": 4,
+      "matched": 19,
+      "t": 2,
+      "share": 1.0
+    },
+    "PrintReadsSpark": {
+      "rows": 23,
+      "accepted": 13,
+      "rejected": 10,
+      "distinct_outputs": 10,
+      "matched": 23,
+      "t": 2,
+      "share": 1.0
+    },
+    "PileupSpark": {
+      "rows": 22,
+      "accepted": 17,
+      "rejected": 5,
+      "distinct_outputs": 8,
+      "matched": 22,
+      "t": 2,
+      "share": 1.0
+    },
     "CountBasesInReference": {
       "rows": 19,
       "accepted": 8,
