@@ -297,6 +297,9 @@ pub fn runner(name: &str) -> Option<Runner> {
         "CountReadsSpark" => Some(run_count_reads_spark),
         "CountBasesSpark" => Some(run_count_bases_spark),
         "FlagStatSpark" => Some(run_flag_stat_spark),
+        "CountVariantsSpark" => Some(run_count_variants_spark),
+        "PileupSpark" => Some(run_pileup_spark),
+        "PrintReadsSpark" => Some(run_print_reads_spark),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
         "SplitIntervals" => Some(run_split_intervals),
         "PreprocessIntervals" => Some(run_preprocess_intervals),
@@ -1011,6 +1014,18 @@ fn run_count_bases_spark(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_flag_stat_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::flag_stat_spark(&parsed("FlagStatSpark", args)?)
+}
+
+fn run_count_variants_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::count_variants_spark(&parsed("CountVariantsSpark", args)?)
+}
+
+fn run_pileup_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::pileup_spark(&parsed("PileupSpark", args)?)
+}
+
+fn run_print_reads_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::print_reads_spark(&parsed("PrintReadsSpark", args)?)
 }
 
 fn run_gather_vcfs_cloud(args: &[String]) -> Result<Option<String>, Thrown> {

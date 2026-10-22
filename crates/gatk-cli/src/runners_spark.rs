@@ -136,16 +136,44 @@ fn spark_reads_header(input: &str) -> Result<ReadsDataSource, Thrown> {
     ReadsDataSource::open_unindexed(path).map_err(|error| failed(format!("{error:?}")))
 }
 
+/// `SparkContextFactory.getSparkContext(name, getSparkProperties(), master)`: the properties are
+/// parsed as the call's argument, before the master is, and the log level is set on the context.
+fn spark_context(parser: &Parser) -> Result<(), Thrown> {
+    spark_properties(parser)?;
+    spark_master(parser)?;
+    spark_verbosity(parser)
+}
+
+/// `-L` or `-XL` on the command line, which is what `intervalsSpecified` asks.
+fn intervals_specified(parser: &Parser) -> bool {
+    !arguments(parser, "intervals").is_empty() || !arguments(parser, "exclude-intervals").is_empty()
+}
+
+/// `validateSequenceDictionaries`: the reference against the reads, and nothing else.
+fn validate_reference_against_reads(
+    reference: &SamHeader,
+    reads: &SamHeader,
+) -> Result<(), Thrown> {
+    gatk_tools::sequence_dictionary::validate(
+        "reference",
+        &reference.sequences,
+        "reads",
+        &reads.sequences,
+        false,
+        false,
+    )
+    .map_err(|refusal| Thrown {
+        failure: Failure::User,
+        exception: refusal.java_class(),
+        message: Some(refusal.message()),
+    })
+}
+
 /// `SparkCommandLineProgram.doWork` up to `runTool`, for a tool that reads one input.
 fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
     // The plugin descriptor validates while the command line is parsed.
     let filters = resolve_read_filters(parser, tool)?;
-
-    // `SparkContextFactory.getSparkContext(name, getSparkProperties(), master)`: the properties
-    // are parsed as the call's argument, before the master is.
-    spark_properties(parser)?;
-    spark_master(parser)?;
-    spark_verbosity(parser)?;
+    spark_context(parser)?;
 
     // `initializeReference`, before the reads.
     let reference = reference_dictionary(parser)?;
@@ -171,31 +199,16 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
         None => Vec::new(),
     };
 
-    // `validateSequenceDictionaries`: the reference against the reads, and nothing else.
     if !flag(parser, "disable-sequence-dictionary-validation") {
         if let Some(reference) = &reference {
-            gatk_tools::sequence_dictionary::validate(
-                "reference",
-                &reference.sequences,
-                "reads",
-                &header.sequences,
-                false,
-                false,
-            )
-            .map_err(|refusal| Thrown {
-                failure: Failure::User,
-                exception: refusal.java_class(),
-                message: Some(refusal.message()),
-            })?;
+            validate_reference_against_reads(reference, &header)?;
         }
     }
 
     // `getUnfilteredReads` with intervals is a Disq traversal, which needs the index beside the
     // BAM. Without one the reference fails inside an executor task, and that failure is Spark's
     // log rather than a GATK refusal; the port says so in its own words.
-    let intervals_specified = !arguments(parser, "intervals").is_empty()
-        || !arguments(parser, "exclude-intervals").is_empty();
-    let source = if intervals_specified {
+    let source = if intervals_specified(parser) {
         let path = std::path::Path::new(&input);
         match htsjdk_bam::sam_files::find_index(path) {
             Some(index) => ReadsDataSource::open(path, &index)
@@ -221,6 +234,316 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
         intervals,
         filters,
     })
+}
+
+/// `CountVariantsSpark.runTool`: Disq's variants over `-L`, counted and printed like the reads.
+///
+/// The tool replaces the plugin descriptors with none, so it has no read filter to resolve, and it
+/// requires no reads: `-I` is opened only when given, for its dictionary. Disq queries a VCF over
+/// intervals through its index and refuses one that has none, from inside the job, which surfaces
+/// as the `IllegalArgumentException` itself rather than a GATK error.
+pub fn count_variants_spark(parser: &Parser) -> Outcome {
+    spark_context(parser)?;
+    let reference = reference_dictionary(parser)?;
+    let inputs = arguments(parser, "input");
+    if inputs.len() > 1 {
+        return Err(Thrown::user(
+            "Sorry, we only support a single reads input for for this spark tool.",
+        ));
+    }
+    let reads = match inputs.first() {
+        Some(input) => Some(spark_reads_header(input)?.header().clone()),
+        None => None,
+    };
+
+    // `getBestAvailableSequenceDictionary`: the reference's, then the reads', and with neither an
+    // interval cannot be resolved at all.
+    let intervals =
+        match reference.as_ref().or(reads.as_ref()) {
+            Some(best) => interval_arguments(parser, best)?.map(|parameters| parameters.intervals),
+            None if intervals_specified(parser) => return Err(Thrown::user(
+                "We require at least one input source that has a sequence dictionary (reference \
+                 or reads) when intervals are specified",
+            )),
+            None => None,
+        };
+    if !flag(parser, "disable-sequence-dictionary-validation") {
+        if let (Some(reference), Some(reads)) = (&reference, &reads) {
+            validate_reference_against_reads(reference, reads)?;
+        }
+    }
+
+    let variant = argument(parser, "variant").ok_or_else(|| {
+        Thrown::command_line("Argument variant was missing: Argument 'variant' is required")
+    })?;
+    if intervals.is_some() {
+        let index = if variant.ends_with(".gz") || variant.ends_with(".bgz") {
+            format!("{variant}.tbi")
+        } else {
+            format!("{variant}.idx")
+        };
+        if !std::path::Path::new(&index).exists() {
+            return Err(Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                format!("Intervals set but no index file found for {variant} at {index}"),
+            ));
+        }
+    }
+    let (codec, text) = open_feature_input(&variant)?;
+    let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
+        .into_iter()
+        .map(|(feature, _)| Locus {
+            contig: feature.contig,
+            start: feature.start,
+            stop: feature.end,
+        })
+        .collect();
+    let count = gatk_tools::count_variants::count(&features, intervals.as_deref(), true, &variant)
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.class(),
+            message: Some(error.message()),
+        })?;
+    gatk_tools::tool_stdout::println(&count.to_string());
+    spark_output(parser, &count.to_string())?;
+    Ok(None)
+}
+
+/// `PileupSpark.processAlignments`: `Pileup`'s line per locus, without its deletion filter, saved
+/// with `saveAsTextFile`.
+///
+/// `LocusWalkerSpark.getAlignments` cuts each interval (the whole dictionary when there is none)
+/// into shards of `--read-shard-size` bases and runs a fresh locus iterator per shard, so a
+/// downsampler starts over at every shard boundary. Without `--shuffle` the reads are joined to
+/// the shards through `SparkSharder.joinOverlapping`, which fails inside a task when the filtered
+/// reads are empty: every partition is, so the shards are given partition `-1`.
+pub fn pileup_spark(parser: &Parser) -> Outcome {
+    if !arguments(parser, "metadata").is_empty() {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            "PileupSpark's --metadata is a feature source this port does not open yet, and a run \
+             that ignored it would answer without the column it asks for. This message is the \
+             port's own and not GATK's.",
+        ));
+    }
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "PileupSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let mut reference = match argument(parser, "reference") {
+        Some(path) => Some(
+            gatk_engine::reference::ReferenceFileSource::open(std::path::Path::new(&path))
+                .map_err(|error| Thrown::user(format!("{error:?}")))?,
+        ),
+        None => None,
+    };
+    let dictionary = match reference.as_mut() {
+        Some(source) => source.sequences().to_vec(),
+        None => header
+            .sequences
+            .iter()
+            .map(|sequence| (sequence.name.clone(), sequence.length as usize))
+            .collect(),
+    };
+
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    if records.is_empty() && !flag(parser, "shuffle") {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+        return Err(Thrown::non_user(
+            "java.lang.ArrayIndexOutOfBoundsException",
+            "Index -1 out of bounds for length 1",
+        ));
+    }
+
+    let shard_size = number_or(parser, "read-shard-size", 10000).max(1);
+    let whole: Vec<gatk_engine::interval::SimpleInterval> = if intervals.is_empty() {
+        dictionary
+            .iter()
+            .map(|(name, length)| gatk_engine::interval::SimpleInterval {
+                contig: name.clone(),
+                start: 1,
+                end: *length as i32,
+            })
+            .collect()
+    } else {
+        intervals.clone()
+    };
+    // `Shard.divideIntervalIntoShards` with no padding.
+    let shards = whole.iter().flat_map(|interval| {
+        (interval.start..=interval.end)
+            .step_by(shard_size as usize)
+            .map(move |start| gatk_engine::interval::SimpleInterval {
+                contig: interval.contig.clone(),
+                start,
+                end: (start + shard_size - 1).min(interval.end),
+            })
+    });
+
+    let mut bases: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    if let Some(source) = reference.as_mut() {
+        for (name, length) in source.sequences().to_vec() {
+            let contig = source
+                .query(&name, 1, length as i32)
+                .map_err(|error| Thrown::user(format!("{error:?}")))?;
+            bases.insert(name, contig);
+        }
+    }
+    let output_insert_length = flag(parser, "output-insert-length");
+    let show_verbose = flag(parser, "show-verbose");
+    let mut text = String::new();
+    for shard in shards {
+        let applied = gatk_tools::locus_walker::traverse(
+            &records,
+            &header,
+            None,
+            Some(std::slice::from_ref(&shard)),
+            gatk_tools::locus_walker::Options {
+                max_depth_per_sample: number_or(parser, "max-depth-per-sample", 0),
+                ..gatk_tools::locus_walker::Options::default()
+            },
+            &|_| true,
+        )
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+        for one in &applied {
+            let base = bases
+                .get(&one.context.contig)
+                .and_then(|contig| contig.get((one.context.position - 1) as usize))
+                .map(|base| *base as char)
+                .unwrap_or('N');
+            // `saveAsTextFile` ends every record with a newline of its own, after the tool's.
+            text.push_str(&gatk_tools::pileup::line_unfiltered(
+                &one.context.pileup,
+                base,
+                &[],
+                output_insert_length,
+                show_verbose,
+            ));
+            text.push('\n');
+        }
+    }
+
+    let directory = std::path::Path::new(&output);
+    std::fs::create_dir_all(directory)
+        .and_then(|()| std::fs::write(directory.join("part-00000"), &text))
+        .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
+        .map_err(|error| Thrown::non_user(PORT_FAILURE, format!("{output}: {error}")))?;
+    Ok(None)
+}
+
+/// `PrintReadsSpark.runTool`: the filtered reads, unsorted, through `ReadsSparkSink` and Disq.
+///
+/// The header reaches the writer through Kryo, which rebuilds `@HD` with a group order: `GO:none`
+/// when the input named none, placed before `SO`. Disq then writes one of two layouts:
+///
+/// * `--sharded-output`: a directory holding `part-r-00000.bam`, header and records in one BGZF
+///   stream and its terminator, beside an empty `_SUCCESS`. No index is written for a directory.
+/// * otherwise one file assembled from parts: the header compressed ALONE, then the records'
+///   own stream, then a single terminator; `.bai` and `.sbi` are named by APPENDING to the output.
+///
+/// Both deflate at GATKConfig's level with the deflater `--use-jdk-deflater` chooses.
+pub fn print_reads_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "PrintReadsSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+
+    let mut header = header.clone();
+    let sort_order = header.attributes.get("SO").map(str::to_string);
+    let group_order = header.attributes.get("GO").unwrap_or("none").to_string();
+    header.attributes.remove("SO");
+    header.attributes.remove("GO");
+    header.set_group_order(&group_order);
+    if let Some(order) = sort_order {
+        header.set_sort_order(&order);
+    }
+
+    let (level, deflater) = output_compression(parser);
+    let failed = |what: &str, error: String| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {what}: {error}"))
+    };
+    if flag(parser, "sharded-output") {
+        let mut writer =
+            htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), &header, level, deflater)
+                .map_err(|error| failed(&output, error.to_string()))?;
+        for record in &records {
+            writer
+                .write(record)
+                .map_err(|error| failed(&output, error.to_string()))?;
+        }
+        let part = writer
+            .finish()
+            .map_err(|error| failed(&output, error.to_string()))?;
+        let directory = std::path::Path::new(&output);
+        std::fs::create_dir_all(directory)
+            .and_then(|()| std::fs::write(directory.join("part-r-00000.bam"), &part))
+            .and_then(|()| std::fs::write(directory.join("_SUCCESS"), b""))
+            .map_err(|error| failed(&output, error.to_string()))?;
+        return Ok(None);
+    }
+
+    // The header part: a header-only BAM without its terminator.
+    let mut header_part =
+        htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), &header, level, deflater)
+            .and_then(|writer| writer.finish())
+            .map_err(|error| failed(&output, error.to_string()))?;
+    header_part.truncate(header_part.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len());
+
+    // The records' part, whose offsets the splitting index records relative to the whole file.
+    let shift = (header_part.len() as u64) << 16;
+    let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+    let mut sbi = htsjdk_bam::sbi::SbiIndexWriter::new(
+        number_or(parser, "splitting-index-granularity", 4096).max(1) as u64,
+    );
+    let mut encoded = Vec::new();
+    for record in &records {
+        encoded.clear();
+        record
+            .encode_into(&mut encoded)
+            .map_err(|error| failed(&output, format!("{error:?}")))?;
+        sbi.process_record(shift + stream.file_pointer())
+            .map_err(|error| failed(&output, error))?;
+        std::io::Write::write_all(&mut stream, &encoded)
+            .map_err(|error| failed(&output, error.to_string()))?;
+    }
+    let records_part = stream
+        .into_inner_without_terminator()
+        .map_err(|error| failed(&output, error.to_string()))?;
+
+    let mut bam = header_part;
+    bam.extend_from_slice(&records_part);
+    let terminator_offset = (bam.len() as u64) << 16;
+    bam.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
+    std::fs::write(&output, &bam).map_err(|error| failed(&output, error.to_string()))?;
+
+    if flag(parser, "create-output-bam-index") {
+        let bai = htsjdk_bam::build_index::build_bam_index(&bam)
+            .map_err(|error| failed(&format!("{output}.bai"), format!("{error:?}")))?;
+        std::fs::write(format!("{output}.bai"), bai)
+            .map_err(|error| failed(&format!("{output}.bai"), error.to_string()))?;
+    }
+    if flag(parser, "create-output-bam-splitting-index") {
+        let index = sbi
+            .finish(terminator_offset, bam.len() as u64, None, None)
+            .map_err(|error| failed(&format!("{output}.sbi"), error))?;
+        std::fs::write(format!("{output}.sbi"), index)
+            .map_err(|error| failed(&format!("{output}.sbi"), error.to_string()))?;
+    }
+    Ok(None)
 }
 
 /// `-O`, written with `print`: the text and no newline after it.

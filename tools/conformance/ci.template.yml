@@ -240,6 +240,7 @@ jobs:
             --tool PrintReads --tool GatherVcfsCloud --tool ApplyBQSR \
             --tool CountBases --tool FlagStat \
             --tool CountReadsSpark --tool CountBasesSpark --tool FlagStatSpark \
+            --tool CountVariantsSpark --tool PrintReadsSpark --tool PileupSpark \
             --tool CountBasesInReference \
             --tool SplitIntervals \
             --tool Pileup --tool PreprocessIntervals \

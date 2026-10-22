@@ -297,6 +297,14 @@ pub fn default_filters(tool: &str) -> Option<&'static [&'static str]> {
         // `GATKSparkTool`'s own default, the wellformed filter alone.
         "CountReadsSpark" => Some(&["AllowAllReadsReadFilter"]),
         "CountBasesSpark" | "FlagStatSpark" => Some(&["WellformedReadFilter"]),
+        // `PileupSpark.getDefaultReadFilters`: Pileup's five, with the wellformed filter LAST.
+        "PileupSpark" => Some(&[
+            "MappedReadFilter",
+            "NotDuplicateReadFilter",
+            "PassesVendorQualityCheckReadFilter",
+            "NotSecondaryAlignmentReadFilter",
+            "WellformedReadFilter",
+        ]),
         // `GetPileupSummaries.getDefaultReadFilters` does NOT call super, so the wellformed filter
         // is LAST rather than first, and the list is eleven long: the order is the tool's own and
         // it is what `--disable-read-filter` lists.
