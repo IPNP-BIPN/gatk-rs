@@ -30,9 +30,10 @@
 //! query past the end of a contig, for `start > stop`, for a start below 1 and for an unknown
 //! contig, and this returns [`ReferenceError`] in exactly those cases.
 
+use std::io::{Read, Seek};
 use std::path::Path;
 
-use htsjdk_bam::fasta_index::IndexedFasta;
+use htsjdk_bam::fasta_index::{FastaIndex, FastaIndexError, IndexedFasta};
 
 /// What the reference throws rather than returning bases.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,16 +46,35 @@ pub enum ReferenceError {
     Io(String),
 }
 
+/// An indexed FASTA whatever reader it reads through. `IndexedFasta::open` returns
+/// `IndexedFasta<File>` up to htsjdk-rs#272 and `IndexedFasta<PositionalFile>` from it, so the
+/// source names neither and compiles against either revision.
+trait Fasta: Send + Sync {
+    fn index(&self) -> &FastaIndex;
+    fn query(&mut self, contig: &str, start: i64, stop: i64) -> Result<Vec<u8>, FastaIndexError>;
+}
+
+impl<R: Read + Seek + Send + Sync> Fasta for IndexedFasta<R> {
+    fn index(&self) -> &FastaIndex {
+        IndexedFasta::index(self)
+    }
+
+    fn query(&mut self, contig: &str, start: i64, stop: i64) -> Result<Vec<u8>, FastaIndexError> {
+        IndexedFasta::query(self, contig, start, stop)
+    }
+}
+
 /// `ReferenceFileSource`: an indexed FASTA queried by interval.
 pub struct ReferenceFileSource {
-    reader: IndexedFasta<std::fs::File>,
+    reader: Box<dyn Fasta>,
     lengths: Vec<(String, usize)>,
 }
 
 impl ReferenceFileSource {
     /// Open a FASTA and its `.fai`.
     pub fn open(path: &Path) -> Result<ReferenceFileSource, ReferenceError> {
-        let reader = IndexedFasta::open(path).map_err(|e| ReferenceError::Io(e.message()))?;
+        let reader: Box<dyn Fasta> =
+            Box::new(IndexedFasta::open(path).map_err(|e| ReferenceError::Io(e.message()))?);
         let lengths = reader
             .index()
             .entries
