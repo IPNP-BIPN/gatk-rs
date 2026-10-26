@@ -8101,6 +8101,98 @@
           "why": "From the pinned container on a real x86-64 runner, the candidate artefact of run 38614435348, byte for byte the local dump."
         }
       ]
+    },
+    {
+      "id": "spark-walkers",
+      "status": "oracle-backed",
+      "title": "Six Spark tools end to end through Main, on one partition",
+      "harness": "tools/readfilter-conformance",
+      "tools": [
+        "CountReadsSpark",
+        "CountBasesSpark",
+        "FlagStatSpark",
+        "CountVariantsSpark",
+        "PrintReadsSpark",
+        "PileupSpark"
+      ],
+      "java_props": [
+        "-Duser.language=en",
+        "-Duser.country=US",
+        "-Dsamjdk.use_libdeflate=false",
+        "-Dsamjdk.compression_level=2",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels.spi=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.ref=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.zip=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.jar=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.file.attribute=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED",
+        "--add-opens=java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+        "--add-opens=java.base/sun.invoke.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED",
+        "--add-opens=java.base/java.security=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.annotation=ALL-UNNAMED",
+        "--add-opens=java.base/java.text=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.charset=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.mbeanserver=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management=ALL-UNNAMED",
+        "--add-opens=java.base/java.util.regex=ALL-UNNAMED",
+        "--add-opens=java.base/sun.util.locale=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.math=ALL-UNNAMED",
+        "--add-opens=java.xml/com.sun.xml.internal.stream.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.factory=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio.channels=ALL-UNNAMED",
+        "--add-opens=java.base/sun.security.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.time.zone=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.scope=ALL-UNNAMED",
+        "--add-opens=java.base/sun.reflect.generics.tree=ALL-UNNAMED",
+        "--add-opens=java.management/com.sun.jmx.interceptor=ALL-UNNAMED",
+        "--add-opens=java.management/javax.management.openmbean=ALL-UNNAMED",
+        "--add-opens=java.management/sun.management=ALL-UNNAMED",
+        "--add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED",
+        "--add-opens=jdk.management.jfr/jdk.management.jfr=ALL-UNNAMED",
+        "--add-opens=jdk.jfr/jdk.jfr.internal.management=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.module=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.module=ALL-UNNAMED",
+        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+      ],
+      "why": "The covering arrays compare these tools against the reference on every CI run but hold no golden, so nothing fixed is re-derived for them. Every run here goes through Main with --spark-master local[1], the door a user takes, and every path is relative so the @PG command line PrintReadsSpark records is the same in any directory. THE THREE COUNTS ARE PRINTED, NOT RETURNED, so there is no Tool returned: line and -O receives the same text. COUNTREADSSPARK DEFAULTS TO ALLOW_ALL_READS while CountBasesSpark and FlagStatSpark take the wellformed filter. COUNTVARIANTSSPARK WITH -L QUERIES THROUGH THE INDEX, so the same VCF without its .idx is refused while a whole-file count is not. WITHOUT AN .sbi DISQ GUESSES THE FIRST RECORD, scanning from the header's own block for ten records that chain; a mapped read with no cigar is never a start, so the shared fixture's chr1 reads are never read and CountReadsSpark counts 3 of 11. PRINTREADSSPARK WRITES DISQ'S BAM, with .bai and .sbi beside a single file and a directory of one part and _SUCCESS for sharded output, written through the JDK deflater so the bytes replay on a host without ISA-L. AND PILEUPSPARK SAVES A TEXT FILE DIRECTORY, part-00000 and _SUCCESS with Hadoop's checksum files beside them.",
+      "compare": {
+        "mode": "lines"
+      },
+      "expect_rows": 58,
+      "expect_contains": [
+        "stdout\tcount-reads\t3\\n",
+        "stdout\tcount-variants-chr1\t3\\n",
+        "file\tprint-reads\tprint-reads.bam.sbi\t",
+        "file\tpileup\tpileup/part-00000\t",
+        "error\tcount-variants-unindexed\tjava.lang.IllegalArgumentException:Intervals set but no index file found"
+      ],
+      "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, and the unindexed interval query refused.",
+      "cases": [
+        {
+          "dump": "SparkWalkersDump",
+          "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
+          "why": "Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
+        }
+      ],
+      "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
     }
   ],
   "probes": []

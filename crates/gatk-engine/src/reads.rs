@@ -380,6 +380,9 @@ pub struct ReadsDataSource {
     path: String,
     /// One entry per reference sequence: its bins' chunks and its linear index.
     index: Vec<ReferenceIndex>,
+    /// The virtual pointer no record before which is read: Disq's guessed first record for a
+    /// Spark tool, and 0, which clips nothing, for everything else.
+    split_start: u64,
 }
 
 struct ReferenceIndex {
@@ -437,6 +440,7 @@ impl ReadsDataSource {
             header,
             path: bam.display().to_string(),
             index,
+            split_start: 0,
         })
     }
 
@@ -461,6 +465,7 @@ impl ReadsDataSource {
             header,
             path: bam.display().to_string(),
             index: Vec::new(),
+            split_start: 0,
         })
     }
 
@@ -531,7 +536,12 @@ impl ReadsDataSource {
         let mut filter = IntervalFilter::new(&optimized, false);
         let mut kept = Vec::new();
         'chunks: for chunk in span {
-            let mut cursor = BlockCursor::seek(&self.compressed, chunk.start)?;
+            // `removeContentsBefore(splitSpan)`: Disq's split clips the index's chunks.
+            if chunk.end <= self.split_start {
+                continue;
+            }
+            let start = chunk.start.max(self.split_start);
+            let mut cursor = BlockCursor::seek(&self.compressed, start)?;
             while cursor.virtual_pos() < chunk.end {
                 let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? else {
                     break;
@@ -622,6 +632,14 @@ impl ReadsDataSource {
 
     /// A full traversal, which is what a walker with no `-L` does.
     pub fn iter_all(&self) -> Result<Vec<BamRecord>, ReadsError> {
+        if self.split_start != 0 {
+            let mut cursor = BlockCursor::seek(&self.compressed, self.split_start)?;
+            let mut records = Vec::new();
+            while let Some(record) = cursor.next_record().map_err(|e| self.name_the_file(e))? {
+                records.push(record);
+            }
+            return Ok(records);
+        }
         let decompressed = htsjdk_bgzf::read::decompress_all(&self.compressed)
             .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
         let reader =
@@ -630,6 +648,150 @@ impl ReadsDataSource {
             .map(|r| r.map_err(|e| ReadsError::Malformed(format!("{e:?}"))))
             .collect()
     }
+}
+
+impl ReadsDataSource {
+    /// Disq's `BamSource.getFirstReadInPartition` with no `.sbi`: the reads start where its
+    /// `BamRecordGuesser` first accepts a record, not where the header ends.
+    ///
+    /// The guess scans every uncompressed byte from the start of the first block, the header's
+    /// own, and accepts a position from which ten records chain, or the file ends after at least
+    /// one. A mapped record with no cigar is never a start, so every record before one that lies
+    /// within ten of it is never read: the reads are lost, not refused. No accepted position in
+    /// the first ten million is a partition with no reads.
+    ///
+    /// shortcut: one partition, which is what a file under the split size gets; a larger file is
+    /// split and each split guesses its own start, which this does not do.
+    pub fn with_disq_split_start(mut self) -> Result<ReadsDataSource, ReadsError> {
+        let mut blocks = Vec::new();
+        let mut address = 0usize;
+        while address < self.compressed.len() {
+            let mut reader = BgzfReader::new(&self.compressed[address..]);
+            let Some(block) = reader
+                .next_block()
+                .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?
+            else {
+                break;
+            };
+            let size = block.block_compressed_size;
+            blocks.push((address as u64, block.data));
+            address += size;
+        }
+        let flat: Vec<u8> = blocks
+            .iter()
+            .flat_map(|(_, data)| data.iter().copied())
+            .collect();
+        let lengths: Vec<i32> = self.header.sequences.iter().map(|s| s.length).collect();
+        let mut linear = 0usize;
+        let mut index = 0usize;
+        'blocks: for (address, data) in &blocks {
+            for up in 0..data.len() {
+                index += 1;
+                if index > 10_000_000 {
+                    break 'blocks;
+                }
+                if guess_chain(&flat, &lengths, linear + up) {
+                    self.split_start = vfp::make_file_pointer(*address, up as u32)
+                        .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+                    return Ok(self);
+                }
+            }
+            linear += data.len();
+        }
+        // Nothing accepted: past every block, so nothing is read.
+        self.split_start = vfp::make_file_pointer(self.compressed.len() as u64, 0)
+            .map_err(|e| ReadsError::Malformed(format!("{e:?}")))?;
+        Ok(self)
+    }
+}
+
+/// `BamRecordGuesser.checkRecordStart`: ten records chaining from `at`, or the end of the
+/// stream after at least one.
+fn guess_chain(flat: &[u8], lengths: &[i32], mut at: usize) -> bool {
+    for successful in 0..10 {
+        match guess_record(flat, lengths, at) {
+            Guess::Start(next) => at = next,
+            Guess::NoStart => return false,
+            Guess::Eof => return successful > 0,
+        }
+    }
+    true
+}
+
+enum Guess {
+    Start(usize),
+    NoStart,
+    Eof,
+}
+
+/// `BamRecordGuesser.checkRecordStartInternal`, over the decompressed stream.
+fn guess_record(flat: &[u8], lengths: &[i32], at: usize) -> Guess {
+    let int = |offset: usize| {
+        i32::from_le_bytes([
+            flat[offset],
+            flat[offset + 1],
+            flat[offset + 2],
+            flat[offset + 3],
+        ])
+    };
+    if at + 36 > flat.len() {
+        return Guess::Eof;
+    }
+    let count = lengths.len() as i32;
+    let locus_ok = |id: i32, pos: i32| {
+        !(id < -1 || id >= count || pos < -1 || (id >= 0 && pos > lengths[id as usize]))
+    };
+    let remaining = int(at);
+    if !locus_ok(int(at + 4), int(at + 8)) || !locus_ok(int(at + 24), int(at + 28)) {
+        return Guess::NoStart;
+    }
+    let name_length = (int(at + 12) & 0xff) as usize;
+    if name_length < 2 {
+        return Guess::NoStart;
+    }
+    let flags = (int(at + 16) as u32 >> 16) as u16;
+    let cigar_ops = (int(at + 16) & 0xffff) as usize;
+    let l_seq = int(at + 20);
+    let seq_length = l_seq.wrapping_add(l_seq.wrapping_add(1) / 2);
+    let mapped = flags & 0x4 == 0;
+    let primary = flags & 0x100 == 0 && flags & 0x800 == 0;
+    if mapped && ((seq_length == 0 && primary) || cigar_ops == 0) {
+        return Guess::NoStart;
+    }
+    let name = at + 36;
+    if name + name_length > flat.len() {
+        return Guess::Eof;
+    }
+    if flat[name + name_length - 1] != 0 {
+        return Guess::NoStart;
+    }
+    let valid = |b: u8| (b'!'..=b'?').contains(&b) || (b'A'..=b'~').contains(&b);
+    if !flat[name..name + name_length - 1].iter().all(|&b| valid(b)) {
+        return Guess::NoStart;
+    }
+    let mut cigar = name + name_length;
+    for _ in 0..cigar_ops {
+        if cigar + 4 > flat.len() {
+            return Guess::Eof;
+        }
+        let op = int(cigar);
+        if op == -1 {
+            return Guess::Eof;
+        }
+        if op & 0xf > 8 {
+            return Guess::NoStart;
+        }
+        cigar += 4;
+    }
+    let zero_min = (32 + name_length as i64 + 4 * cigar_ops as i64) + seq_length as i64;
+    if (remaining as i64) < zero_min {
+        return Guess::NoStart;
+    }
+    let next = at + 4 + remaining as usize;
+    if next > flat.len() {
+        return Guess::Eof;
+    }
+    Guess::Start(next)
 }
 
 /// Reads records from an arbitrary virtual file pointer, crossing BGZF block boundaries.
