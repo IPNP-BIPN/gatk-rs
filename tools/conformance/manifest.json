@@ -8104,7 +8104,7 @@
     },
     {
       "id": "spark-walkers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Six Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8188,8 +8188,8 @@
       "cases": [
         {
           "dump": "SparkWalkersDump",
-          "golden": null,
-          "why": "Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. Golden pending: the candidate artefact of a real x86-64 run becomes the golden."
+          "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
+          "why": "Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
