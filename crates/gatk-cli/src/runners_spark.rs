@@ -227,6 +227,10 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
     } else {
         source
     };
+    // Disq reads from the record its guesser accepts, which is not always the first.
+    let source = source
+        .with_disq_split_start()
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
 
     Ok(SparkStart {
         source,
