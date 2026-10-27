@@ -61,8 +61,9 @@ impl BaseRecalibratorError {
 
 /// `BaseRecalibrator`: the recalibration table this run produced, as text.
 ///
-/// `contig_bases` is the whole reference contig, because the counting pass needs the read's span for
-/// its comparison and a wider window for BAQ.
+/// `contig_bases` answers a whole reference contig by name, because the counting pass needs the
+/// read's span for its comparison and a wider window for BAQ. Each read is compared against ITS
+/// contig: taking the reads' first one compared a chr2 read against chr1's bases.
 ///
 /// The quantization is computed **after** `finalizeData`, so it depends on every read the traversal
 /// kept, and the report is written from the finalised tables.
@@ -74,7 +75,7 @@ impl BaseRecalibratorError {
 #[allow(clippy::too_many_arguments)]
 pub fn base_recalibrator(
     source: &ReadsDataSource,
-    contig_bases: &mut dyn FnMut() -> Result<Vec<u8>, BaseRecalibratorError>,
+    contig_bases: &mut dyn FnMut(&str) -> Result<Vec<u8>, BaseRecalibratorError>,
     known_sites: &[SimpleInterval],
     arguments: &EngineArguments,
     quantizing_levels: i32,
@@ -89,15 +90,30 @@ pub fn base_recalibrator(
     let records = crate::read_walker::traverse(source, intervals, filter)
         .map_err(BaseRecalibratorError::Reads)?;
 
-    // The bases come after the traversal, for the reason in the doc comment above.
-    let contig_bases = contig_bases()?;
-    let contig_bases = contig_bases.as_slice();
+    // The bases come after the traversal, for the reason in the doc comment above, and once per
+    // contig.
+    let mut fetched: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
 
     let mut engine = BaseRecalibrationEngine::new(arguments.clone(), &header)
         .map_err(BaseRecalibratorError::Engine)?;
     for record in &records {
+        let contig = usize::try_from(record.reference_index)
+            .ok()
+            .and_then(|index| header.sequences.get(index))
+            .map(|sequence| sequence.name.clone());
+        let bases: &[u8] = match contig {
+            Some(contig) => {
+                if !fetched.contains_key(&contig) {
+                    let bases = contig_bases(&contig)?;
+                    fetched.insert(contig.clone(), bases);
+                }
+                &fetched[&contig]
+            }
+            None => &[],
+        };
+        let overlapping = sites_overlapping(record, &header, known_sites);
         engine
-            .process_read(record, &header, contig_bases, known_sites)
+            .process_read(record, &header, bases, &overlapping)
             .map_err(BaseRecalibratorError::Engine)?;
     }
     engine
@@ -112,6 +128,33 @@ pub fn base_recalibrator(
         &engine.tables,
         &engine.covariates,
     ))
+}
+
+/// The known sites the engine is handed for one read: those on its contig overlapping
+/// `new SimpleInterval(read)`, its aligned span, which is the walker's `FeatureContext` and
+/// `JoinReadsWithVariants`' query alike. A site in a soft clip alone is not one of them, and a read
+/// whose span is no valid interval is handed none.
+fn sites_overlapping(
+    record: &BamRecord,
+    header: &htsjdk_bam::header::SamHeader,
+    known_sites: &[SimpleInterval],
+) -> Vec<SimpleInterval> {
+    let Some(contig) = usize::try_from(record.reference_index)
+        .ok()
+        .and_then(|index| header.sequences.get(index))
+    else {
+        return Vec::new();
+    };
+    let start = record.alignment_start;
+    let end = record.alignment_end();
+    if start < 1 || end < start {
+        return Vec::new();
+    }
+    known_sites
+        .iter()
+        .filter(|site| site.contig == contig.name && site.start <= end && site.end >= start)
+        .cloned()
+        .collect()
 }
 
 /// `new QuantizationInfo(finalTables, QUANTIZING_LEVELS)`: the empirical quality histogram of the

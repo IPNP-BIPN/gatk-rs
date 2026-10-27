@@ -120,31 +120,14 @@ pub fn apply_bqsr_with(
     level: u32,
     deflater: htsjdk_bgzf::Deflater,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), ApplyBqsrError> {
-    let mut report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
+    let report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
 
     // The filters run first and the transformer second, which is the whole point of
     // `makePostReadFilterTransformer`. A read dropped here never reaches the recalibration.
     let records = crate::read_walker::traverse(source, &options.intervals, filter)
         .map_err(ApplyBqsrError::Reads)?;
 
-    let header = source.header().clone();
-    let mut transformer = BqsrReadTransformer::new(
-        &header,
-        &mut report.tables,
-        &mut report.quantization_info,
-        &report.covariates,
-        arguments,
-    )
-    .map_err(ApplyBqsrError::Transform)?;
-
-    let mut recalibrated = Vec::with_capacity(records.len());
-    for record in &records {
-        recalibrated.push(
-            transformer
-                .apply(record)
-                .map_err(ApplyBqsrError::Transform)?,
-        );
-    }
+    let recalibrated = recalibrate_with(report, source.header(), arguments, &records)?;
 
     let out_header = header_for_sam_writer(source.header(), TOOL_NAME, options);
     crate::sam_output::write_records_with(
@@ -155,4 +138,43 @@ pub fn apply_bqsr_with(
         deflater,
     )
     .map_err(ApplyBqsrError::Reads)
+}
+
+/// `BQSRReadTransformer` over reads already filtered, which `ApplyBQSR` shares with the two Spark
+/// tools that apply a table. `ApplyBQSRSparkFn` builds one transformer per partition, and one
+/// partition is one transformer.
+pub fn recalibrate(
+    header: &htsjdk_bam::header::SamHeader,
+    recal_text: &str,
+    arguments: &ApplyBqsrArguments,
+    records: &[BamRecord],
+) -> Result<Vec<BamRecord>, ApplyBqsrError> {
+    let report = RecalibrationReport::parse(recal_text).map_err(ApplyBqsrError::Report)?;
+    recalibrate_with(report, header, arguments, records)
+}
+
+fn recalibrate_with(
+    mut report: RecalibrationReport,
+    header: &htsjdk_bam::header::SamHeader,
+    arguments: &ApplyBqsrArguments,
+    records: &[BamRecord],
+) -> Result<Vec<BamRecord>, ApplyBqsrError> {
+    let mut transformer = BqsrReadTransformer::new(
+        header,
+        &mut report.tables,
+        &mut report.quantization_info,
+        &report.covariates,
+        arguments,
+    )
+    .map_err(ApplyBqsrError::Transform)?;
+
+    let mut recalibrated = Vec::with_capacity(records.len());
+    for record in records {
+        recalibrated.push(
+            transformer
+                .apply(record)
+                .map_err(ApplyBqsrError::Transform)?,
+        );
+    }
+    Ok(recalibrated)
 }

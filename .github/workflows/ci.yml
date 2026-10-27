@@ -451,56 +451,56 @@ jobs:
             suites: "expanded-command-line main-non-user main-entry splitting-index allele-frequency-qc"
           - group: oracle-backed
             index: "59/70"
-            slug: "calculate-contamination-usage-text-bwa-index-image-tool-argument-value-classes-plugin-argument-ownership"
-            suites: "calculate-contamination usage-text bwa-index-image tool-argument-value-classes plugin-argument-ownership"
+            slug: "calculate-contamination-tool-argument-declarations-usage-text-bwa-index-image-tool-argument-enums"
+            suites: "calculate-contamination tool-argument-declarations usage-text bwa-index-image tool-argument-enums"
           - group: oracle-backed
             index: "60/70"
-            slug: "read-filter-catalogue-mutex-target-names-count-reads-plumbing-read-walker-refusals-smith-waterman"
-            suites: "read-filter-catalogue mutex-target-names count-reads-plumbing read-walker-refusals smith-waterman"
+            slug: "tool-argument-value-classes-plugin-argument-ownership-read-filter-catalogue-mutex-target-names-count-reads-plumbing"
+            suites: "tool-argument-value-classes plugin-argument-ownership read-filter-catalogue mutex-target-names count-reads-plumbing"
           - group: oracle-backed
             index: "61/70"
-            slug: "read-threading-graph-chain-pruner-adaptive-chain-pruner-seq-graph-kbest-haplotype"
-            suites: "read-threading-graph chain-pruner adaptive-chain-pruner seq-graph kbest-haplotype"
+            slug: "read-walker-refusals-smith-waterman-read-threading-graph-chain-pruner-adaptive-chain-pruner"
+            suites: "read-walker-refusals smith-waterman read-threading-graph chain-pruner adaptive-chain-pruner"
           - group: oracle-backed
             index: "62/70"
-            slug: "dangling-ends-pair-hmm-likelihood-engine-read-threading-assembler-event-map-assembly-region-trimmer"
-            suites: "dangling-ends pair-hmm-likelihood-engine read-threading-assembler event-map assembly-region-trimmer"
+            slug: "seq-graph-kbest-haplotype-dangling-ends-pair-hmm-likelihood-engine-read-threading-assembler"
+            suites: "seq-graph kbest-haplotype dangling-ends pair-hmm-likelihood-engine read-threading-assembler"
           - group: oracle-backed
             index: "63/70"
-            slug: "finalize-region-assembly-complexity-allele-mapping-dragstr-likelihoods-hc-is-active"
-            suites: "finalize-region assembly-complexity allele-mapping dragstr-likelihoods hc-is-active"
+            slug: "event-map-assembly-region-trimmer-finalize-region-assembly-complexity-allele-mapping"
+            suites: "event-map assembly-region-trimmer finalize-region assembly-complexity allele-mapping"
           - group: oracle-backed
             index: "64/70"
-            slug: "hc-genotyping-dragen-genotypes-hc-annotated-calls-hc-phasing-hc-region-assembly"
-            suites: "hc-genotyping dragen-genotypes hc-annotated-calls hc-phasing hc-region-assembly"
+            slug: "dragstr-likelihoods-hc-is-active-hc-genotyping-dragen-genotypes-hc-annotated-calls"
+            suites: "dragstr-likelihoods hc-is-active hc-genotyping dragen-genotypes hc-annotated-calls"
           - group: oracle-backed
             index: "65/70"
-            slug: "hc-call-region-hc-end-to-end-hc-gvcf-end-to-end-hc-dragen-end-to-end-hc-disable-optimizations"
-            suites: "hc-call-region hc-end-to-end hc-gvcf-end-to-end hc-dragen-end-to-end hc-disable-optimizations"
+            slug: "hc-phasing-hc-region-assembly-hc-call-region-hc-end-to-end-hc-gvcf-end-to-end"
+            suites: "hc-phasing hc-region-assembly hc-call-region hc-end-to-end hc-gvcf-end-to-end"
           - group: oracle-backed
             index: "66/70"
-            slug: "callers-all-annotations-mutect2-gvcf-mutect2-mitochondria-hc-pedigree-hc-linked-graph"
-            suites: "callers-all-annotations mutect2-gvcf mutect2-mitochondria hc-pedigree hc-linked-graph"
+            slug: "hc-dragen-end-to-end-hc-disable-optimizations-callers-all-annotations-mutect2-gvcf-mutect2-mitochondria"
+            suites: "hc-dragen-end-to-end hc-disable-optimizations callers-all-annotations mutect2-gvcf mutect2-mitochondria"
           - group: oracle-backed
             index: "67/70"
-            slug: "hc-flow-hc-allele-filtering-mutect2-end-to-end-ramps-end-to-end-hc-pileup"
-            suites: "hc-flow hc-allele-filtering mutect2-end-to-end ramps-end-to-end hc-pileup"
+            slug: "hc-pedigree-hc-linked-graph-hc-flow-hc-allele-filtering-mutect2-end-to-end"
+            suites: "hc-pedigree hc-linked-graph hc-flow hc-allele-filtering mutect2-end-to-end"
           - group: oracle-backed
             index: "68/70"
-            slug: "hc-pdhmm-hc-alleles-hc-bamout-hc-debug-outputs-hc-error-correction"
-            suites: "hc-pdhmm hc-alleles hc-bamout hc-debug-outputs hc-error-correction"
+            slug: "ramps-end-to-end-hc-pileup-hc-pdhmm-hc-alleles-hc-bamout"
+            suites: "ramps-end-to-end hc-pileup hc-pdhmm hc-alleles hc-bamout"
           - group: oracle-backed
             index: "69/70"
-            slug: "hc-resources-hc-ploidy-hc-contamination-mutect2-resources-mutect2-f1r2"
-            suites: "hc-resources hc-ploidy hc-contamination mutect2-resources mutect2-f1r2"
+            slug: "hc-debug-outputs-hc-error-correction-hc-resources-hc-ploidy-hc-contamination"
+            suites: "hc-debug-outputs hc-error-correction hc-resources hc-ploidy hc-contamination"
           - group: oracle-backed
             index: "70/70"
-            slug: "mutect2-permutect-hc-allele-graphs-mutect2-dragstr-spark-walkers"
-            suites: "mutect2-permutect hc-allele-graphs mutect2-dragstr spark-walkers"
+            slug: "mutect2-resources-mutect2-f1r2-mutect2-permutect-hc-allele-graphs-mutect2-dragstr"
+            suites: "mutect2-resources mutect2-f1r2 mutect2-permutect hc-allele-graphs mutect2-dragstr"
           - group: golden-pending
             index: "1/1"
-            slug: "tool-argument-declarations-tool-argument-enums"
-            suites: "tool-argument-declarations tool-argument-enums"
+            slug: "spark-walkers"
+            suites: "spark-walkers"
     steps:
       - uses: actions/checkout@v7
 

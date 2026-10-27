@@ -12065,6 +12065,185 @@
         "that run without -L at all: Disq reads the whole file there, and the locus walker",
         "shards the whole dictionary, which no row measured while every row set -L."
       ]
+    },
+    "BaseRecalibratorSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/groups.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/groups.bai"
+      ],
+      "--known-sites": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/known.bed"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/recal_spark.table",
+        "/work/out/recal_spark2.table"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "BaseRecalibrator's fixtures and PrintReadsSpark's Spark arguments: one partition is the walker's",
+        "engine, so its values are the ones the twin's table was measured over, and -L takes <unset>",
+        "so rows read the whole file through Disq's guessed start."
+      ]
+    },
+    "ApplyBQSRSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--output": [
+        "/work/out/applybqsr_spark.bam",
+        "/work/out/applybqsr_spark2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--bqsr-recal-file": [
+        "/work/fixtures/recal.table",
+        "/work/fixtures/recal2.table"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "ApplyBQSR's fixtures and PrintReadsSpark's Spark arguments; the output is PrintReadsSpark's writer."
+      ]
+    },
+    "BQSRPipelineSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/groups.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/groups.bai"
+      ],
+      "--known-sites": [
+        "/work/fixtures/population.vcf",
+        "/work/fixtures/known.bed"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/bqsr_pipeline_spark.bam",
+        "/work/out/bqsr_pipeline_spark2.bam"
+      ],
+      "--reference": [
+        "/work/fixtures/reference.fasta",
+        "/work/fixtures/other.fasta"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "BaseRecalibrator's fixtures for the table, PrintReadsSpark's Spark arguments for the job, and",
+        "PrintReadsSpark's writer for the output."
+      ]
     }
   },
   "constraints": [

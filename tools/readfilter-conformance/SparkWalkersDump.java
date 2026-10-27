@@ -22,6 +22,9 @@
  *     `.sbi` beside a single file and a directory of one part and `_SUCCESS` for sharded output;
  *     through the JDK deflater, so the bytes replay on a host without ISA-L; GKL's level 2 is the
  *     covering array's to compare;
+ *   - BASERECALIBRATORSPARK IS THE WALKER'S ENGINE ON ONE PARTITION, over the reads Disq's guess
+ *     leaves; APPLYBQSRSPARK APPLIES ITS TABLE through PrintReadsSpark's writer, and
+ *     BQSRPIPELINESPARK CHAINS THE TWO without writing the table;
  *   - AND PILEUPSPARK SAVES A TEXT FILE DIRECTORY, `part-00000` and `_SUCCESS`, with Hadoop's own
  *     checksum files beside them.
  *
@@ -121,6 +124,17 @@ public class SparkWalkersDump {
                 "-O", out("pileup-chr1", "pileup-chr1"));
         run("pileup-shuffle", "pileup-shuffle", "PileupSpark", "-I", i, "-R", r, "--shuffle",
                 "true", "-O", out("pileup-shuffle", "pileup-shuffle"));
+        // BQSR: the table over the indexed VCF's sites, the table applied by the next run, and the
+        // two passes chained in one job with the table never written.
+        final String sites = indexedVcf.toString();
+        run("base-recalibrator", "recal.table", "BaseRecalibratorSpark", "-I", i, "-R", r,
+                "--known-sites", sites, "-O", out("base-recalibrator", "recal.table"));
+        run("apply-bqsr", "apply-bqsr.bam", "ApplyBQSRSpark", "-I", i, "--use-jdk-deflater",
+                "true", "--bqsr-recal-file", out("base-recalibrator", "recal.table"),
+                "-O", out("apply-bqsr", "apply-bqsr.bam"));
+        run("bqsr-pipeline", "bqsr-pipeline.bam", "BQSRPipelineSpark", "-I", i, "-R", r,
+                "--use-jdk-deflater", "true", "--known-sites", sites,
+                "-O", out("bqsr-pipeline", "bqsr-pipeline.bam"));
     }
 
     /** Each run writes into a directory of its own, so whatever lands there is its output. */
