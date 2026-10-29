@@ -570,14 +570,14 @@ public class ToolArgumentDeclarationDump {
                 new org.broadinstitute.hellbender.tools.spark.ApplyBQSRSpark());
         declarations("BQSRPipelineSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.BQSRPipelineSpark());
-        // X.1, fifth brick: a sort, a variant copy and the allelic counts on Spark, each over a
-        // writer or a twin the port already runs.
+        // X.1, fifth brick: a sort, a variant copy and a revert on Spark, each over a writer or a
+        // twin the port already runs.
         declarations("SortSamSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.SortSamSpark());
         declarations("PrintVariantsSpark",
                 new org.broadinstitute.hellbender.tools.spark.pipelines.PrintVariantsSpark());
-        declarations("CollectAllelicCountsSpark",
-                new org.broadinstitute.hellbender.tools.copynumber.CollectAllelicCountsSpark());
+        declarations("RevertSamSpark",
+                new org.broadinstitute.hellbender.tools.spark.RevertSamSpark());
 
         // A read walker: its own input, and the arguments it inherits.
         parse("CountReads", "no-arguments", new String[]{});
