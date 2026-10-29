@@ -12298,6 +12298,64 @@
         "PrintReadsSpark's values: SortSamSpark is its writer asked to sort to the header, so the",
         "same inputs and Spark arguments measure the sort, both orders coming from the enum itself."
       ]
+    },
+    "PrintVariantsSpark": {
+      "--variant": [
+        "/work/fixtures/indexed.vcf",
+        "/work/fixtures/reads.vcf",
+        "/work/fixtures/reads.vcf.gz"
+      ],
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/printvariants_spark.vcf",
+        "/work/out/printvariants_spark.vcf.gz"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "CountVariantsSpark's values, with a plain and a block-compressed output, which Disq",
+        "writes as text with no index and as BGZF with its .tbi."
+      ]
     }
   },
   "constraints": [

@@ -24088,7 +24088,7 @@ mod spark_runners;
 pub use spark_runners::{
     apply_bqsr_spark, base_recalibrator_spark, bqsr_pipeline_spark, count_bases_spark,
     count_reads_spark, count_variants_spark, flag_stat_spark, pileup_spark, print_reads_spark,
-    sort_sam_spark,
+    print_variants_spark, sort_sam_spark,
 };
 
 /// `GroundTruthReadsBuilder`, in a file of its own.

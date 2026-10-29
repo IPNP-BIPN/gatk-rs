@@ -1,4 +1,4 @@
-//! The ten Spark tools this port runs, replayed end to end against GATK 4.6.2.0 with
+//! The eleven Spark tools this port runs, replayed end to end against GATK 4.6.2.0 with
 //! `--spark-master local[1]`.
 //!
 //! Golden from `tools/readfilter-conformance/SparkWalkersDump.java`, which records each run's
@@ -16,6 +16,8 @@
 //!    `BQSRPipelineSpark` chaining the two without writing the table;
 //!  * **SortSamSpark**, that writer asked to sort to the header: a `.bai` for a coordinate sort
 //!    and only the `.sbi` for a queryname one;
+//!  * **PrintVariantsSpark's VCF**, as text with no index, or block-compressed with a `.tbi` whose
+//!    last chunk ends where the terminator starts;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed

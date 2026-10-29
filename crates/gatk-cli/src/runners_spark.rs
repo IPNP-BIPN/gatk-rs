@@ -247,6 +247,35 @@ fn spark_startup(parser: &Parser, tool: &str) -> Result<SparkStart, Thrown> {
 /// intervals through its index and refuses one that has none, from inside the job, which surfaces
 /// as the `IllegalArgumentException` itself rather than a GATK error.
 pub fn count_variants_spark(parser: &Parser) -> Outcome {
+    let (variant, intervals) = variant_spark_startup(parser)?;
+    let (codec, text) = open_feature_input(&variant)?;
+    let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
+        .into_iter()
+        .map(|(feature, _)| Locus {
+            contig: feature.contig,
+            start: feature.start,
+            stop: feature.end,
+        })
+        .collect();
+    let count = gatk_tools::count_variants::count(&features, intervals.as_deref(), true, &variant)
+        .map_err(|error| Thrown {
+            failure: Failure::User,
+            exception: error.class(),
+            message: Some(error.message()),
+        })?;
+    gatk_tools::tool_stdout::println(&count.to_string());
+    spark_output(parser, &count.to_string())?;
+    Ok(None)
+}
+
+/// `GATKSparkTool`'s startup for a tool driven by `-V`, up to the variants: the context, the
+/// reference, the optional reads for their dictionary, the intervals against the best dictionary,
+/// and Disq's refusal of an interval query over a VCF with no index.
+///
+/// Returns the `-V` path and the traversal intervals.
+fn variant_spark_startup(
+    parser: &Parser,
+) -> Result<(String, Option<Vec<gatk_engine::interval::SimpleInterval>>), Thrown> {
     spark_context(parser)?;
     let reference = reference_dictionary(parser)?;
     let inputs = arguments(parser, "input");
@@ -293,23 +322,134 @@ pub fn count_variants_spark(parser: &Parser) -> Outcome {
             ));
         }
     }
-    let (codec, text) = open_feature_input(&variant)?;
-    let features: Vec<Locus> = gatk_tools::feature_codec::features(&text, codec)
-        .into_iter()
-        .map(|(feature, _)| Locus {
-            contig: feature.contig,
-            start: feature.start,
-            stop: feature.end,
+    Ok((variant, intervals))
+}
+
+/// `PrintVariantsSpark.processVariants`: the variants `-L` selects, unsorted, through
+/// `VariantsSparkSink` and Disq.
+///
+/// The header is the input's as htsjdk reads it, with no command line added. Disq refuses BCF by
+/// name before it writes anything, writes a plain `.vcf` as text with NO index whatever
+/// `--create-output-variant-index` says, and writes a block-compressed name as the header
+/// compressed alone, the records' own stream and one terminator, with a `.tbi` APPENDED when
+/// indexing is on.
+pub fn print_variants_spark(parser: &Parser) -> Outcome {
+    let (variant, intervals) = variant_spark_startup(parser)?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    // Block compressed or not, as `CountVariantsSpark` opens it.
+    let (_, text) = open_feature_input(&variant)?;
+    let file = htsjdk_vcf::reader::read_vcf(&text).map_err(|failure| Thrown {
+        failure: Failure::User,
+        exception: failure.error.class(),
+        message: Some(failure.error.message()),
+    })?;
+    let loci: Vec<Locus> = file
+        .records
+        .iter()
+        .map(|record| Locus {
+            contig: record.contig.clone(),
+            start: record.start as i32,
+            stop: record.stop as i32,
         })
         .collect();
-    let count = gatk_tools::count_variants::count(&features, intervals.as_deref(), true, &variant)
-        .map_err(|error| Thrown {
+    let kept: Vec<htsjdk_vcf::variant::VariantContext> =
+        gatk_engine::variant_source::traverse(&loci, intervals.as_deref())
+            .into_iter()
+            .map(|locus| {
+                // `traverse` hands back the loci themselves; their place is the record's.
+                let index = (locus as *const Locus as usize - loci.as_ptr() as usize)
+                    / std::mem::size_of::<Locus>();
+                file.records[index].clone()
+            })
+            .collect();
+
+    if output.ends_with(".bcf") || output.ends_with(".bcf.gz") {
+        return Err(Thrown {
             failure: Failure::User,
-            exception: error.class(),
-            message: Some(error.message()),
-        })?;
-    gatk_tools::tool_stdout::println(&count.to_string());
-    spark_output(parser, &count.to_string())?;
+            exception:
+                "org.broadinstitute.hellbender.exceptions.UserException$UnimplementedFeature",
+            message: Some(
+                "It is currently not possible to write a BCF file on spark.  See \
+                 https://github.com/broadinstitute/gatk/issues/4303 for more details ."
+                    .to_string(),
+            ),
+        });
+    }
+    // A record with genotypes never reaches the writer: Kryo rebuilds its `LazyGenotypesContext`
+    // without the parser, and the first `add` decodes through it. Without `--shuffle` that happens
+    // where the driver collects the task's result; with it, inside the executor's join. Measured
+    // over the whole covering array, the stage follows `--shuffle` alone.
+    if !file.header.samples.is_empty() && !kept.is_empty() {
+        const KRYO: &str = "com.esotericsoftware.kryo.KryoException: \
+             java.lang.NullPointerException: Cannot invoke \
+             \"htsjdk.variant.variantcontext.LazyGenotypesContext$LazyParser.parse(Object)\" \
+             because \"this.parser\" is null\nSerialization trace:\n\
+             genotypes (htsjdk.variant.variantcontext.VariantContext)\n";
+        // shortcut: the executor's message names the lost task and its host, which no two runs
+        // share; the stage's log line is what the covering array compares, and it is exact.
+        let message = if flag(parser, "shuffle") {
+            eprintln!("ERROR Executor - Exception in task 0.0 in stage 1.0 (TID 1)");
+            format!("Job aborted due to stage failure: Task 0 in stage 1.0 failed 1 times: {KRYO}")
+        } else {
+            eprintln!("ERROR TaskResultGetter - Exception while getting task result");
+            format!(
+                "Job aborted due to stage failure: Exception while getting task result: {KRYO}\
+                 interval (org.broadinstitute.hellbender.engine.spark.SparkSharder$PartitionLocatable)"
+            )
+        };
+        return Err(Thrown::non_user("org.apache.spark.SparkException", message));
+    }
+    let failed = |error: String| {
+        Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+    };
+    let header_text = file.header.write();
+    let mut records_text = String::new();
+    let encoder = htsjdk_vcf::encoder::VcfEncoder::new(&file.header);
+    for record in &kept {
+        encoder
+            .encode_into(record, &mut records_text)
+            .map_err(|error| failed(format!("{error:?}")))?;
+        records_text.push('\n');
+    }
+
+    let block_compressed = output.ends_with(".gz") || output.ends_with(".bgz");
+    if !block_compressed {
+        std::fs::write(&output, format!("{header_text}{records_text}"))
+            .map_err(|error| failed(error.to_string()))?;
+        return Ok(None);
+    }
+    let (level, deflater) = output_compression(parser);
+    let part = |text: &str| -> Result<Vec<u8>, Thrown> {
+        let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
+        std::io::Write::write_all(&mut stream, text.as_bytes())
+            .map_err(|error| failed(error.to_string()))?;
+        stream
+            .into_inner_without_terminator()
+            .map_err(|error| failed(error.to_string()))
+    };
+    let mut bytes = part(&header_text)?;
+    bytes.extend_from_slice(&part(&records_text)?);
+    bytes.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
+    std::fs::write(&output, &bytes).map_err(|error| failed(error.to_string()))?;
+
+    if flag(parser, "create-output-variant-index") {
+        // Disq finalizes the index at the position the records end, BEFORE the terminator it
+        // appends, where `IndexFeatureFile` reads the whole file and ends the last chunk after it.
+        let source = index_feature_file::Source::new(&output);
+        let records_end = bytes.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len();
+        let index = index_feature_file::build_tabix(
+            &bytes[..records_end],
+            &source,
+            &output,
+            deflater,
+            level,
+        )
+        .map_err(|refusal| Thrown::user(refusal.message()))?;
+        let name = format!("{output}.tbi");
+        std::fs::write(&name, index).map_err(|error| failed(error.to_string()))?;
+    }
     Ok(None)
 }
 

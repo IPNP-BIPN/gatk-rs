@@ -1,5 +1,5 @@
 /*
- * The ten Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
+ * The eleven Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
  *
  * The covering arrays compare the port against the reference row by row on every CI run; what
  * they cannot do is hold a golden, so nothing re-derives a fixed answer for these tools. This dump
@@ -67,11 +67,20 @@ public class SparkWalkersDump {
             + "chr1\t150\t.\tC\tT\t50\t.\t.\n"
             + "chr2\t20\t.\tG\tA\t50\t.\t.\n";
 
+    /** The same sites with one sample's calls, which PrintVariantsSpark cannot carry through Kryo. */
+    static final String GENOTYPED_VCF = "##fileformat=VCFv4.2\n"
+            + "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n"
+            + "##contig=<ID=chr1,length=200>\n"
+            + "##contig=<ID=chr2,length=200>\n"
+            + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n"
+            + "chr1\t10\t.\tA\tC\t50\t.\t.\tGT\t0/1\n"
+            + "chr2\t20\t.\tG\tA\t50\t.\t.\tGT\t1/1\n";
+
     public static void main(final String[] args) throws Exception {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: ten Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: eleven Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -85,10 +94,12 @@ public class SparkWalkersDump {
         final Path indexedVcf = DIR.resolve("indexed.vcf");
         Files.write(indexedVcf, VCF.getBytes());
         new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", indexedVcf.toString()});
+        final Path genotypedVcf = DIR.resolve("genotyped.vcf");
+        Files.write(genotypedVcf, GENOTYPED_VCF.getBytes());
 
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
-                "reads.bam", "reads.bai", "plain.vcf"}) {
+                "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -151,6 +162,24 @@ public class SparkWalkersDump {
         run("sort-sam-unsorted", "sort-sam-unsorted.bam", "SortSamSpark", "-I", i,
                 "--use-jdk-deflater", "true", "--sort-order", "unsorted",
                 "-O", out("sort-sam-unsorted", "sort-sam-unsorted.bam"));
+        // PrintVariantsSpark: Disq's VCF writer, as text, block-compressed with its tabix index,
+        // over an interval of the indexed copy, refused for BCF, and failing inside the job on a
+        // record with genotypes.
+        run("print-variants", "print-variants.vcf", "PrintVariantsSpark", "-V",
+                plainVcf.toString(), "-O", out("print-variants", "print-variants.vcf"));
+        run("print-variants-gz", "print-variants-gz.vcf.gz", "PrintVariantsSpark", "--use-jdk-deflater", "true", "-V",
+                plainVcf.toString(), "-O", out("print-variants-gz", "print-variants-gz.vcf.gz"));
+        run("print-variants-chr1", "print-variants-chr1.vcf", "PrintVariantsSpark", "-V",
+                indexedVcf.toString(), "-R", r, "-L", "chr1",
+                "-O", out("print-variants-chr1", "print-variants-chr1.vcf"));
+        run("print-variants-no-index", "print-variants-no-index.vcf.gz", "PrintVariantsSpark",
+                "--use-jdk-deflater", "true", "-V", plainVcf.toString(), "--create-output-variant-index", "false",
+                "-O", out("print-variants-no-index", "print-variants-no-index.vcf.gz"));
+        run("print-variants-bcf", "print-variants-bcf.bcf", "PrintVariantsSpark", "-V",
+                plainVcf.toString(), "-O", out("print-variants-bcf", "print-variants-bcf.bcf"));
+        run("print-variants-genotyped", "print-variants-genotyped.vcf", "PrintVariantsSpark",
+                "-V", genotypedVcf.toString(),
+                "-O", out("print-variants-genotyped", "print-variants-genotyped.vcf"));
     }
 
     /** Each run writes into a directory of its own, so whatever lands there is its output. */
