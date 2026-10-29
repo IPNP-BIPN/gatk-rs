@@ -1,5 +1,5 @@
 /*
- * The six Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
+ * The nine Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
  *
  * The covering arrays compare the port against the reference row by row on every CI run; what
  * they cannot do is hold a golden, so nothing re-derives a fixed answer for these tools. This dump
@@ -71,7 +71,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: six Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: nine Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());

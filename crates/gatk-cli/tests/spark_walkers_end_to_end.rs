@@ -1,4 +1,4 @@
-//! The six Spark tools this port runs, replayed end to end against GATK 4.6.2.0 with
+//! The nine Spark tools this port runs, replayed end to end against GATK 4.6.2.0 with
 //! `--spark-master local[1]`.
 //!
 //! Golden from `tools/readfilter-conformance/SparkWalkersDump.java`, which records each run's
@@ -11,6 +11,9 @@
 //!    first accepts ten chained records, and a mapped read with no cigar is never one, so the
 //!    shared fixture's chr1 reads are not read at all and `CountReadsSpark` counts 3 of 11;
 //!  * **PrintReadsSpark's BAM, `.bai` and `.sbi`**, and its sharded directory;
+//!  * **BQSR on one partition**: `BaseRecalibratorSpark`'s table over the reads Disq's guess
+//!    leaves, `ApplyBQSRSpark` applying it through `PrintReadsSpark`'s writer, and
+//!    `BQSRPipelineSpark` chaining the two without writing the table;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed
@@ -114,7 +117,7 @@ fn every_run_replays_as_the_reference_ran_it() {
         "sparkwalkers-dump/indexed.vcf".to_string(),
     ]);
     assert_eq!(indexed.status, 0, "{}", indexed.stderr);
-    assert!(!labels.is_empty(), "the golden holds no runs");
+    assert_eq!(labels.len(), 21);
 
     let row = |kind: &str, label: &str| -> Option<String> {
         let prefix = format!("{kind}\t{label}\t");

@@ -8104,7 +8104,7 @@
     },
     {
       "id": "spark-walkers",
-      "status": "golden-pending",
+      "status": "oracle-backed",
       "title": "Nine Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
@@ -8185,14 +8185,16 @@
         "stdout\tcount-variants-chr1\t3\\n",
         "file\tprint-reads\tprint-reads.bam.sbi\t",
         "file\tpileup\tpileup/part-00000\t",
-        "error\tcount-variants-unindexed\tjava.lang.IllegalArgumentException:Intervals set but no index file found"
+        "error\tcount-variants-unindexed\tjava.lang.IllegalArgumentException:Intervals set but no index file found",
+        "file\tbase-recalibrator\trecal.table\t",
+        "file\tbqsr-pipeline\tbqsr-pipeline.bam.sbi\t"
       ],
-      "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, and the unindexed interval query refused.",
+      "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, the unindexed interval query refused, BaseRecalibratorSpark's table and BQSRPipelineSpark's BAM with its splitting index.",
       "cases": [
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Re-measured with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
+          "why": "Frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
