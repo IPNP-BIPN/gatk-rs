@@ -592,6 +592,7 @@ jobs:
             --tool CountBases --tool FlagStat \
             --tool CountReadsSpark --tool CountBasesSpark --tool FlagStatSpark \
             --tool CountVariantsSpark --tool PrintReadsSpark --tool PileupSpark \
+            --tool BaseRecalibratorSpark --tool ApplyBQSRSpark --tool BQSRPipelineSpark \
             --tool CountBasesInReference \
             --tool SplitIntervals \
             --tool Pileup --tool PreprocessIntervals \
