@@ -470,6 +470,34 @@ pub fn print_reads_spark(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `SortSamSpark.runTool`: every read, the header's `SO` set to `--sort-order`, then `writeReads`
+/// asked to sort to the header.
+///
+/// The tool sorts nothing itself. `ReadsSparkSink` sorts the `SAMRecord`s with the comparator the
+/// header's order names, `HeaderlessSAMRecordCoordinateComparator` or htsjdk's
+/// `SAMRecordQueryNameComparator`, and the reads keep `ALLOW_ALL_READS`, so nothing is dropped.
+pub fn sort_sam_spark(parser: &Parser) -> Outcome {
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "SortSamSpark")?;
+    let output = argument(parser, "output").ok_or_else(|| {
+        Thrown::command_line("Argument output was missing: Argument 'output' is required")
+    })?;
+    let filter = read_filter(parser, &filters, &header)?;
+    let records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    // `SparkSortOrder`'s two constants, which Barclay has already checked; an enum, so read as a
+    // scalar rather than as text.
+    let order = scalar(parser, "sort-order").unwrap_or_else(|| "coordinate".to_string());
+    let mut sorted = header.clone();
+    sorted.set_sort_order(&order);
+    write_spark_reads(parser, &sorted, &records, &output, true)?;
+    Ok(None)
+}
+
 /// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
 ///
 /// With `sort_to_header`, a coordinate-sorted header is sorted to first (`sortSamRecordsToMatchHeader`), over
@@ -595,9 +623,11 @@ fn write_spark_reads(
     Ok(())
 }
 
-/// `SparkUtils.sortUsingElementsAsKeys` for a coordinate-sorted header: `sortByKey` with
-/// `HeaderlessSAMRecordCoordinateComparator` over a `RangePartitioner` of
-/// `getRecommendedNumReducers()` partitions. Any other order is written as it was read.
+/// `SparkUtils.sortUsingElementsAsKeys` with `ReadsSparkSink.getSAMRecordComparator`: `sortByKey`
+/// over a `RangePartitioner` of `getRecommendedNumReducers()` partitions, with
+/// `HeaderlessSAMRecordCoordinateComparator` for a coordinate-sorted header and htsjdk's
+/// `SAMRecordQueryNameComparator` for a queryname-sorted one. Any other order is written as it was
+/// read.
 ///
 /// The sort is stable, as Spark's `TimSort` is, so equal keys keep the traversal's order.
 fn sorted_partitions(
@@ -605,11 +635,13 @@ fn sorted_partitions(
     sort_order: Option<&str>,
     records: &[BamRecord],
 ) -> Result<Vec<Vec<BamRecord>>, Thrown> {
-    if sort_order != Some("coordinate") {
-        return Ok(vec![records.to_vec()]);
-    }
+    let compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering = match sort_order {
+        Some("coordinate") => htsjdk_bam::coordinate::compare,
+        Some("queryname") => htsjdk_bam::query_name::compare,
+        _ => return Ok(vec![records.to_vec()]),
+    };
     let mut sorted = records.to_vec();
-    sorted.sort_by(htsjdk_bam::coordinate::compare);
+    sorted.sort_by(compare);
 
     // `getRecommendedNumReducers`: the argument, else one per ten megabytes of input.
     let mut reducers = number_or(parser, "num-reducers", 0).max(0) as usize;
@@ -620,13 +652,13 @@ fn sorted_partitions(
             .unwrap_or(0);
         reducers = 1 + (size / (10 * 1024 * 1024)) as usize;
     }
-    let bounds = range_bounds(&sorted, reducers)?;
+    let bounds = range_bounds(&sorted, reducers, compare)?;
     let mut partitions: Vec<Vec<BamRecord>> = vec![Vec::new(); bounds.len() + 1];
     for record in sorted {
         // `getPartition`: the first bound the key is not greater than.
         let partition = bounds
             .iter()
-            .position(|bound| htsjdk_bam::coordinate::compare(&record, bound).is_le())
+            .position(|bound| compare(&record, bound).is_le())
             .unwrap_or(bounds.len());
         partitions[partition].push(record);
     }
@@ -638,7 +670,11 @@ fn sorted_partitions(
 ///
 /// shortcut: one input partition holding at most `sampleSizePerPartition` keys, where the sketch is
 /// the whole partition; more is a reservoir sample the port does not draw, and is refused by name.
-fn range_bounds(sorted: &[BamRecord], partitions: usize) -> Result<Vec<BamRecord>, Thrown> {
+fn range_bounds(
+    sorted: &[BamRecord],
+    partitions: usize,
+    compare: fn(&BamRecord, &BamRecord) -> std::cmp::Ordering,
+) -> Result<Vec<BamRecord>, Thrown> {
     if partitions <= 1 || sorted.is_empty() {
         return Ok(Vec::new());
     }
@@ -667,7 +703,7 @@ fn range_bounds(sorted: &[BamRecord], partitions: usize) -> Result<Vec<BamRecord
         if cumulative >= target
             && bounds
                 .last()
-                .is_none_or(|previous| htsjdk_bam::coordinate::compare(key, previous).is_gt())
+                .is_none_or(|previous| compare(key, previous).is_gt())
         {
             bounds.push(key.clone());
             target += step;

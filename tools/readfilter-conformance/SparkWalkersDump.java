@@ -1,5 +1,5 @@
 /*
- * The nine Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
+ * The ten Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
  *
  * The covering arrays compare the port against the reference row by row on every CI run; what
  * they cannot do is hold a golden, so nothing re-derives a fixed answer for these tools. This dump
@@ -71,7 +71,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: nine Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: ten Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -135,6 +135,22 @@ public class SparkWalkersDump {
         run("bqsr-pipeline", "bqsr-pipeline.bam", "BQSRPipelineSpark", "-I", i, "-R", r,
                 "--use-jdk-deflater", "true", "--known-sites", sites,
                 "-O", out("bqsr-pipeline", "bqsr-pipeline.bam"));
+        // SortSamSpark: PrintReadsSpark's writer asked to sort to the header, by coordinate (the
+        // default), by name, into shards, and over an interval; an order Spark has no sort for is
+        // Barclay's to refuse.
+        run("sort-sam", "sort-sam.bam", "SortSamSpark", "-I", i, "--use-jdk-deflater", "true",
+                "-O", out("sort-sam", "sort-sam.bam"));
+        run("sort-sam-queryname", "sort-sam-queryname.bam", "SortSamSpark", "-I", i,
+                "--use-jdk-deflater", "true", "--sort-order", "queryname",
+                "-O", out("sort-sam-queryname", "sort-sam-queryname.bam"));
+        run("sort-sam-sharded", "sort-sam-sharded.bam", "SortSamSpark", "-I", i,
+                "--use-jdk-deflater", "true", "--sharded-output", "true",
+                "-O", out("sort-sam-sharded", "sort-sam-sharded.bam"));
+        run("sort-sam-chr2", "sort-sam-chr2.bam", "SortSamSpark", "-I", i, "--use-jdk-deflater",
+                "true", "-L", "chr2", "-O", out("sort-sam-chr2", "sort-sam-chr2.bam"));
+        run("sort-sam-unsorted", "sort-sam-unsorted.bam", "SortSamSpark", "-I", i,
+                "--use-jdk-deflater", "true", "--sort-order", "unsorted",
+                "-O", out("sort-sam-unsorted", "sort-sam-unsorted.bam"));
     }
 
     /** Each run writes into a directory of its own, so whatever lands there is its output. */

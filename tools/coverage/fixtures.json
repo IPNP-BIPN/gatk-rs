@@ -12244,6 +12244,60 @@
         "BaseRecalibrator's fixtures for the table, PrintReadsSpark's Spark arguments for the job, and",
         "PrintReadsSpark's writer for the output."
       ]
+    },
+    "SortSamSpark": {
+      "--input": [
+        "/work/fixtures/reads.bam",
+        "/work/fixtures/reads2.bam",
+        "/work/fixtures/reads.vcf"
+      ],
+      "--read-index": [
+        "/work/fixtures/reads.bai",
+        "/work/fixtures/reads2.bai"
+      ],
+      "--intervals": [
+        "chr1:1-6000",
+        "chr1:50000-60000",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/sortsam_spark.bam",
+        "/work/out/sortsam_spark2.bam"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-500",
+        "chr1:400-600",
+        "<unset>"
+      ],
+      "$why": [
+        "PrintReadsSpark's values: SortSamSpark is its writer asked to sort to the header, so the",
+        "same inputs and Spark arguments measure the sort, both orders coming from the enum itself."
+      ]
     }
   },
   "constraints": [

@@ -8104,8 +8104,8 @@
     },
     {
       "id": "spark-walkers",
-      "status": "oracle-backed",
-      "title": "Nine Spark tools end to end through Main, on one partition",
+      "status": "golden-pending",
+      "title": "Ten Spark tools end to end through Main, on one partition",
       "harness": "tools/readfilter-conformance",
       "tools": [
         "CountReadsSpark",
@@ -8116,7 +8116,8 @@
         "PileupSpark",
         "BaseRecalibratorSpark",
         "ApplyBQSRSpark",
-        "BQSRPipelineSpark"
+        "BQSRPipelineSpark",
+        "SortSamSpark"
       ],
       "java_props": [
         "-Duser.language=en",
@@ -8175,11 +8176,11 @@
         "--add-opens=java.base/java.lang.module=ALL-UNNAMED",
         "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
       ],
-      "why": "The covering arrays compare these tools against the reference on every CI run but hold no golden, so nothing fixed is re-derived for them. Every run here goes through Main with --spark-master local[1], the door a user takes, and every path is relative so the @PG command line PrintReadsSpark records is the same in any directory. THE THREE COUNTS ARE PRINTED, NOT RETURNED, so there is no Tool returned: line and -O receives the same text. COUNTREADSSPARK DEFAULTS TO ALLOW_ALL_READS while CountBasesSpark and FlagStatSpark take the wellformed filter. COUNTVARIANTSSPARK WITH -L QUERIES THROUGH THE INDEX, so the same VCF without its .idx is refused while a whole-file count is not. WITHOUT AN .sbi DISQ GUESSES THE FIRST RECORD, scanning from the header's own block for ten records that chain; a mapped read with no cigar is never a start, so the shared fixture's chr1 reads are never read and CountReadsSpark counts 3 of 11. PRINTREADSSPARK WRITES DISQ'S BAM, with .bai and .sbi beside a single file and a directory of one part and _SUCCESS for sharded output, written through the JDK deflater so the bytes replay on a host without ISA-L. BASERECALIBRATORSPARK IS THE WALKER'S ENGINE ON ONE PARTITION over the reads Disq's guess leaves, APPLYBQSRSPARK APPLIES ITS TABLE through PrintReadsSpark's writer and BQSRPIPELINESPARK CHAINS THE TWO without writing the table. AND PILEUPSPARK SAVES A TEXT FILE DIRECTORY, part-00000 and _SUCCESS with Hadoop's checksum files beside them.",
+      "why": "The covering arrays compare these tools against the reference on every CI run but hold no golden, so nothing fixed is re-derived for them. Every run here goes through Main with --spark-master local[1], the door a user takes, and every path is relative so the @PG command line PrintReadsSpark records is the same in any directory. THE THREE COUNTS ARE PRINTED, NOT RETURNED, so there is no Tool returned: line and -O receives the same text. COUNTREADSSPARK DEFAULTS TO ALLOW_ALL_READS while CountBasesSpark and FlagStatSpark take the wellformed filter. COUNTVARIANTSSPARK WITH -L QUERIES THROUGH THE INDEX, so the same VCF without its .idx is refused while a whole-file count is not. WITHOUT AN .sbi DISQ GUESSES THE FIRST RECORD, scanning from the header's own block for ten records that chain; a mapped read with no cigar is never a start, so the shared fixture's chr1 reads are never read and CountReadsSpark counts 3 of 11. PRINTREADSSPARK WRITES DISQ'S BAM, with .bai and .sbi beside a single file and a directory of one part and _SUCCESS for sharded output, written through the JDK deflater so the bytes replay on a host without ISA-L. BASERECALIBRATORSPARK IS THE WALKER'S ENGINE ON ONE PARTITION over the reads Disq's guess leaves, APPLYBQSRSPARK APPLIES ITS TABLE through PrintReadsSpark's writer and BQSRPIPELINESPARK CHAINS THE TWO without writing the table. SORTSAMSPARK IS THAT WRITER ASKED TO SORT TO THE HEADER, by coordinate with its .bai or by name with only its .sbi, and an order Spark has no sort for is Barclay's to refuse. AND PILEUPSPARK SAVES A TEXT FILE DIRECTORY, part-00000 and _SUCCESS with Hadoop's checksum files beside them.",
       "compare": {
         "mode": "lines"
       },
-      "expect_rows": 71,
+      "expect_rows": 92,
       "expect_contains": [
         "stdout\tcount-reads\t3\\n",
         "stdout\tcount-variants-chr1\t3\\n",
@@ -8187,14 +8188,16 @@
         "file\tpileup\tpileup/part-00000\t",
         "error\tcount-variants-unindexed\tjava.lang.IllegalArgumentException:Intervals set but no index file found",
         "file\tbase-recalibrator\trecal.table\t",
-        "file\tbqsr-pipeline\tbqsr-pipeline.bam.sbi\t"
+        "file\tbqsr-pipeline\tbqsr-pipeline.bam.sbi\t",
+        "file\tsort-sam-queryname\tsort-sam-queryname.bam.sbi\t",
+        "error\tsort-sam-unsorted\torg.broadinstitute.barclay.argparser.CommandLineException$BadArgumentValue:Argument sort-order has a bad value: unsorted."
       ],
-      "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, the unindexed interval query refused, BaseRecalibratorSpark's table and BQSRPipelineSpark's BAM with its splitting index.",
+      "$expect_why": "Disq's guessed start counting 3 of the 11 reads, an interval count over the indexed VCF, PrintReadsSpark's splitting index and PileupSpark's part file written, the unindexed interval query refused, BaseRecalibratorSpark's table, BQSRPipelineSpark's BAM with its splitting index, SortSamSpark's queryname output indexed only for splitting, and the order it has no sort for refused.",
       "cases": [
         {
           "dump": "SparkWalkersDump",
           "golden": "crates/gatk-tools/tests/data/spark_walkers.txt.gz",
-          "why": "Frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
+          "why": "Re-measured with SortSamSpark, the fifth Spark brick: twenty-six runs. Frozen from the golden-pending artefact of run 40458473356, in the pinned container on a real x86-64 runner, with BaseRecalibratorSpark, ApplyBQSRSpark and BQSRPipelineSpark, the fourth Spark brick: twenty-one runs, the first eighteen byte for byte the earlier golden. Eighteen runs over one reference, the shared eleven-read BAM and a four-record VCF, the fixtures travelling as base64. From the pinned container on a real x86-64 runner, published as the golden-pending artefact of run 40318773837, and byte for byte what this laptop produced."
         }
       ],
       "$java_props_why": "GATK's jar carries runtimeAddOpens in its manifest, which only java -jar honours; the dump runs from the classpath, so Spark's StorageUtils needs the same opens passed by hand. Level 2 is what GATKConfig gives a real gatk invocation and instanceMain never sees (#1032)."
