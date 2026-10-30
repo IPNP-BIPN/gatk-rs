@@ -12697,6 +12697,73 @@
       "$why": [
         "SortSamSpark's values and writer, with a name list the corpus has."
       ]
+    },
+    "CompareDuplicatesSpark": {
+      "--input": [
+        "/work/fixtures/dup_a.bam",
+        "/work/fixtures/dup_marks.bam"
+      ],
+      "--read-index": [
+        "/work/fixtures/dup_a.bai",
+        "/work/fixtures/dup_marks.bai"
+      ],
+      "--input2": [
+        "/work/fixtures/dup_a.bam",
+        "/work/fixtures/dup_marks.bam"
+      ],
+      "--intervals": [
+        "chr1:1-250",
+        "chr1:150-500",
+        "<unset>"
+      ],
+      "--spark-master": [
+        "local[1]",
+        "local[2]"
+      ],
+      "--conf": [
+        "spark.ui.enabled=false",
+        "spark.driver.maxResultSize=0"
+      ],
+      "--program-name": [
+        "counts",
+        "counts2"
+      ],
+      "--spark-verbosity": [
+        "WARN",
+        "ERROR"
+      ],
+      "--num-reducers": [
+        "0",
+        "2"
+      ],
+      "--bam-partition-size": [
+        "0",
+        "1000000"
+      ],
+      "--output-shard-tmp-dir": [],
+      "--exclude-intervals": [
+        "chr1:1-150",
+        "chr1:250-350",
+        "<unset>"
+      ],
+      "--output": [
+        "/work/out/first.bam",
+        "<unset>"
+      ],
+      "--output2": [
+        "/work/out/second.bam",
+        "<unset>"
+      ],
+      "--print-summary": [
+        "false"
+      ],
+      "$why": [
+        "Two BAMs that agree or differ in their marks only, so the rows reach the summary and the writer: the differences that stop the tool are measured by the spark-walkers golden. --print-summary holds at false: with it the tool walks a HashSet of enum constants, an order two JVMs do not share, so the golden's sorted summary measures it instead. No --reference: no dictionary of the corpus matches these BAMs, and the startup's refusal is the other Spark tools' to measure."
+      ],
+      "--reference": [],
+      "--disable-read-filter": [
+        "AllowAllReadsReadFilter"
+      ]
     }
   },
   "constraints": [
@@ -13817,6 +13884,46 @@
         "--sanitize": "false"
       },
       "why": "The tool refuses this pair while it parses, so a row holding it measures nothing else."
+    },
+    {
+      "tools": [
+        "CompareDuplicatesSpark"
+      ],
+      "forbid": {
+        "--output": "/work/out/first.bam",
+        "--output2": "<unset>"
+      },
+      "why": "The tool refuses one output without the other, which the golden measures."
+    },
+    {
+      "tools": [
+        "CompareDuplicatesSpark"
+      ],
+      "forbid": {
+        "--output": "<unset>",
+        "--output2": "/work/out/second.bam"
+      },
+      "why": "The tool refuses one output without the other, which the golden measures."
+    },
+    {
+      "tools": [
+        "CompareDuplicatesSpark"
+      ],
+      "forbid": {
+        "--throw-on-diff": "true",
+        "--input2": "/work/fixtures/dup_marks.bam"
+      },
+      "why": "Throwing on a difference stops the row before the outputs compare; the golden measures it."
+    },
+    {
+      "tools": [
+        "CompareDuplicatesSpark"
+      ],
+      "forbid": {
+        "--throw-on-diff": "true",
+        "--input": "/work/fixtures/dup_marks.bam"
+      },
+      "why": "Throwing on a difference stops the row before the outputs compare; the golden measures it."
     }
   ],
   "exclude": {

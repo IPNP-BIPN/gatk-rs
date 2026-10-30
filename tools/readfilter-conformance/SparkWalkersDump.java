@@ -39,6 +39,13 @@
  * Usage: SparkWalkersDump
  */
 
+import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMFileWriter;
+import htsjdk.samtools.SAMFileWriterFactory;
+import htsjdk.samtools.SAMReadGroupRecord;
+import htsjdk.samtools.SAMRecord;
+import htsjdk.samtools.SAMSequenceDictionary;
+import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.reference.FastaSequenceIndexCreator;
 import org.broadinstitute.hellbender.Main;
 
@@ -82,7 +89,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: seventeen Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: eighteen Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -103,13 +110,69 @@ public class SparkWalkersDump {
                 + DIR.resolve("out/revert-sam-map/mapped.bam") + "\n").getBytes());
         Files.write(DIR.resolve("revert.bad-map.tsv"), "ID\tFILE\nrg1\tx.bam\n".getBytes());
 
+        // Pairs of BAMs that agree or disagree in one way each, for CompareDuplicatesSpark.
+        final String[][] pairs = {
+                {"dup-a.bam", "", "", "", ""},
+                // The same reads, with the marks moved and a tag the tool throws away.
+                {"dup-marks.bam", "a1=none,b1=dup,b2=none,c1=dup,a2=tag", "", "", ""},
+                // One name changed where the group is otherwise whole.
+                {"dup-renamed.bam", "", "a2", "", ""},
+                // A read moved out of its group: the groups differ in size, and the new one is
+                // only in the second BAM, where nothing looks at it.
+                {"dup-uneven.bam", "", "", "a2", ""},
+                // A group of one moved: the first BAM's key finds nothing in the second.
+                {"dup-moved.bam", "", "", "d1", ""},
+                // A read with no group, and one with a group the first header does not know.
+                {"dup-no-group.bam", "", "", "", "a1=none"},
+                {"dup-other-group.bam", "", "", "", "a1=rg3"},
+                // Fewer reads altogether.
+                {"dup-fewer.bam", "drop=e1", "", "", ""},
+        };
+        for (final String[] pair : pairs) {
+            duplicateFixture(DIR.resolve(pair[0]), pair[1], pair[2], pair[3], pair[4]);
+        }
+
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
                 "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
-                "revert.bad-map.tsv", "names.txt"}) {
+                "revert.bad-map.tsv", "names.txt", "dup-a.bam", "dup-a.bai", "dup-marks.bam",
+                "dup-marks.bai", "dup-renamed.bam", "dup-uneven.bam", "dup-moved.bam",
+                "dup-no-group.bam", "dup-other-group.bam", "dup-fewer.bam"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
+
+        // COMPAREDUPLICATESSPARK prints what it found; only the second BAM skips the read filter.
+        final String compare = "CompareDuplicatesSpark";
+        final String dupA = DIR.resolve("dup-a.bam").toString();
+        final String[][] comparisons = {
+                {"compare-same", "dup-a.bam"},
+                {"compare-marks", "dup-marks.bam"},
+                {"compare-marks-throw", "dup-marks.bam", "--throw-on-diff", "true"},
+                {"compare-same-throw", "dup-a.bam", "--throw-on-diff", "true"},
+                {"compare-no-summary", "dup-marks.bam", "--print-summary", "false"},
+                {"compare-renamed", "dup-renamed.bam"},
+                {"compare-uneven", "dup-uneven.bam"},
+                {"compare-moved", "dup-moved.bam"},
+                {"compare-moved-reducers", "dup-moved.bam", "--num-reducers", "3"},
+                {"compare-no-group", "dup-no-group.bam"},
+                {"compare-other-group", "dup-other-group.bam"},
+                {"compare-fewer", "dup-fewer.bam"},
+                {"compare-filter", "dup-a.bam", "-RF", "MappingQualityReadFilter",
+                        "--minimum-mapping-quality", "30"},
+                {"compare-intervals", "dup-marks.bam", "-L", "chr1:100-300"},
+                {"compare-only-output", "dup-a.bam", "-O", "only.bam"},
+        };
+        for (final String[] row : comparisons) {
+            final List<String> argv = new ArrayList<>(Arrays.asList("-I", dupA,
+                    "--input2", DIR.resolve(row[1]).toString()));
+            argv.addAll(Arrays.asList(row).subList(2, row.length));
+            run(row[0], null, compare, argv.toArray(new String[0]));
+        }
+        run("compare-output", "first.bam", compare, "-I", dupA,
+                "-I2", DIR.resolve("dup-marks.bam").toString(), "--use-jdk-deflater", "true",
+                "-O", out("compare-output", "first.bam"),
+                "-O2", out("compare-output", "second.bam"));
 
         final String r = fasta.toString();
         final String i = bam.toString();
@@ -286,6 +349,81 @@ public class SparkWalkersDump {
                 "-O", out("print-variants-genotyped", "print-variants-genotyped.vcf"));
     }
 
+    /**
+     * Twelve reads in groups of the MarkDuplicates key: a1/a2, b1/b2 and c1/c2 share a start, d1 is
+     * reverse and clipped, e1 sits on chr2 in a read group with no library, and u1 is unmapped.
+     */
+    static void duplicateFixture(final Path bam, final String changes, final String renamed,
+                                 final String moved, final String groups) {
+        final SAMFileHeader header = new SAMFileHeader();
+        final SAMSequenceDictionary dictionary = new SAMSequenceDictionary();
+        dictionary.addSequence(new SAMSequenceRecord("chr1", 1000));
+        dictionary.addSequence(new SAMSequenceRecord("chr2", 1000));
+        header.setSequenceDictionary(dictionary);
+        header.setSortOrder(SAMFileHeader.SortOrder.coordinate);
+        final SAMReadGroupRecord withLibrary = new SAMReadGroupRecord("rg1");
+        withLibrary.setSample("sample1");
+        withLibrary.setLibrary("lib1");
+        header.addReadGroup(withLibrary);
+        final SAMReadGroupRecord noLibrary = new SAMReadGroupRecord("rg2");
+        noLibrary.setSample("sample1");
+        header.addReadGroup(noLibrary);
+        final SAMReadGroupRecord third = new SAMReadGroupRecord("rg3");
+        third.setSample("sample1");
+        third.setLibrary("lib3");
+        if (groups.contains("rg3")) {
+            header.addReadGroup(third);
+        }
+        final List<String> edits = Arrays.asList(changes.split(","));
+        final Object[][] reads = {
+                {"a1", 0, 100, 0x400, "10M"}, {"a2", 0, 100, 0, "10M"},
+                {"b1", 0, 200, 0, "10M"}, {"b2", 0, 200, 0x400, "10M"},
+                {"c1", 0, 300, 0, "10M"}, {"c2", 0, 300, 0, "10M"},
+                {"d1", 0, 402, 0x10, "2S8M"},
+                {"e1", 1, 50, 0, "10M"},
+                {"u1", -1, 0, 0x4, "*"},
+        };
+        try (final SAMFileWriter writer = new SAMFileWriterFactory().setCreateIndex(true)
+                .makeBAMWriter(header, false, bam.toFile())) {
+            for (final Object[] read : reads) {
+                final String name = (String) read[0];
+                if (edits.contains("drop=" + name)) {
+                    continue;
+                }
+                final SAMRecord record = new SAMRecord(header);
+                record.setReadName(name.equals(renamed) ? "zz" : name);
+                int flags = (int) read[3];
+                if (edits.contains(name + "=dup")) {
+                    flags |= 0x400;
+                }
+                if (edits.contains(name + "=none")) {
+                    flags &= ~0x400;
+                }
+                record.setFlags(flags);
+                if ((int) read[1] >= 0) {
+                    record.setReferenceIndex((int) read[1]);
+                    record.setAlignmentStart((int) read[2] + (name.equals(moved) ? 20 : 0));
+                    record.setCigarString((String) read[4]);
+                    record.setMappingQuality(name.equals("c2") ? 10 : 60);
+                }
+                record.setReadString("ACGTACGTAC");
+                record.setBaseQualityString("IIIIIIIIII");
+                final String group = name.equals("e1") ? "rg2" : "rg1";
+                if (groups.equals(name + "=none")) {
+                    // No group at all.
+                } else if (groups.startsWith(name + "=")) {
+                    record.setAttribute("RG", groups.substring(name.length() + 1));
+                } else {
+                    record.setAttribute("RG", group);
+                }
+                if (edits.contains(name + "=tag")) {
+                    record.setAttribute("XX", 7);
+                }
+                writer.addAlignment(record);
+            }
+        }
+    }
+
     /** Each run writes into a directory of its own, so whatever lands there is its output. */
     static String out(final String label, final String name) throws Exception {
         final Path dir = DIR.resolve("out").resolve(label);
@@ -360,7 +498,16 @@ public class SparkWalkersDump {
                 .getBytes(StandardCharsets.UTF_8);
     }
 
+    /** The path, and CompareDuplicatesSpark's summary in the one order two JVMs can share. */
     static String masked(final String text) {
-        return text.replace(Path.of("").toAbsolutePath().toString(), "<cwd>");
+        final String masked = text.replace(Path.of("").toAbsolutePath().toString(), "<cwd>");
+        final String rule = "##############################\n";
+        final int at = masked.indexOf(rule);
+        if (at < 0) {
+            return masked;
+        }
+        final int from = at + rule.length();
+        return masked.substring(0, from) + Arrays.stream(masked.substring(from).split("\n"))
+                .sorted().map(line -> line + "\n").collect(Collectors.joining());
     }
 }
