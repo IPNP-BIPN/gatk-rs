@@ -638,6 +638,534 @@ pub fn sort_sam_spark(parser: &Parser) -> Outcome {
     Ok(None)
 }
 
+/// `getOutputMap`: where each read group goes, or the one file for all of them under `None`.
+///
+/// `customCommandLineValidation` runs `validateOutputParams` over the same arguments and never looks
+/// at the list it returns, so a bad combination only fails when the tool reaches this.
+fn revert_output_files(
+    parser: &Parser,
+    groups: &[String],
+    extension: &str,
+) -> Result<Vec<(Option<String>, String)>, Thrown> {
+    let output = argument(parser, "output");
+    if !flag(parser, "output-by-readgroup") {
+        // `IOUtils.getPath(null)`, on a command line that named only `--output-map`.
+        let output = output.ok_or_else(|| {
+            Thrown::non_user(
+                "java.lang.IllegalArgumentException",
+                "Null object is not allowed here.",
+            )
+        })?;
+        return Ok(vec![(None, output)]);
+    }
+    let Some(map) = argument(parser, "output-map") else {
+        // Barclay's mutex guarantees one of the two, and `Paths.get(outputDir, fileName)` joins them.
+        let directory = output.unwrap_or_default();
+        return Ok(groups
+            .iter()
+            .map(|id| {
+                let path = std::path::Path::new(&directory).join(format!("{id}{extension}"));
+                (Some(id.clone()), path.display().to_string())
+            })
+            .collect());
+    };
+
+    // `createOutputMapFromFile` through `TableCodec(null)`: the first line names the columns, any
+    // white space separates them, and `#` and `track` lines are no rows.
+    let text = std::fs::read_to_string(&map).map_err(|_| {
+        Thrown::non_user(
+            "htsjdk.tribble.TribbleException$MalformedFeatureFile",
+            format!(
+                "Unable to create BasicFeatureReader using feature file , for input source: {map}"
+            ),
+        )
+    })?;
+    let mut lines = text.lines();
+    let columns: Vec<&str> = lines.next().unwrap_or("").split_whitespace().collect();
+    let column = |name: &str| {
+        columns
+            .iter()
+            .position(|column| *column == name)
+            .ok_or_else(|| {
+                Thrown::non_user(
+                    "java.lang.IllegalArgumentException",
+                    format!("We don't have a column named {name}"),
+                )
+            })
+    };
+    let mut files: Vec<(Option<String>, String)> = Vec::new();
+    for line in lines.filter(|line| !line.starts_with('#') && !line.starts_with("track")) {
+        let (id_at, output_at) = (column("READ_GROUP_ID")?, column("OUTPUT")?);
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let (Some(id), Some(file)) = (fields.get(id_at), fields.get(output_at)) else {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "{map}: a row short of its columns fails the reference's TableFeature, which \
+                     this port does not reproduce. This message is the port's own and not GATK's."
+                ),
+            ));
+        };
+        // A `HashMap`, so a later row of the same group wins.
+        files.retain(|(group, _)| group.as_deref() != Some(*id));
+        files.push((Some(id.to_string()), file.to_string()));
+    }
+    Ok(files)
+}
+
+/// `new SAMFileHeader()` with what `createOutHeader` carries over, and the read groups it is given.
+fn revert_out_header(
+    header: &SamHeader,
+    sort_order: &str,
+    groups: &[htsjdk_bam::header::ReadGroup],
+    keep_alignment: bool,
+) -> SamHeader {
+    let mut out = SamHeader::default();
+    out.set_sort_order(sort_order);
+    if keep_alignment {
+        out.sequences = header.sequences.clone();
+        out.programs = header.programs.clone();
+    }
+    out.read_groups = groups.to_vec();
+    out
+}
+
+fn read_group_of(record: &BamRecord) -> Option<&str> {
+    match record.tags.get(htsjdk_bam::tag::Tag::new(b"RG")) {
+        Some(htsjdk_bam::tag::TagValue::Str(id)) => Some(id),
+        _ => None,
+    }
+}
+
+/// `RevertSamSpark.revertReads`, one record.
+///
+/// Not Picard's `RevertSam`: `setMateIsUnplaced` marks every read paired on its way, and
+/// supplementary reads are neither dropped nor unflagged.
+fn revert_record(
+    record: &mut BamRecord,
+    restore_qualities: bool,
+    keep_duplicates: bool,
+    keep_alignment: bool,
+    attributes: &[String],
+) -> Result<(), Thrown> {
+    use htsjdk_bam::tag::{Tag, TagValue};
+    const PAIRED: u16 = 0x1;
+    const PROPER_PAIR: u16 = 0x2;
+    const UNMAPPED: u16 = 0x4;
+    const MATE_UNMAPPED: u16 = 0x8;
+    const REVERSE: u16 = 0x10;
+    const MATE_REVERSE: u16 = 0x20;
+    const SECONDARY: u16 = 0x100;
+    const DUPLICATE: u16 = 0x400;
+
+    if restore_qualities {
+        // `getOriginalBaseQualities`: an empty `OQ` is none, and stays on the read.
+        if let Some(TagValue::Str(original)) = record.tags.get(Tag::new(b"OQ")) {
+            if !original.is_empty() {
+                record.base_qualities = htsjdk_bam::fastq::fastq_to_phred(original);
+                record.tags.remove(Tag::new(b"OQ"));
+            }
+        }
+    }
+    if !keep_duplicates {
+        record.flags &= !DUPLICATE;
+    }
+    if keep_alignment {
+        return Ok(());
+    }
+    if record.flags & REVERSE != 0 {
+        // `SAMRecord.reverseComplement(true)`, whose default lists name these four tags.
+        htsjdk_bam::sequence::reverse_complement(&mut record.read_bases);
+        htsjdk_bam::sequence::reverse_qualities(&mut record.base_qualities);
+        for name in [b"E2", b"SQ"] {
+            if let Some(TagValue::Str(text)) = record.tags.get(Tag::new(name)) {
+                let mut bytes = text.clone().into_bytes();
+                htsjdk_bam::sequence::reverse_complement(&mut bytes);
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                record.tags.insert(Tag::new(name), TagValue::Str(text));
+            }
+        }
+        for name in [b"OQ", b"U2"] {
+            if let Some(TagValue::Str(text)) = record.tags.get(Tag::new(name)) {
+                let text: String = text.chars().rev().collect();
+                record.tags.insert(Tag::new(name), TagValue::Str(text));
+            }
+        }
+        record.flags &= !REVERSE;
+    }
+    record.flags |= UNMAPPED | PAIRED | MATE_UNMAPPED;
+    record.flags &= !(SECONDARY | PROPER_PAIR | MATE_REVERSE);
+    record.reference_index = -1;
+    record.alignment_start = 0;
+    record.mapping_quality = 0;
+    record.cigar = Default::default();
+    record.inferred_insert_size = 0;
+    record.mate_reference_index = -1;
+    record.mate_alignment_start = 0;
+    for name in attributes {
+        // `ReadUtils.assertAttributeNameIsLegal`, inside a task.
+        let bytes = name.as_bytes();
+        let legal =
+            bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1].is_ascii_alphanumeric();
+        if !legal {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "Read attribute {name} invalid: the reference fails this inside a Spark task, \
+                     which this port does not reproduce. This message is the port's own and not \
+                     GATK's."
+                ),
+            ));
+        }
+        record.tags.remove(Tag::new(&[bytes[0], bytes[1]]));
+    }
+    Ok(())
+}
+
+/// `QualityEncodingDetector.detect` over one read group's first 10000 reads, for a SAM file:
+/// whether its qualities need the Illumina offset taken off.
+///
+/// `generateBestGuess` reduces to this because the schemes' ranges cannot leave `Standard` beside
+/// another format: it needs an ASCII value below 59, which Solexa and Illumina both exclude. All
+/// `I` qualities therefore read as Illumina, and that is what the reference does with them.
+fn quality_offset_applies(records: &[&BamRecord]) -> Result<bool, Thrown> {
+    if records.is_empty() {
+        return Ok(false);
+    }
+    let (mut lowest, mut highest, mut standard) = (u8::MAX, 0u8, false);
+    for record in records {
+        // `getBaseQualityString`, where absent qualities are the one character `*`.
+        let observed: Vec<u8> = if record.base_qualities.is_empty() {
+            vec![b'*']
+        } else {
+            record.base_qualities.iter().map(|q| q + 33).collect()
+        };
+        for ascii in observed {
+            lowest = lowest.min(ascii);
+            highest = highest.max(ascii);
+            standard |= (33..=58).contains(&ascii);
+        }
+    }
+    let in_range = |low: u8| lowest >= low && highest <= 126;
+    if standard && in_range(33) {
+        return Ok(false);
+    }
+    if in_range(59) {
+        return Ok(true);
+    }
+    Err(Thrown::non_user(
+        "htsjdk.samtools.SAMException",
+        "The quality format cannot be determined: all formats were excluded.",
+    ))
+}
+
+/// `RevertSamSpark.sanitize`: the reads whose lengths agree, sorted by name unless the input's
+/// header says they are, then each run of one name on a partition judged alone.
+fn sanitize_reads(
+    parser: &Parser,
+    header: &SamHeader,
+    records: Vec<BamRecord>,
+    keep_first: bool,
+) -> Result<Vec<Vec<BamRecord>>, Thrown> {
+    const FIRST: u16 = 0x40;
+    const SECOND: u16 = 0x80;
+    const PAIRED: u16 = 0x1;
+
+    // `createReadGroupFormatMap`, over the reads before any is dropped.
+    let mut illumina = std::collections::HashSet::new();
+    for group in &header.read_groups {
+        let reads: Vec<&BamRecord> = records
+            .iter()
+            .filter(|record| read_group_of(record) == Some(group.id.as_str()))
+            .take(10000)
+            .collect();
+        if quality_offset_applies(&reads)? {
+            illumina.insert(group.id.clone());
+        }
+    }
+
+    let kept: Vec<BamRecord> = records
+        .into_iter()
+        .filter(|record| record.read_bases.len() == record.base_qualities.len())
+        .collect();
+    let name_grouped = header.attributes.get("SO") == Some("queryname")
+        || header.attributes.get("GO") == Some("query");
+    let partitions = if name_grouped {
+        vec![kept]
+    } else {
+        sorted_partitions(parser, Some("queryname"), &kept)?
+    };
+
+    let mut out = Vec::with_capacity(partitions.len());
+    for partition in partitions {
+        let mut admitted = Vec::new();
+        for group in partition.chunk_by(|a, b| a.read_name == b.read_name) {
+            let first = group
+                .iter()
+                .find(|r| r.flags & PAIRED != 0 && r.flags & FIRST != 0);
+            let second = group
+                .iter()
+                .find(|r| r.flags & PAIRED != 0 && r.flags & SECOND != 0);
+            let count = |flag: u16| {
+                group
+                    .iter()
+                    .filter(|r| r.flags & PAIRED != 0 && r.flags & flag != 0)
+                    .count()
+            };
+            let (firsts, seconds) = (count(FIRST), count(SECOND));
+            let unpaired = group.iter().filter(|r| r.flags & PAIRED == 0).count();
+
+            let chosen: Vec<&BamRecord> = if firsts > 0 || seconds > 0 {
+                if firsts == 1 && seconds == 1 {
+                    group.iter().collect()
+                } else if keep_first && firsts >= 1 && seconds >= 1 {
+                    vec![first.expect("counted"), second.expect("counted")]
+                } else {
+                    continue;
+                }
+            } else if unpaired > 1 {
+                if !keep_first {
+                    continue;
+                }
+                vec![group
+                    .iter()
+                    .find(|r| r.flags & PAIRED == 0)
+                    .expect("counted")]
+            } else {
+                group.iter().collect()
+            };
+
+            for record in chosen {
+                let mut record = record.clone();
+                if read_group_of(&record).is_some_and(|id| illumina.contains(id)) {
+                    // `ILLUMINA_TO_PHRED_SUBTRAHEND`. Solexa's lowest values go negative, which
+                    // `setBaseQualities` refuses inside a task.
+                    for quality in &mut record.base_qualities {
+                        *quality = match quality.checked_sub(31) {
+                            Some(lowered) => lowered,
+                            None => {
+                                let below = i32::from(*quality) - 31;
+                                return Err(Thrown::non_user(
+                                    "org.apache.spark.SparkException",
+                                    format!("Base quality score {below} is invalid"),
+                                ));
+                            }
+                        };
+                    }
+                }
+                admitted.push(record);
+            }
+        }
+        out.push(admitted);
+    }
+    Ok(out)
+}
+
+/// `RevertSamSpark.runTool`.
+///
+/// Its `--remove-duplicate-information` KEEPS the flags, as the field behind it is named, and
+/// without `--remove-default-attributes-to-clear` no default tag is cleared. With it the list is
+/// the unmodifiable defaults, and the `addAll` that follows always throws.
+pub fn revert_sam_spark(parser: &Parser) -> Outcome {
+    // `customCommandLineValidation`, while the command line is parsed.
+    let sanitize = flag(parser, "sanitize");
+    let keep_first = flag(parser, "keep-first-duplicate");
+    if !sanitize && keep_first {
+        return Err(Thrown::command_line(
+            "Command Line Validation failed:'keepFirstDuplicate' cannot be used without 'sanitize'",
+        ));
+    }
+
+    let SparkStart {
+        source,
+        header,
+        intervals,
+        filters,
+    } = spark_startup(parser, "RevertSamSpark")?;
+    let filter = read_filter(parser, &filters, &header)?;
+
+    // `validateHeaderOverrides`, then the overrides on the driver's header.
+    let sample = argument(parser, "sample-alias");
+    let library = argument(parser, "library-name");
+    if sample.is_some() || library.is_some() {
+        let groups = &header.read_groups;
+        let same = |value: fn(&htsjdk_bam::header::ReadGroup) -> Option<&str>| {
+            groups
+                .windows(2)
+                .all(|pair| value(&pair[0]) == value(&pair[1]))
+        };
+        if sample.is_some() && !same(|group| group.attributes.get("SM")) {
+            return Err(Thrown::user(
+                "Read groups have multiple values for sample.  A value for sampleAlias cannot be \
+                 supplied.",
+            ));
+        }
+        if library.is_some() && !same(|group| group.attributes.get("LB")) {
+            return Err(Thrown::user(
+                "Read groups have multiple values for library name.  A value for library name \
+                 cannot be supplied.",
+            ));
+        }
+    }
+    let mut driver = header.clone();
+    for group in &mut driver.read_groups {
+        if let Some(sample) = &sample {
+            group.attributes.set("SM", sample);
+        }
+        if let Some(library) = &library {
+            group.attributes.set("LB", library);
+        }
+    }
+
+    // `getDefaultExtension`, by the first input's name.
+    let extension = match scalar(parser, "output-by-readgroup-file-format").as_deref() {
+        Some("sam") => ".sam",
+        Some("bam") => ".bam",
+        Some("cram") => ".cram",
+        _ => match argument(parser, "input") {
+            Some(input) if input.ends_with(".sam") => ".sam",
+            Some(input) if input.ends_with(".cram") => ".cram",
+            _ => ".bam",
+        },
+    };
+    let ids: Vec<String> = driver.read_groups.iter().map(|g| g.id.clone()).collect();
+    let files = revert_output_files(parser, &ids, extension)?;
+
+    let sort_order = scalar(parser, "sort-order").unwrap_or_else(|| "queryname".to_string());
+    let keep_alignment = flag(parser, "keep-alignment-information");
+    if flag(parser, "output-by-readgroup") && driver.read_groups.is_empty() {
+        return Err(Thrown::user("The header is missing its read group map"));
+    }
+    if flag(parser, "output-by-readgroup") {
+        // `assertAllReadGroupsMapped`.
+        for id in &ids {
+            if !files.iter().any(|(group, _)| group.as_ref() == Some(id)) {
+                let map: Vec<String> = files
+                    .iter()
+                    .map(|(group, file)| format!("{}={file}", group.as_deref().unwrap_or("null")))
+                    .collect();
+                return Err(Thrown::non_user(
+                    "org.broadinstitute.hellbender.exceptions.GATKException",
+                    format!(
+                        "Read group id {id} not found in outputMap {{{}}}",
+                        map.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    if flag(parser, "remove-default-attributes-to-clear") {
+        return Err(Thrown::non_user(
+            "java.lang.UnsupportedOperationException",
+            "null",
+        ));
+    }
+
+    let attributes = arguments(parser, "attributes-to-clear");
+    let restore = !flag(parser, "dont-restore-original-qualities");
+    let keep_duplicates = flag(parser, "remove-duplicate-information");
+    let mut records = gatk_tools::read_walker::traverse(&source, &intervals, &filter)
+        .map_err(|error| Thrown::user(format!("{error:?}")))?;
+    for record in &mut records {
+        revert_record(
+            record,
+            restore,
+            keep_duplicates,
+            keep_alignment,
+            &attributes,
+        )?;
+    }
+    let partitions = if sanitize {
+        sanitize_reads(parser, &driver, records, keep_first)?
+    } else {
+        vec![records]
+    };
+
+    for (group, file) in files {
+        let Some(id) = group else {
+            let out = revert_out_header(&driver, &sort_order, &driver.read_groups, keep_alignment);
+            write_reverted(parser, &out, &sort_order, &partitions, &file)?;
+            continue;
+        };
+        // `r.getReadGroup().equals(key)`: a read without a group fails the task.
+        if partitions
+            .iter()
+            .flatten()
+            .any(|r| read_group_of(r).is_none())
+        {
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                "A read without a read group: the reference fails this inside a Spark task, which \
+                 this port does not reproduce. This message is the port's own and not GATK's.",
+            ));
+        }
+        let groups: Vec<_> = driver
+            .read_groups
+            .iter()
+            .filter(|group| group.id == id)
+            .cloned()
+            .collect();
+        if groups.is_empty() {
+            // `headerMap.get(id)` is null for a group only the map names.
+            return Err(Thrown::non_user(
+                PORT_LIMITATION,
+                format!(
+                    "The output map names read group {id}, which the header does not: the \
+                     reference fails on a null header. This message is the port's own and not \
+                     GATK's."
+                ),
+            ));
+        }
+        let out = revert_out_header(&driver, &sort_order, &groups, keep_alignment);
+        let filtered: Vec<Vec<BamRecord>> = partitions
+            .iter()
+            .map(|partition| {
+                partition
+                    .iter()
+                    .filter(|record| read_group_of(record) == Some(id.as_str()))
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        write_reverted(parser, &out, &sort_order, &filtered, &file)?;
+    }
+    Ok(None)
+}
+
+/// `writeReads(ctx, path, reads, header, false)` for an output whose directory Hadoop would make.
+fn write_reverted(
+    parser: &Parser,
+    header: &SamHeader,
+    sort_order: &str,
+    partitions: &[Vec<BamRecord>],
+    output: &str,
+) -> Result<(), Thrown> {
+    if let Some(parent) = std::path::Path::new(output).parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+        })?;
+    }
+    if output.ends_with(".sam") && !flag(parser, "sharded-output") {
+        // Disq's SAM writer: the text, whatever the partitions, and no index of any kind.
+        let records: Vec<BamRecord> = partitions.iter().flatten().cloned().collect();
+        let text = htsjdk_bam::sam_file::write_sam(header, &records)
+            .ok_or_else(|| Thrown::non_user(PORT_FAILURE, format!("could not write {output}")))?;
+        return std::fs::write(output, text).map_err(|error| {
+            Thrown::non_user(PORT_FAILURE, format!("could not write {output}: {error}"))
+        });
+    }
+    if !output.ends_with(".bam") {
+        return Err(Thrown::non_user(
+            PORT_LIMITATION,
+            format!(
+                "{output}: Disq's CRAM writer and sharded SAM are not ported yet. This message is \
+                 the port's own and not GATK's."
+            ),
+        ));
+    }
+    write_spark_partitions(parser, header, Some(sort_order), partitions, output)
+}
+
 /// `GATKSparkTool.writeReads` through `ReadsSparkSink` and Disq, as described above.
 ///
 /// With `sort_to_header`, a coordinate-sorted header is sorted to first (`sortSamRecordsToMatchHeader`), over
@@ -665,7 +1193,17 @@ fn write_spark_reads(
     } else {
         vec![records.to_vec()]
     };
+    write_spark_partitions(parser, &header, sort_order.as_deref(), &partitions, output)
+}
 
+/// [`write_spark_reads`] past the sort: the header as Disq writes it, and one stream per partition.
+fn write_spark_partitions(
+    parser: &Parser,
+    header: &SamHeader,
+    sort_order: Option<&str>,
+    partitions: &[Vec<BamRecord>],
+    output: &str,
+) -> Result<(), Thrown> {
     let (level, deflater) = output_compression(parser);
     let failed = |what: &str, error: String| {
         Thrown::non_user(PORT_FAILURE, format!("could not write {what}: {error}"))
@@ -676,7 +1214,7 @@ fn write_spark_reads(
         for (index, partition) in partitions.iter().enumerate() {
             let mut writer = htsjdk_bam::writer::BamWriter::with_compression(
                 Vec::new(),
-                &header,
+                header,
                 level,
                 deflater,
             )
@@ -699,7 +1237,7 @@ fn write_spark_reads(
 
     // The header part: a header-only BAM without its terminator.
     let mut header_part =
-        htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), &header, level, deflater)
+        htsjdk_bam::writer::BamWriter::with_compression(Vec::new(), header, level, deflater)
             .and_then(|writer| writer.finish())
             .map_err(|error| failed(output, error.to_string()))?;
     header_part.truncate(header_part.len() - htsjdk_bgzf::EMPTY_GZIP_BLOCK.len());
@@ -711,7 +1249,7 @@ fn write_spark_reads(
     let mut bam = header_part;
     let mut offsets: Vec<u64> = Vec::new();
     let mut encoded = Vec::new();
-    for partition in &partitions {
+    for partition in partitions {
         let shift = (bam.len() as u64) << 16;
         let mut stream = htsjdk_bgzf::BgzfWriter::with_deflater(Vec::new(), level, deflater);
         for (index, record) in partition.iter().enumerate() {
@@ -734,7 +1272,7 @@ fn write_spark_reads(
     bam.extend_from_slice(&htsjdk_bgzf::EMPTY_GZIP_BLOCK);
     std::fs::write(output, &bam).map_err(|error| failed(output, error.to_string()))?;
 
-    if flag(parser, "create-output-bam-index") && sort_order.as_deref() == Some("coordinate") {
+    if flag(parser, "create-output-bam-index") && sort_order == Some("coordinate") {
         // shortcut: the index is built from the whole file; Disq merges one per part with
         // `BAMIndexMerger`, which is the same index on every array row measured so far. Port the
         // merger if a multi-partition row ever disagrees.

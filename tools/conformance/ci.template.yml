@@ -242,7 +242,7 @@ jobs:
             --tool CountReadsSpark --tool CountBasesSpark --tool FlagStatSpark \
             --tool CountVariantsSpark --tool PrintReadsSpark --tool PileupSpark \
             --tool BaseRecalibratorSpark --tool ApplyBQSRSpark --tool BQSRPipelineSpark \
-            --tool SortSamSpark --tool PrintVariantsSpark \
+            --tool SortSamSpark --tool PrintVariantsSpark --tool RevertSamSpark \
             --tool CountBasesInReference \
             --tool SplitIntervals \
             --tool Pileup --tool PreprocessIntervals \

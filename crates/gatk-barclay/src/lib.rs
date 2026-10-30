@@ -887,13 +887,13 @@ impl Definition {
     }
 
     /// `getArgRequiredErrorMessage()`, whose second form renders the mutex targets as a
-    /// `LinkedHashSet`'s `toString`.
+    /// `LinkedHashSet`'s `toString`, inside braces of its own: `{[output-map]}`.
     fn arg_required_error_message(&self) -> String {
         if self.annotation.mutex.is_empty() {
             format!("Argument '{}' is required", self.long_name())
         } else {
             format!(
-                "Argument '{}' is required unless one of [{}] are provided",
+                "Argument '{}' is required unless one of {{[{}]}} are provided",
                 self.long_name(),
                 self.annotation.mutex.join(", ")
             )

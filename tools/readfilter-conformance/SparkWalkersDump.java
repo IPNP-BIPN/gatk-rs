@@ -1,5 +1,5 @@
 /*
- * The eleven Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
+ * The twelve Spark tools this port runs, end to end through Main, against `--spark-master local[1]`.
  *
  * The covering arrays compare the port against the reference row by row on every CI run; what
  * they cannot do is hold a golden, so nothing re-derives a fixed answer for these tools. This dump
@@ -80,7 +80,7 @@ public class SparkWalkersDump {
         PrintReadsDump.emptyDirectory(DIR);
         Files.createDirectories(DIR);
 
-        System.out.println("# SparkWalkersDump: eleven Spark tools through Main, --spark-master local[1]");
+        System.out.println("# SparkWalkersDump: twelve Spark tools through Main, --spark-master local[1]");
 
         final Path fasta = DIR.resolve("ref.fasta");
         Files.write(fasta, ReadWalkerDump.FASTA.getBytes());
@@ -96,10 +96,14 @@ public class SparkWalkersDump {
         new Main().instanceMain(new String[] {"IndexFeatureFile", "-I", indexedVcf.toString()});
         final Path genotypedVcf = DIR.resolve("genotyped.vcf");
         Files.write(genotypedVcf, GENOTYPED_VCF.getBytes());
+        Files.write(DIR.resolve("revert.map.tsv"), ("READ_GROUP_ID\tOUTPUT\nrg1\t"
+                + DIR.resolve("out/revert-sam-map/mapped.bam") + "\n").getBytes());
+        Files.write(DIR.resolve("revert.bad-map.tsv"), "ID\tFILE\nrg1\tx.bam\n".getBytes());
 
         // The fixtures travel, so the port runs over these bytes rather than its own rebuild.
         for (final String name : new String[] {"ref.fasta", "ref.fasta.fai", "ref.dict",
-                "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf"}) {
+                "reads.bam", "reads.bai", "plain.vcf", "genotyped.vcf", "revert.map.tsv",
+                "revert.bad-map.tsv"}) {
             System.out.printf("input\t%s\t%s%n", name,
                     Base64.getEncoder().encodeToString(Files.readAllBytes(DIR.resolve(name))));
         }
@@ -162,6 +166,62 @@ public class SparkWalkersDump {
         run("sort-sam-unsorted", "sort-sam-unsorted.bam", "SortSamSpark", "-I", i,
                 "--use-jdk-deflater", "true", "--sort-order", "unsorted",
                 "-O", out("sort-sam-unsorted", "sort-sam-unsorted.bam"));
+        // RevertSamSpark: the reversion and each switch that holds part of it back, the arguments
+        // the tool has quirks on (`--remove-default-attributes-to-clear` fails, and the output
+        // checks' answers are thrown away), `--sanitize` with its sort, and one file per read group.
+        final String revert = "RevertSamSpark";
+        run("revert-sam", "revert-sam.bam", revert, "-I", i, "--use-jdk-deflater", "true",
+                "-O", out("revert-sam", "revert-sam.bam"));
+        run("revert-sam-keep-alignment", "revert-sam-keep-alignment.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--keep-alignment-information", "true",
+                "--sort-order", "coordinate",
+                "-O", out("revert-sam-keep-alignment", "revert-sam-keep-alignment.bam"));
+        run("revert-sam-qualities", "revert-sam-qualities.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--dont-restore-original-qualities", "true",
+                "-O", out("revert-sam-qualities", "revert-sam-qualities.bam"));
+        run("revert-sam-duplicates", "revert-sam-duplicates.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--remove-duplicate-information", "true",
+                "-O", out("revert-sam-duplicates", "revert-sam-duplicates.bam"));
+        run("revert-sam-attributes", "revert-sam-attributes.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--attributes-to-clear", "NM",
+                "--attributes-to-clear", "RG",
+                "-O", out("revert-sam-attributes", "revert-sam-attributes.bam"));
+        run("revert-sam-defaults", "revert-sam-defaults.bam", revert, "-I", i,
+                "--remove-default-attributes-to-clear", "true",
+                "-O", out("revert-sam-defaults", "revert-sam-defaults.bam"));
+        run("revert-sam-alias", "revert-sam-alias.bam", revert, "-I", i, "--use-jdk-deflater",
+                "true", "--sample-alias", "alias", "--library-name", "library",
+                "-O", out("revert-sam-alias", "revert-sam-alias.bam"));
+        run("revert-sam-sanitize", "revert-sam-sanitize.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--sanitize", "true",
+                "-O", out("revert-sam-sanitize", "revert-sam-sanitize.bam"));
+        run("revert-sam-sanitize-first", "revert-sam-sanitize-first.bam", revert, "-I", i,
+                "--use-jdk-deflater", "true", "--sanitize", "true", "--keep-first-duplicate", "true",
+                "--num-reducers", "2",
+                "-O", out("revert-sam-sanitize-first", "revert-sam-sanitize-first.bam"));
+        run("revert-sam-first-alone", "revert-sam-first-alone.bam", revert, "-I", i,
+                "--keep-first-duplicate", "true",
+                "-O", out("revert-sam-first-alone", "revert-sam-first-alone.bam"));
+        run("revert-sam-sharded", "revert-sam-sharded.bam", revert, "-I", i, "--use-jdk-deflater",
+                "true", "--sharded-output", "true",
+                "-O", out("revert-sam-sharded", "revert-sam-sharded.bam"));
+        run("revert-sam-sam", "revert-sam-sam.sam", revert, "-I", i,
+                "-O", out("revert-sam-sam", "revert-sam-sam.sam"));
+        run("revert-sam-by-group", "by-group", revert, "-I", i, "--use-jdk-deflater", "true",
+                "--output-by-readgroup", "true", "-O", out("revert-sam-by-group", "by-group"));
+        run("revert-sam-by-group-sam", "by-group", revert, "-I", i,
+                "--output-by-readgroup", "true", "--output-by-readgroup-file-format", "sam",
+                "-O", out("revert-sam-by-group-sam", "by-group"));
+        run("revert-sam-no-output", null, revert, "-I", i, "--output-by-readgroup", "true");
+        final String map = DIR.resolve("revert.map.tsv").toString();
+        run("revert-sam-map", "mapped.bam", revert, "-I", i, "--use-jdk-deflater", "true",
+                "--output-by-readgroup", "true", "--output-map", map);
+        out("revert-sam-map", "mapped.bam");
+        run("revert-sam-map-alone", null, revert, "-I", i, "--output-map", map);
+        run("revert-sam-map-bad", null, revert, "-I", i, "--output-by-readgroup", "true",
+                "--output-map", DIR.resolve("revert.bad-map.tsv").toString());
+        run("revert-sam-map-missing", null, revert, "-I", i, "--output-by-readgroup", "true",
+                "--output-map", DIR.resolve("no-such.tsv").toString());
         // PrintVariantsSpark: Disq's VCF writer, as text, block-compressed with its tabix index,
         // over an interval of the indexed copy, refused for BCF, and failing inside the job on a
         // record with genotypes.

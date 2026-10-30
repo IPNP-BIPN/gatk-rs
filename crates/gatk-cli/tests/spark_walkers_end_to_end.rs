@@ -18,6 +18,10 @@
 //!    and only the `.sbi` for a queryname one;
 //!  * **PrintVariantsSpark's VCF**, as text with no index, or block-compressed with a `.tbi` whose
 //!    last chunk ends where the terminator starts;
+//!  * **RevertSamSpark**, whose flags keep `RevertSam`'s names and not always its meaning:
+//!    `--remove-default-attributes-to-clear` always fails, `--remove-duplicate-information` keeps
+//!    them, every reverted read comes out paired, and `--sanitize` reads all-high qualities as
+//!    Illumina or Solexa and fails on what the offset takes below zero;
 //!  * **and PileupSpark's text-file directory**, Hadoop's checksums included.
 //!
 //! # How the runs are replayed

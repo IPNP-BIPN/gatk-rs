@@ -304,6 +304,7 @@ pub fn runner(name: &str) -> Option<Runner> {
         "ApplyBQSRSpark" => Some(run_apply_bqsr_spark),
         "BQSRPipelineSpark" => Some(run_bqsr_pipeline_spark),
         "SortSamSpark" => Some(run_sort_sam_spark),
+        "RevertSamSpark" => Some(run_revert_sam_spark),
         "PrintVariantsSpark" => Some(run_print_variants_spark),
         "CountBasesInReference" => Some(run_count_bases_in_reference),
         "SplitIntervals" => Some(run_split_intervals),
@@ -1043,6 +1044,10 @@ fn run_apply_bqsr_spark(args: &[String]) -> Result<Option<String>, Thrown> {
 
 fn run_bqsr_pipeline_spark(args: &[String]) -> Result<Option<String>, Thrown> {
     runners::bqsr_pipeline_spark(&parsed("BQSRPipelineSpark", args)?)
+}
+
+fn run_revert_sam_spark(args: &[String]) -> Result<Option<String>, Thrown> {
+    runners::revert_sam_spark(&parsed("RevertSamSpark", args)?)
 }
 
 fn run_sort_sam_spark(args: &[String]) -> Result<Option<String>, Thrown> {
