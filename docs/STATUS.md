@@ -164,11 +164,11 @@ The cost column is `port / reference` wall clock, cold / steady, from the latest
 | `AnnotateVcfWithBamDepth` | variant-walker | oracle-backed | annotate-vcf-with-bam-depth | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.055 |
 | `AnnotateVcfWithExpectedAlleleFraction` | variant-walker | oracle-backed | annotate-vcf-with-expected-allele-fraction | 1 | t=2, 23/23 rows (100%) | 0.002 / 0.054 |
 | `ApplyBQSR` | record-transform | oracle-backed | apply-bqsr, tool-argument-declarations, tool-argument-enums | 3 | t=2, 21/21 rows (100%) | 0.003 / 0.071 |
-| `ApplyBQSRSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `ApplyBQSRSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 20/20 rows (100%) | not measured |
 | `ApplyVQSR` | variant-transform | oracle-backed | apply-vqsr-allele-specific, apply-vqsr-site-filtering, apply-vqsr-tranches, apply-vqsr-two-modes | 4 | t=2, 25/25 rows (100%) | 0.002 / 0.058 |
-| `BQSRPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `BQSRPipelineSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 23/23 rows (100%) | not measured |
 | `BaseRecalibrator` | record-transform | oracle-backed | base-recalibrator | 1 | t=2, 21/21 rows (100%) | 0.006 / 0.127 |
-| `BaseRecalibratorSpark` | record-transform | oracle-backed | spark-walkers | 1 | not measured | not measured |
+| `BaseRecalibratorSpark` | record-transform | oracle-backed | spark-walkers | 1 | t=2, 22/22 rows (100%) | not measured |
 | `BwaMemIndexImageCreator` | reference-utility | oracle-backed | bwa-index-image | 1 | t=2, 15/15 rows (100%) | 0.003 / 0.085 |
 | `CRAMIssue8768Detector` | unclassified | oracle-backed | cram-issue-8768-detector | 1 | t=2, 11/11 rows (100%) | 0.007 / 0.145 |
 | `CalculateAverageCombinedAnnotations` | unclassified | oracle-backed | calculate-average-combined-annotations | 1 | t=2, 16/16 rows (100%) | 0.003 / 0.065 |
