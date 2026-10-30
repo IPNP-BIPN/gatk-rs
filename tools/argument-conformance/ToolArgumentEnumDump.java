@@ -528,6 +528,19 @@ public class ToolArgumentEnumDump {
                 new org.broadinstitute.hellbender.tools.spark.pipelines.PrintVariantsSpark());
         declarations("RevertSamSpark",
                 new org.broadinstitute.hellbender.tools.spark.RevertSamSpark());
+        // X.1, sixth brick: a filter by read name and the metrics whose non-Spark twins already run.
+        declarations("ExtractOriginalAlignmentRecordsByNameSpark",
+                new org.broadinstitute.hellbender.tools.spark.sv.utils.ExtractOriginalAlignmentRecordsByNameSpark());
+        declarations("CollectQualityYieldMetricsSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectQualityYieldMetricsSpark());
+        declarations("CollectInsertSizeMetricsSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectInsertSizeMetricsSpark());
+        declarations("MeanQualityByCycleSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.MeanQualityByCycleSpark());
+        declarations("QualityScoreDistributionSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.QualityScoreDistributionSpark());
+        declarations("CollectBaseDistributionByCycleSpark",
+                new org.broadinstitute.hellbender.tools.spark.pipelines.metrics.CollectBaseDistributionByCycleSpark());
         // The table first, then the arguments that point into it.
         final List<String> names = new ArrayList<>(types.keySet());
         java.util.Collections.sort(names);
