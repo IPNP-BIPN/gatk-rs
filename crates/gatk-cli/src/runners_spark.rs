@@ -1055,10 +1055,11 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
         }
     }
     if flag(parser, "remove-default-attributes-to-clear") {
-        return Err(Thrown::non_user(
-            "java.lang.UnsupportedOperationException",
-            "null",
-        ));
+        return Err(Thrown {
+            failure: Failure::Other,
+            exception: "java.lang.UnsupportedOperationException",
+            message: None,
+        });
     }
 
     let attributes = arguments(parser, "attributes-to-clear");
@@ -1075,6 +1076,20 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
             &attributes,
         )?;
     }
+    // `r.getReadGroup().equals(key)` is the first thing to touch a read when a group is looked up:
+    // `--attributes-to-clear RG`, or a read that never had one, fails the first task.
+    let looks_up_group =
+        (sanitize && !driver.read_groups.is_empty()) || flag(parser, "output-by-readgroup");
+    if looks_up_group && records.iter().any(|record| read_group_of(record).is_none()) {
+        eprintln!("ERROR Executor - Exception in task 0.0 in stage 0.0 (TID 0)");
+        return Err(Thrown::non_user(
+            "org.apache.spark.SparkException",
+            "Job aborted due to stage failure: Task 0 in stage 0.0 failed 1 times: \
+             java.lang.NullPointerException: Cannot invoke \"String.equals(Object)\" because the \
+             return value of \"org.broadinstitute.hellbender.utils.read.GATKRead.getReadGroup()\" \
+             is null",
+        ));
+    }
     let partitions = if sanitize {
         sanitize_reads(parser, &driver, records, keep_first)?
     } else {
@@ -1087,18 +1102,6 @@ pub fn revert_sam_spark(parser: &Parser) -> Outcome {
             write_reverted(parser, &out, &sort_order, &partitions, &file)?;
             continue;
         };
-        // `r.getReadGroup().equals(key)`: a read without a group fails the task.
-        if partitions
-            .iter()
-            .flatten()
-            .any(|r| read_group_of(r).is_none())
-        {
-            return Err(Thrown::non_user(
-                PORT_LIMITATION,
-                "A read without a read group: the reference fails this inside a Spark task, which \
-                 this port does not reproduce. This message is the port's own and not GATK's.",
-            ));
-        }
         let groups: Vec<_> = driver
             .read_groups
             .iter()
