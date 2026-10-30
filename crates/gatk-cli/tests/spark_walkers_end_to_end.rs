@@ -154,7 +154,11 @@ fn every_run_replays_as_the_reference_ran_it() {
         }
         match row("error", label) {
             Some(error) => {
-                let message = error.split_once(':').map_or("", |(_, message)| message);
+                // The dump prints a null message as `null`; `Throwable.toString` prints none.
+                let message = match error.split_once(':') {
+                    Some((_, "null")) | None => "",
+                    Some((_, message)) => message,
+                };
                 let stderr = ran.stderr.replace(&cwd, "<cwd>");
                 if ran.status == 0 || !stderr.contains(message) {
                     failures.push(format!(
